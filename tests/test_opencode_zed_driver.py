@@ -70,7 +70,7 @@ def test_required_environment_rejects_missing_and_trims_present_value(
     assert zed_client._required_env("SYNAPSE_ZED_TEST_VALUE") == "value"
 
 
-def test_trace_wait_accepts_marker_and_rejects_exit_or_timeout(
+def test_trace_wait_and_session_readiness_fail_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -80,6 +80,8 @@ def test_trace_wait_accepts_marker_and_rejects_exit_or_timeout(
     trace.write_text('{"method":"session/new"}\n', encoding="utf-8")
     assert zed_client._trace_has(trace, "session/new") is True
     zed_client._wait_for_trace(trace, "session/new", float("inf"), _process(live), "session")
+    monkeypatch.setattr(zed_client, "has_ready_session", lambda _trace: True)
+    zed_client._wait_for_ready_session(trace, float("inf"), _process(live))
 
     trace.unlink()
     sleeps: list[float] = []
@@ -246,6 +248,7 @@ def test_main_uses_isolated_profile_and_runs_the_exact_acp_sequence(
     actions: list[tuple[str, tuple[str, ...], float]] = []
     focused_inputs: list[tuple[str, float]] = []
     waits: list[tuple[str, float, str]] = []
+    session_waits: list[float] = []
 
     def wait_for_trace(
         _trace: Path,
@@ -279,6 +282,11 @@ def test_main_uses_isolated_profile_and_runs_the_exact_acp_sequence(
         lambda window, *, deadline: focused_inputs.append((window, deadline)),
     )
     monkeypatch.setattr(zed_client, "_wait_for_trace", wait_for_trace)
+    monkeypatch.setattr(
+        zed_client,
+        "_wait_for_ready_session",
+        lambda _trace, deadline, _process_argument: session_waits.append(deadline),
+    )
     monkeypatch.setattr(zed_client, "_capture_screenshot", screenshot)
     monkeypatch.setattr(time, "monotonic", lambda: next(clock))
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
@@ -299,12 +307,10 @@ def test_main_uses_isolated_profile_and_runs_the_exact_acp_sequence(
     assert (xdg_data / "zed-e2e" / "config" / "settings.json").is_file()
     assert not (xdg_config / "zed" / "settings.json").exists()
     assert waits == [
-        ('"method":"session/new"', 80.0, "ACP session creation"),
-        ('"response_to":"session/new"', 80.0, "ACP session response"),
-        ('"method":"session/update"', 80.0, "ACP session update"),
         ('"method":"session/prompt"', 90.0, "ACP prompt delivery"),
         ('"response_to":"session/prompt"', 90.0, "ACP prompt response"),
     ]
+    assert session_waits == [80.0]
     assert (
         "open the configured ACP agent",
         ("key", "--window", "123", "ctrl+alt+shift+F12"),
@@ -360,6 +366,7 @@ def test_main_fails_when_success_evidence_cannot_be_captured(
     monkeypatch.setattr(zed_client, "bounded_sleep", lambda *_args: None)
     monkeypatch.setattr(zed_client, "focus_window_for_input", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(zed_client, "_wait_for_trace", lambda *_args: None)
+    monkeypatch.setattr(zed_client, "_wait_for_ready_session", lambda *_args: None)
     monkeypatch.setattr(zed_client, "_capture_screenshot", lambda _path: False)
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 

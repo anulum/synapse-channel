@@ -14,9 +14,11 @@ import os
 import subprocess  # nosec B404
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from e2e.opencode_editors.editor_process_runner import PROCESS_GROUP_SUPERVISION_ENV
+from e2e.opencode_editors.zed_readiness import has_ready_session
 from e2e.opencode_editors.zed_timing import DEFAULT_ZED_TIMING
 from e2e.opencode_editors.zed_x11 import (
     bounded_sleep,
@@ -45,6 +47,23 @@ def _trace_has(trace: Path, marker: str) -> bool:
     return marker in trace.read_text(encoding="utf-8")
 
 
+def _wait_for_trace_state(
+    trace: Path,
+    ready: Callable[[Path], bool],
+    deadline: float,
+    process: subprocess.Popen[str],
+    stage: str,
+) -> None:
+    """Wait for one semantic ACP milestone or a terminal process failure."""
+    while time.monotonic() < deadline:
+        if ready(trace):
+            return
+        if process.poll() is not None:
+            raise RuntimeError(f"Zed exited before {stage}: exit status {process.returncode}")
+        time.sleep(0.25)
+    raise RuntimeError(f"Zed never reached {stage} before timeout")
+
+
 def _wait_for_trace(
     trace: Path,
     marker: str,
@@ -52,14 +71,29 @@ def _wait_for_trace(
     process: subprocess.Popen[str],
     stage: str,
 ) -> None:
-    """Wait for one semantic ACP milestone or a terminal process failure."""
-    while time.monotonic() < deadline:
-        if _trace_has(trace, marker):
-            return
-        if process.poll() is not None:
-            raise RuntimeError(f"Zed exited before {stage}: exit status {process.returncode}")
-        time.sleep(0.25)
-    raise RuntimeError(f"Zed never reached {stage} before timeout")
+    """Wait for one content marker in the bounded ACP trace."""
+    _wait_for_trace_state(
+        trace,
+        lambda candidate: _trace_has(candidate, marker),
+        deadline,
+        process,
+        stage,
+    )
+
+
+def _wait_for_ready_session(
+    trace: Path,
+    deadline: float,
+    process: subprocess.Popen[str],
+) -> None:
+    """Wait until ordered trace evidence proves a usable ACP session."""
+    _wait_for_trace_state(
+        trace,
+        has_ready_session,
+        deadline,
+        process,
+        "ACP session readiness",
+    )
 
 
 def _write_profile(data_root: Path, proxy_argv: list[str]) -> None:
@@ -188,27 +222,7 @@ def main() -> int:
                 deadline=startup_deadline,
             )
             session_deadline = time.monotonic() + DEFAULT_ZED_TIMING.acp_session_seconds
-            _wait_for_trace(
-                trace,
-                '"method":"session/new"',
-                session_deadline,
-                process,
-                "ACP session creation",
-            )
-            _wait_for_trace(
-                trace,
-                '"response_to":"session/new"',
-                session_deadline,
-                process,
-                "ACP session response",
-            )
-            _wait_for_trace(
-                trace,
-                '"method":"session/update"',
-                session_deadline,
-                process,
-                "ACP session update",
-            )
+            _wait_for_ready_session(trace, session_deadline, process)
             bounded_sleep(session_deadline, 0.5)
             prompt_deadline = time.monotonic() + DEFAULT_ZED_TIMING.acp_prompt_seconds
             focus_window_for_input(window, deadline=prompt_deadline)
