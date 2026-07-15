@@ -10,12 +10,22 @@
 from __future__ import annotations
 
 import io
+import sys
 import tarfile
 import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from tools.check_wheel_sdist_parity import main, parity_problems
+
+if TYPE_CHECKING:
+    from tools.check_wheel_sdist_parity import main, parity_problems
+else:
+    # ``tools`` is release/build tooling outside the installed package, so the
+    # repository root must be on the path before importing it (the same shim the
+    # other tools-backed tests use).
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from tools.check_wheel_sdist_parity import main, parity_problems
 
 
 def _make_wheel(path: Path, modules: tuple[str, ...]) -> Path:
