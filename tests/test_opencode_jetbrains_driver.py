@@ -29,6 +29,28 @@ from e2e.opencode_editors.jetbrains_lifecycle import JetBrainsLifecycleGuard
 from e2e.opencode_editors.jetbrains_x11_geometry import X11WindowRectangle
 
 
+def test_show_ai_chat_uses_only_proven_current_focus(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    focused: list[tuple[str, float]] = []
+    actions: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_focus_window_for_input",
+        lambda window, *, deadline: focused.append((window, deadline)),
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_checked_xdotool",
+        lambda _action, *args, **_kwargs: actions.append(args),
+    )
+
+    jetbrains_client._show_ai_chat("123", deadline=7.0)
+
+    assert focused == [("123", 7.0)]
+    assert actions == [("key", "ctrl+alt+shift+j")]
+
+
 def test_agent_selector_popup_requires_pinned_window_invariants(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -249,11 +271,17 @@ def test_agent_selector_opens_only_from_the_pinned_project_frame(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     actions: list[tuple[str, ...]] = []
+    focused: list[tuple[str, float]] = []
     monkeypatch.setattr(
         jetbrains_x11_driver, "_window_geometry", lambda _window, **_kwargs: (1400, 1000)
     )
     monkeypatch.setattr(
         jetbrains_x11_driver, "_window_is_root_child", lambda *_args, **_kwargs: True
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_focus_window_for_input",
+        lambda window, *, deadline: focused.append((window, deadline)),
     )
     monkeypatch.setattr(
         jetbrains_x11_driver,
@@ -271,9 +299,9 @@ def test_agent_selector_opens_only_from_the_pinned_project_frame(
 
     assert _open_agent_selector("123", deadline=float("inf")) == "selector-for-123"
     assert actions == [
-        ("windowfocus", "--sync", "123"),
-        ("key", "--window", "123", "ctrl+alt+shift+k"),
+        ("key", "ctrl+alt+shift+k"),
     ]
+    assert focused == [("123", float("inf"))]
 
 
 @pytest.mark.parametrize(("geometry", "root_child"), [((1399, 1000), True), ((1400, 1000), False)])
@@ -304,6 +332,7 @@ def test_agent_selector_filters_exact_name_confirms_once_and_proves_closure(
     actions: list[tuple[str, ...]] = []
     captures: list[bool] = []
     guarded: list[bool] = []
+    focused: list[tuple[str, float]] = []
     monkeypatch.setattr(
         jetbrains_client,
         "_is_agent_selector_popup",
@@ -326,6 +355,11 @@ def test_agent_selector_filters_exact_name_confirms_once_and_proves_closure(
     )
     monkeypatch.setattr(
         jetbrains_x11_driver,
+        "_focus_window_for_input",
+        lambda window, *, deadline: focused.append((window, deadline)),
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
         "_checked_xdotool",
         lambda _action, *args, **_kwargs: actions.append(args),
     )
@@ -340,19 +374,17 @@ def test_agent_selector_filters_exact_name_confirms_once_and_proves_closure(
     )
 
     assert actions == [
-        ("windowfocus", "--sync", "selector"),
-        ("key", "--window", "selector", "ctrl+a"),
+        ("key", "ctrl+a"),
         (
             "type",
-            "--window",
-            "selector",
             "--delay",
             "1",
             "--",
             "SYNAPSE OpenCode E2E",
         ),
-        ("key", "--window", "selector", "Return"),
+        ("key", "Return"),
     ]
+    assert focused == [("selector", float("inf"))]
     assert captures == [True]
     assert guarded == [True, True, True]
 
@@ -395,6 +427,11 @@ def test_agent_selector_rejects_visible_ownership_drift_or_replacement(
         lambda *_args, **_kwargs: matches,
     )
     monkeypatch.setattr(jetbrains_x11_driver, "_checked_xdotool", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_focus_window_for_input",
+        lambda *_a, **_k: None,
+    )
     monkeypatch.setattr(jetbrains_x11_driver, "_bounded_poll_sleep", lambda _deadline: None)
 
     with pytest.raises(RuntimeError, match=message):
@@ -442,6 +479,11 @@ def test_agent_selector_rejects_unclassifiable_replacement_after_confirmation(
         ),
     )
     monkeypatch.setattr(jetbrains_x11_driver, "_checked_xdotool", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_focus_window_for_input",
+        lambda *_a, **_k: None,
+    )
 
     with pytest.raises(RuntimeError, match="malformed transient ownership"):
         _select_pinned_agent("selector", "123", deadline=float("inf"))
@@ -482,6 +524,11 @@ def test_agent_selector_rejects_malformed_replacement_parentage_after_confirmati
         ),
     )
     monkeypatch.setattr(jetbrains_x11_driver, "_checked_xdotool", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_focus_window_for_input",
+        lambda *_a, **_k: None,
+    )
 
     with pytest.raises(RuntimeError, match="malformed parentage"):
         _select_pinned_agent("selector", "123", deadline=float("inf"))
@@ -546,6 +593,11 @@ def test_agent_selector_search_and_confirmation_timeout_fail_closed(
         lambda *_args, **_kwargs: next(snapshots),
     )
     monkeypatch.setattr(jetbrains_x11_driver, "_checked_xdotool", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_focus_window_for_input",
+        lambda *_a, **_k: None,
+    )
     monkeypatch.setattr(jetbrains_x11_driver, "_bounded_poll_sleep", lambda _deadline: None)
     with pytest.raises(RuntimeError, match="changed while filtering"):
         _select_pinned_agent("selector", "123", deadline=float("inf"))
@@ -604,6 +656,11 @@ def test_selector_retry_suppression_and_one_loop_closure_are_bounded(
         lambda snapshot, *_args, **_kwargs: ("selector",) if snapshot else (),
     )
     monkeypatch.setattr(jetbrains_x11_driver, "_checked_xdotool", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_focus_window_for_input",
+        lambda *_a, **_k: None,
+    )
     sleeps: list[bool] = []
     monkeypatch.setattr(
         jetbrains_x11_driver,
@@ -929,6 +986,11 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
         jetbrains_x11_driver,
         "_checked_xdotool",
         lambda *_args, **_kwargs: events.append("chat"),
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_focus_window_for_input",
+        lambda *_args, **_kwargs: events.append("focus"),
     )
     monkeypatch.setattr(
         jetbrains_x11_driver,

@@ -244,6 +244,7 @@ def test_main_uses_isolated_profile_and_runs_the_exact_acp_sequence(
         return process
 
     actions: list[tuple[str, tuple[str, ...], float]] = []
+    focused_inputs: list[tuple[str, float]] = []
     waits: list[tuple[str, float, str]] = []
 
     def wait_for_trace(
@@ -272,6 +273,11 @@ def test_main_uses_isolated_profile_and_runs_the_exact_acp_sequence(
         lambda action, *args, deadline: actions.append((action, args, deadline)),
     )
     monkeypatch.setattr(zed_client, "bounded_sleep", lambda _deadline, _seconds: None)
+    monkeypatch.setattr(
+        zed_client,
+        "focus_window_for_input",
+        lambda window, *, deadline: focused_inputs.append((window, deadline)),
+    )
     monkeypatch.setattr(zed_client, "_wait_for_trace", wait_for_trace)
     monkeypatch.setattr(zed_client, "_capture_screenshot", screenshot)
     monkeypatch.setattr(time, "monotonic", lambda: next(clock))
@@ -302,6 +308,12 @@ def test_main_uses_isolated_profile_and_runs_the_exact_acp_sequence(
         ("key", "--window", "123", "ctrl+alt+shift+F12"),
         70.0,
     ) in actions
+    assert (
+        "type the Zed prompt",
+        ("type", "--delay", "1", "--", "governed prompt"),
+        90.0,
+    ) in actions
+    assert focused_inputs == [("123", 90.0)]
     assert process.terminated is True
     assert process.killed is expected_killed
     assert (artifacts / "zed.png").read_bytes() == b"png"
@@ -339,6 +351,7 @@ def test_main_fails_when_success_evidence_cannot_be_captured(
     )
     monkeypatch.setattr(zed_client, "checked_xdotool", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(zed_client, "bounded_sleep", lambda *_args: None)
+    monkeypatch.setattr(zed_client, "focus_window_for_input", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(zed_client, "_wait_for_trace", lambda *_args: None)
     monkeypatch.setattr(zed_client, "_capture_screenshot", lambda _path: False)
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)

@@ -78,18 +78,10 @@ def _required_env(name: str) -> str:
 
 def _show_ai_chat(window: str, *, deadline: float | None = None) -> None:
     """Focus the pinned IDEA frame and invoke its idempotent chat action."""
-    x11._checked_xdotool(
-        "focus the IntelliJ IDEA window",
-        "windowfocus",
-        "--sync",
-        window,
-        deadline=deadline,
-    )
+    x11._focus_window_for_input(window, deadline=deadline)
     x11._checked_xdotool(
         "open the AI Assistant tool window",
         "key",
-        "--window",
-        window,
         "ctrl+alt+shift+j",
         deadline=deadline,
     )
@@ -262,18 +254,10 @@ def _open_agent_selector(
                 "refusing JetBrains selector input outside the pinned project frame: "
                 f"geometry={rendered}, root_child={root_child}"
             )
-        x11._checked_xdotool(
-            "focus the IntelliJ IDEA window",
-            "windowfocus",
-            "--sync",
-            window,
-            deadline=deadline,
-        )
+        x11._focus_window_for_input(window, deadline=deadline)
         x11._checked_xdotool(
             "invoke the pinned JetBrains agent selector action",
             "key",
-            "--window",
-            window,
             "ctrl+alt+shift+k",
             deadline=deadline,
         )
@@ -300,26 +284,16 @@ def _select_pinned_agent(
     matches = _visible_agent_selector_popups(project, deadline=deadline)
     if matches != (selector,):
         raise RuntimeError(f"refusing ambiguous JetBrains ACP agent selection: matches={matches!r}")
-    x11._checked_xdotool(
-        "focus the pinned JetBrains ACP agent selector",
-        "windowfocus",
-        "--sync",
-        selector,
-        deadline=deadline,
-    )
+    x11._focus_window_for_input(selector, deadline=deadline)
     x11._checked_xdotool(
         "clear the JetBrains ACP agent filter",
         "key",
-        "--window",
-        selector,
         "ctrl+a",
         deadline=deadline,
     )
     x11._checked_xdotool(
         "filter the exact SYNAPSE OpenCode ACP agent",
         "type",
-        "--window",
-        selector,
         "--delay",
         "1",
         "--",
@@ -342,8 +316,6 @@ def _select_pinned_agent(
     x11._checked_xdotool(
         "confirm the exact SYNAPSE OpenCode ACP agent",
         "key",
-        "--window",
-        selector,
         "Return",
         deadline=deadline,
     )

@@ -294,6 +294,34 @@ def _focused_window_id(*, deadline: float | None = None) -> int | None:
         return None
 
 
+def _focus_window_for_input(window: str, *, deadline: float | None = None) -> None:
+    """Focus one X11 frame and prove its window tree owns keyboard input."""
+    try:
+        window_id = int(window, 0)
+    except ValueError as exc:
+        raise RuntimeError("validated JetBrains input window has an invalid XID") from exc
+    if window_id <= 0:
+        raise RuntimeError("validated JetBrains input window has an invalid XID")
+    _checked_xdotool(
+        "focus the JetBrains input window",
+        "windowfocus",
+        "--sync",
+        window,
+        deadline=deadline,
+    )
+    focused_window_id = _focused_window_id(deadline=deadline)
+    owns_focus = focused_window_id is not None and focus_belongs_to_project(
+        window_id,
+        focused_window_id,
+        lambda candidate: _window_parent_ids(candidate, deadline=deadline),
+    )
+    if not owns_focus:
+        raise RuntimeError(
+            "refusing JetBrains input without target-window keyboard focus: "
+            f"expected={window_id}, focused={focused_window_id}"
+        )
+
+
 def _focus_chat_composer(window: str, *, deadline: float | None = None) -> None:
     """Focus the chat composer inside one validated IDEA project frame."""
     geometry = _window_geometry(window, deadline=deadline)

@@ -402,9 +402,12 @@ durable hub journal must retain exactly one matching claim, release, and
 assessment receipt.
 
 The JetBrains driver selects only a top-level project frame with the pinned
-geometry, focuses the chat composer, and verifies that keyboard focus belongs
-to that frame or reaches it through a bounded, cycle-free X11 parent chain
-before issuing any global Swing keystroke. Agent-selector discovery batches
+geometry. Before opening AI Chat, invoking the selector, or entering selector
+input, it focuses the validated target and proves that keyboard focus belongs
+to that frame or reaches it through a bounded, cycle-free X11 parent chain;
+only then does it use the current-focus XTEST path accepted by Swing. The chat
+composer applies the same ownership proof after its bounded pointer focus.
+Agent-selector discovery batches
 the visible JetBrains window geometry into one X11 query, then performs the
 more expensive root-child and transient-owner checks only for windows with the
 exact pinned selector dimensions. Malformed batch output, multiple matching
@@ -468,7 +471,9 @@ selectors, requires pinned Zed's exact project-root title shape, and binds the
 window's `_NET_WM_PID` to the isolated driver process group. Both WM_CLASS
 fields must equal pinned stable app ID `dev.zed.Zed`; that identity is part of
 the machine-readable compatibility contract. Title-only windows and unrelated
-Zed processes cannot receive input. Startup, session, and prompt
+Zed processes cannot receive input. Before prompt input the driver focuses the
+owned frame, re-reads the exact X11 input-focus XID, and only then types through
+the current-focus XTEST path that pinned Zed accepts. Startup, session, and prompt
 input each use absolute deadlines; the derived 305-second parent cap also
 reserves both screenshot attempts, direct leader cleanup, complete
 driver/editor/proxy/helper process-group cleanup, and a separate supervision

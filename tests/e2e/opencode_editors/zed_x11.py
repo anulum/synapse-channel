@@ -77,6 +77,29 @@ def checked_xdotool(
         raise RuntimeError(f"xdotool could not {action}: {detail}")
 
 
+def focus_window_for_input(window: str, *, deadline: float) -> None:
+    """Focus one owned frame and prove X11 reports that exact input target."""
+    checked_xdotool(
+        "focus the Zed input target",
+        "windowfocus",
+        "--sync",
+        window,
+        deadline=deadline,
+    )
+    result = _run_xdotool("getwindowfocus", deadline=deadline)
+    token = result.stdout.strip()
+    if (
+        result.returncode != 0
+        or result.stderr.strip()
+        or not token.isdecimal()
+        or int(token) <= 0
+        or token != str(int(token))
+        or token != window
+    ):
+        detail = result.stderr.strip() or result.stdout.strip() or "no focused window"
+        raise RuntimeError(f"xdotool could not prove Zed input focus: {detail}")
+
+
 def _window_ids(
     result: subprocess.CompletedProcess[str],
     *,

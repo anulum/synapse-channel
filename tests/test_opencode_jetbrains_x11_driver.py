@@ -158,6 +158,62 @@ def test_window_geometry_name_and_focus_parsers_cover_success_and_failure(
     assert jetbrains_x11_driver._focused_window_id() == 0x123
 
 
+@pytest.mark.parametrize("focused", [123, 300])
+def test_focus_window_for_input_accepts_exact_or_descendant_focus(
+    monkeypatch: pytest.MonkeyPatch,
+    focused: int,
+) -> None:
+    actions: list[tuple[str, tuple[str, ...], float | None]] = []
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_checked_xdotool",
+        lambda action, *args, deadline=None: actions.append((action, args, deadline)),
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_focused_window_id",
+        lambda **_kwargs: focused,
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_window_parent_ids",
+        lambda window, **_kwargs: {300: (1, 123)}[window],
+    )
+
+    jetbrains_x11_driver._focus_window_for_input("123", deadline=7.0)
+
+    assert actions == [
+        ("focus the JetBrains input window", ("windowfocus", "--sync", "123"), 7.0),
+    ]
+
+
+@pytest.mark.parametrize("window", ["invalid", "0", "-1"])
+def test_focus_window_for_input_rejects_an_invalid_target(window: str) -> None:
+    with pytest.raises(RuntimeError, match="input window has an invalid XID"):
+        jetbrains_x11_driver._focus_window_for_input(window)
+
+
+@pytest.mark.parametrize("focused", [None, 456])
+def test_focus_window_for_input_rejects_unowned_focus(
+    monkeypatch: pytest.MonkeyPatch,
+    focused: int | None,
+) -> None:
+    monkeypatch.setattr(jetbrains_x11_driver, "_checked_xdotool", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_focused_window_id",
+        lambda **_kwargs: focused,
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_window_parent_ids",
+        lambda _window, **_kwargs: (1, 1),
+    )
+
+    with pytest.raises(RuntimeError, match="without target-window keyboard focus"):
+        jetbrains_x11_driver._focus_window_for_input("123", deadline=7.0)
+
+
 def test_xwininfo_and_transient_queries_parse_only_proven_ownership(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

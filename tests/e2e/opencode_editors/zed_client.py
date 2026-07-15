@@ -22,6 +22,7 @@ from e2e.opencode_editors.zed_x11 import (
     bounded_sleep,
     checked_xdotool,
     find_owned_window,
+    focus_window_for_input,
     required_executable,
 )
 
@@ -195,11 +196,10 @@ def main() -> int:
                 "ACP session creation",
             )
             prompt_deadline = time.monotonic() + DEFAULT_ZED_TIMING.acp_prompt_seconds
+            focus_window_for_input(window, deadline=prompt_deadline)
             checked_xdotool(
                 "type the Zed prompt",
                 "type",
-                "--window",
-                window,
                 "--delay",
                 "1",
                 "--",

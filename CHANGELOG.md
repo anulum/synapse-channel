@@ -54,8 +54,9 @@ All notable changes to this project are documented here.
 - The JetBrains lane now waits on a stable ACP lifecycle marker, proves the
   pinned plugin gate precedes both independently scheduled session-readiness
   events without inventing an order between them, and proves the validated
-  project frame or a bounded, cycle-free Swing descendant owns keyboard focus
-  before prompt input. Selector discovery batches window geometry, validates
+  project frame, selector, or a bounded, cycle-free Swing descendant owns
+  keyboard focus before current-focus XTEST input. Selector discovery batches
+  window geometry, validates
   exact root/transient ownership and cardinality only for pinned candidates,
   filters the exact pinned agent name, and proves the original selector XID and
   every valid replacement are absent after confirmation. Empty X11 searches
@@ -83,7 +84,8 @@ All notable changes to this project are documented here.
   malformed X11 window searches, and accepts only the intersection of anchored
   `dev.zed.Zed` class and instance identity with the pinned project title and a
   `_NET_WM_PID` owned by the isolated process group. It requires non-empty proxy
-  arguments, applies absolute startup/session/prompt-input deadlines, derives
+  arguments, proves the exact owned X11 focus before current-focus prompt input,
+  applies absolute startup/session/prompt-input deadlines, derives
   the outer timeout from every phase and cleanup reserve, kills the complete
   driver/editor/proxy/helper group, and fails if success screenshot evidence is
   absent. The JetBrains selector snapshot retries only a line-anchored canonical

@@ -96,6 +96,51 @@ def test_checked_xdotool_accepts_success_and_rejects_failure(
         zed_x11.checked_xdotool("focus", "windowfocus", "123", deadline=1.0)
 
 
+def test_focus_window_for_input_proves_the_exact_current_xid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actions: list[tuple[str, tuple[str, ...], float]] = []
+    monkeypatch.setattr(
+        zed_x11,
+        "checked_xdotool",
+        lambda action, *args, deadline: actions.append((action, args, deadline)),
+    )
+    monkeypatch.setattr(
+        zed_x11,
+        "_run_xdotool",
+        lambda *args, **_kwargs: (
+            _completed(stdout="123\n")
+            if args == ("getwindowfocus",)
+            else _completed(2, stderr="unexpected")
+        ),
+    )
+    zed_x11.focus_window_for_input("123", deadline=7.0)
+    assert actions == [
+        ("focus the Zed input target", ("windowfocus", "--sync", "123"), 7.0),
+    ]
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        _completed(2, stderr="display unavailable"),
+        _completed(stdout="123\n", stderr="warning"),
+        _completed(stdout="invalid\n"),
+        _completed(stdout="0\n"),
+        _completed(stdout="0123\n"),
+        _completed(stdout="456\n"),
+    ],
+)
+def test_focus_window_for_input_rejects_unproved_focus(
+    monkeypatch: pytest.MonkeyPatch,
+    result: subprocess.CompletedProcess[str],
+) -> None:
+    monkeypatch.setattr(zed_x11, "checked_xdotool", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(zed_x11, "_run_xdotool", lambda *_args, **_kwargs: result)
+    with pytest.raises(RuntimeError, match="could not prove Zed input focus"):
+        zed_x11.focus_window_for_input("123", deadline=7.0)
+
+
 def test_window_id_parser_accepts_only_exact_visible_search_shapes() -> None:
     selector = ("--class", _PINNED_ZED_X11_REGEX)
     assert zed_x11._window_ids(_completed(1), selector=selector) == ()
