@@ -138,9 +138,14 @@ When that boundary is crossed, the proportionate controls are:
   Bearer auth with `--bearer-auth --a2a-token`, with bearer values compared in
   constant time. Request bodies are capped by byte size and JSON nesting depth
   before A2A dispatch. Persisted A2A state files and write temp files are
-  restricted to owner-only permissions. Webhook delivery validates resolved
-  target addresses before sending and before following redirects, blocking
-  localhost, loopback, private, and link-local destinations. Stored tasks, task
+  restricted to owner-only permissions. Webhook delivery resolves each
+  target once and pins the connection to that validated address, so a DNS name
+  cannot rebind to a local address between the check and the connect. It admits
+  only globally routable destinations — rejecting loopback, private, link-local,
+  carrier-grade NAT, multicast, reserved, and unspecified addresses, including
+  IPv4-mapped IPv6 — applies the same policy to redirect targets, preserves the
+  hostname for TLS, ignores environment proxies, and reads the discarded response
+  under a fixed byte bound. Stored tasks, task
   history, artifacts, push configs, in-process replay history, and terminal-task
   retention are bounded. Treat any non-loopback A2A bind as an exposed HTTP
   service: use bearer auth, keep state files private, and do not claim external

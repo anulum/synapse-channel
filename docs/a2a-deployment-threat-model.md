@@ -50,7 +50,7 @@ Out of scope:
 | --- | --- | --- | --- |
 | A2A client -> reverse proxy -> bridge | Untrusted clients submit task or push-config requests. | Non-loopback bind refuses to start without bearer auth unless `--insecure-off-loopback` is set. | Terminate TLS at the proxy or bind natively with TLS; require bearer auth for protected routes. |
 | Bridge -> Synapse hub | Bridge forwards task text/data/file parts into Synapse chat. | Bridge uses the configured hub URI and optional hub token. | Point the bridge only at the intended hub and target. |
-| Bridge -> webhook receiver | A client can configure outbound webhook targets. | Delivery resolves targets before sending and before redirects, blocking localhost, loopback, private, and link-local addresses by default. | Permit only receiver domains that match the deployment policy; review redirects. |
+| Bridge -> webhook receiver | A client can configure outbound webhook targets. | Delivery resolves each target once and pins the connection to that validated address (no re-resolve between check and connect), admits only globally routable destinations — rejecting loopback, private, link-local, carrier-grade NAT, multicast, reserved, and unspecified addresses including IPv4-mapped IPv6 — applies the same policy to redirect targets, ignores environment proxies, and bounds the discarded response body. | Permit only receiver domains that match the deployment policy; review redirects. |
 | Bridge -> local filesystem | State persistence can leak task metadata if permissions are loose. | A2A state and temp files are owner-only and writes replace atomically. | Place `--state-file` on a trusted local disk, not a shared web root. |
 | Bridge logs -> operators | Logs can leak bearer tokens or task payloads. | The stdlib handler suppresses default access logging. | If a proxy logs requests, redact `Authorization` and avoid body logging. |
 
@@ -104,7 +104,7 @@ no list configured the check is a no-op.
 | --- | --- |
 | Client sends an over-large JSON body. | Bridge returns `413 Request body too large` before dispatch. |
 | Client sends deeply nested JSON. | Bridge rejects the body through bounded JSON parsing before dispatch. |
-| Client configures `localhost`, loopback, private, or link-local webhook URLs. | Delivery rejects the target before sending. |
+| Client configures `localhost`, loopback, private, link-local, CGNAT, or other non-routable webhook URLs, or a name that rebinds to one after validation. | Delivery pins the once-resolved address and rejects any non-globally-routable target before the socket is opened. |
 | Client configures a public-looking host that resolves to a local address. | Delivery rejects the target before sending. |
 | Webhook receiver redirects to a local address. | Redirect handler validates and rejects the new target before following it. |
 | Reverse proxy strips the `Authorization` header. | Protected routes fail authentication at the bridge. |

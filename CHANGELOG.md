@@ -13,6 +13,20 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- A2A outbound webhook delivery is now DNS-rebinding resistant. A new
+  `safe_webhook_transport` resolves each target once and pins the connection to
+  the validated address, so a name cannot resolve to a permitted public address
+  during the check and to a loopback, private, or cloud-metadata address at
+  connect time. It replaces the previous loopback/private/link-local deny list
+  with a positive policy that admits only globally routable destinations —
+  rejecting carrier-grade NAT, multicast, reserved, unspecified, and IPv4-mapped
+  IPv6 forms as well — applies the same policy to redirect targets, preserves the
+  hostname for TLS SNI and certificate verification, disables environment proxies,
+  and reads the discarded response body under a fixed byte bound instead of
+  unbounded.
+
 ## [0.99.8] - 2026-07-14
 
 ### Added

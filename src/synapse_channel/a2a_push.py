@@ -5,57 +5,27 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — Agent2Agent push notification delivery
-"""Push-notification delivery helpers for the Agent2Agent bridge."""
+"""Push-notification delivery helpers for the Agent2Agent bridge.
+
+Delivery goes out over the SSRF-resistant transport in
+:mod:`synapse_channel.safe_webhook_transport`, which resolves each target once,
+admits only globally routable addresses, pins the connection to the validated
+address, and bounds the discarded response body.
+"""
 
 from __future__ import annotations
 
-import ipaddress
 import json
-import socket
-import ssl
 from collections.abc import Callable
-from http.client import HTTPMessage
-from typing import IO
 from urllib import request
 from urllib.error import URLError
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
-from synapse_channel import a2a_http_protocol
+from synapse_channel import a2a_http_protocol, safe_webhook_transport
 from synapse_channel.a2a import JsonMap
 
 PushDeliverer = Callable[[JsonMap], None]
-LOCAL_TARGET_ERROR = "pushNotificationConfig.webhookUrl must not target local networks"
-
-
-class _SafeWebhookRedirectHandler(request.HTTPRedirectHandler):
-    """Validate webhook redirect targets before following them."""
-
-    def __init__(self, *, allow_local_targets: bool = False) -> None:
-        self._allow_local_targets = allow_local_targets
-        super().__init__()
-
-    def redirect_request(
-        self,
-        req: request.Request,
-        fp: IO[bytes],
-        code: int,
-        msg: str,
-        headers: HTTPMessage,
-        newurl: str,
-    ) -> request.Request | None:
-        redirect_url = urljoin(req.full_url, newurl)
-        _validate_webhook_target(
-            redirect_url,
-            allow_local_targets=self._allow_local_targets,
-        )
-        if code in {307, 308}:
-            return request.Request(
-                redirect_url,
-                data=req.data,
-                headers=dict(req.headers),
-                method=req.get_method(),
-            )
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+LOCAL_TARGET_ERROR = safe_webhook_transport.LOCAL_TARGET_ERROR
 
 
 class WebhookDeliveryClient:
@@ -90,6 +60,11 @@ class WebhookDeliveryClient:
     def deliver(self, delivery: JsonMap) -> None:
         """POST one prepared push notification envelope.
 
+        The URL scheme and host are checked before the request is built, and the
+        actual connection is pinned to a validated globally routable address by
+        the safe transport, so a DNS answer cannot change between validation and
+        connect.
+
         Parameters
         ----------
         delivery : JsonMap
@@ -111,16 +86,12 @@ class WebhookDeliveryClient:
             headers=headers,
             method="POST",
         )
-        handlers: list[request.BaseHandler] = [
-            _SafeWebhookRedirectHandler(allow_local_targets=self.allow_local_targets)
-        ]
-        if self.ca_file is not None:
-            handlers.append(
-                request.HTTPSHandler(context=ssl.create_default_context(cafile=self.ca_file))
-            )
-        opener = request.build_opener(*handlers)
+        opener = safe_webhook_transport.build_safe_opener(
+            allow_local=self.allow_local_targets,
+            ca_file=self.ca_file,
+        )
         with opener.open(req, timeout=self.timeout_seconds) as response:
-            response.read()
+            safe_webhook_transport.read_bounded(response)
 
 
 def build_push_delivery(*, task: JsonMap, config: JsonMap) -> JsonMap:
@@ -153,7 +124,7 @@ def build_push_delivery(*, task: JsonMap, config: JsonMap) -> JsonMap:
 
 
 def http_push_deliverer(delivery: JsonMap) -> None:
-    """Deliver one push notification over stdlib HTTP.
+    """Deliver one push notification over the SSRF-resistant transport.
 
     Parameters
     ----------
@@ -164,7 +135,13 @@ def http_push_deliverer(delivery: JsonMap) -> None:
 
 
 def _validate_webhook_target(url: str, *, allow_local_targets: bool = False) -> None:
-    """Reject webhook targets that resolve to local network addresses."""
+    """Reject obviously unsafe webhook targets before a connection is attempted.
+
+    The scheme, host, and port are checked here for a fast, clear failure. The
+    address-family policy — refusing any non-public destination — is enforced when
+    the safe transport resolves and pins the connection, so validation and connect
+    observe the same DNS answer.
+    """
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         raise URLError("pushNotificationConfig.webhookUrl must use http or https")
@@ -174,28 +151,11 @@ def _validate_webhook_target(url: str, *, allow_local_targets: bool = False) -> 
     if not allow_local_targets and hostname.lower() == "localhost":
         raise URLError(LOCAL_TARGET_ERROR)
     try:
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        port = parsed.port
     except ValueError as exc:
         raise URLError("pushNotificationConfig.webhookUrl has an invalid port") from exc
-    try:
-        infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
-    except OSError as exc:
-        raise URLError(f"could not resolve webhook target {hostname}: {exc}") from exc
-    for info in infos:
-        sockaddr = info[4]
-        if not sockaddr:
-            continue
-        if not allow_local_targets and _is_local_network_address(str(sockaddr[0])):
-            raise URLError(LOCAL_TARGET_ERROR)
-
-
-def _is_local_network_address(raw_address: str) -> bool:
-    """Return whether ``raw_address`` is unsafe for outbound webhook delivery."""
-    try:
-        address = ipaddress.ip_address(raw_address.split("%", 1)[0])
-    except ValueError:
-        return False
-    return address.is_loopback or address.is_private or address.is_link_local
+    # Reading ``.port`` validates the range; the value itself is not needed here.
+    del port
 
 
 def deliver_push_notification(

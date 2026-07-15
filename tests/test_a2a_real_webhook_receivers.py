@@ -94,7 +94,7 @@ def test_default_webhook_delivery_client_still_blocks_local_receivers() -> None:
     assert receiver.requests == []
 
 
-def test_webhook_delivery_rechecks_dns_before_sending(
+def test_webhook_delivery_pins_the_validated_address_and_rejects_rebinding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with _WebhookReceiver() as receiver:
@@ -110,8 +110,10 @@ def test_webhook_delivery_rechecks_dns_before_sending(
                 return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
             return original_getaddrinfo(host, port, type=socket.SOCK_STREAM)
 
+        # Resolution and pinning both live in the safe transport, so a name that
+        # resolves to a loopback address is refused where the socket is opened.
         monkeypatch.setattr(
-            "synapse_channel.a2a_push.socket.getaddrinfo",
+            "synapse_channel.safe_webhook_transport.socket.getaddrinfo",
             resolve_rebound_host,
         )
         with pytest.raises(URLError, match="must not target local networks"):
