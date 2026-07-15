@@ -151,6 +151,7 @@ def _memory_flags(service: _MemoryService, token_file: Path) -> list[str]:
 def _token_file(tmp_path: Path) -> Path:
     path = tmp_path / "memory.token"
     path.write_text("memory-secret\n", encoding="utf-8")
+    path.chmod(0o600)  # the memory secret floor refuses group/other-readable token files
     return path
 
 
