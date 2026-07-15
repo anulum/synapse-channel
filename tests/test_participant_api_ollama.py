@@ -137,8 +137,8 @@ class _FakeResponse:
     ) -> None:
         return None
 
-    def read(self) -> bytes:
-        return self._payload
+    def read(self, amount: int = -1) -> bytes:
+        return self._payload if amount < 0 else self._payload[:amount]
 
 
 def test_default_poster_posts_json_over_http(monkeypatch: pytest.MonkeyPatch) -> None:
