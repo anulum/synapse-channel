@@ -416,7 +416,9 @@ snapshot must prove both the original XID and every valid replacement selector
 are absent. A legitimate empty X11 search is accepted only without diagnostics;
 timeouts, display/transport failures, malformed geometry, or failed title,
 parentage, and transient-owner queries fail closed instead of being interpreted
-as disappearance. Selector screenshots consume the selection phase's remaining
+as disappearance. Ownership tokens must be positive canonical hexadecimal X11
+IDs; Python-only signed, underscored, decimal, and octal forms are rejected.
+Selector screenshots consume the selection phase's remaining
 deadline, are written through an owner-only temporary regular file, and are
 sealed to a previously absent destination. Its readiness contract requires the
 pinned plugin check before both session start and available-command evidence,

@@ -56,7 +56,8 @@ All notable changes to this project are documented here.
   filters the exact pinned agent name, and proves the original selector XID and
   every valid replacement are absent after confirmation. Empty X11 searches
   are distinguished from timeout, transport, and property-query failures so
-  unclassifiable desktop state cannot masquerade as selector closure. Selector
+  unclassifiable desktop state cannot masquerade as selector closure; ownership
+  accepts only positive canonical hexadecimal XIDs. Selector
   evidence is phase-bounded, owner-only, non-empty, and sealed to a previously
   absent path.
   Lifecycle reads bind the baseline log device/inode and reject rotation,

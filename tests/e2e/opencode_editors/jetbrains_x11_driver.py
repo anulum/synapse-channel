@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess  # nosec B404
 import time
@@ -26,6 +27,17 @@ _CHAT_COMPOSER_RIGHT_INSET = 240
 _CHAT_COMPOSER_BOTTOM_INSET = 130
 _CHAT_SEND_RIGHT_INSET = 64
 _CHAT_SEND_BOTTOM_INSET = 76
+_CANONICAL_XID = re.compile(r"0x[0-9A-Fa-f]+\Z")
+
+
+def _required_xid(token: str, *, diagnostic: str) -> int:
+    """Parse one positive canonical hexadecimal X11 identifier."""
+    if _CANONICAL_XID.fullmatch(token) is None:
+        raise RuntimeError(diagnostic)
+    xid = int(token[2:], 16)
+    if xid == 0:
+        raise RuntimeError(diagnostic)
+    return xid
 
 
 def _required_tool(name: str) -> str:
@@ -183,13 +195,9 @@ def _required_window_is_root_child(
     root, parent = _window_parentage(completed.stdout)
     if root is None or parent is None:
         raise RuntimeError(f"xwininfo returned malformed parentage for X11 window {window}")
-    try:
-        root_id = int(root, 0)
-        parent_id = int(parent, 0)
-    except ValueError as exc:
-        raise RuntimeError(
-            f"xwininfo returned malformed parentage for X11 window {window}"
-        ) from exc
+    diagnostic = f"xwininfo returned malformed parentage for X11 window {window}"
+    root_id = _required_xid(root, diagnostic=diagnostic)
+    parent_id = _required_xid(parent, diagnostic=diagnostic)
     return parent_id == root_id
 
 
@@ -271,17 +279,8 @@ def _required_window_transient_for(
     if not normalized.startswith(ownership_prefix):
         raise RuntimeError(f"xprop returned malformed transient ownership for X11 window {window}")
     raw_owner = normalized.removeprefix(ownership_prefix)
-    if " " in raw_owner:
-        raise RuntimeError(f"xprop returned malformed transient ownership for X11 window {window}")
-    try:
-        owner = int(raw_owner, 0)
-    except ValueError as exc:
-        raise RuntimeError(
-            f"xprop returned malformed transient ownership for X11 window {window}"
-        ) from exc
-    if owner <= 0:
-        raise RuntimeError(f"xprop returned malformed transient ownership for X11 window {window}")
-    return owner
+    diagnostic = f"xprop returned malformed transient ownership for X11 window {window}"
+    return _required_xid(raw_owner, diagnostic=diagnostic)
 
 
 def _focused_window_id(*, deadline: float | None = None) -> int | None:

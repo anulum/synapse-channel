@@ -243,6 +243,12 @@ def test_required_selector_queries_reject_unclassifiable_x11_state(
             subprocess.CompletedProcess(
                 [],
                 0,
+                "Root window id: +0x1\nParent window id: +0x1\n",
+                "",
+            ),
+            subprocess.CompletedProcess(
+                [],
+                0,
                 "Root window id: 0x1\nParent window id: 0x2\n",
                 "",
             ),
@@ -293,6 +299,8 @@ def test_required_selector_queries_reject_unclassifiable_x11_state(
         jetbrains_x11_driver._required_window_is_root_child("123")
     with pytest.raises(RuntimeError, match="malformed parentage"):
         jetbrains_x11_driver._required_window_is_root_child("123")
+    with pytest.raises(RuntimeError, match="malformed parentage"):
+        jetbrains_x11_driver._required_window_is_root_child("123")
     assert jetbrains_x11_driver._required_window_is_root_child("123") is False
     assert jetbrains_x11_driver._required_window_is_root_child("123") is True
     with pytest.raises(RuntimeError, match="xprop could not classify"):
@@ -307,6 +315,18 @@ def test_required_selector_queries_reject_unclassifiable_x11_state(
     with pytest.raises(RuntimeError, match="malformed transient ownership"):
         jetbrains_x11_driver._required_window_transient_for("123")
     assert jetbrains_x11_driver._required_window_transient_for("123") == 0x123
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["+0x456", "0x4_56", "1110", "0o2126", "0X456", "0x", "-0x1", "0x0"],
+)
+def test_required_xid_rejects_noncanonical_or_zero_tokens(token: str) -> None:
+    with pytest.raises(RuntimeError, match="malformed XID"):
+        jetbrains_x11_driver._required_xid(token, diagnostic="malformed XID")
+
+    assert jetbrains_x11_driver._required_xid("0x456", diagnostic="malformed XID") == 0x456
+    assert jetbrains_x11_driver._required_xid("0xAbC", diagnostic="malformed XID") == 0xABC
 
 
 def test_pointer_click_moves_and_clicks_in_one_xdotool_invocation(
