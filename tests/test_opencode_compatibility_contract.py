@@ -115,6 +115,51 @@ def test_repository_contract_refuses_documented_wire_identity_drift(tmp_path: Pa
         assert_repository_contract(contract, root)
 
 
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("advisory", "must gate every pinned real-client lane"),
+        ("advisory-spaced", "must gate every pinned real-client lane"),
+        ("missing-zed", "one required zed matrix lane"),
+    ],
+)
+def test_repository_contract_refuses_editor_release_gate_drift(
+    tmp_path: Path,
+    mutation: str,
+    message: str,
+) -> None:
+    contract = load_compatibility()
+    root = tmp_path / "repository"
+    source_root = Path(__file__).resolve().parents[1]
+    surfaces = (
+        "src/synapse_channel/participants/opencode_stream.py",
+        "tests/fixtures/opencode/process.py",
+        "docs/opencode.md",
+        ".github/workflows/opencode-integration.yml",
+        ".github/workflows/opencode-editor-e2e.yml",
+        ".github/workflows/opencode-compatibility.yml",
+    )
+    for relative in surfaces:
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_root / relative, destination)
+    workflow = root / ".github/workflows/opencode-editor-e2e.yml"
+    workflow_text = workflow.read_text(encoding="utf-8")
+    if mutation.startswith("advisory"):
+        separator = " :" if mutation == "advisory-spaced" else ":"
+        workflow_text = workflow_text.replace(
+            "    strategy:\n",
+            f"    continue-on-error{separator} true\n    strategy:\n",
+            1,
+        )
+    else:
+        workflow_text = workflow_text.replace("          - client: zed\n", "", 1)
+    workflow.write_text(workflow_text, encoding="utf-8")
+
+    with pytest.raises(CompatibilityError, match=message):
+        assert_repository_contract(contract, root)
+
+
 def test_upstream_verifier_accepts_all_pinned_assets_and_reports_latest() -> None:
     contract = load_compatibility()
     release, latest, tag_ref = _official_evidence(contract)

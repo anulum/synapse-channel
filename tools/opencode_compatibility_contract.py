@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "integrations" / "opencode" / "compatibility.json"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _TAG_COMMIT = re.compile(r"[0-9a-f]{40}")
+_CONTINUE_ON_ERROR = re.compile(r"(?m)^\s*['\"]?continue-on-error['\"]?\s*:")
 _PIN_TYPES = frozenset({"git-commit", "runtime-version", "sha256"})
 _EXPECTED_ARTIFACTS = {
     "darwin-arm64": ("opencode-darwin-arm64.zip", "opencode"),
@@ -314,7 +315,14 @@ def assert_repository_contract(contract: Compatibility, root: Path = ROOT) -> No
     for component in contract.components:
         if component.pin not in text["editors"]:
             raise CompatibilityError(f"editor workflow omitted {component.name} pin")
+    editor_workflow = text["editors"]
+    if _CONTINUE_ON_ERROR.search(editor_workflow):
+        raise CompatibilityError("editor workflow must gate every pinned real-client lane")
     for client in contract.clients:
+        if editor_workflow.count(f"- client: {client.lane}\n") != 1:
+            raise CompatibilityError(
+                f"editor workflow must contain one required {client.lane} matrix lane"
+            )
         if client.name not in text["docs"] or client.version not in text["docs"]:
             raise CompatibilityError(f"OpenCode documentation omitted {client.lane} wire identity")
     for artifact in contract.artifacts:

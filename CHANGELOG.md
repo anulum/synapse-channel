@@ -44,6 +44,10 @@ All notable changes to this project are documented here.
   its exact wire name and version. The real-editor gate rejects any unmatched
   or erroneous bidirectional request and treats missing lifecycle responses as
   incomplete evidence.
+- Every OpenCode editor-E2E lane now gates the workflow. Pinned Zed and
+  JetBrains GUI turns run through validated X11 targets under Xvfb alongside
+  the required headless Neovim and Emacs clients; neither GUI failure is hidden
+  by `continue-on-error`.
 
 ### Fixed
 
@@ -73,6 +77,14 @@ All notable changes to this project are documented here.
   The ACP evidence proxy rejects malformed responses before consuming their
   pending correlation, and the parent timeout is derived from every phase,
   evidence capture, cleanup, and a separate supervision margin.
+- The Zed lane now writes settings and keymaps to the `config` directory owned
+  by pinned Zed 1.10.3's `--user-data-dir`, uses a dedicated binding that cannot
+  fall through to the built-in remote-project picker, rejects ambiguous or
+  malformed X11 window searches, requires non-empty proxy arguments, separates
+  startup/session/prompt deadlines, and fails if success screenshot evidence is
+  absent. The JetBrains selector snapshot retries only the exact transient
+  `BadWindow`/`X_GetWindowAttributes` disappearance race, at most three times;
+  persistent or different X11 failures remain fatal.
 
 ## [0.99.8] - 2026-07-14
 

@@ -48,6 +48,9 @@ _AGENT_SELECTION_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.agent_selection_seco
 _ACP_HANDSHAKE_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_handshake_seconds
 _ACP_PROMPT_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_prompt_seconds
 _AGENT_SELECTOR_OPEN_RETRY_SECONDS = 5.0
+_X11_SNAPSHOT_ATTEMPTS = 3
+_X11_BAD_WINDOW_MARKER = "X Error of failed request:  BadWindow (invalid Window parameter)"
+_X11_GET_WINDOW_ATTRIBUTES_MARKER = "Major opcode of failed request:  3 (X_GetWindowAttributes)"
 _AGENT_SELECTOR_TITLE = "win0"
 _AGENT_SELECTOR_GEOMETRY = (310, 407)
 _CHAT_READY_MARKERS = (f"No session managers found for agent '{_AGENT_NAME}'",)
@@ -117,18 +120,37 @@ def _agent_selector_owner_matches(
     )
 
 
+def _is_disappearing_window_snapshot(result: subprocess.CompletedProcess[str]) -> bool:
+    """Return whether a batched X11 query lost a window during classification."""
+    diagnostic = result.stderr
+    return (
+        result.returncode == 1
+        and not result.stdout.strip()
+        and _X11_BAD_WINDOW_MARKER in diagnostic
+        and _X11_GET_WINDOW_ATTRIBUTES_MARKER in diagnostic
+    )
+
+
 def _visible_jetbrains_window_rectangles(*, deadline: float) -> tuple[X11WindowRectangle, ...]:
     """Return one validated batched snapshot of visible JetBrains windows."""
-    result = x11._xdotool(
-        "search",
-        "--onlyvisible",
-        "--class",
-        "jetbrains-.*",
-        "getwindowgeometry",
-        "--shell",
-        "%@",
-        deadline=deadline,
-    )
+    attempts_remaining = _X11_SNAPSHOT_ATTEMPTS
+    while True:
+        result = x11._xdotool(
+            "search",
+            "--onlyvisible",
+            "--class",
+            "jetbrains-.*",
+            "getwindowgeometry",
+            "--shell",
+            "%@",
+            deadline=deadline,
+        )
+        if not _is_disappearing_window_snapshot(result):
+            break
+        attempts_remaining -= 1
+        if attempts_remaining == 0:
+            break
+        x11._bounded_poll_sleep(deadline)
     if result.returncode == 1 and not result.stdout.strip() and not result.stderr.strip():
         return ()
     if result.returncode != 0:

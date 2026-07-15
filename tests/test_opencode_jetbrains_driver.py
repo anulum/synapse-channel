@@ -626,6 +626,69 @@ def test_visible_selector_snapshot_accepts_only_an_empty_search_miss(
     assert jetbrains_client._visible_agent_selector_popups("invalid", deadline=1.0) == ()
 
 
+def test_visible_selector_snapshot_retries_exact_disappearing_window_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bad_window = subprocess.CompletedProcess(
+        [],
+        1,
+        "",
+        "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+        "  Major opcode of failed request:  3 (X_GetWindowAttributes)\n"
+        "  Resource id in failed request:  0x40039d\n",
+    )
+    results = iter(
+        [
+            bad_window,
+            bad_window,
+            subprocess.CompletedProcess([], 1, "", ""),
+        ]
+    )
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_xdotool",
+        lambda *_args, **_kwargs: next(results),
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_bounded_poll_sleep",
+        lambda deadline: sleeps.append(deadline),
+    )
+
+    assert jetbrains_client._visible_jetbrains_window_rectangles(deadline=7.0) == ()
+    assert sleeps == [7.0, 7.0]
+
+
+def test_visible_selector_snapshot_bounds_persistent_disappearing_window_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[bool] = []
+    sleeps: list[bool] = []
+
+    def persistent_race(*_args: str, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(True)
+        return subprocess.CompletedProcess(
+            [],
+            1,
+            "",
+            "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+            "  Major opcode of failed request:  3 (X_GetWindowAttributes)\n",
+        )
+
+    monkeypatch.setattr(jetbrains_x11_driver, "_xdotool", persistent_race)
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_bounded_poll_sleep",
+        lambda _deadline: sleeps.append(True),
+    )
+
+    with pytest.raises(RuntimeError, match="snapshot visible JetBrains windows"):
+        jetbrains_client._visible_jetbrains_window_rectangles(deadline=float("inf"))
+    assert calls == [True, True, True]
+    assert sleeps == [True, True]
+
+
 @pytest.mark.parametrize(
     ("returncode", "diagnostic"),
     [
@@ -633,6 +696,11 @@ def test_visible_selector_snapshot_accepts_only_an_empty_search_miss(
         (0, "unexpected warning"),
         (1, "display unavailable"),
         (2, "transport failed"),
+        (
+            2,
+            "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+            "  Major opcode of failed request:  3 (X_GetWindowAttributes)\n",
+        ),
         (124, "xdotool command timed out"),
     ],
 )

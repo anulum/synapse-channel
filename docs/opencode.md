@@ -363,8 +363,8 @@ the exact OpenCode binary and a local deterministic provider:
 |---|---|---|
 | Neovim | Neovim 0.12.4 and CodeCompanion.nvim 19.19.0 | `CodeCompanion.nvim` `1.0.0` |
 | Emacs | Emacs 29.3, Agent Shell 0.59.1, `acp.el` 0.12.2, and Shell Maker 0.93.5 | `agent-shell` `0.59.1` |
-| Zed | Zed 1.10.3 under Xvfb through `agent::NewExternalAgentThread` (advisory in CI) | `zed` `1.10.3` |
-| JetBrains | IntelliJ IDEA 2026.1.4, AI Assistant 261.26222.65, and required Full Line Code Completion 261.26222.65 under Xvfb (advisory in CI) | `JetBrains.IntelliJ IDEA` `2026.1.4` |
+| Zed | Zed 1.10.3 under Xvfb through `agent::NewExternalAgentThread` | `zed` `1.10.3` |
+| JetBrains | IntelliJ IDEA 2026.1.4, AI Assistant 261.26222.65, and required Full Line Code Completion 261.26222.65 under Xvfb | `JetBrains.IntelliJ IDEA` `2026.1.4` |
 
 Version 2 of `integrations/opencode/compatibility.json` is authoritative for
 these ACP `clientInfo` tuples as well as the executable and plugin pins.
@@ -456,17 +456,19 @@ length and SHA-256 digest, never its content. A response must contain exactly
 one of `result` or `error`; errors require an integer code and non-empty message,
 and malformed responses are rejected before their pending request is consumed.
 
-The headless Neovim and Emacs lanes are **required** and gate the workflow. The
-Zed and JetBrains lanes are **advisory** in continuous integration: a headless
-runner has no desktop accessibility bus (AT-SPI `org.a11y.Bus`), so these heavy
-GUI IDEs cannot start far enough to reach the ACP `session/new` handshake even
-under Xvfb, and the IntelliJ platform declines to initialise its project store
-headless. Those two lanes therefore run best-effort for signal (`continue-on-error`)
-and do not block the workflow; the full governance chain above is enforced by the
-required, headless-capable Neovim and Emacs lanes. Running the Zed or JetBrains
-acceptance under a real desktop session (local or a self-hosted runner with a
-window manager and accessibility bus) exercises the same contract without the
-advisory caveat.
+All four editor lanes are **required** and gate the workflow. Neovim and Emacs
+use their headless clients. Zed and JetBrains run their pinned real GUI clients
+under Xvfb and target validated X11 windows directly, so they do not depend on a
+desktop accessibility bus or window manager. Zed 1.10.3's `--user-data-dir`
+contract places the isolated settings and keymap in `<data-dir>/config`; the
+driver writes that exact profile with owner-only modes and invokes a dedicated
+`ctrl-alt-shift-f12` binding that does not fall through to Zed's built-in
+remote-project shortcut. JetBrains retries a batched selector snapshot only
+when `xdotool` reports the exact disappearing-window `BadWindow` plus
+`X_GetWindowAttributes` signature, and only three times. A persistent race or
+any other timeout, transport, warning, malformed output, or ownership ambiguity
+still fails closed. A failed Zed or JetBrains real-client turn therefore fails
+the matrix and the workflow rather than being hidden by `continue-on-error`.
 
 The real-process suite uses isolated home/config/data/state/cache roots and a
 local scripted provider. It proves:
