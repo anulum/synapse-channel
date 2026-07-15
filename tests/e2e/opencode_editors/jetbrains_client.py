@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess  # nosec B404
 import sys
 import time
@@ -49,8 +50,14 @@ _ACP_HANDSHAKE_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_handshake_seconds
 _ACP_PROMPT_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_prompt_seconds
 _AGENT_SELECTOR_OPEN_RETRY_SECONDS = 5.0
 _X11_SNAPSHOT_ATTEMPTS = 3
-_X11_BAD_WINDOW_MARKER = "X Error of failed request:  BadWindow (invalid Window parameter)"
-_X11_GET_WINDOW_ATTRIBUTES_MARKER = "Major opcode of failed request:  3 (X_GetWindowAttributes)"
+_X11_BAD_WINDOW_LINE = "X Error of failed request:  BadWindow (invalid Window parameter)"
+_X11_GET_WINDOW_ATTRIBUTES_LINE = "  Major opcode of failed request:  3 (X_GetWindowAttributes)"
+_X11_BAD_WINDOW_METADATA = (
+    re.compile(r"  Minor opcode of failed request:  [0-9]+"),
+    re.compile(r"  Resource id in failed request:  0x[0-9a-f]+"),
+    re.compile(r"  Serial number of failed request:  [0-9]+"),
+    re.compile(r"  Current serial number in output stream:  [0-9]+"),
+)
 _AGENT_SELECTOR_TITLE = "win0"
 _AGENT_SELECTOR_GEOMETRY = (310, 407)
 _CHAT_READY_MARKERS = (f"No session managers found for agent '{_AGENT_NAME}'",)
@@ -122,13 +129,22 @@ def _agent_selector_owner_matches(
 
 def _is_disappearing_window_snapshot(result: subprocess.CompletedProcess[str]) -> bool:
     """Return whether a batched X11 query lost a window during classification."""
-    diagnostic = result.stderr
-    return (
-        result.returncode == 1
-        and not result.stdout.strip()
-        and _X11_BAD_WINDOW_MARKER in diagnostic
-        and _X11_GET_WINDOW_ATTRIBUTES_MARKER in diagnostic
-    )
+    if result.returncode != 1 or result.stdout.strip():
+        return False
+    lines = result.stderr.splitlines()
+    if lines[:2] != [_X11_BAD_WINDOW_LINE, _X11_GET_WINDOW_ATTRIBUTES_LINE]:
+        return False
+    matched_metadata: set[int] = set()
+    for line in lines[2:]:
+        matches = {
+            index
+            for index, pattern in enumerate(_X11_BAD_WINDOW_METADATA)
+            if pattern.fullmatch(line)
+        }
+        if len(matches) != 1 or not matched_metadata.isdisjoint(matches):
+            return False
+        matched_metadata.update(matches)
+    return True
 
 
 def _visible_jetbrains_window_rectangles(*, deadline: float) -> tuple[X11WindowRectangle, ...]:

@@ -660,6 +660,30 @@ def test_visible_selector_snapshot_retries_exact_disappearing_window_race(
     assert sleeps == [7.0, 7.0]
 
 
+def test_disappearing_window_parser_accepts_only_canonical_unique_metadata() -> None:
+    diagnostic = (
+        "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+        "  Major opcode of failed request:  3 (X_GetWindowAttributes)\n"
+        "  Minor opcode of failed request:  0\n"
+        "  Resource id in failed request:  0x40039d\n"
+        "  Serial number of failed request:  42\n"
+        "  Current serial number in output stream:  43\n"
+    )
+    assert (
+        jetbrains_client._is_disappearing_window_snapshot(
+            subprocess.CompletedProcess([], 1, "", diagnostic)
+        )
+        is True
+    )
+    duplicate = diagnostic + "  Serial number of failed request:  44\n"
+    assert (
+        jetbrains_client._is_disappearing_window_snapshot(
+            subprocess.CompletedProcess([], 1, "", duplicate)
+        )
+        is False
+    )
+
+
 def test_visible_selector_snapshot_bounds_persistent_disappearing_window_race(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -695,6 +719,17 @@ def test_visible_selector_snapshot_bounds_persistent_disappearing_window_race(
         (0, ""),
         (0, "unexpected warning"),
         (1, "display unavailable"),
+        (
+            1,
+            "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+            "  Major opcode of failed request:  3 (X_GetWindowAttributes)\n"
+            "transport failed\n",
+        ),
+        (
+            1,
+            "prefix X Error of failed request:  BadWindow (invalid Window parameter)\n"
+            "  Major opcode of failed request:  3 (X_GetWindowAttributes)\n",
+        ),
         (2, "transport failed"),
         (
             2,

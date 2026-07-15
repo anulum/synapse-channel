@@ -27,6 +27,7 @@ else:
     from tools.opencode_compatibility_contract import load_compatibility
 
 from cli_e2e_helpers import git_repo, isolated_hub, run_cli
+from e2e.opencode_editors.editor_process_runner import run_isolated_editor_command
 from e2e.opencode_editors.governance_contract import (
     PROMPT,
     RESPONSE,
@@ -38,6 +39,7 @@ from e2e.opencode_editors.governance_contract import (
 )
 from e2e.opencode_editors.jetbrains_timing import DEFAULT_JETBRAINS_TIMING
 from e2e.opencode_editors.trace_contract import assert_editor_trace
+from e2e.opencode_editors.zed_timing import DEFAULT_ZED_TIMING
 from fixtures.opencode.llm import ScriptedLlmServer
 from fixtures.opencode.process import OPENCODE_VERSION, TEST_MODEL, isolated_environment
 
@@ -45,7 +47,7 @@ _CLIENT_TIMEOUT_SECONDS = {
     "emacs": 180,
     "jetbrains": DEFAULT_JETBRAINS_TIMING.parent_timeout_seconds,
     "neovim": 180,
-    "zed": 180,
+    "zed": DEFAULT_ZED_TIMING.parent_timeout_seconds,
 }
 _ISOLATED_HUB_READY_TIMEOUT_SECONDS = 60.0
 
@@ -260,15 +262,23 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
             )
             enqueue_governance_turn(llm, project)
             command = _command(client, fixture_dir)
-            completed = subprocess.run(  # nosec B603
-                command,
-                cwd=project,
-                env=environment,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=_CLIENT_TIMEOUT_SECONDS[client],
-            )
+            if client == "zed":
+                completed = run_isolated_editor_command(
+                    command,
+                    cwd=project,
+                    env=environment,
+                    timeout=_CLIENT_TIMEOUT_SECONDS[client],
+                )
+            else:
+                completed = subprocess.run(  # nosec B603
+                    command,
+                    cwd=project,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=_CLIENT_TIMEOUT_SECONDS[client],
+                )
             assert completed.returncode == 0, (
                 f"{client} acceptance exited {completed.returncode}\n"
                 f"stdout:\n{completed.stdout[-8000:]}\n"

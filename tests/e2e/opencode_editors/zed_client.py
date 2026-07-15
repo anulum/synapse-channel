@@ -11,16 +11,20 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess  # nosec B404
 import sys
 import time
 from pathlib import Path
 
-_STARTUP_TIMEOUT_SECONDS = 60.0
-_ACP_SESSION_TIMEOUT_SECONDS = 60.0
-_ACP_PROMPT_TIMEOUT_SECONDS = 60.0
-_GUI_COMMAND_TIMEOUT_SECONDS = 10.0
+from e2e.opencode_editors.editor_process_runner import PROCESS_GROUP_SUPERVISION_ENV
+from e2e.opencode_editors.zed_timing import DEFAULT_ZED_TIMING
+from e2e.opencode_editors.zed_x11 import (
+    bounded_sleep,
+    checked_xdotool,
+    find_owned_window,
+    required_executable,
+)
+
 _OPEN_AGENT_BINDING = "ctrl-alt-shift-f12"
 _OPEN_AGENT_ACCELERATOR = "ctrl+alt+shift+F12"
 
@@ -31,85 +35,6 @@ def _required_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"{name} is required")
     return value
-
-
-def _required_executable(name: str) -> str:
-    """Resolve one required tool to an absolute executable path."""
-    executable = shutil.which(name)
-    if executable is None or not os.path.isabs(executable):
-        raise RuntimeError(f"required executable is unavailable: {name}")
-    return executable
-
-
-def _run_xdotool(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run one bounded X11 command and normalise a transport timeout."""
-    command = [_required_executable("xdotool"), *args]
-    try:
-        return subprocess.run(  # nosec B603
-            command,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=_GUI_COMMAND_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-        stderr = exc.stderr if isinstance(exc.stderr, str) else ""
-        return subprocess.CompletedProcess(
-            command,
-            124,
-            stdout,
-            stderr or "xdotool command timed out",
-        )
-
-
-def _checked_xdotool(action: str, *args: str) -> None:
-    """Run one GUI action and fail with its diagnostic output."""
-    completed = _run_xdotool(*args)
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
-        raise RuntimeError(f"xdotool could not {action}: {detail}")
-
-
-def _window_ids(
-    result: subprocess.CompletedProcess[str],
-    *,
-    selector: tuple[str, str],
-) -> tuple[str, ...]:
-    """Parse one exact visible-window search without hiding X11 failures."""
-    if result.returncode == 1 and not result.stdout.strip() and not result.stderr.strip():
-        return ()
-    if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or "no diagnostic"
-        raise RuntimeError(f"xdotool could not search for Zed by {selector[0]}: {detail}")
-    if result.stderr.strip() or not result.stdout.strip():
-        detail = result.stderr.strip() or "empty window identifier output"
-        raise RuntimeError(f"xdotool returned an unclassifiable Zed search: {detail}")
-    windows: list[str] = []
-    for raw_window in result.stdout.splitlines():
-        window = raw_window.strip()
-        if not window.isdecimal() or int(window) <= 0:
-            raise RuntimeError("xdotool returned a malformed Zed window identifier")
-        if window not in windows:
-            windows.append(window)
-    return tuple(windows)
-
-
-def _find_window(deadline: float) -> str:
-    """Return the one visible Zed frame before the startup deadline."""
-    while time.monotonic() < deadline:
-        windows: list[str] = []
-        for selector in (("--class", "zed"), ("--classname", "zed"), ("--name", "Zed")):
-            result = _run_xdotool("search", "--onlyvisible", *selector)
-            for window in _window_ids(result, selector=selector):
-                if window not in windows:
-                    windows.append(window)
-        if len(windows) > 1:
-            raise RuntimeError(f"Zed exposed multiple visible candidate windows: {windows!r}")
-        if windows:
-            return windows[0]
-        time.sleep(0.25)
-    raise RuntimeError("Zed did not expose a visible window")
 
 
 def _trace_has(trace: Path, marker: str) -> bool:
@@ -174,11 +99,11 @@ def _capture_screenshot(path: Path) -> bool:
     """Capture the root X11 surface and report whether evidence exists."""
     try:
         completed = subprocess.run(  # nosec B603
-            [_required_executable("import"), "-window", "root", str(path)],
+            [required_executable("import"), "-window", "root", str(path)],
             capture_output=True,
             text=True,
             check=False,
-            timeout=15,
+            timeout=DEFAULT_ZED_TIMING.screenshot_seconds,
         )
     except (OSError, RuntimeError, subprocess.TimeoutExpired):
         return False
@@ -187,6 +112,8 @@ def _capture_screenshot(path: Path) -> bool:
 
 def main() -> int:
     """Run the isolated pinned Zed-to-OpenCode ACP acceptance flow."""
+    if os.environ.get(PROCESS_GROUP_SUPERVISION_ENV, "").strip() != "1":
+        raise RuntimeError("Zed acceptance requires isolated process-group supervision")
     zed = Path(_required_env("SYNAPSE_ZED_BIN"))
     project = Path(_required_env("SYNAPSE_EDITOR_E2E_PROJECT"))
     trace = Path(_required_env("SYNAPSE_ACP_TRACE"))
@@ -212,6 +139,7 @@ def main() -> int:
     # Without it Zed presents a modal GPU warning before the trust prompt.
     process_env["ZED_ALLOW_EMULATED_GPU"] = "1"
     with log_path.open("w", encoding="utf-8") as log:
+        startup_deadline = time.monotonic() + DEFAULT_ZED_TIMING.startup_seconds
         process = subprocess.Popen(  # nosec B603
             [str(zed), "--foreground", "--user-data-dir", str(data_root), str(project)],
             cwd=project,
@@ -221,33 +149,44 @@ def main() -> int:
             text=True,
         )
         try:
-            startup_deadline = time.monotonic() + _STARTUP_TIMEOUT_SECONDS
-            window = _find_window(startup_deadline)
+            window = find_owned_window(
+                startup_deadline,
+                process_group=os.getpgrp(),
+                project_name=project.name,
+            )
             # xvfb-run intentionally has no EWMH window manager.  Every action
             # targets the discovered X11 window directly, so activation is not
             # required and would fail on the headless runner.
-            _checked_xdotool("focus the Zed window", "windowfocus", "--sync", window)
+            checked_xdotool(
+                "focus the Zed window",
+                "windowfocus",
+                "--sync",
+                window,
+                deadline=startup_deadline,
+            )
             # Each run has an isolated data directory, so Zed correctly asks
             # whether the synthetic repository is trusted.  The dialog binds
             # Enter to "Trust and Continue"; exercise that real first-run UI
             # before invoking the configured ACP action.
-            time.sleep(1.0)
-            _checked_xdotool(
+            bounded_sleep(startup_deadline, 1.0)
+            checked_xdotool(
                 "trust the synthetic Zed project",
                 "key",
                 "--window",
                 window,
                 "Return",
+                deadline=startup_deadline,
             )
-            time.sleep(1.0)
-            _checked_xdotool(
+            bounded_sleep(startup_deadline, 1.0)
+            checked_xdotool(
                 "open the configured ACP agent",
                 "key",
                 "--window",
                 window,
                 _OPEN_AGENT_ACCELERATOR,
+                deadline=startup_deadline,
             )
-            session_deadline = time.monotonic() + _ACP_SESSION_TIMEOUT_SECONDS
+            session_deadline = time.monotonic() + DEFAULT_ZED_TIMING.acp_session_seconds
             _wait_for_trace(
                 trace,
                 '"method":"session/new"',
@@ -255,7 +194,8 @@ def main() -> int:
                 process,
                 "ACP session creation",
             )
-            _checked_xdotool(
+            prompt_deadline = time.monotonic() + DEFAULT_ZED_TIMING.acp_prompt_seconds
+            checked_xdotool(
                 "type the Zed prompt",
                 "type",
                 "--window",
@@ -264,9 +204,16 @@ def main() -> int:
                 "1",
                 "--",
                 prompt,
+                deadline=prompt_deadline,
             )
-            _checked_xdotool("submit the Zed prompt", "key", "--window", window, "Return")
-            prompt_deadline = time.monotonic() + _ACP_PROMPT_TIMEOUT_SECONDS
+            checked_xdotool(
+                "submit the Zed prompt",
+                "key",
+                "--window",
+                window,
+                "Return",
+                deadline=prompt_deadline,
+            )
             _wait_for_trace(
                 trace,
                 '"method":"session/prompt"',
@@ -289,10 +236,10 @@ def main() -> int:
                 _capture_screenshot(screenshot)
             process.terminate()
             try:
-                process.wait(timeout=10)
+                process.wait(timeout=DEFAULT_ZED_TIMING.leader_term_seconds)
             except subprocess.TimeoutExpired:
                 process.kill()
-                process.wait(timeout=5)
+                process.wait(timeout=DEFAULT_ZED_TIMING.leader_kill_seconds)
             if process.returncode not in (0, -15):
                 print(log_path.read_text(encoding="utf-8")[-8000:], file=sys.stderr)
 

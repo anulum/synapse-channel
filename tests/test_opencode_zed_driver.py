@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -19,6 +18,7 @@ from typing import cast
 import pytest
 
 from e2e.opencode_editors import zed_client
+from e2e.opencode_editors.editor_process_runner import PROCESS_GROUP_SUPERVISION_ENV
 
 
 class _FakeZedProcess:
@@ -68,121 +68,6 @@ def test_required_environment_rejects_missing_and_trims_present_value(
 
     monkeypatch.setenv("SYNAPSE_ZED_TEST_VALUE", " value ")
     assert zed_client._required_env("SYNAPSE_ZED_TEST_VALUE") == "value"
-
-
-def test_required_executable_rejects_missing_or_relative_tools(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(shutil, "which", lambda _name: None)
-    with pytest.raises(RuntimeError, match="required executable is unavailable: xdotool"):
-        zed_client._required_executable("xdotool")
-
-    monkeypatch.setattr(shutil, "which", lambda _name: "bin/xdotool")
-    with pytest.raises(RuntimeError, match="required executable is unavailable: xdotool"):
-        zed_client._required_executable("xdotool")
-
-    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/xdotool")
-    assert zed_client._required_executable("xdotool") == "/usr/bin/xdotool"
-
-
-def test_xdotool_timeout_is_normalised_and_checked_action_fails_closed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def timeout(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        raise subprocess.TimeoutExpired(["xdotool"], 10, output="partial")
-
-    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(subprocess, "run", timeout)
-    completed = zed_client._run_xdotool("search")
-    assert completed.returncode == 124
-    assert completed.stdout == "partial"
-    assert completed.stderr == "xdotool command timed out"
-
-    monkeypatch.setattr(
-        zed_client,
-        "_run_xdotool",
-        lambda *_args: subprocess.CompletedProcess([], 2, "", "display unavailable"),
-    )
-    with pytest.raises(RuntimeError, match="could not focus: display unavailable"):
-        zed_client._checked_xdotool("focus", "windowfocus", "123")
-
-
-def test_checked_xdotool_accepts_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        zed_client,
-        "_run_xdotool",
-        lambda *_args: subprocess.CompletedProcess([], 0, "", ""),
-    )
-    zed_client._checked_xdotool("focus", "windowfocus", "123")
-
-
-def test_window_search_parser_accepts_only_exact_search_shapes() -> None:
-    selector = ("--class", "zed")
-    assert (
-        zed_client._window_ids(
-            subprocess.CompletedProcess([], 1, "", ""),
-            selector=selector,
-        )
-        == ()
-    )
-    assert zed_client._window_ids(
-        subprocess.CompletedProcess([], 0, "123\n123\n", ""),
-        selector=selector,
-    ) == ("123",)
-
-
-@pytest.mark.parametrize(
-    ("result", "message"),
-    [
-        (subprocess.CompletedProcess([], 2, "", "display unavailable"), "could not search"),
-        (subprocess.CompletedProcess([], 0, "", "warning"), "unclassifiable"),
-        (subprocess.CompletedProcess([], 0, "", ""), "unclassifiable"),
-        (subprocess.CompletedProcess([], 0, "invalid\n", ""), "malformed"),
-        (subprocess.CompletedProcess([], 0, "0\n", ""), "malformed"),
-    ],
-)
-def test_window_search_parser_rejects_transport_and_identifier_failures(
-    result: subprocess.CompletedProcess[str],
-    message: str,
-) -> None:
-    with pytest.raises(RuntimeError, match=message):
-        zed_client._window_ids(result, selector=("--class", "zed"))
-
-
-def test_window_discovery_deduplicates_selectors_and_rejects_ambiguity(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        zed_client,
-        "_run_xdotool",
-        lambda *_args: subprocess.CompletedProcess([], 0, "123\n", ""),
-    )
-    assert zed_client._find_window(float("inf")) == "123"
-
-    outputs = iter(("123\n", "456\n", "123\n"))
-    monkeypatch.setattr(
-        zed_client,
-        "_run_xdotool",
-        lambda *_args: subprocess.CompletedProcess([], 0, next(outputs), ""),
-    )
-    with pytest.raises(RuntimeError, match="multiple visible candidate windows"):
-        zed_client._find_window(float("inf"))
-
-
-def test_window_discovery_timeout_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
-    clock = iter((0.0, 1.0))
-    sleeps: list[float] = []
-    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
-    monkeypatch.setattr(time, "sleep", sleeps.append)
-    monkeypatch.setattr(
-        zed_client,
-        "_run_xdotool",
-        lambda *_args: subprocess.CompletedProcess([], 1, "", ""),
-    )
-
-    with pytest.raises(RuntimeError, match="did not expose a visible window"):
-        zed_client._find_window(0.5)
-    assert sleeps == [0.25]
 
 
 def test_trace_wait_accepts_marker_and_rejects_exit_or_timeout(
@@ -258,7 +143,7 @@ def test_screenshot_capture_reports_success_failure_and_timeout(
         Path(command[-1]).write_bytes(b"png")
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(zed_client, "required_executable", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(subprocess, "run", capture)
     assert zed_client._capture_screenshot(screenshot) is True
 
@@ -291,7 +176,10 @@ def test_screenshot_capture_reports_success_failure_and_timeout(
     monkeypatch.setattr(subprocess, "run", os_error)
     assert zed_client._capture_screenshot(screenshot) is False
 
-    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    def missing_executable(_name: str) -> str:
+        raise RuntimeError("missing")
+
+    monkeypatch.setattr(zed_client, "required_executable", missing_executable)
     assert zed_client._capture_screenshot(screenshot) is False
 
 
@@ -310,6 +198,7 @@ def test_main_rejects_invalid_proxy_arguments(
     }
     for name, value in required.items():
         monkeypatch.setenv(name, value)
+    monkeypatch.setenv(PROCESS_GROUP_SUPERVISION_ENV, "1")
 
     with pytest.raises(RuntimeError, match="must contain non-empty string arguments"):
         zed_client.main()
@@ -345,6 +234,7 @@ def test_main_uses_isolated_profile_and_runs_the_exact_acp_sequence(
     }
     for name, value in environment.items():
         monkeypatch.setenv(name, value)
+    monkeypatch.setenv(PROCESS_GROUP_SUPERVISION_ENV, "1")
 
     process = _FakeZedProcess(final_returncode=final_returncode, timeout_once=timeout_once)
     popen_calls: list[tuple[list[str], Path]] = []
@@ -353,7 +243,7 @@ def test_main_uses_isolated_profile_and_runs_the_exact_acp_sequence(
         popen_calls.append((command, cast(Path, kwargs["cwd"])))
         return process
 
-    actions: list[tuple[str, tuple[str, ...]]] = []
+    actions: list[tuple[str, tuple[str, ...], float]] = []
     waits: list[tuple[str, float, str]] = []
 
     def wait_for_trace(
@@ -371,12 +261,17 @@ def test_main_uses_isolated_profile_and_runs_the_exact_acp_sequence(
 
     clock = iter((10.0, 20.0, 30.0))
     monkeypatch.setattr(subprocess, "Popen", popen)
-    monkeypatch.setattr(zed_client, "_find_window", lambda _deadline: "123")
     monkeypatch.setattr(
         zed_client,
-        "_checked_xdotool",
-        lambda action, *args: actions.append((action, args)),
+        "find_owned_window",
+        lambda _deadline, **_kwargs: "123",
     )
+    monkeypatch.setattr(
+        zed_client,
+        "checked_xdotool",
+        lambda action, *args, deadline: actions.append((action, args, deadline)),
+    )
+    monkeypatch.setattr(zed_client, "bounded_sleep", lambda _deadline, _seconds: None)
     monkeypatch.setattr(zed_client, "_wait_for_trace", wait_for_trace)
     monkeypatch.setattr(zed_client, "_capture_screenshot", screenshot)
     monkeypatch.setattr(time, "monotonic", lambda: next(clock))
@@ -405,6 +300,7 @@ def test_main_uses_isolated_profile_and_runs_the_exact_acp_sequence(
     assert (
         "open the configured ACP agent",
         ("key", "--window", "123", "ctrl+alt+shift+F12"),
+        70.0,
     ) in actions
     assert process.terminated is True
     assert process.killed is expected_killed
@@ -432,11 +328,17 @@ def test_main_fails_when_success_evidence_cannot_be_captured(
         "XDG_DATA_HOME": str(data),
     }.items():
         monkeypatch.setenv(name, value)
+    monkeypatch.setenv(PROCESS_GROUP_SUPERVISION_ENV, "1")
 
     process = _FakeZedProcess()
     monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
-    monkeypatch.setattr(zed_client, "_find_window", lambda _deadline: "123")
-    monkeypatch.setattr(zed_client, "_checked_xdotool", lambda *_args: None)
+    monkeypatch.setattr(
+        zed_client,
+        "find_owned_window",
+        lambda _deadline, **_kwargs: "123",
+    )
+    monkeypatch.setattr(zed_client, "checked_xdotool", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(zed_client, "bounded_sleep", lambda *_args: None)
     monkeypatch.setattr(zed_client, "_wait_for_trace", lambda *_args: None)
     monkeypatch.setattr(zed_client, "_capture_screenshot", lambda _path: False)
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
@@ -444,3 +346,11 @@ def test_main_fails_when_success_evidence_cannot_be_captured(
     with pytest.raises(RuntimeError, match="without screenshot evidence"):
         zed_client.main()
     assert process.terminated is True
+
+
+def test_main_refuses_unsupervised_process_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(PROCESS_GROUP_SUPERVISION_ENV, raising=False)
+    with pytest.raises(RuntimeError, match="process-group supervision"):
+        zed_client.main()

@@ -80,11 +80,15 @@ All notable changes to this project are documented here.
 - The Zed lane now writes settings and keymaps to the `config` directory owned
   by pinned Zed 1.10.3's `--user-data-dir`, uses a dedicated binding that cannot
   fall through to the built-in remote-project picker, rejects ambiguous or
-  malformed X11 window searches, requires non-empty proxy arguments, separates
-  startup/session/prompt deadlines, and fails if success screenshot evidence is
-  absent. The JetBrains selector snapshot retries only the exact transient
-  `BadWindow`/`X_GetWindowAttributes` disappearance race, at most three times;
-  persistent or different X11 failures remain fatal.
+  malformed X11 window searches, and accepts only the intersection of anchored
+  class and instance identities with the pinned project title and a
+  `_NET_WM_PID` owned by the isolated process group. It requires non-empty proxy
+  arguments, applies absolute startup/session/prompt-input deadlines, derives
+  the outer timeout from every phase and cleanup reserve, kills the complete
+  driver/editor/proxy/helper group, and fails if success screenshot evidence is
+  absent. The JetBrains selector snapshot retries only a line-anchored canonical
+  `BadWindow`/`X_GetWindowAttributes` disappearance report, at most three times;
+  mixed, duplicate, persistent, or different X11 failures remain fatal.
 
 ## [0.99.8] - 2026-07-14
 

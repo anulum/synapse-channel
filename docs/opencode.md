@@ -463,12 +463,20 @@ desktop accessibility bus or window manager. Zed 1.10.3's `--user-data-dir`
 contract places the isolated settings and keymap in `<data-dir>/config`; the
 driver writes that exact profile with owner-only modes and invokes a dedicated
 `ctrl-alt-shift-f12` binding that does not fall through to Zed's built-in
-remote-project shortcut. JetBrains retries a batched selector snapshot only
-when `xdotool` reports the exact disappearing-window `BadWindow` plus
-`X_GetWindowAttributes` signature, and only three times. A persistent race or
-any other timeout, transport, warning, malformed output, or ownership ambiguity
-still fails closed. A failed Zed or JetBrains real-client turn therefore fails
-the matrix and the workflow rather than being hidden by `continue-on-error`.
+remote-project shortcut. Its X11 driver intersects anchored class and instance
+selectors, requires pinned Zed's exact project-root title shape, and binds the
+window's `_NET_WM_PID` to the isolated driver process group. Title-only windows
+and unrelated Zed processes cannot receive input. Startup, session, and prompt
+input each use absolute deadlines; the derived 305-second parent cap also
+reserves both screenshot attempts, direct leader cleanup, complete
+driver/editor/proxy/helper process-group cleanup, and a separate supervision
+margin. JetBrains retries a batched selector snapshot only when every diagnostic
+line forms the canonical disappearing-window `BadWindow` plus
+`X_GetWindowAttributes` report, and only three times. Mixed, prefixed, duplicate,
+or unknown diagnostics are fatal. A persistent race or any other timeout,
+transport, warning, malformed output, or ownership ambiguity still fails closed.
+A failed Zed or JetBrains real-client turn therefore fails the matrix and the
+workflow rather than being hidden by `continue-on-error`.
 
 The real-process suite uses isolated home/config/data/state/cache roots and a
 local scripted provider. It proves:
