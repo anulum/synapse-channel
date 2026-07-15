@@ -254,7 +254,30 @@ def test_required_selector_queries_reject_unclassifiable_x11_state(
             ),
             subprocess.CompletedProcess([], 1, "", "xprop failed"),
             subprocess.CompletedProcess([], 0, "WM_TRANSIENT_FOR:  not found.\n", ""),
-            subprocess.CompletedProcess([], 0, "WM_TRANSIENT_FOR(WINDOW): malformed\n", ""),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                "OTHER_PROPERTY(WINDOW): window id # 0x456\n",
+                "",
+            ),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                "WM_TRANSIENT_FOR(WINDOW): window id # 0x456 trailing\n",
+                "",
+            ),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                "WM_TRANSIENT_FOR(WINDOW): window id # invalid\n",
+                "",
+            ),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                "WM_TRANSIENT_FOR(WINDOW): window id # 0x0\n",
+                "",
+            ),
             subprocess.CompletedProcess(
                 [],
                 0,
@@ -275,6 +298,12 @@ def test_required_selector_queries_reject_unclassifiable_x11_state(
     with pytest.raises(RuntimeError, match="xprop could not classify"):
         jetbrains_x11_driver._required_window_transient_for("123")
     assert jetbrains_x11_driver._required_window_transient_for("123") is None
+    with pytest.raises(RuntimeError, match="malformed transient ownership"):
+        jetbrains_x11_driver._required_window_transient_for("123")
+    with pytest.raises(RuntimeError, match="malformed transient ownership"):
+        jetbrains_x11_driver._required_window_transient_for("123")
+    with pytest.raises(RuntimeError, match="malformed transient ownership"):
+        jetbrains_x11_driver._required_window_transient_for("123")
     with pytest.raises(RuntimeError, match="malformed transient ownership"):
         jetbrains_x11_driver._required_window_transient_for("123")
     assert jetbrains_x11_driver._required_window_transient_for("123") == 0x123

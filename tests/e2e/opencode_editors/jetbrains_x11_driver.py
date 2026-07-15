@@ -267,8 +267,19 @@ def _required_window_transient_for(
     normalized = " ".join(completed.stdout.split())
     if normalized == "WM_TRANSIENT_FOR: not found.":
         return None
-    owner = _xprop_window_id(completed.stdout)
-    if owner is None:
+    ownership_prefix = "WM_TRANSIENT_FOR(WINDOW): window id # "
+    if not normalized.startswith(ownership_prefix):
+        raise RuntimeError(f"xprop returned malformed transient ownership for X11 window {window}")
+    raw_owner = normalized.removeprefix(ownership_prefix)
+    if " " in raw_owner:
+        raise RuntimeError(f"xprop returned malformed transient ownership for X11 window {window}")
+    try:
+        owner = int(raw_owner, 0)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"xprop returned malformed transient ownership for X11 window {window}"
+        ) from exc
+    if owner <= 0:
         raise RuntimeError(f"xprop returned malformed transient ownership for X11 window {window}")
     return owner
 

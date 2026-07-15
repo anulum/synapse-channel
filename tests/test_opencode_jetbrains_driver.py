@@ -437,7 +437,7 @@ def test_agent_selector_rejects_unclassifiable_replacement_after_confirmation(
         lambda *_args, **_kwargs: subprocess.CompletedProcess(
             [],
             0,
-            "WM_TRANSIENT_FOR(WINDOW): malformed\n",
+            "OTHER_PROPERTY(WINDOW): window id # 0x456\n",
             "",
         ),
     )
