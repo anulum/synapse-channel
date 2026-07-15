@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -17,9 +18,14 @@ import pytest
 
 from e2e.opencode_editors import jetbrains_client
 from e2e.opencode_editors.jetbrains_client import (
+    _ACP_SESSION_COMPLETIONS,
+    _ACP_SESSION_PREREQUISITE,
     _CHAT_READY_MARKERS,
     _idea_command,
+    _open_agent_selector,
+    _select_pinned_agent,
     _wait_for_idea_log,
+    _wait_for_trace,
     _window_parentage,
     _write_acp_config,
     _write_idea_profile,
@@ -27,12 +33,8 @@ from e2e.opencode_editors.jetbrains_client import (
 )
 
 
-def test_idea_log_wait_requires_all_readiness_markers_in_order(tmp_path: Path) -> None:
-    markers = (
-        "Required plugins check passed",
-        "Starting ACP client session ",
-        "Received notification: AvailableCommandsUpdate",
-    )
+def test_idea_log_wait_requires_all_ordered_markers(tmp_path: Path) -> None:
+    markers = (_ACP_SESSION_PREREQUISITE, *_ACP_SESSION_COMPLETIONS)
     idea_log = tmp_path / "idea.log"
     idea_log.write_text("\n".join(markers) + "\n", encoding="utf-8")
 
@@ -51,6 +53,26 @@ def test_idea_log_wait_requires_all_readiness_markers_in_order(tmp_path: Path) -
             0.0,
             lambda: None,
         )
+
+
+def test_idea_log_wait_uses_a_bounded_contents_reader(tmp_path: Path) -> None:
+    contents = "plugins ready\ncommands available\nsession started\n"
+    reads: list[bool] = []
+
+    def read_contents() -> str:
+        reads.append(True)
+        return contents
+
+    _wait_for_idea_log(
+        tmp_path,
+        ("unused ordered marker",),
+        float("inf"),
+        lambda: None,
+        matcher=lambda value: "plugins ready" in value and "session started" in value,
+        contents_reader=read_contents,
+    )
+
+    assert reads == [True]
 
 
 def test_idea_log_wait_fails_closed_when_idea_exits(tmp_path: Path) -> None:
@@ -104,6 +126,73 @@ def test_idea_log_wait_retries_idempotent_ui_action_until_ready(tmp_path: Path) 
     )
 
     assert attempts == 2
+
+
+def test_idea_log_wait_checks_the_lifecycle_guard_before_success(tmp_path: Path) -> None:
+    (tmp_path / "idea.log").write_text("ready\n", encoding="utf-8")
+    guarded: list[bool] = []
+
+    _wait_for_idea_log(
+        tmp_path,
+        "ready",
+        float("inf"),
+        lambda: None,
+        guard=lambda: guarded.append(True),
+    )
+
+    assert guarded == [True]
+
+
+def test_trace_wait_checks_the_lifecycle_guard_before_success(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text('{"method":"initialize"}\n', encoding="utf-8")
+    process = subprocess.Popen(  # nosec B603
+        [sys.executable, "-c", "import time; time.sleep(10)"],
+        text=True,
+        start_new_session=True,
+    )
+    guarded: list[bool] = []
+    try:
+        _wait_for_trace(
+            trace,
+            '"method":"initialize"',
+            float("inf"),
+            process,
+            guard=lambda: guarded.append(True),
+        )
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+    assert guarded == [True]
+
+
+def test_trace_wait_rejects_duplicate_lifecycle_before_matching_marker(
+    tmp_path: Path,
+) -> None:
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text('{"method":"initialize"}\n', encoding="utf-8")
+    process = subprocess.Popen(  # nosec B603
+        [sys.executable, "-c", "import time; time.sleep(10)"],
+        text=True,
+        start_new_session=True,
+    )
+
+    def reject_duplicate() -> None:
+        raise RuntimeError("duplicate lifecycle")
+
+    try:
+        with pytest.raises(RuntimeError, match="duplicate lifecycle"):
+            _wait_for_trace(
+                trace,
+                '"method":"initialize"',
+                float("inf"),
+                process,
+                guard=reject_duplicate,
+            )
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
 
 
 def test_chat_readiness_uses_stable_lifecycle_events(tmp_path: Path) -> None:
@@ -174,7 +263,6 @@ def test_xprop_transient_parent_parser_accepts_only_a_window_id() -> None:
 def test_agent_selector_popup_requires_pinned_window_invariants(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(jetbrains_client, "_window_name", lambda _window, **_kwargs: "win0")
     monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (310, 407))
     monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: True)
     monkeypatch.setattr(jetbrains_client, "_window_transient_for", lambda _window, **_kwargs: 123)
@@ -182,20 +270,348 @@ def test_agent_selector_popup_requires_pinned_window_invariants(
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is True
     assert jetbrains_client._is_agent_selector_popup("selector", "invalid") is False
 
-    monkeypatch.setattr(jetbrains_client, "_window_name", lambda _window, **_kwargs: "other")
-    assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
-    monkeypatch.setattr(jetbrains_client, "_window_name", lambda _window, **_kwargs: "win0")
 
+def test_agent_selector_popup_rejects_each_wrong_window_invariant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (311, 407))
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: True)
+    monkeypatch.setattr(jetbrains_client, "_window_transient_for", lambda _window, **_kwargs: 123)
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
-    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (310, 407))
 
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (310, 407))
     monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: False)
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
-    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: True)
 
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: True)
     monkeypatch.setattr(jetbrains_client, "_window_transient_for", lambda _window, **_kwargs: 124)
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
+
+
+def test_agent_selector_popup_search_deduplicates_one_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch = (
+        "WINDOW=456\nX=1\nY=2\nWIDTH=310\nHEIGHT=407\nSCREEN=0\n"
+        "WINDOW=456\nX=1\nY=2\nWIDTH=310\nHEIGHT=407\nSCREEN=0\n"
+    )
+    calls: list[tuple[str, ...]] = []
+
+    def batched_geometry(*args: str, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess([], 0, batch, "")
+
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_xdotool",
+        batched_geometry,
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_agent_selector_owner_matches",
+        lambda window, project_id, **_kwargs: window == "456" and project_id == 123,
+    )
+
+    assert jetbrains_client._visible_agent_selector_popups("123", deadline=float("inf")) == ("456",)
+    assert calls == [
+        (
+            "search",
+            "--onlyvisible",
+            "--class",
+            "jetbrains-.*",
+            "getwindowgeometry",
+            "--shell",
+            "%@",
+        )
+    ]
+
+
+def test_agent_selector_popup_search_fails_closed_on_multiple_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch = (
+        "WINDOW=456\nX=1\nY=2\nWIDTH=310\nHEIGHT=407\nSCREEN=0\n"
+        "WINDOW=789\nX=3\nY=4\nWIDTH=310\nHEIGHT=407\nSCREEN=0\n"
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_xdotool",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, batch, ""),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_agent_selector_owner_matches",
+        lambda _window, _project_id, **_kwargs: True,
+    )
+
+    with pytest.raises(RuntimeError, match="multiple pinned ACP agent selector popups"):
+        jetbrains_client._find_agent_selector_popup(float("inf"), "123")
+
+
+def test_agent_selector_popup_search_prefilters_geometry_before_owner_queries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch = "WINDOW=456\nX=1\nY=2\nWIDTH=1400\nHEIGHT=1000\nSCREEN=0\n"
+    owner_queries: list[str] = []
+
+    def record_owner_query(window: str, _project_id: int, **_kwargs: object) -> bool:
+        owner_queries.append(window)
+        return True
+
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_xdotool",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, batch, ""),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_agent_selector_owner_matches",
+        record_owner_query,
+    )
+
+    assert jetbrains_client._visible_agent_selector_popups("123", deadline=float("inf")) == ()
+    assert owner_queries == []
+
+
+def test_agent_selector_popup_search_rejects_malformed_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_xdotool",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, "WINDOW=456\nX=1\n", ""),
+    )
+
+    with pytest.raises(RuntimeError, match="malformed batched selector geometry"):
+        jetbrains_client._visible_agent_selector_popups("123", deadline=float("inf"))
+
+
+def test_agent_selector_popup_search_retries_only_while_guard_is_clean(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matches = iter([(), ("456",)])
+    retries: list[bool] = []
+    guarded: list[bool] = []
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_visible_agent_selector_popups",
+        lambda *_args, **_kwargs: next(matches),
+    )
+
+    selector = jetbrains_client._find_agent_selector_popup(
+        float("inf"),
+        "123",
+        retry=lambda: retries.append(True),
+        retry_interval_seconds=0.01,
+        guard=lambda: guarded.append(True),
+    )
+
+    assert selector == "456"
+    assert retries == [True]
+    assert guarded == [True, True]
+
+
+def test_agent_selector_popup_search_rejects_nonpositive_retry_interval() -> None:
+    with pytest.raises(ValueError, match="selector retry interval must be positive"):
+        jetbrains_client._find_agent_selector_popup(
+            float("inf"),
+            "123",
+            retry_interval_seconds=0.0,
+        )
+
+
+def test_agent_selector_opens_only_from_the_pinned_project_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actions: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (1400, 1000)
+    )
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_checked_xdotool",
+        lambda _action, *args, **_kwargs: actions.append(args),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_find_agent_selector_popup",
+        lambda _deadline, project, **kwargs: (
+            kwargs["retry"](),
+            f"selector-for-{project}",
+        )[1],
+    )
+
+    assert _open_agent_selector("123", deadline=float("inf")) == "selector-for-123"
+    assert actions == [
+        ("windowfocus", "--sync", "123"),
+        ("key", "--window", "123", "ctrl+alt+shift+k"),
+    ]
+
+
+@pytest.mark.parametrize(("geometry", "root_child"), [((1399, 1000), True), ((1400, 1000), False)])
+def test_agent_selector_refuses_an_unpinned_project_frame(
+    monkeypatch: pytest.MonkeyPatch,
+    geometry: tuple[int, int],
+    root_child: bool,
+) -> None:
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window, **_kwargs: geometry)
+    monkeypatch.setattr(
+        jetbrains_client, "_window_is_root_child", lambda *_args, **_kwargs: root_child
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_visible_agent_selector_popups",
+        lambda *_args, **_kwargs: (),
+    )
+
+    with pytest.raises(RuntimeError, match="outside the pinned project frame"):
+        _open_agent_selector("123", deadline=float("inf"))
+
+
+def test_xdotool_timeout_is_a_fail_closed_command_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(jetbrains_client, "_required_tool", lambda _name: "/usr/bin/xdotool")
+
+    def time_out(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(["xdotool", "search"], 1.0)
+
+    monkeypatch.setattr(subprocess, "run", time_out)
+
+    completed = jetbrains_client._xdotool("search")
+
+    assert completed.returncode == 124
+    assert completed.stderr == "xdotool command timed out"
+
+
+def test_pointer_click_moves_and_clicks_in_one_xdotool_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, tuple[str, ...], float | None]] = []
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_checked_xdotool",
+        lambda action, *args, deadline=None: calls.append((action, args, deadline)),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_window_rectangle",
+        lambda _window, **_kwargs: (0, 1106, 70, 310, 407),
+    )
+
+    jetbrains_client._pointer_click(
+        "123",
+        155,
+        185,
+        "select the pinned agent",
+        deadline=42.0,
+    )
+
+    assert calls == [
+        (
+            "select the pinned agent",
+            (
+                "mousemove",
+                "--screen",
+                "0",
+                "1261",
+                "255",
+                "sleep",
+                "0.25",
+                "click",
+                "1",
+            ),
+            42.0,
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("rectangle", "point", "message"),
+    [
+        (None, (0, 0), "vanished X11 window"),
+        ((0, 10, 20, 100, 100), (100, 50), "outside its X11 window"),
+        ((0, 10, 20, 100, 100), (-1, 50), "outside its X11 window"),
+    ],
+)
+def test_pointer_click_rejects_a_missing_window_or_out_of_bounds_point(
+    monkeypatch: pytest.MonkeyPatch,
+    rectangle: tuple[int, int, int, int, int] | None,
+    point: tuple[int, int],
+    message: str,
+) -> None:
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_window_rectangle",
+        lambda _window, **_kwargs: rectangle,
+    )
+
+    with pytest.raises(RuntimeError, match=message):
+        jetbrains_client._pointer_click("123", *point, "test pointer input")
+
+
+def test_agent_selector_clicks_the_pinned_row_once_and_proves_closure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matches = iter([("selector",), ()])
+    clicks: list[tuple[str, int, int, str]] = []
+    guarded: list[bool] = []
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_is_agent_selector_popup",
+        lambda selector, project, **_kwargs: selector == "selector" and project == "123",
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_visible_agent_selector_popups",
+        lambda _project, **_kwargs: next(matches),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_pointer_click",
+        lambda window, x, y, action, **_kwargs: clicks.append((window, x, y, action)),
+    )
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda *_args, **_kwargs: None)
+
+    _select_pinned_agent(
+        "selector",
+        "123",
+        deadline=float("inf"),
+        guard=lambda: guarded.append(True),
+    )
+
+    assert clicks == [("selector", 155, 185, "select the pinned SYNAPSE OpenCode ACP agent")]
+    assert guarded == [True]
+
+
+@pytest.mark.parametrize(
+    ("popup_is_pinned", "matches", "message"),
+    [
+        (False, ("selector",), "outside the pinned ACP agent selector popup"),
+        (True, (), "ambiguous JetBrains ACP agent selection"),
+        (True, ("selector", "other"), "ambiguous JetBrains ACP agent selection"),
+    ],
+)
+def test_agent_selector_refuses_unpinned_or_ambiguous_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+    popup_is_pinned: bool,
+    matches: tuple[str, ...],
+    message: str,
+) -> None:
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_is_agent_selector_popup",
+        lambda *_args, **_kwargs: popup_is_pinned,
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_visible_agent_selector_popups",
+        lambda *_args, **_kwargs: matches,
+    )
+
+    with pytest.raises(RuntimeError, match=message):
+        _select_pinned_agent("selector", "123", deadline=float("inf"))
 
 
 def test_idea_command_binds_jvm_home_to_the_isolated_profile(tmp_path: Path) -> None:
@@ -262,6 +678,11 @@ def test_chat_composer_focus_rejects_ambient_keyboard_focus(
         "_xdotool",
         lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, "124\n", ""),
     )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_window_parent_ids",
+        lambda _window, **_kwargs: (1, 1),
+    )
 
     with pytest.raises(RuntimeError, match="without project-frame keyboard focus"):
         jetbrains_client._focus_chat_composer("123")
@@ -294,6 +715,29 @@ def test_chat_composer_focus_rejects_unprovable_keyboard_focus(
 
     with pytest.raises(RuntimeError, match="focused=None"):
         jetbrains_client._focus_chat_composer("123")
+
+
+def test_chat_composer_focus_accepts_a_nested_swing_focus_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (1400, 1000)
+    )
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(jetbrains_client, "_checked_xdotool", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(jetbrains_client, "_pointer_click", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_xdotool",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, "300\n", ""),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_window_parent_ids",
+        lambda window, **_kwargs: {300: (1, 200), 200: (1, 123)}[window],
+    )
+
+    jetbrains_client._focus_chat_composer("123")
 
 
 def test_chat_composer_focus_rejects_an_invalid_project_xid(
@@ -343,6 +787,7 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
 ) -> None:
     focused: list[str] = []
     actions: list[tuple[str, tuple[str, ...]]] = []
+    clicks: list[tuple[str, int, int, str]] = []
     monkeypatch.setattr(
         jetbrains_client,
         "_focus_chat_composer",
@@ -352,6 +797,21 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
         jetbrains_client,
         "_checked_xdotool",
         lambda action, *args, **_kwargs: actions.append((action, args)),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_window_geometry",
+        lambda _window, **_kwargs: (1400, 1000),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_window_is_root_child",
+        lambda _window, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_pointer_click",
+        lambda window, x, y, action, **_kwargs: clicks.append((window, x, y, action)),
     )
 
     jetbrains_client._submit_chat_prompt("project", "governed prompt")
@@ -363,11 +823,34 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
             "type the ACP prompt",
             ("type", "--delay", "1", "--", "governed prompt"),
         ),
-        (
-            "invoke the pinned AI Chat send action",
-            ("key", "Return"),
-        ),
     ]
+    assert clicks == [("project", 1336, 924, "submit the JetBrains ACP prompt")]
+
+
+@pytest.mark.parametrize(
+    ("geometry", "root_child"),
+    [((1399, 1000), True), ((1400, 1000), False)],
+)
+def test_chat_prompt_submission_refuses_an_unpinned_project_frame(
+    monkeypatch: pytest.MonkeyPatch,
+    geometry: tuple[int, int],
+    root_child: bool,
+) -> None:
+    monkeypatch.setattr(jetbrains_client, "_focus_chat_composer", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(jetbrains_client, "_checked_xdotool", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_window_geometry",
+        lambda _window, **_kwargs: geometry,
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_window_is_root_child",
+        lambda _window, **_kwargs: root_child,
+    )
+
+    with pytest.raises(RuntimeError, match="outside the pinned project frame"):
+        jetbrains_client._submit_chat_prompt("project", "governed prompt")
 
 
 def test_acp_config_is_private_and_contains_only_the_selected_agent(tmp_path: Path) -> None:

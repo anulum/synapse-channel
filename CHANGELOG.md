@@ -48,10 +48,16 @@ All notable changes to this project are documented here.
 ### Fixed
 
 - The JetBrains lane now waits on a stable ACP lifecycle marker, proves the
-  validated project frame owns keyboard focus before prompt input, constrains
-  every GUI subprocess by its phase's remaining absolute deadline, and starts
-  the prompt deadline before composer input. Evidence-capture failures are
-  aggregated without ever skipping complete IDEA process-group termination.
+  pinned plugin gate precedes both independently scheduled session-readiness
+  events without inventing an order between them, and proves the validated
+  project frame or a bounded, cycle-free Swing descendant owns keyboard focus
+  before prompt input. Selector discovery batches window geometry, validates
+  exact root/transient ownership and cardinality only for pinned candidates,
+  and uses absolute pointer coordinates after revalidation. It constrains every
+  GUI subprocess by its phase's remaining absolute deadline and starts the
+  prompt deadline before composer input. Evidence-capture failures are
+  aggregated without skipping complete IDEA process-group termination, while
+  adapter removal preserves every non-owned OpenCode configuration entry.
   The ACP evidence proxy rejects malformed responses before consuming their
   pending correlation, and the parent timeout is derived from every phase,
   evidence capture, cleanup, and a separate supervision margin.

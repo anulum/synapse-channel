@@ -25,11 +25,16 @@ on:
       - "tests/test_cli_e2e_opencode_editors.py"
       - "tests/test_opencode_compatibility_contract.py"
       - "tests/test_opencode_editor_process_group.py"
+      - "tests/test_opencode_editor_governance_contract.py"
       - "tests/test_opencode_editor_trace_contract.py"
       - "tests/test_opencode_editor_trace_validation.py"
       - "tests/test_opencode_jetbrains_cleanup.py"
       - "tests/test_opencode_jetbrains_driver.py"
+      - "tests/test_opencode_jetbrains_lifecycle.py"
+      - "tests/test_opencode_jetbrains_readiness.py"
       - "tests/test_opencode_jetbrains_timing.py"
+      - "tests/test_opencode_jetbrains_x11_focus.py"
+      - "tests/test_opencode_jetbrains_x11_geometry.py"
       - "tools/opencode_compatibility_contract.py"
       - "docs/opencode.md"
       - "docs/mcp.md"
@@ -50,11 +55,16 @@ on:
       - "tests/test_cli_e2e_opencode_editors.py"
       - "tests/test_opencode_compatibility_contract.py"
       - "tests/test_opencode_editor_process_group.py"
+      - "tests/test_opencode_editor_governance_contract.py"
       - "tests/test_opencode_editor_trace_contract.py"
       - "tests/test_opencode_editor_trace_validation.py"
       - "tests/test_opencode_jetbrains_cleanup.py"
       - "tests/test_opencode_jetbrains_driver.py"
+      - "tests/test_opencode_jetbrains_lifecycle.py"
+      - "tests/test_opencode_jetbrains_readiness.py"
       - "tests/test_opencode_jetbrains_timing.py"
+      - "tests/test_opencode_jetbrains_x11_focus.py"
+      - "tests/test_opencode_jetbrains_x11_geometry.py"
       - "tools/opencode_compatibility_contract.py"
       - "docs/opencode.md"
       - "docs/mcp.md"
@@ -292,15 +302,24 @@ jobs:
             tests/e2e/opencode_editors/governance_contract.py
             tests/e2e/opencode_editors/jetbrains_client.py
             tests/e2e/opencode_editors/jetbrains_cleanup.py
+            tests/e2e/opencode_editors/jetbrains_lifecycle.py
+            tests/e2e/opencode_editors/jetbrains_readiness.py
             tests/e2e/opencode_editors/jetbrains_timing.py
+            tests/e2e/opencode_editors/jetbrains_x11_focus.py
+            tests/e2e/opencode_editors/jetbrains_x11_geometry.py
             tests/e2e/opencode_editors/process_group.py
             tests/e2e/opencode_editors/trace_contract.py
             tests/e2e/opencode_editors/zed_client.py
             tests/test_cli_e2e_opencode_editors.py
             tests/test_opencode_compatibility_contract.py
             tests/test_opencode_editor_process_group.py
+            tests/test_opencode_editor_governance_contract.py
             tests/test_opencode_jetbrains_cleanup.py
+            tests/test_opencode_jetbrains_lifecycle.py
+            tests/test_opencode_jetbrains_readiness.py
             tests/test_opencode_jetbrains_timing.py
+            tests/test_opencode_jetbrains_x11_focus.py
+            tests/test_opencode_jetbrains_x11_geometry.py
             tests/test_opencode_jetbrains_driver.py
             tests/test_opencode_editor_trace_contract.py
             tests/test_opencode_editor_trace_validation.py
@@ -316,16 +335,26 @@ jobs:
             || "$SYNAPSE_EDITOR_E2E_CLIENT" == "jetbrains" ]]; then
             xvfb-run -a -s '-screen 0 1920x1080x24' \
               pytest tests/test_opencode_editor_process_group.py \
+                tests/test_opencode_editor_governance_contract.py \
                 tests/test_opencode_jetbrains_cleanup.py \
+                tests/test_opencode_jetbrains_lifecycle.py \
+                tests/test_opencode_jetbrains_readiness.py \
                 tests/test_opencode_jetbrains_timing.py \
+                tests/test_opencode_jetbrains_x11_focus.py \
+                tests/test_opencode_jetbrains_x11_geometry.py \
                 tests/test_opencode_editor_trace_contract.py \
                 tests/test_opencode_editor_trace_validation.py \
                 tests/test_opencode_jetbrains_driver.py \
                 tests/test_cli_e2e_opencode_editors.py
           else
             pytest tests/test_opencode_editor_process_group.py \
+              tests/test_opencode_editor_governance_contract.py \
               tests/test_opencode_jetbrains_cleanup.py \
+              tests/test_opencode_jetbrains_lifecycle.py \
+              tests/test_opencode_jetbrains_readiness.py \
               tests/test_opencode_jetbrains_timing.py \
+              tests/test_opencode_jetbrains_x11_focus.py \
+              tests/test_opencode_jetbrains_x11_geometry.py \
               tests/test_opencode_editor_trace_contract.py \
               tests/test_opencode_editor_trace_validation.py \
               tests/test_opencode_jetbrains_driver.py \

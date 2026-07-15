@@ -91,7 +91,7 @@ class JetBrainsTimingBudget:
 
 
 DEFAULT_JETBRAINS_TIMING = JetBrainsTimingBudget(
-    startup_seconds=150.0,
+    startup_seconds=300.0,
     chat_ready_seconds=90.0,
     agent_selection_seconds=90.0,
     acp_handshake_seconds=180.0,

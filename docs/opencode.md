@@ -402,15 +402,26 @@ durable hub journal must retain exactly one matching claim, release, and
 assessment receipt.
 
 The JetBrains driver selects only a top-level project frame with the pinned
-geometry, focuses the chat composer, and verifies that the same X11 frame owns
-keyboard focus before issuing any global Swing keystroke. IDEA starts as an
+geometry, focuses the chat composer, and verifies that keyboard focus belongs
+to that frame or reaches it through a bounded, cycle-free X11 parent chain
+before issuing any global Swing keystroke. Agent-selector discovery batches
+the visible JetBrains window geometry into one X11 query, then performs the
+more expensive root-child and transient-owner checks only for windows with the
+exact pinned selector dimensions. Malformed batch output, multiple matching
+selectors, or a selector whose ownership changes before or after the absolute
+pointer click fails closed. Its readiness contract requires the pinned plugin
+check before both session start and available-command evidence, while allowing
+those independently scheduled completion events in either observed IDEA
+2026.1.4 order. IDEA starts as an
 isolated process-group leader; cleanup terminates every helper with bounded
 `SIGTERM`/`SIGKILL` escalation. Its ACP initialization phase has a bounded
-three-minute budget for delayed plugin continuations on loaded headless hosts;
+three-minute budget for delayed plugin continuations on loaded headless hosts
+and a separate five-minute startup budget for first-run, project loading, and
+plugin discovery under bounded host contention;
 every X11 subprocess receives the lesser of its ten-second ceiling and the
 phase's remaining absolute time, including commands inside candidate-window
 loops. The prompt phase begins before composer focus and submission. The parent
-runner therefore derives a 755-second cap from 600 seconds of bounded phases,
+runner therefore derives a 905-second cap from 750 seconds of bounded phases,
 15 seconds of evidence capture, 20 seconds of complete process-group cleanup,
 and a separate two-minute supervision margin. Evidence-capture and termination
 failures are aggregated, and capture failure cannot skip termination. The outer

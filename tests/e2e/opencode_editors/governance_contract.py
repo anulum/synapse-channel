@@ -32,10 +32,11 @@ _RELEASE_TOOL = "synapse_synapse_release"
 
 
 def source_environment(environment: dict[str, str]) -> dict[str, str]:
-    """Expose the checked-out package to installed adapter subprocesses."""
-    source = str(Path(__file__).resolve().parents[3] / "src")
-    inherited = environment.get("PYTHONPATH", "")
-    environment["PYTHONPATH"] = source if not inherited else source + os.pathsep + inherited
+    """Expose the checked-out package and editor fixtures to child processes."""
+    repository = Path(__file__).resolve().parents[3]
+    environment["PYTHONPATH"] = os.pathsep.join(
+        (str(repository / "src"), str(repository / "tests"))
+    )
     environment.pop("FORCE_COLOR", None)
     return environment
 

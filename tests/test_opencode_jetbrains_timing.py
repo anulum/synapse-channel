@@ -23,11 +23,11 @@ from e2e.opencode_editors.process_group import PROCESS_GROUP_CLEANUP_TIMEOUT_SEC
 def test_default_timing_budget_covers_every_driver_phase_and_cleanup() -> None:
     budget = DEFAULT_JETBRAINS_TIMING
 
-    assert budget.phase_seconds == 600.0
+    assert budget.phase_seconds == 750.0
     assert budget.screenshot_seconds == 15.0
     assert budget.cleanup_seconds == PROCESS_GROUP_CLEANUP_TIMEOUT_SECONDS == 20.0
-    assert budget.driver_budget_seconds == 635.0
-    assert budget.parent_timeout_seconds == 755
+    assert budget.driver_budget_seconds == 785.0
+    assert budget.parent_timeout_seconds == 905
     assert budget.parent_timeout_seconds - budget.driver_budget_seconds == 120.0
 
 

@@ -19,9 +19,17 @@ from collections.abc import Callable
 from pathlib import Path
 
 from e2e.opencode_editors.jetbrains_cleanup import capture_evidence_and_terminate
+from e2e.opencode_editors.jetbrains_lifecycle import JetBrainsLifecycleGuard
+from e2e.opencode_editors.jetbrains_readiness import prerequisite_then_all
 from e2e.opencode_editors.jetbrains_timing import DEFAULT_JETBRAINS_TIMING
+from e2e.opencode_editors.jetbrains_x11_focus import focus_belongs_to_project
+from e2e.opencode_editors.jetbrains_x11_geometry import (
+    parse_window_rectangle,
+    parse_window_rectangles,
+)
 
 _AGENT_NAME = "SYNAPSE OpenCode E2E"
+_AGENT_ID = "acp.synapse-opencode-e2e"
 _STARTUP_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.startup_seconds
 _CHAT_READY_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.chat_ready_seconds
 _AGENT_SELECTION_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.agent_selection_seconds
@@ -30,23 +38,26 @@ _ACP_PROMPT_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_prompt_seconds
 _GUI_COMMAND_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.command_timeout_seconds
 _SCREENSHOT_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.screenshot_seconds
 _CHAT_OPEN_RETRY_SECONDS = 5.0
-_MAX_TRACE_SEGMENTS = 8
+_AGENT_SELECTOR_OPEN_RETRY_SECONDS = 5.0
 _USER_AGREEMENT_TITLE = "IntelliJ IDEA User Agreement"
 _USER_AGREEMENT_VERSION = "2.0"
 _USER_AGREEMENT_ENV = "SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION"
 _DATA_SHARING_TITLE = "Data Sharing"
 _AGENT_SELECTOR_REGISTRY_KEY = "llm.chat.new.chat.and.agent.selector.enabled"
-_AGENT_SELECTOR_TITLE = "win0"
 _AGENT_SELECTOR_GEOMETRY = (310, 407)
 _CHAT_READY_MARKERS = (f"No session managers found for agent '{_AGENT_NAME}'",)
-_ACP_SESSION_READY_MARKERS = (
-    "Required plugins check passed",
+_ACP_SESSION_PREREQUISITE = "Required plugins check passed"
+_ACP_SESSION_COMPLETIONS = (
     "Starting ACP client session ",
     "Received notification: AvailableCommandsUpdate",
 )
 _PROJECT_MINIMUM_GEOMETRY = (1000, 700)
+_PROJECT_SELECTOR_GEOMETRY = (1400, 1000)
+_AGENT_SELECTOR_AGENT_POINT = (155, 185)
 _CHAT_COMPOSER_RIGHT_INSET = 240
 _CHAT_COMPOSER_BOTTOM_INSET = 130
+_CHAT_SEND_RIGHT_INSET = 64
+_CHAT_SEND_BOTTOM_INSET = 76
 
 
 def _required_tool(name: str) -> str:
@@ -85,13 +96,24 @@ def _xdotool(
     *args: str,
     deadline: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # nosec B603
-        [_required_tool("xdotool"), *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=_command_timeout(deadline),
-    )
+    command = [_required_tool("xdotool"), *args]
+    try:
+        return subprocess.run(  # nosec B603
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_command_timeout(deadline),
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+        stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+        return subprocess.CompletedProcess(
+            command,
+            124,
+            stdout,
+            stderr or "xdotool command timed out",
+        )
 
 
 def _checked_xdotool(
@@ -125,12 +147,12 @@ def _show_ai_chat(window: str, *, deadline: float | None = None) -> None:
     )
 
 
-def _window_geometry(
+def _window_rectangle(
     window: str,
     *,
     deadline: float | None = None,
-) -> tuple[int, int] | None:
-    """Return one visible X11 window's dimensions, or ``None`` if it vanished."""
+) -> tuple[int, int, int, int, int] | None:
+    """Return ``(screen, x, y, width, height)`` for one X11 window."""
     completed = _xdotool(
         "getwindowgeometry",
         "--shell",
@@ -139,11 +161,17 @@ def _window_geometry(
     )
     if completed.returncode != 0:
         return None
-    geometry = dict(line.split("=", 1) for line in completed.stdout.splitlines() if "=" in line)
-    try:
-        return int(geometry["WIDTH"]), int(geometry["HEIGHT"])
-    except (KeyError, ValueError):
-        return None
+    return parse_window_rectangle(completed.stdout)
+
+
+def _window_geometry(
+    window: str,
+    *,
+    deadline: float | None = None,
+) -> tuple[int, int] | None:
+    """Return one X11 window's dimensions, or ``None`` if it vanished."""
+    rectangle = _window_rectangle(window, deadline=deadline)
+    return None if rectangle is None else rectangle[3:]
 
 
 def _window_name(window: str, *, deadline: float | None = None) -> str | None:
@@ -182,6 +210,31 @@ def _window_is_root_child(window: str, *, deadline: float | None = None) -> bool
         return False
     root, parent = _window_parentage(completed.stdout)
     return root is not None and parent == root
+
+
+def _window_parent_ids(
+    window: int,
+    *,
+    deadline: float | None = None,
+) -> tuple[int | None, int | None]:
+    """Return parsed root and parent XIDs for one candidate focus owner."""
+    completed = subprocess.run(  # nosec B603
+        [_required_tool("xwininfo"), "-id", str(window), "-tree"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=_command_timeout(deadline),
+    )
+    if completed.returncode != 0:
+        return None, None
+    root, parent = _window_parentage(completed.stdout)
+    try:
+        return (
+            int(root, 0) if root is not None else None,
+            int(parent, 0) if parent is not None else None,
+        )
+    except ValueError:
+        return None, None
 
 
 def _xprop_window_id(output: str) -> int | None:
@@ -306,7 +359,12 @@ def _focus_chat_composer(window: str, *, deadline: float | None = None) -> None:
     except ValueError as exc:
         raise RuntimeError("validated JetBrains project window has an invalid XID") from exc
     focused_window_id = _focused_window_id(deadline=deadline)
-    if focused_window_id != project_window_id:
+    owns_focus = focused_window_id is not None and focus_belongs_to_project(
+        project_window_id,
+        focused_window_id,
+        lambda candidate: _window_parent_ids(candidate, deadline=deadline),
+    )
+    if not owns_focus:
         raise RuntimeError(
             "refusing JetBrains prompt input without project-frame keyboard focus: "
             f"expected={project_window_id}, focused={focused_window_id}"
@@ -336,10 +394,19 @@ def _submit_chat_prompt(
         prompt,
         deadline=deadline,
     )
-    _checked_xdotool(
-        "invoke the pinned AI Chat send action",
-        "key",
-        "Return",
+    geometry = _window_geometry(window, deadline=deadline)
+    root_child = _window_is_root_child(window, deadline=deadline)
+    if geometry != _PROJECT_SELECTOR_GEOMETRY or not root_child:
+        rendered = "?x?" if geometry is None else f"{geometry[0]}x{geometry[1]}"
+        raise RuntimeError(
+            "refusing JetBrains prompt submission outside the pinned project frame: "
+            f"geometry={rendered}, root_child={root_child}"
+        )
+    _pointer_click(
+        window,
+        geometry[0] - _CHAT_SEND_RIGHT_INSET,
+        geometry[1] - _CHAT_SEND_BOTTOM_INSET,
+        "submit the JetBrains ACP prompt",
         deadline=deadline,
     )
 
@@ -352,18 +419,28 @@ def _pointer_click(
     *,
     deadline: float | None = None,
 ) -> None:
-    """Click one deterministic point after its caller validates the window."""
+    """Atomically click one deterministic point in a validated window."""
+    rectangle = _window_rectangle(window, deadline=deadline)
+    if rectangle is None:
+        raise RuntimeError(f"refusing {action} in a vanished X11 window")
+    screen, left, top, width, height = rectangle
+    if x < 0 or y < 0 or x >= width or y >= height:
+        raise RuntimeError(
+            f"refusing {action} outside its X11 window: point=({x},{y}), geometry={width}x{height}"
+        )
     _checked_xdotool(
-        f"move to {action}",
+        action,
         "mousemove",
-        "--sync",
-        "--window",
-        window,
-        str(x),
-        str(y),
+        "--screen",
+        str(screen),
+        str(left + x),
+        str(top + y),
+        "sleep",
+        "0.25",
+        "click",
+        "1",
         deadline=deadline,
     )
-    _checked_xdotool(action, "click", "1", deadline=deadline)
 
 
 def _require_agreement_window(
@@ -491,30 +568,167 @@ def _is_agent_selector_popup(
         project_id = int(project)
     except ValueError:
         return False
-    return (
-        _window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
-        and _window_geometry(window, deadline=deadline) == _AGENT_SELECTOR_GEOMETRY
-        and _window_is_root_child(window, deadline=deadline)
-        and _window_transient_for(window, deadline=deadline) == project_id
+    return _window_geometry(
+        window, deadline=deadline
+    ) == _AGENT_SELECTOR_GEOMETRY and _agent_selector_owner_matches(
+        window, project_id, deadline=deadline
     )
 
 
-def _find_agent_selector_popup(deadline: float, project: str) -> str:
-    """Wait for the exact pinned agent selector before sending text input."""
+def _agent_selector_owner_matches(
+    window: str,
+    project_id: int,
+    *,
+    deadline: float | None = None,
+) -> bool:
+    """Validate the expensive X11 ownership invariants for one selector candidate."""
+    return _window_is_root_child(window, deadline=deadline) and (
+        _window_transient_for(window, deadline=deadline) == project_id
+    )
+
+
+def _visible_agent_selector_popups(
+    project: str,
+    *,
+    deadline: float,
+) -> tuple[str, ...]:
+    """Return the distinct visible selectors owned by one project frame."""
+    result = _xdotool(
+        "search",
+        "--onlyvisible",
+        "--class",
+        "jetbrains-.*",
+        "getwindowgeometry",
+        "--shell",
+        "%@",
+        deadline=deadline,
+    )
+    if result.returncode != 0:
+        return ()
+    try:
+        rectangles = parse_window_rectangles(result.stdout)
+    except ValueError as exc:
+        raise RuntimeError("xdotool returned malformed batched selector geometry") from exc
+    try:
+        project_id = int(project)
+    except ValueError:
+        return ()
+    matches: list[str] = []
+    for rectangle in reversed(rectangles):
+        window = rectangle.window
+        if (
+            rectangle.geometry == _AGENT_SELECTOR_GEOMETRY
+            and window not in matches
+            and _agent_selector_owner_matches(window, project_id, deadline=deadline)
+        ):
+            matches.append(window)
+    return tuple(matches)
+
+
+def _find_agent_selector_popup(
+    deadline: float,
+    project: str,
+    *,
+    retry: Callable[[], None] | None = None,
+    retry_interval_seconds: float = _AGENT_SELECTOR_OPEN_RETRY_SECONDS,
+    guard: Callable[[], object] | None = None,
+) -> str:
+    """Wait for one selector while safely retrying its idempotent opener."""
+    if retry_interval_seconds <= 0:
+        raise ValueError("selector retry interval must be positive")
+    next_retry = 0.0
     while time.monotonic() < deadline:
-        result = _xdotool(
-            "search",
-            "--onlyvisible",
-            "--class",
-            "jetbrains-.*",
-            deadline=deadline,
-        )
-        if result.returncode == 0:
-            for window in reversed(result.stdout.splitlines()):
-                if _is_agent_selector_popup(window, project, deadline=deadline):
-                    return window
+        if guard is not None:
+            guard()
+        matches = _visible_agent_selector_popups(project, deadline=deadline)
+        if len(matches) > 1:
+            raise RuntimeError(
+                "IntelliJ IDEA exposed multiple pinned ACP agent selector popups: "
+                f"count={len(matches)}"
+            )
+        if matches:
+            return matches[0]
+        now = time.monotonic()
+        if retry is not None and now >= next_retry:
+            retry()
+            next_retry = now + retry_interval_seconds
         _bounded_poll_sleep(deadline)
     raise RuntimeError("IntelliJ IDEA did not expose the pinned ACP agent selector popup")
+
+
+def _open_agent_selector(
+    window: str,
+    *,
+    deadline: float,
+    guard: Callable[[], object] | None = None,
+) -> str:
+    """Invoke the pinned selector action, retrying only before lifecycle start."""
+
+    def click_selector() -> None:
+        geometry = _window_geometry(window, deadline=deadline)
+        root_child = _window_is_root_child(window, deadline=deadline)
+        if geometry != _PROJECT_SELECTOR_GEOMETRY or not root_child:
+            rendered = "?x?" if geometry is None else f"{geometry[0]}x{geometry[1]}"
+            raise RuntimeError(
+                "refusing JetBrains selector input outside the pinned project frame: "
+                f"geometry={rendered}, root_child={root_child}"
+            )
+        _checked_xdotool(
+            "focus the IntelliJ IDEA window",
+            "windowfocus",
+            "--sync",
+            window,
+            deadline=deadline,
+        )
+        _checked_xdotool(
+            "invoke the pinned JetBrains agent selector action",
+            "key",
+            "--window",
+            window,
+            "ctrl+alt+shift+k",
+            deadline=deadline,
+        )
+
+    return _find_agent_selector_popup(
+        deadline,
+        window,
+        retry=click_selector,
+        guard=guard,
+    )
+
+
+def _select_pinned_agent(
+    selector: str,
+    project: str,
+    *,
+    deadline: float,
+    guard: Callable[[], object] | None = None,
+) -> None:
+    """Click the pinned OpenCode row once and prove the selector closes."""
+    if not _is_agent_selector_popup(selector, project, deadline=deadline):
+        raise RuntimeError("refusing input outside the pinned ACP agent selector popup")
+    matches = _visible_agent_selector_popups(project, deadline=deadline)
+    if matches != (selector,):
+        raise RuntimeError(f"refusing ambiguous JetBrains ACP agent selection: matches={matches!r}")
+    _pointer_click(
+        selector,
+        *_AGENT_SELECTOR_AGENT_POINT,
+        "select the pinned SYNAPSE OpenCode ACP agent",
+        deadline=deadline,
+    )
+    while time.monotonic() < deadline:
+        if guard is not None:
+            guard()
+        matches = _visible_agent_selector_popups(project, deadline=deadline)
+        if not matches:
+            return
+        if matches != (selector,):
+            raise RuntimeError(
+                "JetBrains ACP agent selector cardinality changed after confirmation: "
+                f"matches={matches!r}"
+            )
+        _bounded_poll_sleep(deadline)
+    raise RuntimeError("JetBrains ACP agent selector remained open after confirmation")
 
 
 def _skip_islands_onboarding(deadline: float, project: str) -> None:
@@ -537,17 +751,22 @@ def _skip_islands_onboarding(deadline: float, project: str) -> None:
 
 
 def _trace_has(trace: Path, marker: str) -> bool:
-    paths = (trace, *(Path(f"{trace}.{index}") for index in range(1, _MAX_TRACE_SEGMENTS)))
-    return any(
-        path.is_file() and not path.is_symlink() and marker in path.read_text(encoding="utf-8")
-        for path in paths
+    return (
+        trace.is_file() and not trace.is_symlink() and marker in trace.read_text(encoding="utf-8")
     )
 
 
 def _wait_for_trace(
-    trace: Path, marker: str, deadline: float, process: subprocess.Popen[str]
+    trace: Path,
+    marker: str,
+    deadline: float,
+    process: subprocess.Popen[str],
+    *,
+    guard: Callable[[], object] | None = None,
 ) -> None:
     while time.monotonic() < deadline:
+        if guard is not None:
+            guard()
         if _trace_has(trace, marker):
             return
         if process.poll() is not None:
@@ -652,8 +871,11 @@ def _wait_for_idea_log(
     *,
     retry: Callable[[], None] | None = None,
     retry_interval_seconds: float = _CHAT_OPEN_RETRY_SECONDS,
+    guard: Callable[[], object] | None = None,
+    matcher: Callable[[str], bool] | None = None,
+    contents_reader: Callable[[], str] | None = None,
 ) -> None:
-    """Wait for ordered IDEA log evidence while proving the process remains live."""
+    """Wait for exact IDEA log evidence while proving the process remains live."""
     required = (markers,) if isinstance(markers, str) else markers
     if not required:
         raise ValueError("at least one IDEA log marker is required")
@@ -662,15 +884,25 @@ def _wait_for_idea_log(
     idea_log = log_root / "idea.log"
     next_retry = 0.0
     while time.monotonic() < deadline:
-        if idea_log.is_file():
-            contents = idea_log.read_text(encoding="utf-8", errors="replace")
+        if guard is not None:
+            guard()
+        if contents_reader is not None or idea_log.is_file():
+            contents = (
+                contents_reader()
+                if contents_reader is not None
+                else idea_log.read_text(encoding="utf-8", errors="replace")
+            )
+            if matcher is not None and matcher(contents):
+                return
             position = 0
+            matched = True
             for marker in required:
                 position = contents.find(marker, position)
                 if position < 0:
+                    matched = False
                     break
                 position += len(marker)
-            else:
+            if matched:
                 return
         if poll() is not None:
             raise RuntimeError(f"IntelliJ IDEA exited before log evidence {required!r}")
@@ -705,6 +937,7 @@ def main() -> int:
 
     output = artifacts / "intellij-process.log"
     screenshot = artifacts / "intellij.png"
+    selector_screenshot = artifacts / "intellij-agent-selector.png"
     command = _idea_command(
         binary,
         home=home,
@@ -744,55 +977,84 @@ def main() -> int:
                 process.poll,
                 retry=lambda: _show_ai_chat(window, deadline=chat_deadline),
             )
+            lifecycle = JetBrainsLifecycleGuard.capture(
+                log_root,
+                trace,
+                agent_id=_AGENT_ID,
+                agent_name=_AGENT_NAME,
+            )
+            lifecycle.assert_at_most_one()
             selection_deadline = time.monotonic() + _AGENT_SELECTION_TIMEOUT_SECONDS
-            _checked_xdotool(
-                "open the ACP agent selector",
-                "key",
-                "--window",
+            selector = _open_agent_selector(
                 window,
-                "ctrl+alt+shift+k",
                 deadline=selection_deadline,
+                guard=lifecycle.require_none,
             )
-            selector = _find_agent_selector_popup(selection_deadline, window)
-            _checked_xdotool(
-                "select the ACP agent",
-                "type",
-                "--window",
+            lifecycle.require_none()
+            _bounded_poll_sleep(selection_deadline)
+            _screenshot(selector_screenshot)
+            lifecycle.require_none()
+            _select_pinned_agent(
                 selector,
-                "--delay",
-                "1",
-                "--",
-                _AGENT_NAME,
+                window,
                 deadline=selection_deadline,
-            )
-            _checked_xdotool(
-                "confirm the ACP agent",
-                "key",
-                "--window",
-                selector,
-                "Return",
-                deadline=selection_deadline,
+                guard=lifecycle.assert_at_most_one,
             )
             _wait_for_idea_log(
                 log_root,
                 "Creating AcpSessionLifecycleManager for agent 'acp.synapse-opencode-e2e'",
                 selection_deadline,
                 process.poll,
+                guard=lifecycle.assert_at_most_one,
             )
             handshake_deadline = time.monotonic() + _ACP_HANDSHAKE_TIMEOUT_SECONDS
-            _wait_for_trace(trace, '"method":"initialize"', handshake_deadline, process)
-            _wait_for_trace(trace, '"method":"session/new"', handshake_deadline, process)
+            _wait_for_trace(
+                trace,
+                '"method":"initialize"',
+                handshake_deadline,
+                process,
+                guard=lifecycle.assert_at_most_one,
+            )
+            _wait_for_trace(
+                trace,
+                '"method":"session/new"',
+                handshake_deadline,
+                process,
+                guard=lifecycle.assert_at_most_one,
+            )
+            lifecycle.require_exactly_one()
             _wait_for_idea_log(
                 log_root,
-                _ACP_SESSION_READY_MARKERS,
+                (_ACP_SESSION_PREREQUISITE, *_ACP_SESSION_COMPLETIONS),
                 handshake_deadline,
                 process.poll,
+                guard=lifecycle.require_exactly_one,
+                matcher=lambda contents: prerequisite_then_all(
+                    contents,
+                    _ACP_SESSION_PREREQUISITE,
+                    _ACP_SESSION_COMPLETIONS,
+                ),
+                contents_reader=lifecycle.idea_contents,
             )
             prompt_deadline = time.monotonic() + _ACP_PROMPT_TIMEOUT_SECONDS
             _submit_chat_prompt(window, prompt, deadline=prompt_deadline)
-            _wait_for_trace(trace, '"method":"session/prompt"', prompt_deadline, process)
-            _wait_for_trace(trace, '"response_to":"session/prompt"', prompt_deadline, process)
+            _wait_for_trace(
+                trace,
+                '"method":"session/prompt"',
+                prompt_deadline,
+                process,
+                guard=lifecycle.require_exactly_one,
+            )
+            _wait_for_trace(
+                trace,
+                '"response_to":"session/prompt"',
+                prompt_deadline,
+                process,
+                guard=lifecycle.require_exactly_one,
+            )
+            lifecycle.require_exactly_one()
             _screenshot(screenshot)
+            lifecycle.require_exactly_one()
             return 0
         finally:
             capture_evidence_and_terminate(

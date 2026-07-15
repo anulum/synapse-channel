@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Sequence
+from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -46,6 +47,70 @@ _CLIENT_TIMEOUT_SECONDS = {
     "neovim": 180,
     "zed": 180,
 }
+_ISOLATED_HUB_READY_TIMEOUT_SECONDS = 60.0
+
+
+def _expected_config_after_adapter_uninstall(
+    installed: object,
+) -> dict[str, object]:
+    """Remove exactly the Synapse-owned MCP entry from a parsed config."""
+    if not isinstance(installed, dict):
+        raise ValueError("installed OpenCode config must be an object")
+    expected: dict[str, object] = deepcopy(installed)
+    mcp = expected.get("mcp")
+    if not isinstance(mcp, dict):
+        raise ValueError("installed OpenCode config omitted its MCP object")
+    entry = mcp.get("synapse")
+    if not isinstance(entry, dict):
+        raise ValueError("installed OpenCode config omitted its Synapse MCP entry")
+    environment = entry.get("environment")
+    if (
+        not isinstance(environment, dict)
+        or environment.get("SYNAPSE_ADAPTER_OWNER") != "synapse-channel"
+    ):
+        raise ValueError("installed OpenCode config lost its Synapse owner marker")
+    del mcp["synapse"]
+    if not mcp:
+        del expected["mcp"]
+    return expected
+
+
+def test_expected_config_after_uninstall_preserves_every_nonowned_entry() -> None:
+    installed = {
+        "$schema": "https://opencode.ai/config.json",
+        "permission": {"write": "allow"},
+        "mcp": {
+            "other": {"type": "local"},
+            "synapse": {"environment": {"SYNAPSE_ADAPTER_OWNER": "synapse-channel"}},
+        },
+    }
+
+    assert _expected_config_after_adapter_uninstall(installed) == {
+        "$schema": "https://opencode.ai/config.json",
+        "permission": {"write": "allow"},
+        "mcp": {"other": {"type": "local"}},
+    }
+    assert "synapse" in installed["mcp"]
+
+
+@pytest.mark.parametrize(
+    ("installed", "message"),
+    [
+        ([], "must be an object"),
+        ({}, "omitted its MCP object"),
+        ({"mcp": {}}, "omitted its Synapse MCP entry"),
+        (
+            {"mcp": {"synapse": {"environment": {}}}},
+            "lost its Synapse owner marker",
+        ),
+    ],
+)
+def test_expected_config_after_uninstall_rejects_unowned_or_invalid_state(
+    installed: object,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _expected_config_after_adapter_uninstall(installed)
 
 
 def _required_env(name: str) -> str:
@@ -141,7 +206,13 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
     )
     config_path.chmod(0o600)
 
-    with ScriptedLlmServer() as llm, isolated_hub(tmp_path) as hub:
+    with (
+        ScriptedLlmServer() as llm,
+        isolated_hub(
+            tmp_path,
+            ready_timeout=_ISOLATED_HUB_READY_TIMEOUT_SECONDS,
+        ) as hub,
+    ):
         try:
             installed = run_cli(
                 "adapters",
@@ -215,6 +286,14 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
             assert not (project / "denied-after.txt").exists()
         finally:
             cleanup_errors: list[str] = []
+            expected_config: dict[str, object] | None = None
+            try:
+                installed_config = json.loads(config_path.read_text(encoding="utf-8"))
+                expected_config = _expected_config_after_adapter_uninstall(installed_config)
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                cleanup_errors.append(
+                    f"installed OpenCode configuration could not be verified: {exc}"
+                )
             removed = run_cli(
                 "adapters",
                 "opencode",
@@ -230,13 +309,13 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
             except (OSError, json.JSONDecodeError) as exc:
                 cleanup_errors.append(f"OpenCode configuration could not be verified: {exc}")
             else:
-                expected_config = {
-                    "$schema": "https://opencode.ai/config.json",
-                    "permission": {"write": "allow"},
-                }
-                if restored_config != expected_config:
+                if expected_config is not None and restored_config != expected_config:
                     cleanup_errors.append(
-                        "OpenCode adapter uninstall did not restore configuration"
+                        "OpenCode adapter uninstall changed non-owned configuration"
+                    )
+                if restored_config.get("permission") != {"write": "allow"}:
+                    cleanup_errors.append(
+                        "OpenCode adapter uninstall lost the original write permission"
                     )
             if cleanup_errors:
                 detail = "; ".join(cleanup_errors)
