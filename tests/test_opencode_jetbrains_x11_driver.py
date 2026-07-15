@@ -207,6 +207,66 @@ def test_xwininfo_and_transient_queries_parse_only_proven_ownership(
     assert jetbrains_x11_driver._window_transient_for("123") == 0x123
 
 
+def test_required_selector_queries_reject_unclassifiable_x11_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    name_results = iter(
+        [
+            subprocess.CompletedProcess([], 1, "", "display unavailable"),
+            subprocess.CompletedProcess([], 0, "win0\n", ""),
+        ]
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_xdotool",
+        lambda *_args, **_kwargs: next(name_results),
+    )
+    with pytest.raises(RuntimeError, match="could not classify X11 window 123"):
+        jetbrains_x11_driver._required_window_name("123")
+    assert jetbrains_x11_driver._required_window_name("123") == "win0"
+
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_required_tool",
+        lambda name: f"/usr/bin/{name}",
+    )
+    query_results = iter(
+        [
+            subprocess.CompletedProcess([], 1, "", "xwininfo failed"),
+            subprocess.CompletedProcess([], 0, "Root window id: 0x1\n", ""),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                "Root window id: 0x1\nParent window id: 0x2\n",
+                "",
+            ),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                "Root window id: 0x1\nParent window id: 0x1\n",
+                "",
+            ),
+            subprocess.CompletedProcess([], 1, "", "xprop failed"),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                "WM_TRANSIENT_FOR(WINDOW): window id # 0x123\n",
+                "",
+            ),
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: next(query_results))
+    with pytest.raises(RuntimeError, match="xwininfo could not classify"):
+        jetbrains_x11_driver._required_window_is_root_child("123")
+    with pytest.raises(RuntimeError, match="malformed parentage"):
+        jetbrains_x11_driver._required_window_is_root_child("123")
+    assert jetbrains_x11_driver._required_window_is_root_child("123") is False
+    assert jetbrains_x11_driver._required_window_is_root_child("123") is True
+    with pytest.raises(RuntimeError, match="xprop could not classify"):
+        jetbrains_x11_driver._required_window_transient_for("123")
+    assert jetbrains_x11_driver._required_window_transient_for("123") == 0x123
+
+
 def test_pointer_click_moves_and_clicks_in_one_xdotool_invocation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

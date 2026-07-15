@@ -413,7 +413,10 @@ fails closed. The driver clears the selector filter, types the exact
 `SYNAPSE OpenCode E2E` name, revalidates its title and transient owner, captures
 the filtered result, and confirms with `Return`; a raw post-confirmation X11
 snapshot must prove both the original XID and every valid replacement selector
-are absent. Selector screenshots consume the selection phase's remaining
+are absent. A legitimate empty X11 search is accepted only without diagnostics;
+timeouts, display/transport failures, malformed geometry, or failed title,
+parentage, and transient-owner queries fail closed instead of being interpreted
+as disappearance. Selector screenshots consume the selection phase's remaining
 deadline, are written through an owner-only temporary regular file, and are
 sealed to a previously absent destination. Its readiness contract requires the
 pinned plugin check before both session start and available-command evidence,

@@ -54,8 +54,11 @@ All notable changes to this project are documented here.
   before prompt input. Selector discovery batches window geometry, validates
   exact root/transient ownership and cardinality only for pinned candidates,
   filters the exact pinned agent name, and proves the original selector XID and
-  every valid replacement are absent after confirmation. Selector evidence is
-  phase-bounded, owner-only, non-empty, and sealed to a previously absent path.
+  every valid replacement are absent after confirmation. Empty X11 searches
+  are distinguished from timeout, transport, and property-query failures so
+  unclassifiable desktop state cannot masquerade as selector closure. Selector
+  evidence is phase-bounded, owner-only, non-empty, and sealed to a previously
+  absent path.
   Lifecycle reads bind the baseline log device/inode and reject rotation,
   truncation, or any post-baseline event for a competing agent. The driver is
   split by responsibility across orchestration/selection, X11 transport/input,

@@ -109,11 +109,11 @@ def _agent_selector_owner_matches(
     *,
     deadline: float | None = None,
 ) -> bool:
-    """Validate semantic title and X11 ownership for one selector candidate."""
+    """Validate one selector candidate, rejecting unclassifiable X11 state."""
     return (
-        x11._window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
-        and x11._window_is_root_child(window, deadline=deadline)
-        and x11._window_transient_for(window, deadline=deadline) == project_id
+        x11._required_window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
+        and x11._required_window_is_root_child(window, deadline=deadline)
+        and x11._required_window_transient_for(window, deadline=deadline) == project_id
     )
 
 
@@ -129,8 +129,11 @@ def _visible_jetbrains_window_rectangles(*, deadline: float) -> tuple[X11WindowR
         "%@",
         deadline=deadline,
     )
-    if result.returncode != 0:
+    if result.returncode == 1 and not result.stdout.strip() and not result.stderr.strip():
         return ()
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "no diagnostic"
+        raise RuntimeError(f"xdotool could not snapshot visible JetBrains windows: {detail}")
     try:
         return parse_window_rectangles(result.stdout)
     except ValueError as exc:

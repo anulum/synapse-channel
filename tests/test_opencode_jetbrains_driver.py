@@ -35,12 +35,20 @@ def test_agent_selector_popup_requires_pinned_window_invariants(
     monkeypatch.setattr(
         jetbrains_x11_driver, "_window_geometry", lambda _window, **_kwargs: (310, 407)
     )
-    monkeypatch.setattr(jetbrains_x11_driver, "_window_name", lambda _window, **_kwargs: "win0")
     monkeypatch.setattr(
-        jetbrains_x11_driver, "_window_is_root_child", lambda _window, **_kwargs: True
+        jetbrains_x11_driver,
+        "_required_window_name",
+        lambda _window, **_kwargs: "win0",
     )
     monkeypatch.setattr(
-        jetbrains_x11_driver, "_window_transient_for", lambda _window, **_kwargs: 123
+        jetbrains_x11_driver,
+        "_required_window_is_root_child",
+        lambda _window, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_required_window_transient_for",
+        lambda _window, **_kwargs: 123,
     )
 
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is True
@@ -54,34 +62,54 @@ def test_agent_selector_popup_rejects_each_wrong_window_invariant(
         jetbrains_x11_driver, "_window_geometry", lambda _window, **_kwargs: (311, 407)
     )
     monkeypatch.setattr(
-        jetbrains_x11_driver, "_window_is_root_child", lambda _window, **_kwargs: True
+        jetbrains_x11_driver,
+        "_required_window_is_root_child",
+        lambda _window, **_kwargs: True,
     )
     monkeypatch.setattr(
-        jetbrains_x11_driver, "_window_transient_for", lambda _window, **_kwargs: 123
+        jetbrains_x11_driver,
+        "_required_window_transient_for",
+        lambda _window, **_kwargs: 123,
     )
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
 
     monkeypatch.setattr(
         jetbrains_x11_driver, "_window_geometry", lambda _window, **_kwargs: (310, 407)
     )
-    monkeypatch.setattr(jetbrains_x11_driver, "_window_name", lambda _window, **_kwargs: "win0")
     monkeypatch.setattr(
-        jetbrains_x11_driver, "_window_is_root_child", lambda _window, **_kwargs: False
+        jetbrains_x11_driver,
+        "_required_window_name",
+        lambda _window, **_kwargs: "win0",
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_required_window_is_root_child",
+        lambda _window, **_kwargs: False,
     )
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
 
     monkeypatch.setattr(
-        jetbrains_x11_driver, "_window_is_root_child", lambda _window, **_kwargs: True
+        jetbrains_x11_driver,
+        "_required_window_is_root_child",
+        lambda _window, **_kwargs: True,
     )
     monkeypatch.setattr(
-        jetbrains_x11_driver, "_window_transient_for", lambda _window, **_kwargs: 124
+        jetbrains_x11_driver,
+        "_required_window_transient_for",
+        lambda _window, **_kwargs: 124,
     )
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
 
     monkeypatch.setattr(
-        jetbrains_x11_driver, "_window_transient_for", lambda _window, **_kwargs: 123
+        jetbrains_x11_driver,
+        "_required_window_transient_for",
+        lambda _window, **_kwargs: 123,
     )
-    monkeypatch.setattr(jetbrains_x11_driver, "_window_name", lambda _window, **_kwargs: "other")
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_required_window_name",
+        lambda _window, **_kwargs: "other",
+    )
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
 
 
@@ -373,6 +401,45 @@ def test_agent_selector_rejects_visible_ownership_drift_or_replacement(
         _select_pinned_agent("selector", "123", deadline=float("inf"))
 
 
+def test_agent_selector_rejects_unclassifiable_replacement_after_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(jetbrains_client, "_is_agent_selector_popup", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_visible_agent_selector_popups",
+        lambda *_args, **_kwargs: ("selector",),
+    )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_visible_jetbrains_window_rectangles",
+        lambda **_kwargs: (X11WindowRectangle("replacement", 0, 1, 2, 310, 407),),
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_required_window_name",
+        lambda *_args, **_kwargs: "win0",
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_required_window_is_root_child",
+        lambda *_args, **_kwargs: True,
+    )
+
+    def failed_transient_query(*_args: object, **_kwargs: object) -> int | None:
+        raise RuntimeError("xprop unavailable")
+
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_required_window_transient_for",
+        failed_transient_query,
+    )
+    monkeypatch.setattr(jetbrains_x11_driver, "_checked_xdotool", lambda *_a, **_k: None)
+
+    with pytest.raises(RuntimeError, match="xprop unavailable"):
+        _select_pinned_agent("selector", "123", deadline=float("inf"))
+
+
 @pytest.mark.parametrize(
     ("popup_is_pinned", "matches", "message"),
     [
@@ -500,16 +567,40 @@ def test_selector_retry_suppression_and_one_loop_closure_are_bounded(
     assert sleeps == [True, True]
 
 
-def test_visible_selector_snapshot_handles_command_failure_and_invalid_project(
+def test_visible_selector_snapshot_accepts_only_an_empty_search_miss(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         jetbrains_x11_driver,
         "_xdotool",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 1, "", "failed"),
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 1, "", ""),
     )
     assert jetbrains_client._visible_jetbrains_window_rectangles(deadline=1.0) == ()
     assert jetbrains_client._visible_agent_selector_popups("invalid", deadline=1.0) == ()
+
+
+@pytest.mark.parametrize(
+    ("returncode", "diagnostic"),
+    [(1, "display unavailable"), (2, "transport failed"), (124, "xdotool command timed out")],
+)
+def test_visible_selector_snapshot_rejects_x11_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int,
+    diagnostic: str,
+) -> None:
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_xdotool",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [],
+            returncode,
+            "",
+            diagnostic,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="could not snapshot visible JetBrains windows"):
+        jetbrains_client._visible_jetbrains_window_rectangles(deadline=1.0)
 
 
 class _FakeIdeaProcess:

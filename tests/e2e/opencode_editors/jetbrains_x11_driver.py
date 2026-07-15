@@ -125,6 +125,15 @@ def _window_name(window: str, *, deadline: float | None = None) -> str | None:
     return completed.stdout.rstrip("\r\n")
 
 
+def _required_window_name(window: str, *, deadline: float | None = None) -> str:
+    """Return one title, rejecting an X11 query that cannot classify the window."""
+    completed = _xdotool("getwindowname", window, deadline=deadline)
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
+        raise RuntimeError(f"xdotool could not classify X11 window {window}: {detail}")
+    return completed.stdout.rstrip("\r\n")
+
+
 def _window_parentage(tree: str) -> tuple[str | None, str | None]:
     """Parse the root and parent XIDs from one ``xwininfo -tree`` result."""
     root: str | None = None
@@ -153,6 +162,28 @@ def _window_is_root_child(window: str, *, deadline: float | None = None) -> bool
         return False
     root, parent = _window_parentage(completed.stdout)
     return root is not None and parent == root
+
+
+def _required_window_is_root_child(
+    window: str,
+    *,
+    deadline: float | None = None,
+) -> bool:
+    """Return root ownership, rejecting failed or malformed X11 parentage queries."""
+    completed = subprocess.run(  # nosec B603
+        [_required_tool("xwininfo"), "-id", window, "-tree"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=_command_timeout(deadline),
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
+        raise RuntimeError(f"xwininfo could not classify X11 window {window}: {detail}")
+    root, parent = _window_parentage(completed.stdout)
+    if root is None or parent is None:
+        raise RuntimeError(f"xwininfo returned malformed parentage for X11 window {window}")
+    return parent == root
 
 
 def _window_parent_ids(
@@ -207,6 +238,25 @@ def _window_transient_for(window: str, *, deadline: float | None = None) -> int 
     )
     if completed.returncode != 0:
         return None
+    return _xprop_window_id(completed.stdout)
+
+
+def _required_window_transient_for(
+    window: str,
+    *,
+    deadline: float | None = None,
+) -> int | None:
+    """Return transient ownership, rejecting an X11 property query failure."""
+    completed = subprocess.run(  # nosec B603
+        [_required_tool("xprop"), "-id", window, "WM_TRANSIENT_FOR"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=_command_timeout(deadline),
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
+        raise RuntimeError(f"xprop could not classify X11 window {window}: {detail}")
     return _xprop_window_id(completed.stdout)
 
 
