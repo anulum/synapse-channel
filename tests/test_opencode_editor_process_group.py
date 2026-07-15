@@ -46,10 +46,14 @@ def _popen(process: _FakeProcess) -> subprocess.Popen[str]:
 
 
 def _wait_for_marker(path: Path, process: subprocess.Popen[str]) -> None:
-    """Wait until the isolated process has started its helper."""
+    """Wait until the isolated process publishes a complete helper PID."""
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
-        if path.is_file():
+        try:
+            payload = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            payload = ""
+        if payload.isdigit() and int(payload) > 0:
             return
         if process.poll() is not None:
             raise AssertionError("editor fixture exited before starting its helper")
