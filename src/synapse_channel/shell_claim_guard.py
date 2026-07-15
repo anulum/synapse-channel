@@ -121,8 +121,6 @@ def _repository_claims(
             continue
         if not isinstance(git, dict) or not isinstance(git.get("branch"), str):
             raise ClaimCoverageError("Hub returned malformed claim Git context.")
-        if git["branch"] != repository.branch:
-            continue
         paths = claim.get("paths")
         owner = claim.get("owner")
         status = claim.get("status")
@@ -148,7 +146,8 @@ def decide_shell_from_snapshot(
         claims = _repository_claims(snapshot, repository)
     except ClaimCoverageError as exc:
         raise ShellClaimGuardError(str(exc)) from exc
-    whole = tuple(claim for claim in claims if not claim["paths"])
+    branch_claims = tuple(claim for claim in claims if claim["git"]["branch"] == repository.branch)
+    whole = tuple(claim for claim in branch_claims if not claim["paths"])
     if not whole:
         return GuardVerdict(
             False,

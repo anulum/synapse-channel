@@ -88,6 +88,27 @@ def test_whole_worktree_claim_allows_shell(tmp_path: Path) -> None:
     assert verdict.allowed
 
 
+def test_shell_denies_competing_owner_on_another_branch(tmp_path: Path) -> None:
+    verdict = decide_shell_from_snapshot(
+        {
+            "active_claims": [
+                _claim(tmp_path),
+                _claim(
+                    tmp_path,
+                    owner="seat/two",
+                    paths=["src"],
+                    branch="feature/other",
+                ),
+            ]
+        },
+        identity="seat/one",
+        provider="Provider",
+        repository=ShellRepository(tmp_path, "main"),
+    )
+    assert not verdict.allowed
+    assert "ownership" in verdict.reason
+
+
 @pytest.mark.parametrize(
     ("claims", "message"),
     [
@@ -135,6 +156,16 @@ def test_shell_rejects_malformed_relevant_claim(tmp_path: Path) -> None:
 
     malformed = _claim(tmp_path)
     malformed["git"] = None
+    with pytest.raises(ShellClaimGuardError, match="malformed claim Git context"):
+        decide_shell_from_snapshot(
+            {"active_claims": [malformed]},
+            identity="seat/one",
+            provider="Provider",
+            repository=ShellRepository(tmp_path, "main"),
+        )
+
+    malformed = _claim(tmp_path)
+    malformed["git"] = {"branch": 7}
     with pytest.raises(ShellClaimGuardError, match="malformed claim Git context"):
         decide_shell_from_snapshot(
             {"active_claims": [malformed]},
