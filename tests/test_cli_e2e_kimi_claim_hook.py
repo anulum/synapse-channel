@@ -196,7 +196,7 @@ def test_cli_prints_mergeable_config_without_writing_settings(tmp_path: Path) ->
     assert result.ok(), result.output
     rendered = result.stdout
     assert "[[hooks]]" in rendered
-    assert 'matcher = "^(Write|Edit)$"' in rendered
+    assert 'matcher = "^(Write|Edit|Bash)$"' in rendered
     assert not (tmp_path / ".kimi-code").exists()
 
 

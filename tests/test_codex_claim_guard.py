@@ -107,7 +107,7 @@ def test_patch_parser_rejects_ambiguous_or_empty_commands(command: str) -> None:
                 "tool_use_id": "t",
                 "cwd": "/repo",
                 "hook_event_name": "PreToolUse",
-                "tool_name": "Bash",
+                "tool_name": "WebSearch",
                 "tool_input": {"command": _patch("*** Update File: a.py")},
             }
         ),
@@ -189,7 +189,7 @@ async def test_codex_malformed_event_denies_without_querying_hub(tmp_path: Path)
         raise AssertionError("malformed input must not query the hub")
 
     verdict = await evaluate_hook_event(
-        _event(tmp_path, _patch("*** Update File: a.py"), tool="Bash"),
+        _event(tmp_path, _patch("*** Update File: a.py"), tool="WebSearch"),
         identity="seat/one",
         uri="ws://hub",
         token=None,
@@ -197,4 +197,4 @@ async def test_codex_malformed_event_denies_without_querying_hub(tmp_path: Path)
         state_fetcher=must_not_run,
     )
     assert not verdict.allowed
-    assert "only apply_patch" in verdict.reason
+    assert "only apply_patch or Bash" in verdict.reason

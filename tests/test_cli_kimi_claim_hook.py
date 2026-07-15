@@ -49,7 +49,7 @@ def test_render_config_is_valid_toml_shell_safe_and_token_safe(tmp_path: Path) -
     config = tomllib.loads(rendered)
     hook = config["hooks"][0]
     assert hook["event"] == "PreToolUse"
-    assert hook["matcher"] == "^(Write|Edit)$"
+    assert hook["matcher"] == "^(Write|Edit|Bash)$"
     argv = shlex.split(hook["command"])
     assert argv[:3] == [str(Path(sys.executable).resolve()), "adapters", "kimi-claim-hook"]
     assert argv[argv.index("--token-file") + 1] == str(token_file.resolve())

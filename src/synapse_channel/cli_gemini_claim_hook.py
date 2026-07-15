@@ -33,8 +33,8 @@ from synapse_channel.cli_claim_hook_common import (
 from synapse_channel.file_claim_guard import GuardVerdict
 from synapse_channel.gemini_claim_guard import evaluate_hook_event, gemini_denial_payload
 
-GEMINI_TOOL_MATCHER = "^(replace|write_file)$"
-"""Anchored matcher for Gemini's two file-mutation tools (regex per the hook planner)."""
+GEMINI_TOOL_MATCHER = "^(replace|write_file|run_shell_command)$"
+"""Anchored matcher for Gemini's file and shell mutation tools."""
 
 
 def render_hook_config(
@@ -110,7 +110,7 @@ def _cmd_gemini_claim_hook(args: argparse.Namespace) -> int:
     return run_claim_hook(
         args,
         evaluator=_evaluate,
-        failure_reason="Synapse claim verification failed; Gemini replace/write_file denied.",
+        failure_reason="Synapse claim verification failed; Gemini mutation denied.",
         payload_renderer=gemini_denial_payload,
     )
 
@@ -119,7 +119,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
     """Register the nested ``adapters gemini-claim-hook`` command."""
     parser = subparsers.add_parser(
         "gemini-claim-hook",
-        help="Guard Gemini CLI replace/write_file calls with live Synapse file claims.",
+        help="Guard Gemini CLI file edits and run_shell_command with live Synapse claims.",
     )
     add_claim_hook_arguments(parser)
     parser.set_defaults(func=_cmd_gemini_claim_hook)

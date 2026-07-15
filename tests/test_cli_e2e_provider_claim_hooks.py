@@ -76,8 +76,11 @@ def _rendered_command(provider: str, output: str) -> str:
 def _deny_reason(provider: str, stdout: str) -> str:
     """Return the denial reason from the provider's native structured deny."""
     output = json.loads(stdout)
-    if provider == "gemini-claim-hook":
+    if provider in {"gemini-claim-hook", "grok-claim-hook"}:
         assert output["decision"] == "deny"
+        return str(output["reason"])
+    if provider == "opencode-claim-hook":
+        assert output["allowed"] is False
         return str(output["reason"])
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
     return str(output["hookSpecificOutput"]["permissionDecisionReason"])
@@ -88,6 +91,70 @@ _PROVIDER_CASES = [
     ("gemini-claim-hook", _gemini_event),
     ("kimi-claim-hook", _kimi_event),
 ]
+
+
+def _shell_event(provider: str, repo: Path) -> str:
+    common = {"session_id": f"{provider}-session", "cwd": str(repo)}
+    if provider in {"claude-claim-hook", "codex-claim-hook"}:
+        return json.dumps(
+            common
+            | {
+                "tool_use_id": "shell-tool",
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": "true"},
+            }
+        )
+    if provider == "kimi-claim-hook":
+        return json.dumps(
+            common
+            | {
+                "tool_call_id": "shell-tool",
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": "true"},
+            }
+        )
+    if provider == "gemini-claim-hook":
+        return json.dumps(
+            common
+            | {
+                "timestamp": "2026-07-15T00:00:00Z",
+                "hook_event_name": "BeforeTool",
+                "tool_name": "run_shell_command",
+                "tool_input": {"command": "true"},
+            }
+        )
+    if provider == "grok-claim-hook":
+        return json.dumps(
+            {
+                "sessionId": "grok-session",
+                "toolUseId": "shell-tool",
+                "cwd": str(repo),
+                "hookEventName": "PreToolUse",
+                "toolName": "run_terminal_command",
+                "toolInput": {"command": "true"},
+            }
+        )
+    return json.dumps(
+        common
+        | {
+            "tool_use_id": "shell-tool",
+            "hook_event_name": "tool.execute.before",
+            "tool_name": "bash",
+            "tool_input": {},
+        }
+    )
+
+
+_SHELL_PROVIDERS = (
+    "claude-claim-hook",
+    "codex-claim-hook",
+    "gemini-claim-hook",
+    "grok-claim-hook",
+    "kimi-claim-hook",
+    "opencode-claim-hook",
+)
 
 
 @pytest.mark.parametrize(("command", "event"), _PROVIDER_CASES)
@@ -186,3 +253,62 @@ def test_printed_recipe_authenticates_token_secured_hub(
         )
         assert allowed.ok(), allowed.output
         assert allowed.stdout == ""
+
+
+@pytest.mark.parametrize("command", _SHELL_PROVIDERS)
+def test_shell_requires_whole_worktree_claim_across_provider_clis(
+    tmp_path: Path, command: str
+) -> None:
+    whole_repo = git_repo(tmp_path / f"{command}-whole")
+    bounded_repo = git_repo(tmp_path / f"{command}-bounded")
+    with isolated_hub(tmp_path) as hub:
+        whole = run_cli(
+            "git-claim",
+            f"{command}-SHELL-WHOLE",
+            "--auto-release-on",
+            "manual",
+            "--name",
+            "seat/one",
+            uri=hub.uri,
+            cwd=whole_repo,
+        )
+        assert whole.ok(), whole.output
+        allowed = run_cli(
+            "adapters",
+            command,
+            "--identity",
+            "seat/one",
+            stdin=_shell_event(command, whole_repo),
+            uri=hub.uri,
+            cwd=whole_repo,
+        )
+        assert allowed.ok(), allowed.output
+        if command == "opencode-claim-hook":
+            assert json.loads(allowed.stdout) == {"allowed": True}
+        else:
+            assert allowed.stdout == ""
+
+        bounded = run_cli(
+            "git-claim",
+            f"{command}-SHELL-BOUNDED",
+            "--paths",
+            "README.md",
+            "--auto-release-on",
+            "manual",
+            "--name",
+            "seat/one",
+            uri=hub.uri,
+            cwd=bounded_repo,
+        )
+        assert bounded.ok(), bounded.output
+        denied = run_cli(
+            "adapters",
+            command,
+            "--identity",
+            "seat/one",
+            stdin=_shell_event(command, bounded_repo),
+            uri=hub.uri,
+            cwd=bounded_repo,
+        )
+        assert denied.ok(), denied.output
+        assert "whole-worktree claim required" in _deny_reason(command, denied.stdout)

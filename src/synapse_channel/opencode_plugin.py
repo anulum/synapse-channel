@@ -40,7 +40,7 @@ def render_opencode_plugin(
     """Return an OpenCode plugin that denies on every ambiguous hook outcome.
 
     The generated JavaScript uses ``Bun.spawn`` with an argv array, writes one
-    bounded path-only or patch-only JSON event to stdin, caps the combined
+    bounded path-only, patch-only, or metadata-only JSON event to stdin, caps the combined
     output streams, enforces a wall-clock
     deadline, and accepts only an explicit ``{"allowed": true}`` response.
     Neither raw tokens nor shell strings are persisted.
@@ -58,7 +58,7 @@ const HOOK_ARGV = {argv_json};
 const TIMEOUT_MS = {timeout_ms};
 const MAX_INPUT_BYTES = {MAX_HOOK_EVENT_BYTES};
 const MAX_OUTPUT_BYTES = {max_output_bytes};
-const MUTATION_TOOLS = new Set(["edit", "write", "apply_patch"]);
+const MUTATION_TOOLS = new Set(["edit", "write", "apply_patch", "bash"]);
 
 async function readBounded(stream, budget) {{
   const reader = stream.getReader();
@@ -87,6 +87,7 @@ function safeReason(value) {{
 }}
 
 function boundedToolInput(tool, args) {{
+  if (tool === "bash") return {{}};
   const key = tool === "apply_patch" ? "patchText" : "filePath";
   const value = args?.[key];
   if (typeof value === "string" && new TextEncoder().encode(value).byteLength > MAX_INPUT_BYTES) {{

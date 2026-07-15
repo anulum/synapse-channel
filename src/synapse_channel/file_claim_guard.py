@@ -13,7 +13,7 @@ import hashlib
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from synapse_channel.claim_state import ClaimStateError, fetch_state_snapshot
 from synapse_channel.core.errors import SynapseError
@@ -22,6 +22,20 @@ from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runne
 from synapse_channel.path_resolution import resolve_weakly_fail_closed
 
 StateFetcher = Callable[..., Awaitable[dict[str, Any]]]
+
+
+class ClaimRequest(Protocol):
+    """Minimal request identity shared by file and shell claim checks."""
+
+    @property
+    def session_id(self) -> str:
+        """Return the provider session identifier."""
+        ...
+
+    @property
+    def tool_use_id(self) -> str:
+        """Return the provider tool-call identifier."""
+        ...
 
 
 class FileClaimGuardError(SynapseError, RuntimeError):
@@ -220,7 +234,7 @@ def decide_targets_from_snapshot(
     return GuardVerdict(True)
 
 
-def requester_name(request: MutationRequest, identity: str) -> str:
+def requester_name(request: ClaimRequest, identity: str) -> str:
     """Return one of sixteen stable state-query identities for this claim owner."""
     owner = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
     call = f"{request.session_id}\0{request.tool_use_id}".encode()

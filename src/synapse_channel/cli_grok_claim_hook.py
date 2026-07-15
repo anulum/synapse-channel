@@ -25,8 +25,8 @@ from synapse_channel.cli_claim_hook_common import (
 from synapse_channel.file_claim_guard import GuardVerdict
 from synapse_channel.grok_claim_guard import denial_payload, evaluate_hook_event
 
-GROK_TOOL_MATCHER = "^(search_replace|write|Edit|Write|MultiEdit)$"
-"""Matcher covering Grok's native file editor and its compatibility aliases."""
+GROK_TOOL_MATCHER = "^(search_replace|write|Edit|Write|MultiEdit|run_terminal_command)$"
+"""Matcher covering Grok's file editors and native terminal command tool."""
 
 
 def render_hook_config(
@@ -102,7 +102,7 @@ def _cmd_grok_claim_hook(args: argparse.Namespace) -> int:
     return run_claim_hook(
         args,
         evaluator=_evaluate,
-        failure_reason="Synapse claim verification failed; Grok file mutation denied.",
+        failure_reason="Synapse claim verification failed; Grok mutation denied.",
         payload_renderer=denial_payload,
     )
 
@@ -111,7 +111,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
     """Register the nested adapters grok-claim-hook command."""
     parser = subparsers.add_parser(
         "grok-claim-hook",
-        help="Guard Grok search_replace calls with live Synapse file claims.",
+        help="Guard Grok file edits and terminal commands with live Synapse claims.",
     )
     add_claim_hook_arguments(parser)
     parser.set_defaults(func=_cmd_grok_claim_hook)

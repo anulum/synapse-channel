@@ -4,8 +4,8 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — fail-closed Kimi Code Edit/Write claim guard
-"""Adapt Kimi Code ``PreToolUse`` file events to live Synapse claims."""
+# SYNAPSE_CHANNEL — fail-closed Kimi Code mutation claim guard
+"""Adapt Kimi Code ``PreToolUse`` file and Bash events to live Synapse claims."""
 
 from __future__ import annotations
 
@@ -20,11 +20,15 @@ from synapse_channel.file_claim_guard import (
     GuardVerdict,
     MutationRequest,
     StateFetcher,
-    evaluate_mutation_request,
 )
 from synapse_channel.git.gitclaim import GitRunner, _default_git_runner
+from synapse_channel.shell_claim_guard import (
+    ProviderClaimRequest,
+    ShellRequest,
+    evaluate_provider_request,
+)
 
-SUPPORTED_TOOLS = frozenset({"Edit", "Write"})
+SUPPORTED_TOOLS = frozenset({"Edit", "Write", "Bash"})
 
 
 class KimiClaimGuardError(FileClaimGuardError):
@@ -40,8 +44,8 @@ def _required_string(data: Mapping[str, Any], key: str, *, location: str) -> str
     return value.strip()
 
 
-def parse_hook_request(raw: str) -> MutationRequest:
-    """Parse and validate one Kimi Code ``PreToolUse`` Edit/Write event."""
+def parse_hook_request(raw: str) -> ProviderClaimRequest:
+    """Parse and validate one Kimi Code ``PreToolUse`` mutation event."""
     try:
         decoded = json.loads(raw)
     except (json.JSONDecodeError, TypeError) as exc:
@@ -52,16 +56,21 @@ def parse_hook_request(raw: str) -> MutationRequest:
         raise KimiClaimGuardError("Kimi claim guard accepts only PreToolUse events.")
     tool_name = _required_string(decoded, "tool_name", location="input")
     if tool_name not in SUPPORTED_TOOLS:
-        raise KimiClaimGuardError("Kimi claim guard accepts only Edit or Write calls.")
+        raise KimiClaimGuardError("Kimi claim guard accepts only Edit, Write, or Bash calls.")
     tool_input = decoded.get("tool_input")
     if not isinstance(tool_input, dict):
         raise KimiClaimGuardError("Kimi hook input needs a tool_input object.")
     cwd = Path(_required_string(decoded, "cwd", location="input"))
     if not cwd.is_absolute():
         raise KimiClaimGuardError("Kimi hook cwd must be absolute.")
+    session_id = _required_string(decoded, "session_id", location="input")
+    tool_use_id = _required_string(decoded, "tool_call_id", location="input")
+    if tool_name == "Bash":
+        _required_string(tool_input, "command", location="tool_input")
+        return ShellRequest(session_id=session_id, tool_use_id=tool_use_id, cwd=cwd)
     return MutationRequest(
-        session_id=_required_string(decoded, "session_id", location="input"),
-        tool_use_id=_required_string(decoded, "tool_call_id", location="input"),
+        session_id=session_id,
+        tool_use_id=tool_use_id,
         cwd=cwd,
         file_paths=(Path(_required_string(tool_input, "path", location="tool_input")),),
         allow_semantic_source=tool_name == "Edit",
@@ -83,7 +92,7 @@ async def evaluate_hook_event(
         request = parse_hook_request(raw)
     except KimiClaimGuardError as exc:
         return GuardVerdict(False, str(exc))
-    return await evaluate_mutation_request(
+    return await evaluate_provider_request(
         request,
         provider="Kimi",
         identity=identity,

@@ -4,8 +4,8 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — fail-closed Codex apply_patch claim guard
-"""Adapt Codex ``PreToolUse`` apply-patch events to live Synapse claims."""
+# SYNAPSE_CHANNEL — fail-closed Codex mutation claim guard
+"""Adapt Codex ``PreToolUse`` apply-patch and Bash events to live claims."""
 
 from __future__ import annotations
 
@@ -26,11 +26,16 @@ from synapse_channel.file_claim_guard import (
     GuardVerdict,
     MutationRequest,
     StateFetcher,
-    evaluate_mutation_request,
 )
 from synapse_channel.git.gitclaim import GitRunner, _default_git_runner
+from synapse_channel.shell_claim_guard import (
+    ProviderClaimRequest,
+    ShellRequest,
+    evaluate_provider_request,
+)
 
 SUPPORTED_TOOL = "apply_patch"
+SUPPORTED_TOOLS = frozenset({SUPPORTED_TOOL, "Bash"})
 
 
 class CodexClaimGuardError(FileClaimGuardError):
@@ -54,8 +59,8 @@ def _required_string(data: Mapping[str, Any], key: str, *, location: str) -> str
     return value.strip()
 
 
-def parse_hook_request(raw: str) -> MutationRequest:
-    """Parse and validate one Codex ``PreToolUse`` apply-patch event."""
+def parse_hook_request(raw: str) -> ProviderClaimRequest:
+    """Parse and validate one Codex ``PreToolUse`` mutation event."""
     try:
         decoded = json.loads(raw)
     except (json.JSONDecodeError, TypeError) as exc:
@@ -64,20 +69,24 @@ def parse_hook_request(raw: str) -> MutationRequest:
         raise CodexClaimGuardError("Codex hook input must be a JSON object.")
     if _required_string(decoded, "hook_event_name", location="input") != "PreToolUse":
         raise CodexClaimGuardError("Codex claim guard accepts only PreToolUse events.")
-    if _required_string(decoded, "tool_name", location="input") != SUPPORTED_TOOL:
-        raise CodexClaimGuardError("Codex claim guard accepts only apply_patch calls.")
+    tool_name = _required_string(decoded, "tool_name", location="input")
+    if tool_name not in SUPPORTED_TOOLS:
+        raise CodexClaimGuardError("Codex claim guard accepts only apply_patch or Bash calls.")
     tool_input = decoded.get("tool_input")
     if not isinstance(tool_input, dict):
         raise CodexClaimGuardError("Codex hook input needs a tool_input object.")
     cwd = Path(_required_string(decoded, "cwd", location="input"))
     if not cwd.is_absolute():
         raise CodexClaimGuardError("Codex hook cwd must be absolute.")
-    file_paths = parse_apply_patch_paths(
-        _required_string(tool_input, "command", location="tool_input")
-    )
+    command = _required_string(tool_input, "command", location="tool_input")
+    session_id = _required_string(decoded, "session_id", location="input")
+    tool_use_id = _required_string(decoded, "tool_use_id", location="input")
+    if tool_name == "Bash":
+        return ShellRequest(session_id=session_id, tool_use_id=tool_use_id, cwd=cwd)
+    file_paths = parse_apply_patch_paths(command)
     return MutationRequest(
-        session_id=_required_string(decoded, "session_id", location="input"),
-        tool_use_id=_required_string(decoded, "tool_use_id", location="input"),
+        session_id=session_id,
+        tool_use_id=tool_use_id,
         cwd=cwd,
         file_paths=file_paths,
     )
@@ -98,7 +107,7 @@ async def evaluate_hook_event(
         request = parse_hook_request(raw)
     except CodexClaimGuardError as exc:
         return GuardVerdict(False, str(exc))
-    return await evaluate_mutation_request(
+    return await evaluate_provider_request(
         request,
         provider="Codex",
         identity=identity,

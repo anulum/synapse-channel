@@ -42,7 +42,7 @@ def test_render_config_targets_native_before_tool_store(tmp_path: Path) -> None:
         synapse_bin=sys.executable,
     )
     group = config["hooks"]["BeforeTool"][0]
-    assert group["matcher"] == "^(replace|write_file)$"
+    assert group["matcher"] == "^(replace|write_file|run_shell_command)$"
     hook = group["hooks"][0]
     argv = shlex.split(hook["command"])
     assert argv[:3] == [str(Path(sys.executable).resolve()), "adapters", "gemini-claim-hook"]
@@ -64,12 +64,13 @@ def test_render_config_timeout_is_milliseconds() -> None:
     assert timeout >= 5000
 
 
-def test_matcher_covers_exactly_the_two_mutation_tools() -> None:
+def test_matcher_covers_exactly_the_three_mutation_tools() -> None:
     """Anchored regex per the installed planner's ``new RegExp(matcher).test(toolName)``."""
     pattern = re.compile(hook_cli.GEMINI_TOOL_MATCHER)
     assert pattern.search("replace")
     assert pattern.search("write_file")
-    for other in ("run_shell_command", "read_file", "Edit", "Write", "write_file_v2"):
+    assert pattern.search("run_shell_command")
+    for other in ("read_file", "Edit", "Write", "write_file_v2"):
         assert not pattern.search(other)
 
 

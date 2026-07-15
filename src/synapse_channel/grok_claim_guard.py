@@ -7,7 +7,7 @@
 # SYNAPSE_CHANNEL — fail-closed Grok PreToolUse file-mutation claim guard
 """Adapt Grok PreToolUse file events to authoritative Synapse claims.
 
-Grok 0.2.93 sends camelCase hook JSON on stdin and blocks only when a
+Grok 0.2.101 sends camelCase hook JSON on stdin and blocks only when a
 PreToolUse hook returns a top-level decision=deny object. Native file edits use
 search_replace; compatibility aliases and the older write spelling are accepted
 because Grok maps those matcher names onto its native tool surface.
@@ -26,9 +26,13 @@ from synapse_channel.file_claim_guard import (
     GuardVerdict,
     MutationRequest,
     StateFetcher,
-    evaluate_mutation_request,
 )
 from synapse_channel.git.gitclaim import GitRunner, _default_git_runner
+from synapse_channel.shell_claim_guard import (
+    ProviderClaimRequest,
+    ShellRequest,
+    evaluate_provider_request,
+)
 
 __all__ = [
     "GrokClaimGuardError",
@@ -38,7 +42,9 @@ __all__ = [
     "parse_hook_request",
 ]
 
-SUPPORTED_TOOLS = frozenset({"search_replace", "write", "Edit", "Write", "MultiEdit"})
+SUPPORTED_TOOLS = frozenset(
+    {"search_replace", "write", "Edit", "Write", "MultiEdit", "run_terminal_command"}
+)
 """Grok's native file editor plus supported historical and compatibility aliases."""
 
 _PATH_KEYS = ("path", "file_path", "target_file", "file")
@@ -77,8 +83,8 @@ def _tool_input(decoded: Mapping[str, Any]) -> Mapping[str, Any]:
     raise GrokClaimGuardError("Grok hook input needs a toolInput object.")
 
 
-def parse_hook_request(raw: str) -> MutationRequest:
-    """Parse one Grok PreToolUse file-mutation event."""
+def parse_hook_request(raw: str) -> ProviderClaimRequest:
+    """Parse one Grok PreToolUse file or shell mutation event."""
     try:
         decoded = json.loads(raw)
     except (json.JSONDecodeError, TypeError) as exc:
@@ -92,16 +98,22 @@ def parse_hook_request(raw: str) -> MutationRequest:
     tool_name = _first_string(decoded, _TOOL_NAME_KEYS, location="input")
     if tool_name not in SUPPORTED_TOOLS:
         raise GrokClaimGuardError(
-            "Grok claim guard accepts only search_replace, write, Edit, Write, or MultiEdit."
+            "Grok claim guard accepts only file editors or run_terminal_command."
         )
 
     cwd = Path(_first_string(decoded, _CWD_KEYS, location="input"))
     if not cwd.is_absolute():
         raise GrokClaimGuardError("Grok hook cwd must be absolute.")
-    path = Path(_first_string(_tool_input(decoded), _PATH_KEYS, location="toolInput"))
+    tool_input = _tool_input(decoded)
+    session_id = _first_string(decoded, _SESSION_KEYS, location="input")
+    tool_use_id = _first_string(decoded, _TOOL_ID_KEYS, location="input")
+    if tool_name == "run_terminal_command":
+        _first_string(tool_input, ("command",), location="toolInput")
+        return ShellRequest(session_id=session_id, tool_use_id=tool_use_id, cwd=cwd)
+    path = Path(_first_string(tool_input, _PATH_KEYS, location="toolInput"))
     return MutationRequest(
-        session_id=_first_string(decoded, _SESSION_KEYS, location="input"),
-        tool_use_id=_first_string(decoded, _TOOL_ID_KEYS, location="input"),
+        session_id=session_id,
+        tool_use_id=tool_use_id,
         cwd=cwd,
         file_paths=(path,),
         allow_semantic_source=tool_name in {"search_replace", "Edit", "MultiEdit"},
@@ -109,7 +121,7 @@ def parse_hook_request(raw: str) -> MutationRequest:
 
 
 def denial_payload(reason: str) -> dict[str, Any]:
-    """Return the blocking deny object documented by Grok 0.2.93."""
+    """Return the blocking deny object documented by Grok 0.2.101."""
     return {"decision": "deny", "reason": reason}
 
 
@@ -128,7 +140,7 @@ async def evaluate_hook_event(
         request = parse_hook_request(raw)
     except GrokClaimGuardError as exc:
         return GuardVerdict(False, str(exc))
-    return await evaluate_mutation_request(
+    return await evaluate_provider_request(
         request,
         provider="Grok",
         identity=identity,

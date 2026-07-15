@@ -188,5 +188,7 @@ def test_cli_prints_mergeable_config_without_writing_settings(tmp_path: Path) ->
     )
     assert result.ok(), result.output
     config = json.loads(result.stdout)
-    assert config["hooks"]["BeforeTool"][0]["matcher"] == "^(replace|write_file)$"
+    assert config["hooks"]["BeforeTool"][0]["matcher"] == (
+        "^(replace|write_file|run_shell_command)$"
+    )
     assert not (tmp_path / ".gemini").exists()

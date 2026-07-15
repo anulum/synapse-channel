@@ -57,6 +57,14 @@ All notable changes to this project are documented here.
   deliberately route such a file through a symlinked directory must configure
   its real component-wise path. The single-link inode floor is enabled only for
   outbound MCP executable-policy and trust files.
+- Provider claim hooks now cover Claude and Kimi `Bash`, Codex's intercepted
+  `Bash`, Gemini `run_shell_command`, Grok `run_terminal_command`, and OpenCode
+  `bash`. Because arbitrary shell text has no trustworthy declared write set,
+  these calls require an editable, unambiguous whole-worktree claim; command
+  text is not parsed, persisted, or forwarded by the OpenCode plugin. Codex's
+  incomplete `unified_exec` interception and each host's crash/timeout behavior
+  remain documented residuals, and the staged claim check remains the independent
+  second gate.
 - The read-only dashboard now enforces an always-on `Host`-header boundary
   against DNS rebinding. Its live JSON and audit feeds are unauthenticated on
   loopback so the browser cockpit can load, which made them a rebinding target: a

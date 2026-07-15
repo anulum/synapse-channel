@@ -264,7 +264,7 @@ def add_opencode_claim_hook_parser(
     """Register ``adapters opencode-claim-hook`` for the native plugin."""
     parser = subparsers.add_parser(
         "opencode-claim-hook",
-        help="Guard OpenCode edit/write/apply_patch calls with live claims.",
+        help="Guard OpenCode file edits and bash calls with live claims.",
     )
     add_claim_hook_arguments(parser)
     parser.set_defaults(func=_cmd_opencode_claim_hook)

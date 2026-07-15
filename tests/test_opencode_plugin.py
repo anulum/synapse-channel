@@ -18,7 +18,7 @@ def test_plugin_is_argv_only_bounded_and_explicit_verdict_only() -> None:
     assert source.startswith(f"// {PLUGIN_OWNER_MARKER}\n")
     assert "Bun.spawn(HOOK_ARGV" in source
     assert "tool.execute.before" in source
-    assert 'edit", "write", "apply_patch' in source
+    assert 'edit", "write", "apply_patch", "bash' in source
     assert "verdict?.allowed === true" in source
     assert "MAX_INPUT_BYTES = 1048576" in source
     assert "MAX_OUTPUT_BYTES = 65536" in source
@@ -26,11 +26,11 @@ def test_plugin_is_argv_only_bounded_and_explicit_verdict_only() -> None:
     assert "tool_input: toolInput" in source
     assert "tool_input: output.args" not in source
     assert 'tool === "apply_patch" ? "patchText" : "filePath"' in source
+    assert 'if (tool === "bash") return {}' in source
     assert "new TextEncoder().encode(value).byteLength > MAX_INPUT_BYTES" in source
     assert "const outputBudget = { used: 0 }" in source
     assert "readBounded(process.stdout, outputBudget)" in source
     assert "readBounded(process.stderr, outputBudget)" in source
-    assert "shell" not in source
 
 
 @pytest.mark.parametrize(

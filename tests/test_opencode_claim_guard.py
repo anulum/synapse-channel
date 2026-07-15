@@ -42,6 +42,7 @@ def test_parses_native_file_path_tools(
     allow_semantic_source: bool,
 ) -> None:
     request = parse_hook_request(_event(tool, {"filePath": "src/a.py"}))
+    assert isinstance(request, MutationRequest)
     assert request.cwd == Path("/repo")
     assert request.file_paths == (Path("src/a.py"),)
     assert request.allow_semantic_source is allow_semantic_source
@@ -54,6 +55,7 @@ def test_parses_native_apply_patch_tool() -> None:
             {"patchText": "*** Begin Patch\n*** Update File: a.py\n@@\n-x\n+y\n*** End Patch"},
         )
     )
+    assert isinstance(request, MutationRequest)
     assert request.file_paths == (Path("a.py"),)
     assert request.allow_semantic_source is False
 
@@ -62,7 +64,7 @@ def test_parses_native_apply_patch_tool() -> None:
     ("raw", "message"),
     [
         ("[]", "JSON object"),
-        (_event("bash", {}), "only edit, write, and apply_patch"),
+        (_event("read", {}), "only edit, write, apply_patch, or bash"),
         (_event("edit", []), "tool_input object"),
         (_event("edit", {"filePath": "a"}, cwd="relative"), "must be absolute"),
         (_event("edit", {"filePath": "a.py "}), "surrounding whitespace"),
@@ -107,7 +109,7 @@ async def test_valid_event_delegates_to_provider_neutral_guard(
         captured.update(kwargs)
         return GuardVerdict(True)
 
-    monkeypatch.setattr(opencode_claim_guard, "evaluate_mutation_request", allow)
+    monkeypatch.setattr(opencode_claim_guard, "evaluate_provider_request", allow)
     verdict = await evaluate_hook_event(
         _event("write", {"filePath": "a.py"}),
         identity="seat/one",

@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — Codex apply_patch claim-hook CLI and recipe
+# SYNAPSE_CHANNEL — Codex mutation claim-hook CLI and recipe
 """Run the Codex claim guard or print a mergeable ``hooks.json`` fragment."""
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def render_hook_config(
     token_file: str | None,
     synapse_bin: str | None,
 ) -> dict[str, Any]:
-    """Return a token-safe Codex ``hooks.json`` fragment for ``apply_patch``."""
+    """Return a token-safe Codex ``hooks.json`` fragment for file edits and Bash."""
     command = render_hook_command(
         command="codex-claim-hook",
         identity=identity,
@@ -47,7 +47,7 @@ def render_hook_config(
         "hooks": {
             "PreToolUse": [
                 {
-                    "matcher": "Edit|Write",
+                    "matcher": "Edit|Write|Bash",
                     "hooks": [
                         {
                             "type": "command",
@@ -100,7 +100,7 @@ def _cmd_codex_claim_hook(args: argparse.Namespace) -> int:
     return run_claim_hook(
         args,
         evaluator=_evaluate,
-        failure_reason="Synapse claim verification failed; Codex apply_patch denied.",
+        failure_reason="Synapse claim verification failed; Codex mutation denied.",
     )
 
 
@@ -108,7 +108,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
     """Register the nested ``adapters codex-claim-hook`` command."""
     parser = subparsers.add_parser(
         "codex-claim-hook",
-        help="Guard Codex apply_patch calls with live Synapse file claims.",
+        help="Guard Codex apply_patch and Bash calls with live Synapse claims.",
     )
     add_claim_hook_arguments(parser)
     parser.set_defaults(func=_cmd_codex_claim_hook)

@@ -40,7 +40,7 @@ def test_render_config_is_scoped_shell_safe_and_token_safe(tmp_path: Path) -> No
         synapse_bin=sys.executable,
     )
     group = config["hooks"]["PreToolUse"][0]
-    assert group["matcher"] == "Edit|Write"
+    assert group["matcher"] == "Edit|Write|Bash"
     hook = group["hooks"][0]
     argv = shlex.split(hook["command"])
     assert argv[:3] == [str(Path(sys.executable).resolve()), "adapters", "codex-claim-hook"]

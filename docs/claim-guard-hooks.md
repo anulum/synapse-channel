@@ -5,25 +5,25 @@ Commercial license available
 © Code 2020–2026 Miroslav Šotek. All rights reserved.
 ORCID: 0009-0009-3560-0851
 Contact: www.anulum.li | protoscience@anulum.li
-SYNAPSE CHANNEL — provider file-edit claim hooks
+SYNAPSE CHANNEL — provider mutation claim hooks
 -->
 
-# Provider file-edit claim hooks
+# Provider mutation claim hooks
 
-Synapse can stop a supported native file-edit call before it runs unless the
-configured identity owns a live claim for every target file. Claude Code, Codex,
-Gemini CLI, Grok, Kimi, and OpenCode use different hook payloads, so Synapse
-keeps their wire adapters small and sends all six through one claim decision
-engine.
+Synapse can stop a supported native mutation call before it runs unless the
+configured identity owns the required live claim. Exact file tools require path
+coverage for every target. Intercepted shell tools require an editable claim for
+the complete worktree because arbitrary command text has no trustworthy declared
+write set. Synapse never guesses write paths by parsing shell text.
 
 | Provider | Covered native tool | Path source | Symbol-claim pre-edit use | Recipe format |
 |---|---|---|---|---|
-| Claude Code | `Edit`, `Write` | absolute `tool_input.file_path` | `Edit` only | `settings.json` fragment |
-| Codex | `apply_patch` (matcher aliases `Edit|Write`) | every add, update, delete, and move path in `tool_input.command` | no; patch payload requires whole-file claims | `hooks.json` fragment |
-| Gemini CLI | `replace`, `write_file` on the native `BeforeTool` event | relative or absolute `tool_input.file_path` | `replace` only | `settings.json` `hooks` fragment |
-| Grok | `search_replace` (plus `Edit` / `Write` / `MultiEdit` compatibility aliases and the older `write` spelling) | relative or absolute `toolInput.path` | `search_replace`, `Edit`, and `MultiEdit` | global `~/.grok/hooks/*.json` fragment |
-| Kimi Code | `Edit`, `Write` | relative or absolute `tool_input.path` | `Edit` only | `config.toml` fragment |
-| OpenCode | `edit`, `write`, `apply_patch` on `tool.execute.before` | `args.filePath`, or every add/update/delete/move path in `args.patchText` | `edit` only | owned project/global plugin plus MCP config |
+| Claude Code | `Edit`, `Write`; `Bash` | absolute `tool_input.file_path`; whole worktree for `Bash` | `Edit` only | `settings.json` fragment |
+| Codex | `apply_patch` (matcher aliases `Edit|Write`); intercepted `Bash` | every add, update, delete, and move path in `tool_input.command`; whole worktree for `Bash` | no; patch payload requires whole-file claims | `hooks.json` fragment |
+| Gemini CLI | `replace`, `write_file`, `run_shell_command` on the native `BeforeTool` event | relative or absolute `tool_input.file_path`; whole worktree for shell | `replace` only | `settings.json` `hooks` fragment |
+| Grok | `search_replace` (plus `Edit` / `Write` / `MultiEdit` compatibility aliases and the older `write` spelling), `run_terminal_command` | relative or absolute `toolInput.path`; whole worktree for terminal commands | `search_replace`, `Edit`, and `MultiEdit` | global `~/.grok/hooks/*.json` fragment |
+| Kimi Code | `Edit`, `Write`; `Bash` | relative or absolute `tool_input.path`; whole worktree for `Bash` | `Edit` only | `config.toml` fragment |
+| OpenCode | `edit`, `write`, `apply_patch`, `bash` on `tool.execute.before` | `args.filePath`, or every add/update/delete/move path in `args.patchText`; whole worktree for `bash` | `edit` only | owned project/global plugin plus MCP config |
 
 The decision requires the exact worktree, branch, path coverage, editable task
 state, and unambiguous owner. A missing claim, competing owner, malformed event,
@@ -50,6 +50,18 @@ synapse git-claim EDIT-AUTH \
   --name my-repo/codex \
   --auto-release-on manual
 ```
+
+For a shell call, take an explicit whole-worktree claim by omitting `--paths`:
+
+```bash
+synapse git-claim SHELL-AUTH \
+  --name my-repo/codex \
+  --auto-release-on manual
+```
+
+That claim is intentionally exclusive. If the worktree contains any active
+claim for another owner, the shell guard denies the call. Prefer native file
+tools with bounded path claims whenever a whole-worktree lease is unnecessary.
 
 Print the recipe for the provider you run:
 
@@ -152,14 +164,14 @@ Synapse always converts **handled** failures into a structured deny on exit 0.
 Hosts may still **fail open** when the hook process itself crashes, times out,
 or returns non-JSON. That host residual is the fail-open matrix:
 
-| Provider | Synapse handled failure | Host crash / timeout / bad JSON | Outside matcher (shell / MCP / other tools) |
+| Provider | Synapse handled failure | Host crash / timeout / bad JSON | Residual outside the covered hook path |
 |---|---|---|---|
-| Claude Code | deny on exit 0 (`Edit`/`Write`) | host-dependent; structured deny preferred | **fail-open** for `Bash` and unguarded tools |
-| Codex | deny on exit 0 (`apply_patch`) | host documents PreToolUse as guardrail | **fail-open** for shell, `unified_exec`, MCP, other matchers |
-| Gemini CLI | structured `decision=deny` on exit 0 | host treats plain non-JSON exit 1 as warning (**fail-open**) | **fail-open** for `run_shell_command` and MCP |
-| Grok | structured `decision=deny` on exit 0 | host fail-open on timeout/crash/malformed | **fail-open** for `run_terminal_command` and unguarded tools |
-| Kimi Code | structured deny on exit 0 | host documents fail-open on crash/timeout | **fail-open** outside `Edit`/`Write` matcher |
-| OpenCode | plugin throws before mutation | helper crash/timeout → throw (**fail-closed** for covered tools) | **fail-open** for shell, custom tools, MCP, new tool names |
+| Claude Code | deny on exit 0 for file tools and `Bash` | host-dependent; structured deny preferred | MCP, custom, and future write-capable tools |
+| Codex | deny on exit 0 for `apply_patch` and intercepted `Bash` | host documents PreToolUse as guardrail | `unified_exec` interception is incomplete; MCP and future tools remain outside |
+| Gemini CLI | structured `decision=deny` on exit 0, including `run_shell_command` | plain non-JSON exit 1 is a warning (**fail-open**) | MCP, custom, and future write-capable tools |
+| Grok | structured `decision=deny` on exit 0, including `run_terminal_command` | host fail-open on timeout/crash/malformed | custom and future write-capable tools |
+| Kimi Code | structured deny on exit 0, including `Bash` | host documents fail-open on crash/timeout | custom and future write-capable tools |
+| OpenCode | plugin throws before covered mutation, including `bash` | helper crash/timeout → throw (**fail-closed** for covered tools) | custom, MCP, and future write-capable tools |
 
 See also [SECURITY.md — known limitations](https://github.com/anulum/synapse-channel/blob/main/SECURITY.md#out-of-scope--known-limitations)
 for the residual that commit-time `git-claim-check` covers independently.
@@ -169,26 +181,26 @@ parse, Git, state, transport, timeout, and unexpected runtime failure. This
 avoids provider conventions in which an ordinary non-zero error means
 "continue." It does not turn a native hook into a filesystem sandbox.
 
-- **Claude Code:** the released integration covers `Edit|Write`. Claude `Bash`
-  commands remain outside this hook.
+- **Claude Code:** the matcher covers `Edit|Write|Bash`; `Bash` requires the
+  whole-worktree claim. Custom and future write-capable tools remain outside.
 - **Codex:** the hook validates every path named by `apply_patch`, including both
-  sides of a move. Codex documents `PreToolUse` as a guardrail rather than a
-  complete enforcement boundary: alternate shell, `unified_exec`, MCP, or future
+  sides of a move, and intercepts canonical `Bash` with the whole-worktree rule.
+  Codex documents `PreToolUse` as a guardrail rather than a complete enforcement
+  boundary: newer `unified_exec` interception is incomplete, and MCP or future
   tool paths may perform equivalent writes without this matcher.
 - **Gemini CLI:** the guard speaks Gemini's native contract — the `BeforeTool`
-  event, `replace`/`write_file` tool names, and a top-level
+  event, `replace`/`write_file`/`run_shell_command` tool names, and a top-level
   `{"decision": "deny", "reason": …}` blocking response — verified against the
-  installed 0.47.0 bundle source. `run_shell_command` and MCP tool paths remain
-  outside this matcher, and Gemini's hook runner treats a plain non-JSON hook
-  crash with exit 1 as a non-blocking warning, so Synapse always emits the
-  structured deny object on exit zero for handled failures.
-- **Grok:** the guard speaks the installed 0.2.93 contract — camelCase
+  installed 0.47.0 bundle source. Shell requires the whole-worktree claim. MCP
+  remains outside this matcher, and Gemini treats a plain non-JSON exit 1 as a
+  non-blocking warning, so handled failures always emit structured deny on exit 0.
+- **Grok:** the guard speaks the installed 0.2.101 contract — camelCase
   `PreToolUse` input, native `search_replace` path data, and top-level
   `{"decision": "deny", "reason": …}` output. Grok's host runner treats hook
   timeouts, crashes, and malformed output as fail-open, so Synapse bounds the
   query and converts every handled failure to explicit deny JSON on exit zero.
-  `run_terminal_command` and any future write-capable tool outside the matcher
-  remain outside this bounded guard.
+  `run_terminal_command` now uses the whole-worktree claim rule. Future
+  write-capable tools outside the matcher remain outside this bounded guard.
 - **Kimi Code:** the handler converts all failures it receives into structured
   denial on exit zero. Kimi documents its hook runner itself as fail-open if the
   process crashes or exceeds the host timeout. Synapse leaves headroom and catches
@@ -196,9 +208,9 @@ avoids provider conventions in which an ordinary non-zero error means
 - **OpenCode:** the generated plugin accepts only an explicit allow response from
   the bounded helper process. A helper crash, timeout, excessive output,
   invalid UTF-8/JSON, ambiguous response, missing claim, or hub failure throws
-  from `tool.execute.before` before `edit`, `write`, or `apply_patch` runs.
-  Shell commands, custom tools, MCP tools, and future write-capable tool names
-  remain outside this matcher.
+  from `tool.execute.before` before `edit`, `write`, `apply_patch`, or `bash`
+  runs. The plugin sends metadata only for `bash`; command text is neither parsed
+  nor forwarded to the helper. Custom, MCP, and future tool names remain outside.
 
 Do not describe these adapters as complete shell or operating-system isolation.
 For a stricter deployment, combine them with provider sandboxing and deny
@@ -214,8 +226,8 @@ synapse git-claim-check --staged --name my-repo/codex
 ```
 
 The native hook stops covered edits early. The staged-path gate independently
-checks every path before commit, including changes produced through an unguarded
-shell or external program. When a staged source has a semantic claim, it compares
+checks every path before commit, including changes produced through a shell path
+the host did not intercept or an external program. When a staged source has a semantic claim, it compares
 `HEAD` with the Git index, maps both hunk sides through the local tree-sitter
 parser, and checks the exact `.synapse-symbol` paths. Module-level edits,
 add/delete/rename operations, unsupported or invalid syntax, ambiguous mappings,
@@ -229,7 +241,7 @@ agents must claim their scope explicitly.
 - [Codex hooks](https://developers.openai.com/codex/hooks)
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli) — the `BeforeTool`
   contract above was read from the installed 0.47.0 bundle source
-- Grok 0.2.93 — the `PreToolUse`, matcher-alias, input, deny, timeout, and
+- Grok 0.2.101 — the `PreToolUse`, matcher-alias, input, deny, timeout, and
   fail-open contracts above were read from the installed user guide
 - [Kimi Code hooks](https://moonshotai.github.io/kimi-code/en/customization/hooks)
 - [OpenCode plugins](https://opencode.ai/docs/plugins/) — native

@@ -422,9 +422,11 @@ loopback would only break port publishing without adding security.
   boundary is **opt-in** (`synapse a2a-serve --allow-origin`); opaque `null`
   origins are always rejected. Print the effective policy with
   `synapse doctor --a2a-policy` (and optional `--a2a-allow-origin` mirrors).
-- Provider file-edit claim hooks are **not** a full OS sandbox. Synapse fail-closes
-  handled hook failures, but several hosts fail open on crash/timeout, and shell
-  or MCP write paths stay outside the matchers. See the provider × fail-closed
+- Provider mutation claim hooks are **not** a full OS sandbox. Supported shell
+  hooks require an exclusive whole-worktree claim instead of guessing paths from
+  command text. Several hosts still fail open on crash/timeout, Codex documents
+  incomplete `unified_exec` interception, and MCP/custom write paths may stay
+  outside the matchers. See the provider × fail-closed
   matrix in [`docs/claim-guard-hooks.md`](docs/claim-guard-hooks.md). Commit-time
   `synapse git-claim-check --staged` remains the independent second gate.
   Semantic claims do not make one shared physical file safe for two owners:

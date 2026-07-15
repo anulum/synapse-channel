@@ -181,5 +181,5 @@ def test_cli_prints_mergeable_config_without_writing_settings(tmp_path: Path) ->
     )
     assert result.ok(), result.output
     config = json.loads(result.stdout)
-    assert config["hooks"]["PreToolUse"][0]["matcher"] == "Edit|Write"
+    assert config["hooks"]["PreToolUse"][0]["matcher"] == "Edit|Write|Bash"
     assert not (tmp_path / ".claude").exists()

@@ -124,6 +124,7 @@ def test_parse_hook_request_rejects_unsupported_or_malformed_input(raw: str) -> 
 def test_resolve_repository_target_canonicalises_repo_relative_path(tmp_path: Path) -> None:
     (tmp_path / "src").mkdir()
     request = parse_hook_request(_event(tmp_path, tmp_path / "src" / "new.py", tool="Write"))
+    assert isinstance(request, HookRequest)
     target = resolve_repository_target(request, runner=_runner(tmp_path, "feature/x"))
     assert target == RepositoryTarget(tmp_path.resolve(), "feature/x", "src/new.py")
 
@@ -135,6 +136,7 @@ def test_resolve_repository_target_denies_symlink_escape(tmp_path: Path) -> None
     outside.mkdir()
     (repo / "linked").symlink_to(outside, target_is_directory=True)
     request = parse_hook_request(_event(repo, repo / "linked" / "escape.py", tool="Write"))
+    assert isinstance(request, HookRequest)
     with pytest.raises(ClaimGuardError, match="escapes"):
         resolve_repository_target(request, runner=_runner(repo))
 
@@ -142,6 +144,7 @@ def test_resolve_repository_target_denies_symlink_escape(tmp_path: Path) -> None
 def test_resolve_repository_target_walks_to_existing_parent(tmp_path: Path) -> None:
     target_path = tmp_path / "missing" / "nested" / "new.py"
     request = parse_hook_request(_event(tmp_path, target_path, tool="Write"))
+    assert isinstance(request, HookRequest)
 
     def runner(args: list[str]) -> str:
         assert args[1] == str(tmp_path)
@@ -153,10 +156,12 @@ def test_resolve_repository_target_walks_to_existing_parent(tmp_path: Path) -> N
 
 def test_resolve_repository_target_denies_directory_and_bad_git_context(tmp_path: Path) -> None:
     directory_request = parse_hook_request(_event(tmp_path, tmp_path, tool="Write"))
+    assert isinstance(directory_request, HookRequest)
     with pytest.raises(ClaimGuardError, match="file path"):
         resolve_repository_target(directory_request, runner=_runner(tmp_path))
 
     file_request = parse_hook_request(_event(tmp_path, tmp_path / "new.py", tool="Write"))
+    assert isinstance(file_request, HookRequest)
 
     def broken(_args: list[str]) -> str:
         raise GitError("not a repository")

@@ -53,7 +53,7 @@ def render_hook_config(
     token_file: str | None,
     synapse_bin: str | None,
 ) -> str:
-    """Return a token-safe Kimi ``config.toml`` fragment for ``Edit|Write``."""
+    """Return a token-safe Kimi config fragment for file edits and Bash."""
     command = render_hook_command(
         command="kimi-claim-hook",
         identity=identity,
@@ -66,7 +66,7 @@ def render_hook_config(
         (
             "[[hooks]]",
             'event = "PreToolUse"',
-            'matcher = "^(Write|Edit)$"',
+            'matcher = "^(Write|Edit|Bash)$"',
             f"command = {json.dumps(command, ensure_ascii=False)}",
             f"timeout = {hook_timeout(ready_timeout)}",
             "",

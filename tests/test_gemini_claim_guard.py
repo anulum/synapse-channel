@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from synapse_channel.file_claim_guard import MutationRequest
 from synapse_channel.gemini_claim_guard import (
     GeminiClaimGuardError,
     evaluate_hook_event,
@@ -75,6 +76,7 @@ def _claim(
 
 def test_parse_hook_request_accepts_replace(tmp_path: Path) -> None:
     request = parse_hook_request(_event(tmp_path, tmp_path / "src" / "a.py"))
+    assert isinstance(request, MutationRequest)
     assert request.session_id == "session-1"
     assert request.tool_use_id == "2026-07-12T15:30:00.000Z"
     assert request.cwd == tmp_path
@@ -84,6 +86,7 @@ def test_parse_hook_request_accepts_replace(tmp_path: Path) -> None:
 
 def test_parse_hook_request_accepts_write_file(tmp_path: Path) -> None:
     request = parse_hook_request(_event(tmp_path, tmp_path / "src" / "a.py", tool="write_file"))
+    assert isinstance(request, MutationRequest)
     assert request.file_paths == (tmp_path / "src" / "a.py",)
     assert request.allow_semantic_source is False
 
@@ -110,6 +113,7 @@ def test_parse_hook_request_accepts_installed_bundle_shape() -> None:
         }
     )
     request = parse_hook_request(raw)
+    assert isinstance(request, MutationRequest)
     assert request.session_id == "session-1"
     assert request.tool_use_id == "2026-07-12T15:30:00.000Z"
     assert request.cwd == Path("/tmp/synapse-gemini-payload-test")
@@ -124,14 +128,14 @@ def test_parse_hook_request_rejects_claude_event_name(tmp_path: Path) -> None:
 
 
 def test_parse_hook_request_rejects_unsupported_tool(tmp_path: Path) -> None:
-    with pytest.raises(GeminiClaimGuardError, match="only replace or write_file"):
-        parse_hook_request(_event(tmp_path, tmp_path / "src" / "a.py", tool="run_shell_command"))
+    with pytest.raises(GeminiClaimGuardError, match="only replace, write_file"):
+        parse_hook_request(_event(tmp_path, tmp_path / "src" / "a.py", tool="execute"))
 
 
 def test_parse_hook_request_rejects_claude_tool_aliases(tmp_path: Path) -> None:
     """Claude-style ``Edit``/``Write`` names never appear in Gemini hook input."""
     for alias in ("Edit", "Write"):
-        with pytest.raises(GeminiClaimGuardError, match="only replace or write_file"):
+        with pytest.raises(GeminiClaimGuardError, match="only replace, write_file"):
             parse_hook_request(_event(tmp_path, tmp_path / "src" / "a.py", tool=alias))
 
 

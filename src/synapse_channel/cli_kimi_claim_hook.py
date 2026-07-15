@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — Kimi Code Edit/Write claim-hook CLI and recipe
+# SYNAPSE_CHANNEL — Kimi Code mutation claim-hook CLI and recipe
 """Run the Kimi claim guard or safely manage its marked ``config.toml`` block."""
 
 from __future__ import annotations
@@ -130,7 +130,7 @@ def _cmd_kimi_claim_hook(args: argparse.Namespace) -> int:
     return run_claim_hook(
         args,
         evaluator=_evaluate,
-        failure_reason="Synapse claim verification failed; Kimi Edit/Write denied.",
+        failure_reason="Synapse claim verification failed; Kimi mutation denied.",
     )
 
 
@@ -138,7 +138,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
     """Register the nested ``adapters kimi-claim-hook`` command."""
     parser = subparsers.add_parser(
         "kimi-claim-hook",
-        help="Guard Kimi Code Edit/Write calls with live Synapse file claims.",
+        help="Guard Kimi Code file edits and Bash with live Synapse claims.",
     )
     add_claim_hook_arguments(parser, identity_required=False)
     config_actions = parser.add_mutually_exclusive_group()

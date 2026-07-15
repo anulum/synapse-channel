@@ -56,7 +56,7 @@ def test_render_hook_config_is_exec_form_scoped_and_token_safe(tmp_path: Path) -
         synapse_bin=sys.executable,
     )
     group = config["hooks"]["PreToolUse"][0]
-    assert group["matcher"] == "Edit|Write"
+    assert group["matcher"] == "Edit|Write|Bash"
     hook = group["hooks"][0]
     assert hook["type"] == "command"
     assert hook["command"] == str(Path(sys.executable).resolve())
@@ -186,7 +186,7 @@ def test_print_config_writes_only_stdout(
     )
     assert _cmd_claude_claim_hook(args) == 0
     output = json.loads(capsys.readouterr().out)
-    assert output["hooks"]["PreToolUse"][0]["matcher"] == "Edit|Write"
+    assert output["hooks"]["PreToolUse"][0]["matcher"] == "Edit|Write|Bash"
     assert list(tmp_path.iterdir()) == []
 
 

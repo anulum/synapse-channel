@@ -59,6 +59,7 @@ def test_render_hook_config_is_shell_command_and_token_safe(tmp_path: Path) -> N
     group = config["hooks"]["PreToolUse"][0]
     assert "search_replace" in group["matcher"]
     assert "write" in group["matcher"]
+    assert "run_terminal_command" in group["matcher"]
     hook = group["hooks"][0]
     assert hook["type"] == "command"
     command = hook["command"]

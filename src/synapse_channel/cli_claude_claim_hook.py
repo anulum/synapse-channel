@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — Claude Code claim-guard CLI and configuration recipe
-"""Register and run the Claude Code ``Edit|Write`` claim guard.
+"""Register and run the Claude Code ``Edit|Write|Bash`` claim guard.
 
 The runtime reads Claude's ``PreToolUse`` JSON from stdin. ``--print-config``
 instead emits a mergeable exec-form settings fragment and never writes a Claude
@@ -107,7 +107,7 @@ def render_hook_config(
         "hooks": {
             "PreToolUse": [
                 {
-                    "matcher": "Edit|Write",
+                    "matcher": "Edit|Write|Bash",
                     "hooks": [
                         {
                             "type": "command",
@@ -159,7 +159,7 @@ def _cmd_claude_claim_hook(
     except Exception:
         # Claude treats exit 1 as non-blocking. Convert every unexpected runtime
         # exception into valid deny JSON on exit 0 so a bug cannot authorise a write.
-        verdict = GuardVerdict(False, "Synapse claim verification failed; Edit/Write denied.")
+        verdict = GuardVerdict(False, "Synapse claim verification failed; mutation denied.")
     if verdict.allowed:
         return 0
     print(json.dumps(denial_payload(verdict.reason), ensure_ascii=False))
@@ -170,7 +170,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
     """Register the nested ``adapters claude-claim-hook`` command."""
     parser = subparsers.add_parser(
         "claude-claim-hook",
-        help="Guard Claude Code Edit/Write calls with live Synapse file claims.",
+        help="Guard Claude Code file edits and Bash with live Synapse claims.",
     )
     parser.add_argument("--identity", required=True, help="Exact identity that must own the claim.")
     parser.add_argument("--uri", default=default_hub_uri(), help="Authoritative Synapse hub URI.")

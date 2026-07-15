@@ -26,7 +26,7 @@ def test_provider_claim_hook_guide_is_discoverable_and_honest() -> None:
         assert command in readme
         assert command in guide
     assert "guardrail rather than" in guide
-    assert "complete enforcement boundary" in guide
+    assert "complete enforcement boundary" in " ".join(guide.split())
     assert "hook runner itself as fail-open" in guide
     assert "BeforeTool" in guide
     assert '{"decision": "deny", "reason": …}' in guide
@@ -39,6 +39,10 @@ def test_provider_claim_hook_guide_is_discoverable_and_honest() -> None:
     assert "final-component symlink" in guide
     assert "not complete Bash or filesystem isolation" in readme
     assert "git-claim-check --staged" in guide
+    assert "whole-worktree claim" in guide
+    for shell_tool in ("Bash", "run_shell_command", "run_terminal_command", "`bash`"):
+        assert shell_tool in guide
+    assert "unified_exec` interception is incomplete" in guide
     # SCH-H-NEW-05: provider × fail-closed matrix for hook-host residuals
     assert "Provider × fail-closed matrix" in guide
     assert "Host crash / timeout / bad JSON" in guide

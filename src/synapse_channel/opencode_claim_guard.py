@@ -21,12 +21,16 @@ from synapse_channel.file_claim_guard import (
     GuardVerdict,
     MutationRequest,
     StateFetcher,
-    evaluate_mutation_request,
 )
 from synapse_channel.git.gitclaim import GitRunner, _default_git_runner
+from synapse_channel.shell_claim_guard import (
+    ProviderClaimRequest,
+    ShellRequest,
+    evaluate_provider_request,
+)
 
 HOOK_EVENT = "tool.execute.before"
-SUPPORTED_TOOLS = frozenset({"edit", "write", "apply_patch"})
+SUPPORTED_TOOLS = frozenset({"edit", "write", "apply_patch", "bash"})
 MAX_HOOK_EVENT_BYTES = 1_048_576
 """Maximum UTF-8 size accepted for one native OpenCode hook event."""
 
@@ -74,7 +78,7 @@ def _mutation_paths(tool: str, tool_input: Mapping[str, Any]) -> tuple[Path, ...
         raise OpenCodeClaimGuardError(f"OpenCode {exc}") from exc
 
 
-def parse_hook_request(raw: str) -> MutationRequest:
+def parse_hook_request(raw: str) -> ProviderClaimRequest:
     """Parse one OpenCode native plugin event into a provider-neutral request."""
     if not isinstance(raw, str):
         raise OpenCodeClaimGuardError("OpenCode hook input must be UTF-8 text.")
@@ -95,7 +99,7 @@ def parse_hook_request(raw: str) -> MutationRequest:
     tool = _required_string(decoded, "tool_name", location="input")
     if tool not in SUPPORTED_TOOLS:
         raise OpenCodeClaimGuardError(
-            "OpenCode claim guard accepts only edit, write, and apply_patch calls."
+            "OpenCode claim guard accepts only edit, write, apply_patch, or bash calls."
         )
     tool_input = decoded.get("tool_input")
     if not isinstance(tool_input, dict):
@@ -103,9 +107,13 @@ def parse_hook_request(raw: str) -> MutationRequest:
     cwd = Path(_required_exact_path(decoded, "cwd", location="input"))
     if not cwd.is_absolute():
         raise OpenCodeClaimGuardError("OpenCode hook cwd must be absolute.")
+    session_id = _required_string(decoded, "session_id", location="input")
+    tool_use_id = _required_string(decoded, "tool_use_id", location="input")
+    if tool == "bash":
+        return ShellRequest(session_id=session_id, tool_use_id=tool_use_id, cwd=cwd)
     return MutationRequest(
-        session_id=_required_string(decoded, "session_id", location="input"),
-        tool_use_id=_required_string(decoded, "tool_use_id", location="input"),
+        session_id=session_id,
+        tool_use_id=tool_use_id,
         cwd=cwd,
         file_paths=_mutation_paths(tool, tool_input),
         allow_semantic_source=tool == "edit",
@@ -127,7 +135,7 @@ async def evaluate_hook_event(
         request = parse_hook_request(raw)
     except OpenCodeClaimGuardError as exc:
         return GuardVerdict(False, str(exc))
-    return await evaluate_mutation_request(
+    return await evaluate_provider_request(
         request,
         provider="OpenCode",
         identity=identity,

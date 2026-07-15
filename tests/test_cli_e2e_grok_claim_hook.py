@@ -233,4 +233,5 @@ def test_cli_prints_mergeable_config_without_writing_settings(tmp_path: Path) ->
     config = json.loads(result.stdout)
     matcher = config["hooks"]["PreToolUse"][0]["matcher"]
     assert "search_replace" in matcher and "write" in matcher
+    assert "run_terminal_command" in matcher
     assert not (tmp_path / ".grok").exists()

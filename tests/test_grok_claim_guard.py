@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from synapse_channel.file_claim_guard import MutationRequest
 from synapse_channel.grok_claim_guard import (
     GrokClaimGuardError,
     denial_payload,
@@ -51,6 +52,7 @@ def _event(
 
 def test_parse_camel_case_search_replace() -> None:
     request = parse_hook_request(_event())
+    assert isinstance(request, MutationRequest)
     assert request.file_paths == (Path("/tmp/repo/src/a.py"),)
     assert request.cwd == Path("/tmp/repo")
     assert request.session_id == "sess-1"
@@ -60,6 +62,7 @@ def test_parse_camel_case_search_replace() -> None:
 
 def test_parse_snake_case_and_write_tool() -> None:
     request = parse_hook_request(_event(tool="write", camel=False, path="/tmp/repo/x.md"))
+    assert isinstance(request, MutationRequest)
     assert request.file_paths == (Path("/tmp/repo/x.md"),)
     assert request.allow_semantic_source is False
 
@@ -67,6 +70,7 @@ def test_parse_snake_case_and_write_tool() -> None:
 def test_relative_path_is_preserved_for_shared_canonicalisation() -> None:
     raw = _event(path="src/a.py", cwd="/tmp/repo")
     request = parse_hook_request(raw)
+    assert isinstance(request, MutationRequest)
     assert request.file_paths == (Path("src/a.py"),)
 
 
@@ -77,8 +81,8 @@ def test_denial_payload_is_grok_native() -> None:
 
 
 def test_unsupported_tool_is_rejected() -> None:
-    with pytest.raises(GrokClaimGuardError, match="search_replace"):
-        parse_hook_request(_event(tool="run_terminal_command"))
+    with pytest.raises(GrokClaimGuardError, match="file editors or run_terminal_command"):
+        parse_hook_request(_event(tool="bash"))
 
 
 def test_non_json_is_rejected() -> None:
@@ -99,6 +103,7 @@ def test_render_hook_config_is_mergeable_grok_json(tmp_path: Path) -> None:
     assert "PreToolUse" in config["hooks"]
     matcher = config["hooks"]["PreToolUse"][0]["matcher"]
     assert "search_replace" in matcher and "write" in matcher
+    assert "run_terminal_command" in matcher
     command = config["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
     assert "grok-claim-hook" in command
     assert "user/terminal-1" in command
@@ -156,6 +161,7 @@ def test_non_pretool_event_is_rejected() -> None:
 def test_edit_and_multiedit_aliases_parse() -> None:
     for tool in ("Edit", "MultiEdit"):
         request = parse_hook_request(_event(tool=tool))
+        assert isinstance(request, MutationRequest)
         assert request.file_paths == (Path("/tmp/repo/src/a.py"),)
         assert request.allow_semantic_source is True
     assert parse_hook_request(_event(tool="Write")).allow_semantic_source is False
@@ -171,6 +177,7 @@ def test_target_file_key_is_accepted() -> None:
         "toolUseId": "call-1",
     }
     request = parse_hook_request(json.dumps(payload))
+    assert isinstance(request, MutationRequest)
     assert request.file_paths == (Path("src/a.py"),)
 
 

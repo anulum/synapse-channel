@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from synapse_channel.file_claim_guard import MutationRequest
 from synapse_channel.kimi_claim_guard import (
     KimiClaimGuardError,
     evaluate_hook_event,
@@ -68,6 +69,7 @@ def _claim(
 
 def test_parse_hook_request_accepts_tool_call_id(tmp_path: Path) -> None:
     request = parse_hook_request(_event(tmp_path, tmp_path / "src" / "a.py"))
+    assert isinstance(request, MutationRequest)
     assert request.session_id == "session-1"
     assert request.tool_use_id == "tool-1"
     assert request.cwd == tmp_path
@@ -105,6 +107,7 @@ def test_parse_hook_request_accepts_installed_kimi_0233_shape() -> None:
         }
     )
     request = parse_hook_request(raw)
+    assert isinstance(request, MutationRequest)
     assert request.session_id == "session-1"
     assert request.tool_use_id == "tool-1"
     assert request.cwd == Path("/tmp/synapse-kimi-payload-test")
@@ -120,8 +123,8 @@ def test_parse_hook_request_rejects_wrong_event(tmp_path: Path) -> None:
 
 
 def test_parse_hook_request_rejects_unsupported_tool(tmp_path: Path) -> None:
-    with pytest.raises(KimiClaimGuardError, match="only Edit or Write"):
-        parse_hook_request(_event(tmp_path, tmp_path / "src" / "a.py", tool="Bash"))
+    with pytest.raises(KimiClaimGuardError, match="only Edit, Write, or Bash"):
+        parse_hook_request(_event(tmp_path, tmp_path / "src" / "a.py", tool="WebSearch"))
 
 
 def test_parse_hook_request_rejects_missing_path(tmp_path: Path) -> None:

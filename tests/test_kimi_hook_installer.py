@@ -40,7 +40,7 @@ def test_render_hook_config_is_valid_toml_and_token_safe(tmp_path: Path) -> None
     config = tomllib.loads(rendered)
     hook = config["hooks"][0]
     assert hook["event"] == "PreToolUse"
-    assert hook["matcher"] == "^(Write|Edit)$"
+    assert hook["matcher"] == "^(Write|Edit|Bash)$"
     assert "secret-token" not in rendered
     assert str(token_file.resolve()) in rendered
 

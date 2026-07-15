@@ -39,12 +39,16 @@ from synapse_channel.file_claim_guard import (
     GuardVerdict,
     MutationRequest,
     StateFetcher,
-    evaluate_mutation_request,
 )
 from synapse_channel.git.gitclaim import GitRunner, _default_git_runner
+from synapse_channel.shell_claim_guard import (
+    ProviderClaimRequest,
+    ShellRequest,
+    evaluate_provider_request,
+)
 
-SUPPORTED_TOOLS = frozenset({"replace", "write_file"})
-"""Gemini CLI file-mutation tools covered by this guard."""
+SUPPORTED_TOOLS = frozenset({"replace", "write_file", "run_shell_command"})
+"""Gemini CLI file-mutation and shell tools covered by this guard."""
 
 
 class GeminiClaimGuardError(FileClaimGuardError):
@@ -60,8 +64,8 @@ def _required_string(data: Mapping[str, Any], key: str, *, location: str) -> str
     return value.strip()
 
 
-def parse_hook_request(raw: str) -> MutationRequest:
-    """Parse and validate one Gemini CLI ``BeforeTool`` replace/write_file event."""
+def parse_hook_request(raw: str) -> ProviderClaimRequest:
+    """Parse and validate one Gemini CLI ``BeforeTool`` mutation event."""
     try:
         decoded = json.loads(raw)
     except (json.JSONDecodeError, TypeError) as exc:
@@ -72,16 +76,23 @@ def parse_hook_request(raw: str) -> MutationRequest:
         raise GeminiClaimGuardError("Gemini claim guard accepts only BeforeTool events.")
     tool_name = _required_string(decoded, "tool_name", location="input")
     if tool_name not in SUPPORTED_TOOLS:
-        raise GeminiClaimGuardError("Gemini claim guard accepts only replace or write_file calls.")
+        raise GeminiClaimGuardError(
+            "Gemini claim guard accepts only replace, write_file, or run_shell_command calls."
+        )
     tool_input = decoded.get("tool_input")
     if not isinstance(tool_input, dict):
         raise GeminiClaimGuardError("Gemini hook input needs a tool_input object.")
     cwd = Path(_required_string(decoded, "cwd", location="input"))
     if not cwd.is_absolute():
         raise GeminiClaimGuardError("Gemini hook cwd must be absolute.")
+    session_id = _required_string(decoded, "session_id", location="input")
+    tool_use_id = _required_string(decoded, "timestamp", location="input")
+    if tool_name == "run_shell_command":
+        _required_string(tool_input, "command", location="tool_input")
+        return ShellRequest(session_id=session_id, tool_use_id=tool_use_id, cwd=cwd)
     return MutationRequest(
-        session_id=_required_string(decoded, "session_id", location="input"),
-        tool_use_id=_required_string(decoded, "timestamp", location="input"),
+        session_id=session_id,
+        tool_use_id=tool_use_id,
         cwd=cwd,
         file_paths=(Path(_required_string(tool_input, "file_path", location="tool_input")),),
         allow_semantic_source=tool_name == "replace",
@@ -103,7 +114,7 @@ async def evaluate_hook_event(
         request = parse_hook_request(raw)
     except GeminiClaimGuardError as exc:
         return GuardVerdict(False, str(exc))
-    return await evaluate_mutation_request(
+    return await evaluate_provider_request(
         request,
         provider="Gemini",
         identity=identity,

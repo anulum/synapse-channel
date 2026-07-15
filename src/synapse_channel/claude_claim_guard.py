@@ -4,8 +4,8 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — fail-closed Claude Code Edit/Write claim guard
-"""Adapt Claude Code ``PreToolUse`` file events to live Synapse claims.
+# SYNAPSE_CHANNEL — fail-closed Claude Code mutation claim guard
+"""Adapt Claude Code ``PreToolUse`` file and shell events to live Synapse claims.
 
 The released Claude-facing types and functions remain import-compatible. Shared
 path resolution and multi-provider claim decisions live in
@@ -30,14 +30,18 @@ from synapse_channel.file_claim_guard import (
     StateFetcher,
     decide_targets_from_snapshot,
     denial_payload,
-    evaluate_mutation_request,
     resolve_repository_targets,
 )
 from synapse_channel.git.claim_coverage import EDITABLE_STATUSES as EDITABLE_STATUSES
 from synapse_channel.git.claim_coverage import claim_path_covers as claim_path_covers
 from synapse_channel.git.gitclaim import GitRunner, _default_git_runner
+from synapse_channel.shell_claim_guard import (
+    ProviderClaimRequest,
+    ShellRequest,
+    evaluate_provider_request,
+)
 
-SUPPORTED_TOOLS = frozenset({"Edit", "Write"})
+SUPPORTED_TOOLS = frozenset({"Edit", "Write", "Bash"})
 """Claude Code tools covered by this guard."""
 
 
@@ -65,8 +69,8 @@ def _required_string(data: Mapping[str, Any], key: str, *, location: str) -> str
     return value.strip()
 
 
-def parse_hook_request(raw: str) -> HookRequest:
-    """Parse and validate one Claude Code ``PreToolUse`` Edit/Write event."""
+def parse_hook_request(raw: str) -> HookRequest | ShellRequest:
+    """Parse one Claude Code ``PreToolUse`` file or shell event."""
     try:
         decoded = json.loads(raw)
     except (json.JSONDecodeError, TypeError) as exc:
@@ -77,19 +81,24 @@ def parse_hook_request(raw: str) -> HookRequest:
         raise ClaimGuardError("Claude claim guard accepts only PreToolUse events.")
     tool_name = _required_string(decoded, "tool_name", location="input")
     if tool_name not in SUPPORTED_TOOLS:
-        raise ClaimGuardError("Claude claim guard accepts only Edit or Write calls.")
+        raise ClaimGuardError("Claude claim guard accepts only Edit, Write, or Bash calls.")
     tool_input = decoded.get("tool_input")
     if not isinstance(tool_input, dict):
         raise ClaimGuardError("Claude hook input needs a tool_input object.")
-    file_path = Path(_required_string(tool_input, "file_path", location="tool_input"))
     cwd = Path(_required_string(decoded, "cwd", location="input"))
-    if not file_path.is_absolute():
-        raise ClaimGuardError("Claude Edit/Write file_path must be absolute.")
     if not cwd.is_absolute():
         raise ClaimGuardError("Claude hook cwd must be absolute.")
+    session_id = _required_string(decoded, "session_id", location="input")
+    tool_use_id = _required_string(decoded, "tool_use_id", location="input")
+    if tool_name == "Bash":
+        _required_string(tool_input, "command", location="tool_input")
+        return ShellRequest(session_id=session_id, tool_use_id=tool_use_id, cwd=cwd)
+    file_path = Path(_required_string(tool_input, "file_path", location="tool_input"))
+    if not file_path.is_absolute():
+        raise ClaimGuardError("Claude Edit/Write file_path must be absolute.")
     return HookRequest(
-        session_id=_required_string(decoded, "session_id", location="input"),
-        tool_use_id=_required_string(decoded, "tool_use_id", location="input"),
+        session_id=session_id,
+        tool_use_id=tool_use_id,
         tool_name=tool_name,
         cwd=cwd,
         file_path=file_path,
@@ -143,8 +152,11 @@ async def evaluate_hook_event(
         request = parse_hook_request(raw)
     except ClaimGuardError as exc:
         return GuardVerdict(False, str(exc))
-    return await evaluate_mutation_request(
-        _mutation_request(request),
+    provider_request: ProviderClaimRequest = (
+        request if isinstance(request, ShellRequest) else _mutation_request(request)
+    )
+    return await evaluate_provider_request(
+        provider_request,
         provider="Claude",
         identity=identity,
         uri=uri,
