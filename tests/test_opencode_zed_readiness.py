@@ -55,6 +55,8 @@ def test_zed_session_readiness_requires_ordered_correlated_success(tmp_path: Pat
         (request, changed_event(response, error=True), update),
         (request, changed_event(response, session_id_present=False), update),
         (request, changed_event(response, id="wrong"), update),
+        (changed_event(request, id=1), changed_event(response, id=True), update),
+        (changed_event(request, id=1), changed_event(response, id=1.0), update),
         (changed_event(request, direction="agent_to_client"), response, update),
         (changed_event(request, id=True), response, update),
         (request, request, response, update),

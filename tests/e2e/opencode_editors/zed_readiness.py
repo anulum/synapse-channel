@@ -50,11 +50,15 @@ def has_ready_session(trace: Path) -> bool:
             request_id = candidate
             continue
         if event.get("response_to") == "session/new":
+            response_id = event.get("id")
             if (
                 direction != "agent_to_client"
                 or response_seen
                 or request_id is None
-                or event.get("id") != request_id
+                or isinstance(response_id, bool)
+                or not isinstance(response_id, (int, str))
+                or type(response_id) is not type(request_id)
+                or response_id != request_id
                 or event.get("error") is not False
                 or event.get("session_id_present") is not True
             ):

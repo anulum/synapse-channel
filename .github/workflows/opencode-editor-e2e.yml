@@ -40,6 +40,7 @@ on:
       - "tests/test_opencode_jetbrains_x11_focus.py"
       - "tests/test_opencode_jetbrains_x11_geometry.py"
       - "tests/test_opencode_zed_driver.py"
+      - "tests/test_opencode_zed_readiness.py"
       - "tests/test_opencode_zed_timing.py"
       - "tests/test_opencode_zed_x11.py"
       - "tools/opencode_compatibility_contract.py"
@@ -77,6 +78,7 @@ on:
       - "tests/test_opencode_jetbrains_x11_focus.py"
       - "tests/test_opencode_jetbrains_x11_geometry.py"
       - "tests/test_opencode_zed_driver.py"
+      - "tests/test_opencode_zed_readiness.py"
       - "tests/test_opencode_zed_timing.py"
       - "tests/test_opencode_zed_x11.py"
       - "tools/opencode_compatibility_contract.py"
@@ -321,6 +323,7 @@ jobs:
             tests/e2e/opencode_editors/process_group.py
             tests/e2e/opencode_editors/trace_contract.py
             tests/e2e/opencode_editors/zed_client.py
+            tests/e2e/opencode_editors/zed_readiness.py
             tests/e2e/opencode_editors/zed_timing.py
             tests/e2e/opencode_editors/zed_x11.py
             tests/test_cli_e2e_opencode_editors.py
@@ -339,6 +342,7 @@ jobs:
             tests/test_opencode_jetbrains_x11_focus.py
             tests/test_opencode_jetbrains_x11_geometry.py
             tests/test_opencode_zed_driver.py
+            tests/test_opencode_zed_readiness.py
             tests/test_opencode_zed_timing.py
             tests/test_opencode_zed_x11.py
             tests/test_opencode_editor_trace_contract.py
@@ -368,6 +372,7 @@ jobs:
                 tests/test_opencode_jetbrains_x11_focus.py \
                 tests/test_opencode_jetbrains_x11_geometry.py \
                 tests/test_opencode_zed_driver.py \
+                tests/test_opencode_zed_readiness.py \
                 tests/test_opencode_zed_timing.py \
                 tests/test_opencode_zed_x11.py \
                 tests/test_opencode_editor_trace_contract.py \
@@ -388,6 +393,7 @@ jobs:
               tests/test_opencode_jetbrains_x11_focus.py \
               tests/test_opencode_jetbrains_x11_geometry.py \
               tests/test_opencode_zed_driver.py \
+              tests/test_opencode_zed_readiness.py \
               tests/test_opencode_zed_timing.py \
               tests/test_opencode_zed_x11.py \
               tests/test_opencode_editor_trace_contract.py \
