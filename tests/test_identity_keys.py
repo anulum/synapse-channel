@@ -68,6 +68,8 @@ def test_load_missing_file_raises(tmp_path: Path) -> None:
 def test_load_non_pem_raises(tmp_path: Path) -> None:
     path = tmp_path / "id.pem"
     path.write_bytes(b"not a pem key")
+    # Secret floor runs before PEM parse — fixtures must be owner-only.
+    path.chmod(SIGNING_KEY_FILE_MODE)
 
     with pytest.raises(IdentityKeyError, match="not a valid PEM key"):
         load_signing_key(path)
@@ -83,6 +85,7 @@ def test_load_non_ed25519_key_raises(tmp_path: Path) -> None:
             encryption_algorithm=serialization.NoEncryption(),
         )
     )
+    path.chmod(SIGNING_KEY_FILE_MODE)
 
     with pytest.raises(IdentityKeyError, match="must be Ed25519"):
         load_signing_key(path)
