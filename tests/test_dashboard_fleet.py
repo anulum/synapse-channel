@@ -29,8 +29,11 @@ from synapse_channel.dashboard_render import render_dashboard_html
 from synapse_channel.observed_peers import ObservedPeerSnapshot
 
 
-def _http_get(url: str) -> tuple[int, str, str]:
-    request = Request(url, headers={"Connection": "close"})
+def _http_get(url: str, authorization: str | None = None) -> tuple[int, str, str]:
+    headers = {"Connection": "close"}
+    if authorization is not None:
+        headers["Authorization"] = authorization
+    request = Request(url, headers=headers)
     with urlopen(request, timeout=3) as response:  # nosec B310
         return response.status, response.headers.get_content_type(), response.read().decode()
 
@@ -327,11 +330,12 @@ async def test_dashboard_http_json_includes_fleet_visibility(tmp_path: Path) -> 
                 a2a_state_file=a2a_state,
             )
             try:
+                bearer = f"Bearer {server.dashboard_token}"
                 status, content_type, body = await asyncio.to_thread(
-                    _http_get, server.url("/snapshot.json")
+                    _http_get, server.url("/snapshot.json"), bearer
                 )
                 studio_status, studio_type, studio_body = await asyncio.to_thread(
-                    _http_get, server.url("/studio.json")
+                    _http_get, server.url("/studio.json"), bearer
                 )
             finally:
                 server.close()

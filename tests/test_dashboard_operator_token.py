@@ -22,43 +22,16 @@ from synapse_channel.dashboard_bind import _resolve_dashboard_token
 
 class TestResolveDashboardToken:
     def test_a_supplied_token_gates_reads_and_writes(self) -> None:
-        assert _resolve_dashboard_token(
-            "127.0.0.1", allow_non_loopback=False, dashboard_token="tok", operator=True
-        ) == ("tok", False, True)
+        assert _resolve_dashboard_token(dashboard_token="tok") == ("tok", False, True)
 
     def test_an_empty_supplied_token_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="must not be empty"):
-            _resolve_dashboard_token(
-                "127.0.0.1", allow_non_loopback=False, dashboard_token="", operator=True
-            )
+            _resolve_dashboard_token(dashboard_token="")
 
-    def test_a_read_only_loopback_dashboard_needs_no_token(self) -> None:
-        assert _resolve_dashboard_token(
-            "127.0.0.1", allow_non_loopback=False, dashboard_token=None, operator=False
-        ) == (None, False, False)
-
-    def test_a_read_only_exposed_bind_generates_a_read_gating_token(self) -> None:
-        token, generated, protects_reads = _resolve_dashboard_token(
-            "0.0.0.0", allow_non_loopback=True, dashboard_token=None, operator=False
-        )
-        assert generated is True
-        assert protects_reads is True
-        assert token is not None and len(token) > 0
-
-    def test_operator_on_loopback_generates_a_write_only_token(self) -> None:
-        # The fix: an armed write-path gets a token even on loopback, but it gates
-        # writes only — reads stay open so the browser cockpit still loads.
-        token, generated, protects_reads = _resolve_dashboard_token(
-            "127.0.0.1", allow_non_loopback=False, dashboard_token=None, operator=True
-        )
-        assert generated is True
-        assert protects_reads is False
-        assert token is not None and len(token) > 0
-
-    def test_an_exposed_operator_bind_still_gates_reads(self) -> None:
-        token, generated, protects_reads = _resolve_dashboard_token(
-            "0.0.0.0", allow_non_loopback=True, dashboard_token=None, operator=True
-        )
+    def test_a_tokenless_caller_gets_a_generated_read_gating_token(self) -> None:
+        # F3: reads are never left open, so a caller that supplies no token gets a
+        # generated one that gates live/page reads (on loopback too).
+        token, generated, protects_reads = _resolve_dashboard_token(dashboard_token=None)
         assert generated is True
         assert protects_reads is True
         assert token is not None and len(token) > 0
@@ -113,27 +86,34 @@ async def test_operator_dashboard_on_loopback_gets_a_generated_token() -> None:
             server.close()
 
 
-async def test_read_only_dashboard_on_loopback_stays_tokenless() -> None:
+async def test_read_only_dashboard_on_loopback_gets_a_read_gating_token() -> None:
+    # F3: even a read-only loopback dashboard gates its live reads with a generated
+    # token, so a same-host process cannot pull the cockpit's data without presenting it.
     async with running_hub(SynapseHub()) as (_hub, uri):
         server = _server(uri, operator=False)
+        bearer = f"Bearer {server.dashboard_token}"
         try:
-            assert server.dashboard_token is None
-            assert server.dashboard_token_generated is False
+            assert server.dashboard_token is not None
+            assert server.dashboard_token_generated is True
+            assert _get_status(server.url("/studio.json")) == 401  # read: token required
+            assert _get_status(server.url("/studio.json"), authorization=bearer) != 401
         finally:
             server.close()
 
 
-async def test_operator_loopback_leaves_reads_open_but_gates_writes() -> None:
-    # The write-only token: a browser can still load the read-only cockpit (GET is
-    # open), but a same-host non-browser process cannot POST a write without the token.
+async def test_operator_loopback_gates_both_reads_and_writes() -> None:
+    # F3 + REV-SEC-04: on loopback a live read and an operator write each require the
+    # generated token; a same-host non-browser process is refused both without it. The
+    # validated React shell stays the only public exception so its unlock veil can load.
     async with running_hub(SynapseHub()) as (_hub, uri):
         server = _server(uri, operator=True)
         bearer = f"Bearer {server.dashboard_token}"
         try:
-            assert _get_status(server.url("/cockpit.js")) == 200  # read: no token needed
+            assert _get_status(server.url("/studio.json")) == 401  # read: token required
+            assert _get_status(server.url("/studio.json"), authorization=bearer) != 401
             assert _post_status(server.url("/message")) == 401  # write: token required
-            # A write with the generated token passes auth (the unreachable hub then
-            # makes it a 503, but auth was cleared — not a 401).
+            # A write with the generated token clears auth (the unreachable hub then
+            # makes it a 503, but auth passed — not a 401).
             assert _post_status(server.url("/message"), authorization=bearer) != 401
         finally:
             server.close()

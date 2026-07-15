@@ -12,7 +12,7 @@ import asyncio
 import json
 from collections.abc import Mapping
 
-from dashboard_helpers import _http_get
+from dashboard_helpers import _authorized_get
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.dashboard import start_dashboard_server
@@ -120,10 +120,12 @@ async def test_live_hub_tasks_and_claims_reach_studio_columns_and_assets() -> No
                 allow_non_loopback=False,
             )
             try:
-                studio_response = await asyncio.to_thread(_http_get, server.url("/studio.json"))
-                command_response = await asyncio.to_thread(_http_get, server.url("/studio/command"))
+                studio_response = await asyncio.to_thread(_authorized_get, server, "/studio.json")
+                command_response = await asyncio.to_thread(
+                    _authorized_get, server, "/studio/command"
+                )
                 asset_responses = {
-                    path: await asyncio.to_thread(_http_get, server.url("/" + path))
+                    path: await asyncio.to_thread(_authorized_get, server, "/" + path)
                     for path in (
                         "board-columns.css",
                         "board-columns.js",

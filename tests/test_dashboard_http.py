@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 import synapse_channel.dashboard as dashboard_module
-from dashboard_helpers import _http_get
+from dashboard_helpers import _authorized_get, _http_get
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.hub_config import HubConfig, HubLimits, config_fingerprint
@@ -171,12 +171,14 @@ async def test_dashboard_http_server_serves_real_html_and_json() -> None:
             allow_non_loopback=False,
         )
         try:
-            root_status, root_type, root_body = await asyncio.to_thread(_http_get, server.url("/"))
+            root_status, root_type, root_body = await asyncio.to_thread(
+                _authorized_get, server, "/"
+            )
             classic_status, classic_type, classic_body = await asyncio.to_thread(
-                _http_get, server.url("/classic")
+                _authorized_get, server, "/classic"
             )
             json_status, json_type, json_body = await asyncio.to_thread(
-                _http_get, server.url("/snapshot.json")
+                _authorized_get, server, "/snapshot.json"
             )
         finally:
             server.close()
@@ -225,19 +227,19 @@ async def test_dashboard_http_server_serves_the_studio_reference_css_and_feed(
         )
         try:
             studio_status, studio_type, studio_body = await asyncio.to_thread(
-                _http_get, server.url("/studio")
+                _authorized_get, server, "/studio"
             )
             css_status, css_type, css_body = await asyncio.to_thread(
-                _http_get, server.url("/studio.css")
+                _authorized_get, server, "/studio.css"
             )
             command_status, command_type, command_body = await asyncio.to_thread(
-                _http_get, server.url("/studio/command")
+                _authorized_get, server, "/studio/command"
             )
             studio_json_status, studio_json_type, studio_json_body = await asyncio.to_thread(
-                _http_get, server.url("/studio.json")
+                _authorized_get, server, "/studio.json"
             )
             events_status, events_type, events_body = await asyncio.to_thread(
-                _http_get, server.url("/events.json?since=0&limit=20")
+                _authorized_get, server, "/events.json?since=0&limit=20"
             )
         finally:
             server.close()
@@ -303,7 +305,7 @@ def test_dashboard_http_server_serves_operator_actions_feed(tmp_path: Path) -> N
         reliability_db=db,
     )
     try:
-        status, content_type, body = _http_get(server.url("/operator-actions.json?limit=10"))
+        status, content_type, body = _authorized_get(server, "/operator-actions.json?limit=10")
     finally:
         server.close()
 
@@ -330,7 +332,7 @@ def test_dashboard_http_operator_actions_feed_reports_absence() -> None:
         allow_non_loopback=False,
     )
     try:
-        missing_status, _, missing_body = _http_get(server.url("/operator-actions.json"))
+        missing_status, _, missing_body = _authorized_get(server, "/operator-actions.json")
     finally:
         server.close()
 
@@ -354,7 +356,7 @@ def test_dashboard_http_operator_actions_feed_rejects_bad_query(tmp_path: Path) 
         reliability_db=db,
     )
     try:
-        status, content_type, body = _http_get(server.url("/operator-actions.json?since=nope"))
+        status, content_type, body = _authorized_get(server, "/operator-actions.json?since=nope")
     finally:
         server.close()
 
@@ -380,7 +382,7 @@ async def test_dashboard_http_server_requires_dashboard_bearer_token() -> None:
         )
         try:
             missing_status, missing_type, missing_body = await asyncio.to_thread(
-                _http_get, server.url("/")
+                _authorized_get, server, "/", unauthenticated=True
             )
             wrong_status, _, _ = await asyncio.to_thread(
                 _http_get, server.url("/snapshot.json"), authorization="Bearer wrong"
@@ -416,8 +418,8 @@ async def test_dashboard_http_server_reports_unavailable_hub() -> None:
     )
     try:
         # Front door (Studio) loads offline; classic HTML still needs a live hub.
-        root_status, root_type, root_body = _http_get(server.url("/"))
-        classic_status, classic_type, classic_body = _http_get(server.url("/classic"))
+        root_status, root_type, root_body = _authorized_get(server, "/")
+        classic_status, classic_type, classic_body = _authorized_get(server, "/classic")
     finally:
         server.close()
 
@@ -442,7 +444,7 @@ async def test_dashboard_http_server_rejects_unknown_paths() -> None:
         allow_non_loopback=False,
     )
     try:
-        status, content_type, body = _http_get(server.url("/missing"))
+        status, content_type, body = _authorized_get(server, "/missing")
     finally:
         server.close()
 
@@ -531,10 +533,10 @@ async def test_dashboard_studio_json_includes_observed_fleet_from_live_peer() ->
             )
             try:
                 status, content_type, body = await asyncio.to_thread(
-                    _http_get, server.url("/studio.json")
+                    _authorized_get, server, "/studio.json"
                 )
                 command_status, _, command_body = await asyncio.to_thread(
-                    _http_get, server.url("/studio/command")
+                    _authorized_get, server, "/studio/command"
                 )
             finally:
                 server.close()

@@ -35,6 +35,26 @@ def _http_get(url: str, *, authorization: str | None = None) -> tuple[int, str, 
         return exc.code, exc.headers.get_content_type(), exc.read().decode("utf-8")
 
 
+def _authorized_get(
+    server: DashboardServer,
+    path: str,
+    *,
+    authorization: str | None = None,
+    unauthenticated: bool = False,
+) -> tuple[int, str, str]:
+    """GET ``path`` on ``server``, presenting its generated read token by default.
+
+    Live/page reads are gated by a bearer in every posture, so a read against a
+    server the caller left tokenless must present the token the server generated.
+    Pass ``authorization`` to present a specific (for example wrong) bearer, or
+    ``unauthenticated=True`` to exercise the no-bearer path.
+    """
+    if not unauthenticated and authorization is None:
+        token = server.dashboard_token
+        authorization = None if token is None else f"Bearer {token}"
+    return _http_get(server.url(path), authorization=authorization)
+
+
 def _feeds_server(
     *,
     reliability_db: Path | None = None,

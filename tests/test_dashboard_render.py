@@ -15,7 +15,7 @@ from pathlib import Path
 
 from websockets.asyncio.client import connect
 
-from dashboard_helpers import _feeds_server, _http_get
+from dashboard_helpers import _authorized_get, _feeds_server, _http_get
 from hub_e2e_helpers import read_until_type, running_hub
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.dashboard import (
@@ -108,9 +108,12 @@ def test_cockpit_dist_serves_index_assets_and_refuses_escapes(tmp_path: Path) ->
         index_status, index_type, index_body = _http_get(server.url("/cockpit/"))
         bare_status, _, _ = _http_get(server.url("/cockpit"))
         js_status, js_type, _ = _http_get(server.url("/cockpit/app.js"))
-        escape_status, _, _ = _http_get(server.url("/cockpit/../secret.txt"))
-        suffix_status, _, _ = _http_get(server.url("/cockpit/tool.exe"))
-        missing_status, _, _ = _http_get(server.url("/cockpit/nope.css"))
+        # Authorise the traversal/suffix/missing probes so they reach the routed
+        # cockpit handler and its 404 refusal, rather than the read gate's 401 (the
+        # unauthenticated-gate path is covered by the read-gated test below).
+        escape_status, _, _ = _authorized_get(server, "/cockpit/../secret.txt")
+        suffix_status, _, _ = _authorized_get(server, "/cockpit/tool.exe")
+        missing_status, _, _ = _authorized_get(server, "/cockpit/nope.css")
     finally:
         server.close()
 
@@ -160,7 +163,7 @@ def test_read_gated_dashboard_exposes_only_the_validated_cockpit_shell(tmp_path:
 def test_cockpit_dist_reports_absence_when_unconfigured() -> None:
     server = _feeds_server()
     try:
-        status, _, body = _http_get(server.url("/cockpit/"))
+        status, _, body = _authorized_get(server, "/cockpit/")
     finally:
         server.close()
 

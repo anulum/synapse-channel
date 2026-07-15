@@ -25,8 +25,10 @@ def test_dashboard_serves_the_read_only_fleet_snapshot(tmp_path: Path) -> None:
     """``dashboard`` publishes ``/snapshot.json`` with the fleet snapshot shape."""
     with isolated_hub(tmp_path) as hub:
         run_cli("task", "declare", "BUILD", "--title", "build step", uri=hub.uri)
-        with isolated_dashboard(hub.uri) as base:
-            status, body = http_get(f"{base}/snapshot.json")
+        with isolated_dashboard(hub.uri) as (base, token):
+            status, body = http_get(
+                f"{base}/snapshot.json", headers={"Authorization": f"Bearer {token}"}
+            )
             assert status == 200, f"status={status} body={body!r}"
             snapshot = json.loads(body)
             # The keys the cockpit and other read-side clients rely on.
@@ -36,8 +38,8 @@ def test_dashboard_serves_the_read_only_fleet_snapshot(tmp_path: Path) -> None:
 
 def test_dashboard_index_page_is_served(tmp_path: Path) -> None:
     """``dashboard`` also serves a human index page at the root."""
-    with isolated_hub(tmp_path) as hub, isolated_dashboard(hub.uri) as base:
-        status, body = http_get(f"{base}/")
+    with isolated_hub(tmp_path) as hub, isolated_dashboard(hub.uri) as (base, token):
+        status, body = http_get(f"{base}/", headers={"Authorization": f"Bearer {token}"})
         assert status == 200, f"status={status}"
         assert "SYNAPSE" in body.upper()
 

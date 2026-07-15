@@ -837,10 +837,12 @@ def start_dashboard_server(
         Optional persisted A2A bridge state file to summarise in the dashboard
         fleet section.
     dashboard_token : str or None, optional
-        Optional HTTP bearer token for dashboard browser and JSON requests. A
-        token is generated automatically when the caller does not provide one and
-        either the bind is non-loopback or ``operator`` writes are armed — so the
-        operator write-path is never reachable unauthenticated, even on loopback.
+        Optional HTTP bearer token for dashboard browser and JSON requests. When the
+        caller provides none, the server generates one — printed by the CLI so the
+        cockpit unlock veil can present it — and it gates every live/page read (and
+        operator writes when armed), even on loopback, so a same-host process cannot
+        read the cockpit's live data unbidden. The validated React shell stays the
+        one public exception so its unlock veil can load.
     dashboard_access_file : str, pathlib.Path, or None, optional
         Strict owner-only principal/token-file policy. Mutually exclusive with
         ``dashboard_token`` and the legacy global ``operator_name``.
@@ -886,12 +888,7 @@ def start_dashboard_server(
         dashboard_token_generated = False
     else:
         effective_dashboard_token, dashboard_token_generated, token_protects_reads = (
-            _resolve_dashboard_token(
-                host,
-                allow_non_loopback=allow_non_loopback,
-                dashboard_token=dashboard_token,
-                operator=operator,
-            )
+            _resolve_dashboard_token(dashboard_token=dashboard_token)
         )
         access_policy = compatibility_access_policy(
             dashboard_token=effective_dashboard_token,

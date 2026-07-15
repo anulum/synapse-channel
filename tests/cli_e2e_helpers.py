@@ -410,27 +410,42 @@ def isolated_team(*, no_workers: bool = True, ready_timeout: float = 10.0) -> It
 
 
 @contextmanager
-def isolated_dashboard(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[str]:
-    """Serve ``synapse dashboard`` against ``hub_uri``; yield its base HTTP URL.
+def isolated_dashboard(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[tuple[str, str]]:
+    """Serve ``synapse dashboard`` against ``hub_uri``; yield ``(base_url, bearer)``.
 
-    Blocks until ``/snapshot.json`` answers, so the caller can fetch the read-only
-    fleet snapshot the cockpit and other clients consume.
+    Live/page reads are gated by a bearer, so the dashboard is launched with a known
+    ``--dashboard-token`` and the caller receives it to authorise its requests. Blocks
+    until ``/snapshot.json`` answers, so the caller can fetch the read-only fleet
+    snapshot the cockpit and other clients consume.
     """
     port = free_port()
+    token = "e2e-dashboard-token"  # nosec B105 - fixed loopback test bearer, not a secret
     proc = subprocess.Popen(  # noqa: S603 - fixed interpreter, test-only
-        [*_CLI, "dashboard", "--port", str(port), "--host", "127.0.0.1", "--uri", hub_uri],
+        [
+            *_CLI,
+            "dashboard",
+            "--port",
+            str(port),
+            "--host",
+            "127.0.0.1",
+            "--uri",
+            hub_uri,
+            "--dashboard-token",
+            token,
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
     )
     base = f"http://127.0.0.1:{port}"
+    auth = {"Authorization": f"Bearer {token}"}
     try:
         deadline = time.monotonic() + ready_timeout
         while time.monotonic() < deadline:
-            status, _ = http_get(f"{base}/snapshot.json", timeout=1.0)
+            status, _ = http_get(f"{base}/snapshot.json", timeout=1.0, headers=auth)
             if status == 200:
                 break
             time.sleep(0.1)
-        yield base
+        yield base, token
     finally:
         _stop(proc)

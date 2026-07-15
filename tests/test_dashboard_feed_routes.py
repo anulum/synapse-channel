@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from dashboard_helpers import _feeds_server, _http_get
+from dashboard_helpers import _authorized_get, _feeds_server, _http_get
 from synapse_channel.core.journal import EventKind, record_ledger_task, record_operator_relay
 from synapse_channel.core.ledger import LedgerTask
 from synapse_channel.core.merkle import proof_from_json, verify_inclusion
@@ -47,7 +47,7 @@ def _reliability_server(reliability_db: Path | None, **overrides: str) -> Dashbo
 def test_dashboard_reliability_endpoint_reports_absence_without_a_store() -> None:
     server = _reliability_server(None)
     try:
-        status, content_type, body = _http_get(server.url("/reliability.json"))
+        status, content_type, body = _authorized_get(server, "/reliability.json")
     finally:
         server.close()
 
@@ -70,7 +70,7 @@ def test_dashboard_reliability_endpoint_serves_the_report_with_the_hub_down(
 
     server = _reliability_server(db)
     try:
-        status, content_type, body = _http_get(server.url("/reliability.json"))
+        status, content_type, body = _authorized_get(server, "/reliability.json")
     finally:
         server.close()
 
@@ -141,7 +141,7 @@ def test_dashboard_feed_queries_never_crash_on_malformed_input(tmp_path: Path) -
     try:
         for feed in feeds:
             for raw_query in _MALFORMED_FEED_QUERIES:
-                status, _, _ = _http_get(server.url(f"{feed}?{raw_query}"))
+                status, _, _ = _authorized_get(server, f"{feed}?{raw_query}")
                 assert status in {200, 400, 404, 503}, f"{feed}?{raw_query} -> {status}"
     finally:
         server.close()
@@ -152,7 +152,7 @@ def test_dashboard_reliability_endpoint_fails_visible_on_a_missing_store(
 ) -> None:
     server = _reliability_server(tmp_path / "absent.db")
     try:
-        status, content_type, body = _http_get(server.url("/reliability.json"))
+        status, content_type, body = _authorized_get(server, "/reliability.json")
     finally:
         server.close()
 
@@ -169,7 +169,7 @@ def test_dashboard_reliability_endpoint_requires_the_dashboard_token(
 
     server = _reliability_server(db, dashboard_token="secret")
     try:
-        denied_status, _, _ = _http_get(server.url("/reliability.json"))
+        denied_status, _, _ = _authorized_get(server, "/reliability.json", unauthenticated=True)
         allowed_status, _, allowed_body = _http_get(
             server.url("/reliability.json"), authorization="Bearer secret"
         )
@@ -195,7 +195,7 @@ def _seed_feed_store(db: Path) -> None:
 def test_events_feed_reports_absence_without_a_store() -> None:
     server = _feeds_server()
     try:
-        status, _, body = _http_get(server.url("/events.json"))
+        status, _, body = _authorized_get(server, "/events.json")
     finally:
         server.close()
 
@@ -209,7 +209,7 @@ def test_events_feed_serves_the_tail_with_the_hub_down(tmp_path: Path) -> None:
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, content_type, body = _http_get(server.url("/events.json?since=1&limit=5"))
+        status, content_type, body = _authorized_get(server, "/events.json?since=1&limit=5")
     finally:
         server.close()
 
@@ -227,7 +227,7 @@ def test_events_feed_refuses_malformed_numbers(tmp_path: Path) -> None:
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, _, body = _http_get(server.url("/events.json?since=abc"))
+        status, _, body = _authorized_get(server, "/events.json?since=abc")
     finally:
         server.close()
 
@@ -238,7 +238,7 @@ def test_events_feed_refuses_malformed_numbers(tmp_path: Path) -> None:
 def test_events_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=tmp_path / "absent.db")
     try:
-        status, _, body = _http_get(server.url("/events.json"))
+        status, _, body = _authorized_get(server, "/events.json")
     finally:
         server.close()
 
@@ -252,7 +252,7 @@ def test_postmortem_feed_serves_task_evidence_with_the_hub_down(tmp_path: Path) 
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, content_type, body = _http_get(server.url("/postmortem.json?task=T"))
+        status, content_type, body = _authorized_get(server, "/postmortem.json?task=T")
     finally:
         server.close()
 
@@ -289,7 +289,7 @@ def _seed_session_note(db: Path) -> None:
 def test_sessions_feed_reports_absence_without_a_store() -> None:
     server = _feeds_server()
     try:
-        status, _, body = _http_get(server.url("/sessions.json"))
+        status, _, body = _authorized_get(server, "/sessions.json")
     finally:
         server.close()
 
@@ -303,7 +303,7 @@ def test_sessions_feed_serves_the_report_with_the_hub_down(tmp_path: Path) -> No
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, content_type, body = _http_get(server.url("/sessions.json"))
+        status, content_type, body = _authorized_get(server, "/sessions.json")
     finally:
         server.close()
 
@@ -322,7 +322,7 @@ def test_sessions_feed_is_honest_empty_on_a_log_without_notes(tmp_path: Path) ->
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, _, body = _http_get(server.url("/sessions.json"))
+        status, _, body = _authorized_get(server, "/sessions.json")
     finally:
         server.close()
 
@@ -335,7 +335,7 @@ def test_sessions_feed_is_honest_empty_on_a_log_without_notes(tmp_path: Path) ->
 def test_sessions_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=tmp_path / "absent.db")
     try:
-        status, _, body = _http_get(server.url("/sessions.json"))
+        status, _, body = _authorized_get(server, "/sessions.json")
     finally:
         server.close()
 
@@ -366,7 +366,7 @@ def _seed_waits_store(db: Path) -> None:
 def test_waits_feed_reports_absence_without_a_store() -> None:
     server = _feeds_server()
     try:
-        status, _, body = _http_get(server.url("/waits.json"))
+        status, _, body = _authorized_get(server, "/waits.json")
     finally:
         server.close()
 
@@ -380,7 +380,7 @@ def test_waits_feed_serves_the_gates_with_the_hub_down(tmp_path: Path) -> None:
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, content_type, body = _http_get(server.url("/waits.json"))
+        status, content_type, body = _authorized_get(server, "/waits.json")
     finally:
         server.close()
 
@@ -397,7 +397,7 @@ def test_waits_feed_serves_the_gates_with_the_hub_down(tmp_path: Path) -> None:
 def test_waits_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=tmp_path / "absent.db")
     try:
-        status, _, body = _http_get(server.url("/waits.json"))
+        status, _, body = _authorized_get(server, "/waits.json")
     finally:
         server.close()
 
@@ -411,11 +411,11 @@ def test_causality_feed_mirrors_the_cli_shape(tmp_path: Path) -> None:
 
     server = _feeds_server(reliability_db=db)
     try:
-        by_seq_status, _, by_seq_body = _http_get(
-            server.url("/causality.json?seq=1&direction=effects")
+        by_seq_status, _, by_seq_body = _authorized_get(
+            server, "/causality.json?seq=1&direction=effects"
         )
-        by_task_status, _, by_task_body = _http_get(
-            server.url("/causality.json?task=T&direction=causes")
+        by_task_status, _, by_task_body = _authorized_get(
+            server, "/causality.json?task=T&direction=causes"
         )
     finally:
         server.close()
@@ -435,14 +435,14 @@ def test_causality_feed_maps_errors_to_honest_statuses(tmp_path: Path) -> None:
 
     server = _feeds_server(reliability_db=db)
     try:
-        ghost_status, _, ghost_body = _http_get(server.url("/causality.json?task=GHOST"))
-        bad_seq_status, _, _ = _http_get(server.url("/causality.json?seq=abc"))
-        bad_direction_status, _, _ = _http_get(
-            server.url("/causality.json?seq=1&direction=sideways")
+        ghost_status, _, ghost_body = _authorized_get(server, "/causality.json?task=GHOST")
+        bad_seq_status, _, _ = _authorized_get(server, "/causality.json?seq=abc")
+        bad_direction_status, _, _ = _authorized_get(
+            server, "/causality.json?seq=1&direction=sideways"
         )
         unconfigured = _feeds_server()
         try:
-            absent_status, _, _ = _http_get(unconfigured.url("/causality.json?seq=1"))
+            absent_status, _, _ = _authorized_get(unconfigured, "/causality.json?seq=1")
         finally:
             unconfigured.close()
     finally:
@@ -476,12 +476,12 @@ def test_federation_feed_serves_peerings_and_reports_absence(tmp_path: Path) -> 
 
     configured = _feeds_server(federation_store=store)
     try:
-        status, _, body = _http_get(configured.url("/federation.json"))
+        status, _, body = _authorized_get(configured, "/federation.json")
     finally:
         configured.close()
     unconfigured = _feeds_server()
     try:
-        absent_status, _, absent_body = _http_get(unconfigured.url("/federation.json"))
+        absent_status, _, absent_body = _authorized_get(unconfigured, "/federation.json")
     finally:
         unconfigured.close()
 
@@ -500,7 +500,7 @@ def test_federation_feed_fails_visible_on_a_corrupt_store(tmp_path: Path) -> Non
 
     server = _feeds_server(federation_store=store)
     try:
-        status, _, _ = _http_get(server.url("/federation.json"))
+        status, _, _ = _authorized_get(server, "/federation.json")
     finally:
         server.close()
 
@@ -525,7 +525,7 @@ def test_feed_endpoints_sit_behind_the_dashboard_token(tmp_path: Path) -> None:
         dashboard_token="secret",
     )
     try:
-        denied, _, _ = _http_get(server.url("/events.json"))
+        denied, _, _ = _authorized_get(server, "/events.json", unauthenticated=True)
         allowed, _, _ = _http_get(server.url("/events.json"), authorization="Bearer secret")
     finally:
         server.close()
@@ -537,7 +537,7 @@ def test_feed_endpoints_sit_behind_the_dashboard_token(tmp_path: Path) -> None:
 def test_causality_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=tmp_path / "absent.db")
     try:
-        status, _, body = _http_get(server.url("/causality.json?seq=1"))
+        status, _, body = _authorized_get(server, "/causality.json?seq=1")
     finally:
         server.close()
 
@@ -551,7 +551,7 @@ def test_events_feed_supports_the_latest_tail_shortcut(tmp_path: Path) -> None:
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, _, body = _http_get(server.url("/events.json?since=latest"))
+        status, _, body = _authorized_get(server, "/events.json?since=latest")
     finally:
         server.close()
 
@@ -564,7 +564,7 @@ def test_events_feed_supports_the_latest_tail_shortcut(tmp_path: Path) -> None:
 def test_metrics_feed_reports_absence_without_a_store() -> None:
     server = _feeds_server()
     try:
-        status, _, body = _http_get(server.url("/metrics.json"))
+        status, _, body = _authorized_get(server, "/metrics.json")
     finally:
         server.close()
 
@@ -578,7 +578,7 @@ def test_metrics_feed_serves_log_metrics_with_the_hub_down(tmp_path: Path) -> No
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, content_type, body = _http_get(server.url("/metrics.json"))
+        status, content_type, body = _authorized_get(server, "/metrics.json")
     finally:
         server.close()
 
@@ -594,7 +594,7 @@ def test_metrics_feed_serves_log_metrics_with_the_hub_down(tmp_path: Path) -> No
 def test_metrics_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=tmp_path / "absent.db")
     try:
-        status, _, body = _http_get(server.url("/metrics.json"))
+        status, _, body = _authorized_get(server, "/metrics.json")
     finally:
         server.close()
 
@@ -608,7 +608,7 @@ def test_metrics_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
 
     server = _feeds_server(reliability_db=db, dashboard_token="s3cret")
     try:
-        denied, _, _ = _http_get(server.url("/metrics.json"))
+        denied, _, _ = _authorized_get(server, "/metrics.json", unauthenticated=True)
         allowed, _, body = _http_get(server.url("/metrics.json"), authorization="Bearer s3cret")
     finally:
         server.close()
@@ -640,7 +640,7 @@ def _seed_receipts_store(db: Path) -> None:
 def test_receipts_feed_reports_absence_without_a_store() -> None:
     server = _feeds_server()
     try:
-        status, _, body = _http_get(server.url("/receipts.json"))
+        status, _, body = _authorized_get(server, "/receipts.json")
     finally:
         server.close()
 
@@ -654,7 +654,7 @@ def test_receipts_feed_serves_universal_receipts_with_the_hub_down(tmp_path: Pat
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, content_type, body = _http_get(server.url("/receipts.json?since=0&limit=10"))
+        status, content_type, body = _authorized_get(server, "/receipts.json?since=0&limit=10")
     finally:
         server.close()
 
@@ -671,7 +671,7 @@ def test_receipts_feed_refuses_malformed_numbers(tmp_path: Path) -> None:
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, _, body = _http_get(server.url("/receipts.json?since=abc"))
+        status, _, body = _authorized_get(server, "/receipts.json?since=abc")
     finally:
         server.close()
 
@@ -682,7 +682,7 @@ def test_receipts_feed_refuses_malformed_numbers(tmp_path: Path) -> None:
 def test_receipts_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=tmp_path / "absent.db")
     try:
-        status, _, body = _http_get(server.url("/receipts.json"))
+        status, _, body = _authorized_get(server, "/receipts.json")
     finally:
         server.close()
 
@@ -695,7 +695,7 @@ def test_receipts_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
     _seed_receipts_store(db)
     server = _feeds_server(reliability_db=db, dashboard_token="s3cret")
     try:
-        denied, _, _ = _http_get(server.url("/receipts.json"))
+        denied, _, _ = _authorized_get(server, "/receipts.json", unauthenticated=True)
         allowed, _, _ = _http_get(server.url("/receipts.json"), authorization="Bearer s3cret")
     finally:
         server.close()
@@ -707,7 +707,7 @@ def test_receipts_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
 def test_state_at_feed_reports_absence_without_a_store() -> None:
     server = _feeds_server()
     try:
-        status, _, body = _http_get(server.url("/state-at.json?seq=1"))
+        status, _, body = _authorized_get(server, "/state-at.json?seq=1")
     finally:
         server.close()
     assert status == 404
@@ -743,7 +743,7 @@ def test_state_at_feed_reconstructs_state_at_a_seq(tmp_path: Path) -> None:
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, content_type, body = _http_get(server.url("/state-at.json?seq=1"))
+        status, content_type, body = _authorized_get(server, "/state-at.json?seq=1")
     finally:
         server.close()
 
@@ -763,7 +763,7 @@ def test_state_at_feed_refuses_a_malformed_seq(tmp_path: Path) -> None:
     _seed_feed_store(db)
     server = _feeds_server(reliability_db=db)
     try:
-        status, _, body = _http_get(server.url("/state-at.json?seq=abc"))
+        status, _, body = _authorized_get(server, "/state-at.json?seq=abc")
     finally:
         server.close()
     assert status == 400
@@ -773,7 +773,7 @@ def test_state_at_feed_refuses_a_malformed_seq(tmp_path: Path) -> None:
 def test_state_at_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=tmp_path / "absent.db")
     try:
-        status, _, body = _http_get(server.url("/state-at.json?seq=1"))
+        status, _, body = _authorized_get(server, "/state-at.json?seq=1")
     finally:
         server.close()
     assert status == 503
@@ -785,7 +785,7 @@ def test_state_at_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
     _seed_replayable_store(db)
     server = _feeds_server(reliability_db=db, dashboard_token="s3cret")
     try:
-        denied, _, _ = _http_get(server.url("/state-at.json?seq=1"))
+        denied, _, _ = _authorized_get(server, "/state-at.json?seq=1", unauthenticated=True)
         allowed, _, _ = _http_get(server.url("/state-at.json?seq=1"), authorization="Bearer s3cret")
     finally:
         server.close()
@@ -796,7 +796,7 @@ def test_state_at_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
 def test_merkle_proof_feed_reports_absence_without_a_store() -> None:
     server = _feeds_server()
     try:
-        status, _, body = _http_get(server.url("/merkle-proof.json?seq=1"))
+        status, _, body = _authorized_get(server, "/merkle-proof.json?seq=1")
     finally:
         server.close()
     assert status == 404
@@ -809,7 +809,7 @@ def test_merkle_proof_feed_proves_inclusion_with_the_hub_down(tmp_path: Path) ->
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, content_type, body = _http_get(server.url("/merkle-proof.json?seq=1"))
+        status, content_type, body = _authorized_get(server, "/merkle-proof.json?seq=1")
     finally:
         server.close()
 
@@ -829,7 +829,7 @@ def test_merkle_proof_feed_reports_an_absent_seq_without_fabricating(tmp_path: P
     _seed_feed_store(db)  # only seq 1..2 exist
     server = _feeds_server(reliability_db=db)
     try:
-        status, _, body = _http_get(server.url("/merkle-proof.json?seq=99"))
+        status, _, body = _authorized_get(server, "/merkle-proof.json?seq=99")
     finally:
         server.close()
     assert status == 200
@@ -843,7 +843,7 @@ def test_merkle_proof_feed_refuses_a_malformed_seq(tmp_path: Path) -> None:
     _seed_feed_store(db)
     server = _feeds_server(reliability_db=db)
     try:
-        status, _, body = _http_get(server.url("/merkle-proof.json?seq=abc"))
+        status, _, body = _authorized_get(server, "/merkle-proof.json?seq=abc")
     finally:
         server.close()
     assert status == 400
@@ -853,7 +853,7 @@ def test_merkle_proof_feed_refuses_a_malformed_seq(tmp_path: Path) -> None:
 def test_merkle_proof_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=tmp_path / "absent.db")
     try:
-        status, _, body = _http_get(server.url("/merkle-proof.json?seq=1"))
+        status, _, body = _authorized_get(server, "/merkle-proof.json?seq=1")
     finally:
         server.close()
     assert status == 503
@@ -865,7 +865,7 @@ def test_merkle_proof_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None
     _seed_feed_store(db)
     server = _feeds_server(reliability_db=db, dashboard_token="s3cret")
     try:
-        denied, _, _ = _http_get(server.url("/merkle-proof.json?seq=1"))
+        denied, _, _ = _authorized_get(server, "/merkle-proof.json?seq=1", unauthenticated=True)
         allowed, _, _ = _http_get(
             server.url("/merkle-proof.json?seq=1"), authorization="Bearer s3cret"
         )
@@ -878,7 +878,7 @@ def test_merkle_proof_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None
 def test_health_anomalies_feed_reports_absence_without_a_store() -> None:
     server = _feeds_server()
     try:
-        status, _, body = _http_get(server.url("/health-anomalies.json"))
+        status, _, body = _authorized_get(server, "/health-anomalies.json")
     finally:
         server.close()
     assert status == 404
@@ -897,7 +897,7 @@ def test_health_anomalies_feed_flags_anomalies_with_the_hub_down(tmp_path: Path)
 
     server = _feeds_server(reliability_db=db)
     try:
-        status, content_type, body = _http_get(server.url("/health-anomalies.json"))
+        status, content_type, body = _authorized_get(server, "/health-anomalies.json")
     finally:
         server.close()
 
@@ -912,7 +912,7 @@ def test_health_anomalies_feed_flags_anomalies_with_the_hub_down(tmp_path: Path)
 def test_health_anomalies_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=tmp_path / "absent.db")
     try:
-        status, _, body = _http_get(server.url("/health-anomalies.json"))
+        status, _, body = _authorized_get(server, "/health-anomalies.json")
     finally:
         server.close()
     assert status == 503
@@ -924,7 +924,7 @@ def test_health_anomalies_feed_is_behind_the_dashboard_token(tmp_path: Path) -> 
     _seed_feed_store(db)
     server = _feeds_server(reliability_db=db, dashboard_token="s3cret")
     try:
-        denied, _, _ = _http_get(server.url("/health-anomalies.json"))
+        denied, _, _ = _authorized_get(server, "/health-anomalies.json", unauthenticated=True)
         allowed, _, _ = _http_get(
             server.url("/health-anomalies.json"), authorization="Bearer s3cret"
         )

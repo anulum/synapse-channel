@@ -72,15 +72,17 @@ def test_get_with_a_rebinding_host_is_refused(server: DashboardServer) -> None:
 
 
 def test_get_with_a_loopback_host_passes_the_boundary(server: DashboardServer) -> None:
-    """A GET on the served loopback authority clears the boundary (no 403)."""
+    """A GET on the served loopback authority clears the boundary (no 403), then
+    meets the read token: reads are gated on loopback too, so it answers 401."""
     status, _ = _request(server, "GET", "/missing", host_header=f"127.0.0.1:{server.port}")
-    assert status == 404
+    assert status == 401
 
 
 def test_get_with_the_localhost_name_passes_the_boundary(server: DashboardServer) -> None:
-    """The ``localhost`` name on the served port clears the boundary."""
+    """The ``localhost`` name on the served port clears the boundary, then meets the
+    read token (401)."""
     status, _ = _request(server, "GET", "/missing", host_header=f"localhost:{server.port}")
-    assert status == 404
+    assert status == 401
 
 
 def test_get_without_a_host_header_fails_closed(server: DashboardServer) -> None:
@@ -118,7 +120,7 @@ def test_operator_approved_extra_host_clears_the_boundary() -> None:
         rejected, _ = _request(started, "GET", "/missing", host_header="other.example:80")
     finally:
         started.close()
-    assert approved == 404
+    assert approved == 401  # boundary cleared, then met the read token
     assert rejected == 403
 
 

@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import hashlib
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -105,7 +105,11 @@ def test_studio_font_assets_are_pinned_bounded_woff2() -> None:
 def test_dashboard_serves_a_binary_studio_font_with_the_exact_type() -> None:
     server = _feeds_server()
     try:
-        with urlopen(server.url("/fonts/inter-latin.woff2"), timeout=3) as response:
+        request = Request(
+            server.url("/fonts/inter-latin.woff2"),
+            headers={"Authorization": f"Bearer {server.dashboard_token}"},
+        )
+        with urlopen(request, timeout=3) as response:  # nosec B310
             status = response.status
             content_type = response.headers.get_content_type()
             body = response.read()
@@ -164,12 +168,21 @@ async def test_dashboard_serves_cockpit_assets_and_404() -> None:
             allow_non_loopback=False,
         )
         base = f"http://{server.host}:{server.port}"
+        bearer = f"Bearer {server.dashboard_token}"
         try:
-            css_status, css_headers, css_body = await http_get(base, "/cockpit.css")
-            js_status, js_headers, js_body = await http_get(base, "/cockpit.js")
-            risk_css_status, _, risk_css_body = await http_get(base, "/risk-panel.css")
-            risk_js_status, _, risk_js_body = await http_get(base, "/risk-panel.js")
-            missing_status, _, _ = await http_get(base, "/nope.png")
+            css_status, css_headers, css_body = await http_get(
+                base, "/cockpit.css", authorization=bearer
+            )
+            js_status, js_headers, js_body = await http_get(
+                base, "/cockpit.js", authorization=bearer
+            )
+            risk_css_status, _, risk_css_body = await http_get(
+                base, "/risk-panel.css", authorization=bearer
+            )
+            risk_js_status, _, risk_js_body = await http_get(
+                base, "/risk-panel.js", authorization=bearer
+            )
+            missing_status, _, _ = await http_get(base, "/nope.png", authorization=bearer)
         finally:
             server.close()
 
