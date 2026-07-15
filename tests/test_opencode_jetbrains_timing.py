@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import replace
 
 import pytest
@@ -23,12 +24,10 @@ def test_default_timing_budget_covers_every_driver_phase_and_cleanup() -> None:
     budget = DEFAULT_JETBRAINS_TIMING
 
     assert budget.phase_seconds == 600.0
-    assert budget.prompt_submission_seconds == 90.0
-    assert budget.phase_overhang_seconds == 180.0
     assert budget.screenshot_seconds == 15.0
     assert budget.cleanup_seconds == PROCESS_GROUP_CLEANUP_TIMEOUT_SECONDS == 20.0
-    assert budget.driver_budget_seconds == 905.0
-    assert budget.parent_timeout_seconds == 1025
+    assert budget.driver_budget_seconds == 635.0
+    assert budget.parent_timeout_seconds == 755
     assert budget.parent_timeout_seconds - budget.driver_budget_seconds == 120.0
 
 
@@ -44,22 +43,33 @@ def test_driver_consumes_the_shared_timing_budget() -> None:
     assert jetbrains_client._SCREENSHOT_TIMEOUT_SECONDS == budget.screenshot_seconds
 
 
+def test_gui_commands_cannot_overrun_their_absolute_phase_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(time, "monotonic", lambda: 100.0)
+
+    assert jetbrains_client._command_timeout(None) == 10.0
+    assert jetbrains_client._command_timeout(120.0) == 10.0
+    assert jetbrains_client._command_timeout(103.5) == 3.5
+    with pytest.raises(RuntimeError, match="phase deadline expired"):
+        jetbrains_client._command_timeout(100.0)
+
+
+def test_poll_sleep_cannot_cross_the_absolute_phase_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr(time, "monotonic", lambda: 100.0)
+    monkeypatch.setattr(time, "sleep", sleeps.append)
+
+    jetbrains_client._bounded_poll_sleep(100.0)
+    jetbrains_client._bounded_poll_sleep(100.1)
+    jetbrains_client._bounded_poll_sleep(101.0)
+
+    assert sleeps == pytest.approx([0.1, 0.25])
+
+
 @pytest.mark.parametrize("value", [0.0, -1.0, math.inf, math.nan])
 def test_timing_budget_refuses_invalid_durations(value: float) -> None:
     with pytest.raises(ValueError, match="durations must be finite and positive"):
         replace(DEFAULT_JETBRAINS_TIMING, startup_seconds=value)
-
-
-@pytest.mark.parametrize(
-    "field",
-    ["prompt_submission_commands", "phase_overhang_commands"],
-)
-def test_timing_budget_refuses_invalid_command_counts(field: str) -> None:
-    values = {
-        "prompt_submission_commands": DEFAULT_JETBRAINS_TIMING.prompt_submission_commands,
-        "phase_overhang_commands": DEFAULT_JETBRAINS_TIMING.phase_overhang_commands,
-    }
-    values[field] = 0
-
-    with pytest.raises(ValueError, match="command counts must be positive"):
-        replace(DEFAULT_JETBRAINS_TIMING, **values)

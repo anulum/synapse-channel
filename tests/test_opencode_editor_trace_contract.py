@@ -312,6 +312,55 @@ def test_trace_writer_correlates_agent_requests(tmp_path: Path) -> None:
         writer.close()
 
 
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"jsonrpc": "2.0", "id": 8},
+        {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "result": {},
+            "error": {"code": -32603, "message": "conflict"},
+        },
+        {"jsonrpc": "2.0", "id": 8, "error": None},
+        {"jsonrpc": "2.0", "id": 8, "error": {"message": "missing code"}},
+        {"jsonrpc": "2.0", "id": 8, "error": {"code": True, "message": "bad"}},
+        {"jsonrpc": "2.0", "id": 8, "error": {"code": -32603, "message": 7}},
+        {"jsonrpc": "2.0", "id": 8, "error": {"code": -32603, "message": ""}},
+    ],
+)
+def test_malformed_response_is_rejected_without_losing_correlation(
+    tmp_path: Path,
+    response: dict[str, Any],
+) -> None:
+    """Reject malformed responses while preserving the pending request."""
+    trace = tmp_path / "trace.jsonl"
+    messages = _messages()
+    writer = TraceWriter(trace)
+    try:
+        for direction, message in messages[:4]:
+            writer.record(direction, json.dumps(message).encode("utf-8"))
+        writer.record(
+            "agent_to_client",
+            b'{"jsonrpc":"2.0","id":8,"method":"session/request_permission"}',
+        )
+        with pytest.raises(ValueError):
+            writer.record(
+                "client_to_agent",
+                json.dumps(response).encode("utf-8"),
+            )
+        writer.record(
+            "client_to_agent",
+            b'{"jsonrpc":"2.0","id":8,"result":{"outcome":"cancelled"}}',
+        )
+        for direction, message in messages[4:]:
+            writer.record(direction, json.dumps(message).encode("utf-8"))
+    finally:
+        writer.close()
+
+    _assert_trace(trace)
+
+
 def test_trace_writer_refuses_existing_or_symlink_path(tmp_path: Path) -> None:
     existing = tmp_path / "existing.jsonl"
     existing.write_text("owned\n", encoding="utf-8")

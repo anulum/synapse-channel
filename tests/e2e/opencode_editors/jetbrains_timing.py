@@ -32,12 +32,8 @@ class JetBrainsTimingBudget:
     acp_prompt_seconds:
         Maximum prompt submission and response duration.
     command_timeout_seconds:
-        Maximum duration of one X11 command.
-    prompt_submission_commands:
-        Maximum X11 commands in the composer-focus and send path.
-    phase_overhang_commands:
-        Conservative allowance for nested X11 commands already running when a
-        phase deadline expires.
+        Maximum duration of one X11 command. Each command also receives its
+        phase's remaining absolute deadline, so it cannot extend that phase.
     screenshot_seconds:
         Maximum final evidence screenshot duration.
     cleanup_seconds:
@@ -52,8 +48,6 @@ class JetBrainsTimingBudget:
     acp_handshake_seconds: float
     acp_prompt_seconds: float
     command_timeout_seconds: float
-    prompt_submission_commands: int
-    phase_overhang_commands: int
     screenshot_seconds: float
     cleanup_seconds: float
     parent_supervision_seconds: float
@@ -73,8 +67,6 @@ class JetBrainsTimingBudget:
         )
         if any(not math.isfinite(value) or value <= 0 for value in durations):
             raise ValueError("JetBrains timing durations must be finite and positive")
-        if self.prompt_submission_commands <= 0 or self.phase_overhang_commands <= 0:
-            raise ValueError("JetBrains timing command counts must be positive")
 
     @property
     def phase_seconds(self) -> float:
@@ -88,25 +80,9 @@ class JetBrainsTimingBudget:
         )
 
     @property
-    def prompt_submission_seconds(self) -> float:
-        """Return the complete worst-case composer-focus and send duration."""
-        return self.prompt_submission_commands * self.command_timeout_seconds
-
-    @property
-    def phase_overhang_seconds(self) -> float:
-        """Return the allowance for nested calls crossing phase deadlines."""
-        return self.phase_overhang_commands * self.command_timeout_seconds
-
-    @property
     def driver_budget_seconds(self) -> float:
         """Return the complete driver budget including evidence and cleanup."""
-        return (
-            self.phase_seconds
-            + self.prompt_submission_seconds
-            + self.phase_overhang_seconds
-            + self.screenshot_seconds
-            + self.cleanup_seconds
-        )
+        return self.phase_seconds + self.screenshot_seconds + self.cleanup_seconds
 
     @property
     def parent_timeout_seconds(self) -> int:
@@ -121,8 +97,6 @@ DEFAULT_JETBRAINS_TIMING = JetBrainsTimingBudget(
     acp_handshake_seconds=180.0,
     acp_prompt_seconds=90.0,
     command_timeout_seconds=10.0,
-    prompt_submission_commands=9,
-    phase_overhang_commands=18,
     screenshot_seconds=15.0,
     cleanup_seconds=PROCESS_GROUP_CLEANUP_TIMEOUT_SECONDS,
     parent_supervision_seconds=120.0,

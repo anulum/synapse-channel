@@ -18,8 +18,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from e2e.opencode_editors.jetbrains_cleanup import capture_evidence_and_terminate
 from e2e.opencode_editors.jetbrains_timing import DEFAULT_JETBRAINS_TIMING
-from e2e.opencode_editors.process_group import terminate_isolated_process_group
 
 _AGENT_NAME = "SYNAPSE OpenCode E2E"
 _STARTUP_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.startup_seconds
@@ -64,39 +64,79 @@ def _required_env(name: str) -> str:
     return value
 
 
-def _xdotool(*args: str) -> subprocess.CompletedProcess[str]:
+def _command_timeout(deadline: float | None) -> float:
+    """Return one GUI command's ceiling within an optional absolute deadline."""
+    if deadline is None:
+        return _GUI_COMMAND_TIMEOUT_SECONDS
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise RuntimeError("JetBrains GUI phase deadline expired")
+    return min(_GUI_COMMAND_TIMEOUT_SECONDS, remaining)
+
+
+def _bounded_poll_sleep(deadline: float) -> None:
+    """Sleep for at most one poll interval without crossing a phase deadline."""
+    remaining = deadline - time.monotonic()
+    if remaining > 0:
+        time.sleep(min(0.25, remaining))
+
+
+def _xdotool(
+    *args: str,
+    deadline: float | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # nosec B603
         [_required_tool("xdotool"), *args],
         capture_output=True,
         text=True,
         check=False,
-        timeout=_GUI_COMMAND_TIMEOUT_SECONDS,
+        timeout=_command_timeout(deadline),
     )
 
 
-def _checked_xdotool(action: str, *args: str) -> None:
+def _checked_xdotool(
+    action: str,
+    *args: str,
+    deadline: float | None = None,
+) -> None:
     """Run one GUI action and fail with its diagnostic output."""
-    completed = _xdotool(*args)
+    completed = _xdotool(*args, deadline=deadline)
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
         raise RuntimeError(f"xdotool could not {action}: {detail}")
 
 
-def _show_ai_chat(window: str) -> None:
+def _show_ai_chat(window: str, *, deadline: float | None = None) -> None:
     """Focus the pinned IDEA frame and invoke its idempotent chat action."""
-    _checked_xdotool("focus the IntelliJ IDEA window", "windowfocus", "--sync", window)
+    _checked_xdotool(
+        "focus the IntelliJ IDEA window",
+        "windowfocus",
+        "--sync",
+        window,
+        deadline=deadline,
+    )
     _checked_xdotool(
         "open the AI Assistant tool window",
         "key",
         "--window",
         window,
         "ctrl+alt+shift+j",
+        deadline=deadline,
     )
 
 
-def _window_geometry(window: str) -> tuple[int, int] | None:
+def _window_geometry(
+    window: str,
+    *,
+    deadline: float | None = None,
+) -> tuple[int, int] | None:
     """Return one visible X11 window's dimensions, or ``None`` if it vanished."""
-    completed = _xdotool("getwindowgeometry", "--shell", window)
+    completed = _xdotool(
+        "getwindowgeometry",
+        "--shell",
+        window,
+        deadline=deadline,
+    )
     if completed.returncode != 0:
         return None
     geometry = dict(line.split("=", 1) for line in completed.stdout.splitlines() if "=" in line)
@@ -106,9 +146,9 @@ def _window_geometry(window: str) -> tuple[int, int] | None:
         return None
 
 
-def _window_name(window: str) -> str | None:
+def _window_name(window: str, *, deadline: float | None = None) -> str | None:
     """Return one visible X11 window's semantic title, if it still exists."""
-    completed = _xdotool("getwindowname", window)
+    completed = _xdotool("getwindowname", window, deadline=deadline)
     if completed.returncode != 0:
         return None
     return completed.stdout.rstrip("\r\n")
@@ -129,14 +169,14 @@ def _window_parentage(tree: str) -> tuple[str | None, str | None]:
     return root, parent
 
 
-def _window_is_root_child(window: str) -> bool:
+def _window_is_root_child(window: str, *, deadline: float | None = None) -> bool:
     """Return whether a visible window is a top-level child of the X11 root."""
     completed = subprocess.run(  # nosec B603
         [_required_tool("xwininfo"), "-id", window, "-tree"],
         capture_output=True,
         text=True,
         check=False,
-        timeout=_GUI_COMMAND_TIMEOUT_SECONDS,
+        timeout=_command_timeout(deadline),
     )
     if completed.returncode != 0:
         return False
@@ -160,23 +200,23 @@ def _xprop_window_id(output: str) -> int | None:
     return None
 
 
-def _window_transient_for(window: str) -> int | None:
+def _window_transient_for(window: str, *, deadline: float | None = None) -> int | None:
     """Return the XID that owns one transient top-level window."""
     completed = subprocess.run(  # nosec B603
         [_required_tool("xprop"), "-id", window, "WM_TRANSIENT_FOR"],
         capture_output=True,
         text=True,
         check=False,
-        timeout=_GUI_COMMAND_TIMEOUT_SECONDS,
+        timeout=_command_timeout(deadline),
     )
     if completed.returncode != 0:
         return None
     return _xprop_window_id(completed.stdout)
 
 
-def _focused_window_id() -> int | None:
+def _focused_window_id(*, deadline: float | None = None) -> int | None:
     """Return the XID that owns keyboard focus, if it can be proven."""
-    completed = _xdotool("getwindowfocus")
+    completed = _xdotool("getwindowfocus", deadline=deadline)
     if completed.returncode != 0:
         return None
     try:
@@ -189,41 +229,53 @@ def _find_first_run_dialog(deadline: float) -> tuple[str, str]:
     """Wait for one recognised top-level page of the pinned first-run UI."""
     while time.monotonic() < deadline:
         for title in (_USER_AGREEMENT_TITLE, _DATA_SHARING_TITLE):
-            result = _xdotool("search", "--onlyvisible", "--name", f"^{title}$")
+            result = _xdotool(
+                "search",
+                "--onlyvisible",
+                "--name",
+                f"^{title}$",
+                deadline=deadline,
+            )
             if result.returncode == 0:
                 for window in reversed(result.stdout.splitlines()):
                     if (
-                        _window_name(window) == title
-                        and _window_geometry(window) == (600, 460)
-                        and _window_is_root_child(window)
+                        _window_name(window, deadline=deadline) == title
+                        and _window_geometry(window, deadline=deadline) == (600, 460)
+                        and _window_is_root_child(window, deadline=deadline)
                     ):
                         return window, title
-        time.sleep(0.25)
+        _bounded_poll_sleep(deadline)
     raise RuntimeError("IntelliJ IDEA did not expose a recognised pinned first-run dialog")
 
 
 def _find_project_window(deadline: float) -> str:
     """Wait past fixed-size first-run windows for the real project frame."""
     while time.monotonic() < deadline:
-        result = _xdotool("search", "--onlyvisible", "--class", "jetbrains-.*")
+        result = _xdotool(
+            "search",
+            "--onlyvisible",
+            "--class",
+            "jetbrains-.*",
+            deadline=deadline,
+        )
         if result.returncode == 0:
             for window in reversed(result.stdout.splitlines()):
-                geometry = _window_geometry(window)
+                geometry = _window_geometry(window, deadline=deadline)
                 if (
                     geometry is not None
                     and geometry[0] > 640
                     and geometry[1] > 460
-                    and _window_is_root_child(window)
+                    and _window_is_root_child(window, deadline=deadline)
                 ):
                     return window
-        time.sleep(0.25)
+        _bounded_poll_sleep(deadline)
     raise RuntimeError("IntelliJ IDEA did not expose a visible project window")
 
 
-def _focus_chat_composer(window: str) -> None:
+def _focus_chat_composer(window: str, *, deadline: float | None = None) -> None:
     """Focus the chat composer inside one validated IDEA project frame."""
-    geometry = _window_geometry(window)
-    root_child = _window_is_root_child(window)
+    geometry = _window_geometry(window, deadline=deadline)
+    root_child = _window_is_root_child(window, deadline=deadline)
     if (
         geometry is None
         or geometry[0] < _PROJECT_MINIMUM_GEOMETRY[0]
@@ -235,18 +287,25 @@ def _focus_chat_composer(window: str) -> None:
             "refusing JetBrains composer input outside a validated project frame: "
             f"geometry={rendered}, root_child={root_child}"
         )
-    _checked_xdotool("focus the IntelliJ IDEA window", "windowfocus", "--sync", window)
+    _checked_xdotool(
+        "focus the IntelliJ IDEA window",
+        "windowfocus",
+        "--sync",
+        window,
+        deadline=deadline,
+    )
     _pointer_click(
         window,
         geometry[0] - _CHAT_COMPOSER_RIGHT_INSET,
         geometry[1] - _CHAT_COMPOSER_BOTTOM_INSET,
         "focus the JetBrains AI Chat composer",
+        deadline=deadline,
     )
     try:
         project_window_id = int(window, 0)
     except ValueError as exc:
         raise RuntimeError("validated JetBrains project window has an invalid XID") from exc
-    focused_window_id = _focused_window_id()
+    focused_window_id = _focused_window_id(deadline=deadline)
     if focused_window_id != project_window_id:
         raise RuntimeError(
             "refusing JetBrains prompt input without project-frame keyboard focus: "
@@ -254,10 +313,20 @@ def _focus_chat_composer(window: str) -> None:
         )
 
 
-def _submit_chat_prompt(window: str, prompt: str) -> None:
+def _submit_chat_prompt(
+    window: str,
+    prompt: str,
+    *,
+    deadline: float | None = None,
+) -> None:
     """Enter and submit a prompt through the focused Swing composer widget."""
-    _focus_chat_composer(window)
-    _checked_xdotool("clear the ACP prompt composer", "key", "ctrl+a")
+    _focus_chat_composer(window, deadline=deadline)
+    _checked_xdotool(
+        "clear the ACP prompt composer",
+        "key",
+        "ctrl+a",
+        deadline=deadline,
+    )
     _checked_xdotool(
         "type the ACP prompt",
         "type",
@@ -265,15 +334,24 @@ def _submit_chat_prompt(window: str, prompt: str) -> None:
         "1",
         "--",
         prompt,
+        deadline=deadline,
     )
     _checked_xdotool(
         "invoke the pinned AI Chat send action",
         "key",
         "Return",
+        deadline=deadline,
     )
 
 
-def _pointer_click(window: str, x: int, y: int, action: str) -> None:
+def _pointer_click(
+    window: str,
+    x: int,
+    y: int,
+    action: str,
+    *,
+    deadline: float | None = None,
+) -> None:
     """Click one deterministic point after its caller validates the window."""
     _checked_xdotool(
         f"move to {action}",
@@ -283,15 +361,21 @@ def _pointer_click(window: str, x: int, y: int, action: str) -> None:
         window,
         str(x),
         str(y),
+        deadline=deadline,
     )
-    _checked_xdotool(action, "click", "1")
+    _checked_xdotool(action, "click", "1", deadline=deadline)
 
 
-def _require_agreement_window(window: str, title: str) -> None:
+def _require_agreement_window(
+    window: str,
+    title: str,
+    *,
+    deadline: float | None = None,
+) -> None:
     """Refuse pointer input unless the exact pinned agreement page is present."""
-    geometry = _window_geometry(window)
-    actual_title = _window_name(window)
-    root_child = _window_is_root_child(window)
+    geometry = _window_geometry(window, deadline=deadline)
+    actual_title = _window_name(window, deadline=deadline)
+    root_child = _window_is_root_child(window, deadline=deadline)
     if geometry != (600, 460) or actual_title != title or not root_child:
         rendered = "?x?" if geometry is None else f"{geometry[0]}x{geometry[1]}"
         raise RuntimeError(
@@ -304,18 +388,24 @@ def _complete_first_run_agreements(deadline: float) -> None:
     """Explicitly decline telemetry in the pinned first-run data-sharing UI."""
     window, title = _find_first_run_dialog(deadline)
     if title == _USER_AGREEMENT_TITLE:
-        _accept_user_agreement(window, title)
+        _accept_user_agreement(window, title, deadline=deadline)
         while time.monotonic() < deadline:
             window, title = _find_first_run_dialog(deadline)
             if title == _DATA_SHARING_TITLE:
                 break
-            time.sleep(0.25)
+            _bounded_poll_sleep(deadline)
         else:
             raise RuntimeError("IntelliJ IDEA did not advance to Data Sharing")
     # The nested "Content window" has the same class and geometry, so the
     # semantic title and root-parent invariant are both mandatory.
-    _require_agreement_window(window, title)
-    _pointer_click(window, 326, 432, "decline JetBrains usage-statistics sharing")
+    _require_agreement_window(window, title, deadline=deadline)
+    _pointer_click(
+        window,
+        326,
+        432,
+        "decline JetBrains usage-statistics sharing",
+        deadline=deadline,
+    )
 
 
 def _require_user_agreement_authorization() -> None:
@@ -329,19 +419,36 @@ def _require_user_agreement_authorization() -> None:
         )
 
 
-def _accept_user_agreement(window: str, title: str) -> None:
+def _accept_user_agreement(window: str, title: str, *, deadline: float) -> None:
     """Accept only the exact agreement version attested by the owner."""
     _require_user_agreement_authorization()
-    _require_agreement_window(window, title)
-    _pointer_click(window, 44, 392, "confirm the JetBrains User Agreement checkbox")
-    time.sleep(0.25)
-    _require_agreement_window(window, title)
-    _pointer_click(window, 542, 432, "accept the JetBrains User Agreement")
+    _require_agreement_window(window, title, deadline=deadline)
+    _pointer_click(
+        window,
+        44,
+        392,
+        "confirm the JetBrains User Agreement checkbox",
+        deadline=deadline,
+    )
+    _bounded_poll_sleep(deadline)
+    _require_agreement_window(window, title, deadline=deadline)
+    _pointer_click(
+        window,
+        542,
+        432,
+        "accept the JetBrains User Agreement",
+        deadline=deadline,
+    )
 
 
-def _is_islands_popup(window: str, project: str) -> bool:
+def _is_islands_popup(
+    window: str,
+    project: str,
+    *,
+    deadline: float | None = None,
+) -> bool:
     """Match only the pinned onboarding transient owned by the project frame."""
-    title = _window_name(window)
+    title = _window_name(window, deadline=deadline)
     try:
         project_id = int(project)
     except ValueError:
@@ -349,60 +456,83 @@ def _is_islands_popup(window: str, project: str) -> bool:
     return (
         title is not None
         and not title.strip()
-        and _window_geometry(window) == (386, 486)
-        and _window_is_root_child(window)
-        and _window_transient_for(window) == project_id
+        and _window_geometry(window, deadline=deadline) == (386, 486)
+        and _window_is_root_child(window, deadline=deadline)
+        and _window_transient_for(window, deadline=deadline) == project_id
     )
 
 
 def _find_islands_popup(deadline: float, project: str) -> str:
     """Wait for the exact late first-run onboarding transient."""
     while time.monotonic() < deadline:
-        result = _xdotool("search", "--onlyvisible", "--class", "jetbrains-.*")
+        result = _xdotool(
+            "search",
+            "--onlyvisible",
+            "--class",
+            "jetbrains-.*",
+            deadline=deadline,
+        )
         if result.returncode == 0:
             for window in reversed(result.stdout.splitlines()):
-                if _is_islands_popup(window, project):
+                if _is_islands_popup(window, project, deadline=deadline):
                     return window
-        time.sleep(0.25)
+        _bounded_poll_sleep(deadline)
     raise RuntimeError("IntelliJ IDEA did not expose the pinned Islands onboarding popup")
 
 
-def _is_agent_selector_popup(window: str, project: str) -> bool:
+def _is_agent_selector_popup(
+    window: str,
+    project: str,
+    *,
+    deadline: float | None = None,
+) -> bool:
     """Match only the pinned agent selector transient owned by the project frame."""
     try:
         project_id = int(project)
     except ValueError:
         return False
     return (
-        _window_name(window) == _AGENT_SELECTOR_TITLE
-        and _window_geometry(window) == _AGENT_SELECTOR_GEOMETRY
-        and _window_is_root_child(window)
-        and _window_transient_for(window) == project_id
+        _window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
+        and _window_geometry(window, deadline=deadline) == _AGENT_SELECTOR_GEOMETRY
+        and _window_is_root_child(window, deadline=deadline)
+        and _window_transient_for(window, deadline=deadline) == project_id
     )
 
 
 def _find_agent_selector_popup(deadline: float, project: str) -> str:
     """Wait for the exact pinned agent selector before sending text input."""
     while time.monotonic() < deadline:
-        result = _xdotool("search", "--onlyvisible", "--class", "jetbrains-.*")
+        result = _xdotool(
+            "search",
+            "--onlyvisible",
+            "--class",
+            "jetbrains-.*",
+            deadline=deadline,
+        )
         if result.returncode == 0:
             for window in reversed(result.stdout.splitlines()):
-                if _is_agent_selector_popup(window, project):
+                if _is_agent_selector_popup(window, project, deadline=deadline):
                     return window
-        time.sleep(0.25)
+        _bounded_poll_sleep(deadline)
     raise RuntimeError("IntelliJ IDEA did not expose the pinned ACP agent selector popup")
 
 
 def _skip_islands_onboarding(deadline: float, project: str) -> None:
     """Dismiss the pinned onboarding transient and prove it disappeared."""
     popup = _find_islands_popup(deadline, project)
-    if not _is_islands_popup(popup, project):
+    if not _is_islands_popup(popup, project, deadline=deadline):
         raise RuntimeError("refusing input outside the pinned Islands onboarding popup")
-    _pointer_click(popup, 191, 444, "skip the JetBrains Islands quick tour")
+    _pointer_click(
+        popup,
+        191,
+        444,
+        "skip the JetBrains Islands quick tour",
+        deadline=deadline,
+    )
     while time.monotonic() < deadline:
-        if _window_geometry(popup) is None:
+        if _window_geometry(popup, deadline=deadline) is None:
             return
-        time.sleep(0.25)
+        _bounded_poll_sleep(deadline)
     raise RuntimeError("JetBrains Islands onboarding popup remained after Skip")
 
 
@@ -422,7 +552,7 @@ def _wait_for_trace(
             return
         if process.poll() is not None:
             raise RuntimeError(f"IntelliJ IDEA exited before ACP evidence: {process.returncode}")
-        time.sleep(0.25)
+        _bounded_poll_sleep(deadline)
     raise RuntimeError(f"IntelliJ IDEA ACP trace never contained {marker}")
 
 
@@ -548,7 +678,7 @@ def _wait_for_idea_log(
         if retry is not None and now >= next_retry:
             retry()
             next_retry = now + retry_interval_seconds
-        time.sleep(0.25)
+        _bounded_poll_sleep(deadline)
     raise RuntimeError(f"IntelliJ IDEA log never contained ordered markers {required!r}")
 
 
@@ -612,7 +742,7 @@ def main() -> int:
                 _CHAT_READY_MARKERS,
                 chat_deadline,
                 process.poll,
-                retry=lambda: _show_ai_chat(window),
+                retry=lambda: _show_ai_chat(window, deadline=chat_deadline),
             )
             selection_deadline = time.monotonic() + _AGENT_SELECTION_TIMEOUT_SECONDS
             _checked_xdotool(
@@ -621,6 +751,7 @@ def main() -> int:
                 "--window",
                 window,
                 "ctrl+alt+shift+k",
+                deadline=selection_deadline,
             )
             selector = _find_agent_selector_popup(selection_deadline, window)
             _checked_xdotool(
@@ -632,8 +763,16 @@ def main() -> int:
                 "1",
                 "--",
                 _AGENT_NAME,
+                deadline=selection_deadline,
             )
-            _checked_xdotool("confirm the ACP agent", "key", "--window", selector, "Return")
+            _checked_xdotool(
+                "confirm the ACP agent",
+                "key",
+                "--window",
+                selector,
+                "Return",
+                deadline=selection_deadline,
+            )
             _wait_for_idea_log(
                 log_root,
                 "Creating AcpSessionLifecycleManager for agent 'acp.synapse-opencode-e2e'",
@@ -649,16 +788,19 @@ def main() -> int:
                 handshake_deadline,
                 process.poll,
             )
-            _submit_chat_prompt(window, prompt)
             prompt_deadline = time.monotonic() + _ACP_PROMPT_TIMEOUT_SECONDS
+            _submit_chat_prompt(window, prompt, deadline=prompt_deadline)
             _wait_for_trace(trace, '"method":"session/prompt"', prompt_deadline, process)
             _wait_for_trace(trace, '"response_to":"session/prompt"', prompt_deadline, process)
             _screenshot(screenshot)
             return 0
         finally:
-            if not screenshot.exists():
-                _screenshot(screenshot)
-            terminate_isolated_process_group(process)
+            capture_evidence_and_terminate(
+                process,
+                screenshot=screenshot,
+                capture_screenshot=_screenshot,
+                active_error=sys.exc_info()[1],
+            )
             if process.returncode not in (0, -15):
                 print(output.read_text(encoding="utf-8")[-12000:], file=sys.stderr)
             idea_log = log_root / "idea.log"

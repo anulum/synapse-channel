@@ -48,11 +48,13 @@ All notable changes to this project are documented here.
 ### Fixed
 
 - The JetBrains lane now waits on a stable ACP lifecycle marker, proves the
-  validated project frame owns keyboard focus before prompt input, terminates
-  the complete isolated IDEA process group, gives delayed ACP initialization a
-  bounded three-minute budget, derives the parent cap from all GUI, evidence,
-  and cleanup bounds, and restores the project adapter configuration after both
-  successful and failed editor runs.
+  validated project frame owns keyboard focus before prompt input, constrains
+  every GUI subprocess by its phase's remaining absolute deadline, and starts
+  the prompt deadline before composer input. Evidence-capture failures are
+  aggregated without ever skipping complete IDEA process-group termination.
+  The ACP evidence proxy rejects malformed responses before consuming their
+  pending correlation, and the parent timeout is derived from every phase,
+  evidence capture, cleanup, and a separate supervision margin.
 
 ## [0.99.8] - 2026-07-14
 

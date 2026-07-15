@@ -144,6 +144,18 @@ def _has_terminal_auth_method(methods: object) -> bool:
     return False
 
 
+def _validate_error_response(error: object) -> None:
+    """Require the mandatory JSON-RPC 2.0 error object fields."""
+    if not isinstance(error, Mapping):
+        raise ValueError("ACP evidence error response is not an object")
+    code = error.get("code")
+    message = error.get("message")
+    if isinstance(code, bool) or not isinstance(code, int):
+        raise ValueError("ACP evidence error response code is not an integer")
+    if not isinstance(message, str) or not message.strip():
+        raise ValueError("ACP evidence error response message is empty")
+
+
 class TraceWriter:
     """Write one private, append-only, content-minimised JSONL trace."""
 
@@ -249,12 +261,19 @@ class TraceWriter:
         if request_id is None:
             raise ValueError("ACP evidence message has neither method nor response id")
 
+        has_result = "result" in message
+        has_error = "error" in message
+        if has_result == has_error:
+            raise ValueError("ACP evidence response must contain exactly one of result or error")
+        if has_error:
+            _validate_error_response(message["error"])
+
         event["id"] = request_id
         response_to = self._pending.pop((_opposite(direction), request_id), None)
         if response_to is None:
             raise ValueError("ACP evidence response id has no pending request")
         event["response_to"] = response_to
-        event["error"] = "error" in message
+        event["error"] = has_error
         result = message.get("result")
         if isinstance(result, Mapping):
             if response_to == "initialize":

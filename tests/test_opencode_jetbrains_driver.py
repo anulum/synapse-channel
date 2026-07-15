@@ -174,27 +174,27 @@ def test_xprop_transient_parent_parser_accepts_only_a_window_id() -> None:
 def test_agent_selector_popup_requires_pinned_window_invariants(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(jetbrains_client, "_window_name", lambda _window: "win0")
-    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (310, 407))
-    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
-    monkeypatch.setattr(jetbrains_client, "_window_transient_for", lambda _window: 123)
+    monkeypatch.setattr(jetbrains_client, "_window_name", lambda _window, **_kwargs: "win0")
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (310, 407))
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: True)
+    monkeypatch.setattr(jetbrains_client, "_window_transient_for", lambda _window, **_kwargs: 123)
 
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is True
     assert jetbrains_client._is_agent_selector_popup("selector", "invalid") is False
 
-    monkeypatch.setattr(jetbrains_client, "_window_name", lambda _window: "other")
+    monkeypatch.setattr(jetbrains_client, "_window_name", lambda _window, **_kwargs: "other")
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
-    monkeypatch.setattr(jetbrains_client, "_window_name", lambda _window: "win0")
+    monkeypatch.setattr(jetbrains_client, "_window_name", lambda _window, **_kwargs: "win0")
 
-    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (311, 407))
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (311, 407))
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
-    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (310, 407))
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (310, 407))
 
-    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: False)
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: False)
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
-    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: True)
 
-    monkeypatch.setattr(jetbrains_client, "_window_transient_for", lambda _window: 124)
+    monkeypatch.setattr(jetbrains_client, "_window_transient_for", lambda _window, **_kwargs: 124)
     assert jetbrains_client._is_agent_selector_popup("selector", "123") is False
 
 
@@ -218,22 +218,24 @@ def test_chat_composer_focus_targets_the_validated_project_frame(
 ) -> None:
     actions: list[tuple[str, ...]] = []
     clicks: list[tuple[str, int, int, str]] = []
-    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (1400, 1000))
-    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
+    monkeypatch.setattr(
+        jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (1400, 1000)
+    )
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: True)
     monkeypatch.setattr(
         jetbrains_client,
         "_checked_xdotool",
-        lambda _action, *args: actions.append(args),
+        lambda _action, *args, **_kwargs: actions.append(args),
     )
     monkeypatch.setattr(
         jetbrains_client,
         "_pointer_click",
-        lambda window, x, y, action: clicks.append((window, x, y, action)),
+        lambda window, x, y, action, **_kwargs: clicks.append((window, x, y, action)),
     )
     monkeypatch.setattr(
         jetbrains_client,
         "_xdotool",
-        lambda *_args: subprocess.CompletedProcess([], 0, "123\n", ""),
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, "123\n", ""),
     )
 
     jetbrains_client._focus_chat_composer("123")
@@ -245,14 +247,20 @@ def test_chat_composer_focus_targets_the_validated_project_frame(
 def test_chat_composer_focus_rejects_ambient_keyboard_focus(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (1400, 1000))
-    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
-    monkeypatch.setattr(jetbrains_client, "_checked_xdotool", lambda _action, *_args: None)
-    monkeypatch.setattr(jetbrains_client, "_pointer_click", lambda *_args: None)
+    monkeypatch.setattr(
+        jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (1400, 1000)
+    )
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: True)
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_checked_xdotool",
+        lambda _action, *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(jetbrains_client, "_pointer_click", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         jetbrains_client,
         "_xdotool",
-        lambda *_args: subprocess.CompletedProcess([], 0, "124\n", ""),
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, "124\n", ""),
     )
 
     with pytest.raises(RuntimeError, match="without project-frame keyboard focus"):
@@ -268,14 +276,20 @@ def test_chat_composer_focus_rejects_unprovable_keyboard_focus(
     returncode: int,
     output: str,
 ) -> None:
-    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (1400, 1000))
-    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
-    monkeypatch.setattr(jetbrains_client, "_checked_xdotool", lambda _action, *_args: None)
-    monkeypatch.setattr(jetbrains_client, "_pointer_click", lambda *_args: None)
+    monkeypatch.setattr(
+        jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (1400, 1000)
+    )
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: True)
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_checked_xdotool",
+        lambda _action, *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(jetbrains_client, "_pointer_click", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         jetbrains_client,
         "_xdotool",
-        lambda *_args: subprocess.CompletedProcess([], returncode, output, ""),
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], returncode, output, ""),
     )
 
     with pytest.raises(RuntimeError, match="focused=None"):
@@ -285,10 +299,16 @@ def test_chat_composer_focus_rejects_unprovable_keyboard_focus(
 def test_chat_composer_focus_rejects_an_invalid_project_xid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (1400, 1000))
-    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
-    monkeypatch.setattr(jetbrains_client, "_checked_xdotool", lambda _action, *_args: None)
-    monkeypatch.setattr(jetbrains_client, "_pointer_click", lambda *_args: None)
+    monkeypatch.setattr(
+        jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (1400, 1000)
+    )
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: True)
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_checked_xdotool",
+        lambda _action, *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(jetbrains_client, "_pointer_click", lambda *_args, **_kwargs: None)
 
     with pytest.raises(RuntimeError, match="invalid XID"):
         jetbrains_client._focus_chat_composer("project")
@@ -299,8 +319,8 @@ def test_chat_composer_focus_rejects_an_unvalidated_project_frame(
     monkeypatch: pytest.MonkeyPatch,
     geometry: tuple[int, int] | None,
 ) -> None:
-    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: geometry)
-    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window, **_kwargs: geometry)
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: True)
 
     with pytest.raises(RuntimeError, match="outside a validated project frame"):
         jetbrains_client._focus_chat_composer("project")
@@ -309,8 +329,10 @@ def test_chat_composer_focus_rejects_an_unvalidated_project_frame(
 def test_chat_composer_focus_rejects_a_nested_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (1400, 1000))
-    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: False)
+    monkeypatch.setattr(
+        jetbrains_client, "_window_geometry", lambda _window, **_kwargs: (1400, 1000)
+    )
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window, **_kwargs: False)
 
     with pytest.raises(RuntimeError, match="root_child=False"):
         jetbrains_client._focus_chat_composer("project")
@@ -324,12 +346,12 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
     monkeypatch.setattr(
         jetbrains_client,
         "_focus_chat_composer",
-        lambda window: focused.append(window),
+        lambda window, **_kwargs: focused.append(window),
     )
     monkeypatch.setattr(
         jetbrains_client,
         "_checked_xdotool",
-        lambda action, *args: actions.append((action, args)),
+        lambda action, *args, **_kwargs: actions.append((action, args)),
     )
 
     jetbrains_client._submit_chat_prompt("project", "governed prompt")
@@ -400,12 +422,12 @@ def test_first_run_accepts_only_attested_v2_then_declines_telemetry(
     monkeypatch.setattr(
         jetbrains_client,
         "_require_agreement_window",
-        lambda window, title: checks.append((window, title)),
+        lambda window, title, **_kwargs: checks.append((window, title)),
     )
     monkeypatch.setattr(
         jetbrains_client,
         "_pointer_click",
-        lambda window, x, y, action: clicks.append((window, x, y, action)),
+        lambda window, x, y, action, **_kwargs: clicks.append((window, x, y, action)),
     )
     jetbrains_client._complete_first_run_agreements(float("inf"))
 

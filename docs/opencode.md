@@ -407,12 +407,16 @@ keyboard focus before issuing any global Swing keystroke. IDEA starts as an
 isolated process-group leader; cleanup terminates every helper with bounded
 `SIGTERM`/`SIGKILL` escalation. Its ACP initialization phase has a bounded
 three-minute budget for delayed plugin continuations on loaded headless hosts;
-the parent runner derives its cap from every phase, all nine bounded composer
-commands, nested phase overhang, evidence capture, complete process-group
-cleanup, and a separate two-minute supervision margin. The outer editor journey
-always uninstalls the temporary project adapter and verifies the original
-OpenCode configuration was restored, including when the editor or evidence
-assertion fails.
+every X11 subprocess receives the lesser of its ten-second ceiling and the
+phase's remaining absolute time, including commands inside candidate-window
+loops. The prompt phase begins before composer focus and submission. The parent
+runner therefore derives a 755-second cap from 600 seconds of bounded phases,
+15 seconds of evidence capture, 20 seconds of complete process-group cleanup,
+and a separate two-minute supervision margin. Evidence-capture and termination
+failures are aggregated, and capture failure cannot skip termination. The outer
+editor journey always uninstalls the temporary project adapter and verifies the
+original OpenCode configuration was restored, including when the editor or
+evidence assertion fails.
 
 Missing clients, changed identity names or versions, changed capabilities,
 malformed or replayed traffic, unknown response IDs, absent responses, unsafe
@@ -420,7 +424,9 @@ evidence paths, leaked prompt content, a wrong OpenCode/model version, or any
 governance mismatch fails the selected job. GUI lanes wait for observable ACP
 session state rather than fixed delays. The evidence proxy writes a private
 bounded JSONL trace containing protocol metadata and only the prompt's byte
-length and SHA-256 digest, never its content.
+length and SHA-256 digest, never its content. A response must contain exactly
+one of `result` or `error`; errors require an integer code and non-empty message,
+and malformed responses are rejected before their pending request is consumed.
 
 The headless Neovim and Emacs lanes are **required** and gate the workflow. The
 Zed and JetBrains lanes are **advisory** in continuous integration: a headless
