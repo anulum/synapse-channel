@@ -40,6 +40,7 @@ from synapse_channel.core.identity_keys import (
     public_key_b64,
     write_signing_key,
 )
+from synapse_channel.core.private_dir import PrivateDirError, ensure_private_dir
 
 MACHINE_KEY_FILENAME = "machine.pem"
 """The per-machine private-key file under the identity directory."""
@@ -135,8 +136,11 @@ def ensure_machine_identity(*, base: Path | None = None) -> MachineIdentity:
     key_path = directory / MACHINE_KEY_FILENAME
     if not key_path.is_file():
         try:
-            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        except OSError as exc:
+            # Owner-only floor, not bare ``mkdir(exist_ok=True)``: a pre-existing
+            # symlinked or foreign-owned identity directory is refused rather
+            # than silently accepted as the home for the machine signing key.
+            ensure_private_dir(directory, parents=True, purpose="machine identity directory")
+        except (OSError, PrivateDirError) as exc:
             raise IdentityKeyError(f"cannot create identity directory {directory}: {exc}") from exc
         try:
             write_signing_key(key_path, generate_signing_key())
