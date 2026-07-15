@@ -61,6 +61,12 @@ _EXPECTED_COMPONENTS = frozenset(
         "JetBrains Full Line Code Completion",
     }
 )
+_EXPECTED_CLIENTS = {
+    "emacs": ("agent-shell", "0.59.1", "Agent Shell"),
+    "jetbrains": ("JetBrains.IntelliJ IDEA", "2026.1.4", "IntelliJ IDEA"),
+    "neovim": ("CodeCompanion.nvim", "1.0.0", "CodeCompanion.nvim"),
+    "zed": ("zed", "1.10.3", "Zed"),
+}
 
 
 class CompatibilityError(ValueError):
@@ -91,6 +97,16 @@ class Component:
 
 
 @dataclass(frozen=True)
+class EditorClient:
+    """One exact ACP client implementation identity emitted by an editor lane."""
+
+    lane: str
+    name: str
+    version: str
+    component: str
+
+
+@dataclass(frozen=True)
 class Compatibility:
     """The complete pinned OpenCode and editor compatibility matrix."""
 
@@ -101,6 +117,7 @@ class Compatibility:
     tag_commit: str
     artifacts: tuple[Artifact, ...]
     components: tuple[Component, ...]
+    clients: tuple[EditorClient, ...]
 
     def artifact(self, key: str) -> Artifact:
         """Return the exactly named artifact or fail closed."""
@@ -108,6 +125,13 @@ class Compatibility:
             if artifact.key == key:
                 return artifact
         raise CompatibilityError(f"unknown OpenCode compatibility platform: {key}")
+
+    def client(self, lane: str) -> EditorClient:
+        """Return the exactly named editor lane's ACP client identity."""
+        for client in self.clients:
+            if client.lane == lane:
+                return client
+        raise CompatibilityError(f"unknown OpenCode editor lane: {lane}")
 
 
 def _object(value: object, where: str) -> Mapping[str, Any]:
@@ -140,8 +164,12 @@ def load_compatibility(path: Path = DEFAULT_MANIFEST) -> Compatibility:
         root = _object(json.loads(path.read_text(encoding="utf-8")), "manifest")
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise CompatibilityError(f"cannot read OpenCode compatibility manifest: {path}") from exc
-    _exact_keys(root, {"schema_version", "upstream", "artifacts", "components"}, "manifest")
-    if root.get("schema_version") != "synapse.opencode-compatibility.v1":
+    _exact_keys(
+        root,
+        {"schema_version", "upstream", "artifacts", "clients", "components"},
+        "manifest",
+    )
+    if root.get("schema_version") != "synapse.opencode-compatibility.v2":
         raise CompatibilityError("unsupported OpenCode compatibility schema")
 
     upstream = _object(root.get("upstream"), "upstream")
@@ -226,6 +254,33 @@ def load_compatibility(path: Path = DEFAULT_MANIFEST) -> Compatibility:
     if component_names != _EXPECTED_COMPONENTS or len(component_names) != len(components):
         raise CompatibilityError("editor compatibility component coverage is incomplete")
 
+    raw_clients = _object(root.get("clients"), "clients")
+    clients: list[EditorClient] = []
+    for lane, value in sorted(raw_clients.items(), key=lambda item: str(item[0])):
+        lane_name = str(lane)
+        data = _object(value, f"clients.{lane_name}")
+        _exact_keys(data, {"name", "version", "component"}, f"clients.{lane_name}")
+        client = EditorClient(
+            lane=lane_name,
+            name=_text(data, "name", f"clients.{lane_name}"),
+            version=_text(data, "version", f"clients.{lane_name}"),
+            component=_text(data, "component", f"clients.{lane_name}"),
+        )
+        expected_client = _EXPECTED_CLIENTS.get(lane_name)
+        if (
+            expected_client is None
+            or (
+                client.name,
+                client.version,
+                client.component,
+            )
+            != expected_client
+        ):
+            raise CompatibilityError(f"editor client {lane_name} differs from the wire contract")
+        clients.append(client)
+    if {item.lane for item in clients} != set(_EXPECTED_CLIENTS):
+        raise CompatibilityError("editor client lane coverage is incomplete")
+
     return Compatibility(
         repository=repository,
         release_api=release_api,
@@ -234,6 +289,7 @@ def load_compatibility(path: Path = DEFAULT_MANIFEST) -> Compatibility:
         tag_commit=tag_commit,
         artifacts=tuple(artifacts),
         components=tuple(components),
+        clients=tuple(clients),
     )
 
 
@@ -258,6 +314,9 @@ def assert_repository_contract(contract: Compatibility, root: Path = ROOT) -> No
     for component in contract.components:
         if component.pin not in text["editors"]:
             raise CompatibilityError(f"editor workflow omitted {component.name} pin")
+    for client in contract.clients:
+        if client.name not in text["docs"] or client.version not in text["docs"]:
+            raise CompatibilityError(f"OpenCode documentation omitted {client.lane} wire identity")
     for artifact in contract.artifacts:
         if artifact.smoke and (
             artifact.key not in text["compatibility"]
@@ -348,6 +407,7 @@ def main() -> int:
         parser.error("release, latest, and tag-ref JSON must be supplied together")
     report: dict[str, object] = {
         "artifact_count": len(contract.artifacts),
+        "client_count": len(contract.clients),
         "component_count": len(contract.components),
         "pinned_tag": contract.tag,
     }

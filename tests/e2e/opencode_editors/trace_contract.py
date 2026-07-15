@@ -20,10 +20,22 @@ from typing import Any
 _MAX_TRACE_BYTES = 4_194_304
 _MAX_TRACE_SEGMENTS = 8
 _HANDSHAKE_METHODS = ("initialize", "session/new")
+_DIRECTIONS = frozenset({"client_to_agent", "agent_to_client"})
 
 
 def prompt_sha256(prompt: str) -> str:
-    """Return the canonical prompt fingerprint used by the evidence proxy."""
+    """Return the canonical prompt fingerprint used by the evidence proxy.
+
+    Parameters
+    ----------
+    prompt:
+        Prompt text submitted through the real editor.
+
+    Returns
+    -------
+    str
+        Lowercase SHA-256 digest of the UTF-8 prompt bytes.
+    """
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
 
@@ -108,32 +120,94 @@ def _request(events: Iterable[Mapping[str, Any]], method: str) -> Mapping[str, A
 
 
 def _response(events: Iterable[Mapping[str, Any]], method: str) -> Mapping[str, Any]:
-    matches = [
+    return next(
         event
         for event in events
         if event.get("direction") == "agent_to_client" and event.get("response_to") == method
-    ]
-    if len(matches) != 1:
-        raise AssertionError(
-            f"real editor received {len(matches)} ACP {method} responses instead of one"
-        )
-    if matches[0].get("error") is not False:
-        raise AssertionError(f"OpenCode returned an ACP error for {method}")
-    return matches[0]
+    )
+
+
+def _request_id(value: object) -> int | str | None:
+    """Return a trace request identifier without accepting booleans."""
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return None
+    return value
+
+
+def _opposite(direction: str) -> str:
+    """Return the request direction paired with a response direction."""
+    return "agent_to_client" if direction == "client_to_agent" else "client_to_agent"
+
+
+def _assert_complete_requests(events: Iterable[Mapping[str, Any]]) -> None:
+    """Require each bidirectional JSON-RPC request to receive one clean response."""
+    pending: dict[tuple[str, int | str], str] = {}
+    for event in events:
+        direction = event.get("direction")
+        if direction not in _DIRECTIONS:
+            raise AssertionError("ACP trace contains an invalid traffic direction")
+        request_id = _request_id(event.get("id"))
+        if "id" in event and request_id is None:
+            raise AssertionError("ACP trace contains an invalid request id")
+        method = event.get("method")
+        if isinstance(method, str):
+            if request_id is None:
+                continue
+            key = (direction, request_id)
+            if key in pending:
+                raise AssertionError("ACP trace reuses a pending request id")
+            pending[key] = method
+            continue
+
+        response_to = event.get("response_to")
+        if not isinstance(response_to, str) or request_id is None:
+            raise AssertionError("ACP trace contains an uncorrelated protocol event")
+        request_key = (_opposite(direction), request_id)
+        request_method = pending.pop(request_key, None)
+        if request_method is None:
+            raise AssertionError("ACP trace contains an unknown or out-of-order response id")
+        if response_to != request_method:
+            raise AssertionError("ACP trace response method does not match its request")
+        if event.get("error") is not False:
+            raise AssertionError(f"ACP error response received for {request_method}")
+
+    if pending:
+        methods = ", ".join(sorted({method for method in pending.values()}))
+        raise AssertionError(f"ACP trace has requests without responses: {methods}")
 
 
 def assert_editor_trace(
     path: Path,
     *,
-    expected_client_names: Iterable[str],
+    expected_clients: Mapping[str, str],
     expected_agent_version: str,
     prompt: str,
 ) -> None:
-    """Assert one prompt round trip across bounded exclusive lifecycle traces."""
-    expected_names = set(expected_client_names)
+    """Assert one prompt round trip across bounded exclusive lifecycle traces.
+
+    Parameters
+    ----------
+    path:
+        First segment of the private trace bundle.
+    expected_clients:
+        Exact allowed ACP client names mapped to their emitted versions.
+    expected_agent_version:
+        Exact OpenCode version required on the wire.
+    prompt:
+        Acceptance prompt whose length and digest must match the trace.
+
+    Raises
+    ------
+    AssertionError
+        If identity, lifecycle, correlation, privacy, or prompt evidence is
+        incomplete or differs from the pinned contract.
+    """
+    if not expected_clients:
+        raise ValueError("at least one exact ACP client identity is required")
     traces = _read_trace_bundle(path)
     prompt_traces: list[list[dict[str, Any]]] = []
     for events in traces:
+        _assert_complete_requests(events)
         requests = {method: _request(events, method) for method in _HANDSHAKE_METHODS}
         responses = {method: _response(events, method) for method in _HANDSHAKE_METHODS}
 
@@ -141,9 +215,14 @@ def assert_editor_trace(
         if initialize.get("protocol_version") != 1:
             raise AssertionError("editor did not request ACP protocol version 1")
         client_info = initialize.get("client_info")
-        client_name = client_info.get("name") if isinstance(client_info, Mapping) else None
-        if client_name not in expected_names:
+        if not isinstance(client_info, Mapping):
+            raise AssertionError("ACP client did not report implementation metadata")
+        client_name = client_info.get("name")
+        if not isinstance(client_name, str) or client_name not in expected_clients:
             raise AssertionError(f"unexpected ACP client identity: {client_name!r}")
+        client_version = client_info.get("version")
+        if client_version != expected_clients[client_name]:
+            raise AssertionError("ACP client reported an unexpected version")
 
         initialize_response = responses["initialize"]
         if initialize_response.get("protocol_version") != 1:

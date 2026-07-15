@@ -85,6 +85,28 @@
       "smoke": false
     }
   },
+  "clients": {
+    "emacs": {
+      "component": "Agent Shell",
+      "name": "agent-shell",
+      "version": "0.59.1"
+    },
+    "jetbrains": {
+      "component": "IntelliJ IDEA",
+      "name": "JetBrains.IntelliJ IDEA",
+      "version": "2026.1.4"
+    },
+    "neovim": {
+      "component": "CodeCompanion.nvim",
+      "name": "CodeCompanion.nvim",
+      "version": "1.0.0"
+    },
+    "zed": {
+      "component": "Zed",
+      "name": "zed",
+      "version": "1.10.3"
+    }
+  },
   "components": [
     {
       "name": "Neovim",
@@ -164,7 +186,7 @@
       "version": "261.26222.65"
     }
   ],
-  "schema_version": "synapse.opencode-compatibility.v1",
+  "schema_version": "synapse.opencode-compatibility.v2",
   "upstream": {
     "release_api": "https://api.github.com/repos/anomalyco/opencode/releases",
     "repository": "anomalyco/opencode",

@@ -38,6 +38,20 @@ All notable changes to this project are documented here.
   and reads the discarded response body under a fixed byte bound instead of
   unbounded.
 
+### Changed
+
+- Version 2 of the OpenCode compatibility manifest binds every ACP client to
+  its exact wire name and version. The real-editor gate rejects any unmatched
+  or erroneous bidirectional request and treats missing lifecycle responses as
+  incomplete evidence.
+
+### Fixed
+
+- The JetBrains lane now waits on a stable ACP lifecycle marker, proves the
+  validated project frame owns keyboard focus before prompt input, terminates
+  the complete isolated IDEA process group, and restores the project adapter
+  configuration after both successful and failed editor runs.
+
 ## [0.99.8] - 2026-07-14
 
 ### Added

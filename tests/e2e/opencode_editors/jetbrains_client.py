@@ -18,6 +18,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from e2e.opencode_editors.process_group import terminate_isolated_process_group
+
 _AGENT_NAME = "SYNAPSE OpenCode E2E"
 _STARTUP_TIMEOUT_SECONDS = 150.0
 _CHAT_READY_TIMEOUT_SECONDS = 90.0
@@ -33,10 +35,7 @@ _DATA_SHARING_TITLE = "Data Sharing"
 _AGENT_SELECTOR_REGISTRY_KEY = "llm.chat.new.chat.and.agent.selector.enabled"
 _AGENT_SELECTOR_TITLE = "win0"
 _AGENT_SELECTOR_GEOMETRY = (310, 407)
-_CHAT_READY_MARKERS = (
-    "Default-agent CDN readiness wait finished",
-    f"No session managers found for agent '{_AGENT_NAME}'",
-)
+_CHAT_READY_MARKERS = (f"No session managers found for agent '{_AGENT_NAME}'",)
 _ACP_SESSION_READY_MARKERS = (
     "Required plugins check passed",
     "Starting ACP client session ",
@@ -172,6 +171,17 @@ def _window_transient_for(window: str) -> int | None:
     return _xprop_window_id(completed.stdout)
 
 
+def _focused_window_id() -> int | None:
+    """Return the XID that owns keyboard focus, if it can be proven."""
+    completed = _xdotool("getwindowfocus")
+    if completed.returncode != 0:
+        return None
+    try:
+        return int(completed.stdout.strip(), 0)
+    except ValueError:
+        return None
+
+
 def _find_first_run_dialog(deadline: float) -> tuple[str, str]:
     """Wait for one recognised top-level page of the pinned first-run UI."""
     while time.monotonic() < deadline:
@@ -229,6 +239,16 @@ def _focus_chat_composer(window: str) -> None:
         geometry[1] - _CHAT_COMPOSER_BOTTOM_INSET,
         "focus the JetBrains AI Chat composer",
     )
+    try:
+        project_window_id = int(window, 0)
+    except ValueError as exc:
+        raise RuntimeError("validated JetBrains project window has an invalid XID") from exc
+    focused_window_id = _focused_window_id()
+    if focused_window_id != project_window_id:
+        raise RuntimeError(
+            "refusing JetBrains prompt input without project-frame keyboard focus: "
+            f"expected={project_window_id}, focused={focused_window_id}"
+        )
 
 
 def _submit_chat_prompt(window: str, prompt: str) -> None:
@@ -569,6 +589,7 @@ def main() -> int:
             stdout=log,
             stderr=subprocess.STDOUT,
             text=True,
+            start_new_session=True,
         )
         try:
             startup_deadline = time.monotonic() + _STARTUP_TIMEOUT_SECONDS
@@ -634,12 +655,7 @@ def main() -> int:
         finally:
             if not screenshot.exists():
                 _screenshot(screenshot)
-            process.terminate()
-            try:
-                process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
+            terminate_isolated_process_group(process)
             if process.returncode not in (0, -15):
                 print(output.read_text(encoding="utf-8")[-12000:], file=sys.stderr)
             idea_log = log_root / "idea.log"

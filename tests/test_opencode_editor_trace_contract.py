@@ -121,7 +121,7 @@ def _write_trace(
 def _assert_trace(path: Path) -> None:
     assert_editor_trace(
         path,
-        expected_client_names=("editor-client",),
+        expected_clients={"editor-client": "1.0"},
         expected_agent_version=OPENCODE_VERSION,
         prompt=_PROMPT,
     )

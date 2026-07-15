@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -80,7 +81,38 @@ def test_repository_uses_one_complete_immutable_compatibility_contract() -> None
     assert len(contract.artifacts) == 12
     assert sum(artifact.smoke for artifact in contract.artifacts) == 5
     assert len(contract.components) == 11
+    assert len(contract.clients) == 4
+    assert contract.client("jetbrains").name == "JetBrains.IntelliJ IDEA"
+    assert contract.client("neovim").version == "1.0.0"
+    with pytest.raises(CompatibilityError, match="unknown OpenCode editor lane"):
+        contract.client("unknown")
     assert_repository_contract(contract)
+
+
+def test_repository_contract_refuses_documented_wire_identity_drift(tmp_path: Path) -> None:
+    contract = load_compatibility()
+    root = tmp_path / "repository"
+    source_root = Path(__file__).resolve().parents[1]
+    surfaces = (
+        "src/synapse_channel/participants/opencode_stream.py",
+        "tests/fixtures/opencode/process.py",
+        "docs/opencode.md",
+        ".github/workflows/opencode-integration.yml",
+        ".github/workflows/opencode-editor-e2e.yml",
+        ".github/workflows/opencode-compatibility.yml",
+    )
+    for relative in surfaces:
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_root / relative, destination)
+    docs = root / "docs/opencode.md"
+    docs.write_text(
+        docs.read_text(encoding="utf-8").replace("CodeCompanion.nvim", "CodeCompanion"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CompatibilityError, match="neovim wire identity"):
+        assert_repository_contract(contract, root)
 
 
 def test_upstream_verifier_accepts_all_pinned_assets_and_reports_latest() -> None:
@@ -107,6 +139,8 @@ def test_upstream_verifier_accepts_all_pinned_assets_and_reports_latest() -> Non
         ("missing-platform", "incomplete platform coverage"),
         ("wrong-runner", "supported runner matrix"),
         ("missing-component", "component coverage is incomplete"),
+        ("missing-client", "client lane coverage is incomplete"),
+        ("wire-client", "differs from the wire contract"),
         ("runtime-pin", "runtime pin differs"),
         ("extra-field", "fields differ"),
         ("schema", "unsupported OpenCode compatibility schema"),
@@ -125,6 +159,7 @@ def test_manifest_refuses_incomplete_or_widened_contracts(
 ) -> None:
     data = _manifest_data()
     artifacts = cast(dict[str, Any], data["artifacts"])
+    clients = cast(dict[str, dict[str, str]], data["clients"])
     components = cast(list[dict[str, Any]], data["components"])
     if mutation == "missing-platform":
         del artifacts["windows-arm64"]
@@ -132,6 +167,10 @@ def test_manifest_refuses_incomplete_or_widened_contracts(
         cast(dict[str, Any], artifacts["linux-x64"])["runner"] = "ubuntu-latest"
     elif mutation == "missing-component":
         components.pop()
+    elif mutation == "missing-client":
+        del clients["zed"]
+    elif mutation == "wire-client":
+        clients["neovim"]["version"] = "19.19.0"
     elif mutation == "runtime-pin":
         next(row for row in components if row["name"] == "Emacs")["pin"] = "29.2"
     elif mutation == "extra-field":
@@ -233,6 +272,7 @@ def test_contract_cli_writes_machine_readable_advisory(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout) == {
         "artifact_count": 12,
+        "client_count": 4,
         "component_count": 11,
         "latest_tag": "v1.18.0",
         "pinned_is_latest": False,

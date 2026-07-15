@@ -19,11 +19,16 @@ on:
       - "src/synapse_channel/git/**"
       - "src/synapse_channel/mcp/**"
       - "src/synapse_channel/opencode_*.py"
+      - "integrations/opencode/compatibility.json"
       - "tests/e2e/opencode_editors/**"
       - "tests/fixtures/opencode/**"
       - "tests/test_cli_e2e_opencode_editors.py"
+      - "tests/test_opencode_compatibility_contract.py"
+      - "tests/test_opencode_editor_process_group.py"
       - "tests/test_opencode_editor_trace_contract.py"
+      - "tests/test_opencode_editor_trace_validation.py"
       - "tests/test_opencode_jetbrains_driver.py"
+      - "tools/opencode_compatibility_contract.py"
       - "docs/opencode.md"
       - "docs/mcp.md"
   pull_request:
@@ -37,11 +42,16 @@ on:
       - "src/synapse_channel/git/**"
       - "src/synapse_channel/mcp/**"
       - "src/synapse_channel/opencode_*.py"
+      - "integrations/opencode/compatibility.json"
       - "tests/e2e/opencode_editors/**"
       - "tests/fixtures/opencode/**"
       - "tests/test_cli_e2e_opencode_editors.py"
+      - "tests/test_opencode_compatibility_contract.py"
+      - "tests/test_opencode_editor_process_group.py"
       - "tests/test_opencode_editor_trace_contract.py"
+      - "tests/test_opencode_editor_trace_validation.py"
       - "tests/test_opencode_jetbrains_driver.py"
+      - "tools/opencode_compatibility_contract.py"
       - "docs/opencode.md"
       - "docs/mcp.md"
   workflow_dispatch:
@@ -266,7 +276,6 @@ jobs:
                 <<< "$full_line_xml"
               echo "SYNAPSE_JETBRAINS_BIN=$idea_bin" >> "$GITHUB_ENV"
               echo "SYNAPSE_JETBRAINS_PLUGINS=$RUNNER_TEMP/jetbrains-plugins" >> "$GITHUB_ENV"
-              echo "SYNAPSE_JETBRAINS_CLIENT_NAME=JetBrains.IntelliJ IDEA" >> "$GITHUB_ENV"
               ;;
           esac
       - name: Focused editor contract checks
@@ -278,11 +287,16 @@ jobs:
             tests/e2e/opencode_editors/acp_trace_proxy.py
             tests/e2e/opencode_editors/governance_contract.py
             tests/e2e/opencode_editors/jetbrains_client.py
+            tests/e2e/opencode_editors/process_group.py
             tests/e2e/opencode_editors/trace_contract.py
             tests/e2e/opencode_editors/zed_client.py
             tests/test_cli_e2e_opencode_editors.py
+            tests/test_opencode_compatibility_contract.py
+            tests/test_opencode_editor_process_group.py
             tests/test_opencode_jetbrains_driver.py
             tests/test_opencode_editor_trace_contract.py
+            tests/test_opencode_editor_trace_validation.py
+            tools/opencode_compatibility_contract.py
           )
           ruff check "${files[@]}"
           ruff format --check "${files[@]}"
@@ -293,11 +307,15 @@ jobs:
           if [[ "$SYNAPSE_EDITOR_E2E_CLIENT" == "zed" \
             || "$SYNAPSE_EDITOR_E2E_CLIENT" == "jetbrains" ]]; then
             xvfb-run -a -s '-screen 0 1920x1080x24' \
-              pytest tests/test_opencode_editor_trace_contract.py \
+              pytest tests/test_opencode_editor_process_group.py \
+                tests/test_opencode_editor_trace_contract.py \
+                tests/test_opencode_editor_trace_validation.py \
                 tests/test_opencode_jetbrains_driver.py \
                 tests/test_cli_e2e_opencode_editors.py
           else
-            pytest tests/test_opencode_editor_trace_contract.py \
+            pytest tests/test_opencode_editor_process_group.py \
+              tests/test_opencode_editor_trace_contract.py \
+              tests/test_opencode_editor_trace_validation.py \
               tests/test_opencode_jetbrains_driver.py \
               tests/test_cli_e2e_opencode_editors.py
           fi

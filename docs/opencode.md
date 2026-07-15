@@ -359,13 +359,15 @@ The separate `opencode-editor-e2e` workflow does not substitute a synthetic ACP
 peer for an editor. Four fail-closed jobs launch the real client process against
 the exact OpenCode binary and a local deterministic provider:
 
-| Lane | Pinned client surface |
-|---|---|
-| Neovim | Neovim 0.12.4 and CodeCompanion.nvim 19.19.0 |
-| Emacs | Emacs 29.3, Agent Shell 0.59.1, `acp.el` 0.12.2, and Shell Maker 0.93.5 |
-| Zed | Zed 1.10.3 under Xvfb through `agent::NewExternalAgentThread` (advisory in CI) |
-| JetBrains | IntelliJ IDEA 2026.1.4, AI Assistant 261.26222.65, and required Full Line Code Completion 261.26222.65 under Xvfb (advisory in CI) |
+| Lane | Pinned client surface | Required ACP `clientInfo` |
+|---|---|---|
+| Neovim | Neovim 0.12.4 and CodeCompanion.nvim 19.19.0 | `CodeCompanion.nvim` `1.0.0` |
+| Emacs | Emacs 29.3, Agent Shell 0.59.1, `acp.el` 0.12.2, and Shell Maker 0.93.5 | `agent-shell` `0.59.1` |
+| Zed | Zed 1.10.3 under Xvfb through `agent::NewExternalAgentThread` (advisory in CI) | `zed` `1.10.3` |
+| JetBrains | IntelliJ IDEA 2026.1.4, AI Assistant 261.26222.65, and required Full Line Code Completion 261.26222.65 under Xvfb (advisory in CI) | `JetBrains.IntelliJ IDEA` `2026.1.4` |
 
+Version 2 of `integrations/opencode/compatibility.json` is authoritative for
+these ACP `clientInfo` tuples as well as the executable and plugin pins.
 Release archives are SHA-256 verified; editor plugins are checked out at exact
 commits or verified by archive hash and declared version. The JetBrains lane
 uses a single exact platform build (`261.26222.65`) for the IDE and both plugin
@@ -383,28 +385,37 @@ through the non-secret `JETBRAINS_USER_AGREEMENT_ACCEPTED_VERSION` repository
 variable. The driver accepts only the pinned `2.0` agreement, fails closed on a
 missing or different attestation, and still explicitly declines telemetry. A
 future agreement revision therefore requires a new affirmative owner decision
-and code review. The
-Zed lane opts into its documented software-rendered CI mode and completes the
-real isolated-project trust prompt. Each editor must
-identify itself during ACP initialization, create exactly one session, deliver
-exactly one acceptance prompt, receive `end_turn`, and reach the deterministic
-provider. OpenCode must advertise its exact command-shaped terminal-auth method.
+and code review. The Zed lane opts into its documented software-rendered CI
+mode and completes the real isolated-project trust prompt. Each editor must
+identify itself with its exact wire name and version during ACP initialization,
+create exactly one session, deliver exactly one acceptance prompt, receive
+`end_turn`, and reach the deterministic provider. OpenCode must advertise its
+exact command-shaped terminal-auth method.
 The proxy records the editor's original capability, maps the standard
 `auth.terminal` opt-in to OpenCode's pinned legacy metadata, and injects that
 legacy opt-in only when the editor omitted it. An explicit false is never
-overridden, and the evidence records whether injection occurred. The same turn must prove the
-full governance chain: denied write before ownership, native OpenCode MCP
-discovery of `synapse_git_claim`, exact Git/path claim, allowed claimed write,
-receipt-bearing release, and denied write after release. The durable hub journal
-must retain exactly one matching claim, release, and assessment receipt.
+overridden, and the evidence records whether injection occurred. The same turn
+must prove the full governance chain: denied write before ownership, native
+OpenCode MCP discovery of `synapse_git_claim`, exact Git/path claim, allowed
+claimed write, receipt-bearing release, and denied write after release. The
+durable hub journal must retain exactly one matching claim, release, and
+assessment receipt.
 
-Missing clients, changed identities or capabilities, malformed or replayed
-traffic, unknown response IDs, absent responses, unsafe evidence paths, leaked
-prompt content, a wrong OpenCode/model version, or any governance mismatch fails
-the selected job. GUI lanes wait for observable ACP session state rather than
-fixed delays. The evidence proxy writes a private bounded JSONL trace containing
-protocol metadata and only the prompt's byte length and SHA-256 digest, never its
-content.
+The JetBrains driver selects only a top-level project frame with the pinned
+geometry, focuses the chat composer, and verifies that the same X11 frame owns
+keyboard focus before issuing any global Swing keystroke. IDEA starts as an
+isolated process-group leader; cleanup terminates every helper with bounded
+`SIGTERM`/`SIGKILL` escalation. The outer editor journey always uninstalls the
+temporary project adapter and verifies the original OpenCode configuration was
+restored, including when the editor or evidence assertion fails.
+
+Missing clients, changed identity names or versions, changed capabilities,
+malformed or replayed traffic, unknown response IDs, absent responses, unsafe
+evidence paths, leaked prompt content, a wrong OpenCode/model version, or any
+governance mismatch fails the selected job. GUI lanes wait for observable ACP
+session state rather than fixed delays. The evidence proxy writes a private
+bounded JSONL trace containing protocol metadata and only the prompt's byte
+length and SHA-256 digest, never its content.
 
 The headless Neovim and Emacs lanes are **required** and gate the workflow. The
 Zed and JetBrains lanes are **advisory** in continuous integration: a headless

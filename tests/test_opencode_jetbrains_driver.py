@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import time
 from pathlib import Path
 
@@ -108,8 +109,6 @@ def test_idea_log_wait_retries_idempotent_ui_action_until_ready(tmp_path: Path) 
 def test_chat_readiness_uses_stable_lifecycle_events(tmp_path: Path) -> None:
     idea_log = tmp_path / "idea.log"
     idea_log.write_text(
-        "2026-07-15 AcpNewChatReadinessAwaiter - "
-        "Default-agent CDN readiness wait finished\n"
         "2026-07-15 AcpSessionLifecycleManagerRegistry - "
         "No session managers found for agent 'SYNAPSE OpenCode E2E'\n",
         encoding="utf-8",
@@ -231,11 +230,68 @@ def test_chat_composer_focus_targets_the_validated_project_frame(
         "_pointer_click",
         lambda window, x, y, action: clicks.append((window, x, y, action)),
     )
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_xdotool",
+        lambda *_args: subprocess.CompletedProcess([], 0, "123\n", ""),
+    )
 
-    jetbrains_client._focus_chat_composer("project")
+    jetbrains_client._focus_chat_composer("123")
 
-    assert actions == [("windowfocus", "--sync", "project")]
-    assert clicks == [("project", 1160, 870, "focus the JetBrains AI Chat composer")]
+    assert actions == [("windowfocus", "--sync", "123")]
+    assert clicks == [("123", 1160, 870, "focus the JetBrains AI Chat composer")]
+
+
+def test_chat_composer_focus_rejects_ambient_keyboard_focus(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (1400, 1000))
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
+    monkeypatch.setattr(jetbrains_client, "_checked_xdotool", lambda _action, *_args: None)
+    monkeypatch.setattr(jetbrains_client, "_pointer_click", lambda *_args: None)
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_xdotool",
+        lambda *_args: subprocess.CompletedProcess([], 0, "124\n", ""),
+    )
+
+    with pytest.raises(RuntimeError, match="without project-frame keyboard focus"):
+        jetbrains_client._focus_chat_composer("123")
+
+
+@pytest.mark.parametrize(
+    ("returncode", "output"),
+    [(1, ""), (0, "not-a-window")],
+)
+def test_chat_composer_focus_rejects_unprovable_keyboard_focus(
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int,
+    output: str,
+) -> None:
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (1400, 1000))
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
+    monkeypatch.setattr(jetbrains_client, "_checked_xdotool", lambda _action, *_args: None)
+    monkeypatch.setattr(jetbrains_client, "_pointer_click", lambda *_args: None)
+    monkeypatch.setattr(
+        jetbrains_client,
+        "_xdotool",
+        lambda *_args: subprocess.CompletedProcess([], returncode, output, ""),
+    )
+
+    with pytest.raises(RuntimeError, match="focused=None"):
+        jetbrains_client._focus_chat_composer("123")
+
+
+def test_chat_composer_focus_rejects_an_invalid_project_xid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(jetbrains_client, "_window_geometry", lambda _window: (1400, 1000))
+    monkeypatch.setattr(jetbrains_client, "_window_is_root_child", lambda _window: True)
+    monkeypatch.setattr(jetbrains_client, "_checked_xdotool", lambda _action, *_args: None)
+    monkeypatch.setattr(jetbrains_client, "_pointer_click", lambda *_args: None)
+
+    with pytest.raises(RuntimeError, match="invalid XID"):
+        jetbrains_client._focus_chat_composer("project")
 
 
 @pytest.mark.parametrize("geometry", [None, (999, 1000), (1400, 699)])
