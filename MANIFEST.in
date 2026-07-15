@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE_CHANNEL — source-distribution manifest
+#
+# Tests are exercised in CI and live in the Git repository, not in the
+# installable source distribution. setuptools' default sdist picks up the
+# test_*.py modules but not their helper modules, conftest, or fixtures, which
+# shipped a partial test suite that could not run (external review finding 7).
+# Prune it so the sdist is a clean, installable library that mirrors the wheel.
+prune tests

@@ -21,8 +21,9 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     publish = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
     security = SECURITY_POLICY.read_text(encoding="utf-8")
-    build, after_build = publish.split("\n  attest:", maxsplit=1)
-    attest, publish_job = after_build.split("\n  publish:", maxsplit=1)
+    build, after_build = publish.split("\n  integrity:", maxsplit=1)
+    integrity, after_integrity = after_build.split("\n  attest:", maxsplit=1)
+    attest, publish_job = after_integrity.split("\n  publish:", maxsplit=1)
 
     assert (release + publish).count("python -m build") == 1
     assert "python -m build --outdir release-artifact" in build
@@ -33,6 +34,18 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     assert "id-token: write" not in build
     assert 'tags: ["v*"]' in publish
     assert "workflow_dispatch:" not in publish
+
+    # The integrity gate installs the exact artifacts in clean environments and
+    # proves wheel/sdist parity before anything is signed or published; it never
+    # rebuilds, so the one verified build stays authoritative.
+    assert "needs: build" in integrity
+    assert "name: release-dist" in integrity
+    assert "actions/download-artifact@" in integrity
+    assert "import synapse_channel" in integrity
+    assert "synapse --help" in integrity
+    assert "tools/check_wheel_sdist_parity.py" in integrity
+    assert "python -m build" not in integrity
+    assert "id-token: write" not in integrity
 
     assert "needs: build" in attest
     assert "artifact-metadata: write" in attest
@@ -48,7 +61,7 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     assert "name: release-provenance" in attest
     assert attest.index("sha256sum --check") < attest.index("actions/attest@")
 
-    assert "needs: [build, attest]" in publish_job
+    assert "needs: [build, attest, integrity]" in publish_job
     assert "id-token: write" in publish_job
     assert "actions/download-artifact@" in publish_job
     assert "sha256sum --check --strict SHA256SUMS" in publish_job

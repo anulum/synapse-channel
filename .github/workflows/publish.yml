@@ -51,6 +51,38 @@ jobs:
           path: release-artifact/
           if-no-files-found: error
 
+  integrity:
+    # Provenance proves which artifact was built; this proves it works. Install
+    # the exact wheel and sdist in clean environments and confirm they ship the
+    # same importable package with no partial test tree — publication blocks on it.
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-dist
+          path: release-artifact/
+      - name: Install the built wheel in a clean environment and smoke it
+        run: |
+          python -m venv .wheel-venv
+          .wheel-venv/bin/python -m pip install release-artifact/*.whl
+          .wheel-venv/bin/python -c "import synapse_channel; print(synapse_channel.__version__)"
+          .wheel-venv/bin/synapse --help >/dev/null
+      - name: Install the source distribution in a clean environment and smoke it
+        run: |
+          python -m venv .sdist-venv
+          .sdist-venv/bin/python -m pip install release-artifact/*.tar.gz
+          .sdist-venv/bin/python -c "import synapse_channel; print(synapse_channel.__version__)"
+          .sdist-venv/bin/synapse --help >/dev/null
+      - name: Verify wheel and sdist ship the same package and the sdist has no tests
+        run: python tools/check_wheel_sdist_parity.py release-artifact/*.whl release-artifact/*.tar.gz
+
   attest:
     needs: build
     runs-on: ubuntu-latest
@@ -91,7 +123,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [build, attest]
+    needs: [build, attest, integrity]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
