@@ -18,6 +18,8 @@ import pytest
 
 from e2e.opencode_editors import zed_x11
 
+_PINNED_ZED_X11_REGEX = r"^dev\.zed\.Zed$"
+
 
 def _completed(
     returncode: int = 0,
@@ -95,7 +97,7 @@ def test_checked_xdotool_accepts_success_and_rejects_failure(
 
 
 def test_window_id_parser_accepts_only_exact_visible_search_shapes() -> None:
-    selector = ("--class", "^zed$")
+    selector = ("--class", _PINNED_ZED_X11_REGEX)
     assert zed_x11._window_ids(_completed(1), selector=selector) == ()
     assert zed_x11._window_ids(_completed(stdout="123\n123\n"), selector=selector) == ("123",)
 
@@ -115,7 +117,7 @@ def test_window_id_parser_rejects_transport_and_identifier_failures(
     message: str,
 ) -> None:
     with pytest.raises(RuntimeError, match=message):
-        zed_x11._window_ids(result, selector=("--class", "^zed$"))
+        zed_x11._window_ids(result, selector=("--class", _PINNED_ZED_X11_REGEX))
 
 
 @pytest.mark.parametrize(
@@ -220,7 +222,12 @@ def test_owned_window_requires_exact_strong_identity_and_group(
     monkeypatch.setattr(zed_x11, "_required_window_pid", lambda *_args, **_kwargs: 42)
     monkeypatch.setattr(zed_x11, "_required_process_group", lambda _pid: 77)
     assert zed_x11.find_owned_window(1.0, process_group=77, project_name="project") == "123"
-    assert selectors == [("--class", "^zed$"), ("--classname", "^zed$")]
+    assert zed_x11._PINNED_ZED_APP_ID == "dev.zed.Zed"
+    assert zed_x11._PINNED_ZED_APP_ID_REGEX == _PINNED_ZED_X11_REGEX
+    assert selectors == [
+        ("--class", _PINNED_ZED_X11_REGEX),
+        ("--classname", _PINNED_ZED_X11_REGEX),
+    ]
 
 
 def test_window_search_uses_the_exact_selector_and_deadline(
@@ -233,9 +240,12 @@ def test_window_search_uses_the_exact_selector_and_deadline(
         return _completed(stdout="123\n")
 
     monkeypatch.setattr(zed_x11, "_run_xdotool", run)
-    assert zed_x11._search_window_ids(("--class", "^zed$"), deadline=7.0) == ("123",)
+    assert zed_x11._search_window_ids(
+        ("--class", _PINNED_ZED_X11_REGEX),
+        deadline=7.0,
+    ) == ("123",)
     assert calls == [
-        (("search", "--onlyvisible", "--class", "^zed$"), 7.0),
+        (("search", "--onlyvisible", "--class", _PINNED_ZED_X11_REGEX), 7.0),
     ]
 
 
@@ -307,10 +317,10 @@ def test_owned_window_ignores_title_only_impostors_and_times_out(
     with pytest.raises(RuntimeError, match="owned visible window"):
         zed_x11.find_owned_window(0.5, process_group=77, project_name="project")
     assert calls == [
-        ("--class", "^zed$"),
-        ("--classname", "^zed$"),
-        ("--class", "^zed$"),
-        ("--classname", "^zed$"),
+        ("--class", _PINNED_ZED_X11_REGEX),
+        ("--classname", _PINNED_ZED_X11_REGEX),
+        ("--class", _PINNED_ZED_X11_REGEX),
+        ("--classname", _PINNED_ZED_X11_REGEX),
     ]
 
 

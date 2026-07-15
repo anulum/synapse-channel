@@ -465,8 +465,10 @@ driver writes that exact profile with owner-only modes and invokes a dedicated
 `ctrl-alt-shift-f12` binding that does not fall through to Zed's built-in
 remote-project shortcut. Its X11 driver intersects anchored class and instance
 selectors, requires pinned Zed's exact project-root title shape, and binds the
-window's `_NET_WM_PID` to the isolated driver process group. Title-only windows
-and unrelated Zed processes cannot receive input. Startup, session, and prompt
+window's `_NET_WM_PID` to the isolated driver process group. Both WM_CLASS
+fields must equal pinned stable app ID `dev.zed.Zed`; that identity is part of
+the machine-readable compatibility contract. Title-only windows and unrelated
+Zed processes cannot receive input. Startup, session, and prompt
 input each use absolute deadlines; the derived 305-second parent cap also
 reserves both screenshot attempts, direct leader cleanup, complete
 driver/editor/proxy/helper process-group cleanup, and a separate supervision

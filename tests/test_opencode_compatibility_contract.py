@@ -84,6 +84,7 @@ def test_repository_uses_one_complete_immutable_compatibility_contract() -> None
     assert len(contract.clients) == 4
     assert contract.client("jetbrains").name == "JetBrains.IntelliJ IDEA"
     assert contract.client("neovim").version == "1.0.0"
+    assert contract.client("zed").x11_app_id == "dev.zed.Zed"
     with pytest.raises(CompatibilityError, match="unknown OpenCode editor lane"):
         contract.client("unknown")
     assert_repository_contract(contract)
@@ -100,6 +101,7 @@ def test_repository_contract_refuses_documented_wire_identity_drift(tmp_path: Pa
         ".github/workflows/opencode-integration.yml",
         ".github/workflows/opencode-editor-e2e.yml",
         ".github/workflows/opencode-compatibility.yml",
+        "tests/e2e/opencode_editors/zed_x11.py",
     )
     for relative in surfaces:
         destination = root / relative
@@ -112,6 +114,36 @@ def test_repository_contract_refuses_documented_wire_identity_drift(tmp_path: Pa
     )
 
     with pytest.raises(CompatibilityError, match="neovim wire identity"):
+        assert_repository_contract(contract, root)
+
+
+def test_repository_contract_refuses_zed_x11_app_id_drift(tmp_path: Path) -> None:
+    contract = load_compatibility()
+    root = tmp_path / "repository"
+    source_root = Path(__file__).resolve().parents[1]
+    surfaces = (
+        "src/synapse_channel/participants/opencode_stream.py",
+        "tests/fixtures/opencode/process.py",
+        "docs/opencode.md",
+        ".github/workflows/opencode-integration.yml",
+        ".github/workflows/opencode-editor-e2e.yml",
+        ".github/workflows/opencode-compatibility.yml",
+        "tests/e2e/opencode_editors/zed_x11.py",
+    )
+    for relative in surfaces:
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_root / relative, destination)
+    zed_x11 = root / "tests/e2e/opencode_editors/zed_x11.py"
+    zed_x11.write_text(
+        zed_x11.read_text(encoding="utf-8").replace(
+            '_PINNED_ZED_APP_ID = "dev.zed.Zed"',
+            '_PINNED_ZED_APP_ID = "dev.zed.Zed-Preview"',
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CompatibilityError, match="Zed X11 identity drifted"):
         assert_repository_contract(contract, root)
 
 
@@ -138,6 +170,7 @@ def test_repository_contract_refuses_editor_release_gate_drift(
         ".github/workflows/opencode-integration.yml",
         ".github/workflows/opencode-editor-e2e.yml",
         ".github/workflows/opencode-compatibility.yml",
+        "tests/e2e/opencode_editors/zed_x11.py",
     )
     for relative in surfaces:
         destination = root / relative
@@ -186,6 +219,7 @@ def test_upstream_verifier_accepts_all_pinned_assets_and_reports_latest() -> Non
         ("missing-component", "component coverage is incomplete"),
         ("missing-client", "client lane coverage is incomplete"),
         ("wire-client", "differs from the wire contract"),
+        ("zed-x11-app-id", "differs from the wire contract"),
         ("runtime-pin", "runtime pin differs"),
         ("extra-field", "fields differ"),
         ("schema", "unsupported OpenCode compatibility schema"),
@@ -216,6 +250,8 @@ def test_manifest_refuses_incomplete_or_widened_contracts(
         del clients["zed"]
     elif mutation == "wire-client":
         clients["neovim"]["version"] = "19.19.0"
+    elif mutation == "zed-x11-app-id":
+        clients["zed"]["x11_app_id"] = "zed"
     elif mutation == "runtime-pin":
         next(row for row in components if row["name"] == "Emacs")["pin"] = "29.2"
     elif mutation == "extra-field":

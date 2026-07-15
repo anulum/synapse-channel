@@ -63,10 +63,10 @@ _EXPECTED_COMPONENTS = frozenset(
     }
 )
 _EXPECTED_CLIENTS = {
-    "emacs": ("agent-shell", "0.59.1", "Agent Shell"),
-    "jetbrains": ("JetBrains.IntelliJ IDEA", "2026.1.4", "IntelliJ IDEA"),
-    "neovim": ("CodeCompanion.nvim", "1.0.0", "CodeCompanion.nvim"),
-    "zed": ("zed", "1.10.3", "Zed"),
+    "emacs": ("agent-shell", "0.59.1", "Agent Shell", ""),
+    "jetbrains": ("JetBrains.IntelliJ IDEA", "2026.1.4", "IntelliJ IDEA", ""),
+    "neovim": ("CodeCompanion.nvim", "1.0.0", "CodeCompanion.nvim", ""),
+    "zed": ("zed", "1.10.3", "Zed", "dev.zed.Zed"),
 }
 
 
@@ -105,6 +105,7 @@ class EditorClient:
     name: str
     version: str
     component: str
+    x11_app_id: str
 
 
 @dataclass(frozen=True)
@@ -260,12 +261,18 @@ def load_compatibility(path: Path = DEFAULT_MANIFEST) -> Compatibility:
     for lane, value in sorted(raw_clients.items(), key=lambda item: str(item[0])):
         lane_name = str(lane)
         data = _object(value, f"clients.{lane_name}")
-        _exact_keys(data, {"name", "version", "component"}, f"clients.{lane_name}")
+        expected_fields = {"name", "version", "component"}
+        if lane_name == "zed":
+            expected_fields.add("x11_app_id")
+        _exact_keys(data, expected_fields, f"clients.{lane_name}")
         client = EditorClient(
             lane=lane_name,
             name=_text(data, "name", f"clients.{lane_name}"),
             version=_text(data, "version", f"clients.{lane_name}"),
             component=_text(data, "component", f"clients.{lane_name}"),
+            x11_app_id=(
+                _text(data, "x11_app_id", f"clients.{lane_name}") if lane_name == "zed" else ""
+            ),
         )
         expected_client = _EXPECTED_CLIENTS.get(lane_name)
         if (
@@ -274,6 +281,7 @@ def load_compatibility(path: Path = DEFAULT_MANIFEST) -> Compatibility:
                 client.name,
                 client.version,
                 client.component,
+                client.x11_app_id,
             )
             != expected_client
         ):
@@ -303,6 +311,7 @@ def assert_repository_contract(contract: Compatibility, root: Path = ROOT) -> No
         "integration": root / ".github/workflows/opencode-integration.yml",
         "editors": root / ".github/workflows/opencode-editor-e2e.yml",
         "compatibility": root / ".github/workflows/opencode-compatibility.yml",
+        "zed_x11": root / "tests/e2e/opencode_editors/zed_x11.py",
     }
     text = {name: path.read_text(encoding="utf-8") for name, path in surfaces.items()}
     for name in ("stream", "fixture", "docs", "integration", "editors", "compatibility"):
@@ -325,6 +334,11 @@ def assert_repository_contract(contract: Compatibility, root: Path = ROOT) -> No
             )
         if client.name not in text["docs"] or client.version not in text["docs"]:
             raise CompatibilityError(f"OpenCode documentation omitted {client.lane} wire identity")
+        if client.x11_app_id and (
+            f'_PINNED_ZED_APP_ID = "{client.x11_app_id}"' not in text["zed_x11"]
+            or f"`{client.x11_app_id}`" not in text["docs"]
+        ):
+            raise CompatibilityError("Zed X11 identity drifted from the pinned runtime contract")
     for artifact in contract.artifacts:
         if artifact.smoke and (
             artifact.key not in text["compatibility"]

@@ -81,7 +81,7 @@ All notable changes to this project are documented here.
   by pinned Zed 1.10.3's `--user-data-dir`, uses a dedicated binding that cannot
   fall through to the built-in remote-project picker, rejects ambiguous or
   malformed X11 window searches, and accepts only the intersection of anchored
-  class and instance identities with the pinned project title and a
+  `dev.zed.Zed` class and instance identity with the pinned project title and a
   `_NET_WM_PID` owned by the isolated process group. It requires non-empty proxy
   arguments, applies absolute startup/session/prompt-input deadlines, derives
   the outer timeout from every phase and cleanup reserve, kills the complete

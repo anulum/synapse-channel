@@ -10,14 +10,17 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess  # nosec B404
 import time
 
 from e2e.opencode_editors.zed_timing import DEFAULT_ZED_TIMING
 
-_CLASS_SELECTOR = ("--class", "^zed$")
-_INSTANCE_SELECTOR = ("--classname", "^zed$")
+_PINNED_ZED_APP_ID = "dev.zed.Zed"
+_PINNED_ZED_APP_ID_REGEX = f"^{re.escape(_PINNED_ZED_APP_ID)}$"
+_CLASS_SELECTOR = ("--class", _PINNED_ZED_APP_ID_REGEX)
+_INSTANCE_SELECTOR = ("--classname", _PINNED_ZED_APP_ID_REGEX)
 _POLL_INTERVAL_SECONDS = 0.25
 
 
