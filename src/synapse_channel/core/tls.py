@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.secret_files import SecretFileError, read_regular_file_bytes
 
 
 class HubTLSConfigError(SynapseError, ValueError):
@@ -195,11 +196,16 @@ def _canonical_der(data: bytes) -> bytes:
 
 
 def _load_certificate_der(certfile: str | Path) -> bytes:
-    """Load a PEM or DER certificate file and return canonical DER bytes."""
+    """Load a PEM or DER certificate file and return canonical DER bytes.
+
+    Opens with ``O_NOFOLLOW`` and requires a regular file so a final-path
+    symlink cannot substitute the operator's pin material (SCH-H-NEW-14).
+    Public PEMs may remain mode 0644 — this is not an owner-only secret floor.
+    """
     path = Path(certfile)
     try:
-        data = path.read_bytes()
-    except OSError as exc:
+        data = read_regular_file_bytes(path, label="peer-certificate-pin")
+    except SecretFileError as exc:
         raise HubTLSConfigError(f"could not load peer certificate: {exc}") from exc
     return _canonical_der(data)
 

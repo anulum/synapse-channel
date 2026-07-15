@@ -183,10 +183,12 @@ class RemanentiaHttpRecall:
         try:
             token = read_secret_file(path, flag="memory-token-file")
         except SecretFileError as exc:
+            # Classify on fixed English suffixes only — never on free "empty"/"UTF-8"
+            # substrings that could appear in a user-chosen path (SCH-H-NEW-11b).
             message = str(exc)
-            if "empty" in message:
+            if " is empty; expected one secret value" in message:
                 raise ValueError("memory token file is empty or exceeds its size limit") from None
-            if "UTF-8" in message:
+            if " is not valid UTF-8" in message:
                 raise ValueError("memory token file is not valid UTF-8") from None
             # Missing, symlink, wrong owner/mode, oversized raw open, etc.
             raise RuntimeError("memory token file is unavailable") from None

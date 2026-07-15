@@ -24,6 +24,7 @@ text.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 
@@ -232,7 +233,9 @@ def _write_registry(
 ) -> None:
     """Write the local wake-target registry atomically."""
     path = registry_path(config)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with contextlib.suppress(OSError):
+        path.parent.chmod(0o700)
     record = RegistryRecord(
         identity=config.identity,
         session=config.session,

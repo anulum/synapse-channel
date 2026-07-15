@@ -103,6 +103,53 @@ def _read_owner_only_text(
         raise SecretFileError(f"{flag}: {path} is not valid UTF-8") from exc
 
 
+def read_regular_file_bytes(
+    file_path: str | Path,
+    *,
+    label: str,
+    limit: int = DEFAULT_SECRET_FILE_LIMIT,
+) -> bytes:
+    """Read one regular file with ``O_NOFOLLOW`` (public material; no mode floor).
+
+    Used for pin certificates and public verification documents where owner-only
+    mode is not required, but final-path symlink substitution must still fail
+    closed. The error never includes file content.
+    """
+    if not _POSIX or not hasattr(os, "O_NOFOLLOW"):
+        raise SecretFileError(f"{label}: secure nofollow file open is unavailable on this platform")
+    path = Path(file_path).expanduser()
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise SecretFileError(
+            f"{label}: cannot securely open {path}: {exc.strerror or exc}"
+        ) from exc
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise SecretFileError(f"{label}: {path} is not a regular file")
+        if info.st_size > limit:
+            raise SecretFileError(f"{label}: {path} exceeds the {limit}-byte file limit")
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, min(65_536, limit + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > limit:
+                raise SecretFileError(f"{label}: {path} exceeds the {limit}-byte file limit")
+    except OSError as exc:
+        raise SecretFileError(
+            f"{label}: cannot securely read {path}: {exc.strerror or exc}"
+        ) from exc
+    finally:
+        os.close(descriptor)
+    return b"".join(chunks)
+
+
 def read_secret_file(file_path: str | Path, *, flag: str) -> str:
     """Read one owner-only secret value, stripped of surrounding whitespace.
 

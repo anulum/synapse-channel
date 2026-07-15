@@ -92,19 +92,29 @@ def write_signing_key(path: str | Path, private_key: Ed25519PrivateKey) -> None:
 def load_signing_key(path: str | Path) -> Ed25519PrivateKey:
     """Load an Ed25519 identity signing key from a PKCS#8 PEM file.
 
+    The private PEM is read through the shared owner-only secret floor
+    (``O_NOFOLLOW``, euid owner, mode without group/other bits) so identity
+    and capability-card keys match connect-token and receipt-key discipline.
+    Errors never include key material.
+
     Raises
     ------
     IdentityKeyError
-        When the file is missing, is not PEM, or does not hold an Ed25519 key.
+        When the file is missing, is not owner-only, is not PEM, or does not
+        hold an Ed25519 key.
     """
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+    from synapse_channel.core.secret_files import SecretFileError, read_secret_file
+
     target = Path(path).expanduser()
     try:
-        pem = target.read_bytes()
-    except OSError as exc:
+        # PEM is UTF-8 text; outer strip matches exclusive 0o600 write.
+        pem_text = read_secret_file(target, flag="identity-signing-key")
+    except SecretFileError as exc:
         raise IdentityKeyError(f"cannot read identity key {target}: {exc}") from exc
+    pem = pem_text.encode("utf-8")
     try:
         private_key = serialization.load_pem_private_key(pem, password=None)
     except (ValueError, TypeError) as exc:

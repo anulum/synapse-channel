@@ -255,10 +255,16 @@ def load_receipt_verification_key(path: str | Path) -> ReceiptVerificationKey:
     ReceiptSigningError
         When the file is unreadable, malformed, or self-inconsistent.
     """
+    from synapse_channel.core.secret_files import SecretFileError, read_regular_file_bytes
+
     key_path = Path(path)
     try:
-        document = json.loads(key_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        raw = read_regular_file_bytes(key_path, label="receipt-verification-key")
+        document = json.loads(raw.decode("utf-8"))
+    except SecretFileError as exc:
+        msg = f"cannot read receipt verification key {key_path}: {exc}"
+        raise ReceiptSigningError(msg) from exc
+    except (UnicodeDecodeError, ValueError) as exc:
         msg = f"cannot read receipt verification key {key_path}: {exc}"
         raise ReceiptSigningError(msg) from exc
     if not isinstance(document, Mapping):

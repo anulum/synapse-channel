@@ -149,11 +149,19 @@ def load_capability_card_json(path: str | Path) -> dict[str, Any]:
             result[key] = value
         return result
 
+    from synapse_channel.core.secret_files import SecretFileError, read_regular_file_bytes
+
     try:
-        loaded = json.loads(file.read_text(encoding="utf-8"), object_pairs_hook=object_from_pairs)
-    except FileNotFoundError as exc:
-        raise CapabilityCardSigningError(f"capability card does not exist: {file}") from exc
-    except OSError as exc:
+        raw = read_regular_file_bytes(file, label="capability-card")
+        loaded = json.loads(raw.decode("utf-8"), object_pairs_hook=object_from_pairs)
+    except SecretFileError as exc:
+        # Preserve "does not exist" wording when the open fails for a missing path.
+        reason = str(exc)
+        if "No such file" in reason or "cannot securely open" in reason:
+            if not file.exists():
+                raise CapabilityCardSigningError(f"capability card does not exist: {file}") from exc
+        raise CapabilityCardSigningError(f"cannot read capability card {file}: {exc}") from exc
+    except UnicodeDecodeError as exc:
         raise CapabilityCardSigningError(f"cannot read capability card {file}: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise CapabilityCardSigningError(f"invalid capability-card JSON: {exc}") from exc

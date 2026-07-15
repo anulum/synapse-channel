@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shlex
 
@@ -55,6 +56,9 @@ def _private_sidecar_runtime(env: Mapping[str, str], leaf: str) -> Path:
     else:
         runtime = private_runtime_parent(env) / leaf
     runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # mkdir mode is ignored when the directory already exists — re-tighten.
+    with contextlib.suppress(OSError):
+        runtime.chmod(0o700)
     return runtime
 
 
@@ -134,6 +138,7 @@ def _start_tmux_waiter(
     synapse_bin: str,
     uri: str,
     token: str | None,
+    token_file: str | None = None,
     env: Mapping[str, str],
 ) -> None:
     """Start the persistent directed waiter for a provider tmux session."""
@@ -154,7 +159,11 @@ def _start_tmux_waiter(
         "--agent-command",
         shlex.join(command),
     ]
-    if token:
+    # Prefer --token-file so the child argv never carries a process-visible secret
+    # (SCH-H-NEW-16). Inline --token remains only when no file was supplied.
+    if token_file:
+        wait_command.extend(["--token-file", token_file])
+    elif token:
         wait_command.extend(["--token", token])
     if uri != DEFAULT_HUB_URI:
         wait_command.extend(["--uri", uri])
@@ -191,6 +200,7 @@ def _run_terminal_tmux_session(
     env: Mapping[str, str],
     uri: str,
     token: str | None,
+    token_file: str | None = None,
     tmux_bin: str,
     synapse_bin: str,
     session: str | None,
@@ -220,6 +230,7 @@ def _run_terminal_tmux_session(
         synapse_bin=synapse_bin,
         uri=uri,
         token=token,
+        token_file=token_file,
         env=env,
     )
     return _attach_tmux_session(session=resolved_session, tmux_bin=tmux_bin, env=env)
@@ -264,6 +275,7 @@ def run_worker_session(
             env=env,
             uri=uri,
             token=token,
+            token_file=token_file,
             tmux_bin=tmux_bin,
             synapse_bin=synapse_bin,
             session=tmux_session,
