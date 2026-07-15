@@ -122,6 +122,17 @@ def test_parser_adds_token_file_to_token_commands() -> None:
     assert args.token_file == "/x"
 
 
+def test_parser_builds_without_duplicate_token_file() -> None:
+    """A command that declares its own --token-file keeps the companion idempotent.
+
+    ``doctor`` both takes ``--token`` and declares its own ``--token-file``; the
+    companion loop must skip it rather than add a second one, so ``build_parser``
+    never raises ``argparse.ArgumentError`` and the flag still parses.
+    """
+    args = cli.build_parser().parse_args(["doctor", "--token-file", "/x"])
+    assert args.token_file == "/x"
+
+
 # --- relay parser flags ------------------------------------------------------
 
 

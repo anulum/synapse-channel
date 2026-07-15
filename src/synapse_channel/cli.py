@@ -281,8 +281,11 @@ def build_parser(*, command: str | None = None) -> argparse.ArgumentParser:
 
     # Give every command that takes --token a --token-file companion, so the secret
     # can come from a file instead of argv (which is visible to anyone running `ps`).
+    # A subparser that already declares its own --token-file keeps it, so the loop
+    # stays idempotent and never conflicts with a command-specific declaration.
     for subparser in sub.choices.values():
-        if any("--token" in action.option_strings for action in subparser._actions):
+        option_strings = {opt for action in subparser._actions for opt in action.option_strings}
+        if "--token" in option_strings and "--token-file" not in option_strings:
             subparser.add_argument(
                 "--token-file",
                 default=None,
