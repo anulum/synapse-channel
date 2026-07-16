@@ -414,10 +414,15 @@ more expensive root-child and transient-owner checks only for windows with the
 exact pinned selector dimensions. Malformed batch output, multiple matching
 selectors, or a selector whose ownership changes before or after filtering
 fails closed. The driver clears the selector filter, types the exact
-`SYNAPSE OpenCode E2E` name, revalidates its title and transient owner, captures
-the filtered result, and confirms with `Return`; a raw post-confirmation X11
-snapshot must prove both the original XID and every valid replacement selector
-are absent. A legitimate empty X11 search is accepted only without diagnostics;
+`SYNAPSE OpenCode E2E` name, then boundedly reacquires exactly one title- and
+owner-proven selector through the existing selection deadline before it
+captures the filtered result and confirms with `Return`. A transient empty
+snapshot or an owner-proven popup XID remap is retried without repeating input;
+multiple selectors, an exact selector title outside the pinned project frame,
+or malformed ownership state still fails immediately. After confirmation the
+driver follows any single owner-proven replacement XID and requires two
+consecutive clean absence snapshots before declaring the selector closed. A
+legitimate empty X11 search is accepted only without diagnostics;
 timeouts, display/transport failures, malformed geometry, or failed title,
 parentage, and transient-owner queries fail closed instead of being interpreted
 as disappearance. Ownership tokens must be positive canonical hexadecimal X11
@@ -430,10 +435,11 @@ while allowing those independently scheduled completion events in either
 observed IDEA 2026.1.4 order. Lifecycle baselines bind each log's device and
 inode, reject replacement or truncation, and reject any post-baseline chat or
 process event for an agent other than the exact pinned identity. The
-implementation keeps orchestration/selection, X11 transport/input, first-run
-setup, and evidence capture in separate responsibility modules. The generated
-IDEA ACP entry also refuses an empty or relative proxy executable. IDEA starts as an
-isolated process-group leader; cleanup terminates every helper with bounded
+implementation keeps client orchestration, selector lifecycle, X11
+transport/input, first-run setup, and evidence capture in separate
+responsibility modules. The generated IDEA ACP entry also refuses an empty or
+relative proxy executable. IDEA starts as an isolated process-group leader;
+cleanup terminates every helper with bounded
 `SIGTERM`/`SIGKILL` escalation. Its ACP initialization phase has a bounded
 three-minute budget for delayed plugin continuations on loaded headless hosts
 and a separate five-minute startup budget for first-run, project loading, and
@@ -459,6 +465,14 @@ bounded JSONL trace containing protocol metadata and only the prompt's byte
 length and SHA-256 digest, never its content. A response must contain exactly
 one of `result` or `error`; errors require an integer code and non-empty message,
 and malformed responses are rejected before their pending request is consumed.
+The Emacs lane also waits until both Agent Shell's active-request tracker and
+the underlying `acp.el` pending-request map remain empty for a continuous
+bounded interval before killing its buffer, so the post-turn `session/list`
+title refresh cannot be truncated from the evidence stream. The transport wait
+is isolated from the real-client script and exercised by batch ERT in the exact
+pinned Emacs CI lane, including independent busy trackers, stability-window
+reset, activity created by the threshold-crossing output service, and deadline
+exhaustion.
 
 All four editor lanes are **required** and gate the workflow. Neovim and Emacs
 use their headless clients. Zed and JetBrains run their pinned real GUI clients

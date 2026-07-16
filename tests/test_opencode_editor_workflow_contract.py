@@ -70,6 +70,10 @@ def test_editor_workflow_executes_the_semantic_contract_directly() -> None:
 
     assert "python -m tools.opencode_compatibility_contract --check" in text
     assert "pytest tests/test_opencode_editor_workflow_contract.py" in text
+    assert "tests/e2e/opencode_editors/jetbrains_selector.py" in text
+    assert "tests/test_opencode_jetbrains_selector.py" in text
+    assert "Exercise Emacs transport lifecycle branches" in text
+    assert "-f ert-run-tests-batch-and-exit" in text
 
 
 def test_continue_on_error_is_rejected_at_any_nested_depth() -> None:

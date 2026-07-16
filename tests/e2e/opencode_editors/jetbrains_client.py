@@ -11,11 +11,9 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess  # nosec B404
 import sys
 import time
-from collections.abc import Callable
 from pathlib import Path
 
 from e2e.opencode_editors import jetbrains_x11_driver as x11
@@ -27,6 +25,15 @@ from e2e.opencode_editors.jetbrains_evidence import (
 )
 from e2e.opencode_editors.jetbrains_lifecycle import JetBrainsLifecycleGuard
 from e2e.opencode_editors.jetbrains_readiness import prerequisite_then_all
+from e2e.opencode_editors.jetbrains_selector import (
+    AGENT_NAME as _AGENT_NAME,
+)
+from e2e.opencode_editors.jetbrains_selector import (
+    open_agent_selector as _open_agent_selector,
+)
+from e2e.opencode_editors.jetbrains_selector import (
+    select_pinned_agent as _select_pinned_agent,
+)
 from e2e.opencode_editors.jetbrains_setup import (
     complete_first_run_agreements,
     find_project_window,
@@ -36,30 +43,13 @@ from e2e.opencode_editors.jetbrains_setup import (
     write_idea_profile,
 )
 from e2e.opencode_editors.jetbrains_timing import DEFAULT_JETBRAINS_TIMING
-from e2e.opencode_editors.jetbrains_x11_geometry import (
-    X11WindowRectangle,
-    parse_window_rectangles,
-)
 
-_AGENT_NAME = "SYNAPSE OpenCode E2E"
 _AGENT_ID = "acp.synapse-opencode-e2e"
 _STARTUP_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.startup_seconds
 _CHAT_READY_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.chat_ready_seconds
 _AGENT_SELECTION_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.agent_selection_seconds
 _ACP_HANDSHAKE_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_handshake_seconds
 _ACP_PROMPT_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_prompt_seconds
-_AGENT_SELECTOR_OPEN_RETRY_SECONDS = 5.0
-_X11_SNAPSHOT_ATTEMPTS = 3
-_X11_BAD_WINDOW_LINE = "X Error of failed request:  BadWindow (invalid Window parameter)"
-_X11_GET_WINDOW_ATTRIBUTES_LINE = "  Major opcode of failed request:  3 (X_GetWindowAttributes)"
-_X11_BAD_WINDOW_METADATA = (
-    re.compile(r"  Minor opcode of failed request:  [0-9]+"),
-    re.compile(r"  Resource id in failed request:  0x[0-9a-f]+"),
-    re.compile(r"  Serial number of failed request:  [0-9]+"),
-    re.compile(r"  Current serial number in output stream:  [0-9]+"),
-)
-_AGENT_SELECTOR_TITLE = "win0"
-_AGENT_SELECTOR_GEOMETRY = (310, 407)
 _CHAT_READY_MARKERS = (f"No session managers found for agent '{_AGENT_NAME}'",)
 _ACP_SESSION_PREREQUISITE = "Required plugins check passed"
 _ACP_SESSION_COMPLETIONS = (
@@ -85,260 +75,6 @@ def _show_ai_chat(window: str, *, deadline: float | None = None) -> None:
         "ctrl+alt+shift+j",
         deadline=deadline,
     )
-
-
-def _is_agent_selector_popup(
-    window: str,
-    project: str,
-    *,
-    deadline: float | None = None,
-) -> bool:
-    """Match only the pinned agent selector transient owned by the project frame."""
-    try:
-        project_id = int(project)
-    except ValueError:
-        return False
-    return x11._window_geometry(
-        window, deadline=deadline
-    ) == _AGENT_SELECTOR_GEOMETRY and _agent_selector_owner_matches(
-        window, project_id, deadline=deadline
-    )
-
-
-def _agent_selector_owner_matches(
-    window: str,
-    project_id: int,
-    *,
-    deadline: float | None = None,
-) -> bool:
-    """Validate one selector candidate, rejecting unclassifiable X11 state."""
-    return (
-        x11._required_window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
-        and x11._required_window_is_root_child(window, deadline=deadline)
-        and x11._required_window_transient_for(window, deadline=deadline) == project_id
-    )
-
-
-def _is_disappearing_window_snapshot(result: subprocess.CompletedProcess[str]) -> bool:
-    """Return whether a batched X11 query lost a window during classification."""
-    if result.returncode != 1 or result.stdout.strip():
-        return False
-    lines = result.stderr.splitlines()
-    if lines[:2] != [_X11_BAD_WINDOW_LINE, _X11_GET_WINDOW_ATTRIBUTES_LINE]:
-        return False
-    matched_metadata: set[int] = set()
-    for line in lines[2:]:
-        matches = {
-            index
-            for index, pattern in enumerate(_X11_BAD_WINDOW_METADATA)
-            if pattern.fullmatch(line)
-        }
-        if len(matches) != 1 or not matched_metadata.isdisjoint(matches):
-            return False
-        matched_metadata.update(matches)
-    return True
-
-
-def _visible_jetbrains_window_rectangles(*, deadline: float) -> tuple[X11WindowRectangle, ...]:
-    """Return one validated batched snapshot of visible JetBrains windows."""
-    attempts_remaining = _X11_SNAPSHOT_ATTEMPTS
-    while True:
-        result = x11._xdotool(
-            "search",
-            "--onlyvisible",
-            "--class",
-            "jetbrains-.*",
-            "getwindowgeometry",
-            "--shell",
-            "%@",
-            deadline=deadline,
-        )
-        if not _is_disappearing_window_snapshot(result):
-            break
-        attempts_remaining -= 1
-        if attempts_remaining == 0:
-            break
-        x11._bounded_poll_sleep(deadline)
-    if result.returncode == 1 and not result.stdout.strip() and not result.stderr.strip():
-        return ()
-    if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or "no diagnostic"
-        raise RuntimeError(f"xdotool could not snapshot visible JetBrains windows: {detail}")
-    if result.stderr.strip() or not result.stdout.strip():
-        detail = result.stderr.strip() or "empty geometry output"
-        raise RuntimeError(f"xdotool returned an unclassifiable JetBrains snapshot: {detail}")
-    try:
-        return parse_window_rectangles(result.stdout)
-    except ValueError as exc:
-        raise RuntimeError("xdotool returned malformed batched selector geometry") from exc
-
-
-def _owned_agent_selector_popups(
-    rectangles: tuple[X11WindowRectangle, ...],
-    project_id: int,
-    *,
-    deadline: float,
-) -> tuple[str, ...]:
-    """Return distinct exact selector candidates owned by one project frame."""
-    matches: list[str] = []
-    for rectangle in reversed(rectangles):
-        window = rectangle.window
-        if (
-            rectangle.geometry == _AGENT_SELECTOR_GEOMETRY
-            and window not in matches
-            and _agent_selector_owner_matches(window, project_id, deadline=deadline)
-        ):
-            matches.append(window)
-    return tuple(matches)
-
-
-def _visible_agent_selector_popups(
-    project: str,
-    *,
-    deadline: float,
-) -> tuple[str, ...]:
-    """Return the distinct visible selectors owned by one project frame."""
-    try:
-        project_id = int(project)
-    except ValueError:
-        return ()
-    rectangles = _visible_jetbrains_window_rectangles(deadline=deadline)
-    return _owned_agent_selector_popups(rectangles, project_id, deadline=deadline)
-
-
-def _find_agent_selector_popup(
-    deadline: float,
-    project: str,
-    *,
-    retry: Callable[[], None] | None = None,
-    retry_interval_seconds: float = _AGENT_SELECTOR_OPEN_RETRY_SECONDS,
-    guard: Callable[[], object] | None = None,
-) -> str:
-    """Wait for one selector while safely retrying its idempotent opener."""
-    if retry_interval_seconds <= 0:
-        raise ValueError("selector retry interval must be positive")
-    next_retry = 0.0
-    while time.monotonic() < deadline:
-        if guard is not None:
-            guard()
-        matches = _visible_agent_selector_popups(project, deadline=deadline)
-        if len(matches) > 1:
-            raise RuntimeError(
-                "IntelliJ IDEA exposed multiple pinned ACP agent selector popups: "
-                f"count={len(matches)}"
-            )
-        if matches:
-            return matches[0]
-        now = time.monotonic()
-        if retry is not None and now >= next_retry:
-            retry()
-            next_retry = now + retry_interval_seconds
-        x11._bounded_poll_sleep(deadline)
-    raise RuntimeError("IntelliJ IDEA did not expose the pinned ACP agent selector popup")
-
-
-def _open_agent_selector(
-    window: str,
-    *,
-    deadline: float,
-    guard: Callable[[], object] | None = None,
-) -> str:
-    """Invoke the pinned selector action, retrying only before lifecycle start."""
-
-    def click_selector() -> None:
-        geometry = x11._window_geometry(window, deadline=deadline)
-        root_child = x11._window_is_root_child(window, deadline=deadline)
-        if geometry != x11._PROJECT_SELECTOR_GEOMETRY or not root_child:
-            rendered = "?x?" if geometry is None else f"{geometry[0]}x{geometry[1]}"
-            raise RuntimeError(
-                "refusing JetBrains selector input outside the pinned project frame: "
-                f"geometry={rendered}, root_child={root_child}"
-            )
-        x11._focus_window_for_input(window, deadline=deadline)
-        x11._checked_xdotool(
-            "invoke the pinned JetBrains agent selector action",
-            "key",
-            "ctrl+alt+shift+k",
-            deadline=deadline,
-        )
-
-    return _find_agent_selector_popup(
-        deadline,
-        window,
-        retry=click_selector,
-        guard=guard,
-    )
-
-
-def _select_pinned_agent(
-    selector: str,
-    project: str,
-    *,
-    deadline: float,
-    guard: Callable[[], object] | None = None,
-    capture_filtered_selector: Callable[[], None] | None = None,
-) -> None:
-    """Filter, capture, confirm, and prove closure of one pinned agent selector."""
-    if not _is_agent_selector_popup(selector, project, deadline=deadline):
-        raise RuntimeError("refusing input outside the pinned ACP agent selector popup")
-    matches = _visible_agent_selector_popups(project, deadline=deadline)
-    if matches != (selector,):
-        raise RuntimeError(f"refusing ambiguous JetBrains ACP agent selection: matches={matches!r}")
-    x11._focus_window_for_input(selector, deadline=deadline)
-    x11._checked_xdotool(
-        "clear the JetBrains ACP agent filter",
-        "key",
-        "ctrl+a",
-        deadline=deadline,
-    )
-    x11._checked_xdotool(
-        "filter the exact SYNAPSE OpenCode ACP agent",
-        "type",
-        "--delay",
-        "1",
-        "--",
-        _AGENT_NAME,
-        deadline=deadline,
-    )
-    x11._bounded_poll_sleep(deadline)
-    if guard is not None:
-        guard()
-    matches = _visible_agent_selector_popups(project, deadline=deadline)
-    if matches != (selector,):
-        raise RuntimeError(
-            "JetBrains ACP agent selector changed while filtering the pinned agent: "
-            f"matches={matches!r}"
-        )
-    if capture_filtered_selector is not None:
-        capture_filtered_selector()
-    if guard is not None:
-        guard()
-    x11._focus_window_for_input(selector, deadline=deadline)
-    x11._checked_xdotool(
-        "confirm the exact SYNAPSE OpenCode ACP agent",
-        "key",
-        "Return",
-        deadline=deadline,
-    )
-    while time.monotonic() < deadline:
-        if guard is not None:
-            guard()
-        rectangles = _visible_jetbrains_window_rectangles(deadline=deadline)
-        matches = _owned_agent_selector_popups(
-            rectangles,
-            int(project),
-            deadline=deadline,
-        )
-        visible_windows = {rectangle.window for rectangle in rectangles}
-        if selector not in visible_windows and not matches:
-            return
-        if matches != (selector,):
-            raise RuntimeError(
-                "JetBrains ACP agent selector cardinality changed after confirmation: "
-                f"matches={matches!r}"
-            )
-        x11._bounded_poll_sleep(deadline)
-    raise RuntimeError("JetBrains ACP agent selector remained open after confirmation")
 
 
 def main() -> int:

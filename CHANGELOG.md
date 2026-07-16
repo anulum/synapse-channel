@@ -27,6 +27,18 @@ All notable changes to this project are documented here.
   preserve the additive field. Legacy claims remain wire-compatible with an
   explicit mixed-fleet limitation.
 
+### Fixed
+
+- The required OpenCode editor E2E gate now drains Emacs Agent Shell's
+  post-turn ACP requests before teardown, with the transport lifecycle exercised
+  through batch ERT against busy, reset, threshold-crossing output, and timeout
+  branches. JetBrains selector ownership now stabilises across transient empty
+  snapshots and owner-proven XID remaps from a focused selector module instead
+  of the client orchestrator.
+  Ambiguous, unowned, malformed, or deadline-exhausted selector states remain
+  fail-closed, and post-confirmation closure requires consecutive clean snapshots
+  rather than a single raced absence.
+
 ## [0.99.9] - 2026-07-16
 
 ### Added

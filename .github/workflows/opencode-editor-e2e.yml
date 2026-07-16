@@ -30,11 +30,13 @@ on:
       - "tests/test_opencode_editor_governance_contract.py"
       - "tests/test_opencode_editor_trace_contract.py"
       - "tests/test_opencode_editor_trace_validation.py"
+      - "tests/test_opencode_emacs_client.py"
       - "tests/test_opencode_jetbrains_cleanup.py"
       - "tests/test_opencode_jetbrains_driver.py"
       - "tests/test_opencode_jetbrains_evidence.py"
       - "tests/test_opencode_jetbrains_lifecycle.py"
       - "tests/test_opencode_jetbrains_readiness.py"
+      - "tests/test_opencode_jetbrains_selector.py"
       - "tests/test_opencode_jetbrains_setup.py"
       - "tests/test_opencode_jetbrains_timing.py"
       - "tests/test_opencode_jetbrains_x11_driver.py"
@@ -70,11 +72,13 @@ on:
       - "tests/test_opencode_editor_governance_contract.py"
       - "tests/test_opencode_editor_trace_contract.py"
       - "tests/test_opencode_editor_trace_validation.py"
+      - "tests/test_opencode_emacs_client.py"
       - "tests/test_opencode_jetbrains_cleanup.py"
       - "tests/test_opencode_jetbrains_driver.py"
       - "tests/test_opencode_jetbrains_evidence.py"
       - "tests/test_opencode_jetbrains_lifecycle.py"
       - "tests/test_opencode_jetbrains_readiness.py"
+      - "tests/test_opencode_jetbrains_selector.py"
       - "tests/test_opencode_jetbrains_setup.py"
       - "tests/test_opencode_jetbrains_timing.py"
       - "tests/test_opencode_jetbrains_x11_driver.py"
@@ -319,6 +323,7 @@ jobs:
             tests/e2e/opencode_editors/jetbrains_evidence.py
             tests/e2e/opencode_editors/jetbrains_lifecycle.py
             tests/e2e/opencode_editors/jetbrains_readiness.py
+            tests/e2e/opencode_editors/jetbrains_selector.py
             tests/e2e/opencode_editors/jetbrains_setup.py
             tests/e2e/opencode_editors/jetbrains_timing.py
             tests/e2e/opencode_editors/jetbrains_x11_driver.py
@@ -336,11 +341,13 @@ jobs:
             tests/test_opencode_editor_process_runner.py
             tests/test_opencode_editor_process_group.py
             tests/test_opencode_editor_governance_contract.py
+            tests/test_opencode_emacs_client.py
             tests/test_opencode_jetbrains_cleanup.py
             tests/test_opencode_jetbrains_driver.py
             tests/test_opencode_jetbrains_evidence.py
             tests/test_opencode_jetbrains_lifecycle.py
             tests/test_opencode_jetbrains_readiness.py
+            tests/test_opencode_jetbrains_selector.py
             tests/test_opencode_jetbrains_setup.py
             tests/test_opencode_jetbrains_timing.py
             tests/test_opencode_jetbrains_x11_driver.py
@@ -360,6 +367,13 @@ jobs:
           mypy --strict "${files[@]}"
           python -m tools.opencode_compatibility_contract --check
           pytest tests/test_opencode_editor_workflow_contract.py
+      - name: Exercise Emacs transport lifecycle branches
+        if: matrix.client == 'emacs'
+        run: |
+          "$SYNAPSE_EMACS_BIN" --batch -Q \
+            -L tests/e2e/opencode_editors \
+            -l tests/e2e/opencode_editors/emacs_client_test.el \
+            -f ert-run-tests-batch-and-exit
       - name: Real editor client to OpenCode ACP turn
         run: |
           set -euo pipefail
@@ -374,6 +388,7 @@ jobs:
                 tests/test_opencode_jetbrains_evidence.py \
                 tests/test_opencode_jetbrains_lifecycle.py \
                 tests/test_opencode_jetbrains_readiness.py \
+                tests/test_opencode_jetbrains_selector.py \
                 tests/test_opencode_jetbrains_setup.py \
                 tests/test_opencode_jetbrains_timing.py \
                 tests/test_opencode_jetbrains_x11_driver.py \
@@ -385,6 +400,7 @@ jobs:
                 tests/test_opencode_zed_x11.py \
                 tests/test_opencode_editor_trace_contract.py \
                 tests/test_opencode_editor_trace_validation.py \
+                tests/test_opencode_emacs_client.py \
                 tests/test_cli_e2e_opencode_editors.py
           else
             pytest tests/test_opencode_editor_process_group.py \
@@ -395,6 +411,7 @@ jobs:
               tests/test_opencode_jetbrains_evidence.py \
               tests/test_opencode_jetbrains_lifecycle.py \
               tests/test_opencode_jetbrains_readiness.py \
+              tests/test_opencode_jetbrains_selector.py \
               tests/test_opencode_jetbrains_setup.py \
               tests/test_opencode_jetbrains_timing.py \
               tests/test_opencode_jetbrains_x11_driver.py \
@@ -406,6 +423,7 @@ jobs:
               tests/test_opencode_zed_x11.py \
               tests/test_opencode_editor_trace_contract.py \
               tests/test_opencode_editor_trace_validation.py \
+              tests/test_opencode_emacs_client.py \
               tests/test_cli_e2e_opencode_editors.py
           fi
       - name: Upload bounded ACP evidence and GUI diagnostics

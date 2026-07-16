@@ -14,6 +14,10 @@
 (require 'agent-shell)
 (require 'agent-shell-opencode)
 
+(load
+ (expand-file-name "emacs_transport.el" (file-name-directory load-file-name))
+ nil nil t)
+
 (defun synapse-e2e-required-env (name)
   "Return non-empty environment variable NAME or signal an error."
   (let ((value (getenv name)))
@@ -61,6 +65,7 @@
              (buffer-substring-no-properties (point-min) (point-max))))))
    60
    "Agent Shell did not render the deterministic response")
+  (synapse-e2e-wait-for-transport-quiescence buffer 10)
   (kill-buffer buffer))
 
 ;;; emacs_client.el ends here
