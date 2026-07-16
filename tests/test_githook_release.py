@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import asyncio
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -20,7 +19,7 @@ from cli_e2e_helpers import git_repo, git_run
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.git import githook
-from synapse_channel.git.gitclaim import GitError
+from synapse_channel.git.gitclaim import GitError, _default_git_runner
 from synapse_channel.git.githook import (
     _paths_overlap,
     run_git_release,
@@ -254,12 +253,7 @@ async def test_run_git_release_keeps_same_owner_claim_in_other_worktree(tmp_path
     _, paths, identity = resolve_claim_scope_identity(repo, ("owned.py",))
     _, other_paths, other_identity = resolve_claim_scope_identity(other, ("owned.py",))
     # Claims must match the attached branch of the firing worktree (release_context).
-    branch = subprocess.run(  # noqa: S603, S607 - fixed git, test fixture paths
-        ["git", "-C", str(repo), "branch", "--show-current"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    branch = _default_git_runner(["-C", str(repo), "branch", "--show-current"])
     git = {"branch": branch, "base": "main", "auto_release_on": "commit"}
 
     async with running_hub() as (hub, uri):
@@ -288,13 +282,8 @@ async def test_run_git_release_keeps_same_owner_claim_in_other_worktree(tmp_path
             await close_agents(handle)
 
         def runner(args: list[str]) -> str:
-            command = ["git", *args] if "-C" in args else ["git", "-C", str(repo), *args]
-            return subprocess.run(  # noqa: S603, S607 - fixed git, test fixture paths
-                command,
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout.strip()
+            command = args if "-C" in args else ["-C", str(repo), *args]
+            return _default_git_runner(command)
 
         assert await run_git_release(uri=uri, name="me", trigger="commit", runner=runner) == 0
         await _wait_until(lambda: "HERE" not in hub.state.claims)
