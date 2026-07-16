@@ -42,6 +42,11 @@ from synapse_channel.cli_doctor_mailbox import (
     diagnose_mailbox_pending,
     fetch_doctor_roster,
 )
+from synapse_channel.cli_doctor_mcp_config import (
+    add_mcp_config_doctor_arguments,
+    diagnose_mcp_config,
+    validate_mcp_config_doctor_args,
+)
 from synapse_channel.cli_queries import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.client.diagnostics import (
@@ -246,6 +251,9 @@ async def _diagnose(
     a2a_policy: bool = False,
     a2a_allow_origins: tuple[str, ...] = (),
     mcp_policy: bool = False,
+    mcp_config: str | Path | None = None,
+    mcp_config_trust_bundle: str | Path | None = None,
+    allow_repo_mcp_config: bool = False,
     token_file: str | Path | None = None,
 ) -> tuple[int, list[str], list[Diagnosis]]:
     """Resolve the identity, run every check, and return the summarised verdicts.
@@ -327,6 +335,14 @@ async def _diagnose(
             check_mcp_posture(
                 token=token,
                 token_file=token_file,
+            )
+        )
+    if mcp_config is not None:
+        diagnoses.append(
+            diagnose_mcp_config(
+                mcp_config,
+                trust_bundle_path=mcp_config_trust_bundle,
+                allow_repo_config=allow_repo_mcp_config,
             )
         )
     diagnoses.append(
@@ -432,6 +448,11 @@ def _cmd_doctor(
     receives the state *after* the repair; the sink composes with ``--json``
     (stdout stays one JSON document, the sink gets its own stream).
     """
+    mcp_argument_error = validate_mcp_config_doctor_args(args)
+    if mcp_argument_error:
+        print(f"doctor error: {mcp_argument_error}", file=sys.stderr)
+        return 2
+    mcp_config = getattr(args, "mcp_config", None)
 
     def diagnose() -> tuple[int, list[str], list[Diagnosis]]:
         return async_runner(
@@ -471,6 +492,9 @@ def _cmd_doctor(
                 a2a_policy=bool(getattr(args, "a2a_policy", False)),
                 a2a_allow_origins=tuple(getattr(args, "a2a_allow_origin", ()) or ()),
                 mcp_policy=bool(getattr(args, "mcp_policy", False)),
+                mcp_config=mcp_config,
+                mcp_config_trust_bundle=getattr(args, "mcp_config_trust_bundle", None),
+                allow_repo_mcp_config=bool(getattr(args, "allow_repo_mcp_config", False)),
                 token_file=getattr(args, "token_file", None),
             )
         )
@@ -794,4 +818,5 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "token-file vs argv, optional mcp extra (SCH-H-NEW-03)."
         ),
     )
+    add_mcp_config_doctor_arguments(doctor)
     doctor.set_defaults(func=_cmd_doctor)

@@ -50,7 +50,7 @@ dev = [
   "pre-commit>=4.0",
   "reuse>=6.0",
   "tomli>=2.4.1; python_version < '3.11'",
-  "mcp>=1.28.0",
+  "mcp==1.28.1",
   "cryptography>=42.0",
   "python-pkcs11>=0.9",
   "wasmtime>=14.0.0",
@@ -78,7 +78,8 @@ otel = [
   "opentelemetry-exporter-otlp-proto-http>=1.43.0",
 ]
 mcp = [
-  "mcp>=1.28.0",
+  "mcp==1.28.1",
+  "cryptography>=42.0",
 ]
 semantic = [
   "tree-sitter>=0.26.0",
@@ -110,7 +111,7 @@ all = [
   "wasmtime>=14.0.0",
   "opentelemetry-sdk>=1.43.0",
   "opentelemetry-exporter-otlp-proto-http>=1.43.0",
-  "mcp>=1.28.0",
+  "mcp==1.28.1",
   "cryptography>=42.0",
   "sqlcipher3-binary==0.6.0",
   "python-pkcs11>=0.9",

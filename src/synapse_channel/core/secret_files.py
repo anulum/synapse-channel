@@ -15,11 +15,13 @@ refuses one that other users could read, and never places file content in an
 error message, so a wrongly permissioned or malformed secret can be reported and
 logged without leaking what it protects.
 
-Secure file forms are fail-closed POSIX surfaces. The loader opens one bounded
-descriptor with ``O_NOFOLLOW``, validates that same descriptor as a regular file
-owned by the effective service user with mode ``0600`` or stricter, then reads
-only from it. Platforms that cannot prove those invariants must use a validated
-native secret provider instead of these flags.
+Secure file forms are fail-closed POSIX surfaces. The loader walks every path
+component through directory descriptors with ``O_NOFOLLOW``, validates the final
+descriptor as a regular file owned by the effective service user with mode
+``0600`` or stricter, reads only from it, then rechecks identity and metadata.
+Callers loading executable policy can additionally require a single-link inode.
+Platforms that cannot prove those invariants must use a validated native secret
+provider instead of these flags.
 """
 
 from __future__ import annotations
@@ -49,20 +51,60 @@ class SecretFileError(SynapseError, ValueError):
     code = "secret_file"
 
 
+def open_nofollow_descriptor(file_path: str | Path, *, directory: bool = False) -> int:
+    """Open a path through no-follow directory descriptors for every component.
+
+    The returned descriptor owns the exact final object. Callers must close it.
+    A relative path starts at a descriptor for the current directory; an
+    absolute path starts at the filesystem root. No component lookup is later
+    repeated through an untrusted pathname.
+    """
+    if not _POSIX or not hasattr(os, "O_NOFOLLOW"):
+        raise OSError("secure nofollow path walking is unavailable on this platform")
+    path = Path(file_path)
+    directory_flags = (
+        os.O_RDONLY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    descriptor = os.open(path.anchor or ".", directory_flags)
+    components = path.parts[1:] if path.is_absolute() else path.parts
+    try:
+        for index, component in enumerate(components):
+            final = index == len(components) - 1
+            flags = (
+                os.O_RDONLY
+                | os.O_NOFOLLOW
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NONBLOCK", 0)
+            )
+            if not final or directory:
+                flags |= getattr(os, "O_DIRECTORY", 0)
+            next_descriptor = os.open(component, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
+
+
 def _read_owner_only_text(
     path: Path,
     *,
     flag: str,
     limit: int = DEFAULT_SECRET_FILE_LIMIT,
+    require_single_link: bool = False,
 ) -> str:
     """Read bounded UTF-8 from one same-descriptor owner-only regular file."""
     if not _POSIX or not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "geteuid"):
         raise SecretFileError(
             f"{flag}: secure owner-only file validation is unavailable on this platform"
         )
-    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        descriptor = os.open(path, flags)
+        descriptor = open_nofollow_descriptor(path)
     except OSError as exc:
         raise SecretFileError(
             f"{flag}: cannot securely open {path}: {exc.strerror or exc}"
@@ -73,6 +115,11 @@ def _read_owner_only_text(
             raise SecretFileError(f"{flag}: {path} is not a regular secret file")
         if info.st_uid != os.geteuid():
             raise SecretFileError(f"{flag}: {path} is not owned by the effective hub service user")
+        if require_single_link and info.st_nlink != 1:
+            raise SecretFileError(
+                f"{flag}: {path} has {info.st_nlink} hard links; an owner-only policy file "
+                "must have exactly one link"
+            )
         mode = stat.S_IMODE(info.st_mode)
         if mode & _GROUP_OTHER_BITS:
             raise SecretFileError(
@@ -91,6 +138,29 @@ def _read_owner_only_text(
             total += len(chunk)
             if total > limit:
                 raise SecretFileError(f"{flag}: {path} exceeds the {limit}-byte secret-file limit")
+        after = os.fstat(descriptor)
+        before_identity = (
+            info.st_dev,
+            info.st_ino,
+            info.st_uid,
+            stat.S_IMODE(info.st_mode),
+            info.st_nlink,
+            info.st_size,
+            info.st_mtime_ns,
+            info.st_ctime_ns,
+        )
+        after_identity = (
+            after.st_dev,
+            after.st_ino,
+            after.st_uid,
+            stat.S_IMODE(after.st_mode),
+            after.st_nlink,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        )
+        if before_identity != after_identity:
+            raise SecretFileError(f"{flag}: {path} changed while its policy was being read")
     except OSError as exc:
         raise SecretFileError(
             f"{flag}: cannot securely read {path}: {exc.strerror or exc}"
@@ -112,15 +182,14 @@ def read_regular_file_bytes(
     """Read one regular file with ``O_NOFOLLOW`` (public material; no mode floor).
 
     Used for pin certificates and public verification documents where owner-only
-    mode is not required, but final-path symlink substitution must still fail
+    mode is not required, but symlinks in every path component must still fail
     closed. The error never includes file content.
     """
     if not _POSIX or not hasattr(os, "O_NOFOLLOW"):
         raise SecretFileError(f"{label}: secure nofollow file open is unavailable on this platform")
     path = Path(file_path).expanduser()
-    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        descriptor = os.open(path, flags)
+        descriptor = open_nofollow_descriptor(path)
     except OSError as exc:
         raise SecretFileError(
             f"{label}: cannot securely open {path}: {exc.strerror or exc}"
@@ -150,7 +219,7 @@ def read_regular_file_bytes(
     return b"".join(chunks)
 
 
-def read_secret_file(file_path: str | Path, *, flag: str) -> str:
+def read_secret_file(file_path: str | Path, *, flag: str, require_single_link: bool = False) -> str:
     """Read one owner-only secret value, stripped of surrounding whitespace.
 
     Parameters
@@ -160,6 +229,9 @@ def read_secret_file(file_path: str | Path, *, flag: str) -> str:
     flag : str
         CLI flag being resolved (e.g. ``--metrics-token-file``), named in every
         error so the operator knows which input to fix.
+    require_single_link : bool, optional
+        Reject a final inode with any other hardlink. Executable policy loaders
+        enable this so a repository path cannot alias an outside policy file.
 
     Returns
     -------
@@ -173,7 +245,11 @@ def read_secret_file(file_path: str | Path, *, flag: str) -> str:
         users. The error never contains file content.
     """
     path = Path(file_path).expanduser()
-    secret = _read_owner_only_text(path, flag=flag).strip()
+    secret = _read_owner_only_text(
+        path,
+        flag=flag,
+        require_single_link=require_single_link,
+    ).strip()
     if not secret:
         raise SecretFileError(f"{flag}: {path} is empty; expected one secret value")
     return secret

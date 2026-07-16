@@ -8,7 +8,9 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -42,7 +44,7 @@ async def _fake_opener(spec: McpServerSpec) -> AsyncIterator[_FakeSession]:
 def _patch_fake_client(monkeypatch: pytest.MonkeyPatch, allowed: list[str]) -> None:
     spec = McpServerSpec(name="echo", command="x", allowed_tools=frozenset(allowed))
     client = OutboundMcpClient({"echo": spec}, session_opener=_fake_opener)
-    monkeypatch.setattr(cli_mcp_call, "_build_client", lambda config_path: client)
+    monkeypatch.setattr(cli_mcp_call, "_build_client", lambda config_path, **_kwargs: client)
 
 
 def _run(argv: list[str]) -> int:
@@ -51,11 +53,26 @@ def _run(argv: list[str]) -> int:
 
 
 def _config(tmp_path: Path) -> Path:
+    executable = tmp_path / "mcp-server"
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o700)
     config = tmp_path / "mcp.json"
     config.write_text(
-        json.dumps({"servers": [{"name": "echo", "command": "x", "allowed_tools": ["echo"]}]}),
+        json.dumps(
+            {
+                "servers": [
+                    {
+                        "name": "echo",
+                        "command": str(executable),
+                        "cwd": str(tmp_path),
+                        "allowed_tools": ["echo"],
+                    }
+                ]
+            }
+        ),
         encoding="utf-8",
     )
+    config.chmod(0o600)
     return config
 
 
@@ -65,6 +82,22 @@ def test_parsers_registered() -> None:
     assert tools.func is cli_mcp_call._cmd_mcp_tools
     call = parser.parse_args(["mcp-call", "echo", "echo", "--config", "c.json"])
     assert call.func is cli_mcp_call._cmd_mcp_call
+
+
+def test_parser_accepts_outbound_mcp_trust_flags() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "mcp-tools",
+            "echo",
+            "--config",
+            "/operator/mcp.json",
+            "--config-trust-bundle",
+            "/operator/trust.json",
+            "--allow-repo-mcp-config",
+        ]
+    )
+    assert args.config_trust_bundle == "/operator/trust.json"
+    assert args.allow_repo_mcp_config is True
 
 
 def test_parse_arguments_decodes_values_and_merges_json() -> None:
@@ -107,6 +140,42 @@ def test_mcp_tools_json_output(
     assert payload[0]["name"] == "echo"
 
 
+def test_mcp_tools_forwards_config_trust_policy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+    client = OutboundMcpClient(
+        {"echo": McpServerSpec(name="echo", command="x", allowed_tools=frozenset({"echo"}))},
+        session_opener=_fake_opener,
+    )
+
+    def build_client(path: str, **kwargs: object) -> OutboundMcpClient:
+        captured.update({"path": path, **kwargs})
+        return client
+
+    monkeypatch.setattr(cli_mcp_call, "_build_client", build_client)
+    config = _config(tmp_path)
+    code = _run(
+        [
+            "mcp-tools",
+            "echo",
+            "--config",
+            str(config),
+            "--config-trust-bundle",
+            "/operator/trust.json",
+            "--allow-repo-mcp-config",
+        ]
+    )
+
+    assert code == 0
+    assert "echo: echoes" in capsys.readouterr().out
+    assert captured == {
+        "path": str(config),
+        "trust_bundle_path": "/operator/trust.json",
+        "allow_repo_config": True,
+    }
+
+
 def test_mcp_call_invokes_a_tool(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -118,6 +187,71 @@ def test_mcp_call_invokes_a_tool(
     assert code == 0
     assert "ran echo" in out
     assert '"text": "hi"' in out
+
+
+def test_mcp_call_crosses_trusted_config_and_real_stdio_server(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", "/sensitive/parent-home")
+    mcp_spec = importlib.util.find_spec("mcp")
+    assert mcp_spec is not None and mcp_spec.origin is not None
+    mcp_site_packages = str(Path(mcp_spec.origin).parent.parent)
+    script = tmp_path / "echo_server.py"
+    script.write_text(
+        """import os
+
+from mcp.server.fastmcp import FastMCP
+
+server = FastMCP("cli-echo-test")
+
+@server.tool()
+def echo(text: str) -> str:
+    return f"echo: {text}; home={os.environ.get('HOME', 'missing')}"
+
+if __name__ == "__main__":
+    server.run()
+""",
+        encoding="utf-8",
+    )
+    config = tmp_path / "real-mcp.json"
+    config.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "servers": [
+                    {
+                        "name": "echo",
+                        "command": str(Path(sys.executable).resolve()),
+                        "args": [str(script)],
+                        "cwd": str(tmp_path),
+                        "env": {"PYTHONPATH": mcp_site_packages},
+                        "allowed_tools": ["echo"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+
+    code = _run(
+        [
+            "mcp-call",
+            "echo",
+            "echo",
+            "--config",
+            str(config),
+            "--arg",
+            'text="real-boundary"',
+        ]
+    )
+
+    assert code == 0
+    output = capfd.readouterr().out
+    assert "echo: real-boundary; home=" in output
+    assert "/sensitive/parent-home" not in output
 
 
 def test_mcp_human_output_makes_server_controls_visible(
@@ -134,7 +268,7 @@ def test_mcp_human_output_makes_server_controls_visible(
         async def call_tool(self, _server: str, _tool: str, _arguments: dict[str, object]) -> str:
             return hostile
 
-    monkeypatch.setattr(cli_mcp_call, "_build_client", lambda _path: HostileClient())
+    monkeypatch.setattr(cli_mcp_call, "_build_client", lambda _path, **_kwargs: HostileClient())
 
     assert _run(["mcp-tools", "echo", "--config", str(_config(tmp_path))]) == 0
     assert _run(["mcp-call", "echo", "echo", "--config", str(_config(tmp_path))]) == 0
@@ -180,7 +314,7 @@ def test_mcp_call_reports_a_tool_failure_with_operational_exit_code(
         ) -> str:
             raise McpToolError(f"{server}/{tool} failed with {arguments!r}")
 
-    monkeypatch.setattr(cli_mcp_call, "_build_client", lambda _path: FailingClient())
+    monkeypatch.setattr(cli_mcp_call, "_build_client", lambda _path, **_kwargs: FailingClient())
 
     code = _run(["mcp-call", "echo", "echo", "--config", str(_config(tmp_path))])
 
@@ -191,6 +325,7 @@ def test_mcp_call_reports_a_tool_failure_with_operational_exit_code(
 def test_mcp_tools_reports_a_bad_config(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     bad = tmp_path / "mcp.json"
     bad.write_text("{}", encoding="utf-8")
+    bad.chmod(0o600)
     code = _run(["mcp-tools", "echo", "--config", str(bad)])
     assert code == 2
     assert "mcp-tools error" in capsys.readouterr().out
@@ -223,7 +358,7 @@ class _FailingOpener:
 def _patch_failing_client(monkeypatch: pytest.MonkeyPatch) -> None:
     spec = McpServerSpec(name="echo", command="x", allowed_tools=frozenset({"echo"}))
     client = OutboundMcpClient({"echo": spec}, session_opener=_FailingOpener())
-    monkeypatch.setattr(cli_mcp_call, "_build_client", lambda config_path: client)
+    monkeypatch.setattr(cli_mcp_call, "_build_client", lambda config_path, **_kwargs: client)
 
 
 def test_mcp_tools_reports_a_missing_sdk(

@@ -38,6 +38,41 @@ def test_parser_doctor_has_token_file_companion() -> None:
     assert args.token_file == "/tmp/tok"
 
 
+def test_parser_accepts_mcp_config_trust_flags() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "doctor",
+            "--mcp-config",
+            "/operator/mcp.json",
+            "--mcp-config-trust-bundle",
+            "/operator/trust.json",
+            "--allow-repo-mcp-config",
+        ]
+    )
+    assert args.mcp_config == "/operator/mcp.json"
+    assert args.mcp_config_trust_bundle == "/operator/trust.json"
+    assert args.allow_repo_mcp_config is True
+
+
+@pytest.mark.parametrize(
+    "flag_args",
+    [
+        ["--mcp-config-trust-bundle", "/operator/trust.json"],
+        ["--allow-repo-mcp-config"],
+    ],
+)
+def test_doctor_mcp_dependent_flags_require_config(
+    flag_args: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = cli.build_parser().parse_args(["doctor", *flag_args])
+
+    async def should_not_run(**_: Any) -> tuple[int, list[str], list[Diagnosis]]:
+        raise AssertionError("diagnostics must not run for an invalid flag combination")
+
+    assert cli_doctor._cmd_doctor(args, diagnose_runner=should_not_run) == 2
+    assert "requires --mcp-config" in capsys.readouterr().err
+
+
 def test_parser_doctor_fix_flags() -> None:
     args = cli.build_parser().parse_args(
         ["doctor", "--fix", "--install-user-services", "--identity", "repo/ux"]
@@ -167,6 +202,71 @@ async def test_diagnose_warns_on_hyphen_send_identity() -> None:
             send_name="demorepo-keeper",
         )
     assert any("hyphen child" in line for line in lines)
+
+
+async def test_diagnose_reports_outbound_mcp_config_trust(tmp_path: Path) -> None:
+    async def no_roster(**_: Any) -> list[str]:
+        return []
+
+    executable = tmp_path / "mcp-server"
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o700)
+    config = tmp_path / "mcp.json"
+    config.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "servers": [
+                    {
+                        "name": "echo",
+                        "command": str(executable),
+                        "cwd": str(tmp_path),
+                        "allowed_tools": ["echo"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+
+    code, lines, diagnoses = await cli_doctor._diagnose(
+        uri="ws://127.0.0.1:8876",
+        project="demorepo",
+        agent_id=None,
+        token=None,
+        roster_probe=no_roster,
+        feed_tail_reader=lambda _env: [],
+        cursor_names_reader=lambda _env: [],
+        mcp_config=config,
+    )
+
+    assert code == 0
+    assert any("[warn] mcp-config:" in line and "unsigned manifest" in line for line in lines)
+    assert next(item for item in diagnoses if item.check == "mcp-config").status == "warn"
+
+
+async def test_diagnose_fails_closed_on_loose_mcp_config(tmp_path: Path) -> None:
+    async def no_roster(**_: Any) -> list[str]:
+        return []
+
+    config = tmp_path / "mcp.json"
+    config.write_text('{"version":1,"servers":[]}', encoding="utf-8")
+    config.chmod(0o644)
+
+    code, lines, _diagnoses = await cli_doctor._diagnose(
+        uri="ws://127.0.0.1:8876",
+        project="demorepo",
+        agent_id=None,
+        token=None,
+        roster_probe=no_roster,
+        feed_tail_reader=lambda _env: [],
+        cursor_names_reader=lambda _env: [],
+        mcp_config=config,
+    )
+
+    assert code == 1
+    assert any("[FAIL] mcp-config:" in line for line in lines)
 
 
 async def test_diagnose_appends_federation_diagnoses(tmp_path: Path) -> None:

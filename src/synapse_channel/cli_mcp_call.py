@@ -30,9 +30,20 @@ from synapse_channel.core.mcp_outbound import (
 from synapse_channel.terminal_text import terminal_text
 
 
-def _build_client(config_path: str) -> OutboundMcpClient:
-    """Load the allowlist config and build an outbound client."""
-    return OutboundMcpClient(load_outbound_config(config_path))
+def _build_client(
+    config_path: str,
+    *,
+    trust_bundle_path: str | None = None,
+    allow_repo_config: bool = False,
+) -> OutboundMcpClient:
+    """Load trusted execution policy and build an outbound client."""
+    return OutboundMcpClient(
+        load_outbound_config(
+            config_path,
+            trust_bundle_path=trust_bundle_path,
+            allow_repo_config=allow_repo_config,
+        )
+    )
 
 
 def _parse_arguments(pairs: list[str], args_json: str) -> dict[str, object]:
@@ -62,7 +73,11 @@ def _parse_arguments(pairs: list[str], args_json: str) -> dict[str, object]:
 def _cmd_mcp_tools(args: argparse.Namespace) -> int:
     """List the allowlisted tools an MCP server advertises."""
     try:
-        client = _build_client(args.config)
+        client = _build_client(
+            args.config,
+            trust_bundle_path=args.config_trust_bundle,
+            allow_repo_config=args.allow_repo_mcp_config,
+        )
         tools = asyncio.run(client.list_tools(args.server))
     except (McpConfigError, McpAccessError, McpToolError) as exc:
         print(f"mcp-tools error: {terminal_text(exc)}")
@@ -83,7 +98,11 @@ def _cmd_mcp_call(args: argparse.Namespace) -> int:
     """Call one allowlisted MCP tool and print its result."""
     try:
         arguments = _parse_arguments(args.arg, args.args_json)
-        client = _build_client(args.config)
+        client = _build_client(
+            args.config,
+            trust_bundle_path=args.config_trust_bundle,
+            allow_repo_config=args.allow_repo_mcp_config,
+        )
         result = asyncio.run(client.call_tool(args.server, args.tool, arguments))
     except (McpConfigError, McpAccessError, McpToolError, json.JSONDecodeError) as exc:
         print(f"mcp-call error: {terminal_text(exc)}")
@@ -101,7 +120,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "mcp-tools", help="List the allowlisted tools of an external MCP server."
     )
     tools.add_argument("server", help="Server name from the allowlist config.")
-    tools.add_argument("--config", required=True, help="Outbound MCP allowlist JSON config.")
+    _add_config_trust_arguments(tools)
     tools.add_argument("--json", action="store_true", help="Emit the tool list as JSON.")
     tools.set_defaults(func=_cmd_mcp_tools)
 
@@ -110,9 +129,35 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     call.add_argument("server", help="Server name from the allowlist config.")
     call.add_argument("tool", help="Tool name to call (must be allowlisted).")
-    call.add_argument("--config", required=True, help="Outbound MCP allowlist JSON config.")
+    _add_config_trust_arguments(call)
     call.add_argument(
         "--arg", action="append", default=[], metavar="KEY=VALUE", help="A tool argument."
     )
     call.add_argument("--args-json", default="", help="A full JSON object of tool arguments.")
     call.set_defaults(func=_cmd_mcp_call)
+
+
+def _add_config_trust_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add the shared outbound MCP execution-policy trust flags."""
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="Owner-only outbound MCP policy JSON outside the active repository.",
+    )
+    parser.add_argument(
+        "--config-trust-bundle",
+        default=None,
+        metavar="FILE",
+        help=(
+            "Owner-only Ed25519 trust bundle; when supplied, the config must carry "
+            "a valid signed manifest."
+        ),
+    )
+    parser.add_argument(
+        "--allow-repo-mcp-config",
+        action="store_true",
+        help=(
+            "Explicitly accept an owner-only MCP config/trust bundle inside the active "
+            "repository (unsafe when repository agents can write it)."
+        ),
+    )

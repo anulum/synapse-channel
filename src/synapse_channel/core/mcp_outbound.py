@@ -14,7 +14,7 @@ only reach a server named in the config, and only the tools that server's entry
 allowlists (``"*"`` opts the whole server in). A tool that is not allowlisted is
 refused before the server is ever contacted.
 
-The configuration parsing and the allowlist are pure and unit-testable; the
+Configuration schema and trust enforcement live in dedicated modules; the
 actual MCP session is opened through an injectable opener so the orchestration is
 testable without a live subprocess. The ``mcp`` SDK is an optional extra
 (``pip install 'synapse-channel[mcp]'``); importing this module never requires it.
@@ -22,24 +22,41 @@ testable without a live subprocess. The ``mcp`` SDK is an optional extra
 
 from __future__ import annotations
 
+import asyncio
 import importlib
-import json
+import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from dataclasses import dataclass, field
+from importlib.metadata import version as distribution_version
 from pathlib import Path
 from typing import Any, Protocol
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.mcp_config import (
+    WILDCARD as WILDCARD,
+)
+from synapse_channel.core.mcp_config import (
+    McpConfigError as McpConfigError,
+)
+from synapse_channel.core.mcp_config import (
+    McpServerSpec as McpServerSpec,
+)
+from synapse_channel.core.mcp_config import (
+    tool_allowed as tool_allowed,
+)
+from synapse_channel.core.mcp_config_launch import (
+    MCP_SDK_POSIX_DEFAULT_ENV,
+    bind_mcp_server_launch,
+    child_environment,
+)
+from synapse_channel.core.mcp_config_trust import load_trusted_mcp_config
 
 MCP_EXTRA_HINT = "outbound MCP calls need the optional extra: pip install 'synapse-channel[mcp]'"
-WILDCARD = "*"
+MCP_SDK_VERSION = "1.28.1"
+"""Exact SDK release whose stdio environment merge contract is enforced."""
 
-
-class McpConfigError(SynapseError, ValueError):
-    """Raised when the outbound MCP config file is malformed."""
-
-    code = "mcp_config"
+MCP_SDK_TERMINATION_TIMEOUT = 2.0
+"""Audited SDK grace window before process-tree force termination."""
 
 
 class McpAccessError(SynapseError, PermissionError):
@@ -54,48 +71,19 @@ class McpToolError(SynapseError, RuntimeError):
     code = "mcp_tool"
 
 
-@dataclass(frozen=True)
-class McpServerSpec:
-    """One allowlisted outbound MCP server.
+def load_outbound_config(
+    path: str | Path,
+    *,
+    trust_bundle_path: str | Path | None = None,
+    allow_repo_config: bool = False,
+    repository_root: str | Path | None = None,
+) -> dict[str, McpServerSpec]:
+    """Load a filesystem- and signature-validated outbound MCP policy.
 
-    Parameters
-    ----------
-    name : str
-        Stable server name referenced on the command line.
-    command : str
-        Executable launched for the stdio MCP server.
-    args : tuple[str, ...]
-        Arguments passed to the command.
-    env : dict[str, str]
-        Extra environment variables for the server process.
-    cwd : str
-        Working directory for the server process; blank uses the current one.
-    allowed_tools : frozenset[str]
-        Tool names this server may run, or ``{"*"}`` for every tool. Empty means
-        no tool is permitted (deny by default).
-    timeout_seconds : float
-        Per-call timeout passed to the MCP session.
-    """
-
-    name: str
-    command: str
-    args: tuple[str, ...] = ()
-    env: dict[str, str] = field(default_factory=dict)
-    cwd: str = ""
-    allowed_tools: frozenset[str] = frozenset()
-    timeout_seconds: float = 30.0
-
-
-def tool_allowed(spec: McpServerSpec, tool: str) -> bool:
-    """Return whether ``tool`` is permitted on ``spec`` (deny by default)."""
-    return WILDCARD in spec.allowed_tools or tool in spec.allowed_tools
-
-
-def load_outbound_config(path: str | Path) -> dict[str, McpServerSpec]:
-    """Load and validate the outbound MCP server allowlist from a JSON file.
-
-    The file is ``{"servers": [{"name", "command", "args"?, "env"?, "cwd"?,
-    "allowed_tools"?, "timeout_seconds"?}, ...]}``.
+    By default the config must be an owner-only, no-follow regular file outside
+    the active repository. Supplying ``trust_bundle_path`` also requires a valid
+    Ed25519 manifest signature. Every server command is an absolute executable
+    path, revalidated immediately before launch, and may carry a SHA-256 pin.
 
     Returns
     -------
@@ -105,48 +93,16 @@ def load_outbound_config(path: str | Path) -> dict[str, McpServerSpec]:
     Raises
     ------
     McpConfigError
-        When the file is missing, not JSON, or an entry is malformed.
+        When file provenance, JSON schema, signature, executable, or working
+        directory policy fails.
     """
-    target = Path(path)
-    try:
-        raw = target.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise McpConfigError(f"MCP config does not exist: {target}") from exc
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise McpConfigError(f"invalid MCP config JSON: {exc}") from exc
-    if not isinstance(data, dict) or not isinstance(data.get("servers"), list):
-        raise McpConfigError("MCP config must be an object with a 'servers' list")
-    servers: dict[str, McpServerSpec] = {}
-    for index, entry in enumerate(data["servers"]):
-        spec = _parse_server(entry, index)
-        if spec.name in servers:
-            raise McpConfigError(f"duplicate MCP server name: {spec.name}")
-        servers[spec.name] = spec
-    return servers
-
-
-def _parse_server(entry: object, index: int) -> McpServerSpec:
-    """Parse one server entry into an :class:`McpServerSpec`."""
-    if not isinstance(entry, dict):
-        raise McpConfigError(f"MCP server entry {index} must be an object")
-    name = str(entry.get("name", "")).strip()
-    command = str(entry.get("command", "")).strip()
-    if not name or not command:
-        raise McpConfigError(f"MCP server entry {index} needs non-empty name and command")
-    args = tuple(str(arg) for arg in entry.get("args", []))
-    env = {str(key): str(value) for key, value in dict(entry.get("env", {})).items()}
-    allowed = frozenset(str(tool) for tool in entry.get("allowed_tools", []))
-    return McpServerSpec(
-        name=name,
-        command=command,
-        args=args,
-        env=env,
-        cwd=str(entry.get("cwd", "")).strip(),
-        allowed_tools=allowed,
-        timeout_seconds=float(entry.get("timeout_seconds", 30.0)),
+    servers, _report = load_trusted_mcp_config(
+        path,
+        trust_bundle_path=trust_bundle_path,
+        allow_repo_config=allow_repo_config,
+        repository_root=repository_root,
     )
+    return servers
 
 
 class McpSession(Protocol):
@@ -172,20 +128,39 @@ def _require_mcp(import_module: Callable[[str], Any] = importlib.import_module) 
     return client_stdio, mcp_root
 
 
+def _verify_mcp_sdk_contract(client_stdio: Any, *, installed_version: str | None = None) -> None:
+    """Fail closed unless the installed SDK matches the audited stdio contract."""
+    actual_version = distribution_version("mcp") if installed_version is None else installed_version
+    inherited_names = tuple(getattr(client_stdio, "DEFAULT_INHERITED_ENV_VARS", ()))
+    termination_timeout = getattr(client_stdio, "PROCESS_TERMINATION_TIMEOUT", None)
+    if (
+        actual_version != MCP_SDK_VERSION
+        or inherited_names != MCP_SDK_POSIX_DEFAULT_ENV
+        or termination_timeout != MCP_SDK_TERMINATION_TIMEOUT
+    ):
+        raise McpConfigError(
+            "unsupported MCP SDK stdio environment contract: expected "
+            f"mcp=={MCP_SDK_VERSION}, defaults {MCP_SDK_POSIX_DEFAULT_ENV!r}, and "
+            f"termination timeout {MCP_SDK_TERMINATION_TIMEOUT:g}s"
+        )
+
+
 @asynccontextmanager
 async def default_session_opener(spec: McpServerSpec) -> AsyncIterator[McpSession]:
-    """Open and initialise a real stdio MCP session for ``spec``."""
+    """Revalidate, open, and initialise a real stdio MCP session for ``spec``."""
     client_stdio, mcp_root = _require_mcp()
-    params = client_stdio.StdioServerParameters(
-        command=spec.command,
-        args=list(spec.args),
-        env=spec.env or None,
-        cwd=spec.cwd or None,
-    )
-    async with client_stdio.stdio_client(params) as (read, write):
-        async with mcp_root.ClientSession(read, write) as session:
-            await session.initialize()
-            yield session
+    _verify_mcp_sdk_contract(client_stdio)
+    with bind_mcp_server_launch(spec) as launch:
+        params = client_stdio.StdioServerParameters(
+            command=launch.command,
+            args=list(spec.args),
+            env=child_environment(spec),
+            cwd=launch.cwd,
+        )
+        async with client_stdio.stdio_client(params, errlog=sys.stderr) as (read, write):
+            async with mcp_root.ClientSession(read, write) as session:
+                await session.initialize()
+                yield session
 
 
 def result_text(result: Any) -> str:
@@ -223,8 +198,18 @@ class OutboundMcpClient:
     async def list_tools(self, server: str) -> list[dict[str, str]]:
         """List the allowlisted tools a server advertises."""
         spec = self._spec(server)
-        async with self._opener(spec) as session:
-            listed = await session.list_tools()
+
+        async def discover() -> Any:
+            async with self._opener(spec) as session:
+                return await session.list_tools()
+
+        try:
+            listed = await asyncio.wait_for(discover(), timeout=spec.timeout_seconds)
+        except asyncio.TimeoutError as exc:
+            raise McpToolError(
+                f"tool discovery on server '{server}' timed out after "
+                f"{spec.timeout_seconds:g} seconds"
+            ) from exc
         return [
             {"name": str(tool.name), "description": str(getattr(tool, "description", "") or "")}
             for tool in listed.tools
@@ -246,8 +231,18 @@ class OutboundMcpClient:
         spec = self._spec(server)
         if not tool_allowed(spec, tool):
             raise McpAccessError(f"tool '{tool}' on server '{server}' is not allowed by the config")
-        async with self._opener(spec) as session:
-            result = await session.call_tool(tool, arguments or {})
+
+        async def call() -> Any:
+            async with self._opener(spec) as session:
+                return await session.call_tool(tool, arguments or {})
+
+        try:
+            result = await asyncio.wait_for(call(), timeout=spec.timeout_seconds)
+        except asyncio.TimeoutError as exc:
+            raise McpToolError(
+                f"tool '{tool}' on server '{server}' timed out after "
+                f"{spec.timeout_seconds:g} seconds"
+            ) from exc
         if getattr(result, "isError", False):
             raise McpToolError(
                 f"tool '{tool}' on '{server}' returned an error: {result_text(result)}"

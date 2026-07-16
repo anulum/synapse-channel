@@ -109,6 +109,8 @@ When that boundary is crossed, the proportionate controls are:
   operator explicitly passes `--insecure-off-loopback` to accept an exposed
   unauthenticated hub. Prefer `--token-file PATH` or the `SYNAPSE_TOKEN`
   environment variable over `--token`, which is visible in the process list.
+  Owner-file readers open every path component with `O_NOFOLLOW`; configure the
+  real path rather than a symlinked ancestor directory.
 - **Bounded resources.** A `--max-clients` connection cap, a `--max-msg-kb` frame
   size cap, per-agent rate limiting, bounded chat history, a bounded progress
   ledger, a bounded relay log, and bounded JSON decode depth keep one runaway
@@ -176,6 +178,40 @@ worth stating plainly:
   `--base-url`. The hub is local-first, but a worker is an intentional bridge to
   whatever backend it is pointed at, so `--base-url` must be trusted. A rule-based
   worker (`--provider rule`) never leaves the machine.
+- **Outbound MCP config is process-launch authority.** `synapse mcp-tools` and
+  `synapse mcp-call` start the configured server before its MCP tool allowlist can
+  apply. Their config therefore defaults to an owner-only, single-link file
+  outside the active repository, with every path component opened by descriptor
+  under `O_NOFOLLOW`; repository agents cannot plant or hardlink launch policy
+  for a later operator command. Server commands are raw absolute paths without
+  symlink components. Their validated bytes are copied into a sealed Linux
+  `memfd` and that exact descriptor snapshot is launched, with an optional
+  SHA-256 pin checked against the executing bytes. Configured working directories
+  are required, outside-repository by default, and retained through exact
+  descriptors; group/world-writable cwd paths are rejected, and low-level specs
+  that omit cwd are bound to `/`. The proof covers
+  the command bytes, not auxiliary files named in
+  arguments; invoke scripts directly as the command, and treat doctor's warning
+  on every command argument as residual executable-chain risk. Child processes
+  receive no inherited parent values: SDK baseline
+  names are blanked unless approved, and only literal config values plus
+  individually approved `inherit_env` names are populated. A positive finite
+  per-operation timeout is the server startup and discovery/call deadline. On
+  cancellation, the pinned SDK applies a separate audited two-second graceful
+  exit window before force-terminating the process tree. The
+  exact audited MCP SDK release, inherited-name list, and cleanup window are checked
+  at runtime, so dependency drift fails closed. A separate
+  owner-only trust bundle can require a domain-separated Ed25519 manifest
+  signature that binds its algorithm and key ID; whitespace aliases and
+  duplicate public-key identities are rejected. A present-but-unverified
+  signature fails closed. The
+  `--allow-repo-mcp-config` escape hatch is an explicit trust-boundary downgrade,
+  not a safe default. These controls authenticate local launch policy; they do
+  not sandbox a trusted MCP server after it starts.
+- **Outbound MCP platform floor.** Descriptor-bound MCP launch currently requires
+  Linux `memfd_create`, sealing, and procfs. It fails closed on macOS, Windows,
+  or Linux environments without `/proc/self/fd`; no weaker pathname fallback is
+  used.
 - **Update check.** `synapse --version` is network-silent by default. Set
   `SYNAPSE_UPDATE_CHECK=1` to opt in to a best-effort daily PyPI version check;
   `SYNAPSE_NO_UPDATE_CHECK=1` suppresses it even when the opt-in is present.

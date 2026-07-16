@@ -355,17 +355,47 @@ The directions are independent. `synapse mcp` serves the hub *to* MCP clients;
 `synapse mcp-tools` and `synapse mcp-call` let a Synapse operator *call* tools on
 an external MCP server, with a deny-by-default trust boundary.
 
-A JSON config names the allowed servers and, per server, the tools that may run
-(`"*"` opts the whole server in). A server or tool that is not allowlisted is
-refused before the server is contacted:
+An outbound JSON config is executable policy, not ordinary project data: the
+server process starts before any MCP tool allowlist can protect you. Synapse
+therefore reads it through an owner-only, single-link descriptor, walking every
+path component with `O_NOFOLLOW`, and refuses a config inside the active Git
+repository by default. Store it under an operator-controlled config directory, for example
+`~/.config/synapse/mcp-allow.json`, and run `chmod 600` on it.
+
+Each server needs a raw absolute path with no symlink component. Synapse copies
+the validated executable descriptor into a sealed Linux `memfd` and launches
+that exact immutable snapshot; a configured cwd is retained through its own
+descriptor. `command_sha256` is optional but recommended and is checked against
+the bytes that actually execute. `cwd` is required, must be outside the active
+repository, and must not be group/world-writable unless the explicit
+repository-local escape hatch is used.
+Low-level library callers that construct a spec without `cwd` are descriptor-bound
+to `/`, never to the caller's current directory.
+Executable/hash proof covers the configured command, not files named in its
+arguments. Invoke a script directly as `command` (with a shebang) so its bytes
+are snapshotted; until auxiliary-artifact pins exist, `doctor` conservatively
+warns about every command argument, including launcher flags such as `-m`.
+The child receives no parent environment values by default. Synapse explicitly
+blanks the MCP SDK's baseline POSIX names unless approved; literal `env` entries
+are passed exactly, while `inherit_env` approves individual parent variable
+names.
+An empty tool allowlist denies every tool; `"*"` explicitly opts the whole server
+in. A positive finite `timeout_seconds` (default `30`) is the startup and
+discovery/invocation deadline. Once cancellation begins, the pinned SDK applies
+its separate audited two-second graceful process-exit window before force termination:
 
 ```json
 {
+  "version": 1,
   "servers": [
     {
       "name": "fs",
-      "command": "mcp-server-filesystem",
+      "command": "/opt/synapse-mcp/bin/mcp-server-filesystem",
+      "command_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       "args": ["--root", "/data"],
+      "cwd": "/var/empty/synapse-mcp",
+      "env": {"MCP_LOG_LEVEL": "warning"},
+      "inherit_env": ["LANG"],
       "allowed_tools": ["read_file", "list_directory"]
     }
   ]
@@ -373,10 +403,66 @@ refused before the server is contacted:
 ```
 
 ```bash
-synapse mcp-tools fs --config mcp-allow.json
-synapse mcp-call fs read_file --config mcp-allow.json --arg path="/data/notes.txt"
+chmod 600 ~/.config/synapse/mcp-allow.json
+synapse doctor --mcp-config ~/.config/synapse/mcp-allow.json
+synapse mcp-tools fs --config ~/.config/synapse/mcp-allow.json
+synapse mcp-call fs read_file --config ~/.config/synapse/mcp-allow.json \
+  --arg path="/data/notes.txt"
 ```
 
-The `mcp` SDK is the optional `synapse-channel[mcp]` extra; the commands import it
-only when a call is made. Per-agent ACLs over which identity may invoke outbound
-MCP remain a later tranche — this tranche's boundary is the config allowlist.
+### Signed outbound manifests
+
+For centrally managed or distributed policy, add a version-1 Ed25519 `signature`
+envelope and supply an owner-only trust bundle with
+`--config-trust-bundle FILE`. The signature covers the UTF-8 canonical JSON
+(sorted keys and compact separators), excluding only the signature `value`.
+The signed bytes therefore bind the policy plus envelope version, algorithm,
+and whitespace-free `key_id`, after the domain bytes
+`SYNAPSE-CHANNEL:MCP-CONFIG:v1\0`. A trust bundle cannot reuse the same public
+key under multiple IDs. The envelope is:
+
+```json
+{
+  "version": 1,
+  "algorithm": "ed25519",
+  "key_id": "operations-2026",
+  "value": "BASE64_ED25519_SIGNATURE"
+}
+```
+
+The separate trust bundle is also `chmod 600`, outside the repository, and has
+this shape:
+
+```json
+{
+  "version": 1,
+  "keys": [
+    {
+      "key_id": "operations-2026",
+      "public_key": "BASE64_RAW_32_BYTE_ED25519_PUBLIC_KEY",
+      "revoked": false
+    }
+  ]
+}
+```
+
+Passing a trust bundle makes the signature mandatory; a signed config without a
+trust bundle also fails closed. `synapse doctor --mcp-config FILE
+--mcp-config-trust-bundle TRUST` reports signature, hash-pin, repository, and
+environment posture before an operator attempts a call. The explicit
+`--allow-repo-mcp-config` compatibility escape hatch keeps the owner-only and
+executable checks but accepts a repository-local config and is reported as a
+warning.
+
+The `mcp` extra installs the audited `mcp==1.28.1` SDK and Ed25519 verification
+dependency. Runtime startup also verifies that SDK's inherited-environment list
+before spawning, so dependency drift fails closed rather than exposing a newly
+inherited name.
+
+This descriptor-bound outbound launcher currently supports Linux with
+`memfd_create` and mounted procfs at `/proc/self/fd`. `mcp-tools`, `mcp-call`,
+and `doctor --mcp-config` fail closed on macOS, Windows, containers without
+procfs, or kernels without sealing support. Those platforms need a future
+equivalent native descriptor-execution backend; there is no pathname fallback.
+Per-agent ACLs over which identity may invoke outbound MCP remain a later tranche;
+the controls here bind the operator's process-launch policy before tool discovery.

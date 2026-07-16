@@ -26,6 +26,31 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Outbound MCP configs are now treated as process-launch policy. They default to
+  owner-only single-link files outside the active repository and walk every path
+  component with `O_NOFOLLOW`. Absolute executables are copied into sealed Linux
+  `memfd` snapshots before spawn; configured cwd descriptors remain bound through
+  the session, and optional SHA-256 pins cover the bytes that execute. The exact
+  audited MCP SDK is pinned and its environment contract checked at runtime; no
+  parent value is inherited unless approved. A configured finite timeout is the
+  session-startup and discovery/call deadline; the pinned SDK then has a separate
+  audited two-second graceful cleanup window before force termination. Optional
+  domain-separated Ed25519 manifests bind distributed policy and signature-key
+  identity to a separate owner-only trust bundle; whitespace aliases and
+  duplicate public-key identities fail closed. `doctor --mcp-config` reports repository,
+  signature, executable-pin, and environment posture. The MCP extra now installs
+  its signature-verification dependency.
+  Each server now requires an explicit outside-repository, non-group/world-writable
+  cwd. Doctor warns when
+  all command arguments may select code not covered by the command snapshot; scripts
+  should be invoked directly as the command. The sealed launcher is intentionally
+  Linux-only (`memfd_create` + procfs) and fails closed elsewhere until an
+  equivalent native descriptor backend exists.
+- Owner-only token/key/public-material file readers now reject symlinks in every
+  ancestor component, not only the final filename. Existing deployments that
+  deliberately route such a file through a symlinked directory must configure
+  its real component-wise path. The single-link inode floor is enabled only for
+  outbound MCP executable-policy and trust files.
 - The read-only dashboard now enforces an always-on `Host`-header boundary
   against DNS rebinding. Its live JSON and audit feeds are unauthenticated on
   loopback so the browser cockpit can load, which made them a rebinding target: a

@@ -8,7 +8,8 @@
 
 from __future__ import annotations
 
-import json
+import asyncio
+import importlib.util
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -18,16 +19,19 @@ from typing import Any
 
 import pytest
 
+import synapse_channel.core.mcp_outbound as outbound_module
+from synapse_channel.core.mcp_config_launch import MCP_SDK_POSIX_DEFAULT_ENV
 from synapse_channel.core.mcp_outbound import (
     MCP_EXTRA_HINT,
+    MCP_SDK_VERSION,
     McpAccessError,
     McpConfigError,
     McpServerSpec,
     McpToolError,
     OutboundMcpClient,
     _require_mcp,
+    _verify_mcp_sdk_contract,
     default_session_opener,
-    load_outbound_config,
     result_text,
     tool_allowed,
 )
@@ -66,7 +70,7 @@ def _spec(**overrides: Any) -> McpServerSpec:
     return McpServerSpec(**base)
 
 
-# --- config + allowlist ----------------------------------------------------
+# --- allowlist -------------------------------------------------------------
 
 
 def test_tool_allowed_is_deny_by_default() -> None:
@@ -74,60 +78,6 @@ def test_tool_allowed_is_deny_by_default() -> None:
     assert tool_allowed(_spec(allowed_tools=frozenset({"echo"})), "danger") is False
     assert tool_allowed(_spec(allowed_tools=frozenset({"*"})), "anything") is True
     assert tool_allowed(_spec(allowed_tools=frozenset()), "echo") is False
-
-
-def test_load_config_round_trip(tmp_path: Path) -> None:
-    path = tmp_path / "mcp.json"
-    path.write_text(
-        json.dumps(
-            {
-                "servers": [
-                    {
-                        "name": "fs",
-                        "command": "mcp-fs",
-                        "args": ["--root", "/data"],
-                        "allowed_tools": ["read", "list"],
-                        "env": {"K": "V"},
-                        "timeout_seconds": 12,
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    servers = load_outbound_config(path)
-    assert set(servers) == {"fs"}
-    spec = servers["fs"]
-    assert spec.command == "mcp-fs"
-    assert spec.args == ("--root", "/data")
-    assert spec.allowed_tools == frozenset({"read", "list"})
-    assert spec.env == {"K": "V"}
-    assert spec.timeout_seconds == 12
-
-
-@pytest.mark.parametrize(
-    ("content", "match"),
-    [
-        ("{}", "'servers' list"),
-        ('{"servers": [1]}', "must be an object"),
-        ('{"servers": [{"name": "", "command": "x"}]}', "non-empty name and command"),
-        (
-            '{"servers": [{"name": "a", "command": "x"}, {"name": "a", "command": "y"}]}',
-            "duplicate",
-        ),
-        ("{not json", "invalid MCP config JSON"),
-    ],
-)
-def test_load_config_rejects_bad_files(tmp_path: Path, content: str, match: str) -> None:
-    path = tmp_path / "mcp.json"
-    path.write_text(content, encoding="utf-8")
-    with pytest.raises(McpConfigError, match=match):
-        load_outbound_config(path)
-
-
-def test_load_config_missing_file(tmp_path: Path) -> None:
-    with pytest.raises(McpConfigError, match="does not exist"):
-        load_outbound_config(tmp_path / "absent.json")
 
 
 def test_result_text_joins_text_blocks() -> None:
@@ -200,6 +150,66 @@ def test_require_mcp_returns_the_sdk_modules_when_installed() -> None:
     assert hasattr(mcp_root, "ClientSession")
 
 
+def test_mcp_sdk_environment_contract_is_exact_and_fails_closed_on_drift() -> None:
+    client_stdio, _mcp_root = _require_mcp()
+    _verify_mcp_sdk_contract(client_stdio, installed_version=MCP_SDK_VERSION)
+
+    with pytest.raises(McpConfigError, match="unsupported MCP SDK"):
+        _verify_mcp_sdk_contract(client_stdio, installed_version="future")
+    drifted = SimpleNamespace(
+        DEFAULT_INHERITED_ENV_VARS=[*client_stdio.DEFAULT_INHERITED_ENV_VARS, "NEW_SECRET"],
+        PROCESS_TERMINATION_TIMEOUT=client_stdio.PROCESS_TERMINATION_TIMEOUT,
+    )
+    with pytest.raises(McpConfigError, match="unsupported MCP SDK"):
+        _verify_mcp_sdk_contract(drifted, installed_version=MCP_SDK_VERSION)
+    cleanup_drift = SimpleNamespace(
+        DEFAULT_INHERITED_ENV_VARS=client_stdio.DEFAULT_INHERITED_ENV_VARS,
+        PROCESS_TERMINATION_TIMEOUT=99.0,
+    )
+    with pytest.raises(McpConfigError, match="unsupported MCP SDK"):
+        _verify_mcp_sdk_contract(cleanup_drift, installed_version=MCP_SDK_VERSION)
+
+
+async def test_default_opener_passes_the_current_stderr_stream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executable = tmp_path / "mcp-server"
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o700)
+    observed: dict[str, Any] = {}
+
+    @asynccontextmanager
+    async def stdio_client(params: Any, *, errlog: Any) -> AsyncIterator[tuple[object, object]]:
+        observed.update(params=params, errlog=errlog)
+        yield object(), object()
+
+    class Session:
+        async def __aenter__(self) -> Session:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def initialize(self) -> None:
+            return None
+
+    client_stdio = SimpleNamespace(
+        DEFAULT_INHERITED_ENV_VARS=MCP_SDK_POSIX_DEFAULT_ENV,
+        PROCESS_TERMINATION_TIMEOUT=outbound_module.MCP_SDK_TERMINATION_TIMEOUT,
+        StdioServerParameters=lambda **kwargs: SimpleNamespace(**kwargs),
+        stdio_client=stdio_client,
+    )
+    mcp_root = SimpleNamespace(ClientSession=lambda *_args: Session())
+    monkeypatch.setattr(outbound_module, "_require_mcp", lambda: (client_stdio, mcp_root))
+
+    async with default_session_opener(
+        McpServerSpec(name="echo", command=str(executable))
+    ) as session:
+        assert isinstance(session, Session)
+
+    assert observed["errlog"] is sys.stderr
+
+
 _ECHO_SERVER = """
 from mcp.server.fastmcp import FastMCP
 
@@ -218,12 +228,15 @@ if __name__ == "__main__":
 
 async def test_call_tool_against_a_real_stdio_mcp_server(tmp_path: Path) -> None:
     pytest.importorskip("mcp.server.fastmcp")
+    mcp_spec = importlib.util.find_spec("mcp")
+    assert mcp_spec is not None and mcp_spec.origin is not None
     script = tmp_path / "echo_server.py"
     script.write_text(_ECHO_SERVER, encoding="utf-8")
     spec = McpServerSpec(
         name="echo",
-        command=sys.executable,
+        command=str(Path(sys.executable).resolve()),
         args=(str(script),),
+        env={"PYTHONPATH": str(Path(mcp_spec.origin).parent.parent)},
         allowed_tools=frozenset({"echo"}),
     )
     client = OutboundMcpClient({"echo": spec}, session_opener=default_session_opener)
@@ -232,3 +245,32 @@ async def test_call_tool_against_a_real_stdio_mcp_server(tmp_path: Path) -> None
     assert any(tool["name"] == "echo" for tool in tools)
     output = await client.call_tool("echo", "echo", {"text": "hi"})
     assert "echo: hi" in output
+
+
+async def test_tool_discovery_timeout_is_enforced() -> None:
+    class HangingSession(FakeSession):
+        async def list_tools(self) -> Any:
+            await asyncio.Event().wait()
+
+    spec = McpServerSpec(name="hung", command="/bin/false", timeout_seconds=0.01)
+    client = OutboundMcpClient({"hung": spec}, session_opener=_opener(HangingSession(tools=[])))
+
+    with pytest.raises(McpToolError, match="tool discovery.*timed out after 0.01 seconds"):
+        await client.list_tools("hung")
+
+
+async def test_tool_call_timeout_is_enforced() -> None:
+    class HangingSession(FakeSession):
+        async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
+            await asyncio.Event().wait()
+
+    spec = McpServerSpec(
+        name="hung",
+        command="/bin/false",
+        allowed_tools=frozenset({"echo"}),
+        timeout_seconds=0.01,
+    )
+    client = OutboundMcpClient({"hung": spec}, session_opener=_opener(HangingSession(tools=[])))
+
+    with pytest.raises(McpToolError, match="tool 'echo'.*timed out after 0.01 seconds"):
+        await client.call_tool("hung", "echo")

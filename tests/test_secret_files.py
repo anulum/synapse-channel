@@ -19,6 +19,8 @@ from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secret_files import (
     DEFAULT_SECRET_FILE_LIMIT,
     SecretFileError,
+    open_nofollow_descriptor,
+    read_regular_file_bytes,
     read_secret_file,
     read_secret_lines,
 )
@@ -112,6 +114,16 @@ def test_secret_file_forms_fail_closed_on_non_posix_platforms(
         reader(path, flag="--message-auth-key-file")
 
 
+def test_component_walker_fails_closed_without_posix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import synapse_channel.core.secret_files as module
+
+    monkeypatch.setattr(module, "_POSIX", False)
+    with pytest.raises(OSError, match="unavailable"):
+        open_nofollow_descriptor("secret")
+
+
 @pytest.mark.parametrize("reader", [read_secret_file, read_secret_lines])
 @pytest.mark.skipif(os.name != "posix", reason="POSIX filesystem boundary")
 def test_secret_readers_refuse_symlinks_and_non_regular_files(
@@ -128,6 +140,26 @@ def test_secret_readers_refuse_symlinks_and_non_regular_files(
     os.mkfifo(fifo, mode=0o600)
     with pytest.raises(SecretFileError, match="not a regular"):
         reader(fifo, flag="--message-auth-key-file")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX filesystem boundary")
+def test_secret_readers_refuse_symlinked_ancestors_and_hardlinks(tmp_path: Path) -> None:
+    real_directory = tmp_path / "real"
+    real_directory.mkdir()
+    target = real_directory / "secret"
+    target.write_text("policy\n", encoding="utf-8")
+    target.chmod(0o600)
+    ancestor_link = tmp_path / "via-link"
+    ancestor_link.symlink_to(real_directory, target_is_directory=True)
+
+    with pytest.raises(SecretFileError, match="cannot securely open"):
+        read_secret_file(ancestor_link / "secret", flag="--mcp-config")
+
+    hardlink = tmp_path / "second-name"
+    os.link(target, hardlink)
+    with pytest.raises(SecretFileError, match="hard links"):
+        read_secret_file(target, flag="--mcp-config", require_single_link=True)
+    assert read_secret_file(target, flag="--token-file") == "policy"
 
 
 @pytest.mark.parametrize("reader", [read_secret_file, read_secret_lines])
@@ -177,6 +209,82 @@ def test_secret_reader_enforces_the_limit_after_the_file_grows(
         read_secret_file(path, flag="--metrics-token-file")
 
 
+def test_secret_reader_wraps_descriptor_read_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _secret(tmp_path, "secret\n")
+
+    def fail_read(_descriptor: int, _size: int) -> bytes:
+        raise OSError("forced read error")
+
+    monkeypatch.setattr(os, "read", fail_read)
+    with pytest.raises(SecretFileError, match="cannot securely read"):
+        read_secret_file(path, flag="--metrics-token-file")
+
+
+def test_secret_reader_rejects_descriptor_metadata_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _secret(tmp_path, "secret\n")
+    real_fstat = os.fstat
+    calls = 0
+
+    def drift_after_read(descriptor: int) -> os.stat_result:
+        nonlocal calls
+        calls += 1
+        info = real_fstat(descriptor)
+        if calls == 2:
+            values = list(info)
+            values[9] += 1
+            return os.stat_result(values)
+        return info
+
+    monkeypatch.setattr(os, "fstat", drift_after_read)
+    with pytest.raises(SecretFileError, match="changed while its policy was being read"):
+        read_secret_file(path, flag="--mcp-config", require_single_link=True)
+
+
+def test_regular_file_reader_covers_public_material_boundaries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "public"
+    path.write_bytes(b"public-bytes")
+    assert read_regular_file_bytes(path, label="public") == b"public-bytes"
+
+    with pytest.raises(SecretFileError, match="byte file limit"):
+        read_regular_file_bytes(path, label="public", limit=1)
+    with pytest.raises(SecretFileError, match="not a regular file"):
+        read_regular_file_bytes(tmp_path, label="public")
+    with pytest.raises(SecretFileError, match="cannot securely open"):
+        read_regular_file_bytes(tmp_path / "missing", label="public")
+
+    import synapse_channel.core.secret_files as module
+
+    monkeypatch.setattr(module, "_POSIX", False)
+    with pytest.raises(SecretFileError, match="unavailable"):
+        read_regular_file_bytes(path, label="public")
+
+
+def test_regular_file_reader_enforces_growth_and_wraps_read_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "public"
+    path.write_bytes(b"x")
+    reads = iter((b"xx", b""))
+    monkeypatch.setattr(os, "read", lambda _descriptor, _size: next(reads))
+    with pytest.raises(SecretFileError, match="byte file limit"):
+        read_regular_file_bytes(path, label="public", limit=1)
+
+    monkeypatch.undo()
+
+    def fail_read(_descriptor: int, _size: int) -> bytes:
+        raise OSError("forced public read error")
+
+    monkeypatch.setattr(os, "read", fail_read)
+    with pytest.raises(SecretFileError, match="cannot securely read"):
+        read_regular_file_bytes(path, label="public")
+
+
 def test_secret_reader_refuses_invalid_utf8_without_echoing_bytes(tmp_path: Path) -> None:
     path = tmp_path / "secret"
     path.write_bytes(b"prefix-\xff-secret")
@@ -197,12 +305,20 @@ def test_secret_reader_uses_the_validated_descriptor_after_path_replacement(
     replacement = tmp_path / "replacement"
     replacement.write_text("replacement-secret\n", encoding="utf-8")
     replacement.chmod(0o600)
+    retained = tmp_path / "retained-original"
     original_open = os.open
 
-    def open_then_replace(file: os.PathLike[str] | str, flags: int) -> int:
-        descriptor = original_open(file, flags)
-        path.unlink()
-        replacement.rename(path)
+    replaced = False
+
+    def open_then_replace(
+        file: os.PathLike[str] | str, flags: int, *, dir_fd: int | None = None
+    ) -> int:
+        nonlocal replaced
+        descriptor = original_open(file, flags, dir_fd=dir_fd)
+        if not replaced and os.fstat(descriptor).st_ino == path.stat().st_ino:
+            replaced = True
+            path.rename(retained)
+            replacement.rename(path)
         return descriptor
 
     monkeypatch.setattr("synapse_channel.core.secret_files.os.open", open_then_replace)

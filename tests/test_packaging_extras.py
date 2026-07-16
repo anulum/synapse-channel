@@ -57,6 +57,7 @@ _FEATURE_MODULES = (
     "synapse_channel.core.wasm_sandbox",
     "synapse_channel.otel_export",
     "synapse_channel.mcp.registration",
+    "synapse_channel.core.mcp_config_signing",
     "synapse_channel.git.semantic_tree_sitter",
 )
 
@@ -113,6 +114,10 @@ def test_all_extra_unions_the_feature_extras() -> None:
     for extra in _FEATURE_EXTRAS:
         union.update(extras[extra])
     assert set(extras["all"]) == union
+
+
+def test_mcp_extra_installs_manifest_signature_verification() -> None:
+    assert set(_extras()["mcp"]) == {"mcp==1.28.1", "cryptography>=42.0"}
 
 
 @pytest.mark.parametrize("module_name", _FEATURE_MODULES)
