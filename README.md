@@ -905,6 +905,7 @@ explicitly does *not* claim:
 | [`hub --team-secure`](docs/team-secure.md) | Shipped | The multi-seat trust profile in one switch: connect token, identity binding, role-claim grants, private directed messages (loopback multi-agent fleets). | — |
 | [`hub --paranoid`](docs/paranoid-mode.md) | Shipped | Strict production profile with an explicit missing-hook checklist: token-required access, durable event logs, per-message auth on selected frames, ACL + native WSS, metrics bearer auth. Composes with `--team-secure`. | — |
 | [`hub --secure`](docs/secure-mode.md) | Shipped | Strict multi-seat production umbrella: composes `--team-secure` and `--paranoid`, then bounds per-agent (100/s), per-host (500/s), and per-host-connection (10) flood limits. Fails closed listing all missing material at once; a stricter operator limit is kept; one consolidated report. | — |
+| Flood auto-enable (`--bridge-exposed`, `--expect-multi-seat`) | Shipped | Without `--secure`, fills disabled flood limits when the hub starts exposed (off-loopback bind, connect token, multi-seat intent, or bridge). Both flags default off; multi-seat is also inferred from trust-profile material. Operators running A2A/MCP against the hub should pass `--bridge-exposed`. | Runtime seat count and bridge process discovery are not automatic. |
 | [At-rest encryption](docs/at-rest-encryption.md) | Shipped (opt-in extras) | SQLCipher page encryption for the live event store, plus whole-file AES-256-GCM envelopes for relay logs, A2A state, cursors, and archives; passphrase / PKCS#11 / TPM2 / cloud-HSM key wrapping, threshold escrow, attestation gates. | RAM protection; multi-tenant isolation. |
 | [End-to-end encrypted channels](docs/end-to-end-encrypted-channels.md) | Shipped (runtime) | Selected chat payloads encrypted with `send --encrypt-key-file`, decrypted locally with `listen --decrypt-key-file`. | Key discovery and rotation; private notes/checkpoints/artifacts are follow-on work. |
 | [Private channels](docs/private-channels.md) | Shipped (runtime) | Member-scoped chat delivery, bounded member-only history, channel-tagged relay export, metadata-only event-query filters. | Payload encryption; cryptographic identity. |
@@ -1386,7 +1387,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 644 |
 | Wire message types | 77 |
 | CLI subcommands | 179 |
-| Test functions | 7698 |
+| Test functions | 7708 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 57 |
 | GitHub Actions workflows | 21 |

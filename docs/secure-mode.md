@@ -61,6 +61,39 @@ audit's recommendations and let a small fleet share one loopback or NAT host
 while bounding aggregate traffic; they are an approval point, not an empirical
 throughput claim.
 
+## Auto flood-enable without `--secure` (REV-SEC-06)
+
+When the hub is **not** started with `--secure`, flood limits left at the
+disabled default (`0`) can still be filled automatically if the startup posture
+is exposed. The decision lives in `core/rate_policy.py` and is applied at hub
+startup after security profiles run and before limiters are built.
+
+Any of the following triggers auto-enable of the same secure bounded defaults
+used above (operator-positive limits are preserved; `--secure` already fills and
+stands down this path):
+
+- non-loopback bind;
+- a connect token (or token file) is configured;
+- multi-seat intent (see below);
+- bridge exposed (see below).
+
+**`--expect-multi-seat`** (default off) declares that more than one agent seat is
+expected. Multi-seat intent is also inferred from `--team-secure` / `--secure`,
+`--require-role-claim`, `--require-identity-binding`,
+`--private-directed-messages`, a non-empty `--identity-trust` path, or a
+non-empty `--role-grants` path. Use the explicit flag when those are absent but
+the hub still serves multiple seats on loopback.
+
+**`--bridge-exposed`** (default off) declares that an A2A and/or MCP bridge is
+knowingly reachable alongside this hub (separate process or co-located).
+Operators running `synapse a2a-serve` or `synapse mcp` against the hub should
+pass it: bridge traffic can flood the hub without a connect token, and the hub
+does not auto-detect those separate processes.
+
+Local-first loopback single-seat hubs with no token, no multi-seat intent, and
+no bridge declaration stay unbounded. Neither flag generates credentials or
+enables a bridge; they only feed the exposure posture for flood auto-enable.
+
 ## Required operator material
 
 `--secure` still needs the operator to supply real material — the flag checks

@@ -44,6 +44,8 @@ def test_security_argument_defaults_preserve_local_first_posture(
     assert args.private_directed_messages is False
     assert args.paranoid is False
     assert args.team_secure is False
+    assert args.bridge_exposed is False
+    assert args.expect_multi_seat is False
     assert capsys.readouterr().err == ""
 
 
@@ -88,6 +90,8 @@ def test_security_argument_registrar_accepts_complete_explicit_surface(
             "--capability-card-history-retention-seconds",
             "8",
             "--private-directed-messages",
+            "--bridge-exposed",
+            "--expect-multi-seat",
         ]
     )
 
@@ -113,4 +117,6 @@ def test_security_argument_registrar_accepts_complete_explicit_surface(
     assert args.capability_card_history_capacity == 7
     assert args.capability_card_history_retention_seconds == 8.0
     assert args.private_directed_messages is True
+    assert args.bridge_exposed is True
+    assert args.expect_multi_seat is True
     assert "--metrics-query-token-ok is deprecated" in capsys.readouterr().err

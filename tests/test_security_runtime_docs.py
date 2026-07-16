@@ -51,6 +51,8 @@ def test_documented_security_flags_are_real_hub_parser_options() -> None:
             "--federation-store",
             "federation.json",
             "--federation-observe-only",
+            "--bridge-exposed",
+            "--expect-multi-seat",
         ]
     )
 
@@ -63,6 +65,12 @@ def test_documented_security_flags_are_real_hub_parser_options() -> None:
     assert args.require_message_auth is True
     assert args.federation_store == "federation.json"
     assert args.federation_observe_only is True
+    assert args.bridge_exposed is True
+    assert args.expect_multi_seat is True
+
+    default_hub = cli.build_parser().parse_args(["hub"])
+    assert default_hub.bridge_exposed is False
+    assert default_hub.expect_multi_seat is False
 
     security = _read("SECURITY.md")
     for option in (
@@ -78,6 +86,8 @@ def test_documented_security_flags_are_real_hub_parser_options() -> None:
         "--federation-store",
         "--federation-observe-only",
         "--db-key-file",
+        "--bridge-exposed",
+        "--expect-multi-seat",
     ):
         assert option in security
 

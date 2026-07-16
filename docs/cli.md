@@ -870,6 +870,8 @@ synapse hub --shutdown-close-timeout 5             # bound active socket close h
 synapse hub --tls-certfile ./hub.crt --tls-keyfile ./hub.key  # native wss://
 synapse hub --host 0.0.0.0 --token-file ./tok      # token from a file, not argv (ps-safe)
 synapse hub --host 0.0.0.0 --insecure-off-loopback # bind off-loopback WITHOUT a token (refused otherwise)
+synapse hub --expect-multi-seat                    # multi-seat intent for flood auto-enable (default off)
+synapse hub --bridge-exposed                       # declare A2A/MCP bridge for flood auto-enable (default off)
 ```
 
 Binding a non-loopback host without a token (and, with `--metrics`, a metrics
@@ -877,7 +879,15 @@ token) is **refused** by default — the hub will not start exposed by accident;
 `--insecure-off-loopback` downgrades that to a warning for a trusted private
 network. `--max-connections-per-host` is a connection-count cap keyed by the
 remote host; it is separate from `--host-rate`, which meters inbound frames from
-that host. Native `wss://` uses `--tls-certfile` plus `--tls-keyfile`; it protects
+that host. Without `--secure`, disabled flood limits (`--rate` / `--burst` /
+`--host-rate` / `--host-burst` / `--max-connections-per-host` left at `0`) may
+still be filled automatically when the hub starts in an exposed posture
+(off-loopback bind, connect token, multi-seat intent, or bridge exposed). Use
+`--expect-multi-seat` (default off) when more than one seat is expected without
+`--team-secure` / identity material, and `--bridge-exposed` (default off) when
+an A2A or MCP bridge is knowingly reachable against this hub — the hub does not
+detect those processes automatically. Details:
+[Auto flood-enable (REV-SEC-06)](secure-mode.md#auto-flood-enable-without-secure-rev-sec-06). Native `wss://` uses `--tls-certfile` plus `--tls-keyfile`; it protects
 the transport but does not replace `--token` for off-loopback binds. Supply the
 token with `--token-file` or the `SYNAPSE_TOKEN`
 environment variable rather than `--token`, which is visible in `ps`. The hub

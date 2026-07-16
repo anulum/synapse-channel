@@ -206,9 +206,14 @@ directed messages). For an exposed or multi-host bind, add
 native WSS) or use both together. For a multi-seat hub that is also
 network-exposed, [`--secure`](secure-mode.md) composes both profiles and adds
 bounded per-agent, per-host, and per-host-connection flood limits in one switch.
-Use the [A2A deployment threat
-model](a2a-deployment-threat-model.md) for exposed `synapse a2a-serve`
-deployments.
+Without `--secure`, the hub still auto-fills disabled flood limits when the
+startup posture is exposed (off-loopback bind, connect token, multi-seat intent,
+or bridge exposed) — see [Auto flood-enable](secure-mode.md#auto-flood-enable-without-secure-rev-sec-06).
+Pass **`--expect-multi-seat`** when multi-seat is intended without the trust
+profile flags, and **`--bridge-exposed`** when `synapse a2a-serve` or
+`synapse mcp` runs against the hub (default off; not auto-detected). Use the
+[A2A deployment threat model](a2a-deployment-threat-model.md) for exposed
+`synapse a2a-serve` deployments.
 The planned [at-rest encryption profile](at-rest-encryption.md) is the storage
 hook behind that checklist; it defines key storage, rotation, backup recovery,
 and local-first tradeoffs before any encrypted store migration ships.
