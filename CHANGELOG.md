@@ -13,8 +13,38 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.10] - 2026-07-17
+
+### Security
+
+- Namespace the hub idempotency cache by the authenticated sender and message
+  type, so a client can no longer suppress another agent's mutation or read back
+  its cached grant by reusing an idempotency key.
+- Reject a valid-JSON non-object frame at the decode boundary instead of letting
+  it drop the connection with a 1011 close.
+- Sanitise client-controlled sender, target, type, channel, and payload on the
+  per-message log line, closing a newline log-injection vector.
+- Refuse a same-size in-place rewrite in the OpenCode-adapter and Kimi-hook
+  compare-before-replace file guards by verifying a SHA-256 content digest, not
+  just the stat fingerprint (TOCTOU hardening).
+- Refuse a foreign `SYN_IDENTITY` riding atop the generic `SYN_PROJECT=user`
+  instead of silently coordinating under the shared name.
+
 ### Fixed
 
+- `synapse send` without `--name` now uses a unique ephemeral sender, so a
+  one-shot send no longer collides with a listener already connected under the
+  same name.
+- `synapse team` starts a single offline rule-based worker when Ollama offers no
+  model, instead of spawning Ollama workers whose every reply fails with
+  "connection refused"; it also verifies the hub is accepting connections before
+  printing the READY banner and exits non-zero if the hub never binds.
+- The release workflow resolves the release tag from the published commit rather
+  than the unreliable `workflow_run.head_branch`, so a tag build publishes its
+  GitHub Release automatically.
+- Point `CODEOWNERS` at the relocated `core/` modules (hub, protocol, state,
+  auth), and refresh the identity landing gates and canonical path-identity
+  binding.
 - The required OpenCode editor E2E gate now drains Emacs Agent Shell's
   post-turn ACP requests before teardown, with the transport lifecycle exercised
   through batch ERT against busy, reset, threshold-crossing output, and timeout
@@ -24,6 +54,12 @@ All notable changes to this project are documented here.
   Ambiguous, unowned, malformed, or deadline-exhausted selector states remain
   fail-closed, and post-confirmation closure requires consecutive clean snapshots
   rather than a single raced absence.
+
+### Changed
+
+- Correct the `handle_chat` docstring: a channel-scoped chat is mirrored to the
+  relay log and journalled with its channel tag (it is delivered only to online
+  channel members and is never broadcast or kept in the public chat history).
 
 ## [0.99.9] - 2026-07-16
 
