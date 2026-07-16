@@ -352,8 +352,8 @@ def test_hub_is_listening_reports_connect_success_and_failure() -> None:
         def __enter__(self) -> _Socket:
             return self
 
-        def __exit__(self, *_exc: object) -> bool:
-            return False
+        def __exit__(self, *_exc: object) -> None:
+            return None
 
     assert _hub_is_listening(1234, connect=lambda _addr, timeout: _Socket()) is True
 
