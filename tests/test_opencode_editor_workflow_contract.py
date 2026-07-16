@@ -9,13 +9,25 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from tools.opencode_editor_workflow_contract import (
-    EditorWorkflowError,
-    assert_editor_workflow_contract,
-)
+
+if TYPE_CHECKING:
+    from tools.opencode_editor_workflow_contract import (
+        EditorWorkflowError,
+        assert_editor_workflow_contract,
+    )
+else:
+    # tools/ is not an installed package surface; mirror the compatibility-contract
+    # test import so focused CI (opencode-editor-e2e) can collect without PYTHONPATH=.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from tools.opencode_editor_workflow_contract import (
+        EditorWorkflowError,
+        assert_editor_workflow_contract,
+    )
 
 _LANES = frozenset({"neovim", "emacs", "zed", "jetbrains"})
 
