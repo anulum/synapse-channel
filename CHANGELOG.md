@@ -13,6 +13,20 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- Git-aware claims now bind human-readable paths to a versioned, client-derived
+  canonical identity: strict OS-resolved worktree and filesystem paths, Git-index
+  component spelling, Unicode NFC, the actual worktree case policy, and existing
+  host-namespaced device/object keys. Symlink, junction, hard-link, Windows 8.3,
+  case, and Unicode-equivalent aliases therefore contend without collapsing
+  distinct Linux/ext4 case-sensitive paths. Unknown case policy, malformed,
+  ambiguous, escaping, or display-misaligned identities fail closed before state
+  mutation; journals, replay, causality, yield advice, conflict scans, provider
+  guards, staged checks, Git hooks, MCP, and the TypeScript mutation client
+  preserve the additive field. Legacy claims remain wire-compatible with an
+  explicit mixed-fleet limitation.
+
 ## [0.99.9] - 2026-07-16
 
 ### Added
@@ -71,16 +85,6 @@ All notable changes to this project are documented here.
   deliberately route such a file through a symlinked directory must configure
   its real component-wise path. The single-link inode floor is enabled only for
   outbound MCP executable-policy and trust files.
-- Git-aware claims now bind human-readable paths to a versioned, client-derived
-  canonical identity: strict OS-resolved worktree and filesystem paths, Git-index
-  component spelling, Unicode NFC, the actual worktree case policy, and existing
-  host-namespaced device/object keys. Symlink, junction, hard-link, Windows 8.3, case, and
-  Unicode-equivalent aliases therefore contend without collapsing distinct
-  Linux/ext4 case-sensitive paths. Unknown case policy, malformed, ambiguous, escaping, or
-  display-misaligned identities fail closed before state mutation; journals,
-  replay, causality, yield advice, conflict scans, provider guards, staged checks,
-  Git hooks, MCP, and the TypeScript mutation client preserve the additive field.
-  Legacy claims remain wire-compatible with an explicit mixed-fleet limitation.
 - Provider claim hooks now cover Claude and Kimi `Bash`, Codex's intercepted
   `Bash`, Gemini `run_shell_command`, Grok `run_terminal_command`, and OpenCode
   `bash`. Because arbitrary shell text has no trustworthy declared write set,
