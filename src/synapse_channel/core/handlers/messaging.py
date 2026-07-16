@@ -80,8 +80,10 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
     """Stamp, retain, journal, and broadcast a chat message to every socket.
 
     A message carrying a ``channel`` is audience-scoped instead: it is delivered
-    only to that channel's online members and never broadcast, retained in the
-    public history, or mirrored to the relay log.
+    only to that channel's online members and is never broadcast or kept in the
+    public chat history. It is still mirrored to the relay log and journalled,
+    tagged with its channel so relay and event-query can filter it — see
+    :func:`_route_channel_chat`.
     """
     data["timestamp"] = _client_timestamp(data.get("timestamp"), time.time())
     data["type"] = MessageType.CHAT
