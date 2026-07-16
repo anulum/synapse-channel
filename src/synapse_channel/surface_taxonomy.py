@@ -132,6 +132,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "sqlcipher": GOVERNANCE,
     # newer or advisory surfaces still settling
     "benchmark": EXPERIMENTAL,
+    "deliberate": EXPERIMENTAL,
     "memory-recall": EXPERIMENTAL,
     "participant": EXPERIMENTAL,
     "resource-bids": EXPERIMENTAL,
