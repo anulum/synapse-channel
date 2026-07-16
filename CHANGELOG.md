@@ -65,7 +65,9 @@ All notable changes to this project are documented here.
   of counting toward clean closure. Ambiguous, unowned, malformed, or
   deadline-exhausted selector states remain fail-closed, and post-confirmation
   closure requires consecutive clean snapshots rather than a single raced
-  absence.
+  absence. The required editor workflow now type-checks and executes both
+  selector responsibility modules and their dedicated tests, while a structural
+  contract pins the split and keeps each module below 500 lines.
 - Filesystem-canonical Git claims now resolve synthetic semantic descendants
   through their physical source path without treating `.synapse-symbol` as a
   real child of a file. A backward-compatible object-relative semantic sub-scope

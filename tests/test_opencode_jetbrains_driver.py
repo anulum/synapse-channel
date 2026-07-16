@@ -21,20 +21,32 @@ from e2e.opencode_editors.jetbrains_lifecycle import JetBrainsLifecycleGuard
 
 
 def test_selector_lifecycle_is_not_owned_by_the_client_orchestrator() -> None:
-    """Pin selector state transitions to their focused production module."""
+    """Pin selector responsibilities to bounded, focused production modules."""
     root = Path(__file__).parent / "e2e" / "opencode_editors"
     client = (root / "jetbrains_client.py").read_text(encoding="utf-8")
     selector = (root / "jetbrains_selector.py").read_text(encoding="utf-8")
+    selector_windows = (root / "jetbrains_selector_windows.py").read_text(encoding="utf-8")
 
-    for name in (
+    window_contract = (
         "def is_agent_selector_popup(",
         "def visible_jetbrains_window_rectangles(",
+        "def owned_agent_selector_popups(",
+    )
+    lifecycle_contract = (
         "def find_agent_selector_popup(",
         "def select_pinned_agent(",
-    ):
+    )
+    for name in window_contract + lifecycle_contract:
         assert name not in client
+    for name in window_contract:
+        assert name not in selector
+        assert name in selector_windows
+    for name in lifecycle_contract:
         assert name in selector
+        assert name not in selector_windows
     assert len(client.splitlines()) < 350
+    assert len(selector.splitlines()) < 500
+    assert len(selector_windows.splitlines()) < 500
 
 
 def test_show_ai_chat_uses_only_proven_current_focus(

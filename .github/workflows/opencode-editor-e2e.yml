@@ -37,6 +37,7 @@ on:
       - "tests/test_opencode_jetbrains_lifecycle.py"
       - "tests/test_opencode_jetbrains_readiness.py"
       - "tests/test_opencode_jetbrains_selector.py"
+      - "tests/test_opencode_jetbrains_selector_windows.py"
       - "tests/test_opencode_jetbrains_setup.py"
       - "tests/test_opencode_jetbrains_timing.py"
       - "tests/test_opencode_jetbrains_x11_driver.py"
@@ -79,6 +80,7 @@ on:
       - "tests/test_opencode_jetbrains_lifecycle.py"
       - "tests/test_opencode_jetbrains_readiness.py"
       - "tests/test_opencode_jetbrains_selector.py"
+      - "tests/test_opencode_jetbrains_selector_windows.py"
       - "tests/test_opencode_jetbrains_setup.py"
       - "tests/test_opencode_jetbrains_timing.py"
       - "tests/test_opencode_jetbrains_x11_driver.py"
@@ -324,6 +326,7 @@ jobs:
             tests/e2e/opencode_editors/jetbrains_lifecycle.py
             tests/e2e/opencode_editors/jetbrains_readiness.py
             tests/e2e/opencode_editors/jetbrains_selector.py
+            tests/e2e/opencode_editors/jetbrains_selector_windows.py
             tests/e2e/opencode_editors/jetbrains_setup.py
             tests/e2e/opencode_editors/jetbrains_timing.py
             tests/e2e/opencode_editors/jetbrains_x11_driver.py
@@ -348,6 +351,7 @@ jobs:
             tests/test_opencode_jetbrains_lifecycle.py
             tests/test_opencode_jetbrains_readiness.py
             tests/test_opencode_jetbrains_selector.py
+            tests/test_opencode_jetbrains_selector_windows.py
             tests/test_opencode_jetbrains_setup.py
             tests/test_opencode_jetbrains_timing.py
             tests/test_opencode_jetbrains_x11_driver.py
@@ -389,6 +393,7 @@ jobs:
                 tests/test_opencode_jetbrains_lifecycle.py \
                 tests/test_opencode_jetbrains_readiness.py \
                 tests/test_opencode_jetbrains_selector.py \
+                tests/test_opencode_jetbrains_selector_windows.py \
                 tests/test_opencode_jetbrains_setup.py \
                 tests/test_opencode_jetbrains_timing.py \
                 tests/test_opencode_jetbrains_x11_driver.py \
@@ -412,6 +417,7 @@ jobs:
               tests/test_opencode_jetbrains_lifecycle.py \
               tests/test_opencode_jetbrains_readiness.py \
               tests/test_opencode_jetbrains_selector.py \
+              tests/test_opencode_jetbrains_selector_windows.py \
               tests/test_opencode_jetbrains_setup.py \
               tests/test_opencode_jetbrains_timing.py \
               tests/test_opencode_jetbrains_x11_driver.py \
