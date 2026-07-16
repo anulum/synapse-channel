@@ -16,20 +16,29 @@ Gemini CLI, Grok, Kimi, and OpenCode use different hook payloads, so Synapse
 keeps their wire adapters small and sends all six through one claim decision
 engine.
 
-| Provider | Covered native tool | Path source | Recipe format |
-|---|---|---|---|
-| Claude Code | `Edit`, `Write` | absolute `tool_input.file_path` | `settings.json` fragment |
-| Codex | `apply_patch` (matcher aliases `Edit|Write`) | every add, update, delete, and move path in `tool_input.command` | `hooks.json` fragment |
-| Gemini CLI | `replace`, `write_file` on the native `BeforeTool` event | relative or absolute `tool_input.file_path` | `settings.json` `hooks` fragment |
-| Grok | `search_replace` (plus `Edit` / `Write` / `MultiEdit` compatibility aliases and the older `write` spelling) | relative or absolute `toolInput.path` | global `~/.grok/hooks/*.json` fragment |
-| Kimi Code | `Edit`, `Write` | relative or absolute `tool_input.path` | `config.toml` fragment |
-| OpenCode | `edit`, `write`, `apply_patch` on `tool.execute.before` | `args.filePath`, or every add/update/delete/move path in `args.patchText` | owned project/global plugin plus MCP config |
+| Provider | Covered native tool | Path source | Symbol-claim pre-edit use | Recipe format |
+|---|---|---|---|---|
+| Claude Code | `Edit`, `Write` | absolute `tool_input.file_path` | `Edit` only | `settings.json` fragment |
+| Codex | `apply_patch` (matcher aliases `Edit|Write`) | every add, update, delete, and move path in `tool_input.command` | no; patch payload requires whole-file claims | `hooks.json` fragment |
+| Gemini CLI | `replace`, `write_file` on the native `BeforeTool` event | relative or absolute `tool_input.file_path` | `replace` only | `settings.json` `hooks` fragment |
+| Grok | `search_replace` (plus `Edit` / `Write` / `MultiEdit` compatibility aliases and the older `write` spelling) | relative or absolute `toolInput.path` | `search_replace`, `Edit`, and `MultiEdit` | global `~/.grok/hooks/*.json` fragment |
+| Kimi Code | `Edit`, `Write` | relative or absolute `tool_input.path` | `Edit` only | `config.toml` fragment |
+| OpenCode | `edit`, `write`, `apply_patch` on `tool.execute.before` | `args.filePath`, or every add/update/delete/move path in `args.patchText` | `edit` only | owned project/global plugin plus MCP config |
 
 The decision requires the exact worktree, branch, path coverage, editable task
 state, and unambiguous owner. A missing claim, competing owner, malformed event,
 invalid Git context, stale state, unavailable hub, or query timeout produces the
 provider's structured deny response. Successful checks print nothing and leave
 the provider's ordinary permission flow unchanged.
+
+A precise edit tool may provisionally use a `.synapse-symbol` claim for its
+physical source file. A whole-file writer or patch tool still requires a literal
+whole-file or parent claim because its payload cannot be proven symbol-bounded
+before execution. If another owner holds any sibling symbol claim for the same
+source in the same worktree and branch, the pre-edit decision is ambiguous and
+denies both owners. Parallel sibling-symbol work therefore belongs in isolated
+Git worktrees; the staged index gate below remains the authoritative proof of
+which symbol the resulting change actually touched.
 
 ## Getting started
 
@@ -206,8 +215,14 @@ synapse git-claim-check --staged --name my-repo/codex
 
 The native hook stops covered edits early. The staged-path gate independently
 checks every path before commit, including changes produced through an unguarded
-shell or external program. Neither gate grants a claim; operators and agents must
-claim their scope explicitly.
+shell or external program. When a staged source has a semantic claim, it compares
+`HEAD` with the Git index, maps both hunk sides through the local tree-sitter
+parser, and checks the exact `.synapse-symbol` paths. Module-level edits,
+add/delete/rename operations, unsupported or invalid syntax, ambiguous mappings,
+and other incomplete evidence widen to the physical file and therefore require a
+whole-file claim. A missing parser or unreadable index denies rather than
+silently accepting the physical path. Neither gate grants a claim; operators and
+agents must claim their scope explicitly.
 
 ## Source references
 

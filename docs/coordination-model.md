@@ -93,6 +93,18 @@ widens to the whole file. Optional `--diff-head`, repeatable `--diff-path`, and
 No parser is downloaded at runtime; the hub still stores only canonical paths
 and branch metadata.
 
+Those symbol paths participate in the complete local enforcement chain.
+Precise provider edit tools may provisionally use a symbol claim for its source
+only when the exact worktree/branch has no competing semantic owner; full-file
+writes and patch tools require a literal file claim. At commit time,
+`git-claim-check --staged` compares `HEAD` with the authoritative index and
+checks the exact declarations touched. Incomplete evidence widens to the file
+and parser failure denies. Post-commit/post-merge auto-release repeats the
+committed semantic projection and releases only the exact proven symbol; it
+retains ambiguous symbol claims for manual release. Parallel sibling-symbol
+work should use isolated Git worktrees because the underlying physical file
+cannot safely host independent pre-edit mutations in one shared checkout.
+
 `python tools/import_merge_risk.py --changed <path> --claimed <path> --check` is
 the import graph merge-risk radar for pre-merge and handoff checks. It combines
 explicit changed paths or `--base main --head HEAD` branch diffs with claimed

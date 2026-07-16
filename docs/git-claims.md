@@ -110,9 +110,18 @@ smallest enclosing declaration becomes the claim path; renaming a declaration
 claims both old and new names. The existing path ancestry rule then provides the
 enforcement:
 
-- two different function descendants in one source file can coexist;
+- two different function descendants in one source file can coexist in hub
+  state and can be edited safely from isolated worktrees;
 - a class scope conflicts with its methods;
 - a whole-file or parent-directory claim conflicts with every symbol below it.
+
+Provider guards do not pretend a shared physical file is isolated. A precise
+edit tool may start from one semantic claim only when every semantic claim for
+that source in the exact worktree and branch belongs to the same editable owner.
+A sibling claim held by another owner in the same shared worktree makes the
+pre-edit decision ambiguous and is denied. Whole-file writers and patch tools
+always require a literal whole-file or parent claim. The staged index check is
+the authoritative post-edit proof described below.
 
 Incomplete evidence always widens. Additions, deletions, file renames or copies,
 mode-only changes, unsupported languages, syntax-error trees, oversized or
@@ -138,13 +147,19 @@ synapse git-hook install
 This writes a `post-commit` and a `post-merge` hook that call `synapse
 git-release`. After each commit or merge, `git-release` resolves the changed
 files locally (`git diff-tree` for a commit, `git diff ORIG_HEAD HEAD` for a
-merge) and releases any claim you hold whose `--auto-release-on` matches the
-trigger and whose declared paths were touched. Add `--name` (and `--token-file`
-for a secured hub) to match the identity your agent claims under; a pre-existing
-hook from anything else is left untouched.
+merge), then filters claims by exact owner, canonical worktree, attached branch,
+and `--auto-release-on` trigger. Whole-file claims release from the physical
+change. Semantic claims release only when the committed `HEAD^..HEAD` (or
+`ORIG_HEAD..HEAD` merge) diff proves a matching `.synapse-symbol` path.
+Ambiguous, unsupported, unreadable, or parser-unavailable semantic evidence
+retains the symbol claim for explicit manual release instead of releasing it
+from a mere physical-file match. Add `--name` (and `--token-file` for a secured
+hub) to match the identity your agent claims under; a pre-existing hook from
+anything else is left untouched.
 
-The hub is never involved: it only ever receives an ordinary release, and a hook
-never blocks a commit — an unreachable hub or no matching claim is simply a no-op.
+The hub never parses Git or source: it receives only an ordinary release. The
+hook never blocks a commit — an unreachable hub or no matching claim is simply
+a no-op.
 
 ## Block commits whose staged paths are not claimed
 
@@ -161,13 +176,25 @@ Adds, modifications, deletions, type changes, and unmerged paths are checked.
 Copies and renames check both the old and new names. Malformed, absolute,
 parent-escaping, or truncated records fail closed.
 
+When at least one active claim in the exact worktree and branch uses a
+`.synapse-symbol` path for a staged source, the checker also resolves `HEAD`
+versus the index with the optional local semantic parser. An ordinary
+modification is projected to the exact named declarations touched on both old
+and new sides. The projected symbol paths — not the physical source name — are
+then matched against claims. A change to an unclaimed sibling symbol is denied.
+Any incomplete mapping widens to the physical source, so a symbol-only claim
+cannot authorise module-level edits, additions, deletions, renames, unsupported
+languages, invalid syntax, or ambiguous hunks. Parser/import/Git failures deny;
+they never downgrade a semantic claim check to a permissive file match.
+
 An empty staged index returns success without resolving identity, reading a
 token, or connecting to a hub. For a non-empty index, every covering claim must:
 
 - match the canonical repository root and current non-detached branch exactly;
 - belong to one exact identity and be in `claimed` or `working` state; and
-- cover every staged path, either literally, by directory ancestry, or through
-  the existing empty-path whole-worktree meaning.
+- cover every projected staged path, either by exact semantic or literal scope,
+  by directory ancestry, or through the existing empty-path whole-worktree
+  meaning.
 
 A `PROJECT:git` serialization lock cannot satisfy this check: it has no canonical
 worktree, branch, and path ownership. The checker never acquires, widens, renews,

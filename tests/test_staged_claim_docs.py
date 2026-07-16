@@ -29,6 +29,13 @@ def test_public_guides_document_the_shipped_gate_and_identity_boundary() -> None
     assert "A `PROJECT:git` serialization lock cannot satisfy" in claims
     assert "never token content" in claims
     assert "Run `synapse git-init --name <exact-seat>` once inside every linked worktree" in claims
+    assert "checker also resolves `HEAD`" in claims
+    assert "versus the index with the optional local semantic parser" in claims
+    assert "A change to an unclaimed sibling symbol is denied" in claims
+    assert "Parser/import/Git failures deny" in claims
+    assert "Semantic claims release only when" in claims
+    assert "retains the symbol claim for explicit manual release" in claims
+    assert "Use isolated Git" in readme
 
 
 def test_git_init_boundary_is_not_overstated() -> None:

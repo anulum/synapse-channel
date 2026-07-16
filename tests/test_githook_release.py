@@ -34,11 +34,17 @@ async def _wait_until(predicate: Callable[[], bool], *, timeout: float = 3.0) ->
     raise TimeoutError("condition did not become true")
 
 
-async def _claim_many(uri: str, owner: str, claims: list[ClaimSpec]) -> None:
+async def _claim_many(
+    uri: str,
+    owner: str,
+    claims: list[ClaimSpec],
+    *,
+    worktree: str = "/repo",
+) -> None:
     handle = await connect_agent(owner, uri)
     try:
         for task_id, paths, git in claims:
-            await handle.agent.claim(task_id, paths=paths, git=git)
+            await handle.agent.claim(task_id, paths=paths, git=git, worktree=worktree)
 
             def saw_claim_granted(message: dict[str, Any], expected: str = task_id) -> bool:
                 return message.get("type") == "claim_granted" and message.get("task_id") == expected
@@ -46,6 +52,27 @@ async def _claim_many(uri: str, owner: str, claims: list[ClaimSpec]) -> None:
             await handle.recorder.wait_for(saw_claim_granted)
     finally:
         await close_agents(handle)
+
+
+def _release_runner(
+    changed: str,
+    *,
+    root: str = "/repo",
+    branch: str = "x",
+) -> Callable[[list[str]], str]:
+    def run(args: list[str]) -> str:
+        if args in (
+            ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+            ["diff", "--name-only", "ORIG_HEAD", "HEAD"],
+        ):
+            return changed
+        if args == ["rev-parse", "--show-toplevel"]:
+            return root
+        if args == ["symbolic-ref", "--quiet", "--short", "HEAD"]:
+            return branch
+        raise AssertionError(args)
+
+    return run
 
 
 async def test_run_git_release_releases_matching_claim(capsys: pytest.CaptureFixture[str]) -> None:
@@ -60,7 +87,7 @@ async def test_run_git_release_releases_matching_claim(capsys: pytest.CaptureFix
             uri=uri,
             name="me",
             trigger="commit",
-            runner=lambda _args: "src/a.py\n",
+            runner=_release_runner("src/a.py\n"),
         )
 
         assert rc == 0
@@ -100,7 +127,7 @@ async def test_run_git_release_skips_non_matching_claims() -> None:
             uri=uri,
             name="me",
             trigger="commit",
-            runner=lambda _args: "src/target.py\n",
+            runner=_release_runner("src/target.py\n"),
         )
 
         assert rc == 0
@@ -114,7 +141,7 @@ async def test_run_git_release_unreachable_hub_never_blocks() -> None:
         uri=f"ws://localhost:{port}",
         name="me",
         trigger="commit",
-        runner=lambda _args: "src/a.py\n",
+        runner=_release_runner("src/a.py\n"),
         ready_timeout=0.1,
     )
     assert rc == 0
@@ -136,7 +163,7 @@ async def test_run_git_release_without_active_claims() -> None:
             uri=uri,
             name="me",
             trigger="commit",
-            runner=lambda _args: "src/a.py\n",
+            runner=_release_runner("src/a.py\n"),
         )
 
         assert rc == 0
@@ -155,7 +182,7 @@ async def test_run_git_release_releases_whole_worktree_claim() -> None:
             uri=uri,
             name="me",
             trigger="commit",
-            runner=lambda _args: "src/a.py\n",
+            runner=_release_runner("src/a.py\n"),
         )
 
         assert rc == 0
@@ -185,7 +212,7 @@ async def test_run_git_release_never_blocks_on_a_hub_that_answers_nothing() -> N
         uri="ws://unused",
         name="me",
         trigger="commit",
-        runner=lambda _args: "src/a.py\n",
+        runner=_release_runner("src/a.py\n"),
         agent_factory=_SilentReleaseAgent,  # type: ignore[arg-type]
     )
     assert rc == 0

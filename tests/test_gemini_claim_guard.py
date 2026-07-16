@@ -79,11 +79,13 @@ def test_parse_hook_request_accepts_replace(tmp_path: Path) -> None:
     assert request.tool_use_id == "2026-07-12T15:30:00.000Z"
     assert request.cwd == tmp_path
     assert request.file_paths == (tmp_path / "src" / "a.py",)
+    assert request.allow_semantic_source is True
 
 
 def test_parse_hook_request_accepts_write_file(tmp_path: Path) -> None:
     request = parse_hook_request(_event(tmp_path, tmp_path / "src" / "a.py", tool="write_file"))
     assert request.file_paths == (tmp_path / "src" / "a.py",)
+    assert request.allow_semantic_source is False
 
 
 def test_parse_hook_request_accepts_installed_bundle_shape() -> None:

@@ -922,8 +922,11 @@ non-blocking post-commit/post-merge auto-release hooks, and writes a short
 `.synapse/git-claims.md` guide. This repository separately wires
 `git-claim-check --staged` into pre-commit: it reads the NUL-delimited Git index
 itself and fails closed unless the configured owner has editable claims covering
-every staged path on the same canonical worktree and branch. A Git serialization
-lock is not a path claim. An empty staged index succeeds without a hub so
+every staged path on the same canonical worktree and branch. For semantic
+claims it resolves `HEAD` versus the index and checks the exact tree-sitter
+declarations touched; incomplete evidence widens to a whole-file requirement,
+and parser failure denies. A Git serialization lock is not a path claim. An
+empty staged index succeeds without a hub so
 `pre-commit run --all-files` remains hermetic. `synapse state` shows each claim's
 branch, while `synapse conflicts` flags agents about to edit the same files on
 branches that merge into the same base.
@@ -1040,6 +1043,16 @@ unsupported or invalid syntax, oversized sources, and every other incomplete
 mapping widen to the whole file. Grammar wheels are installed with the extra;
 there is no runtime download, new wire field, or hub-side Git access. The JSON is
 planning evidence, not a correctness proof.
+
+Semantic scopes are enforced end to end on the client. Precise provider edits
+(`Edit`/`replace`/`search_replace`-style tools) may provisionally use a symbol
+claim only when no competing owner holds another symbol in that physical source
+and worktree. Whole-file writes and patch tools require whole-file claims. The
+staged gate proves the exact index symbols before commit, while auto-release
+repeats the committed diff and releases only the symbol actually changed.
+Ambiguous or unavailable semantic evidence fails closed at the staged gate and
+retains the claim at non-blocking post-commit release. Use isolated Git
+worktrees for concurrent sibling-symbol edits.
 
 Before merge or handoff, the import graph merge-risk radar compares changed
 files with claimed paths, package-local Python import neighbours, CODEOWNERS,

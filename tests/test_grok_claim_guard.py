@@ -55,11 +55,13 @@ def test_parse_camel_case_search_replace() -> None:
     assert request.cwd == Path("/tmp/repo")
     assert request.session_id == "sess-1"
     assert request.tool_use_id == "call-1"
+    assert request.allow_semantic_source is True
 
 
 def test_parse_snake_case_and_write_tool() -> None:
     request = parse_hook_request(_event(tool="write", camel=False, path="/tmp/repo/x.md"))
     assert request.file_paths == (Path("/tmp/repo/x.md"),)
+    assert request.allow_semantic_source is False
 
 
 def test_relative_path_is_preserved_for_shared_canonicalisation() -> None:
@@ -152,9 +154,11 @@ def test_non_pretool_event_is_rejected() -> None:
 
 
 def test_edit_and_multiedit_aliases_parse() -> None:
-    for tool in ("Edit", "MultiEdit", "Write"):
+    for tool in ("Edit", "MultiEdit"):
         request = parse_hook_request(_event(tool=tool))
         assert request.file_paths == (Path("/tmp/repo/src/a.py"),)
+        assert request.allow_semantic_source is True
+    assert parse_hook_request(_event(tool="Write")).allow_semantic_source is False
 
 
 def test_target_file_key_is_accepted() -> None:

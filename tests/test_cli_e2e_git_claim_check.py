@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cli_e2e_helpers import git_repo, git_run, isolated_hub, run_cli
+from synapse_channel.git.semantic_scope import semantic_scope_path
 
 _CLEAN_IDENTITY_ENV = {
     "SYN_PROJECT": "",
@@ -90,3 +91,73 @@ def test_live_hub_denies_uncovered_then_allows_exact_owned_claim(tmp_path: Path)
     )
     assert unavailable.returncode == 1
     assert "unavailable" in unavailable.stderr.lower()
+
+
+def test_live_staged_gate_enforces_the_exact_claimed_symbol(tmp_path: Path) -> None:
+    repo = git_repo(tmp_path / "repo")
+    source = repo / "src" / "worker.py"
+    source.parent.mkdir()
+    source.write_text(
+        "def owned():\n    return 1\n\ndef sibling():\n    return 1\n",
+        encoding="utf-8",
+    )
+    git_run(repo, "add", "src/worker.py")
+    git_run(repo, "commit", "-m", "add worker")
+    identity = "project/agent"
+    scope = semantic_scope_path("src/worker.py", "owned")
+
+    with isolated_hub(tmp_path) as hub:
+        initialised = run_cli(
+            "git-init",
+            "--name",
+            identity,
+            uri=hub.uri,
+            cwd=repo,
+            env=_CLEAN_IDENTITY_ENV,
+        )
+        assert initialised.ok(), initialised.output
+        claimed = run_cli(
+            "git-claim",
+            "--task-id",
+            "OWNED-SYMBOL",
+            "--paths",
+            scope,
+            "--auto-release-on",
+            "manual",
+            "--name",
+            identity,
+            uri=hub.uri,
+            cwd=repo,
+            env=_CLEAN_IDENTITY_ENV,
+        )
+        assert claimed.ok(), claimed.output
+
+        source.write_text(
+            "def owned():\n    return 2\n\ndef sibling():\n    return 1\n",
+            encoding="utf-8",
+        )
+        git_run(repo, "add", "src/worker.py")
+        allowed = run_cli(
+            "git-claim-check",
+            "--staged",
+            cwd=repo,
+            env=_CLEAN_IDENTITY_ENV,
+        )
+        assert allowed.ok(), allowed.output
+        assert "OK (1 paths)" in allowed.stdout
+
+        git_run(repo, "reset", "--hard", "HEAD")
+        source.write_text(
+            "def owned():\n    return 1\n\ndef sibling():\n    return 2\n",
+            encoding="utf-8",
+        )
+        git_run(repo, "add", "src/worker.py")
+        denied = run_cli(
+            "git-claim-check",
+            "--staged",
+            cwd=repo,
+            env=_CLEAN_IDENTITY_ENV,
+        )
+        assert denied.returncode == 1
+        assert "no covering claim" in denied.stderr
+        assert "src/worker.py/.synapse-symbol/sibling" in denied.stderr

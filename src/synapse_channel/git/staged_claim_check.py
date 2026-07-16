@@ -24,9 +24,16 @@ from synapse_channel.git.claim_check_context import (
 )
 from synapse_channel.git.claim_coverage import ClaimCoverageError, decide_claim_coverage
 from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
+from synapse_channel.git.semantic_diff import SemanticDiffRecord, resolve_staged_diff
+from synapse_channel.git.semantic_enforcement import (
+    SemanticEnforcementError,
+    project_change_paths,
+    semantic_sources_for_context,
+)
 from synapse_channel.git.staged_paths import read_staged_paths
 
 StateFetcher = Callable[..., Awaitable[dict[str, Any]]]
+SemanticResolver = Callable[[Path, Sequence[str]], tuple[SemanticDiffRecord, ...]]
 MAX_DIAGNOSTIC_PATHS = 32
 MAX_DIAGNOSTIC_CHARS = 2048
 
@@ -84,6 +91,35 @@ def _token(environment: Mapping[str, str], token_file: Path | None) -> str | Non
         raise ClaimCheckConfigError(str(exc)) from exc
 
 
+def _resolve_staged_semantics(
+    root: Path,
+    paths: Sequence[str],
+) -> tuple[SemanticDiffRecord, ...]:
+    """Resolve staged semantic evidence through the production Git index reader."""
+    return resolve_staged_diff(root, paths=paths)
+
+
+def _coverage_paths(
+    snapshot: Mapping[str, Any],
+    *,
+    root: Path,
+    branch: str,
+    physical_paths: tuple[str, ...],
+    semantic_resolver: SemanticResolver,
+) -> tuple[str, ...]:
+    """Return symbol paths for proven semantic modifications, else physical paths."""
+    sources = semantic_sources_for_context(
+        snapshot,
+        root=root,
+        branch=branch,
+        targets=physical_paths,
+    )
+    if not sources:
+        return physical_paths
+    records = semantic_resolver(root, sources)
+    return project_change_paths(physical_paths, records)
+
+
 async def run_staged_claim_check(
     *,
     identity: str | None = None,
@@ -93,8 +129,9 @@ async def run_staged_claim_check(
     runner: GitRunner = _default_git_runner,
     environment: Mapping[str, str] | None = None,
     state_fetcher: StateFetcher = fetch_state_snapshot,
+    semantic_resolver: SemanticResolver = _resolve_staged_semantics,
 ) -> StagedClaimCheckResult:
-    """Allow only when one exact owner covers every path in the staged index."""
+    """Allow only when one owner covers every staged physical or semantic path."""
     env = os.environ if environment is None else environment
     paths: tuple[str, ...] = ()
     try:
@@ -114,14 +151,30 @@ async def run_staged_claim_check(
             token=_token(env, context.token_file),
             timeout=timeout,
         )
+        coverage_paths = _coverage_paths(
+            snapshot,
+            root=context.root,
+            branch=context.branch,
+            physical_paths=paths,
+            semantic_resolver=semantic_resolver,
+        )
         verdict = decide_claim_coverage(
             snapshot,
             identity=context.identity,
             root=context.root,
             branch=context.branch,
-            paths=paths,
+            paths=coverage_paths,
         )
-    except (ClaimCheckConfigError, ClaimCoverageError, ClaimStateError, GitError, OSError) as exc:
+    except (
+        ClaimCheckConfigError,
+        ClaimCoverageError,
+        ClaimStateError,
+        GitError,
+        OSError,
+        RuntimeError,
+        SemanticEnforcementError,
+        ValueError,
+    ) as exc:
         return StagedClaimCheckResult(False, paths, str(exc))
     if verdict.allowed:
         return StagedClaimCheckResult(True, paths)

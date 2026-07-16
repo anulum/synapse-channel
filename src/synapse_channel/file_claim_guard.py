@@ -32,12 +32,28 @@ class FileClaimGuardError(SynapseError, RuntimeError):
 
 @dataclass(frozen=True)
 class MutationRequest:
-    """Provider-neutral identity and path data for one mutation tool call."""
+    """Provider-neutral identity and path data for one mutation tool call.
+
+    Attributes
+    ----------
+    session_id : str
+        Provider session identifier used only to bound state-query identities.
+    tool_use_id : str
+        Provider call identifier used only to bound state-query identities.
+    cwd : pathlib.Path
+        Absolute provider working directory.
+    file_paths : tuple[pathlib.Path, ...]
+        Relative or absolute mutation targets from the provider payload.
+    allow_semantic_source : bool
+        Whether this precise edit tool may provisionally use an unambiguous
+        symbol claim for the target's physical source.
+    """
 
     session_id: str
     tool_use_id: str
     cwd: Path
     file_paths: tuple[Path, ...]
+    allow_semantic_source: bool = False
 
 
 @dataclass(frozen=True)
@@ -133,8 +149,32 @@ def decide_targets_from_snapshot(
     *,
     identity: str,
     targets: tuple[RepositoryTarget, ...],
+    allow_semantic_source: bool = False,
 ) -> GuardVerdict:
-    """Decide whether ``identity`` unambiguously owns every mutation target."""
+    """Decide whether ``identity`` unambiguously owns every mutation target.
+
+    Parameters
+    ----------
+    snapshot : Mapping[str, Any]
+        Authoritative hub state containing active claims.
+    identity : str
+        Exact provider identity performing the mutation.
+    targets : tuple[RepositoryTarget, ...]
+        Canonical worktree, branch, and relative path targets.
+    allow_semantic_source : bool, optional
+        Permit one-owner editable semantic claims to cover their physical
+        source provisionally. Whole-file writers leave this disabled.
+
+    Returns
+    -------
+    GuardVerdict
+        Allow or bounded denial reason for all targets.
+
+    Raises
+    ------
+    FileClaimGuardError
+        If authoritative claim state is malformed.
+    """
     grouped: dict[tuple[Path, str], list[str]] = {}
     for target in targets:
         grouped.setdefault((target.root, target.branch), []).append(target.relative_path)
@@ -150,6 +190,7 @@ def decide_targets_from_snapshot(
                 root=root,
                 branch=branch,
                 paths=paths,
+                allow_semantic_source=allow_semantic_source,
             )
             missing.extend(coverage.missing_paths)
             ownership.extend(coverage.ownership_mismatch_paths)
@@ -207,7 +248,12 @@ async def evaluate_mutation_request(
             token=token,
             timeout=timeout,
         )
-        return decide_targets_from_snapshot(snapshot, identity=identity, targets=targets)
+        return decide_targets_from_snapshot(
+            snapshot,
+            identity=identity,
+            targets=targets,
+            allow_semantic_source=request.allow_semantic_source,
+        )
     except (FileClaimGuardError, ClaimStateError) as exc:
         return GuardVerdict(False, str(exc))
 

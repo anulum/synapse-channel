@@ -19,6 +19,7 @@ from synapse_channel.git.claim_coverage import (
     claim_path_covers,
     decide_claim_coverage,
 )
+from synapse_channel.git.semantic_scope import semantic_scope_path
 
 
 def _claim(
@@ -123,6 +124,59 @@ def test_competing_covering_claim_is_ambiguous(tmp_path: Path) -> None:
         paths=("src/module.py",),
     )
     assert verdict.ownership_mismatch_paths == ("src/module.py",)
+
+
+def test_semantic_source_fallback_is_explicit_owner_exclusive_and_editable(
+    tmp_path: Path,
+) -> None:
+    source = "src/module.py"
+    owner_scope = semantic_scope_path(source, "owned")
+    other_scope = semantic_scope_path(source, "other")
+    snapshot = {"active_claims": [_claim(tmp_path, paths=[owner_scope])]}
+
+    literal = decide_claim_coverage(
+        snapshot,
+        identity="seat/one",
+        root=tmp_path,
+        branch="main",
+        paths=(source,),
+    )
+    assert literal.missing_paths == (source,)
+
+    precise = decide_claim_coverage(
+        snapshot,
+        identity="seat/one",
+        root=tmp_path,
+        branch="main",
+        paths=(source,),
+        allow_semantic_source=True,
+    )
+    assert precise.allowed
+
+    competing = decide_claim_coverage(
+        {
+            "active_claims": [
+                _claim(tmp_path, paths=[owner_scope]),
+                _claim(tmp_path, owner="seat/two", paths=[other_scope]),
+            ]
+        },
+        identity="seat/one",
+        root=tmp_path,
+        branch="main",
+        paths=(source,),
+        allow_semantic_source=True,
+    )
+    assert competing.ownership_mismatch_paths == (source,)
+
+    paused = decide_claim_coverage(
+        {"active_claims": [_claim(tmp_path, paths=[owner_scope], status="input_required")]},
+        identity="seat/one",
+        root=tmp_path,
+        branch="main",
+        paths=(source,),
+        allow_semantic_source=True,
+    )
+    assert paused.non_editable_paths == (source,)
 
 
 @pytest.mark.parametrize(

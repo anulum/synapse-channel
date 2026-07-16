@@ -22,6 +22,7 @@ from synapse_channel.claude_claim_guard import (
     denial_payload,
     evaluate_hook_event,
 )
+from synapse_channel.git.semantic_scope import semantic_scope_path
 
 
 def _event(root: Path, path: Path, *, tool: str = "Edit") -> str:
@@ -174,6 +175,39 @@ async def test_evaluate_hook_event_allows_live_covering_claim(tmp_path: Path) ->
         git_runner=_runner(tmp_path),
     )
     assert verdict.allowed
+
+
+@pytest.mark.asyncio
+async def test_only_precise_edit_can_provisionally_use_a_symbol_claim(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+    path = tmp_path / "src" / "module.py"
+    scope = semantic_scope_path("src/module.py", "run")
+
+    async def snapshot(**_kwargs: object) -> dict[str, Any]:
+        return {"active_claims": [_claim(tmp_path, paths=[scope])]}
+
+    edit = await evaluate_hook_event(
+        _event(tmp_path, path, tool="Edit"),
+        identity="seat/one",
+        uri="ws://hub",
+        token=None,
+        timeout=0.1,
+        state_fetcher=snapshot,
+        git_runner=_runner(tmp_path),
+    )
+    write = await evaluate_hook_event(
+        _event(tmp_path, path, tool="Write"),
+        identity="seat/one",
+        uri="ws://hub",
+        token=None,
+        timeout=0.1,
+        state_fetcher=snapshot,
+        git_runner=_runner(tmp_path),
+    )
+    assert edit.allowed
+    assert not write.allowed
 
 
 @pytest.mark.asyncio

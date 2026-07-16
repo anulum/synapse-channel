@@ -8,14 +8,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from synapse_channel.claim_state import ClaimStateError
+from synapse_channel.git import staged_claim_check
 from synapse_channel.git.gitclaim import GitError
+from synapse_channel.git.semantic_diff import SemanticDiffRecord
+from synapse_channel.git.semantic_scope import semantic_scope_path
 from synapse_channel.git.staged_claim_check import run_staged_claim_check
 
 
@@ -48,13 +51,19 @@ def _runner(
     return run
 
 
-def _claim(root: Path, *, owner: str = "agent", status: str = "claimed") -> dict[str, Any]:
+def _claim(
+    root: Path,
+    *,
+    owner: str = "agent",
+    status: str = "claimed",
+    paths: list[str] | None = None,
+) -> dict[str, Any]:
     return {
         "task_id": "task",
         "owner": owner,
         "status": status,
         "worktree": str(root.resolve()),
-        "paths": ["src"],
+        "paths": ["src"] if paths is None else paths,
         "git": {"branch": "main"},
     }
 
@@ -95,6 +104,101 @@ async def test_owned_editable_claim_allows_with_one_state_query(tmp_path: Path) 
     assert result.paths == ("src/a.py", "src/b.py")
     assert len(captured) == 1
     assert captured[0]["requester"].startswith("claim-check/")
+
+
+def _semantic_record(
+    source: str,
+    *,
+    claim_paths: tuple[str, ...],
+    narrowed: bool = True,
+) -> SemanticDiffRecord:
+    return SemanticDiffRecord(
+        status="M",
+        source=source,
+        old_source=source,
+        language="python",
+        symbols=("run",) if narrowed else (),
+        semantic_scopes=claim_paths if narrowed else (),
+        claim_paths=claim_paths,
+        narrowed=narrowed,
+        reason="test evidence",
+    )
+
+
+def test_production_semantic_resolver_reads_the_staged_diff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = (_semantic_record("src/a.py", claim_paths=("src/a.py",)),)
+    captured: dict[str, object] = {}
+
+    def resolve(root: Path, *, paths: Sequence[str]) -> tuple[SemanticDiffRecord, ...]:
+        captured["root"] = root
+        captured["paths"] = paths
+        return expected
+
+    monkeypatch.setattr(staged_claim_check, "resolve_staged_diff", resolve)
+
+    assert (
+        staged_claim_check._resolve_staged_semantics(
+            tmp_path,
+            ("src/a.py",),
+        )
+        == expected
+    )
+    assert captured == {"root": tmp_path, "paths": ("src/a.py",)}
+
+
+@pytest.mark.asyncio
+async def test_semantic_claim_allows_only_the_proven_staged_symbol(
+    tmp_path: Path,
+) -> None:
+    source = "src/a.py"
+    owned = semantic_scope_path(source, "owned")
+    other = semantic_scope_path(source, "other")
+
+    async def run_with(record: SemanticDiffRecord) -> Any:
+        return await run_staged_claim_check(
+            runner=_runner(tmp_path, f"M\0{source}\0"),
+            environment={},
+            state_fetcher=_fetch({"active_claims": [_claim(tmp_path, paths=[owned])]}),
+            semantic_resolver=lambda _root, _paths: (record,),
+        )
+
+    allowed = await run_with(_semantic_record(source, claim_paths=(owned,)))
+    assert allowed.allowed
+    assert allowed.paths == (source,)
+
+    wrong_symbol = await run_with(_semantic_record(source, claim_paths=(other,)))
+    assert not wrong_symbol.allowed
+    assert "no covering claim" in wrong_symbol.reason
+
+    widened = await run_with(_semantic_record(source, claim_paths=(source,), narrowed=False))
+    assert not widened.allowed
+    assert "no covering claim" in widened.reason
+
+
+@pytest.mark.asyncio
+async def test_semantic_resolver_failure_denies_instead_of_falling_back(
+    tmp_path: Path,
+) -> None:
+    source = "src/a.py"
+    scope = semantic_scope_path(source, "run")
+
+    def unavailable(
+        _root: Path,
+        _paths: Sequence[str],
+    ) -> tuple[SemanticDiffRecord, ...]:
+        raise RuntimeError("semantic parser unavailable")
+
+    result = await run_staged_claim_check(
+        runner=_runner(tmp_path, f"M\0{source}\0"),
+        environment={},
+        state_fetcher=_fetch({"active_claims": [_claim(tmp_path, paths=[scope])]}),
+        semantic_resolver=unavailable,
+    )
+    assert not result.allowed
+    assert result.reason == "semantic parser unavailable"
 
 
 @pytest.mark.asyncio

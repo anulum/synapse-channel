@@ -383,6 +383,13 @@ loopback would only break port publishing without adding security.
   or MCP write paths stay outside the matchers. See the provider × fail-closed
   matrix in [`docs/claim-guard-hooks.md`](docs/claim-guard-hooks.md). Commit-time
   `synapse git-claim-check --staged` remains the independent second gate.
+  Semantic claims do not make one shared physical file safe for two owners:
+  precise native edits accept a symbol claim only when its worktree/branch has
+  no competing semantic owner, whole-file/patch tools require a file claim, and
+  sibling-symbol concurrency belongs in isolated worktrees. The staged gate
+  resolves `HEAD` versus the index and denies on ambiguous or unavailable
+  semantic evidence; non-blocking auto-release retains an unproven symbol claim
+  for manual release.
 - `tools/fuzz_protocol_decode.py` provides local decoder hardening evidence for
   malformed bytes, malformed JSON, quoted bracket runs, valid nested JSON, and
   depth-limit rejection. A weekly and manually dispatchable read-only workflow

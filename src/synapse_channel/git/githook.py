@@ -29,6 +29,16 @@ from typing import Any
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.git.gitclaim import AgentFactory, GitError, GitRunner, _default_git_runner
+from synapse_channel.git.semantic_enforcement import (
+    project_change_paths,
+    semantic_sources_from_paths,
+)
+from synapse_channel.git.semantic_release import (
+    SemanticReleaseResolver,
+    release_candidates,
+    release_context,
+    resolve_release_semantics,
+)
 from synapse_channel.terminal_text import shell_command_arg, shell_long_option
 
 HOOK_MARKER = "# synapse-git-hook"
@@ -297,6 +307,7 @@ async def run_git_release(
     token: str | None = None,
     agent_factory: AgentFactory = SynapseAgent,
     runner: GitRunner = _default_git_runner,
+    semantic_resolver: SemanticReleaseResolver = resolve_release_semantics,
     ready_timeout: float = 5.0,
 ) -> int:
     """Release this agent's branch-scoped claims whose paths were committed/merged.
@@ -317,6 +328,8 @@ async def run_git_release(
         Factory for the hub client; injectable for testing.
     runner : GitRunner, optional
         The git executor; injectable for testing.
+    semantic_resolver : SemanticReleaseResolver, optional
+        Committed-diff resolver for semantic claims; injectable for testing.
     ready_timeout : float, optional
         Maximum seconds to wait for the hook client to receive the hub welcome.
 
@@ -328,6 +341,7 @@ async def run_git_release(
     """
     try:
         changed = changed_files(trigger, runner=runner)
+        root, branch = release_context(runner=runner)
     except GitError as exc:
         print(f"git error: {exc}")
         return 1
@@ -351,11 +365,32 @@ async def run_git_release(
             await asyncio.sleep(0.05)
         released: list[str] = []
         claims = (snapshots[-1].get("active_claims") or []) if snapshots else []
-        for claim in claims:
-            git = claim.get("git")
-            if claim.get("owner") != name or not git or git.get("auto_release_on") != trigger:
-                continue
-            if _paths_overlap([str(p) for p in (claim.get("paths") or [])], changed):
+        candidates = release_candidates(
+            claims,
+            name=name,
+            trigger=trigger,
+            root=root,
+            branch=branch,
+        )
+        semantic_sources = tuple(
+            dict.fromkeys(
+                source
+                for _claim, paths in candidates
+                for source in semantic_sources_from_paths(paths)
+            )
+        )
+        semantic_changed: tuple[str, ...] = ()
+        if semantic_sources:
+            try:
+                semantic_changed = project_change_paths(
+                    semantic_sources,
+                    semantic_resolver(root, trigger, semantic_sources),
+                )
+            except (OSError, RuntimeError, ValueError) as exc:
+                print(f"[{name}] semantic auto-release retained symbol claims: {exc}")
+        changed_paths = [*changed, *semantic_changed]
+        for claim, paths in candidates:
+            if _paths_overlap(list(paths), changed_paths):
                 task_id = str(claim.get("task_id"))
                 await agent.release(task_id)
                 released.append(task_id)

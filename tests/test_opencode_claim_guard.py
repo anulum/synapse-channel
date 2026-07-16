@@ -33,11 +33,18 @@ def _event(tool: str, tool_input: object, *, cwd: str = "/repo") -> str:
     )
 
 
-@pytest.mark.parametrize("tool", ["edit", "write"])
-def test_parses_native_file_path_tools(tool: str) -> None:
+@pytest.mark.parametrize(
+    ("tool", "allow_semantic_source"),
+    [("edit", True), ("write", False)],
+)
+def test_parses_native_file_path_tools(
+    tool: str,
+    allow_semantic_source: bool,
+) -> None:
     request = parse_hook_request(_event(tool, {"filePath": "src/a.py"}))
     assert request.cwd == Path("/repo")
     assert request.file_paths == (Path("src/a.py"),)
+    assert request.allow_semantic_source is allow_semantic_source
 
 
 def test_parses_native_apply_patch_tool() -> None:
@@ -48,6 +55,7 @@ def test_parses_native_apply_patch_tool() -> None:
         )
     )
     assert request.file_paths == (Path("a.py"),)
+    assert request.allow_semantic_source is False
 
 
 @pytest.mark.parametrize(

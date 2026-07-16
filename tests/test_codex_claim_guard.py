@@ -76,6 +76,7 @@ def test_patch_parser_collects_add_update_delete_and_move_paths() -> None:
 def test_hook_parser_maps_codex_wire_shape_to_generic_request(tmp_path: Path) -> None:
     request = parse_hook_request(_event(tmp_path, _patch("*** Update File: src/a.py")))
     assert request == MutationRequest("session", "tool", tmp_path, (Path("src/a.py"),))
+    assert request.allow_semantic_source is False
 
 
 @pytest.mark.parametrize(

@@ -104,6 +104,7 @@ def parse_hook_request(raw: str) -> MutationRequest:
         tool_use_id=_first_string(decoded, _TOOL_ID_KEYS, location="input"),
         cwd=cwd,
         file_paths=(path,),
+        allow_semantic_source=tool_name in {"search_replace", "Edit", "MultiEdit"},
     )
 
 

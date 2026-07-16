@@ -196,6 +196,83 @@ def test_committed_head_and_path_filter_ignore_later_worktree_changes(tmp_path: 
     assert records[0].symbols == ("b",)
 
 
+def test_staged_diff_reads_the_index_and_ignores_later_worktree_changes(
+    tmp_path: Path,
+) -> None:
+    repo, _base = _repo(
+        tmp_path,
+        {"worker.py": ("def staged():\n    return 1\n\ndef unstaged():\n    return 1\n")},
+    )
+    _write(
+        repo,
+        "worker.py",
+        "def staged():\n    return 2\n\ndef unstaged():\n    return 1\n",
+    )
+    _git(repo, "add", "worker.py")
+    _write(
+        repo,
+        "worker.py",
+        "def staged():\n    return 2\n\ndef unstaged():\n    return 99\n",
+    )
+
+    records = semantic_diff.resolve_staged_diff(repo)
+
+    assert len(records) == 1
+    assert records[0].symbols == ("staged",)
+    assert records[0].claim_paths == ("worker.py/.synapse-symbol/staged",)
+
+
+def test_staged_module_level_change_requires_a_whole_file_claim(tmp_path: Path) -> None:
+    repo, _base = _repo(
+        tmp_path,
+        {"worker.py": "VALUE = 1\n\ndef run():\n    return VALUE\n"},
+    )
+    _write(repo, "worker.py", "VALUE = 2\n\ndef run():\n    return VALUE\n")
+    _git(repo, "add", "worker.py")
+
+    record = semantic_diff.resolve_staged_diff(repo)[0]
+
+    assert not record.narrowed
+    assert record.claim_paths == ("worker.py",)
+    assert "outside a named declaration" in record.reason
+
+
+def test_staged_diff_uses_the_empty_tree_for_an_initial_commit(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _write(tmp_path, "worker.py", "def run():\n    return 1\n")
+    _git(tmp_path, "add", "worker.py")
+
+    record = semantic_diff.resolve_staged_diff(tmp_path)[0]
+
+    assert record.status == "A"
+    assert not record.narrowed
+    assert record.claim_paths == ("worker.py",)
+    assert record.reason == "git status A is file-wide"
+
+
+def test_staged_base_does_not_mask_a_non_initial_broken_head(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def fail(args_root: Path, args: tuple[str, ...] | list[str]) -> bytes:
+        assert args_root == tmp_path
+        calls.append(tuple(args))
+        if args[0] == "status":
+            return b"# branch.oid deadbeef\n"
+        raise ValueError("broken HEAD")
+
+    monkeypatch.setattr(semantic_diff, "_git", fail)
+
+    with pytest.raises(ValueError, match="broken HEAD"):
+        semantic_diff._staged_base(tmp_path)
+    assert calls == [
+        ("rev-parse", "--verify", "HEAD"),
+        ("status", "--porcelain=v2", "--branch"),
+    ]
+
+
 def test_mode_only_and_oversized_changes_widen(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -222,6 +299,8 @@ def test_parser_failure_and_invalid_revisions_are_fail_visible(tmp_path: Path) -
         semantic_diff.resolve_git_diff(repo, base=base, parser_factory=refuse)
     with pytest.raises(ValueError, match="must not be blank"):
         semantic_diff.resolve_git_diff(repo, base=" ")
+    with pytest.raises(ValueError, match="cannot also specify"):
+        semantic_diff.resolve_git_diff(repo, base=base, head="HEAD", cached=True)
     with pytest.raises(ValueError, match="git semantic diff failed"):
         semantic_diff.resolve_git_diff(repo, base="missing-ref")
 
@@ -252,6 +331,57 @@ def test_non_regular_working_source_is_refused(tmp_path: Path) -> None:
     (tmp_path / "linked.py").symlink_to("target.py")
     with pytest.raises(OSError, match="not a regular file"):
         semantic_diff._working_source(tmp_path, "linked.py")
+
+
+def test_non_regular_revision_and_index_entries_are_refused(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Test")
+    _git(tmp_path, "config", "user.email", "test@example.invalid")
+    (tmp_path / "worker.py").symlink_to("def run():\n    return 1\n")
+    _git(tmp_path, "add", "worker.py")
+    _git(tmp_path, "commit", "-qm", "symlink")
+    revision = _git(tmp_path, "rev-parse", "HEAD")
+
+    with pytest.raises(OSError, match="revision .* not a regular file"):
+        semantic_diff._revision_source(tmp_path, revision, "worker.py")
+    with pytest.raises(OSError, match="index source is not a regular file"):
+        semantic_diff._index_source(tmp_path, "worker.py")
+
+
+def test_staged_symlink_change_widens_instead_of_parsing_target_text(
+    tmp_path: Path,
+) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Test")
+    _git(tmp_path, "config", "user.email", "test@example.invalid")
+    link = tmp_path / "worker.py"
+    link.symlink_to("def run():\n    return 1\n")
+    _git(tmp_path, "add", "worker.py")
+    _git(tmp_path, "commit", "-qm", "symlink")
+    link.unlink()
+    link.symlink_to("def run():\n    return 2\n")
+    _git(tmp_path, "add", "worker.py")
+
+    record = semantic_diff.resolve_staged_diff(tmp_path)[0]
+
+    assert not record.narrowed
+    assert record.claim_paths == ("worker.py",)
+    assert record.reason == "source side is not a regular file"
+
+
+def test_missing_or_ambiguous_git_entry_is_not_parsed() -> None:
+    with pytest.raises(OSError, match="not one regular file"):
+        semantic_diff._require_regular_git_entry(
+            b"",
+            path="worker.py",
+            location="index",
+        )
+    with pytest.raises(OSError, match="not one regular file"):
+        semantic_diff._require_regular_git_entry(
+            b"100644 a 0\tone.py\0" + b"100644 b 0\ttwo.py\0",
+            path="worker.py",
+            location="index",
+        )
 
 
 def test_parser_boundary_failures_widen_instead_of_escaping(
@@ -307,6 +437,7 @@ def test_empty_internal_ranges_keep_the_defensive_whole_file_fallback(
         changed,
         base="main",
         head=None,
+        cached=False,
         language=language[0],
         spec=language[1],
         parser_factory=default_parser,

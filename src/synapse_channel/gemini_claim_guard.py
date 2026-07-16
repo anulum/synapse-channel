@@ -84,6 +84,7 @@ def parse_hook_request(raw: str) -> MutationRequest:
         tool_use_id=_required_string(decoded, "timestamp", location="input"),
         cwd=cwd,
         file_paths=(Path(_required_string(tool_input, "file_path", location="tool_input")),),
+        allow_semantic_source=tool_name == "replace",
     )
 
 

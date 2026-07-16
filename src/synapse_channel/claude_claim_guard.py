@@ -102,6 +102,7 @@ def _mutation_request(request: HookRequest) -> MutationRequest:
         tool_use_id=request.tool_use_id,
         cwd=request.cwd,
         file_paths=(request.file_path,),
+        allow_semantic_source=request.tool_name == "Edit",
     )
 
 

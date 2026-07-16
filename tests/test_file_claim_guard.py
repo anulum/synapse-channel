@@ -17,11 +17,13 @@ import pytest
 from synapse_channel.claim_state import ClaimStateError
 from synapse_channel.file_claim_guard import (
     MutationRequest,
+    RepositoryTarget,
     decide_targets_from_snapshot,
     evaluate_mutation_request,
     requester_name,
     resolve_repository_targets,
 )
+from synapse_channel.git.semantic_scope import semantic_scope_path
 
 
 def _runner(root: Path, branch: str = "main") -> Callable[[list[str]], str]:
@@ -85,6 +87,40 @@ def test_resolution_rejects_empty_paths_and_relative_cwd(tmp_path: Path) -> None
         resolve_repository_targets(invalid, provider="Provider", runner=_runner(tmp_path))
 
 
+def test_precise_edit_can_use_one_unambiguous_symbol_claim(tmp_path: Path) -> None:
+    source = "src/a.py"
+    target = RepositoryTarget(tmp_path.resolve(), "main", source)
+    owner_scope = semantic_scope_path(source, "owned")
+    other_scope = semantic_scope_path(source, "other")
+
+    denied = decide_targets_from_snapshot(
+        {"active_claims": [_claim(tmp_path, [owner_scope])]},
+        identity="seat/one",
+        targets=(target,),
+    )
+    assert not denied.allowed
+    assert "claim required" in denied.reason
+
+    allowed = decide_targets_from_snapshot(
+        {"active_claims": [_claim(tmp_path, [owner_scope])]},
+        identity="seat/one",
+        targets=(target,),
+        allow_semantic_source=True,
+    )
+    assert allowed.allowed
+
+    competing = _claim(tmp_path, [other_scope])
+    competing["owner"] = "seat/two"
+    ambiguous = decide_targets_from_snapshot(
+        {"active_claims": [_claim(tmp_path, [owner_scope]), competing]},
+        identity="seat/one",
+        targets=(target,),
+        allow_semantic_source=True,
+    )
+    assert not ambiguous.allowed
+    assert "ambiguous" in ambiguous.reason
+
+
 def test_requester_pool_is_stable_and_bounded(tmp_path: Path) -> None:
     names = {
         requester_name(MutationRequest("session", f"tool-{index}", tmp_path, (Path("a"),)), "owner")
@@ -113,3 +149,30 @@ async def test_evaluation_converts_authoritative_state_failure_to_denial(tmp_pat
     )
     assert not verdict.allowed
     assert verdict.reason == "hub unavailable"
+
+
+@pytest.mark.asyncio
+async def test_evaluation_propagates_precise_semantic_permission(tmp_path: Path) -> None:
+    source = "src/a.py"
+    scope = semantic_scope_path(source, "run")
+
+    async def snapshot(**_kwargs: object) -> dict[str, Any]:
+        return {"active_claims": [_claim(tmp_path, [scope])]}
+
+    verdict = await evaluate_mutation_request(
+        MutationRequest(
+            "session",
+            "tool",
+            tmp_path,
+            (Path(source),),
+            allow_semantic_source=True,
+        ),
+        provider="Provider",
+        identity="seat/one",
+        uri="ws://hub",
+        token=None,
+        timeout=0.1,
+        state_fetcher=snapshot,
+        git_runner=_runner(tmp_path),
+    )
+    assert verdict.allowed

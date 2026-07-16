@@ -72,6 +72,7 @@ def test_parse_hook_request_accepts_tool_call_id(tmp_path: Path) -> None:
     assert request.tool_use_id == "tool-1"
     assert request.cwd == tmp_path
     assert request.file_paths == (tmp_path / "src" / "a.py",)
+    assert request.allow_semantic_source is True
 
 
 def test_parse_hook_request_rejects_unverified_tool_use_id_alias(tmp_path: Path) -> None:
@@ -108,6 +109,7 @@ def test_parse_hook_request_accepts_installed_kimi_0233_shape() -> None:
     assert request.tool_use_id == "tool-1"
     assert request.cwd == Path("/tmp/synapse-kimi-payload-test")
     assert request.file_paths == (Path("/tmp/synapse-kimi-payload-test/hello.txt"),)
+    assert request.allow_semantic_source is False
 
 
 def test_parse_hook_request_rejects_wrong_event(tmp_path: Path) -> None:

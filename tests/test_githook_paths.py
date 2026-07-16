@@ -11,6 +11,7 @@ from __future__ import annotations
 from synapse_channel.git.githook import (
     _paths_overlap,
 )
+from synapse_channel.git.semantic_scope import semantic_scope_path
 
 
 def test_paths_overlap_whole_worktree() -> None:
@@ -24,3 +25,15 @@ def test_paths_overlap_exact_prefix_and_miss() -> None:
     assert _paths_overlap(["src/"], ["src/a.py"]) is True
     assert _paths_overlap(["src/a.py"], ["src/b.py"]) is False
     assert _paths_overlap(["docs"], ["src/a.py"]) is False
+
+
+def test_semantic_paths_release_only_exact_or_descendant_symbols() -> None:
+    class_scope = semantic_scope_path("src/a.py", "Worker")
+    method_scope = semantic_scope_path("src/a.py", "Worker.run")
+    sibling_scope = semantic_scope_path("src/a.py", "Worker.stop")
+
+    assert _paths_overlap([class_scope], [method_scope])
+    assert _paths_overlap([method_scope], [method_scope])
+    assert not _paths_overlap([method_scope], [class_scope])
+    assert not _paths_overlap([method_scope], [sibling_scope])
+    assert not _paths_overlap([method_scope], ["src/a.py"])

@@ -41,6 +41,12 @@ from synapse_channel.git.semantic_tree_sitter import (
 MAX_SEMANTIC_SOURCE_BYTES = 2 * 1024 * 1024
 """Largest source side parsed for narrowing; larger files stay whole-file."""
 
+_REGULAR_GIT_MODES = frozenset({b"100644", b"100755"})
+"""Canonical non-executable and executable regular-file modes stored by Git."""
+
+_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+"""Canonical SHA-1 empty tree used by Git for an unborn branch comparison."""
+
 _HUNK = re.compile(rb"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
 
 
@@ -133,11 +139,15 @@ def _changed_files(
     base: str,
     head: str | None,
     paths: Sequence[str],
+    cached: bool,
 ) -> tuple[ChangedFile, ...]:
     """Read tracked file statuses and zero-context hunk ranges from Git."""
+    revision_args = _diff_args(base, head, paths)
+    if cached:
+        revision_args.insert(0, "--cached")
     raw = _git(
         repo_root,
-        ["diff", "--name-status", "-z", "--find-renames", *_diff_args(base, head, paths)],
+        ["diff", "--name-status", "-z", "--find-renames", *revision_args],
     )
     fields = raw.rstrip(b"\0").split(b"\0") if raw else []
     changed: list[ChangedFile] = []
@@ -155,6 +165,9 @@ def _changed_files(
         old_ranges: tuple[LineRange, ...] = ()
         new_ranges: tuple[LineRange, ...] = ()
         if code == "M":
+            patch_args = _diff_args(base, head, (new_path,))
+            if cached:
+                patch_args.insert(0, "--cached")
             patch = _git(
                 repo_root,
                 [
@@ -162,7 +175,7 @@ def _changed_files(
                     "--no-ext-diff",
                     "--no-color",
                     "--unified=0",
-                    *_diff_args(base, head, (new_path,)),
+                    *patch_args,
                 ],
             )
             hunks = _HUNK.findall(patch)
@@ -181,7 +194,9 @@ def _changed_files(
 
 
 def _revision_source(repo_root: Path, revision: str, path: str) -> bytes:
-    """Read one source from a Git revision."""
+    """Read one regular-file source from a Git revision."""
+    listing = _git(repo_root, ["ls-tree", "-z", revision, "--", path])
+    _require_regular_git_entry(listing, path=path, location=f"revision {revision}")
     return _git(repo_root, ["show", f"{revision}:{path}"])
 
 
@@ -191,6 +206,23 @@ def _working_source(repo_root: Path, path: str) -> bytes:
     if source_path.is_symlink() or not source_path.is_file():
         raise OSError(f"working-tree source is not a regular file: {path}")
     return source_path.read_bytes()
+
+
+def _index_source(repo_root: Path, path: str) -> bytes:
+    """Read one regular-file blob from the Git index."""
+    listing = _git(repo_root, ["ls-files", "--stage", "-z", "--", path])
+    _require_regular_git_entry(listing, path=path, location="index")
+    return _git(repo_root, ["show", f":{path}"])
+
+
+def _require_regular_git_entry(raw: bytes, *, path: str, location: str) -> None:
+    """Reject missing, ambiguous, symlink, and gitlink entries before parsing."""
+    entries = tuple(entry for entry in raw.rstrip(b"\0").split(b"\0") if entry)
+    if len(entries) != 1:
+        raise OSError(f"{location} source is not one regular file: {path}")
+    mode = entries[0].split(b" ", 1)[0]
+    if mode not in _REGULAR_GIT_MODES:
+        raise OSError(f"{location} source is not a regular file: {path}")
 
 
 def _whole_file(changed: ChangedFile, language: str | None, reason: str) -> SemanticDiffRecord:
@@ -215,6 +247,7 @@ def _narrow_modified(
     *,
     base: str,
     head: str | None,
+    cached: bool,
     language: str,
     spec: LanguageSpec,
     parser_factory: ParserFactory,
@@ -225,7 +258,11 @@ def _narrow_modified(
         new_source = (
             _revision_source(repo_root, head, changed.new_path)
             if head is not None
-            else _working_source(repo_root, changed.new_path)
+            else (
+                _index_source(repo_root, changed.new_path)
+                if cached
+                else _working_source(repo_root, changed.new_path)
+            )
         )
     except OSError:
         return _whole_file(changed, language, "source side is not a regular file")
@@ -264,13 +301,50 @@ def resolve_git_diff(
     base: str,
     head: str | None = None,
     paths: Sequence[str] = (),
+    cached: bool = False,
     parser_factory: ParserFactory = default_parser,
 ) -> tuple[SemanticDiffRecord, ...]:
-    """Resolve a tracked Git diff into semantic or whole-file claim records."""
+    """Resolve a tracked Git diff into semantic or whole-file claim records.
+
+    Parameters
+    ----------
+    repo_root : pathlib.Path
+        Git worktree whose local objects and files are inspected.
+    base : str
+        Base revision for the old source side.
+    head : str or None, optional
+        Committed new source side. Omit for the working tree or staged index.
+    paths : Sequence[str], optional
+        Repository-relative path filter.
+    cached : bool, optional
+        Compare ``base`` with the staged index rather than the working tree.
+        Cannot be combined with ``head``.
+    parser_factory : ParserFactory, optional
+        Configured local tree-sitter parser factory.
+
+    Returns
+    -------
+    tuple[SemanticDiffRecord, ...]
+        One conservative projection per changed tracked file.
+
+    Raises
+    ------
+    ValueError
+        If revisions are blank, ``cached`` is combined with ``head``, or Git
+        cannot supply the requested diff.
+    """
     if not base.strip() or (head is not None and not head.strip()):
         raise ValueError("semantic diff revisions must not be blank")
+    if cached and head is not None:
+        raise ValueError("staged semantic diffs cannot also specify a head revision")
     records: list[SemanticDiffRecord] = []
-    for changed in _changed_files(repo_root, base=base, head=head, paths=paths):
+    for changed in _changed_files(
+        repo_root,
+        base=base,
+        head=head,
+        paths=paths,
+        cached=cached,
+    ):
         language_entry = language_for_path(changed.new_path)
         if changed.status != "M":
             language = language_entry[0] if language_entry is not None else None
@@ -288,12 +362,64 @@ def resolve_git_diff(
                     changed,
                     base=base,
                     head=head,
+                    cached=cached,
                     language=language,
                     spec=spec,
                     parser_factory=parser_factory,
                 )
             )
     return tuple(records)
+
+
+def resolve_staged_diff(
+    repo_root: Path,
+    *,
+    paths: Sequence[str] = (),
+    parser_factory: ParserFactory = default_parser,
+) -> tuple[SemanticDiffRecord, ...]:
+    """Resolve the staged index for commit-time semantic enforcement.
+
+    Parameters
+    ----------
+    repo_root : pathlib.Path
+        Git worktree whose authoritative index is inspected.
+    paths : Sequence[str], optional
+        Repository-relative physical source filter.
+    parser_factory : ParserFactory, optional
+        Configured local tree-sitter parser factory.
+
+    Returns
+    -------
+    tuple[SemanticDiffRecord, ...]
+        Conservative semantic or whole-file evidence for staged changes.
+
+    Raises
+    ------
+    ValueError
+        If Git state is unreadable or a missing ``HEAD`` is not a verified
+        unborn branch. A verified initial commit compares against Git's empty
+        tree so additions remain whole-file.
+    """
+    base = _staged_base(repo_root)
+    return resolve_git_diff(
+        repo_root,
+        base=base,
+        paths=paths,
+        cached=True,
+        parser_factory=parser_factory,
+    )
+
+
+def _staged_base(repo_root: Path) -> str:
+    """Return ``HEAD`` or the empty tree for a verified unborn branch."""
+    try:
+        _git(repo_root, ["rev-parse", "--verify", "HEAD"])
+    except ValueError as head_error:
+        status = _git(repo_root, ["status", "--porcelain=v2", "--branch"])
+        if b"# branch.oid (initial)" not in status.splitlines():
+            raise head_error
+        return _EMPTY_TREE
+    return "HEAD"
 
 
 def records_to_json(records: Sequence[SemanticDiffRecord]) -> list[dict[str, object]]:

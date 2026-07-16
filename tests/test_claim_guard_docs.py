@@ -42,6 +42,10 @@ def test_provider_claim_hook_guide_is_discoverable_and_honest() -> None:
     # SCH-H-NEW-05: provider × fail-closed matrix for hook-host residuals
     assert "Provider × fail-closed matrix" in guide
     assert "Host crash / timeout / bad JSON" in guide
+    assert "Symbol-claim pre-edit use" in guide
+    assert "patch payload requires whole-file claims" in guide
+    assert "Parallel sibling-symbol work therefore belongs in isolated" in guide
+    assert "maps both hunk sides" in guide
     for provider in ("Claude Code", "Codex", "Gemini CLI", "Grok", "Kimi Code", "OpenCode"):
         assert provider in guide
     security = Path("SECURITY.md").read_text(encoding="utf-8")

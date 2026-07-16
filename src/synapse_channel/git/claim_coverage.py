@@ -22,6 +22,11 @@ from typing import Any
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.lifecycle import TaskStatus
 from synapse_channel.core.scoping import normalize_path
+from synapse_channel.git.semantic_enforcement import (
+    SemanticEnforcementError,
+    claim_paths_for_context,
+    semantic_claim_covers_source,
+)
 from synapse_channel.path_resolution import resolve_weakly_fail_closed
 
 EDITABLE_STATUSES = frozenset({TaskStatus.CLAIMED, TaskStatus.WORKING})
@@ -61,27 +66,19 @@ def _claim_covers_path(
     root: Path,
     branch: str,
     target: str,
+    allow_semantic_source: bool,
 ) -> bool:
-    worktree = claim.get("worktree")
-    if worktree is None or (isinstance(worktree, str) and not worktree.strip()):
-        return False
-    if not isinstance(worktree, str):
-        raise ClaimCoverageError("Hub returned an invalid claim worktree.")
-
-    git = claim.get("git")
-    if not isinstance(git, dict) or git.get("branch") != branch:
-        return False
-
-    paths = claim.get("paths")
-    if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
-        raise ClaimCoverageError("Hub returned malformed claim paths.")
     try:
-        claimed_root = resolve_weakly_fail_closed(Path(worktree))
-    except (OSError, RuntimeError, ValueError) as exc:
-        raise ClaimCoverageError("Hub returned an invalid claim worktree.") from exc
-    if claimed_root != root:
+        paths = claim_paths_for_context(claim, root=root, branch=branch)
+    except SemanticEnforcementError as exc:
+        raise ClaimCoverageError(str(exc)) from exc
+    if paths is None:
         return False
-    return not paths or any(claim_path_covers(path, target) for path in paths)
+    return (
+        not paths
+        or any(claim_path_covers(path, target) for path in paths)
+        or (allow_semantic_source and semantic_claim_covers_source(paths, target))
+    )
 
 
 def decide_claim_coverage(
@@ -91,6 +88,7 @@ def decide_claim_coverage(
     root: Path,
     branch: str,
     paths: Sequence[str],
+    allow_semantic_source: bool = False,
 ) -> ClaimCoverageVerdict:
     """Classify repository paths by claim coverage for ``identity``.
 
@@ -106,6 +104,10 @@ def decide_claim_coverage(
         Exact current branch.
     paths : Sequence[str]
         Repository-relative paths to verify, in diagnostic order.
+    allow_semantic_source : bool, optional
+        Treat a symbol claim as provisional coverage for its physical source.
+        Provider guards use this only for precise edit tools; staged Git
+        enforcement remains authoritative and verifies the resulting symbols.
 
     Returns
     -------
@@ -145,6 +147,7 @@ def decide_claim_coverage(
                 root=canonical_root,
                 branch=branch,
                 target=target,
+                allow_semantic_source=allow_semantic_source,
             )
         ]
         if not covering:
