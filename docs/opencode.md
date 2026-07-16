@@ -410,10 +410,16 @@ composer applies the same ownership proof after its bounded pointer focus.
 The selector re-proves owned focus immediately before final confirmation, after
 all filtered-state evidence has been captured. Agent-selector discovery batches
 the visible JetBrains window geometry into one X11 query, then performs the
-more expensive root-child and transient-owner checks only for windows with the
-exact pinned selector dimensions. Malformed batch output, multiple matching
-selectors, or a selector whose ownership changes before or after filtering
-fails closed. The driver clears the selector filter, types the exact
+more expensive root-child and transient-owner checks only for phase-valid
+selector dimensions. Initial discovery requires the exact unfiltered
+`310 × 407` popup. After filtering, the result-bearing popup may shrink but
+must stay 310 pixels wide, exceed the observed 42-pixel search-only shell, and
+remain no taller than the unfiltered popup. Post-confirmation closure continues
+tracking every positive height within that bound, including the search-only
+shell, so a collapsing or remapped selector cannot masquerade as disappearance.
+Malformed batch output, multiple matching selectors, or a selector whose
+ownership changes before or after filtering fails closed. The driver clears
+the selector filter, types the exact
 `SYNAPSE OpenCode E2E` name, then boundedly reacquires exactly one title- and
 owner-proven selector through the existing selection deadline before it
 captures the filtered result and confirms with `Return`. A transient empty

@@ -34,8 +34,10 @@ from synapse_channel.core.path_identity import (
 )
 from synapse_channel.core.scoping import normalize_path, normalize_paths
 from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
+from synapse_channel.git.semantic_scope import parse_semantic_scope, semantic_scope_path
 
 _CASE_PROBE_LIMIT = 64
+_SEMANTIC_OBJECT_IDENTITY_SEGMENT = ".synapse-fs-object"
 
 
 def _filesystem_namespace() -> str:
@@ -226,6 +228,50 @@ def _object_id(path: Path) -> str:
     return f"{metadata.st_dev:x}:{metadata.st_ino:x}"
 
 
+def _semantic_filesystem_scope(relative: str, resolved: Path, symbol: str) -> str:
+    """Return an alias-stable synthetic filesystem scope for one declaration."""
+    try:
+        metadata = resolved.stat()
+    except FileNotFoundError:
+        filesystem_source = relative
+    except OSError as exc:
+        raise PathIdentityError("semantic claim source identity could not be read") from exc
+    else:
+        if metadata.st_ino > 0 and metadata.st_nlink > 1:
+            object_id = f"{metadata.st_dev:x}:{metadata.st_ino:x}"
+            digest = hashlib.sha256(object_id.encode()).hexdigest()
+            filesystem_source = f"{_SEMANTIC_OBJECT_IDENTITY_SEGMENT}/{digest}"
+        else:
+            filesystem_source = relative
+    try:
+        return semantic_scope_path(filesystem_source, symbol)
+    except ValueError as exc:
+        raise PathIdentityError("semantic claim filesystem identity is invalid") from exc
+
+
+def _resolved_claim_path(root: Path, display: str) -> tuple[str, str]:
+    """Return canonical filesystem spelling and object identity for a display.
+
+    Semantic claim paths are coordination descendants, not real children of the
+    source file. Their physical source is resolved for alias and escape checks,
+    then the synthetic suffix is rebuilt over that canonical source spelling.
+    Hard-linked sources use an object-derived comparison anchor that preserves
+    declaration ancestry across aliases. No direct object identity is attached
+    because sibling symbols intentionally share one source inode and must remain
+    independently claimable.
+    """
+    semantic = parse_semantic_scope(display)
+    physical_display = semantic.source if semantic is not None else display
+    resolved = _resolved_with_missing_tail(root / physical_display)
+    try:
+        relative = resolved.relative_to(root).as_posix()
+    except ValueError as exc:
+        raise PathIdentityError("claim path resolves outside the Git worktree") from exc
+    if semantic is not None:
+        return _semantic_filesystem_scope(relative, resolved, semantic.symbol), ""
+    return relative, _object_id(resolved)
+
+
 def resolve_claim_scope_identity(
     root: Path,
     paths: Sequence[str],
@@ -255,16 +301,15 @@ def resolve_claim_scope_identity(
             index_prefixes=index_prefixes,
             case_sensitive=case_sensitive,
         )
-        resolved = _resolved_with_missing_tail(canonical_root / display)
-        try:
-            relative = resolved.relative_to(canonical_root).as_posix()
-        except ValueError as exc:
-            raise PathIdentityError("claim path resolves outside the Git worktree") from exc
+        filesystem_path, object_id = _resolved_claim_path(canonical_root, display)
         identities.append(
             CanonicalPathIdentity(
                 git_path=comparison_path(git_spelling, case_sensitive=case_sensitive),
-                filesystem_path=comparison_path(relative, case_sensitive=case_sensitive),
-                object_id=_object_id(resolved),
+                filesystem_path=comparison_path(
+                    filesystem_path,
+                    case_sensitive=case_sensitive,
+                ),
+                object_id=object_id,
             )
         )
     try:

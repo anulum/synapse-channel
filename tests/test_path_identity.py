@@ -26,11 +26,13 @@ from synapse_channel.core.path_identity import (
     PathIdentityError,
     claim_scopes_conflict,
 )
+from synapse_channel.core.scoping import MAX_PATH_LENGTH
 from synapse_channel.core.state import SynapseState
 from synapse_channel.git.path_identity import (
     detect_case_sensitivity,
     resolve_claim_scope_identity,
 )
+from synapse_channel.git.semantic_scope import parse_semantic_scope, semantic_scope_path
 
 
 def _commit(repo: Path, *relative_paths: str) -> None:
@@ -244,6 +246,133 @@ def test_real_git_identity_detects_symlink_and_hardlink_aliases(tmp_path: Path) 
     assert first_ok
     assert not second_ok
     assert "file scope conflicts" in reason
+
+
+def test_semantic_identity_resolves_source_without_colliding_siblings(
+    tmp_path: Path,
+) -> None:
+    """Synthetic symbol descendants inherit spelling, never source inode authority."""
+    repo = git_repo(tmp_path / "repo")
+    source = repo / "src" / "worker.py"
+    source.parent.mkdir()
+    source.write_text(
+        "def first():\n    return 1\n\n\ndef second():\n    return 2\n",
+        encoding="utf-8",
+    )
+    _commit(repo, "src/worker.py")
+    first = semantic_scope_path("src/worker.py", "first")
+    second = semantic_scope_path("src/worker.py", "second")
+
+    root, displays, scope = resolve_claim_scope_identity(repo, [first, second])
+
+    assert displays == (first, second)
+    assert [identity.filesystem_path for identity in scope.paths] == [first, second]
+    assert [identity.object_id for identity in scope.paths] == ["", ""]
+    assert not claim_scopes_conflict(
+        str(root),
+        [first],
+        _single(scope, 0),
+        str(root),
+        [second],
+        _single(scope, 1),
+    )
+
+
+def test_semantic_identity_preserves_hardlink_alias_hierarchy(tmp_path: Path) -> None:
+    """Hard-link aliases retain semantic ancestry without merging siblings."""
+    repo = git_repo(tmp_path / "repo")
+    source = repo / "src" / "worker.py"
+    alias = repo / "src" / "worker_alias.py"
+    source.parent.mkdir()
+    source.write_text("class Worker:\n    def run(self):\n        return 1\n", encoding="utf-8")
+    os.link(source, alias)
+    _commit(repo, "src/worker.py", "src/worker_alias.py")
+    parent = semantic_scope_path("src/worker.py", "Worker")
+    child = semantic_scope_path("src/worker_alias.py", "Worker.run")
+    sibling = semantic_scope_path("src/worker.py", "Worker.stop")
+
+    root, displays, scope = resolve_claim_scope_identity(repo, [parent, child, sibling])
+
+    filesystem_scopes = [parse_semantic_scope(identity.filesystem_path) for identity in scope.paths]
+    assert displays == (parent, child, sibling)
+    assert all(item is not None for item in filesystem_scopes)
+    assert len({item.source for item in filesystem_scopes if item is not None}) == 1
+    assert all(identity.object_id == "" for identity in scope.paths)
+    assert claim_scopes_conflict(
+        str(root),
+        [parent],
+        _single(scope, 0),
+        str(root),
+        [child],
+        _single(scope, 1),
+    )
+    assert not claim_scopes_conflict(
+        str(root),
+        [sibling],
+        _single(scope, 2),
+        str(root),
+        [child],
+        _single(scope, 1),
+    )
+
+
+def test_missing_semantic_source_retains_canonical_display_scope(tmp_path: Path) -> None:
+    """A missing future source remains claimable without fabricated object identity."""
+    repo = git_repo(tmp_path / "repo")
+    semantic = semantic_scope_path("src/future.py", "run")
+
+    _root, displays, scope = resolve_claim_scope_identity(repo, [semantic])
+
+    assert displays == (semantic,)
+    assert scope.paths[0].filesystem_path == semantic
+    assert scope.paths[0].object_id == ""
+
+
+def test_unreadable_semantic_source_identity_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unreadable physical source cannot produce trusted semantic identity."""
+    repo = git_repo(tmp_path / "repo")
+    source = repo / "worker.py"
+    source.write_text("def run():\n    return 1\n", encoding="utf-8")
+    _commit(repo, "worker.py")
+    resolved_source = source.resolve()
+    original_stat = Path.stat
+    source_stat_calls = 0
+
+    def guarded_stat(path: Path, *args: Any, **kwargs: Any) -> os.stat_result:
+        nonlocal source_stat_calls
+        if path == resolved_source:
+            source_stat_calls += 1
+            if source_stat_calls > 1:
+                raise PermissionError("fixture denied")
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", guarded_stat)
+
+    with pytest.raises(PathIdentityError, match="source identity could not be read"):
+        resolve_claim_scope_identity(
+            repo,
+            [semantic_scope_path("worker.py", "run")],
+        )
+    assert source_stat_calls == 2
+
+
+def test_oversized_hardlink_semantic_identity_fails_closed(tmp_path: Path) -> None:
+    """An object anchor that would exceed the path ceiling is refused."""
+    repo = git_repo(tmp_path / "repo")
+    source = repo / "a.py"
+    alias = repo / "b.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+    os.link(source, alias)
+    _commit(repo, "a.py", "b.py")
+    prefix = "a.py/.synapse-symbol/"
+    symbol = "x" * (MAX_PATH_LENGTH - len(prefix))
+    semantic = semantic_scope_path("a.py", symbol)
+
+    with pytest.raises(PathIdentityError, match="filesystem identity is invalid"):
+        resolve_claim_scope_identity(repo, [semantic])
 
 
 def test_symlink_escape_is_refused_before_claim(tmp_path: Path) -> None:

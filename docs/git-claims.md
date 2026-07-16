@@ -152,17 +152,27 @@ pre-edit decision ambiguous and is denied. Whole-file writers and patch tools
 always require a literal whole-file or parent claim. The staged index check is
 the authoritative post-edit proof described below.
 
+Claim the smallest coherent ownership boundary, but do not under-claim a tool's
+actual mutation surface: whole-file writers require the file or an ancestor,
+while a verified precise edit may use the exact semantic declaration scope.
+
 Incomplete evidence always widens. Additions, deletions, file renames or copies,
 mode-only changes, unsupported languages, syntax-error trees, oversized or
 non-regular sources, module-level changed lines, and unsafe declaration names
 produce a whole-file claim. Owning tests and generated outputs also remain
 whole-file companions. This may block more work, but it cannot silently omit a
-known conflict.
+known scope or miss a real conflict.
 
 The hub receives only canonical path strings; `.synapse-symbol` is a reserved
 coordination segment, not a filesystem lookup or a new wire field. Evidence JSON
 records each narrowing or widening decision, but tree-sitter output is planning
 evidence, not proof that a change is correct or complete.
+
+Filesystem-canonical identity resolves a semantic descendant through its physical
+source before rebuilding the synthetic suffix. Hard-linked source aliases use a
+private object-derived comparison anchor, so the same declaration and declaration
+ancestry still contend across aliases while sibling declarations remain separate.
+The anchor is comparison material only and never becomes a repository path.
 
 ## Auto-release on commit or merge
 

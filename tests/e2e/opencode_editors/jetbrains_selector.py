@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Callable
+from enum import Enum, auto
 from typing import Protocol
 
 from e2e.opencode_editors import jetbrains_x11_driver as x11
@@ -34,7 +35,17 @@ _X11_BAD_WINDOW_METADATA = (
     re.compile(r"  Current serial number in output stream:  [0-9]+"),
 )
 _AGENT_SELECTOR_TITLE = "win0"
-_AGENT_SELECTOR_GEOMETRY = (310, 407)
+_AGENT_SELECTOR_WIDTH = 310
+_AGENT_SELECTOR_UNFILTERED_HEIGHT = 407
+_AGENT_SELECTOR_SEARCH_ONLY_HEIGHT = 42
+
+
+class _SelectorGeometryPhase(Enum):
+    """Identify the selector geometry contract for one lifecycle phase."""
+
+    UNFILTERED = auto()
+    FILTERED_READY = auto()
+    FILTERED_VISIBLE = auto()
 
 
 class X11QueryResult(Protocol):
@@ -43,6 +54,23 @@ class X11QueryResult(Protocol):
     returncode: int
     stdout: str
     stderr: str
+
+
+def _selector_geometry_matches(
+    geometry: tuple[int, int] | None,
+    phase: _SelectorGeometryPhase,
+) -> bool:
+    """Return whether geometry proves the selector state required by ``phase``."""
+    if geometry is None:
+        return False
+    width, height = geometry
+    if width != _AGENT_SELECTOR_WIDTH:
+        return False
+    if phase is _SelectorGeometryPhase.UNFILTERED:
+        return height == _AGENT_SELECTOR_UNFILTERED_HEIGHT
+    if phase is _SelectorGeometryPhase.FILTERED_READY:
+        return _AGENT_SELECTOR_SEARCH_ONLY_HEIGHT < height <= _AGENT_SELECTOR_UNFILTERED_HEIGHT
+    return 0 < height <= _AGENT_SELECTOR_UNFILTERED_HEIGHT
 
 
 def is_agent_selector_popup(
@@ -72,11 +100,10 @@ def is_agent_selector_popup(
         project_id = int(project)
     except ValueError:
         return False
-    return x11._window_geometry(
-        window, deadline=deadline
-    ) == _AGENT_SELECTOR_GEOMETRY and _agent_selector_owner_matches(
-        window, project_id, deadline=deadline
-    )
+    return _selector_geometry_matches(
+        x11._window_geometry(window, deadline=deadline),
+        _SelectorGeometryPhase.UNFILTERED,
+    ) and _agent_selector_owner_matches(window, project_id, deadline=deadline)
 
 
 def _agent_selector_owner_matches(
@@ -172,8 +199,9 @@ def owned_agent_selector_popups(
     project_id: int,
     *,
     deadline: float,
+    geometry_phase: _SelectorGeometryPhase = _SelectorGeometryPhase.UNFILTERED,
 ) -> tuple[str, ...]:
-    """Return exact selector candidates owned by one project frame.
+    """Return phase-valid selector candidates owned by one project frame.
 
     Parameters
     ----------
@@ -183,6 +211,11 @@ def owned_agent_selector_popups(
         Numeric X11 identifier of the pinned project frame.
     deadline:
         Absolute monotonic deadline for ownership queries.
+    geometry_phase:
+        Lifecycle-specific geometry contract. Initial discovery requires the
+        exact unfiltered popup, filtered readiness excludes the search-field-only
+        shell, and post-confirmation visibility accepts every positive bounded
+        selector height so a collapsing popup cannot masquerade as closure.
 
     Returns
     -------
@@ -192,20 +225,20 @@ def owned_agent_selector_popups(
     Raises
     ------
     RuntimeError
-        If an exact selector title has selector geometry but belongs outside
-        the pinned project frame.
+        If an exact selector title has phase-valid selector geometry but belongs
+        outside the pinned project frame.
     """
     matches: list[str] = []
     for rectangle in reversed(rectangles):
         window = rectangle.window
         if (
-            rectangle.geometry == _AGENT_SELECTOR_GEOMETRY
+            _selector_geometry_matches(rectangle.geometry, geometry_phase)
             and window not in matches
             and _agent_selector_owner_matches(window, project_id, deadline=deadline)
         ):
             matches.append(window)
         elif (
-            rectangle.geometry == _AGENT_SELECTOR_GEOMETRY
+            _selector_geometry_matches(rectangle.geometry, geometry_phase)
             and window not in matches
             and x11._required_window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
         ):
@@ -219,6 +252,7 @@ def visible_agent_selector_popups(
     project: str,
     *,
     deadline: float,
+    geometry_phase: _SelectorGeometryPhase = _SelectorGeometryPhase.UNFILTERED,
 ) -> tuple[str, ...]:
     """Return visible selectors owned by one project frame.
 
@@ -228,6 +262,8 @@ def visible_agent_selector_popups(
         Pinned project-frame X11 identifier.
     deadline:
         Absolute monotonic deadline for snapshot and ownership queries.
+    geometry_phase:
+        Lifecycle-specific selector geometry contract.
 
     Returns
     -------
@@ -240,7 +276,12 @@ def visible_agent_selector_popups(
     except ValueError:
         return ()
     rectangles = visible_jetbrains_window_rectangles(deadline=deadline)
-    return owned_agent_selector_popups(rectangles, project_id, deadline=deadline)
+    return owned_agent_selector_popups(
+        rectangles,
+        project_id,
+        deadline=deadline,
+        geometry_phase=geometry_phase,
+    )
 
 
 def find_agent_selector_popup(
@@ -311,7 +352,11 @@ def _wait_for_owned_agent_selector(
     while time.monotonic() < deadline:
         if guard is not None:
             guard()
-        matches = visible_agent_selector_popups(project, deadline=deadline)
+        matches = visible_agent_selector_popups(
+            project,
+            deadline=deadline,
+            geometry_phase=_SelectorGeometryPhase.FILTERED_READY,
+        )
         if len(matches) > 1:
             raise RuntimeError(
                 f"refusing ambiguous JetBrains ACP agent selection {phase}: matches={matches!r}"
@@ -453,6 +498,7 @@ def select_pinned_agent(
             rectangles,
             int(project),
             deadline=deadline,
+            geometry_phase=_SelectorGeometryPhase.FILTERED_VISIBLE,
         )
         if len(matches) > 1:
             raise RuntimeError(

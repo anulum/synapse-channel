@@ -38,6 +38,9 @@ Justification classes
     A process-blocking serve wrapper whose factory is covered by real tests.
 ``platform-guard``
     Tests for POSIX-only semantics, skipped on Windows runners.
+``filesystem-capability``
+    Tests for real symlink, hard-link, alternate-case, or Windows short-name
+    behavior, skipped only when the host filesystem cannot expose that feature.
 ``optional-dep-guard``
     Tests that run only where their optional dependency is installed; CI
     installs every one of these, so they run and count toward coverage there.
@@ -97,6 +100,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_cli_e2e_opencode_editors.py": (1, "operator-smoke"),
     "tests/test_cli_sqlcipher.py": (2, "optional-dep-guard"),
     "tests/test_cli_streams_sqlcipher.py": (1, "optional-dep-guard"),
+    "tests/test_claim_coverage.py": (1, "platform-guard"),
     "tests/test_dashboard_access_store.py": (1, "platform-guard"),
     "tests/test_dashboard_feeds_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_hub_sqlcipher_e2e.py": (1, "optional-dep-guard"),
@@ -111,6 +115,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_participant_kimi_smoke.py": (1, "operator-smoke"),
     "tests/test_participant_mixed_smoke.py": (1, "operator-smoke"),
     "tests/test_participant_ollama_smoke.py": (1, "operator-smoke"),
+    "tests/test_path_identity.py": (5, "filesystem-capability"),
     "tests/test_persistence.py": (2, "platform-guard"),
     "tests/test_persistence_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_private_dir.py": (1, "platform-guard"),
@@ -209,5 +214,10 @@ def test_the_ledgers_carry_no_unconditional_skips() -> None:
     operator opt-in). An unconditional mark would slip through the count
     gate, so the classes themselves are pinned to the known-conditional set.
     """
-    allowed = {"platform-guard", "optional-dep-guard", "operator-smoke"}
+    allowed = {
+        "filesystem-capability",
+        "operator-smoke",
+        "optional-dep-guard",
+        "platform-guard",
+    }
     assert {reason for _, reason in SKIP_LEDGER.values()} <= allowed

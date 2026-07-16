@@ -50,8 +50,10 @@ def _event(
 
 def _runner(root: Path, branch: str = "main") -> Callable[[list[str]], str]:
     def run(args: list[str]) -> str:
-        assert args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]
-        return f"{root}\n{branch}"
+        if args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]:
+            return f"{root}\n{branch}"
+        assert args[-3:] == ["ls-files", "-z", "--cached"]
+        return ""
 
     return run
 

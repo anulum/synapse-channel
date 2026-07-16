@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,18 @@ from synapse_channel.grok_claim_guard import (
     denial_payload,
     parse_hook_request,
 )
+
+
+def _runner(root: Path, branch: str = "main") -> Callable[[list[str]], str]:
+    """Return a deterministic runner for Git context and index queries."""
+
+    def run(args: list[str]) -> str:
+        if args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]:
+            return f"{root}\n{branch}"
+        assert args[-3:] == ["ls-files", "-z", "--cached"]
+        return ""
+
+    return run
 
 
 def _event(
@@ -195,10 +208,6 @@ async def test_evaluate_hook_event_denies_controlled_query_failure(tmp_path: Pat
     async def unavailable(**_kwargs: object) -> dict[str, Any]:
         raise ClaimStateError("hub unavailable")
 
-    def runner(args: list[str]) -> str:
-        assert args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]
-        return f"{tmp_path}\nmain"
-
     verdict = await evaluate_hook_event(
         _event(path=str(tmp_path / "src" / "module.py"), cwd=str(tmp_path)),
         identity="seat/one",
@@ -206,7 +215,7 @@ async def test_evaluate_hook_event_denies_controlled_query_failure(tmp_path: Pat
         token=None,
         timeout=0.1,
         state_fetcher=unavailable,
-        git_runner=runner,
+        git_runner=_runner(tmp_path),
     )
     assert not verdict.allowed
     assert verdict.reason == "hub unavailable"
@@ -234,9 +243,6 @@ async def test_evaluate_hook_event_allows_live_covering_claim(tmp_path: Path) ->
             ]
         }
 
-    def runner(args: list[str]) -> str:
-        return f"{tmp_path}\nmain"
-
     verdict = await evaluate_hook_event(
         _event(path=str(tmp_path / "src" / "module.py"), cwd=str(tmp_path)),
         identity="seat/one",
@@ -244,7 +250,7 @@ async def test_evaluate_hook_event_allows_live_covering_claim(tmp_path: Path) ->
         token=None,
         timeout=0.1,
         state_fetcher=snapshot,
-        git_runner=runner,
+        git_runner=_runner(tmp_path),
     )
     assert verdict.allowed
 
@@ -260,9 +266,6 @@ async def test_evaluate_hook_event_denies_unclaimed_path(tmp_path: Path) -> None
     async def snapshot(**_kwargs: object) -> dict[str, Any]:
         return {"active_claims": []}
 
-    def runner(args: list[str]) -> str:
-        return f"{tmp_path}\nmain"
-
     verdict = await evaluate_hook_event(
         _event(path=str(tmp_path / "src" / "module.py"), cwd=str(tmp_path)),
         identity="seat/one",
@@ -270,7 +273,7 @@ async def test_evaluate_hook_event_denies_unclaimed_path(tmp_path: Path) -> None
         token=None,
         timeout=0.1,
         state_fetcher=snapshot,
-        git_runner=runner,
+        git_runner=_runner(tmp_path),
     )
     assert not verdict.allowed
 

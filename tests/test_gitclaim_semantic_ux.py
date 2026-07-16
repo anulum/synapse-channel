@@ -62,12 +62,23 @@ def test_receipt():
 
 
 def _branch_then_repo(branch: str, repo: Path) -> Callable[[list[str]], str]:
-    """Return a git runner that answers branch and repository-root queries."""
+    """Return a runner for branch, repository-root, and index-spelling queries."""
 
     def runner(args: list[str]) -> str:
         if args == ["rev-parse", "--show-toplevel"]:
             return repo.as_posix()
-        return branch
+        if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return branch
+        if args == ["rev-parse", "--git-path", "hooks"]:
+            return (repo / ".git" / "hooks").as_posix()
+        if args[-3:] == ["ls-files", "-z", "--cached"]:
+            paths = sorted(
+                path.relative_to(repo).as_posix()
+                for path in repo.rglob("*")
+                if path.is_file() and ".git" not in path.relative_to(repo).parts
+            )
+            return "".join(f"{path}\0" for path in paths)
+        raise AssertionError(args)
 
     return runner
 

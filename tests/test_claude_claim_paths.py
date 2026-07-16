@@ -17,7 +17,6 @@ import pytest
 from synapse_channel.claude_claim_guard import (
     ClaimGuardError,
     HookRequest,
-    RepositoryTarget,
     claim_path_covers,
     parse_hook_request,
     resolve_repository_target,
@@ -40,8 +39,10 @@ def _event(root: Path, path: Path, *, tool: str = "Edit") -> str:
 
 def _runner(root: Path, branch: str = "main") -> Callable[[list[str]], str]:
     def run(args: list[str]) -> str:
-        assert args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]
-        return f"{root}\n{branch}"
+        if args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]:
+            return f"{root}\n{branch}"
+        assert args[-3:] == ["ls-files", "-z", "--cached"]
+        return ""
 
     return run
 
@@ -126,7 +127,14 @@ def test_resolve_repository_target_canonicalises_repo_relative_path(tmp_path: Pa
     request = parse_hook_request(_event(tmp_path, tmp_path / "src" / "new.py", tool="Write"))
     assert isinstance(request, HookRequest)
     target = resolve_repository_target(request, runner=_runner(tmp_path, "feature/x"))
-    assert target == RepositoryTarget(tmp_path.resolve(), "feature/x", "src/new.py")
+    assert target.root == tmp_path.resolve()
+    assert target.branch == "feature/x"
+    assert target.relative_path == "src/new.py"
+    assert target.path_identity is not None
+    assert target.path_identity.validates_display_scope(
+        tmp_path.resolve().as_posix(),
+        ("src/new.py",),
+    )
 
 
 def test_resolve_repository_target_denies_symlink_escape(tmp_path: Path) -> None:
@@ -147,8 +155,11 @@ def test_resolve_repository_target_walks_to_existing_parent(tmp_path: Path) -> N
     assert isinstance(request, HookRequest)
 
     def runner(args: list[str]) -> str:
-        assert args[1] == str(tmp_path)
-        return f"{tmp_path}\nmain"
+        if args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]:
+            assert args[1] == str(tmp_path)
+            return f"{tmp_path}\nmain"
+        assert args[-3:] == ["ls-files", "-z", "--cached"]
+        return ""
 
     target = resolve_repository_target(request, runner=runner)
     assert target.relative_path == "missing/nested/new.py"

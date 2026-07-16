@@ -43,7 +43,13 @@ def _event(root: Path, command: str, *, tool: str = "apply_patch") -> str:
 
 
 def _runner(root: Path) -> Callable[[list[str]], str]:
-    return lambda _args: f"{root}\nmain"
+    def run(args: list[str]) -> str:
+        if args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]:
+            return f"{root}\nmain"
+        assert args[-3:] == ["ls-files", "-z", "--cached"]
+        return ""
+
+    return run
 
 
 def _claim(root: Path, paths: list[str]) -> dict[str, Any]:

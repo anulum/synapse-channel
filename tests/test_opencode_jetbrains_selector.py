@@ -54,6 +54,9 @@ def test_agent_selector_popup_requires_pinned_window_invariants(
 def test_agent_selector_popup_rejects_each_wrong_window_invariant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(jetbrains_x11_driver, "_window_geometry", lambda _window, **_kwargs: None)
+    assert jetbrains_selector.is_agent_selector_popup("selector", "123") is False
+
     monkeypatch.setattr(
         jetbrains_x11_driver, "_window_geometry", lambda _window, **_kwargs: (311, 407)
     )
@@ -196,6 +199,68 @@ def test_agent_selector_popup_search_prefilters_geometry_before_owner_queries(
     assert owner_queries == []
 
 
+@pytest.mark.parametrize(
+    ("geometry", "phase", "expected"),
+    [
+        ((310, 407), jetbrains_selector._SelectorGeometryPhase.UNFILTERED, True),
+        ((310, 201), jetbrains_selector._SelectorGeometryPhase.UNFILTERED, False),
+        ((310, 201), jetbrains_selector._SelectorGeometryPhase.FILTERED_READY, True),
+        ((310, 43), jetbrains_selector._SelectorGeometryPhase.FILTERED_READY, True),
+        ((310, 42), jetbrains_selector._SelectorGeometryPhase.FILTERED_READY, False),
+        ((310, 408), jetbrains_selector._SelectorGeometryPhase.FILTERED_READY, False),
+        ((309, 201), jetbrains_selector._SelectorGeometryPhase.FILTERED_READY, False),
+        ((310, 42), jetbrains_selector._SelectorGeometryPhase.FILTERED_VISIBLE, True),
+        ((310, 1), jetbrains_selector._SelectorGeometryPhase.FILTERED_VISIBLE, True),
+        ((310, 0), jetbrains_selector._SelectorGeometryPhase.FILTERED_VISIBLE, False),
+    ],
+)
+def test_agent_selector_geometry_tracks_lifecycle_phase(
+    monkeypatch: pytest.MonkeyPatch,
+    geometry: tuple[int, int],
+    phase: jetbrains_selector._SelectorGeometryPhase,
+    expected: bool,
+) -> None:
+    """Classify observed dynamic selector heights without weakening ownership."""
+    monkeypatch.setattr(
+        jetbrains_selector,
+        "_agent_selector_owner_matches",
+        lambda *_args, **_kwargs: True,
+    )
+
+    matches = jetbrains_selector.owned_agent_selector_popups(
+        (X11WindowRectangle("selector", 0, 1, 2, *geometry),),
+        123,
+        deadline=1.0,
+        geometry_phase=phase,
+    )
+
+    assert matches == (("selector",) if expected else ())
+
+
+def test_filtered_selector_rejects_dynamic_unowned_popup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A valid collapsed height never bypasses the project ownership proof."""
+    monkeypatch.setattr(
+        jetbrains_selector,
+        "_agent_selector_owner_matches",
+        lambda *_args, **_kwargs: False,
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_required_window_name",
+        lambda *_args, **_kwargs: "win0",
+    )
+
+    with pytest.raises(RuntimeError, match="outside the pinned project frame"):
+        jetbrains_selector.owned_agent_selector_popups(
+            (X11WindowRectangle("selector", 0, 1, 2, 310, 201),),
+            123,
+            deadline=1.0,
+            geometry_phase=jetbrains_selector._SelectorGeometryPhase.FILTERED_READY,
+        )
+
+
 def test_agent_selector_snapshot_rejects_exact_title_with_unowned_frame(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -332,16 +397,30 @@ def test_agent_selector_reacquires_after_filtering_confirms_once_and_proves_clos
     captures: list[bool] = []
     guarded: list[bool] = []
     focused: list[tuple[str, float]] = []
+    geometry_phases: list[jetbrains_selector._SelectorGeometryPhase] = []
     monkeypatch.setattr(
         jetbrains_selector,
         "is_agent_selector_popup",
         lambda selector, project, **_kwargs: selector == "selector" and project == "123",
     )
     selector_snapshots = iter([("selector",), (), ("replacement",)])
+
+    def visible_selector(
+        _project: str,
+        **kwargs: object,
+    ) -> tuple[str, ...]:
+        phase = kwargs.get(
+            "geometry_phase",
+            jetbrains_selector._SelectorGeometryPhase.UNFILTERED,
+        )
+        assert isinstance(phase, jetbrains_selector._SelectorGeometryPhase)
+        geometry_phases.append(phase)
+        return next(selector_snapshots)
+
     monkeypatch.setattr(
         jetbrains_selector,
         "visible_agent_selector_popups",
-        lambda _project, **_kwargs: next(selector_snapshots),
+        visible_selector,
     )
     monkeypatch.setattr(
         jetbrains_selector,
@@ -390,6 +469,11 @@ def test_agent_selector_reacquires_after_filtering_confirms_once_and_proves_clos
     ]
     assert captures == [True]
     assert guarded == [True, True, True, True, True]
+    assert geometry_phases == [
+        jetbrains_selector._SelectorGeometryPhase.UNFILTERED,
+        jetbrains_selector._SelectorGeometryPhase.FILTERED_READY,
+        jetbrains_selector._SelectorGeometryPhase.FILTERED_READY,
+    ]
 
 
 def test_agent_selector_rejects_ambiguous_filtered_reacquisition(

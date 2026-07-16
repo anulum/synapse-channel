@@ -92,7 +92,7 @@ async def _claim_many(
 def _release_runner(
     changed: str,
     *,
-    root: str = "/repo",
+    root: Path,
     branch: str = "x",
 ) -> Callable[[list[str]], str]:
     """Return a deterministic Git runner for release orchestration tests."""
@@ -104,9 +104,11 @@ def _release_runner(
         ):
             return changed
         if args == ["rev-parse", "--show-toplevel"]:
-            return root
+            return root.as_posix()
         if args == ["symbolic-ref", "--quiet", "--short", "HEAD"]:
             return branch
+        if args[-3:] == ["ls-files", "-z", "--cached"]:
+            return "".join(f"{path}\0" for path in changed.splitlines() if path)
         raise AssertionError(args)
 
     return run
@@ -223,7 +225,7 @@ def test_malformed_matching_claim_is_retained_not_released(
     )
 
 
-async def test_release_context_must_match_worktree_and_branch() -> None:
+async def test_release_context_must_match_worktree_and_branch(tmp_path: Path) -> None:
     """Claims from another Git context remain active."""
     async with running_hub() as (hub, uri):
         await _claim_many(
@@ -248,20 +250,21 @@ async def test_release_context_must_match_worktree_and_branch() -> None:
                     {"branch": "other", "base": "main", "auto_release_on": "commit"},
                 )
             ],
+            worktree=str(tmp_path),
         )
 
         rc = await run_git_release(
             uri=uri,
             name="me",
             trigger="commit",
-            runner=_release_runner("src/a.py\n"),
+            runner=_release_runner("src/a.py\n", root=tmp_path),
         )
 
         assert rc == 0
         assert set(hub.state.claims) == {"OTHER_ROOT", "OTHER_BRANCH"}
 
 
-async def test_semantic_release_releases_only_the_changed_symbol() -> None:
+async def test_semantic_release_releases_only_the_changed_symbol(tmp_path: Path) -> None:
     """Injected exact semantic evidence releases one sibling claim."""
     source = "src/a.py"
     changed_scope = semantic_scope_path(source, "changed")
@@ -282,6 +285,7 @@ async def test_semantic_release_releases_only_the_changed_symbol() -> None:
                     {"branch": "x", "base": "main", "auto_release_on": "commit"},
                 ),
             ],
+            worktree=str(tmp_path),
         )
 
         def resolve(
@@ -289,7 +293,7 @@ async def test_semantic_release_releases_only_the_changed_symbol() -> None:
             trigger: str,
             paths: Sequence[str],
         ) -> tuple[SemanticDiffRecord, ...]:
-            assert root == Path("/repo")
+            assert root == tmp_path
             assert trigger == "commit"
             assert paths == (source,)
             return (_semantic_record(source, claim_paths=(changed_scope,)),)
@@ -298,7 +302,7 @@ async def test_semantic_release_releases_only_the_changed_symbol() -> None:
             uri=uri,
             name="me",
             trigger="commit",
-            runner=_release_runner(f"{source}\n"),
+            runner=_release_runner(f"{source}\n", root=tmp_path),
             semantic_resolver=resolve,
         )
 
@@ -373,6 +377,7 @@ async def test_real_committed_diff_releases_only_the_proven_symbol(
 
 
 async def test_ambiguous_or_unavailable_semantics_retain_symbol_claims(
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Unproven semantic changes never release a symbol claim."""
@@ -389,13 +394,14 @@ async def test_ambiguous_or_unavailable_semantics_retain_symbol_claims(
                     {"branch": "x", "base": "main", "auto_release_on": "commit"},
                 )
             ],
+            worktree=str(tmp_path),
         )
 
         rc = await run_git_release(
             uri=uri,
             name="me",
             trigger="commit",
-            runner=_release_runner(f"{source}\n"),
+            runner=_release_runner(f"{source}\n", root=tmp_path),
             semantic_resolver=lambda _root, _trigger, _paths: (
                 _semantic_record(source, claim_paths=(source,), narrowed=False),
             ),
@@ -407,7 +413,7 @@ async def test_ambiguous_or_unavailable_semantics_retain_symbol_claims(
             uri=uri,
             name="me",
             trigger="commit",
-            runner=_release_runner(f"{source}\n"),
+            runner=_release_runner(f"{source}\n", root=tmp_path),
             semantic_resolver=lambda _root, _trigger, _paths: (_ for _ in ()).throw(
                 RuntimeError("parser unavailable")
             ),
@@ -417,7 +423,9 @@ async def test_ambiguous_or_unavailable_semantics_retain_symbol_claims(
     assert "retained symbol claims: parser unavailable" in capsys.readouterr().out
 
 
-async def test_out_of_scope_resolver_record_cannot_release_a_symbol_claim() -> None:
+async def test_out_of_scope_resolver_record_cannot_release_a_symbol_claim(
+    tmp_path: Path,
+) -> None:
     """Only records for the requested physical source participate in release."""
     source = "src/a.py"
     scope = semantic_scope_path(source, "run")
@@ -432,13 +440,14 @@ async def test_out_of_scope_resolver_record_cannot_release_a_symbol_claim() -> N
                     {"branch": "x", "base": "main", "auto_release_on": "commit"},
                 )
             ],
+            worktree=str(tmp_path),
         )
 
         rc = await run_git_release(
             uri=uri,
             name="me",
             trigger="commit",
-            runner=_release_runner(f"{source}\n"),
+            runner=_release_runner(f"{source}\n", root=tmp_path),
             semantic_resolver=lambda _root, _trigger, _paths: (
                 _semantic_record("src/other.py", claim_paths=(scope,)),
             ),

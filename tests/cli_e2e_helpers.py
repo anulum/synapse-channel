@@ -31,6 +31,29 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _CLI = [sys.executable, "-m", "synapse_channel.cli"]
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_CANDIDATE_PYTHONPATH = (
+    (_PROJECT_ROOT / "src").as_posix(),
+    (_PROJECT_ROOT / "tests").as_posix(),
+)
+
+
+def _candidate_environment(overrides: Mapping[str, str] | None) -> dict[str, str]:
+    """Return a child environment that imports this candidate checkout first.
+
+    CLI journeys often execute from a temporary Git repository. Relative
+    ``PYTHONPATH`` entries such as ``src`` would then resolve inside that
+    repository and silently fall back to an installed package instead of the
+    candidate under test.
+    """
+    environment = dict(os.environ)
+    if overrides is not None:
+        environment.update(overrides)
+    inherited = tuple(
+        entry for entry in environment.get("PYTHONPATH", "").split(os.pathsep) if entry
+    )
+    environment["PYTHONPATH"] = os.pathsep.join(dict.fromkeys((*_CANDIDATE_PYTHONPATH, *inherited)))
+    return environment
 
 
 def free_port() -> int:
@@ -129,7 +152,6 @@ def run_cli(
             argv = [*argv[:cut], "--uri", uri, *argv[cut:]]
         else:
             argv += ["--uri", uri]
-    child_env = {**os.environ, **env} if env is not None else None
     completed = subprocess.run(  # noqa: S603 - fixed interpreter, test-only
         [*_CLI, *argv],
         capture_output=True,
@@ -137,7 +159,7 @@ def run_cli(
         timeout=timeout,
         input=stdin,
         cwd=None if cwd is None else str(cwd),
-        env=child_env,
+        env=_candidate_environment(env),
         check=False,
     )
     return CliResult(

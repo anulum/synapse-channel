@@ -57,9 +57,19 @@ All notable changes to this project are documented here.
   branches. JetBrains selector ownership now stabilises across transient empty
   snapshots and owner-proven XID remaps from a focused selector module instead
   of the client orchestrator.
+  Filtered JetBrains selectors now use lifecycle-specific geometry: readiness
+  waits for a rendered result within the bounded popup height, while closure
+  tracks every bounded positive height so a collapsed search shell cannot be
+  mistaken for disappearance.
   Ambiguous, unowned, malformed, or deadline-exhausted selector states remain
   fail-closed, and post-confirmation closure requires consecutive clean snapshots
   rather than a single raced absence.
+- Filesystem-canonical Git claims now resolve synthetic semantic descendants
+  through their physical source path without treating `.synapse-symbol` as a
+  real child of a file. Sibling symbols retain independent ownership because
+  synthetic rows never inherit the shared source inode as edit authority, while
+  an object-derived comparison anchor preserves declaration ancestry across
+  hard-link aliases.
 
 ### Changed
 
