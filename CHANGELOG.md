@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.9] - 2026-07-16
+
 ### Added
 
 - `synapse demo` is now the complete five-minute Claude/Codex golden path. It
@@ -23,6 +25,18 @@ All notable changes to this project are documented here.
   command writes machine-readable `golden-demo.json` evidence and a static
   dashboard that renders every safety milestone; `--output DIR` selects a
   persistent artifact directory.
+
+- `synapse deliberate conclude` and `synapse deliberate verify` seal council
+  deliberations into signed export packages: a canonical-JSON content
+  commitment under an Ed25519 receipt, with verification that fails closed on
+  any post-signing mutation. Land, audit, and research council patterns share
+  one schema, including audit findings with severities and dispositions.
+- Governance metrics define the measurable coordination-discipline wedge:
+  `core/governance_metrics` computes the M1–M4 rates (unclaimed edits, ungated
+  self-pushes, unattested main moves, detection latency) as a pure function
+  over observed events, and the `git/attested_history` collector measures M3
+  on a real repository by classifying every first-parent main advance against
+  the hexadecimal citations kept in an audit-artifact tree.
 
 ### Security
 
@@ -87,6 +101,32 @@ All notable changes to this project are documented here.
   hostname for TLS SNI and certificate verification, disables environment proxies,
   and reads the discarded response body under a fixed byte bound instead of
   unbounded.
+
+- Directed delivery now survives shared-identity environments. Explicit
+  `--name`/`--for` flags replace the ambient identity pair entirely in the
+  `syn` aliases, so a seat that names itself no longer keeps waking on the
+  shared ambient identity's messages; the rendered shell hooks judge an
+  inherited default-shape auto identity by process lineage and re-mint a
+  distinct one when it was minted outside the session, so unrelated sessions
+  stop collapsing onto one `user/terminal-<id>` name; and the wake surface
+  prefixes any replayed directed message older than fifteen minutes with an
+  unambiguous `[replayed <age> ago]` marker, so an era-old directive can never
+  present itself in the shape of a live wake.
+- Exposed hubs now auto-enable bounded flood limits. When any exposure signal
+  is present — an off-loopback bind, a configured token, a bridge, or more
+  than one seat — `core/rate_policy` fills in safe non-zero per-agent and
+  per-host rates and connection caps for limits an operator left disabled,
+  preserving every explicitly configured value verbatim.
+- Semantic-symbol claims are now enforced end to end: worktree- and
+  branch-bound claims cover precise provider edits, the staged gate projects
+  the Git index onto exact symbols, and commit and merge hooks release only
+  proven committed symbols, failing closed on missing parsers, malformed
+  evidence, or whole-file changes.
+- A named shared-host attack regression suite pins one attacker scenario per
+  defence (temp-path clobber, symlinked runtime directories, symlinked or
+  loose secret files, DNS rebinding, smuggled claim paths), backed by a new
+  `ensure_private_dir` same-descriptor `O_NOFOLLOW` floor that closes the
+  pre-existing-directory TOCTOU on private state directories.
 
 ### Changed
 
