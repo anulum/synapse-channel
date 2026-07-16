@@ -10,6 +10,8 @@ export {
   MessageType,
   buildEnvelope,
   nowSeconds,
+  type CanonicalPathIdentity,
+  type ClaimScopeIdentity,
   type Envelope,
   type EnvelopeOptions,
   type MessageTypeValue,

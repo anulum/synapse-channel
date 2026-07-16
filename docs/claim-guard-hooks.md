@@ -39,6 +39,13 @@ source in the same worktree and branch, the pre-edit decision is ambiguous and
 denies both owners. Parallel sibling-symbol work therefore belongs in isolated
 Git worktrees; the staged index gate below remains the authoritative proof of
 which symbol the resulting change actually touched.
+Git-aware claims and mutation targets are compared through the same canonical
+identity: Git-index spelling, strictly resolved worktree-relative filesystem
+path, Unicode NFC, actual filesystem case policy, and an existing object's local
+device/object key. A provider cannot evade a claim through a symlink, hard link,
+junction, case alias, or Windows short name. Resolution outside the worktree or
+an unreadable, ambiguous, or display-misaligned identity is denied before the
+provider mutates a file.
 
 ## Getting started
 

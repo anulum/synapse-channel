@@ -39,9 +39,9 @@ from synapse_channel.core.causality import (
     CausalGraph,
     CausalNode,
     build_causal_graph,
-    paths_overlap,
 )
 from synapse_channel.core.journal import EventKind
+from synapse_channel.core.path_identity import claim_scopes_conflict
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.replay import SNAPSHOT_KINDS
 from synapse_channel.core.terminal_text import terminal_text
@@ -119,9 +119,14 @@ def advise_yields(graph: CausalGraph) -> list[YieldAdvice]:
         for second in live[index + 1 :]:
             if first.owner == second.owner:
                 continue
-            if first.worktree != second.worktree:
-                continue
-            if not paths_overlap(first.paths, second.paths):
+            if not claim_scopes_conflict(
+                first.worktree,
+                first.paths,
+                first.path_identity,
+                second.worktree,
+                second.paths,
+                second.path_identity,
+            ):
                 continue
             recommendations.append(
                 _weigh_pair(

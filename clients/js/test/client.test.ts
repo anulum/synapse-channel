@@ -7,7 +7,7 @@
 // SYNAPSE_CHANNEL — tests for the JS/TS WebSocket client
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MessageType, buildEnvelope } from "../src/protocol.js";
+import { type ClaimScopeIdentity, MessageType, buildEnvelope } from "../src/protocol.js";
 import { SynapseClient, type WebSocketLike } from "../src/client.js";
 
 class FakeSocket implements WebSocketLike {
@@ -114,14 +114,28 @@ describe("SynapseClient messaging", () => {
 
     client.chat("hello", { target: "P/bob", priority: true });
     client.chat("secret", { channel: "ops" });
-    client.claim("t1", ["src/a.ts"]);
+    const pathIdentity: ClaimScopeIdentity = {
+      version: 1,
+      worktree_path: "/repo",
+      worktree_object_id: "1:2",
+      filesystem_namespace: "host:1",
+      case_sensitive: true,
+      paths: [{ git_path: "src/a.ts", filesystem_path: "src/a.ts", object_id: "1:3" }],
+    };
+    client.claim("t1", ["src/a.ts"], pathIdentity);
     client.release("t1");
     client.requestBoard();
 
     const envelopes = socket.sentEnvelopes();
     expect(envelopes[0]).toMatchObject({ type: "chat", target: "P/bob", payload: "hello", priority: true });
     expect(envelopes[1]).toMatchObject({ type: "chat", channel: "ops", payload: "secret" });
-    expect(envelopes[2]).toMatchObject({ type: "claim", task_id: "t1", paths: ["src/a.ts"] });
+    expect(envelopes[2]).toMatchObject({
+      type: "claim",
+      task_id: "t1",
+      worktree: "/repo",
+      paths: ["src/a.ts"],
+      path_identity: pathIdentity,
+    });
     expect(envelopes[3]).toMatchObject({ type: "release", task_id: "t1" });
     expect(envelopes[4]).toMatchObject({ type: "board_request" });
   });

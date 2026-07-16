@@ -27,8 +27,16 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.path_identity import (
+    ClaimScopeIdentity,
+    PathIdentityError,
+    claim_scope_covers_path,
+    claim_worktrees_match,
+    parse_optional_claim_scope_identity,
+)
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.git.gitclaim import AgentFactory, GitError, GitRunner, _default_git_runner
+from synapse_channel.git.path_identity import resolve_claim_scope_identity
 from synapse_channel.git.semantic_enforcement import (
     project_change_paths,
     semantic_sources_from_paths,
@@ -283,18 +291,39 @@ def changed_files(trigger: str, *, runner: GitRunner = _default_git_runner) -> l
     return [line for line in out.splitlines() if line.strip()]
 
 
-def _paths_overlap(claim_paths: list[str], changed: list[str]) -> bool:
+def _paths_overlap(
+    claim_paths: list[str],
+    changed: list[str],
+    claim_identity: ClaimScopeIdentity | None = None,
+    changed_identity: ClaimScopeIdentity | None = None,
+) -> bool:
     """Return whether a claim's declared paths intersect the changed files.
 
     An empty claim scope (the whole worktree) is touched by any change. A declared
-    path matches a changed file it equals or is a directory prefix of.
+    path matches a changed file it equals or is a directory prefix of. When path
+    identities are present, matching is filesystem-canonical; otherwise literal
+    path comparison is retained.
     """
     if not claim_paths:
         return bool(changed)
-    for raw in claim_paths:
+    for claim_index, raw in enumerate(claim_paths):
         prefix = raw.rstrip("/")
-        for changed_path in changed:
-            if changed_path == prefix or changed_path.startswith(prefix + "/"):
+        for changed_index, changed_path in enumerate(changed):
+            if claim_scope_covers_path(
+                prefix,
+                claim_identity.paths[claim_index] if claim_identity is not None else None,
+                changed_path,
+                changed_identity.paths[changed_index] if changed_identity is not None else None,
+                case_sensitive=(
+                    claim_identity.case_sensitive and changed_identity.case_sensitive
+                    if claim_identity is not None and changed_identity is not None
+                    else claim_identity.case_sensitive
+                    if claim_identity is not None
+                    else changed_identity.case_sensitive
+                    if changed_identity is not None
+                    else None
+                ),
+            ):
                 return True
     return False
 
@@ -346,6 +375,20 @@ async def run_git_release(
         print(f"git error: {exc}")
         return 1
 
+    try:
+        canonical_root, canonical_changed, changed_identity = resolve_claim_scope_identity(
+            root,
+            changed,
+            runner=runner,
+        )
+        changed = list(canonical_changed)
+        root = canonical_root
+    except (OSError, PathIdentityError, RuntimeError, ValueError):
+        # Never release a claim when the local repository identity is unknown.
+        # Returning zero preserves the post-hook contract without a fail-open
+        # literal-path downgrade that could free another worktree's claim.
+        return 0
+
     snapshots: list[dict[str, Any]] = []
 
     async def collect(data: dict[str, Any]) -> None:
@@ -388,9 +431,43 @@ async def run_git_release(
                 )
             except (OSError, RuntimeError, ValueError) as exc:
                 print(f"[{name}] semantic auto-release retained symbol claims: {exc}")
-        changed_paths = [*changed, *semantic_changed]
+        # Physical changed paths carry filesystem identity; projected semantic
+        # sources keep literal overlap for symbol scopes.
+        physical_changed = list(changed)
         for claim, paths in candidates:
-            if _paths_overlap(list(paths), changed_paths):
+            claim_paths = list(paths)
+            try:
+                claim_identity = parse_optional_claim_scope_identity(claim)
+            except PathIdentityError:
+                continue
+            claim_worktree = str(claim.get("worktree") or "")
+            if claim_identity is not None and not claim_identity.validates_display_scope(
+                claim_worktree, claim_paths
+            ):
+                continue
+            if not claim_worktrees_match(
+                claim_worktree,
+                claim_identity,
+                root.as_posix(),
+                changed_identity,
+            ):
+                continue
+            if (
+                claim_identity is not None
+                and claim_identity.case_sensitive != changed_identity.case_sensitive
+            ):
+                continue
+            physical_hit = _paths_overlap(
+                claim_paths,
+                physical_changed,
+                claim_identity,
+                changed_identity,
+            )
+            semantic_hit = bool(semantic_changed) and _paths_overlap(
+                claim_paths,
+                list(semantic_changed),
+            )
+            if physical_hit or semantic_hit:
                 task_id = str(claim.get("task_id"))
                 await agent.release(task_id)
                 released.append(task_id)

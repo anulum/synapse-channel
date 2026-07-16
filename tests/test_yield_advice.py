@@ -23,6 +23,7 @@ import pytest
 
 from synapse_channel.core.causality import build_causal_graph
 from synapse_channel.core.journal import EventKind
+from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.yield_advice import (
     YieldAdvice,
@@ -43,6 +44,7 @@ def _claim(
     paths: tuple[str, ...] = (),
     worktree: str = "wt1",
     kind: str = EventKind.CLAIM,
+    path_identity: dict[str, object] | None = None,
 ) -> StoredEvent:
     return StoredEvent(
         seq=seq,
@@ -54,6 +56,7 @@ def _claim(
             "status": status,
             "paths": list(paths),
             "worktree": worktree,
+            **({"path_identity": path_identity} if path_identity is not None else {}),
         },
     )
 
@@ -143,6 +146,29 @@ def test_an_empty_scope_overlaps_every_path() -> None:
         _claim(2, "B", "bob", paths=("docs/guide.md",)),
     )
     assert len(recommendations) == 1
+
+
+def test_hardlink_aliases_receive_one_yield_recommendation() -> None:
+    first_identity = ClaimScopeIdentity(
+        worktree_path="wt1",
+        worktree_object_id="root:1",
+        filesystem_namespace="host:1",
+        case_sensitive=True,
+        paths=(CanonicalPathIdentity("owned.py", "owned.py", "1:2"),),
+    ).as_dict()
+    second_identity = ClaimScopeIdentity(
+        worktree_path="wt1",
+        worktree_object_id="root:1",
+        filesystem_namespace="host:1",
+        case_sensitive=True,
+        paths=(CanonicalPathIdentity("alias.py", "alias.py", "1:2"),),
+    ).as_dict()
+    recommendations = _advise(
+        _claim(1, "A", "alice", paths=("owned.py",), path_identity=first_identity),
+        _claim(2, "B", "bob", paths=("alias.py",), path_identity=second_identity),
+    )
+    assert len(recommendations) == 1
+    assert recommendations[0].yielder.task_id == "B"
 
 
 # --- weighing and tie-break ---------------------------------------------------------

@@ -42,6 +42,15 @@ client.release("synapse-channel:web");
 client.close();
 ```
 
+`claim(taskId, paths, pathIdentity?)` also accepts the version-1
+`ClaimScopeIdentity` exported by the package. This is an additive transport
+type for bridges that already used the Python Git/filesystem resolver; the
+dependency-free browser client deliberately does not inspect a local repository
+or invent canonical values. When present, its canonical `worktree_path` is also
+sent as the ordinary `worktree` field so the hub validates the full display
+scope. Omit the third argument when no trusted local
+resolver is available. The hub then retains legacy literal-path comparison.
+
 `connect()` opens the socket, sends the registration heartbeat (with the token
 when one is configured), and resolves once the hub returns its welcome; it
 rejects if the hub closes the socket before welcoming the identity or if no

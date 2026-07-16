@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from synapse_channel.core.scoping import scopes_conflict
+from synapse_channel.core.path_identity import ClaimScopeIdentity, claim_scopes_conflict
 from synapse_channel.core.state_models import TaskClaim
 
 
@@ -22,11 +22,19 @@ def find_scope_conflict(
     agent: str,
     worktree: str,
     paths: tuple[str, ...],
+    path_identity: ClaimScopeIdentity | None = None,
 ) -> tuple[str, str] | None:
     """Return the first other live claim whose file scope contends, if any."""
     for other_id, other in claims.items():
         if other_id == task or other.owner == agent:
             continue
-        if scopes_conflict(worktree, paths, other.worktree, other.paths):
+        if claim_scopes_conflict(
+            worktree,
+            paths,
+            path_identity,
+            other.worktree,
+            other.paths,
+            other.path_identity,
+        ):
             return other_id, other.owner
     return None

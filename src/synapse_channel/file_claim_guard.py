@@ -17,8 +17,10 @@ from typing import Any, Protocol
 
 from synapse_channel.claim_state import ClaimStateError, fetch_state_snapshot
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.path_identity import ClaimScopeIdentity, PathIdentityError
 from synapse_channel.git.claim_coverage import ClaimCoverageError, decide_claim_coverage
 from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
+from synapse_channel.git.path_identity import resolve_claim_scope_identity
 from synapse_channel.path_resolution import resolve_weakly_fail_closed
 
 StateFetcher = Callable[..., Awaitable[dict[str, Any]]]
@@ -72,11 +74,18 @@ class MutationRequest:
 
 @dataclass(frozen=True)
 class RepositoryTarget:
-    """Canonical Git context and repository-relative mutation target."""
+    """Canonical Git context and repository-relative mutation target.
+
+    ``relative_path`` is retained for actionable display while
+    ``path_identity`` binds its Git spelling, resolved filesystem alias, and
+    optional hard-link object key to the canonical worktree.  Legacy callers may
+    omit ``path_identity`` and retain literal-path coverage matching.
+    """
 
     root: Path
     branch: str
     relative_path: str
+    path_identity: ClaimScopeIdentity | None = None
 
 
 @dataclass(frozen=True)
@@ -114,7 +123,7 @@ def resolve_repository_targets(
     if not request.file_paths:
         raise FileClaimGuardError(f"{provider} hook input contains no mutation paths.")
 
-    targets: list[RepositoryTarget] = []
+    contexts: list[tuple[Path, str, str]] = []
     seen: set[tuple[Path, str, str]] = set()
     for path in request.file_paths:
         target = _absolute_target(path, request.cwd)
@@ -150,8 +159,66 @@ def resolve_repository_targets(
         if key in seen:
             continue
         seen.add(key)
-        targets.append(RepositoryTarget(*key))
+        contexts.append(key)
+
+    targets: list[RepositoryTarget] = []
+    grouped: dict[tuple[Path, str], list[str]] = {}
+    for root, branch, relative in contexts:
+        grouped.setdefault((root, branch), []).append(relative)
+    for (root, branch), relative_paths in grouped.items():
+        try:
+            canonical_root, canonical_paths, identity = resolve_claim_scope_identity(
+                root,
+                relative_paths,
+                runner=runner,
+            )
+        except PathIdentityError as exc:
+            raise FileClaimGuardError(str(exc)) from exc
+        for relative, row in zip(canonical_paths, identity.paths, strict=True):
+            targets.append(
+                RepositoryTarget(
+                    root=canonical_root,
+                    branch=branch,
+                    relative_path=relative,
+                    path_identity=ClaimScopeIdentity(
+                        worktree_path=identity.worktree_path,
+                        worktree_object_id=identity.worktree_object_id,
+                        filesystem_namespace=identity.filesystem_namespace,
+                        case_sensitive=identity.case_sensitive,
+                        paths=(row,),
+                    ),
+                )
+            )
     return tuple(targets)
+
+
+def _combined_target_identity(
+    targets: list[RepositoryTarget],
+) -> ClaimScopeIdentity | None:
+    """Combine aligned single-path identities for one repository/branch group.
+
+    Returns ``None`` when any target lacks path identity so literal matching
+    remains available for legacy call sites and pure semantic projections.
+    """
+    if any(target.path_identity is None for target in targets):
+        return None
+    identities = [target.path_identity for target in targets if target.path_identity is not None]
+    first = identities[0]
+    if any(
+        identity.worktree_path != first.worktree_path
+        or identity.worktree_object_id != first.worktree_object_id
+        or identity.filesystem_namespace != first.filesystem_namespace
+        or identity.case_sensitive != first.case_sensitive
+        for identity in identities[1:]
+    ):
+        raise FileClaimGuardError("Provider mutation targets have inconsistent worktree identity.")
+    return ClaimScopeIdentity(
+        worktree_path=first.worktree_path,
+        worktree_object_id=first.worktree_object_id,
+        filesystem_namespace=first.filesystem_namespace,
+        case_sensitive=first.case_sensitive,
+        paths=tuple(identity.paths[0] for identity in identities),
+    )
 
 
 def _path_list(paths: tuple[str, ...]) -> str:
@@ -189,15 +256,16 @@ def decide_targets_from_snapshot(
     FileClaimGuardError
         If authoritative claim state is malformed.
     """
-    grouped: dict[tuple[Path, str], list[str]] = {}
+    grouped: dict[tuple[Path, str], list[RepositoryTarget]] = {}
     for target in targets:
-        grouped.setdefault((target.root, target.branch), []).append(target.relative_path)
+        grouped.setdefault((target.root, target.branch), []).append(target)
 
     missing: list[str] = []
     ownership: list[str] = []
     non_editable: list[str] = []
     try:
-        for (root, branch), paths in grouped.items():
+        for (root, branch), repository_targets in grouped.items():
+            paths = [target.relative_path for target in repository_targets]
             coverage = decide_claim_coverage(
                 snapshot,
                 identity=identity,
@@ -205,6 +273,7 @@ def decide_targets_from_snapshot(
                 branch=branch,
                 paths=paths,
                 allow_semantic_source=allow_semantic_source,
+                path_identity=_combined_target_identity(repository_targets),
             )
             missing.extend(coverage.missing_paths)
             ownership.extend(coverage.ownership_mismatch_paths)

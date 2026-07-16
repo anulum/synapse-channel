@@ -24,6 +24,7 @@ from typing import Any
 
 from synapse_channel.core.lifecycle import can_transition
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
+from synapse_channel.core.path_identity import ClaimScopeIdentity
 from synapse_channel.core.scoping import (
     DEFAULT_WORKTREE,
     MAX_DECLARED_PATHS,
@@ -179,6 +180,7 @@ class SynapseState:
         *,
         worktree: str = DEFAULT_WORKTREE,
         paths: tuple[str, ...] | list[str] = (),
+        path_identity: ClaimScopeIdentity | None = None,
         git: GitContext | None = None,
     ) -> tuple[bool, str]:
         """Acquire or renew a scoped lease on a task.
@@ -208,6 +210,9 @@ class SynapseState:
             Worktree label; claims in different worktrees never contend.
         paths : tuple[str, ...] or list[str], optional
             Declared file/directory paths; empty claims the whole worktree.
+        path_identity : ClaimScopeIdentity or None, optional
+            Client-derived filesystem-canonical identity aligned one-to-one with
+            ``paths``.  Malformed alignment is refused rather than ignored.
         git : GitContext or None, optional
             Branch context to attach to the claim; ``None`` leaves it unset. A
             renewal replaces it with the supplied value, so a git-aware client
@@ -233,14 +238,24 @@ class SynapseState:
                 MINIMUM_TTL_SECONDS,
             )
         )
-        self.heartbeat(agent, ts)
         norm_paths = normalize_paths(paths, self.max_paths_per_claim)
+        if path_identity is not None and not path_identity.validates_display_scope(
+            worktree, norm_paths
+        ):
+            return False, f"Task '{task}' path identity does not match its declared scope."
+        self.heartbeat(agent, ts)
 
         existing = self.claims.get(task)
         if existing and existing.owner != agent and existing.lease_expires_at > ts:
             return False, f"Task '{task}' is already claimed by {existing.owner}."
 
-        conflict = self._scope_conflict(task, agent, worktree, norm_paths)
+        conflict = self._scope_conflict(
+            task,
+            agent,
+            worktree,
+            norm_paths,
+            path_identity,
+        )
         if conflict is not None:
             other_id, other_owner = conflict
             return (
@@ -270,6 +285,7 @@ class SynapseState:
             lease_expires_at=ts + ttl,
             worktree=worktree,
             paths=norm_paths,
+            path_identity=path_identity,
             epoch=self._next_epoch(),
             checkpoint=checkpoint,
             git=git,
@@ -287,7 +303,12 @@ class SynapseState:
         return self._resource_registry.offers_by(agent)
 
     def _scope_conflict(
-        self, task: str, agent: str, worktree: str, paths: tuple[str, ...]
+        self,
+        task: str,
+        agent: str,
+        worktree: str,
+        paths: tuple[str, ...],
+        path_identity: ClaimScopeIdentity | None,
     ) -> tuple[str, str] | None:
         """Return the first other live claim whose file scope contends, if any.
 
@@ -306,6 +327,8 @@ class SynapseState:
             Worktree label of the incoming claim.
         paths : tuple[str, ...]
             Normalised declared paths of the incoming claim.
+        path_identity : ClaimScopeIdentity or None
+            Optional canonical identity aligned with ``paths``.
 
         Returns
         -------
@@ -319,6 +342,7 @@ class SynapseState:
             agent=agent,
             worktree=worktree,
             paths=paths,
+            path_identity=path_identity,
         )
 
     def update_task(
@@ -601,6 +625,7 @@ class SynapseState:
             data_ref=claim.data_ref,
             worktree=claim.worktree,
             paths=claim.paths,
+            path_identity=claim.path_identity,
             epoch=self._next_epoch(),
             checkpoint=claim.checkpoint,
             git=claim.git,

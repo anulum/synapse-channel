@@ -80,6 +80,49 @@ does not add agent grades to protocol envelopes.
   and durable-audit gates pass. It is emitted only by an explicit operator
   command, never automatically by a client.
 
+### Canonical claim-path identity
+
+A `claim` may carry the additive `path_identity` object below. It does not bump
+the wire version because it is optional, is omitted by legacy clients, and is
+ignored by clients that only render the ordinary `worktree` and `paths` fields.
+
+```json
+{
+  "version": 1,
+  "worktree_path": "/canonical/repository",
+  "worktree_object_id": "device:object",
+  "filesystem_namespace": "sha256:opaque-host-namespace",
+  "case_sensitive": true,
+  "paths": [
+    {
+      "git_path": "src/auth.py",
+      "filesystem_path": "src/auth.py",
+      "object_id": "device:object"
+    }
+  ]
+}
+```
+
+Each nested row aligns one-to-one with the claim's display `paths` and is
+client-derived from the local Git index and filesystem. Comparison strings are
+repository-relative Unicode NFC; case folding occurs only for an insensitive
+worktree. Device/object values are compared only when both identities carry the
+same opaque filesystem namespace and worktree-root object key; this prevents
+coincident inode values on different hosts from aliasing. Empty object ids mean
+the path does not yet exist. Object equality is conflict-only: it can deny a
+competing hard-link claim, but cannot widen edit authorization or auto-release
+because inode identity is not a historical capability. The hub rejects an
+unsupported version, malformed values, or any row that does not match its
+display path before changing state. It then persists and replays the field in
+claim, handoff, journal, causality, conflict, yield, and staged-check projections;
+Git-hook release matching can consume it client-side. The hub never trusts the
+identity as authorization and never uses it to access a local path.
+
+When only one side supplies the field, the hub projects the legacy display
+under the supplied filesystem policy. Two claims without the field retain the
+version-2 literal-path behavior. This supports rolling upgrades but means a
+fleet closes every alias gap only after all Git-aware claim producers upgrade.
+
 An `advertise` message may include `contracts`, either as a list of contract
 objects or as a task-class keyed mapping. The hub normalizes valid entries into
 the manifest shape:
