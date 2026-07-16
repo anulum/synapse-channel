@@ -16,10 +16,12 @@ one. The authoritative map lives in `synapse_channel/surface_taxonomy.py`, and a
 regression test asserts it and the live parser agree — a new subcommand cannot
 ship without being placed here, and a removed one cannot linger.
 
-This is still a `0.x` line. Tiers describe *relative* stability within that line,
-not a 1.0 stability promise: the wire protocol and the public Python API stay
-backwards-compatible within a major version, and any breaking change is called
-out in the changelog.
+Current `0.x` releases do not promise backward compatibility across minor
+releases. Tiers describe *relative* stability within that line, not a 1.0
+stability promise. Deliberate public API or wire changes must update the frozen
+contract, changelog, and migration notes; wire-incompatible changes also bump
+`WIRE_PROTOCOL_VERSION`. The post-1.0 contract is defined in
+[API and wire stability](api-stability.md).
 
 ## Core Versus Optional Layers
 

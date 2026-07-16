@@ -40,6 +40,14 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- The public compatibility contract is now unambiguous across the README,
+  contribution guide, stability and migration guides, public-surface
+  documentation, and all translated READMEs: `0.x` does not promise backward
+  compatibility across minor releases. Deliberate pre-1.0 public API or wire
+  changes must update their frozen contracts and ship changelog plus migration
+  notes; wire-incompatible changes bump `WIRE_PROTOCOL_VERSION`. Starting with
+  `1.0.0`, breaking stable public Python API changes require a package major
+  release.
 - Version 2 of the OpenCode compatibility manifest binds every ACP client to
   its exact wire name and version. The real-editor gate rejects any unmatched
   or erroneous bidirectional request and treats missing lifecycle responses as

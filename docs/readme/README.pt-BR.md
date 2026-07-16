@@ -318,15 +318,18 @@ Este pacote é desenvolvido abertamente e dogfoodado diariamente: uma frota de
 agentes de codificação roda sua própria coordenação sobre ele, então os
 problemas aparecem no uso real e são corrigidos rapidamente. As releases são,
 portanto, frequentes e em geral pequenas — correções e endurecimento em vez de
-churn. O protocolo wire e a API Python pública permanecem retrocompatíveis
-dentro de uma versão maior; qualquer mudança incompatível é destacada no
-changelog.
+churn. As releases `0.x` atuais não prometem retrocompatibilidade entre
+releases menores. O vocabulário wire e a API Python pública são protegidos
+contra deriva acidental, mas uma release menor `0.x` revisada pode alterar
+deliberadamente qualquer uma dessas superfícies. Toda mudança assim é
+documentada no changelog e em notas de migração; uma mudança wire incompatível
+incrementa `WIRE_PROTOCOL_VERSION`. A partir da `1.0.0`, uma mudança
+incompatível na API Python pública estável exige uma nova versão principal do
+pacote. Veja [estabilidade da API e do wire](../api-stability.md).
 
-As releases `0.x` atuais são releases de desenvolvimento, não a linha de
-release comercial estável. A primeira release comercial estável do
-SYNAPSE CHANNEL está planejada com os contratos operacionais, o
-empacotamento, a superfície de suporte e os termos de licenciamento
-comercial documentados como parte dessa release.
+A `1.0.0` está planejada como a primeira release comercial estável do SYNAPSE
+CHANNEL, com os contratos operacionais, o empacotamento, a superfície de suporte
+e os termos de licenciamento comercial documentados como parte dessa release.
 
 O SYNAPSE CHANNEL busca financiamento inicial, parceiros estratégicos e
 coproprietários de ecossistema alinhados que queiram ajudar a amadurecer a

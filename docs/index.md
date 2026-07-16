@@ -20,6 +20,11 @@ line. SYNAPSE CHANNEL is seeking startup funding, strategic partners, and aligne
 ecosystem co-owners; see [Commercial licensing](commercial.md) for the evaluation
 and contact path.
 
+Current `0.x` releases do not promise backward compatibility across minor
+releases. Pin an exact package version when an integration needs a fixed target,
+and review [API and wire stability](api-stability.md) plus the
+[0.x to 1.0 migration guide](migration-1.0.md) before upgrading.
+
 ![A synapse session: declare a plan with a dependency, complete a task, and watch the dependent unblock](assets/demo.gif)
 
 ## Why a coordination bus

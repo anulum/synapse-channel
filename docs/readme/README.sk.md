@@ -301,12 +301,16 @@ Nebindujte ho mimo loopback bez bearer auth.
 Tento balík sa vyvíja otvorene a denne sa dogfooduje: flotila kódovacích agentov
 na ňom prevádzkuje vlastnú koordináciu, takže problémy sa objavia v reálnom
 použití a rýchlo sa opravia. Releasy sú preto časté a väčšinou malé — opravy
-a hardening namiesto churnu. Wire protokol a verejné Python API zostávajú
-spätne kompatibilné v rámci major verzie; každá breaking zmena je uvedená
-v changelogu.
+a hardening namiesto churnu. Aktuálne `0.x` releasy nesľubujú spätnú
+kompatibilitu medzi minor releasmi. Wire slovník a verejné Python API chránia
+testy pred náhodným driftom, no skontrolovaný `0.x` minor release môže
+ktorúkoľvek z týchto plôch zámerne zmeniť. Každá taká zmena musí byť v
+changelogu a migračných poznámkach; nekompatibilná wire zmena zvýši
+`WIRE_PROTOCOL_VERSION`. Od `1.0.0` vyžaduje breaking zmena stabilného verejného
+Python API novú major verziu balíka. Pozri
+[stabilitu API a wire protokolu](../api-stability.md).
 
-Aktuálne `0.x` releasy sú vývojové releasy, nie stabilná komerčná release
-línia. Prvý stabilný komerčný release SYNAPSE CHANNEL je plánovaný
+`1.0.0` je plánovaný ako prvý stabilný komerčný release SYNAPSE CHANNEL
 s operačnými kontraktmi, balením, support plochou a podmienkami komerčného
 licencovania zdokumentovanými ako súčasť toho releasu.
 

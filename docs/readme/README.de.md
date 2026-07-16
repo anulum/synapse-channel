@@ -314,15 +314,20 @@ außerhalb des Loopbacks ohne Bearer-Auth.
 Dieses Paket wird offen entwickelt und täglich dogfooded: Eine Flotte von
 Coding-Agenten betreibt ihre eigene Koordination darauf, daher zeigen sich
 Probleme im realen Einsatz und werden schnell behoben. Releases sind deshalb
-häufig und meist klein — Fixes und Härtung statt Churn. Das Wire-Protokoll und
-die öffentliche Python-API bleiben innerhalb einer Major-Version
-rückwärtskompatibel; jede Breaking-Änderung wird im Changelog ausgewiesen.
+häufig und meist klein — Fixes und Härtung statt Churn. Die aktuellen
+`0.x`-Releases versprechen keine Rückwärtskompatibilität über Minor-Releases
+hinweg. Das Wire-Vokabular und die öffentliche Python-API sind gegen
+unbeabsichtigte Abweichungen geschützt, können sich aber in einem geprüften
+`0.x`-Minor-Release bewusst ändern. Jede solche Änderung wird im Changelog und
+in Migrationshinweisen dokumentiert; inkompatible Wire-Änderungen erhöhen
+`WIRE_PROTOCOL_VERSION`. Ab `1.0.0` erfordert eine inkompatible Änderung der
+stabilen öffentlichen Python-API eine neue Paket-Major-Version. Siehe
+[API- und Wire-Stabilität](../api-stability.md).
 
-Die aktuellen `0.x`-Releases sind Entwicklungsreleases, nicht die stabile
-kommerzielle Release-Linie. Das erste stabile kommerzielle Release von
-SYNAPSE CHANNEL ist geplant, mit den Betriebsverträgen, der Paketierung,
-der Support-Fläche und den kommerziellen Lizenzbedingungen, die als Teil
-dieses Releases dokumentiert werden.
+`1.0.0` ist als erstes stabiles kommerzielles Release von SYNAPSE CHANNEL
+geplant, mit den Betriebsverträgen, der Paketierung, der Support-Fläche und den
+kommerziellen Lizenzbedingungen, die als Teil dieses Releases dokumentiert
+werden.
 
 SYNAPSE CHANNEL sucht Startup-Finanzierung, strategische Partner und
 gleichgesinnte Ökosystem-Mitgestalter, die helfen wollen, die

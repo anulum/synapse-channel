@@ -9,10 +9,18 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # Migration guide: 0.x to 1.0
 
-SYNAPSE CHANNEL `0.x` releases are pre-1.0 development releases. The `1.0`
-line makes the documented public surfaces stable: the package export facade, the
-wire message vocabulary, the federation consumer primitives, and the classified
-CLI tiers.
+Current `0.x` releases do not promise backward compatibility across minor
+releases. They guard public surfaces against accidental drift, but a reviewed
+minor release may deliberately change the package export facade, wire message
+vocabulary, federation consumer primitives, or classified CLI tiers. Such a
+release updates the corresponding frozen contract, changelog, and migration
+notes; a wire-incompatible change also bumps `WIRE_PROTOCOL_VERSION`.
+
+The `1.0` line makes those documented public surfaces stable. Starting with
+`1.0.0`, a breaking stable public Python API change requires a package major
+release, while a wire-incompatible change requires a wire-protocol version bump.
+The canonical policy and its CI guards are documented in
+[API and wire stability](api-stability.md).
 
 This guide is for operators who pin SYNAPSE in local hubs, fleet waiters,
 automation scripts, or out-of-tree integrations.

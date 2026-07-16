@@ -301,14 +301,19 @@ bind it off-loopback without bearer auth.
 This package is developed in the open and dogfooded daily: a fleet of coding
 agents runs its own coordination on it, so problems surface in real use and are
 fixed quickly. Releases are therefore frequent and mostly small — fixes and
-hardening rather than churn. The wire protocol and the public Python API stay
-backwards-compatible within a major version; any breaking change is called out in
-the changelog.
+hardening rather than churn. Current `0.x` releases do not promise backward
+compatibility across minor releases. The wire vocabulary and public Python API
+are guarded against accidental drift, but a reviewed `0.x` minor release may
+deliberately change either surface. Every such change updates the frozen
+contract tests, bumps `WIRE_PROTOCOL_VERSION` for a wire-incompatible change,
+and ships changelog plus migration notes. Starting with `1.0.0`, a breaking
+stable public Python API change requires a package major release; a breaking
+wire change requires a wire-protocol version bump. See
+[API and wire stability](docs/api-stability.md).
 
-Current `0.x` releases are pre-1.0 development releases, not the stable
-commercial release line. `1.0.0` is planned as the first stable commercial
-release of SYNAPSE CHANNEL, with the operational contracts, packaging, support
-surface, and commercial licensing terms documented as part of that release.
+`1.0.0` is planned as the first stable commercial release of SYNAPSE CHANNEL,
+with the operational contracts, packaging, support surface, and commercial
+licensing terms documented as part of that release.
 
 SYNAPSE CHANNEL is seeking startup funding, strategic partners, and aligned
 ecosystem co-owners who want to help mature the coordination layer for
@@ -1400,7 +1405,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 650 |
 | Wire message types | 77 |
 | CLI subcommands | 179 |
-| Test functions | 7791 |
+| Test functions | 7798 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 57 |
 | GitHub Actions workflows | 21 |

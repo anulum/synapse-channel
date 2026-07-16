@@ -21,11 +21,15 @@ runbook and release-cut checklist.
 
 ## Versioning
 
-Releases follow semantic versioning. In the `0.x` line a minor release may change
-a public surface, but only as a reviewed edit to the pin that guards it (below),
-never silently. `1.0.0` locks the public Python API and the wire; after it, a
-breaking wire change bumps the wire-protocol version and a breaking API change
-bumps the major version.
+Current `0.x` releases do not promise backward compatibility across minor
+releases. A minor release may change a public surface, but only as a reviewed
+edit to the pin that guards it (below), with a changelog entry and migration
+notes — never silently. Operators and out-of-tree integrators that need a fixed
+target must pin the exact package version.
+
+`1.0.0` locks the stable public Python API and the wire contract. After it, a
+breaking stable public Python API change requires a package major release, while
+a wire-incompatible change bumps the independently versioned wire protocol.
 
 The **wire-protocol version is decoupled from the package version**.
 `synapse_channel.core.protocol.WIRE_PROTOCOL_VERSION` (an integer, currently `2`)

@@ -79,9 +79,14 @@ The `Makefile` wraps the common tasks (`make help` lists them):
   committed, runnable script under `benchmarks/` with results checked in.
 - **Changelog.** A user-visible change adds a `CHANGELOG.md` `[Unreleased]`
   fragment under the right heading (`Added`, `Changed`, `Fixed`, `Security`).
-- **Backward compatibility.** A change to the wire protocol, a CLI flag's meaning,
-  or a public function's signature states its compatibility impact in the commit
-  or PR. Until 1.0 the wire format may still change; say so when it does.
+- **Backward compatibility.** Current `0.x` releases do not promise backward
+  compatibility across minor releases. A change to the wire protocol, a CLI
+  flag's meaning, or a public function's signature states its compatibility
+  impact in the commit or PR, updates its frozen contract, and adds changelog
+  plus migration notes. A wire-incompatible change also bumps
+  `WIRE_PROTOCOL_VERSION`. Starting with `1.0.0`, a breaking stable public
+  Python API change requires a package major release. See
+  [`docs/api-stability.md`](docs/api-stability.md).
 - **Threat-model delta.** A change that touches authentication, ACLs, exposure
   guards, TLS, rate limiting, or the durable log states what it changes in the
   posture and updates [`SECURITY.md`](SECURITY.md) or
