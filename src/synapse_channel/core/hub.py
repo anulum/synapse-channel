@@ -129,6 +129,7 @@ from synapse_channel.core.state import (
     MAX_CLAIMS_PER_AGENT,
     MAX_OFFERS_PER_AGENT,
 )
+from synapse_channel.core.terminal_text import terminal_text
 
 logger = logging.getLogger("synapse.hub")
 
@@ -1132,11 +1133,21 @@ class SynapseHub:
         # in the hub log either — log the channel id and length, never the content.
         channel_id = str(data.get("channel") or "").strip()
         logged_payload = (
-            f"<channel {channel_id!r} body redacted, {len(payload)} chars>"
+            f"<channel {terminal_text(channel_id)!r} body redacted, {len(payload)} chars>"
             if channel_id
-            else self._redact_payload(payload)
+            else terminal_text(self._redact_payload(payload))
         )
-        logger.info("[%s -> %s] (%s): %s", sender, target, msg_type, logged_payload)
+        # Every field here crosses the untrusted wire boundary: a client controls
+        # its own sender/target/type/channel and the payload. Render each one-line
+        # with controls escaped so a crafted newline cannot forge a second log line
+        # and a carriage return or ANSI cannot rewrite the operator's terminal.
+        logger.info(
+            "[%s -> %s] (%s): %s",
+            terminal_text(sender),
+            terminal_text(target),
+            terminal_text(msg_type),
+            logged_payload,
+        )
 
         if (
             msg_type != MessageType.HEARTBEAT

@@ -9,8 +9,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
+import pytest
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosedError
 
@@ -69,6 +71,33 @@ async def test_non_object_json_frame_is_refused_not_crashed_end_to_end() -> None
             second = await read_until_type(websocket, "error")
     assert "expected a JSON object" in error["payload"]
     assert "expected a JSON object" in second["payload"]
+
+
+async def test_untrusted_log_fields_are_rendered_without_control_characters(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # A client controls its own sender/type/payload. A crafted newline must not
+    # forge a second hub log line, and a CR/ANSI must not rewrite the operator's
+    # terminal: the hub renders every untrusted field one-line, controls escaped.
+    async with running_hub() as (_, uri):
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            with caplog.at_level(logging.INFO, logger="synapse.hub"):
+                await websocket.send(
+                    json.dumps(
+                        {
+                            "sender": "evil\nFORGED",
+                            "type": "chat",
+                            "target": "all",
+                            "payload": "body\r\ninjected",
+                        }
+                    )
+                )
+                await read_until_type(websocket, "presence_update")
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert "evil\\nFORGED" in logged  # the sender's newline is escaped to \n
+    assert "body\\r\\ninjected" in logged  # the payload's CR/LF is escaped
+    assert "evil\nFORGED" not in logged  # never a raw newline forging a second line
 
 
 async def test_host_rate_limiter_refuses_a_flooding_host_end_to_end() -> None:
