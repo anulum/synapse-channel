@@ -53,6 +53,24 @@ async def test_deeply_nested_json_is_rejected_not_crashed_end_to_end() -> None:
     assert "Malformed JSON" in error["payload"]
 
 
+async def test_non_object_json_frame_is_refused_not_crashed_end_to_end() -> None:
+    # A valid-JSON frame need not be an object: a list, null, or a bare number all
+    # decode cleanly, then data.get("sender") would raise AttributeError and drop
+    # the socket with a 1011. It must get a clean protocol error, and the
+    # connection must survive to serve the next frame.
+    async with running_hub() as (_, uri):
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            await websocket.send(json.dumps(["not", "a", "dict"]))
+            error = await read_until_type(websocket, "error")
+            # The connection is still alive — a second non-object frame is refused
+            # the same way rather than the socket being gone.
+            await websocket.send(json.dumps(42))
+            second = await read_until_type(websocket, "error")
+    assert "expected a JSON object" in error["payload"]
+    assert "expected a JSON object" in second["payload"]
+
+
 async def test_host_rate_limiter_refuses_a_flooding_host_end_to_end() -> None:
     hub = SynapseHub(host_rate_limiter=RateLimiter(rate_per_second=0.01, burst=2.0))
     async with running_hub(hub) as (_, uri):

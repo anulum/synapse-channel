@@ -1061,6 +1061,19 @@ class SynapseHub:
             )
             return
 
+        # A valid-JSON frame need not be an object: ``["x"]``, ``null``, ``42`` all
+        # decode cleanly, then ``data.get("sender")`` below would raise
+        # AttributeError and — caught nowhere on the per-connection loop — drop the
+        # socket with a 1011. Reject a non-object envelope at the boundary instead.
+        if not isinstance(data, dict):
+            await self._send_json(
+                websocket,
+                self._system(
+                    "Malformed frame: expected a JSON object.", msg_type=MessageType.ERROR
+                ),
+            )
+            return
+
         # Charge every frame — heartbeats included — to its remote host before any
         # further work, so one host cannot flood the hub regardless of agent name.
         if self.host_rate_limiter is not None and not self.host_rate_limiter.allow(
