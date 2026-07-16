@@ -95,12 +95,14 @@ class TestDeliberationResult:
             "open_questions",
             "evidence_links",
             "gate_checks",
+            "findings",
             "concluded_at",
             "source_clock",
         ]
         assert content["gate_checks"] == [
             {"gate": "G7_seal", "status": "sealed", "evidence": "receipt:abc"}
         ]
+        assert content["findings"] == []
 
     @pytest.mark.parametrize(
         ("field", "value", "match"),

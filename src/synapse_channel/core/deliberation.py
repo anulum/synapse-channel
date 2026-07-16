@@ -61,6 +61,14 @@ DELIBERATION_PATTERNS: frozenset[str] = frozenset(
 LICENSE_TAGS: frozenset[str] = frozenset({"oss-ok", "customer-isolated", "internal-ops"})
 #: Retention classes for an export package.
 RETENTION_CLASSES: frozenset[str] = frozenset({"short", "standard", "long"})
+#: Severities an audit-council finding may carry (the standard five).
+SEVERITIES: frozenset[str] = frozenset({"critical", "high", "medium", "low", "info"})
+#: Dispositions a finding may carry across the audit lifecycle. ``open`` and
+#: ``confirmed``/``plausible`` are live; ``dismissed`` (false positive), ``fixed``,
+#: and ``deferred`` are terminal.
+DISPOSITIONS: frozenset[str] = frozenset(
+    {"open", "confirmed", "plausible", "dismissed", "fixed", "deferred"}
+)
 
 
 class DeliberationError(SynapseError, ValueError):
@@ -94,6 +102,61 @@ class GateCheck:
 
 
 @dataclass(frozen=True)
+class Finding:
+    """One audit-council finding, reusing the ``docs/internal/audit_*`` shape.
+
+    Attributes
+    ----------
+    finding_id : str
+        A stable identifier for the finding.
+    severity : str
+        One of :data:`SEVERITIES`.
+    summary : str
+        A one-line statement of the finding.
+    location : str
+        Where it lives, conventionally ``path:line`` (empty when not localised).
+    evidence : str
+        A reference to the supporting evidence — a digest, run id, or file ref.
+    disposition : str
+        One of :data:`DISPOSITIONS`; ``open`` until reviewed against the
+        production surface (missing evidence never passes as reviewed).
+    """
+
+    finding_id: str
+    severity: str
+    summary: str
+    location: str = ""
+    evidence: str = ""
+    disposition: str = "open"
+
+    def __post_init__(self) -> None:
+        """Reject an empty id/summary or a severity/disposition outside the vocabulary."""
+        if not self.finding_id.strip():
+            raise DeliberationError("finding_id must be a non-empty identifier")
+        if not self.summary.strip():
+            raise DeliberationError("finding summary must be a non-empty statement")
+        if self.severity not in SEVERITIES:
+            raise DeliberationError(
+                f"unknown severity {self.severity!r}; expected one of {sorted(SEVERITIES)}"
+            )
+        if self.disposition not in DISPOSITIONS:
+            raise DeliberationError(
+                f"unknown disposition {self.disposition!r}; expected one of {sorted(DISPOSITIONS)}"
+            )
+
+    def as_dict(self) -> dict[str, str]:
+        """Return a JSON-ready mapping for the finding, key order fixed."""
+        return {
+            "finding_id": self.finding_id,
+            "severity": self.severity,
+            "summary": self.summary,
+            "location": self.location,
+            "evidence": self.evidence,
+            "disposition": self.disposition,
+        }
+
+
+@dataclass(frozen=True)
 class DeliberationResult:
     """The structured output every council must produce on conclude.
 
@@ -113,6 +176,7 @@ class DeliberationResult:
     open_questions: tuple[str, ...] = ()
     evidence_links: tuple[str, ...] = ()
     gate_checks: tuple[GateCheck, ...] = ()
+    findings: tuple[Finding, ...] = ()
     concluded_at: str = ""
     source_clock: str = ""
 
@@ -143,6 +207,7 @@ class DeliberationResult:
             "open_questions": list(self.open_questions),
             "evidence_links": list(self.evidence_links),
             "gate_checks": [gate.as_dict() for gate in self.gate_checks],
+            "findings": [finding.as_dict() for finding in self.findings],
             "concluded_at": self.concluded_at,
             "source_clock": self.source_clock,
         }
@@ -392,6 +457,45 @@ def _gate_checks(data: Mapping[str, Any]) -> tuple[GateCheck, ...]:
     return tuple(checks)
 
 
+def _findings(data: Mapping[str, Any]) -> tuple[Finding, ...]:
+    """Return the ``findings`` list parsed into :class:`Finding` values."""
+    raw = data.get("findings", [])
+    if not isinstance(raw, (list, tuple)):
+        raise DeliberationError("field 'findings' must be a list of finding objects")
+    findings: list[Finding] = []
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            raise DeliberationError(
+                "each finding must be an object with finding_id/severity/summary"
+            )
+        finding_id = entry.get("finding_id")
+        severity = entry.get("severity")
+        summary = entry.get("summary")
+        location = entry.get("location", "")
+        evidence = entry.get("evidence", "")
+        disposition = entry.get("disposition", "open")
+        if (
+            not isinstance(finding_id, str)
+            or not isinstance(severity, str)
+            or not isinstance(summary, str)
+            or not isinstance(location, str)
+            or not isinstance(evidence, str)
+            or not isinstance(disposition, str)
+        ):
+            raise DeliberationError("finding fields must all be strings")
+        findings.append(
+            Finding(
+                finding_id=finding_id,
+                severity=severity,
+                summary=summary,
+                location=location,
+                evidence=evidence,
+                disposition=disposition,
+            )
+        )
+    return tuple(findings)
+
+
 def export_package_from_mapping(data: Mapping[str, Any]) -> ExportPackage:
     """Parse a JSON-loaded mapping into a validated :class:`ExportPackage`.
 
@@ -418,6 +522,7 @@ def export_package_from_mapping(data: Mapping[str, Any]) -> ExportPackage:
         open_questions=_str_tuple(data, "open_questions"),
         evidence_links=_str_tuple(data, "evidence_links"),
         gate_checks=_gate_checks(data),
+        findings=_findings(data),
         concluded_at=_optional_str(data, "concluded_at"),
         source_clock=_optional_str(data, "source_clock"),
     )
@@ -437,8 +542,11 @@ __all__ = [
     "DELIBERATION_PATTERNS",
     "LICENSE_TAGS",
     "RETENTION_CLASSES",
+    "SEVERITIES",
+    "DISPOSITIONS",
     "DeliberationError",
     "GateCheck",
+    "Finding",
     "DeliberationResult",
     "ExportPackage",
     "SealVerification",

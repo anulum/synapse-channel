@@ -125,3 +125,45 @@ def test_unknown_pattern_is_refused_by_schema_validation() -> None:
 def test_non_string_concluded_at_is_refused() -> None:
     with pytest.raises(DeliberationError, match="concluded_at"):
         export_package_from_mapping(_spec(concluded_at=12345))
+
+
+def test_findings_parse_into_the_result() -> None:
+    package = export_package_from_mapping(
+        _spec(
+            pattern="audit_council",
+            findings=[
+                {
+                    "finding_id": "SEC-01",
+                    "severity": "high",
+                    "summary": "open read",
+                    "disposition": "confirmed",
+                }
+            ],
+        )
+    )
+    assert package.result.findings[0].finding_id == "SEC-01"
+    assert package.result.findings[0].disposition == "confirmed"
+
+
+def test_findings_must_be_a_list() -> None:
+    with pytest.raises(DeliberationError, match="findings"):
+        export_package_from_mapping(_spec(findings="SEC-01"))
+
+
+def test_finding_entry_must_be_an_object() -> None:
+    with pytest.raises(DeliberationError, match="finding_id/severity/summary"):
+        export_package_from_mapping(_spec(findings=["SEC-01"]))
+
+
+def test_finding_fields_must_be_strings() -> None:
+    with pytest.raises(DeliberationError, match="finding fields"):
+        export_package_from_mapping(
+            _spec(findings=[{"finding_id": "SEC-01", "severity": 9, "summary": "x"}])
+        )
+
+
+def test_finding_unknown_severity_is_refused_by_schema() -> None:
+    with pytest.raises(DeliberationError, match="unknown severity"):
+        export_package_from_mapping(
+            _spec(findings=[{"finding_id": "SEC-01", "severity": "boom", "summary": "x"}])
+        )
