@@ -19,6 +19,11 @@ but may lose the most recent commit on an **OS crash or power loss**. A write
 marked ``durable=True`` — the lease/claim path — is committed at
 ``synchronous=FULL`` so it survives an OS crash too; the high-volume chat/history
 path stays at ``NORMAL``. This module never claims more than it delivers.
+
+Every failed append is rolled back before the connection is reused. A durable
+attempt also restores ``synchronous=NORMAL`` before its database exception
+propagates, so one rejected write cannot leave later high-volume traffic at the
+``FULL`` setting.
 """
 
 from __future__ import annotations
@@ -155,17 +160,27 @@ class EventStore:
             key). It is durable and never reused across restarts — unlike the
             in-memory per-hub ``msg_id`` — so it is the stable cursor a reconnecting
             client resumes a directed-message backlog from.
+
+        Notes
+        -----
+        A failed database write is rolled back. Durable attempts restore the
+        connection to ``synchronous=NORMAL`` before the failure propagates.
         """
         stamp = time.time() if ts is None else float(ts)
         raw = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
         if durable:
             self._conn.execute("PRAGMA synchronous=FULL")
-        cursor = self._conn.execute(
-            "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", (stamp, kind, raw)
-        )
-        self._conn.commit()
-        if durable:
-            self._conn.execute("PRAGMA synchronous=NORMAL")
+        try:
+            cursor = self._conn.execute(
+                "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", (stamp, kind, raw)
+            )
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            raise
+        finally:
+            if durable:
+                self._conn.execute("PRAGMA synchronous=NORMAL")
         return int(cursor.lastrowid or 0)
 
     def read_all(self) -> list[StoredEvent]:

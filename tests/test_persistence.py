@@ -20,6 +20,11 @@ import pytest
 from synapse_channel.core.persistence import EventStore, StoredEvent
 
 
+def _synchronous_mode(store: EventStore) -> int:
+    row = store._conn.execute("PRAGMA synchronous").fetchone()
+    return int(row[0])
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file permissions")
 def test_event_store_file_is_owner_only(tmp_path: Path) -> None:
     db = tmp_path / "events.db"
@@ -86,8 +91,53 @@ def test_durable_and_normal_writes_both_persist(tmp_path: Path) -> None:
     store.append("chat", {"p": "x"}, durable=False)
     assert store.count() == 2
     # Connection is restored to NORMAL after a durable write.
-    mode = store._conn.execute("PRAGMA synchronous").fetchone()[0]
-    assert mode == 1  # 1 == NORMAL
+    assert _synchronous_mode(store) == 1  # 1 == NORMAL
+    store.close()
+
+
+def test_durable_append_restores_normal_after_insert_failure(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    store._conn.execute(
+        "CREATE TRIGGER reject_event BEFORE INSERT ON events "
+        "BEGIN SELECT RAISE(FAIL, 'forced insert failure'); END"
+    )
+    store._conn.commit()
+
+    with pytest.raises(sqlite3.IntegrityError, match="forced insert failure"):
+        store.append("claim", {"task_id": "rejected"}, durable=True)
+
+    assert _synchronous_mode(store) == 1
+    assert not store._conn.in_transaction
+    assert store.count() == 0
+    store._conn.execute("DROP TRIGGER reject_event")
+    store._conn.commit()
+    assert store.append("claim", {"task_id": "accepted"}) == 1
+    store.close()
+
+
+def test_durable_append_restores_normal_after_commit_failure(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+
+    def deny_commit(
+        action: int,
+        operation: str | None,
+        _table: str | None,
+        _database: str | None,
+        _trigger: str | None,
+    ) -> int:
+        if action == sqlite3.SQLITE_TRANSACTION and operation == "COMMIT":
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    store._conn.set_authorizer(deny_commit)
+    with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+        store.append("claim", {"task_id": "rejected"}, durable=True)
+    store._conn.set_authorizer(None)
+
+    assert _synchronous_mode(store) == 1
+    assert not store._conn.in_transaction
+    assert store.count() == 0
+    assert store.append("claim", {"task_id": "accepted"}) == 1
     store.close()
 
 

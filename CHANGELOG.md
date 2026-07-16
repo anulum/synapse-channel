@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Roll back a failed event-store append and restore SQLite
+  `synchronous=NORMAL` after a rejected durable write, so an INSERT or commit
+  error cannot leave later hub traffic running at the `FULL` durability mode.
+
 ## [0.99.10] - 2026-07-17
 
 ### Security
