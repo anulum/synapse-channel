@@ -19,26 +19,39 @@ permissions: {}
 
 jobs:
   release:
-    if: >-
-      ${{ github.event.workflow_run.conclusion == 'success' &&
-          startsWith(github.event.workflow_run.head_branch, 'v') }}
+    # publish.yml runs only on refs/tags/v*, so a successful publish run is
+    # always a versioned tag build. We deliberately do NOT gate on
+    # workflow_run.head_branch: for tag events GitHub resolves it to the branch
+    # containing the commit (e.g. main), not the tag, which silently skipped
+    # this job. The tag is derived from the published commit below instead.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: write
     steps:
-      - name: Validate the source tag
-        env:
-          SOURCE_TAG: ${{ github.event.workflow_run.head_branch }}
-        run: |
-          if [[ ! "$SOURCE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "refusing non-version publish ref: $SOURCE_TAG" >&2
-            exit 1
-          fi
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+          fetch-tags: true
+      - name: Resolve and validate the release tag
+        id: tag
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          # Derive the tag from the published commit rather than the unreliable
+          # workflow_run.head_branch, and fail closed if no version tag points
+          # at it (e.g. a non-semver publish ref).
+          tag="$(git tag --points-at "$HEAD_SHA" --sort=-v:refname \
+                 | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' \
+                 | head -n 1)"
+          if [[ -z "$tag" ]]; then
+            echo "no version tag points at published commit $HEAD_SHA" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "resolved release tag: $tag"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-dist
@@ -60,8 +73,8 @@ jobs:
             <(find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort)
       - name: Verify portable SLSA provenance before attaching assets
         env:
-          PROVENANCE_BUNDLE: release-provenance/synapse-channel-${{ github.event.workflow_run.head_branch }}-provenance.sigstore.json
-          SOURCE_REF: refs/tags/${{ github.event.workflow_run.head_branch }}
+          PROVENANCE_BUNDLE: release-provenance/synapse-channel-${{ steps.tag.outputs.tag }}-provenance.sigstore.json
+          SOURCE_REF: refs/tags/${{ steps.tag.outputs.tag }}
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           while read -r _ artifact; do
@@ -75,7 +88,7 @@ jobs:
           done < release-artifact/SHA256SUMS
       - name: Extract changelog for this tag
         env:
-          SOURCE_TAG: ${{ github.event.workflow_run.head_branch }}
+          SOURCE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           version="${SOURCE_TAG#v}"
           awk -v v="$version" '
@@ -86,7 +99,7 @@ jobs:
           echo "Release notes:" && cat RELEASE_NOTES.md
       - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
-          tag_name: ${{ github.event.workflow_run.head_branch }}
+          tag_name: ${{ steps.tag.outputs.tag }}
           target_commitish: ${{ github.event.workflow_run.head_sha }}
           body_path: RELEASE_NOTES.md
           files: |
