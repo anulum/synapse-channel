@@ -220,9 +220,11 @@ end
 
 function __synapse_project
   if test -n "$SYN_IDENTITY"; and test "$__SYNAPSE_AUTO_IDENTITY" != "$SYN_IDENTITY"
-    if string match -q "*/*" "$SYN_IDENTITY"
-      string split -m1 / "$SYN_IDENTITY" | head -n 1
-      return 0
+    if not __synapse_identity_is_foreign_auto "$SYN_IDENTITY"
+      if string match -q "*/*" "$SYN_IDENTITY"
+        string split -m1 / "$SYN_IDENTITY" | head -n 1
+        return 0
+      end
     end
   end
   if test "$SYNAPSE_AUTO_PROJECT_FROM_CWD" = "1"
@@ -243,6 +245,46 @@ end
 
 function __synapse_safe_key
   printf '%s' "$argv[1]" | tr -c 'A-Za-z0-9_.-' '_'
+end
+
+function __synapse_pid_in_session_lineage
+  # 0 when $argv[1] is this shell or a live ancestor of it (bounded /proc walk).
+  set -l probe (echo %self)
+  set -l hops 0
+  while test -n "$probe"; and test "$probe" -gt 1 2>/dev/null; and test $hops -lt 64
+    if test "$probe" = "$argv[1]"
+      return 0
+    end
+    set probe (awk '/^PPid:/{{print $2}}' "/proc/$probe/status" 2>/dev/null)
+    set hops (math $hops + 1)
+  end
+  return 1
+end
+
+function __synapse_identity_is_foreign_auto
+  # 0 when $argv[1] is a default-shape auto identity (<project>/terminal-<pid>)
+  # minted by a shell OUTSIDE this session's lineage — the shared-name
+  # collision of the 2026-07-16 delivery-integrity incident (DEL-INT-C).
+  # Manual and provider identities are never judged foreign; an explicit
+  # provider session (SYN_TMUX_PROVIDER=1) keeps its handed-down identity;
+  # without /proc the answer is "not foreign" (fail-open).
+  if not string match -q "*/terminal-*" -- "$argv[1]"
+    return 1
+  end
+  set -l suffix (string replace -r '^.*/terminal-' '' -- "$argv[1]")
+  if not string match -qr '^[0-9]+$' -- "$suffix"
+    return 1
+  end
+  if test "$SYN_TMUX_PROVIDER" = "1"
+    return 1
+  end
+  if not test -d /proc
+    return 1
+  end
+  if __synapse_pid_in_session_lineage "$suffix"
+    return 1
+  end
+  return 0
 end
 
 function __synapse_auto_arm --on-event fish_prompt
@@ -268,10 +310,29 @@ function __synapse_auto_arm --on-event fish_prompt
     set terminal_id (echo %self)
   end
 
+  # A numeric terminal id inherited from outside this session's lineage must
+  # never name this session: it is how one shell's exported id resurrects the
+  # shared name on every later prompt, even after a re-mint.
+  if string match -qr '^[0-9]+$' -- "$terminal_id"; and test -d /proc
+    if test "$SYN_TMUX_PROVIDER" != "1"; and not __synapse_pid_in_session_lineage "$terminal_id"
+      set terminal_id (echo %self)
+    end
+  end
+
   set -l identity
+  set -l keep_inherited 0
   if test -n "$SYN_IDENTITY"; and test "$__SYNAPSE_AUTO_IDENTITY" != "$SYN_IDENTITY"
+    if not __synapse_identity_is_foreign_auto "$SYN_IDENTITY"
+      set keep_inherited 1
+    end
+  end
+  if test $keep_inherited = 1
     set identity "$SYN_IDENTITY"
   else
+    if test -n "$SYN_IDENTITY"; and __synapse_identity_is_foreign_auto "$SYN_IDENTITY"
+      printf 'synapse: %s was minted outside this session; re-minting.\\n' \\
+        "$SYN_IDENTITY" >&2
+    end
     set identity "$project/terminal-$terminal_id"
     if test -n "$SYN_AGENT_TYPE"
       set identity "$project/$SYN_AGENT_TYPE-$terminal_id"
@@ -454,7 +515,8 @@ __synapse_cwd_project() {{
 
 __synapse_project() {{
   local marker_project
-  if [ -n "${{SYN_IDENTITY:-}}" ] && [ "${{__SYNAPSE_AUTO_IDENTITY:-}}" != "$SYN_IDENTITY" ]; then
+  if [ -n "${{SYN_IDENTITY:-}}" ] && [ "${{__SYNAPSE_AUTO_IDENTITY:-}}" != "$SYN_IDENTITY" ] \\
+      && ! __synapse_identity_is_foreign_auto "$SYN_IDENTITY"; then
     case "$SYN_IDENTITY" in
       */*) printf '%s\\n' "${{SYN_IDENTITY%%/*}}"; return 0 ;;
     esac
@@ -474,6 +536,44 @@ __synapse_safe_key() {{
   printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'
 }}
 
+__synapse_pid_in_session_lineage() {{
+  # 0 when $1 is this shell or a live ancestor of it (bounded /proc walk).
+  local probe hops
+  probe=$$
+  hops=0
+  while [ -n "$probe" ] && [ "$probe" -gt 1 ] 2>/dev/null && [ "$hops" -lt 64 ]; do
+    [ "$probe" = "$1" ] && return 0
+    probe="$(awk '/^PPid:/{{print $2}}' "/proc/$probe/status" 2>/dev/null)" || return 1
+    hops=$((hops + 1))
+  done
+  return 1
+}}
+
+__synapse_identity_is_foreign_auto() {{
+  # 0 when $1 is a default-shape auto identity (<project>/terminal-<pid>)
+  # minted by a shell OUTSIDE this session's lineage. Environment layering
+  # (tmux server env, systemd user env) carries such an identity into
+  # unrelated sessions while the mint-guard variable diverges, so every seat
+  # on the workstation silently coordinates under one shared name — the
+  # 2026-07-16 delivery-integrity incident (DEL-INT-C). Manual and provider
+  # identities (non-terminal shapes, non-numeric ids) are never judged
+  # foreign, an explicit provider session (SYN_TMUX_PROVIDER=1) keeps its
+  # handed-down identity, and without /proc the answer is "not foreign"
+  # (fail-open to the old behaviour).
+  local suffix
+  case "$1" in
+    */terminal-*) suffix="${{1##*/terminal-}}" ;;
+    *) return 1 ;;
+  esac
+  case "$suffix" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "${{SYN_TMUX_PROVIDER:-0}}" = "1" ] && return 1
+  [ -d /proc ] || return 1
+  __synapse_pid_in_session_lineage "$suffix" && return 1
+  return 0
+}}
+
 __synapse_auto_arm() {{
   [ "${{SYNAPSE_AUTO_CONNECT:-1}}" = "0" ] && return 0
   command -v synapse >/dev/null 2>&1 || return 0
@@ -490,9 +590,24 @@ __synapse_auto_arm() {{
   fi
 
   terminal_id="${{SYN_AGENT_ID:-${{SYNAPSE_TERMINAL_ID:-$$}}}}"
-  if [ -n "${{SYN_IDENTITY:-}}" ] && [ "${{__SYNAPSE_AUTO_IDENTITY:-}}" != "$SYN_IDENTITY" ]; then
+  # A numeric terminal id inherited from outside this session's lineage must
+  # never name this session: it is how one shell's exported id resurrects the
+  # shared name on every later prompt, even after a re-mint.
+  case "$terminal_id" in
+    ''|*[!0-9]*) : ;;
+    *) if [ -d /proc ] && [ "${{SYN_TMUX_PROVIDER:-0}}" != "1" ] \\
+          && ! __synapse_pid_in_session_lineage "$terminal_id"; then
+         terminal_id=$$
+       fi ;;
+  esac
+  if [ -n "${{SYN_IDENTITY:-}}" ] && [ "${{__SYNAPSE_AUTO_IDENTITY:-}}" != "$SYN_IDENTITY" ] \\
+      && ! __synapse_identity_is_foreign_auto "$SYN_IDENTITY"; then
     identity="$SYN_IDENTITY"
   else
+    if [ -n "${{SYN_IDENTITY:-}}" ] && __synapse_identity_is_foreign_auto "$SYN_IDENTITY"; then
+      printf 'synapse: %s was minted outside this session; re-minting.\\n' \\
+        "$SYN_IDENTITY" >&2
+    fi
     identity="$project/${{SYN_AGENT_TYPE:-terminal}}-$terminal_id"
     export SYN_IDENTITY="$identity"
     export __SYNAPSE_AUTO_IDENTITY="$identity"

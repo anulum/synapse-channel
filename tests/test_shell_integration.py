@@ -602,3 +602,132 @@ def test_shell_hook_cli_emits_fish_that_parses() -> None:
 def test_render_shell_hook_rejects_an_unsupported_shell() -> None:
     with pytest.raises(ValueError, match="supports bash, fish, and zsh"):
         render_shell_hook(shell="powershell")
+
+
+# --- delivery-integrity DEL-INT-C: distinct session identities by default ----
+#
+# The 2026-07-16 incident shape: environment layering (tmux server env,
+# systemd user env) carried another session's auto identity into new shells
+# while the mint-guard variable diverged, so the hook read it as a manual
+# identity and every seat on the workstation coordinated as one shared
+# user/terminal-<id>. A default-shape auto identity whose pid is outside this
+# shell's lineage must be re-minted; manual, provider, and own-lineage
+# identities stay untouched.
+
+
+def _hook_script(tmp_path: Path, hook_path: Path, *exports: str) -> str:
+    """Compose a hermetic bash script that sources the hook and reports identity."""
+    bindir = _write_fake_synapse(tmp_path)
+    lines = [
+        f"export PATH={shlex.quote(str(bindir))}:$PATH",
+        f"export XDG_RUNTIME_DIR={shlex.quote(str(tmp_path / 'run'))}",
+        f"export SYNAPSE_RECORD={shlex.quote(str(tmp_path / 'record'))}",
+        *exports,
+        f"source {shlex.quote(str(hook_path))}",
+        "__synapse_auto_arm",
+        'printf "%s %s\\n" "$$" "$SYN_IDENTITY"',
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def test_bash_hook_remints_a_foreign_auto_identity(tmp_path: Path) -> None:
+    hook_path = tmp_path / "hook.sh"
+    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
+    proc = _run_bash(
+        _hook_script(
+            tmp_path,
+            hook_path,
+            "export SYN_PROJECT=user SYN_IDENTITY=user/terminal-99999999",
+            "export __SYNAPSE_AUTO_PROJECT=user __SYNAPSE_AUTO_IDENTITY=user/terminal-88888888",
+        )
+    )
+    assert proc.returncode == 0, proc.stderr
+    shell_pid, identity = proc.stdout.strip().split()
+    assert identity == f"user/terminal-{shell_pid}"
+    assert "re-minting" in proc.stderr
+
+
+def test_bash_hook_remints_when_the_foreign_terminal_id_is_also_inherited(
+    tmp_path: Path,
+) -> None:
+    # The foreign identity usually rides in with the exported numeric terminal
+    # id that minted it; trusting that id would re-create the same shared name.
+    hook_path = tmp_path / "hook.sh"
+    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
+    proc = _run_bash(
+        _hook_script(
+            tmp_path,
+            hook_path,
+            "export SYN_PROJECT=user SYN_IDENTITY=user/terminal-99999999",
+            "export __SYNAPSE_AUTO_IDENTITY=user/terminal-88888888",
+            "export SYNAPSE_TERMINAL_ID=99999999",
+        )
+    )
+    assert proc.returncode == 0, proc.stderr
+    shell_pid, identity = proc.stdout.strip().split()
+    assert identity == f"user/terminal-{shell_pid}"
+
+
+def test_bash_hook_keeps_a_manual_non_terminal_identity(tmp_path: Path) -> None:
+    hook_path = tmp_path / "hook.sh"
+    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
+    proc = _run_bash(
+        _hook_script(
+            tmp_path,
+            hook_path,
+            "export SYN_PROJECT=SYNAPSE-CHANNEL SYN_IDENTITY=SYNAPSE-CHANNEL/claude-a7c2",
+            "export __SYNAPSE_AUTO_IDENTITY=user/terminal-88888888",
+        )
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip().split()[1] == "SYNAPSE-CHANNEL/claude-a7c2"
+    assert "re-minting" not in proc.stderr
+
+
+def test_bash_hook_keeps_an_auto_identity_minted_by_a_live_ancestor(tmp_path: Path) -> None:
+    # A nested shell under the minting shell shares its seat deliberately:
+    # the embedded pid IS an ancestor, so the identity is not foreign.
+    bindir = _write_fake_synapse(tmp_path)
+    hook_path = tmp_path / "hook.sh"
+    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
+    inner = (
+        f'source {shlex.quote(str(hook_path))}; __synapse_auto_arm; printf "%s\\n" "$SYN_IDENTITY"'
+    )
+    script = (
+        f"export PATH={shlex.quote(str(bindir))}:$PATH\n"
+        f"export XDG_RUNTIME_DIR={shlex.quote(str(tmp_path / 'run'))}\n"
+        f"export SYNAPSE_RECORD={shlex.quote(str(tmp_path / 'record'))}\n"
+        'export SYN_PROJECT=user SYN_IDENTITY="user/terminal-$$"\n'
+        "export __SYNAPSE_AUTO_IDENTITY=user/terminal-88888888\n"
+        'printf "%s\\n" "$$"\n'
+        f"bash --noprofile --norc -c {shlex.quote(inner)}\n"
+    )
+    proc = _run_bash(script)
+    assert proc.returncode == 0, proc.stderr
+    outer_pid, identity = proc.stdout.strip().splitlines()
+    assert identity == f"user/terminal-{outer_pid}"
+    assert "re-minting" not in proc.stderr
+
+
+def test_bash_hook_provider_session_keeps_a_handed_down_identity(tmp_path: Path) -> None:
+    hook_path = tmp_path / "hook.sh"
+    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
+    proc = _run_bash(
+        _hook_script(
+            tmp_path,
+            hook_path,
+            "export SYN_PROJECT=user SYN_IDENTITY=user/terminal-99999999",
+            "export __SYNAPSE_AUTO_IDENTITY=user/terminal-88888888",
+            "export SYN_TMUX_PROVIDER=1",
+        )
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip().split()[1] == "user/terminal-99999999"
+    assert "re-minting" not in proc.stderr
+
+
+def test_fish_hook_carries_the_foreign_auto_identity_guard() -> None:
+    fish = render_shell_hook(shell="fish", provider_commands=())
+    assert "__synapse_identity_is_foreign_auto" in fish
+    assert "__synapse_pid_in_session_lineage" in fish
+    assert "re-minting" in fish
