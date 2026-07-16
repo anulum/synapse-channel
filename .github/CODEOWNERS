@@ -1,16 +1,16 @@
 # SYNAPSE CHANNEL — Code Ownership
-# © 1998-2026 Miroslav Sotek. All rights reserved.
+# © 1998-2026 Miroslav Šotek. All rights reserved.
 
 # Default: all files require maintainer review
 * @anulum/maintainers
 
 # Coordination core: state machine, wire protocol, hub
-src/synapse_channel/hub.py @anulum/maintainers
-src/synapse_channel/protocol.py @anulum/maintainers
-src/synapse_channel/state.py @anulum/maintainers
+src/synapse_channel/core/hub.py @anulum/maintainers
+src/synapse_channel/core/protocol.py @anulum/maintainers
+src/synapse_channel/core/state.py @anulum/maintainers
 
 # Security-sensitive: connect authentication
-src/synapse_channel/auth.py @anulum/maintainers
+src/synapse_channel/core/auth.py @anulum/maintainers
 
 # CI/CD and release
 .github/ @anulum/maintainers
