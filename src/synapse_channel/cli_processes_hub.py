@@ -143,6 +143,38 @@ def _resolve_file_backed_secrets(args: argparse.Namespace) -> None:
         args.message_auth_key = [*args.message_auth_key, *entries]
 
 
+def _hub_multi_seat_intent(args: argparse.Namespace) -> bool:
+    """Return whether startup args declare multi-seat / multi-party intent.
+
+    Runtime seat count is not known before clients connect, so multi-seat is an
+    *intent* signal: explicit ``--expect-multi-seat``, multi-seat security
+    profiles, identity/role material, or private directed routing.
+    """
+    if bool(getattr(args, "expect_multi_seat", False)):
+        return True
+    if bool(getattr(args, "team_secure", False) or getattr(args, "secure", False)):
+        return True
+    if bool(
+        getattr(args, "require_role_claim", False)
+        or getattr(args, "require_identity_binding", False)
+        or getattr(args, "private_directed_messages", False)
+    ):
+        return True
+    identity_trust = str(getattr(args, "identity_trust", "") or "").strip()
+    role_grants = str(getattr(args, "role_grants", "") or "").strip()
+    return bool(identity_trust or role_grants)
+
+
+def _hub_bridge_exposed(args: argparse.Namespace) -> bool:
+    """Return whether the operator declared an A2A/MCP bridge as exposed.
+
+    Bridges run as separate processes today; the truthful signal is the explicit
+    ``--bridge-exposed`` startup flag (operators who front a2a-serve/mcp against
+    this hub must set it). No silent false positive on pure loopback single-seat.
+    """
+    return bool(getattr(args, "bridge_exposed", False))
+
+
 def _apply_auto_rate_policy(args: argparse.Namespace) -> None:
     """Fill disabled flood limits when the hub starts in an exposed posture (REV-SEC-06).
 
@@ -152,19 +184,12 @@ def _apply_auto_rate_policy(args: argparse.Namespace) -> None:
     limits). Local-first loopback single-seat hubs stay unbounded.
     """
     token_configured = bool(args.token or getattr(args, "token_file", None))
-    # A2A/MCP bridges are separate processes today; leave false until the hub
-    # knowingly exposes a co-located bridge flag. Multi-seat is inferred from the
-    # trust-profile / role-claim posture operators already use for teams.
-    multi_seat = bool(
-        getattr(args, "team_secure", False)
-        or getattr(args, "secure", False)
-        or getattr(args, "require_role_claim", False)
-        or getattr(args, "require_identity_binding", False)
-    )
+    multi_seat = _hub_multi_seat_intent(args)
+    bridge_exposed = _hub_bridge_exposed(args)
     posture = HubExposurePosture(
         off_loopback_bind=not is_loopback_bind(args.host),
         token_configured=token_configured,
-        bridge_exposed=False,
+        bridge_exposed=bridge_exposed,
         multi_seat=multi_seat,
     )
     operator = RateLimits(

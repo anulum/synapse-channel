@@ -236,3 +236,20 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
         "retain every message, so a feeds-backed dashboard and the federation follower keep "
         "full visibility.",
     )
+    hub.add_argument(
+        "--bridge-exposed",
+        action="store_true",
+        help="Declare that an A2A and/or MCP bridge is knowingly reachable alongside "
+        "this hub (separate process or co-located). Off by default. When set, flood "
+        "auto-enable (REV-SEC-06) treats the hub as bridge-exposed even on loopback, "
+        "because bridge traffic can flood the hub without a connect token. Operators "
+        "running a2a-serve/mcp against this hub should pass this flag.",
+    )
+    hub.add_argument(
+        "--expect-multi-seat",
+        action="store_true",
+        help="Declare that more than one agent seat is expected on this hub. Off by "
+        "default. Flood auto-enable also infers multi-seat from team-secure/secure, "
+        "identity-trust, role-grants, private-directed-messages, and role/identity "
+        "require flags; use this when those are absent but multi-seat is intended.",
+    )

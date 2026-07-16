@@ -130,3 +130,55 @@ def test_cmd_hub_wires_auto_rate_before_limiters(
     assert captured["kwargs"]["max_connections_per_host"] == SECURE_MAX_CONNECTIONS_PER_HOST
     err = capsys.readouterr().err
     assert "flood auto-enable" in err
+
+
+def test_apply_auto_rate_policy_expect_multi_seat_on_loopback_fills() -> None:
+    args = _hub_ns(host="127.0.0.1", rate=0.0, burst=0.0, host_rate=0.0, host_burst=0.0)
+    args.max_connections_per_host = 0
+    args.token = None
+    args.token_file = None
+    args.secure = False
+    args.team_secure = False
+    args.expect_multi_seat = True
+    args.bridge_exposed = False
+    _apply_auto_rate_policy(args)
+    assert args.rate == SECURE_AGENT_RATE
+    assert args.max_connections_per_host == SECURE_MAX_CONNECTIONS_PER_HOST
+
+
+def test_apply_auto_rate_policy_identity_trust_implies_multi_seat() -> None:
+    args = _hub_ns(host="127.0.0.1", rate=0.0, burst=0.0, host_rate=0.0, host_burst=0.0)
+    args.max_connections_per_host = 0
+    args.token = None
+    args.secure = False
+    args.team_secure = False
+    args.identity_trust = "/tmp/trust.json"
+    args.expect_multi_seat = False
+    args.bridge_exposed = False
+    _apply_auto_rate_policy(args)
+    assert args.rate == SECURE_AGENT_RATE
+
+
+def test_apply_auto_rate_policy_bridge_exposed_on_loopback_fills() -> None:
+    args = _hub_ns(host="127.0.0.1", rate=0.0, burst=0.0, host_rate=0.0, host_burst=0.0)
+    args.max_connections_per_host = 0
+    args.token = None
+    args.secure = False
+    args.team_secure = False
+    args.expect_multi_seat = False
+    args.bridge_exposed = True
+    _apply_auto_rate_policy(args)
+    assert args.rate == SECURE_AGENT_RATE
+    assert args.max_connections_per_host == SECURE_MAX_CONNECTIONS_PER_HOST
+
+
+def test_apply_auto_rate_policy_private_directed_implies_multi_seat() -> None:
+    args = _hub_ns(host="127.0.0.1", rate=0.0, burst=0.0, host_rate=0.0, host_burst=0.0)
+    args.max_connections_per_host = 0
+    args.token = None
+    args.secure = False
+    args.private_directed_messages = True
+    args.bridge_exposed = False
+    args.expect_multi_seat = False
+    _apply_auto_rate_policy(args)
+    assert args.rate == SECURE_AGENT_RATE
