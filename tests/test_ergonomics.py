@@ -97,6 +97,22 @@ def test_disagreeing_syn_project_and_identity_drops_the_borrowed_identity() -> N
     assert ident.ignored_ambient == "user/terminal-14753"
 
 
+def test_foreign_identity_over_the_contested_user_project_is_implausible() -> None:
+    # BUG-1: a shell keeps the ambient SYN_PROJECT=user while a command prefixes a
+    # real seat's SYN_IDENTITY. The disagreeing identity is dropped (as always), but
+    # the "user" fallback must now be flagged implausible so the caller refuses
+    # instead of silently coordinating as the shared "user" name.
+    ident = resolve_identity(
+        env={"SYN_PROJECT": "user", "SYN_IDENTITY": "SCPN-CONTROL/claude-c8f7"},
+        cwd_basename="anulum",
+        home_basename="anulum",
+    )
+    assert ident.project == "user"
+    assert ident.identity == "user"  # the foreign seat is never borrowed
+    assert ident.ignored_ambient == "SCPN-CONTROL/claude-c8f7"
+    assert ident.plausible is False
+
+
 def test_explicit_project_flag_also_drops_a_disagreeing_ambient_identity() -> None:
     # An explicit --project overrides the project; a disagreeing ambient identity is
     # likewise not trusted verbatim, so the identity stays consistent with the flag.
@@ -144,6 +160,15 @@ def test_is_plausible_project() -> None:
     assert is_plausible_project("anulum", home_basename="anulum") is False
     assert is_plausible_project("tmp", home_basename="anulum") is False
     assert is_plausible_project("", home_basename="anulum") is False
+
+
+def test_generic_account_names_are_implausible() -> None:
+    # The contested ambient identity of the 2026-07-10 incident coordinated as the
+    # shared "user" name; that and its account-name siblings are never a real repo,
+    # so a fallback to any of them must be flagged so callers refuse rather than
+    # silently coordinate as it.
+    for name in ("user", "users", "admin", "nobody", "guest"):
+        assert is_plausible_project(name, home_basename="anulum") is False
 
 
 # --- argv builders -----------------------------------------------------------
@@ -1238,6 +1263,36 @@ def test_poisoned_shell_with_an_accidental_fallback_refuses(
     err = capsys.readouterr().err
     assert "REFUSED" in err
     assert "user/terminal-14753" in err
+
+
+def test_foreign_identity_over_the_contested_user_project_refuses(
+    captured_cli: CapturedCalls, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """BUG-1: a foreign SYN_IDENTITY atop the contested SYN_PROJECT=user refuses.
+
+    The shell keeps ambient ``SYN_PROJECT=user`` while a command prefixes a real
+    seat's ``SYN_IDENTITY``. The disagreeing identity is dropped, and because the
+    ``user`` fallback is now implausible the verb refuses rather than sending as
+    the shared ``user`` name — the misattribution that corrupted a directed
+    release verdict's provenance.
+    """
+    assert (
+        ergonomics.main(
+            ["say", "CEO", "release APPROVE"],
+            env={
+                "HOME": "/home/u",
+                "SYN_PROJECT": "user",
+                "SYN_IDENTITY": "SCPN-CONTROL/claude-c8f7",
+            },
+            cwd_basename="anulum",
+            dispatcher=_dispatch(captured_cli),
+        )
+        == 2
+    )
+    assert captured_cli == []  # the message never goes out as "user"
+    err = capsys.readouterr().err
+    assert "REFUSED" in err
+    assert "SCPN-CONTROL/claude-c8f7" in err
 
 
 def test_syn_name_reports_the_ignored_ambient_identity(

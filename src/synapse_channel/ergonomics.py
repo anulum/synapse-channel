@@ -69,10 +69,38 @@ DEFAULT_AGENT_TYPE = "claude"
 """The agent ``type`` used to build a multi-agent identity when ``--id`` is given."""
 
 IMPLAUSIBLE_PROJECTS = frozenset(
-    {"", "tmp", "root", "home", "usr", "var", "bin", "etc", "opt", "mnt", "media", "dev", "srv"}
+    {
+        # System-directory basenames: a project equal to one of these almost
+        # always means the identity was derived from a path by accident.
+        "",
+        "tmp",
+        "root",
+        "home",
+        "usr",
+        "var",
+        "bin",
+        "etc",
+        "opt",
+        "mnt",
+        "media",
+        "dev",
+        "srv",
+        # Generic account/placeholder names that are never a real repository.
+        # ``user`` is the contested ambient identity of the 2026-07-10
+        # directed-delivery incident: without this, a foreign ``$SYN_IDENTITY``
+        # riding atop ``$SYN_PROJECT=user`` was judged plausible and coordinated
+        # as the shared ``user`` name instead of refusing, misattributing a
+        # directed message to a seat that never sent it.
+        "user",
+        "users",
+        "admin",
+        "nobody",
+        "guest",
+    }
 )
 """Resolved project names that almost certainly mean an identity was derived by
-accident (a system directory or nothing) rather than a real repository."""
+accident (a system directory, a generic account name, or nothing) rather than a
+real repository."""
 
 
 def syn_home(env: Mapping[str, str]) -> Path:
