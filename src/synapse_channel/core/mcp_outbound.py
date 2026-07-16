@@ -71,8 +71,10 @@ class McpToolError(SynapseError, RuntimeError):
     code = "mcp_tool"
 
 
-class McpDependencyError(RuntimeError):
+class McpDependencyError(SynapseError, RuntimeError):
     """Raised when the optional outbound MCP dependency is unavailable."""
+
+    code = "mcp_dependency"
 
 
 def load_outbound_config(

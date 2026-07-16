@@ -197,6 +197,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     ),
     "McpAccessError": ("synapse_channel.core.mcp_outbound", "mcp_access", PermissionError),
     "McpConfigError": ("synapse_channel.core.mcp_outbound", "mcp_config", ValueError),
+    "McpDependencyError": (
+        "synapse_channel.core.mcp_outbound",
+        "mcp_dependency",
+        RuntimeError,
+    ),
     "McpGitClaimError": ("synapse_channel.mcp.git_claim", "mcp_git_claim", RuntimeError),
     "McpToolError": ("synapse_channel.core.mcp_outbound", "mcp_tool", RuntimeError),
     "MemoryRecallInputError": (

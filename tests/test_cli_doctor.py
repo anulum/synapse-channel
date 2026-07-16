@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -209,7 +210,9 @@ async def test_diagnose_reports_outbound_mcp_config_trust(tmp_path: Path) -> Non
         return []
 
     executable = tmp_path / "mcp-server"
-    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    # The tightened launch policy rejects shebang scripts outright, so the
+    # trust fixture must be a native executable (the stack's own pattern).
+    shutil.copy2("/bin/true", executable)
     executable.chmod(0o700)
     config = tmp_path / "mcp.json"
     config.write_text(

@@ -245,19 +245,12 @@ synapse quickstart-coding
 `synapse doctor` reports local setup issues such as identity, hub exposure,
 root-filesystem pressure, and missing waiters. A brand-new machine may warn that
 no hub or waiter is running; that is expected before service setup. `synapse
-demo` runs the five-minute Claude/Codex golden path against a disposable real
-Git repository: separate claims, a deliberately refused conflict, fail-closed
-mutation denial, atomic handoff, observed verification, and receipt-backed
-release. It writes `golden-demo.json` plus a static dashboard that shows the
-whole story, and succeeds when it prints:
+demo` starts its own local hub, drives a planner/worker coordination flow, and
+succeeds when it prints:
 
 ```text
 success: coordination demo completed
 ```
-
-Choose a persistent evidence directory with
-`synapse demo --output ./synapse-golden-demo`; without `--output`, the command
-creates a temporary output directory and prints its path.
 
 `synapse quickstart-coding` creates a temporary coding-fleet workspace, runs the
 same no-collision coding demo used by generated workspaces, removes the temporary
@@ -402,7 +395,7 @@ synapse resource-bids BUILD --resource-kind gpu      # rank live resource offers
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1  # emit A2A Agent Card JSON
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877             # run the HTTP+JSON A2A bridge
 synapse doctor                                       # check for common misconfigs (identity, exposure, hub, waiter)
-synapse demo --output ./synapse-golden-demo          # claim → conflict refusal → handoff → verified receipt + dashboard
+synapse demo                                         # installed self-check: local hub + planner/worker flow
 synapse quickstart-coding                            # create a temporary coding fleet workspace and run it
 synapse new coding-fleet ./demo-fleet                # scaffold a runnable two-agent coding demo workspace
 synapse hub --host 0.0.0.0 --token s3cret            # require a shared secret when binding off-loopback
@@ -1408,11 +1401,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.8 |
 | Public API exports | 70 |
-| Package modules | 469 |
-| Classes | 657 |
+| Package modules | 474 |
+| Classes | 661 |
 | Wire message types | 77 |
 | CLI subcommands | 179 |
-| Test functions | 7827 |
+| Test functions | 7895 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 57 |
 | GitHub Actions workflows | 21 |
