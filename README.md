@@ -334,13 +334,16 @@ synapse team
 Then, from another terminal, watch the channel or send a message:
 
 ```bash
-synapse listen --name USER
-synapse send --name USER --target FAST "what is the status of TASK-1?"
+synapse listen --name USER                                 # terminal A: watch the channel as USER
+synapse send --target FAST "what is the status of TASK-1?"  # terminal B: one-shot, unique ephemeral sender
 synapse send --require-recipient --target FAST "ping"  # also print the positive receipt
 ```
 
-One-shot sends avoid the common waiter-name collision: `synapse send --name
-api-dev-rx ...` sends as `api-dev`, leaving the persistent `api-dev-rx` wake
+A `send` without `--name` uses a unique ephemeral sender, so a one-shot send
+never trips the hub's one-owner-per-name rule against a listener you already
+have connected under the same name. One-shot sends also avoid the waiter-name
+collision: `synapse send --name api-dev-rx ...` sends as `api-dev`, leaving the
+persistent `api-dev-rx` wake
 socket connected. Directed sends request a private receipt by default and exit
 non-zero when no consume-live recipient matches — including when a stale socket
 is still connected but has neither a recent reaction nor a live waiter. The
@@ -1405,7 +1408,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 665 |
 | Wire message types | 77 |
 | CLI subcommands | 179 |
-| Test functions | 7918 |
+| Test functions | 7919 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 57 |
 | GitHub Actions workflows | 21 |

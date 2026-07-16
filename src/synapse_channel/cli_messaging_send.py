@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import os
 from typing import Any
 
 from synapse_channel.cli_messaging_types import AgentFactory
@@ -207,12 +208,23 @@ async def _wait_for_delivery_receipt(
     return None
 
 
+def ephemeral_send_name() -> str:
+    """Return a unique one-shot sender name for a ``send`` without ``--name``.
+
+    A ``send`` is a short-lived one-shot, so it needs no persistent identity. The
+    process id is unique among the live send processes that could run at once, so
+    the sender never collides with a listener (or another send) that the hub has
+    already bound under the same name.
+    """
+    return f"send-{os.getpid()}"
+
+
 def _cmd_send(args: argparse.Namespace) -> int:
     """Dispatch the ``send`` subcommand."""
     return asyncio.run(
         _send(
             uri=args.uri,
-            name=args.name,
+            name=args.name or ephemeral_send_name(),
             target=args.target,
             message=args.message,
             wait_seconds=args.wait_seconds,

@@ -22,7 +22,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     """Register the ``send``, ``wait``, and ``listen`` subparsers."""
     send = subparsers.add_parser("send", help="Send one message and optionally await replies.")
     send.add_argument("--uri", default=default_hub_uri())
-    send.add_argument("--name", default="USER")
+    send.add_argument(
+        "--name",
+        default=None,
+        help=(
+            "Sender identity. A one-shot send defaults to a unique ephemeral name so it "
+            "never collides with a listener of the same name (the hub allows one owner per name)."
+        ),
+    )
     send.add_argument("--target", default="all")
     send.add_argument(
         "--channel",

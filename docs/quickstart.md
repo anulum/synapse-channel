@@ -226,8 +226,8 @@ synapse worker --name OFFLINE --provider rule # no network, canned replies
 From another terminal:
 
 ```bash
-synapse listen --name USER                    # stream messages
-synapse send --name USER --target FAST "status of TASK-1?"
+synapse listen --name USER                    # terminal A: stream messages as USER
+synapse send --target FAST "status of TASK-1?"  # terminal B: one-shot, unique ephemeral sender
 synapse board                                 # the shared task/progress plan
 synapse manifest                              # advertised agent capabilities
 ```
@@ -241,7 +241,7 @@ hub — a remote coordinator, or a second local hub on another port — set
 ```bash
 export SYNAPSE_URI=ws://coordinator.internal:8876
 synapse who                                   # now queries the remote hub
-synapse send --name USER --target FAST "ping" # so does every other command
+synapse send --target FAST "ping"             # so does every other command
 ```
 
 An explicit `--uri` on a single command still overrides the environment for that

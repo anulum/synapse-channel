@@ -49,7 +49,10 @@ class TestSendParser:
         assert args.func is _cmd_send
         assert args.message == "hello"
         assert args.uri == default_hub_uri()
-        assert args.name == "USER"
+        # send must NOT default to the literal "USER": a quickstart terminal that
+        # listens as USER and a send that also claims USER trip the hub's
+        # one-owner-per-name rule. A None default resolves to a unique ephemeral.
+        assert args.name is None
         assert args.target == "all"
         assert args.channel == ""
         assert args.wait_seconds == pytest.approx(2.0)
@@ -61,6 +64,17 @@ class TestSendParser:
         assert args.encrypt_recipients is None
         assert args.token is None
         assert args.ready_timeout == pytest.approx(5.0)
+
+    def test_no_name_resolves_to_a_unique_ephemeral_sender(self) -> None:
+        # A bare `send` resolves its None name to a unique ephemeral sender that
+        # is stable within the process, carries the send prefix, and is never the
+        # literal "USER" that would collide with a listener of that name.
+        from synapse_channel.cli_messaging_send import ephemeral_send_name
+
+        name = ephemeral_send_name()
+        assert name != "USER"
+        assert name.startswith("send-")
+        assert name == ephemeral_send_name()
 
     def test_flags_types_and_appended_recipients(self) -> None:
         args = _parser().parse_args(
