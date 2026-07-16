@@ -164,7 +164,9 @@ def test_edit_and_multiedit_aliases_parse() -> None:
         assert isinstance(request, MutationRequest)
         assert request.file_paths == (Path("/tmp/repo/src/a.py"),)
         assert request.allow_semantic_source is True
-    assert parse_hook_request(_event(tool="Write")).allow_semantic_source is False
+    write_request = parse_hook_request(_event(tool="Write"))
+    assert isinstance(write_request, MutationRequest)
+    assert write_request.allow_semantic_source is False
 
 
 def test_target_file_key_is_accepted() -> None:
