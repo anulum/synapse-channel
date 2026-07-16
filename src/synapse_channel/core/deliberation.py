@@ -39,6 +39,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.receipt_signing import (
     MerkleSignatureCheck,
     ReceiptSigningKey,
@@ -62,8 +63,10 @@ LICENSE_TAGS: frozenset[str] = frozenset({"oss-ok", "customer-isolated", "intern
 RETENTION_CLASSES: frozenset[str] = frozenset({"short", "standard", "long"})
 
 
-class DeliberationError(ValueError):
+class DeliberationError(SynapseError, ValueError):
     """Raised when a deliberation result or export package is malformed."""
+
+    code = "deliberation"
 
 
 @dataclass(frozen=True)
@@ -343,6 +346,91 @@ def build_export_package(
     )
 
 
+def _require_str(data: Mapping[str, Any], key: str) -> str:
+    """Return ``data[key]`` as a string, raising when absent or the wrong type."""
+    value = data.get(key)
+    if not isinstance(value, str):
+        raise DeliberationError(f"field {key!r} must be a string")
+    return value
+
+
+def _optional_str(data: Mapping[str, Any], key: str, default: str = "") -> str:
+    """Return ``data[key]`` as a string, or ``default`` when absent."""
+    value = data.get(key, default)
+    if not isinstance(value, str):
+        raise DeliberationError(f"field {key!r} must be a string")
+    return value
+
+
+def _str_tuple(data: Mapping[str, Any], key: str) -> tuple[str, ...]:
+    """Return ``data[key]`` as a tuple of strings, or empty when absent."""
+    value = data.get(key, [])
+    if not isinstance(value, (list, tuple)) or not all(isinstance(item, str) for item in value):
+        raise DeliberationError(f"field {key!r} must be a list of strings")
+    return tuple(value)
+
+
+def _gate_checks(data: Mapping[str, Any]) -> tuple[GateCheck, ...]:
+    """Return the ``gate_checks`` list parsed into :class:`GateCheck` values."""
+    raw = data.get("gate_checks", [])
+    if not isinstance(raw, (list, tuple)):
+        raise DeliberationError("field 'gate_checks' must be a list of gate objects")
+    checks: list[GateCheck] = []
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            raise DeliberationError("each gate_check must be an object with gate/status")
+        gate = entry.get("gate")
+        status = entry.get("status")
+        evidence = entry.get("evidence", "")
+        if (
+            not isinstance(gate, str)
+            or not isinstance(status, str)
+            or not isinstance(evidence, str)
+        ):
+            raise DeliberationError("gate_check gate/status/evidence must be strings")
+        checks.append(GateCheck(gate=gate, status=status, evidence=evidence))
+    return tuple(checks)
+
+
+def export_package_from_mapping(data: Mapping[str, Any]) -> ExportPackage:
+    """Parse a JSON-loaded mapping into a validated :class:`ExportPackage`.
+
+    The reusable loader shared by the ``synapse deliberate`` CLI and any later
+    consumer (for example a Remanentia ingest path). Every field is type-checked;
+    a malformed or missing required field raises :class:`DeliberationError`, and
+    the schema's own validation (unknown pattern/tag, empty thesis, train-eligible
+    fail-closed) still applies through the dataclass constructors.
+    """
+    if not isinstance(data, Mapping):
+        raise DeliberationError("deliberation spec must be a JSON object")
+    train_eligible = data.get("train_eligible", False)
+    if not isinstance(train_eligible, bool):
+        raise DeliberationError("field 'train_eligible' must be a boolean")
+    result = DeliberationResult(
+        deliberation_id=_require_str(data, "deliberation_id"),
+        pattern=_require_str(data, "pattern"),
+        project=_require_str(data, "project"),
+        thesis=_require_str(data, "thesis"),
+        resolution=_require_str(data, "resolution"),
+        objections=_str_tuple(data, "objections"),
+        actions=_str_tuple(data, "actions"),
+        claims_needed=_str_tuple(data, "claims_needed"),
+        open_questions=_str_tuple(data, "open_questions"),
+        evidence_links=_str_tuple(data, "evidence_links"),
+        gate_checks=_gate_checks(data),
+        concluded_at=_optional_str(data, "concluded_at"),
+        source_clock=_optional_str(data, "source_clock"),
+    )
+    return build_export_package(
+        result,
+        license_tag=_require_str(data, "license_tag"),
+        retention_class=_require_str(data, "retention_class"),
+        train_eligible=train_eligible,
+        source=_optional_str(data, "source"),
+        redaction_status=_optional_str(data, "redaction_status", "none"),
+    )
+
+
 __all__ = [
     "AOT_COMMITMENT_SCHEME",
     "AOT_EXPORT_VERSION",
@@ -358,4 +446,5 @@ __all__ = [
     "seal_export_package",
     "verify_sealed_package",
     "build_export_package",
+    "export_package_from_mapping",
 ]

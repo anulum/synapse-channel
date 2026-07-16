@@ -46,14 +46,19 @@ def _result(**overrides: object) -> DeliberationResult:
     return DeliberationResult(**base)  # type: ignore[arg-type]
 
 
-def _package(result: DeliberationResult | None = None, **overrides: object) -> ExportPackage:
+def _package(**overrides: object) -> ExportPackage:
+    # ``result`` travels in the overrides bag so a dynamic ``**{field: value}``
+    # unpack cannot collide with a typed positional parameter under strict mypy.
+    result = overrides.pop("result", None)
+    if not isinstance(result, DeliberationResult):
+        result = _result()
     base: dict[str, object] = {
         "license_tag": "oss-ok",
         "retention_class": "standard",
         "source": ".coordination/…",
     }
     base.update(overrides)
-    return build_export_package(result or _result(), **base)  # type: ignore[arg-type]
+    return build_export_package(result, **base)  # type: ignore[arg-type]
 
 
 @pytest.fixture
@@ -124,8 +129,9 @@ class TestExportPackage:
         ],
     )
     def test_malformed_tags_are_refused(self, field: str, value: str, match: str) -> None:
+        overrides: dict[str, object] = {field: value}
         with pytest.raises(DeliberationError, match=match):
-            _package(**{field: value})
+            _package(**overrides)
 
     def test_train_eligible_fails_closed_without_passing_redaction(self) -> None:
         package = _package(train_eligible=True, redaction_status="none")
@@ -149,7 +155,7 @@ class TestContentCommitment:
 
     def test_commitment_changes_with_content(self) -> None:
         one = content_commitment(_package())
-        other = content_commitment(_package(_result(resolution="BLOCK")))
+        other = content_commitment(_package(result=_result(resolution="BLOCK")))
         assert one["root"] != other["root"]
 
     def test_commitment_declares_scheme_and_algorithm(self) -> None:

@@ -129,6 +129,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "dead_letter_forwarding_wire",
         ValueError,
     ),
+    "DeliberationError": (
+        "synapse_channel.core.deliberation",
+        "deliberation",
+        ValueError,
+    ),
     "FederationDoctorError": (
         "synapse_channel.cli_doctor_federation",
         "federation_doctor",
