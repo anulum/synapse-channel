@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import time
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 
@@ -764,6 +765,63 @@ async def test_wait_mailbox_resumes_from_the_persisted_cursor(tmp_path: Path) ->
         )
     store.close()
     assert second == 2
+
+
+async def test_wait_marks_an_era_old_replayed_directed_message_as_stale(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # DEL-INT-B (CEO-required regression, 2026-07-16 stale-mailbox incident):
+    # a replayed era-old directed message must be withheld or unambiguously
+    # marked stale — it must never present itself in the shape of a live wake.
+    # A directive sent 90 days ago replays to a fresh mailbox waiter (lost or
+    # absent cursor) and surfaces WITH the age marker.
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+        handle = await connect_agent("SENDER", uri)
+        try:
+            await handle.agent.send_message(
+                "chat",
+                target="BOB",
+                payload="upgrade synapse to 0.27.0",
+                timestamp=time.time() - 90 * 86400,
+            )
+        finally:
+            await close_agents(handle)
+        code = await cli_messaging._wait(
+            uri=uri,
+            name="BOB-rx",
+            for_name="BOB",
+            timeout=2.0,
+            directed_only=True,
+            mailbox=True,
+            mailbox_cursor_path=tmp_path / "cursor",
+        )
+    store.close()
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "[replayed 90d ago] SENDER: upgrade synapse to 0.27.0" in out
+
+
+async def test_wait_surfaces_a_fresh_directed_message_without_a_marker(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The counterpart guarantee: a genuinely live wake is not decorated, so
+    # the marker stays an unambiguous staleness signal.
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(uri=uri, name="BOB-rx", for_name="BOB", timeout=2.0)
+        )
+        try:
+            await _wait_for_presence(observer, "BOB-rx")
+            await _send_chat(uri, "A", "BOB", "fresh directive")
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "A: fresh directive" in out
+    assert "[replayed" not in out
 
 
 async def test_wait_persists_the_granted_lease_and_the_owner_re_arms_with_it(

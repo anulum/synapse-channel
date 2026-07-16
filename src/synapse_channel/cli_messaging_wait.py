@@ -37,6 +37,7 @@ from synapse_channel.waiter_identity import (
     waiter_name,
     waiter_owner,
 )
+from synapse_channel.wake_staleness import message_age_seconds, stale_marker
 
 WaitRunner = Callable[..., Coroutine[Any, Any, int]]
 AsyncRunner = Callable[[Coroutine[Any, Any, int]], int]
@@ -248,7 +249,11 @@ async def _wait(
             # frame while the persisted cursor advanced past all of them silently
             # lost the rest (the 2026-07-10 P0 drain swallowed a backlog this way).
             for message in to_surface:
-                print(terminal_chat_line(message.get("sender"), message.get("payload")))
+                # An era-old replayed directive must never present itself in
+                # the same shape as a live wake (the 2026-07-16 stale-mailbox
+                # incident); a stale line carries its age up front.
+                marker = stale_marker(message_age_seconds(message))
+                print(marker + terminal_chat_line(message.get("sender"), message.get("payload")))
             surfaced_seq[0] = max(
                 (
                     seq
