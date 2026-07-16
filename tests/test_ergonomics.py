@@ -20,6 +20,7 @@ from synapse_channel import ergonomics
 from synapse_channel.ergonomics import (
     Identity,
     arm_argv,
+    ask_argv,
     board_argv,
     inbox_argv,
     is_plausible_project,
@@ -175,6 +176,61 @@ def test_arm_argv_broadcasts_drops_directed_only_and_keeps_extra() -> None:
     assert argv[-2:] == ["--timeout", "5"]
 
 
+# The 2026-07-16 delivery-integrity incident (DEL-INT-A): injecting the ambient
+# pair under an explicit pass-through --name cross-bound the waiter — it
+# connected under the explicit name while the argparse-surviving ambient --for
+# kept it waking on the shared ambient identity's messages, so a seat that
+# tried to peel off a shared user/terminal-<id> with `syn-wait --name` stayed
+# bound to it. An explicit binding must replace the ambient pair entirely.
+
+
+def test_arm_argv_explicit_name_suppresses_the_ambient_pair() -> None:
+    ambient = _ident(project="user", identity="user/terminal-14753")
+    argv = arm_argv(ambient, extra=["--name", "quantum/claude-7f3a"])
+    assert "user/terminal-14753" not in argv
+    assert "user/terminal-14753-rx" not in argv
+    assert argv == ["arm", "--directed-only", "--name", "quantum/claude-7f3a"]
+
+
+def test_arm_argv_explicit_waiter_name_wakes_for_its_owner() -> None:
+    argv = arm_argv(_ident(), extra=["--name", "quantum/claude-7f3a-rx"])
+    assert argv == [
+        "arm",
+        "--for",
+        "quantum/claude-7f3a",
+        "--directed-only",
+        "--name",
+        "quantum/claude-7f3a-rx",
+    ]
+
+
+def test_arm_argv_explicit_for_gets_its_own_sidecar() -> None:
+    argv = arm_argv(_ident(), extra=["--for", "quantum/claude-7f3a"])
+    assert argv == [
+        "arm",
+        "--name",
+        "quantum/claude-7f3a-rx",
+        "--directed-only",
+        "--for",
+        "quantum/claude-7f3a",
+    ]
+
+
+def test_arm_argv_explicit_name_and_for_pass_through_untouched() -> None:
+    argv = arm_argv(_ident(), extra=["--name", "a-rx", "--for", "b"])
+    assert argv == ["arm", "--directed-only", "--name", "a-rx", "--for", "b"]
+
+
+def test_arm_argv_equals_form_counts_as_explicit() -> None:
+    argv = arm_argv(_ident(), extra=["--name=quantum/claude-7f3a"])
+    assert argv == ["arm", "--directed-only", "--name=quantum/claude-7f3a"]
+
+
+def test_arm_argv_last_explicit_value_wins_the_composition() -> None:
+    argv = arm_argv(_ident(), extra=["--name", "first-rx", "--name", "second-rx"])
+    assert argv[:3] == ["arm", "--for", "second"]
+
+
 def test_say_argv_sends_as_the_full_identity_by_default() -> None:
     argv = say_argv(_ident(identity="SCPN-CONTROL/coordinator"), "REMANENTIA,CEO", "hello")
     assert argv == [
@@ -212,6 +268,31 @@ def test_ask_argv_waits_and_requires_recipient_by_default() -> None:
         "--require-recipient",
         "status?",
     ]
+
+
+def test_say_argv_explicit_passthrough_name_replaces_the_sender() -> None:
+    # DEL-INT-A: one --name in the final argv, the explicit one — the ambient
+    # sender must not ride along and rely on argparse last-wins ordering.
+    argv = say_argv(
+        _ident(project="user", identity="user/terminal-14753"),
+        "CEO",
+        "hello",
+        extra=["--name", "SYNAPSE-CHANNEL"],
+    )
+    assert argv.count("--name") == 1
+    assert "user/terminal-14753" not in argv
+    assert argv == ["send", "--target", "CEO", "--name", "SYNAPSE-CHANNEL", "hello"]
+
+
+def test_ask_argv_explicit_passthrough_name_replaces_the_sender() -> None:
+    argv = ask_argv(
+        _ident(project="user", identity="user/terminal-14753"),
+        "CEO",
+        "ready?",
+        extra=["--name", "SYNAPSE-CHANNEL"],
+    )
+    assert argv.count("--name") == 1
+    assert "user/terminal-14753" not in argv
 
 
 def test_ask_argv_can_skip_recipient_requirement_and_keep_extra() -> None:
@@ -356,6 +437,28 @@ def test_main_arm_builds_a_directed_only_waiter(captured_cli: CapturedCalls) -> 
         "SYNAPSE-CHANNEL",
         "--directed-only",
     ]
+
+
+def test_main_arm_explicit_name_under_ambient_env_binds_only_the_explicit_seat(
+    captured_cli: CapturedCalls,
+) -> None:
+    # DEL-INT-A end-to-end at the alias front door: a seat peeling off a shared
+    # ambient identity with an explicit --name must not stay bound to it.
+    rc = ergonomics.main(
+        ["arm", "--name", "quantum/claude-7f3a"],
+        env={
+            "HOME": "/home/u",
+            "SYN_PROJECT": "user",
+            "SYN_IDENTITY": "user/terminal-14753",
+        },
+        cwd_basename="anulum",
+        dispatcher=_dispatch(captured_cli),
+    )
+    assert rc == 0
+    dispatched = captured_cli[0]
+    assert "user/terminal-14753" not in dispatched
+    assert "user/terminal-14753-rx" not in dispatched
+    assert dispatched[-2:] == ["--name", "quantum/claude-7f3a"]
 
 
 def test_main_arm_broadcasts_and_passthrough(captured_cli: CapturedCalls) -> None:

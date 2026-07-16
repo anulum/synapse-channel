@@ -43,6 +43,7 @@ from synapse_channel import commit as commit_command
 from synapse_channel import ergonomics_inbox as _inbox
 from synapse_channel import locks as locks_command
 from synapse_channel import reap as reap_command
+from synapse_channel.waiter_identity import is_waiter, waiter_name, waiter_owner
 
 aliased_inbox_argv = _inbox.aliased_inbox_argv
 inbox_argv = _inbox.inbox_argv
@@ -228,11 +229,50 @@ def resolve_identity(
     )
 
 
+def _passthrough_flag_value(extra: Sequence[str], flag: str) -> str | None:
+    """Return the last value of ``flag`` in a pass-through argv, or ``None``.
+
+    Both the two-token (``--name X``) and the equals (``--name=X``) forms count,
+    matching how argparse would read the flag downstream.
+    """
+    value: str | None = None
+    items = list(extra)
+    for index, item in enumerate(items):
+        if item == flag and index + 1 < len(items):
+            value = items[index + 1]
+        elif item.startswith(f"{flag}="):
+            value = item[len(flag) + 1 :]
+    return value
+
+
 def arm_argv(
     identity: Identity, *, directed_only: bool = True, extra: Sequence[str] = ()
 ) -> list[str]:
-    """Build the ``synapse arm`` argv for ``syn arm`` (persistent, distinct ``-rx``)."""
-    argv = ["arm", "--name", identity.waiter_name, "--for", identity.identity]
+    """Build the ``synapse arm`` argv for ``syn arm`` (persistent, distinct ``-rx``).
+
+    An explicit ``--name``/``--for`` in ``extra`` replaces the ambient identity
+    pair ENTIRELY. Injecting the ambient pair under an explicit ``--name`` used
+    to cross-bind the waiter — it connected under the explicit name while the
+    argparse-surviving ambient ``--for`` kept it waking on the shared ambient
+    identity's messages — which is how seats that tried to peel off a shared
+    ``user/terminal-<id>`` name with ``syn-wait --name`` silently stayed bound
+    to it (the 2026-07-16 delivery-integrity incident). With one side explicit,
+    the other is derived from IT: a waiter connect name wakes for its owner, a
+    wake target gets its own ``-rx`` sidecar; with both explicit they pass
+    through untouched.
+    """
+    explicit_name = _passthrough_flag_value(extra, "--name")
+    explicit_for = _passthrough_flag_value(extra, "--for")
+    if explicit_name is not None or explicit_for is not None:
+        argv = ["arm"]
+        if explicit_name is None and explicit_for is not None:
+            argv.extend(["--name", waiter_name(explicit_for)])
+        elif explicit_for is None and explicit_name is not None and is_waiter(explicit_name):
+            argv.extend(["--for", waiter_owner(explicit_name)])
+        # A bare non-waiter --name needs nothing composed: the package arm
+        # derives for=<name> and connects as its distinct -rx sidecar.
+    else:
+        argv = ["arm", "--name", identity.waiter_name, "--for", identity.identity]
     if directed_only:
         argv.append("--directed-only")
     argv.extend(extra)
@@ -254,6 +294,10 @@ def say_argv(
     project-level sender when a deliberate shared project voice is wanted.
     """
     sender = identity.project if as_project else identity.identity
+    if _passthrough_flag_value(extra, "--name") is not None:
+        # An explicit pass-through sender replaces the ambient one outright —
+        # the doubled --name used to work only by argparse last-wins ordering.
+        return ["send", "--target", target, *extra, message]
     return ["send", "--name", sender, "--target", target, *extra, message]
 
 
@@ -275,17 +319,20 @@ def ask_argv(
 
     ``syn ask`` is a question-oriented wrapper: it sends as the resolved identity,
     waits for replies, and by default asks the hub to confirm that at least one
-    online recipient matched the target.
+    online recipient matched the target. An explicit pass-through ``--name``
+    replaces the ambient sender outright, as in :func:`say_argv`.
     """
-    argv = [
-        "send",
-        "--name",
-        identity.identity,
-        "--target",
-        target,
-        "--wait-seconds",
-        _format_seconds(float(wait_seconds)),
-    ]
+    argv = ["send"]
+    if _passthrough_flag_value(extra, "--name") is None:
+        argv.extend(["--name", identity.identity])
+    argv.extend(
+        [
+            "--target",
+            target,
+            "--wait-seconds",
+            _format_seconds(float(wait_seconds)),
+        ]
+    )
     if require_recipient:
         argv.append("--require-recipient")
     argv.extend(extra)
