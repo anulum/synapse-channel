@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import stat
 import tempfile
@@ -20,6 +21,8 @@ from synapse_channel.core.errors import SynapseError
 DEFAULT_FILE_LIMIT = 1_048_576
 _UNSAFE_WRITE_BITS = stat.S_IWGRP | stat.S_IWOTH
 
+_Fingerprint = tuple[int, int, int, int, int]
+
 
 class OpenCodeAdapterFileError(SynapseError, OSError):
     """An OpenCode adapter path is unsafe or changed concurrently."""
@@ -29,16 +32,24 @@ class OpenCodeAdapterFileError(SynapseError, OSError):
 
 @dataclass(frozen=True)
 class FileSnapshot:
-    """Text plus identity metadata used for compare-before-replace writes."""
+    """Text plus identity metadata used for compare-before-replace writes.
+
+    ``digest`` is the SHA-256 of the file's bytes at snapshot time (``None`` when
+    the file did not exist). The write and remove guards verify it in addition to
+    the stat ``fingerprint``, so a same-size rewrite that lands within one
+    ``mtime``/``ctime`` resolution tick — which stat metadata alone cannot
+    distinguish — is still refused.
+    """
 
     text: str
     existed: bool
-    fingerprint: tuple[int, int, int, int] | None
+    fingerprint: _Fingerprint | None
+    digest: bytes | None
     mode: int
 
 
-def _fingerprint(info: os.stat_result) -> tuple[int, int, int, int]:
-    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+def _fingerprint(info: os.stat_result) -> _Fingerprint:
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
 def _validate_file(path: Path, info: os.stat_result) -> None:
@@ -118,20 +129,16 @@ def _mkdir_private_parents(path: Path) -> None:
     _validate_directory_chain(path)
 
 
-def read_text_snapshot(path: Path, *, limit: int = DEFAULT_FILE_LIMIT) -> FileSnapshot:
-    """Read one owner-controlled regular UTF-8 file without following its leaf symlink."""
-    _validate_directory_chain(path.parent)
-    try:
-        before = path.lstat()
-    except FileNotFoundError:
-        return FileSnapshot("", False, None, 0o600)
-    _validate_file(path, before)
+def _read_validated(path: Path, limit: int) -> tuple[os.stat_result, bytes]:
+    """Open, validate, and read one owner-controlled file without following symlinks.
+
+    Opens ``path`` with ``O_NOFOLLOW``, validates the opened file, and reads its
+    bounded content, returning the post-open ``fstat`` and the raw bytes.
+    """
     descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     try:
-        after = os.fstat(descriptor)
-        _validate_file(path, after)
-        if _fingerprint(before) != _fingerprint(after):
-            raise OpenCodeAdapterFileError(f"OpenCode adapter path changed while opening: {path}")
+        info = os.fstat(descriptor)
+        _validate_file(path, info)
         chunks: list[bytes] = []
         total = 0
         while True:
@@ -146,11 +153,27 @@ def read_text_snapshot(path: Path, *, limit: int = DEFAULT_FILE_LIMIT) -> FileSn
                 )
     finally:
         os.close(descriptor)
+    return info, b"".join(chunks)
+
+
+def read_text_snapshot(path: Path, *, limit: int = DEFAULT_FILE_LIMIT) -> FileSnapshot:
+    """Read one owner-controlled regular UTF-8 file without following its leaf symlink."""
+    _validate_directory_chain(path.parent)
     try:
-        text = b"".join(chunks).decode("utf-8", errors="strict")
+        before = path.lstat()
+    except FileNotFoundError:
+        return FileSnapshot("", False, None, None, 0o600)
+    _validate_file(path, before)
+    after, data = _read_validated(path, limit)
+    if _fingerprint(before) != _fingerprint(after):
+        raise OpenCodeAdapterFileError(f"OpenCode adapter path changed while opening: {path}")
+    try:
+        text = data.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
         raise OpenCodeAdapterFileError(f"OpenCode adapter file is not UTF-8: {path}") from exc
-    return FileSnapshot(text, True, _fingerprint(after), stat.S_IMODE(after.st_mode))
+    return FileSnapshot(
+        text, True, _fingerprint(after), hashlib.sha256(data).digest(), stat.S_IMODE(after.st_mode)
+    )
 
 
 def _assert_current(path: Path, snapshot: FileSnapshot) -> None:
@@ -163,7 +186,14 @@ def _assert_current(path: Path, snapshot: FileSnapshot) -> None:
     if not snapshot.existed:
         raise OpenCodeAdapterFileError(f"OpenCode adapter path appeared concurrently: {path}")
     _validate_file(path, current)
-    if snapshot.fingerprint != _fingerprint(current):
+    # Re-read the content and compare its digest as well as the stat fingerprint:
+    # a same-size rewrite within one mtime/ctime tick leaves the fingerprint
+    # identical, so only the digest catches it.
+    info, data = _read_validated(path, DEFAULT_FILE_LIMIT)
+    if (
+        snapshot.fingerprint != _fingerprint(info)
+        or snapshot.digest != hashlib.sha256(data).digest()
+    ):
         raise OpenCodeAdapterFileError(f"OpenCode adapter path changed concurrently: {path}")
 
 

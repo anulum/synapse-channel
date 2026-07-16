@@ -46,6 +46,25 @@ def test_concurrent_change_is_refused(tmp_path: Path) -> None:
         write_text_snapshot(path, "three", snapshot)
 
 
+def test_same_size_rewrite_is_refused_even_when_stat_metadata_collides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Simulate a filesystem where a same-size rewrite lands in one mtime/ctime
+    # tick: freeze the stat fingerprint so it can no longer tell the two writes
+    # apart. Only the content digest can catch "one" -> "two" (same length),
+    # which is exactly the TOCTOU the reviewer reproduced on their hardware.
+    from synapse_channel import opencode_adapter_files as module
+
+    path = tmp_path / "config.json"
+    _write_private(path, "one")
+    frozen = module._fingerprint(os.stat(path))
+    monkeypatch.setattr(module, "_fingerprint", lambda _info: frozen)
+    snapshot = read_text_snapshot(path)
+    _write_private(path, "two")  # same size; metadata frozen-identical
+    with pytest.raises(OpenCodeAdapterFileError, match="changed concurrently"):
+        write_text_snapshot(path, "three", snapshot)
+
+
 def test_leaf_symlink_is_refused(tmp_path: Path) -> None:
     target = tmp_path / "target"
     _write_private(target, "x")

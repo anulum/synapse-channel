@@ -77,6 +77,7 @@ def test_read_regular_config_captures_text_mode_and_identity(tmp_path: Path) -> 
     assert snapshot.text == 'model = "x"\n'
     assert snapshot.existed is True
     assert snapshot.fingerprint is not None
+    assert snapshot.digest is not None
     assert snapshot.mode == 0o640
 
 
@@ -209,6 +210,25 @@ def test_write_refuses_changed_snapshot_without_overwriting(tmp_path: Path) -> N
     with pytest.raises(KimiHookConfigFileError, match="changed concurrently"):
         write_config_snapshot(path, 'model = "ours"\n', snapshot)
     assert path.read_text(encoding="utf-8") == 'model = "external"\n'
+
+
+def test_write_refuses_same_size_rewrite_when_stat_metadata_collides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A same-size in-place rewrite within one mtime/ctime tick leaves the stat
+    # fingerprint identical; freeze it so only the content digest can catch the
+    # change. Regression for the reviewer's TOCTOU finding.
+    from synapse_channel import kimi_hook_config_file as module
+
+    path = tmp_path / "config.toml"
+    path.write_text('model = "aa"\n', encoding="utf-8")
+    frozen = module._fingerprint(os.stat(path))
+    monkeypatch.setattr(module, "_fingerprint", lambda _info: frozen)
+    snapshot = read_config_snapshot(path)
+    path.write_text('model = "bb"\n', encoding="utf-8")  # same size, in place
+    with pytest.raises(KimiHookConfigFileError, match="changed concurrently"):
+        write_config_snapshot(path, 'model = "cc"\n', snapshot)
+    assert path.read_text(encoding="utf-8") == 'model = "bb"\n'
 
 
 def test_write_refuses_disappeared_snapshot(tmp_path: Path) -> None:

@@ -16,6 +16,7 @@ than being overwritten.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import stat
 import tempfile
@@ -54,11 +55,18 @@ class KimiHookConfigFileError(SynapseError, ValueError):
 
 @dataclass(frozen=True)
 class ConfigSnapshot:
-    """One bounded config read plus the identity required for compare-before-write."""
+    """One bounded config read plus the identity required for compare-before-write.
+
+    ``digest`` is the SHA-256 of the file's bytes at read time (``None`` when the
+    file did not exist). The compare-before-write guard verifies it alongside the
+    stat ``fingerprint``, so a same-size in-place rewrite within one ``mtime``/
+    ``ctime`` resolution tick — invisible to stat metadata — is still refused.
+    """
 
     text: str
     existed: bool
     fingerprint: _Fingerprint | None
+    digest: bytes | None = None
     mode: int = 0o600
 
 
@@ -106,21 +114,16 @@ def _validate_regular_owner(path: Path, info: os.stat_result) -> None:
         )
 
 
-def read_config_snapshot(path: Path) -> ConfigSnapshot:
-    """Read one owner-controlled regular file without following its final symlink."""
-    try:
-        before = path.lstat()
-    except FileNotFoundError:
-        return ConfigSnapshot(text="", existed=False, fingerprint=None)
-    _validate_regular_owner(path, before)
+def _read_bounded(path: Path) -> tuple[os.stat_result, bytes]:
+    """Open ``path`` with ``O_NOFOLLOW``, validate it, and read its bounded bytes.
 
+    Returns the post-open ``fstat`` and the raw content.
+    """
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags)
     try:
         after = os.fstat(descriptor)
         _validate_regular_owner(path, after)
-        if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
-            raise KimiHookConfigFileError("Kimi config changed while it was being opened.")
         chunks: list[bytes] = []
         total = 0
         while True:
@@ -135,8 +138,22 @@ def read_config_snapshot(path: Path) -> ConfigSnapshot:
                 )
     finally:
         os.close(descriptor)
+    return after, b"".join(chunks)
+
+
+def read_config_snapshot(path: Path) -> ConfigSnapshot:
+    """Read one owner-controlled regular file without following its final symlink."""
     try:
-        text = b"".join(chunks).decode("utf-8", errors="strict")
+        before = path.lstat()
+    except FileNotFoundError:
+        return ConfigSnapshot(text="", existed=False, fingerprint=None)
+    _validate_regular_owner(path, before)
+
+    after, raw = _read_bounded(path)
+    if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+        raise KimiHookConfigFileError("Kimi config changed while it was being opened.")
+    try:
+        text = raw.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
         raise KimiHookConfigFileError(
             "Kimi config is not valid UTF-8; refusing to edit it."
@@ -145,6 +162,7 @@ def read_config_snapshot(path: Path) -> ConfigSnapshot:
         text=text,
         existed=True,
         fingerprint=_fingerprint(after),
+        digest=hashlib.sha256(raw).digest(),
         mode=stat.S_IMODE(after.st_mode),
     )
 
@@ -161,7 +179,14 @@ def _assert_snapshot_current(path: Path, snapshot: ConfigSnapshot) -> None:
             "Kimi config appeared during the edit; refusing to overwrite it."
         )
     _validate_regular_owner(path, current)
-    if snapshot.fingerprint != _fingerprint(current):
+    # Re-read and compare the content digest as well as the stat fingerprint: a
+    # same-size in-place rewrite within one mtime/ctime tick leaves the fingerprint
+    # identical, so only the digest catches it.
+    info, raw = _read_bounded(path)
+    if (
+        snapshot.fingerprint != _fingerprint(info)
+        or snapshot.digest != hashlib.sha256(raw).digest()
+    ):
         raise KimiHookConfigFileError("Kimi config changed concurrently; no update was written.")
 
 
