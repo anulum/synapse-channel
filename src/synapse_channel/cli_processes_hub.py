@@ -46,6 +46,12 @@ from synapse_channel.core.multihub_watch import MultiHubWatch, parse_watch_peers
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_profile
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.rate_policy import (
+    HubExposurePosture,
+    RateLimits,
+    decide_auto_rate_policy,
+    is_loopback_bind,
+)
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.role_grants import RoleGrantError, load_role_grants
 from synapse_channel.core.secret_files import (
@@ -137,6 +143,53 @@ def _resolve_file_backed_secrets(args: argparse.Namespace) -> None:
         args.message_auth_key = [*args.message_auth_key, *entries]
 
 
+def _apply_auto_rate_policy(args: argparse.Namespace) -> None:
+    """Fill disabled flood limits when the hub starts in an exposed posture (REV-SEC-06).
+
+    Pure decision from :mod:`synapse_channel.core.rate_policy` is applied back onto
+    ``args`` so the existing limiter construction path stays unchanged. When
+    ``--secure`` is active the decision stands down (secure already normalises
+    limits). Local-first loopback single-seat hubs stay unbounded.
+    """
+    token_configured = bool(args.token or getattr(args, "token_file", None))
+    # A2A/MCP bridges are separate processes today; leave false until the hub
+    # knowingly exposes a co-located bridge flag. Multi-seat is inferred from the
+    # trust-profile / role-claim posture operators already use for teams.
+    multi_seat = bool(
+        getattr(args, "team_secure", False)
+        or getattr(args, "secure", False)
+        or getattr(args, "require_role_claim", False)
+        or getattr(args, "require_identity_binding", False)
+    )
+    posture = HubExposurePosture(
+        off_loopback_bind=not is_loopback_bind(args.host),
+        token_configured=token_configured,
+        bridge_exposed=False,
+        multi_seat=multi_seat,
+    )
+    operator = RateLimits(
+        agent_rate=float(args.rate),
+        agent_burst=float(args.burst),
+        host_rate=float(args.host_rate),
+        host_burst=float(args.host_burst),
+        max_connections_per_host=int(args.max_connections_per_host),
+    )
+    decision = decide_auto_rate_policy(
+        posture,
+        operator,
+        secure_mode=bool(getattr(args, "secure", False)),
+    )
+    if not decision.auto_enabled:
+        return
+    args.rate = decision.limits.agent_rate
+    args.burst = decision.limits.agent_burst
+    args.host_rate = decision.limits.host_rate
+    args.host_burst = decision.limits.host_burst
+    args.max_connections_per_host = decision.limits.max_connections_per_host
+    for line in decision.report_lines:
+        print(f"synapse hub: {line}", file=sys.stderr)
+
+
 def _cmd_hub(
     args: argparse.Namespace,
     *,
@@ -186,6 +239,9 @@ def _cmd_hub(
         if team_secure_report is not None:
             for line in team_secure_report.stderr_lines():
                 print(f"synapse hub: {line}", file=sys.stderr)
+    # REV-SEC-06: after security profiles, fill disabled flood limits on exposed
+    # hubs that are not under --secure (which already normalises limits).
+    _apply_auto_rate_policy(args)
     try:
         ssl_context = tls_context_factory(certfile=args.tls_certfile, keyfile=args.tls_keyfile)
     except HubTLSConfigError as exc:
