@@ -79,7 +79,12 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     assert "workflow_run:" in release
     assert "workflows: [publish]" in release
     assert "github.event.workflow_run.conclusion == 'success'" in release
-    assert "startsWith(github.event.workflow_run.head_branch, 'v')" in release
+    # The tag is derived from the published commit, not the unreliable
+    # workflow_run.head_branch (which resolves to the branch containing a tagged
+    # commit — e.g. main — and silently skipped the release job).
+    assert "startsWith(github.event.workflow_run.head_branch" not in release
+    assert 'git tag --points-at "$HEAD_SHA"' in release
+    assert 'echo "tag=$tag" >> "$GITHUB_OUTPUT"' in release
     assert "ref: ${{ github.event.workflow_run.head_sha }}" in release
     assert "run-id: ${{ github.event.workflow_run.id }}" in release
     assert "github-token: ${{ secrets.GITHUB_TOKEN }}" in release
@@ -95,7 +100,7 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     assert '--source-ref "$SOURCE_REF"' in release
     assert '--source-digest "$SOURCE_SHA"' in release
     assert "--deny-self-hosted-runners" in release
-    assert "tag_name: ${{ github.event.workflow_run.head_branch }}" in release
+    assert "tag_name: ${{ steps.tag.outputs.tag }}" in release
     assert "target_commitish: ${{ github.event.workflow_run.head_sha }}" in release
     assert "release-artifact/*" in release
     assert "release-provenance/*" in release
