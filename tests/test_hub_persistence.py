@@ -15,6 +15,7 @@ from websockets.asyncio.client import ClientConnection, connect
 
 from hub_e2e_helpers import collect_available, read_until_type, running_hub, send_json
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
@@ -92,7 +93,8 @@ async def test_hub_restart_replays_the_idempotency_guard(tmp_path: Path) -> None
             replayed = await read_until_type(ws, "claim_granted")
     store_b.close()
 
-    assert "k1" in hub_b._idempotency
+    key = HubLedgerGuard.idempotency_key({"sender": "A", "type": "claim", "idem_key": "k1"})
+    assert key in hub_b._idempotency
     assert "T1" not in hub_b.state.claims
     assert replayed["type"] == "claim_granted"
 
@@ -104,7 +106,8 @@ async def test_hub_without_journal_still_guards_in_memory() -> None:
             await send_json(ws, sender="A", type="claim", task_id="T1", idem_key="k9")
             await read_until_type(ws, "claim_granted")
 
-    assert "k9" in hub._idempotency
+    key = HubLedgerGuard.idempotency_key({"sender": "A", "type": "claim", "idem_key": "k9"})
+    assert key in hub._idempotency
 
 
 async def test_hub_without_journal_keeps_log_untouched(tmp_path: Path) -> None:

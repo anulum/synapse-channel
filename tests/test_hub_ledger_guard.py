@@ -41,20 +41,34 @@ def test_next_msg_id_is_strictly_increasing_from_the_seed() -> None:
     assert guard.message_seq == 7
 
 
-def test_idempotency_key_reads_the_client_field_or_empty() -> None:
-    assert HubLedgerGuard.idempotency_key({"idem_key": "k1"}) == "k1"
-    assert HubLedgerGuard.idempotency_key({"idem_key": ""}) == ""
-    assert HubLedgerGuard.idempotency_key({}) == ""
+def test_idempotency_key_namespaces_by_sender_and_type() -> None:
+    key = HubLedgerGuard.idempotency_key
+    # No client key -> never deduplicated, whatever the sender/type.
+    assert key({"idem_key": ""}) == ""
+    assert key({}) == ""
+    assert key({"sender": "alice", "type": "claim"}) == ""
+    # The same sender, type, and raw key resolve to one stable cache key...
+    base = {"sender": "alice", "type": "claim", "idem_key": "k1"}
+    assert key(base) == key(dict(base))
+    # ...but a different sender, a different type, or a different raw key never
+    # collides with it — the namespacing that stops cross-agent suppression.
+    assert key(base) != key({"sender": "bob", "type": "claim", "idem_key": "k1"})
+    assert key(base) != key({"sender": "alice", "type": "release", "idem_key": "k1"})
+    assert key(base) != key({"sender": "alice", "type": "claim", "idem_key": "k2"})
 
 
-def test_remember_caches_keyed_responses_only() -> None:
+def test_remember_caches_under_the_namespaced_key_only() -> None:
     guard = _guard()
-    guard.remember({"idem_key": "k1"}, {"type": "claim_granted"})
-    assert "k1" in guard.idempotency
-    assert guard.idempotency.get("k1") == {"type": "claim_granted"}
+    data = {"sender": "alice", "type": "claim", "idem_key": "k1"}
+    guard.remember(data, {"type": "claim_granted"})
+    key = HubLedgerGuard.idempotency_key(data)
+    assert key in guard.idempotency
+    assert guard.idempotency.get(key) == {"type": "claim_granted"}
+    # The raw key alone is never the cache key any more.
+    assert guard.idempotency.get("k1") is None
 
     # A response without an idempotency key is never cached.
-    guard.remember({}, {"type": "claim_granted"})
+    guard.remember({"sender": "alice", "type": "claim"}, {"type": "claim_granted"})
     assert guard.idempotency.get("") is None
 
 
@@ -62,9 +76,10 @@ def test_remember_journals_when_a_log_is_attached(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "events.db")
     guard = _guard(journal=store)
 
-    guard.remember({"idem_key": "k1"}, {"type": "claim_granted", "task_id": "T1"})
+    data = {"sender": "alice", "type": "claim", "idem_key": "k1", "task_id": "T1"}
+    guard.remember(data, {"type": "claim_granted", "task_id": "T1"})
 
-    assert "k1" in guard.idempotency
+    assert HubLedgerGuard.idempotency_key(data) in guard.idempotency
     assert store.count() == 1
 
 
@@ -89,19 +104,36 @@ def test_finding_counts_resume_from_the_seed() -> None:
 
 
 async def test_maybe_replay_duplicate_replays_a_cached_mutation() -> None:
-    guard = _guard(idempotency_seed=(("k1", {"type": "claim_granted"}),))
+    data = {"sender": "alice", "type": "claim", "idem_key": "k1"}
+    key = HubLedgerGuard.idempotency_key(data)
+    guard = _guard(idempotency_seed=((key, {"type": "claim_granted"}),))
     sent: list[tuple[Any, dict[str, Any]]] = []
 
     async def _send(websocket: Any, data: dict[str, Any]) -> None:
         sent.append((websocket, data))
 
     socket = object()
-    replayed = await guard.maybe_replay_duplicate(
-        MessageType.CLAIM, {"idem_key": "k1"}, socket, _send
-    )
+    replayed = await guard.maybe_replay_duplicate(MessageType.CLAIM, data, socket, _send)
 
     assert replayed is True
     assert sent == [(socket, {"type": "claim_granted"})]
+
+
+async def test_maybe_replay_duplicate_does_not_cross_senders() -> None:
+    # Alice's claim was cached under her namespaced key. Bob reusing the same raw
+    # idem_key must NOT have her response replayed — that would silently suppress
+    # his mutation and leak her grant fields (the F1/BUG-2 confused deputy). His
+    # frame passes through as novel.
+    alice = {"sender": "alice", "type": "claim", "idem_key": "SHARED"}
+    key = HubLedgerGuard.idempotency_key(alice)
+    guard = _guard(idempotency_seed=((key, {"type": "claim_granted", "task_id": "T1"}),))
+
+    async def _send(websocket: Any, data: dict[str, Any]) -> None:  # pragma: no cover
+        raise AssertionError("a cross-sender frame must not replay another agent's response")
+
+    socket = object()
+    bob = {"sender": "bob", "type": "release", "idem_key": "SHARED"}
+    assert await guard.maybe_replay_duplicate(MessageType.RELEASE, bob, socket, _send) is False
 
 
 async def test_maybe_replay_duplicate_passes_through_non_duplicates() -> None:

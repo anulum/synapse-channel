@@ -96,8 +96,30 @@ class HubLedgerGuard:
 
     @staticmethod
     def idempotency_key(data: dict[str, Any]) -> str:
-        """Return the client-supplied idempotency key, or an empty string."""
-        return str(data.get("idem_key") or "")
+        """Return a sender/type-namespaced idempotency key, or an empty string.
+
+        The client-supplied ``idem_key`` alone is not safe to key the cache on: a
+        malicious or merely buggy agent that reuses another agent's key would have
+        its mutation silently suppressed and be answered with a replay of the
+        first agent's response — cross-agent mutation suppression plus a grant-data
+        leak. Namespace the raw key by the (already authorised) sender and the
+        message type, so one agent's key can never collide with another's, and a
+        ``claim`` can never collide with a ``release`` that reuses the same key.
+        The ``NUL`` separator cannot appear in a normal identity or type token, so
+        the three segments never run together. Empty when no key was supplied, so
+        an unkeyed mutation is never deduplicated.
+
+        The replay guard runs only after the sender has been authorised
+        (``hub.py`` authorises and resolves the identity before checking for a
+        duplicate), so ``data["sender"]`` here is the bound identity, not a raw
+        unverified claim.
+        """
+        raw = str(data.get("idem_key") or "")
+        if not raw:
+            return ""
+        sender = str(data.get("sender") or "").strip()
+        msg_type = str(data.get("type") or "").strip().lower()
+        return f"{sender}\x00{msg_type}\x00{raw}"
 
     def remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
         """Cache the response of an applied mutation under its idempotency key.
