@@ -12,10 +12,19 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.opencode_editor_workflow_contract import (  # noqa: E402
+    EditorWorkflowError,
+    assert_editor_workflow_contract,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "integrations" / "opencode" / "compatibility.json"
@@ -306,84 +315,6 @@ def load_compatibility(path: Path = DEFAULT_MANIFEST) -> Compatibility:
     )
 
 
-def _load_editor_workflow(text: str, path: Path) -> Mapping[str, Any]:
-    import yaml
-
-    unique_key_loader = cast(Any, type("_UniqueKeyLoader", (yaml.SafeLoader,), {}))
-
-    def construct_unique_mapping(
-        loader: Any,
-        node: Any,
-        deep: bool = False,
-    ) -> dict[object, object]:
-        loader.flatten_mapping(node)
-        mapping: dict[object, object] = {}
-        for key_node, value_node in node.value:
-            key = loader.construct_object(key_node, deep=deep)
-            try:
-                duplicate = key in mapping
-            except TypeError as exc:
-                raise CompatibilityError(
-                    "editor workflow YAML mapping keys must be hashable"
-                ) from exc
-            if duplicate:
-                raise CompatibilityError(f"editor workflow YAML duplicates mapping key {key!r}")
-            mapping[key] = loader.construct_object(value_node, deep=deep)
-        return mapping
-
-    unique_key_loader.add_constructor(
-        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
-        construct_unique_mapping,
-    )
-    loader = unique_key_loader(text)
-    try:
-        document = cast(object, loader.get_single_data())
-    except yaml.YAMLError as exc:
-        raise CompatibilityError(f"cannot parse editor workflow YAML: {path}") from exc
-    finally:
-        cast(Any, loader).dispose()
-    return _object(document, "editor workflow")
-
-
-def _contains_mapping_key(value: object, expected: str) -> bool:
-    if isinstance(value, Mapping):
-        return any(
-            key == expected or _contains_mapping_key(child, expected)
-            for key, child in value.items()
-        )
-    if isinstance(value, list):
-        return any(_contains_mapping_key(child, expected) for child in value)
-    return False
-
-
-def _assert_editor_workflow_contract(contract: Compatibility, text: str, path: Path) -> None:
-    workflow = _load_editor_workflow(text, path)
-    jobs = _object(workflow.get("jobs"), "editor workflow.jobs")
-    editor_job = _object(jobs.get("editor-client"), "editor workflow.jobs.editor-client")
-    if _contains_mapping_key(editor_job, "continue-on-error"):
-        raise CompatibilityError("editor workflow must gate every pinned real-client lane")
-    strategy = _object(editor_job.get("strategy"), "editor workflow editor-client strategy")
-    matrix = _object(strategy.get("matrix"), "editor workflow editor-client matrix")
-    include = matrix.get("include")
-    if not isinstance(include, list):
-        raise CompatibilityError("editor workflow editor-client matrix.include must be an array")
-    lanes: list[str] = []
-    for index, value in enumerate(include):
-        row = _object(value, f"editor workflow editor-client matrix.include[{index}]")
-        lane = row.get("client")
-        if not isinstance(lane, str):
-            raise CompatibilityError(
-                f"editor workflow editor-client matrix.include[{index}].client must be a string"
-            )
-        lanes.append(lane)
-    expected = {client.lane for client in contract.clients}
-    if len(lanes) != len(expected) or set(lanes) != expected:
-        raise CompatibilityError(
-            "editor workflow matrix lanes differ: "
-            f"expected={sorted(expected)}, actual={sorted(lanes)}"
-        )
-
-
 def assert_repository_contract(contract: Compatibility, root: Path = ROOT) -> None:
     """Require every duplicated executable/doc pin to match the manifest."""
     surfaces = {
@@ -406,7 +337,14 @@ def assert_repository_contract(contract: Compatibility, root: Path = ROOT) -> No
     for component in contract.components:
         if component.pin not in text["editors"]:
             raise CompatibilityError(f"editor workflow omitted {component.name} pin")
-    _assert_editor_workflow_contract(contract, text["editors"], surfaces["editors"])
+    try:
+        assert_editor_workflow_contract(
+            text["editors"],
+            surfaces["editors"],
+            expected_lanes={client.lane for client in contract.clients},
+        )
+    except EditorWorkflowError as exc:
+        raise CompatibilityError(str(exc)) from exc
     for client in contract.clients:
         if client.name not in text["docs"] or client.version not in text["docs"]:
             raise CompatibilityError(f"OpenCode documentation omitted {client.lane} wire identity")

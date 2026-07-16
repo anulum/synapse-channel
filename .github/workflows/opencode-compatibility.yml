@@ -17,9 +17,11 @@ on:
       - ".github/requirements/**"
       - "integrations/opencode/compatibility.json"
       - "tools/opencode_compatibility_contract.py"
+      - "tools/opencode_editor_workflow_contract.py"
       - "tools/opencode_compatibility_install.py"
       - "tools/opencode_compatibility_smoke.py"
       - "tests/test_opencode_compatibility_contract.py"
+      - "tests/test_opencode_editor_workflow_contract.py"
       - "tests/test_opencode_compatibility_smoke.py"
       - "tests/fixtures/opencode/process.py"
       - "src/synapse_channel/participants/opencode_stream.py"
@@ -33,9 +35,11 @@ on:
       - ".github/requirements/**"
       - "integrations/opencode/compatibility.json"
       - "tools/opencode_compatibility_contract.py"
+      - "tools/opencode_editor_workflow_contract.py"
       - "tools/opencode_compatibility_install.py"
       - "tools/opencode_compatibility_smoke.py"
       - "tests/test_opencode_compatibility_contract.py"
+      - "tests/test_opencode_editor_workflow_contract.py"
       - "tests/test_opencode_compatibility_smoke.py"
       - "tests/fixtures/opencode/process.py"
       - "src/synapse_channel/participants/opencode_stream.py"
@@ -78,28 +82,36 @@ jobs:
           python -m tools.opencode_compatibility_contract --check
           ruff check \
             tools/opencode_compatibility_contract.py \
+            tools/opencode_editor_workflow_contract.py \
             tools/opencode_compatibility_install.py \
             tools/opencode_compatibility_smoke.py \
             tests/test_opencode_compatibility_contract.py \
+            tests/test_opencode_editor_workflow_contract.py \
             tests/test_opencode_compatibility_smoke.py
           ruff format --check \
             tools/opencode_compatibility_contract.py \
+            tools/opencode_editor_workflow_contract.py \
             tools/opencode_compatibility_install.py \
             tools/opencode_compatibility_smoke.py \
             tests/test_opencode_compatibility_contract.py \
+            tests/test_opencode_editor_workflow_contract.py \
             tests/test_opencode_compatibility_smoke.py
           mypy --strict \
             tools/opencode_compatibility_contract.py \
+            tools/opencode_editor_workflow_contract.py \
             tools/opencode_compatibility_install.py \
             tools/opencode_compatibility_smoke.py \
             tests/test_opencode_compatibility_contract.py \
+            tests/test_opencode_editor_workflow_contract.py \
             tests/test_opencode_compatibility_smoke.py
           python -m bandit -q -c pyproject.toml \
             tools/opencode_compatibility_contract.py \
+            tools/opencode_editor_workflow_contract.py \
             tools/opencode_compatibility_install.py \
             tools/opencode_compatibility_smoke.py
           pytest \
             tests/test_opencode_compatibility_contract.py \
+            tests/test_opencode_editor_workflow_contract.py \
             tests/test_opencode_compatibility_smoke.py
       - name: Verify official release evidence and check latest advisory
         id: upstream

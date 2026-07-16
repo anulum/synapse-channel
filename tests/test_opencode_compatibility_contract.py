@@ -182,6 +182,7 @@ def test_repository_contract_refuses_zed_x11_app_id_drift(tmp_path: Path) -> Non
         ("commented-zed", "matrix lanes differ"),
         ("duplicate-client", "matrix lanes differ"),
         ("duplicate-key", "duplicates mapping key 'strategy'"),
+        ("extra-matrix-dimension", "matrix fields differ"),
         ("wrong-client", "matrix lanes differ"),
         ("include-not-array", "matrix.include must be an array"),
         ("client-not-string", r"matrix.include\[0\].client must be a string"),
@@ -250,14 +251,29 @@ def test_repository_contract_refuses_editor_release_gate_drift(
             "    strategy: {}\n    strategy:\n",
             1,
         )
+    elif mutation == "extra-matrix-dimension":
+        workflow_text = workflow_text.replace(
+            "        include:\n",
+            "        client: [vscode]\n        include:\n",
+            1,
+        )
     elif mutation == "wrong-client":
         workflow_text = workflow_text.replace(
             "          - client: zed\n", "          - client: vscode\n", 1
         )
     elif mutation == "include-not-array":
         workflow_text = workflow_text.replace(
-            "        include:\n",
-            "        include: neovim\n        ignored:\n",
+            """        include:
+          - client: neovim
+            timeout: 20
+          - client: emacs
+            timeout: 25
+          - client: zed
+            timeout: 30
+          - client: jetbrains
+            timeout: 45
+""",
+            "        include: neovim\n",
             1,
         )
     elif mutation == "client-not-string":

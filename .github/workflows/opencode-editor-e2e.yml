@@ -24,6 +24,7 @@ on:
       - "tests/fixtures/opencode/**"
       - "tests/test_cli_e2e_opencode_editors.py"
       - "tests/test_opencode_compatibility_contract.py"
+      - "tests/test_opencode_editor_workflow_contract.py"
       - "tests/test_opencode_editor_process_runner.py"
       - "tests/test_opencode_editor_process_group.py"
       - "tests/test_opencode_editor_governance_contract.py"
@@ -44,6 +45,7 @@ on:
       - "tests/test_opencode_zed_timing.py"
       - "tests/test_opencode_zed_x11.py"
       - "tools/opencode_compatibility_contract.py"
+      - "tools/opencode_editor_workflow_contract.py"
       - "docs/opencode.md"
       - "docs/mcp.md"
   pull_request:
@@ -62,6 +64,7 @@ on:
       - "tests/fixtures/opencode/**"
       - "tests/test_cli_e2e_opencode_editors.py"
       - "tests/test_opencode_compatibility_contract.py"
+      - "tests/test_opencode_editor_workflow_contract.py"
       - "tests/test_opencode_editor_process_runner.py"
       - "tests/test_opencode_editor_process_group.py"
       - "tests/test_opencode_editor_governance_contract.py"
@@ -82,6 +85,7 @@ on:
       - "tests/test_opencode_zed_timing.py"
       - "tests/test_opencode_zed_x11.py"
       - "tools/opencode_compatibility_contract.py"
+      - "tools/opencode_editor_workflow_contract.py"
       - "docs/opencode.md"
       - "docs/mcp.md"
   workflow_dispatch:
@@ -328,6 +332,7 @@ jobs:
             tests/e2e/opencode_editors/zed_x11.py
             tests/test_cli_e2e_opencode_editors.py
             tests/test_opencode_compatibility_contract.py
+            tests/test_opencode_editor_workflow_contract.py
             tests/test_opencode_editor_process_runner.py
             tests/test_opencode_editor_process_group.py
             tests/test_opencode_editor_governance_contract.py
@@ -348,6 +353,7 @@ jobs:
             tests/test_opencode_editor_trace_contract.py
             tests/test_opencode_editor_trace_validation.py
             tools/opencode_compatibility_contract.py
+            tools/opencode_editor_workflow_contract.py
           )
           ruff check "${files[@]}"
           ruff format --check "${files[@]}"
