@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,7 @@ from synapse_channel.core.mcp_config_trust import (
 
 
 def _executable(path: Path) -> tuple[Path, str]:
-    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    shutil.copy2("/bin/true", path)
     path.chmod(0o700)
     return path, hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -82,6 +83,7 @@ def test_load_trusted_config_enforces_owner_file_and_absolute_executable(tmp_pat
 
     assert set(servers) == {"echo"}
     assert report.outside_repository is True
+    assert report.trust_bundle_outside_repository is None
     assert report.signed_by == ""
     assert report.unhashed_servers == ()
     assert report.executables[0].sha256 == digest
@@ -104,6 +106,7 @@ def test_signed_config_verifies_against_owner_trust_bundle(tmp_path: Path) -> No
     )
 
     assert report.signed_by == "ops"
+    assert report.trust_bundle_outside_repository is True
     assert report.unhashed_servers == ()
 
 
@@ -173,7 +176,7 @@ def test_cwd_is_required_outside_repository_and_arguments_are_reported(
         allow_repo_config=True,
     )
     assert report.repository_local_cwds == ("echo",)
-    assert report.unbound_arguments == ("echo:0:-m", "echo:1:server")
+    assert report.unbound_arguments == ("echo:0", "echo:1")
 
 
 def test_repository_local_trust_bundle_is_rejected(tmp_path: Path) -> None:
@@ -193,6 +196,14 @@ def test_repository_local_trust_bundle_is_rejected(tmp_path: Path) -> None:
             trust_bundle_path=trust,
             repository_root=repository,
         )
+
+    _servers, report = load_trusted_mcp_config(
+        config,
+        trust_bundle_path=trust,
+        repository_root=repository,
+        allow_repo_config=True,
+    )
+    assert report.trust_bundle_outside_repository is False
 
 
 def test_config_file_floor_rejects_loose_mode_symlink_and_bad_json(tmp_path: Path) -> None:

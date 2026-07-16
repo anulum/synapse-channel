@@ -43,6 +43,9 @@ class McpConfigTrustReport:
         empty when no repository was discovered.
     outside_repository : bool
         Whether the config is outside that root.
+    trust_bundle_outside_repository : bool or None
+        Whether a supplied trust bundle is outside that root, or ``None`` when
+        no trust bundle was supplied.
     signed_by : str
         Verified Ed25519 key id, or empty for an accepted unsigned config.
     executables : tuple[McpExecutableEvidence, ...]
@@ -52,12 +55,14 @@ class McpConfigTrustReport:
     repository_local_cwds : tuple[str, ...]
         Servers whose explicit cwd uses the repository-local escape hatch.
     unbound_arguments : tuple[str, ...]
-        ``server:index:value`` command arguments not covered by the executable snapshot.
+        ``server:index`` markers for command arguments not covered by the
+        executable snapshot. Argument values are deliberately omitted.
     """
 
     config_path: str
     repository_root: str
     outside_repository: bool
+    trust_bundle_outside_repository: bool | None
     signed_by: str
     executables: tuple[McpExecutableEvidence, ...]
     inherited_environment: tuple[str, ...]
@@ -118,9 +123,11 @@ def load_trusted_mcp_config(
         )
     document = _read_owner_json(config_path, label="--config")
     signed_by = ""
+    trust_bundle_outside_repository: bool | None = None
     if trust_bundle_path is not None:
         bundle_path = Path(trust_bundle_path).expanduser()
-        if not _outside_repository(bundle_path, root) and not allow_repo_config:
+        trust_bundle_outside_repository = _outside_repository(bundle_path, root)
+        if not trust_bundle_outside_repository and not allow_repo_config:
             raise McpConfigError(
                 f"MCP config trust bundle {bundle_path.absolute()} is inside the active repository "
                 f"{root}; move it to an owner-controlled config directory"
@@ -155,14 +162,15 @@ def load_trusted_mcp_config(
         for name in server.inherit_env
     )
     unbound_arguments = tuple(
-        f"{server.name}:{index}:{argument}"
+        f"{server.name}:{index}"
         for server in (servers[name] for name in sorted(servers))
-        for index, argument in enumerate(server.args)
+        for index, _argument in enumerate(server.args)
     )
     return servers, McpConfigTrustReport(
         config_path=str(config_path.absolute()),
         repository_root="" if root is None else str(root),
         outside_repository=outside_repository,
+        trust_bundle_outside_repository=trust_bundle_outside_repository,
         signed_by=signed_by,
         executables=executable_evidence,
         inherited_environment=inherited,

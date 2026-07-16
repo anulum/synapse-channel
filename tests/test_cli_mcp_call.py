@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -20,7 +21,12 @@ from typing import Any
 import pytest
 
 from synapse_channel import cli, cli_mcp_call
-from synapse_channel.core.mcp_outbound import McpServerSpec, McpToolError, OutboundMcpClient
+from synapse_channel.core.mcp_outbound import (
+    McpDependencyError,
+    McpServerSpec,
+    McpToolError,
+    OutboundMcpClient,
+)
 
 
 class _FakeSession:
@@ -54,7 +60,7 @@ def _run(argv: list[str]) -> int:
 
 def _config(tmp_path: Path) -> Path:
     executable = tmp_path / "mcp-server"
-    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    shutil.copy2("/bin/true", executable)
     executable.chmod(0o700)
     config = tmp_path / "mcp.json"
     config.write_text(
@@ -331,6 +337,74 @@ def test_mcp_tools_reports_a_bad_config(tmp_path: Path, capsys: pytest.CaptureFi
     assert "mcp-tools error" in capsys.readouterr().out
 
 
+def test_mcp_tools_rejects_an_integer_too_large_for_float_without_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "huge-timeout.json"
+    config.write_text(
+        json.dumps(
+            {
+                "servers": [
+                    {
+                        "name": "echo",
+                        "command": str(Path("/bin/true").resolve()),
+                        "cwd": str(tmp_path),
+                        "timeout_seconds": 10**400,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+
+    code = _run(["mcp-tools", "echo", "--config", str(config)])
+    output = capsys.readouterr().out
+
+    assert code == 2
+    assert "at most 3600 seconds" in output
+    assert "Traceback" not in output
+
+
+@pytest.mark.parametrize("verb", ["mcp-tools", "mcp-call"])
+def test_real_stdio_startup_failure_has_a_stable_operational_boundary(
+    verb: str,
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    config = tmp_path / "failing-server.json"
+    config.write_text(
+        json.dumps(
+            {
+                "servers": [
+                    {
+                        "name": "echo",
+                        "command": str(Path("/bin/false").resolve()),
+                        "cwd": str(tmp_path),
+                        "allowed_tools": ["echo"],
+                        "timeout_seconds": 2,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    argv = [verb, "echo"]
+    if verb == "mcp-call":
+        argv.append("echo")
+    argv.extend(["--config", str(config)])
+
+    code = _run(argv)
+    captured = capfd.readouterr()
+    visible = captured.out + captured.err
+
+    assert code == 1
+    assert "failed during MCP startup or transport" in captured.out
+    assert "ExceptionGroup" not in visible
+    assert "Traceback" not in visible
+
+
 def test_mcp_call_reports_a_bad_arg(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -349,7 +423,7 @@ class _FailingOpener:
         return self
 
     async def __aenter__(self) -> Any:
-        raise RuntimeError("outbound MCP calls need the optional extra")
+        raise McpDependencyError("outbound MCP calls need the optional extra")
 
     async def __aexit__(self, *args: object) -> bool:
         return False

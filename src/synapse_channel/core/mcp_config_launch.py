@@ -127,6 +127,11 @@ def bind_mcp_server_launch(spec: McpServerSpec) -> Iterator[BoundMcpLaunch]:
                 f"MCP server {spec.name!r}: command {command} is not executable by the "
                 "effective user"
             )
+        if os.pread(descriptor, 2, 0) == b"#!":
+            raise McpConfigError(
+                f"MCP server {spec.name!r}: script command has an unbound shebang "
+                "interpreter; configure a native interpreter executable as command"
+            )
         snapshot, digest = _sealed_executable_snapshot(descriptor, info, server=spec.name)
     except OSError as exc:
         raise McpConfigError(

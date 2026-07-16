@@ -191,12 +191,15 @@ worth stating plainly:
   descriptors; group/world-writable cwd paths are rejected, and low-level specs
   that omit cwd are bound to `/`. The proof covers
   the command bytes, not auxiliary files named in
-  arguments; invoke scripts directly as the command, and treat doctor's warning
-  on every command argument as residual executable-chain risk. Child processes
+  arguments. Shebang scripts are rejected as commands because their interpreter
+  is opened outside the sealed snapshot; configure a native interpreter as the
+  command and treat doctor's value-free warning on every argument as residual
+  executable-chain risk. Child processes
   receive no inherited parent values: SDK baseline
   names are blanked unless approved, and only literal config values plus
   individually approved `inherit_env` names are populated. A positive finite
-  per-operation timeout is the server startup and discovery/call deadline. On
+  per-operation timeout no greater than 3600 seconds is the server startup and
+  discovery/call deadline; non-representable values fail parsing. On
   cancellation, the pinned SDK applies a separate audited two-second graceful
   exit window before force-terminating the process tree. The
   exact audited MCP SDK release, inherited-name list, and cleanup window are checked
@@ -206,8 +209,13 @@ worth stating plainly:
   duplicate public-key identities are rejected. A present-but-unverified
   signature fails closed. The
   `--allow-repo-mcp-config` escape hatch is an explicit trust-boundary downgrade,
-  not a safe default. These controls authenticate local launch policy; they do
-  not sandbox a trusted MCP server after it starts.
+  not a safe default; doctor reports config and trust-bundle locality separately,
+  and the escape hatch never relaxes owner-only file or cwd-mode checks. Startup
+  and transport errors are reduced to stable, value-free CLI diagnostics instead
+  of reflecting exception-group text. Configured server stderr remains attached
+  to the operator's stderr and must be treated as trusted server output. These
+  controls authenticate local launch policy; they do not sandbox a trusted MCP
+  server after it starts.
 - **Outbound MCP platform floor.** Descriptor-bound MCP launch currently requires
   Linux `memfd_create`, sealing, and procfs. It fails closed on macOS, Windows,
   or Linux environments without `/proc/self/fd`; no weaker pathname fallback is

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from synapse_channel.core.secret_files import open_nofollow_descriptor
 
 
 def _executable(path: Path) -> tuple[Path, str]:
-    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    shutil.copy2("/bin/true", path)
     path.chmod(0o700)
     return path, hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -103,6 +104,15 @@ def test_launch_validation_rejects_symlinked_ancestors_and_raw_tilde(tmp_path: P
         validate_mcp_server_launch(McpServerSpec(name="x", command="~/mcp-server"))
     with pytest.raises(McpConfigError, match="cwd must be an absolute"):
         validate_mcp_server_launch(McpServerSpec(name="x", command=str(executable), cwd="~/cwd"))
+
+
+def test_launch_validation_rejects_an_unbound_shebang_interpreter(tmp_path: Path) -> None:
+    script = tmp_path / "mcp-server"
+    script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    script.chmod(0o700)
+
+    with pytest.raises(McpConfigError, match="unbound shebang interpreter"):
+        validate_mcp_server_launch(McpServerSpec(name="script", command=str(script)))
 
 
 def test_launch_validation_rejects_directory_and_descriptor_read_error(
@@ -208,7 +218,7 @@ def test_launch_validation_rechecks_cwd_descriptor_type(
 
 def test_bound_launch_executes_snapshot_and_retains_exact_cwd(tmp_path: Path) -> None:
     executable = tmp_path / "mcp-server"
-    executable.write_text("#!/bin/sh\necho trusted\n", encoding="utf-8")
+    shutil.copy2("/bin/echo", executable)
     executable.chmod(0o700)
     digest = hashlib.sha256(executable.read_bytes()).hexdigest()
     cwd = tmp_path / "cwd"
@@ -224,7 +234,7 @@ def test_bound_launch_executes_snapshot_and_retains_exact_cwd(tmp_path: Path) ->
 
     with bind_mcp_server_launch(spec) as launch:
         replacement = tmp_path / "replacement"
-        replacement.write_text("#!/bin/sh\necho replaced\n", encoding="utf-8")
+        shutil.copy2("/bin/false", replacement)
         replacement.chmod(0o700)
         os.replace(replacement, executable)
         renamed_cwd = tmp_path / "renamed-cwd"
@@ -232,7 +242,7 @@ def test_bound_launch_executes_snapshot_and_retains_exact_cwd(tmp_path: Path) ->
         cwd.mkdir()
         (cwd / "marker").write_text("replacement-cwd", encoding="utf-8")
 
-        assert subprocess.check_output([launch.command], text=True).strip() == "trusted"
+        assert subprocess.check_output([launch.command, "trusted"], text=True).strip() == "trusted"
         assert (Path(launch.cwd) / "marker").read_text(encoding="utf-8") == "trusted-cwd"
 
 

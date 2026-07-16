@@ -32,8 +32,9 @@ All notable changes to this project are documented here.
   `memfd` snapshots before spawn; configured cwd descriptors remain bound through
   the session, and optional SHA-256 pins cover the bytes that execute. The exact
   audited MCP SDK is pinned and its environment contract checked at runtime; no
-  parent value is inherited unless approved. A configured finite timeout is the
-  session-startup and discovery/call deadline; the pinned SDK then has a separate
+  parent value is inherited unless approved. A configured finite timeout, capped
+  at 3600 seconds, is the session-startup and discovery/call deadline; the pinned
+  SDK then has a separate
   audited two-second graceful cleanup window before force termination. Optional
   domain-separated Ed25519 manifests bind distributed policy and signature-key
   identity to a separate owner-only trust bundle; whitespace aliases and
@@ -41,9 +42,14 @@ All notable changes to this project are documented here.
   signature, executable-pin, and environment posture. The MCP extra now installs
   its signature-verification dependency.
   Each server now requires an explicit outside-repository, non-group/world-writable
-  cwd. Doctor warns when
-  all command arguments may select code not covered by the command snapshot; scripts
-  should be invoked directly as the command. The sealed launcher is intentionally
+  cwd. Doctor warns with value-free argument positions when arguments may select
+  code not covered by the command snapshot. Shebang scripts are rejected as commands
+  because their interpreters escape the sealed snapshot; operators must configure a
+  native interpreter command and retain the script warning until auxiliary pins exist.
+  Config and trust-bundle repository overrides are reported separately, and no escape
+  hatch relaxes cwd-mode checks. Startup and transport failures now produce stable,
+  sanitized operational errors rather than raw exception groups; configured server
+  stderr remains operator-visible. The sealed launcher is intentionally
   Linux-only (`memfd_create` + procfs) and fails closed elsewhere until an
   equivalent native descriptor backend exists.
 - Owner-only token/key/public-material file readers now reject symlinks in every

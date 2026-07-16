@@ -42,7 +42,9 @@ def diagnose_mcp_config(
         )
     residuals: list[str] = []
     if not report.outside_repository:
-        residuals.append("repository-local override")
+        residuals.append("repository-local config override")
+    if report.trust_bundle_outside_repository is False:
+        residuals.append("repository-local trust bundle override")
     if not report.signed_by:
         residuals.append("unsigned manifest")
     if report.unhashed_servers:
@@ -50,7 +52,7 @@ def diagnose_mcp_config(
     if report.repository_local_cwds:
         residuals.append(f"repository-local cwd for {', '.join(report.repository_local_cwds)}")
     if report.unbound_arguments:
-        residuals.append(f"unbound command args: {', '.join(report.unbound_arguments)}")
+        residuals.append(f"unbound command arg positions: {', '.join(report.unbound_arguments)}")
     controls = (
         f"{len(servers)} server(s), owner-only config, sealed executable snapshots, "
         f"{len(report.inherited_environment)} explicitly inherited environment variable(s)"
@@ -61,8 +63,9 @@ def diagnose_mcp_config(
             status="warn",
             detail=f"{controls}; residual: {'; '.join(residuals)}",
             remedy=(
-                "use a signed manifest, hash every command, invoke scripts directly as the "
-                "command, avoid auxiliary launcher arguments, and avoid repository overrides"
+                "use a signed manifest, hash every native command, configure an interpreter "
+                "binary as command for scripts, avoid auxiliary arguments, and avoid "
+                "repository overrides"
             ),
         )
     return Diagnosis(

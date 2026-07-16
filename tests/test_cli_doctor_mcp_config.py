@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -85,10 +87,11 @@ def test_mcp_doctor_reports_every_residual_as_warning(
 ) -> None:
     report = SimpleNamespace(
         outside_repository=False,
+        trust_bundle_outside_repository=False,
         signed_by=None,
         unhashed_servers=("plain",),
         repository_local_cwds=("local",),
-        unbound_arguments=("local:0:script.py",),
+        unbound_arguments=("local:0",),
         inherited_environment=("LANG",),
     )
     monkeypatch.setattr(
@@ -104,11 +107,12 @@ def test_mcp_doctor_reports_every_residual_as_warning(
     )
 
     assert result.status == "warn"
-    assert "repository-local override" in result.detail
+    assert "repository-local config override" in result.detail
+    assert "repository-local trust bundle override" in result.detail
     assert "unsigned manifest" in result.detail
     assert "no executable hash for plain" in result.detail
     assert "repository-local cwd for local" in result.detail
-    assert "unbound command args: local:0:script.py" in result.detail
+    assert "unbound command arg positions: local:0" in result.detail
 
 
 def test_mcp_doctor_passes_fully_pinned_signed_config(
@@ -116,6 +120,7 @@ def test_mcp_doctor_passes_fully_pinned_signed_config(
 ) -> None:
     report = SimpleNamespace(
         outside_repository=True,
+        trust_bundle_outside_repository=True,
         signed_by="ops",
         unhashed_servers=(),
         repository_local_cwds=(),
@@ -136,3 +141,36 @@ def test_mcp_doctor_passes_fully_pinned_signed_config(
 
     assert result.status == "pass"
     assert "signed by 'ops'" in result.detail
+
+
+def test_mcp_doctor_never_reflects_unbound_argument_values(tmp_path: Path) -> None:
+    executable = tmp_path / "mcp-server"
+    shutil.copy2("/bin/true", executable)
+    executable.chmod(0o700)
+    config = tmp_path / "mcp.json"
+    config.write_text(
+        json.dumps(
+            {
+                "servers": [
+                    {
+                        "name": "echo",
+                        "command": str(executable),
+                        "args": ["--api-key=TOP-SECRET"],
+                        "cwd": str(tmp_path),
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+
+    result = diagnose_mcp_config(
+        config,
+        trust_bundle_path=None,
+        allow_repo_config=False,
+    )
+
+    assert result.status == "warn"
+    assert "unbound command arg positions: echo:0" in result.detail
+    assert "TOP-SECRET" not in result.detail

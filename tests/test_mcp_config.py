@@ -128,7 +128,7 @@ def test_server_spec_defensively_freezes_nested_policy() -> None:
         ({"servers": [{"name": "x", "command": "/x", "cwd": 1}]}, "cwd.*string"),
         (
             {"servers": [{"name": "x", "command": "/x", "timeout_seconds": 0}]},
-            "positive and finite",
+            "positive, finite, and at most",
         ),
         (
             {"servers": [{"name": "x", "command": "/x", "command_sha256": "bad"}]},
@@ -154,7 +154,18 @@ def test_parse_mcp_config_rejects_ambiguous_or_malformed_policy(document: Any, m
         parse_mcp_config(document)
 
 
-@pytest.mark.parametrize("timeout", [True, "1", float("inf"), float("nan")])
+@pytest.mark.parametrize(
+    "timeout",
+    [True, "1", float("inf"), float("nan"), 10**400, 3600.1],
+)
 def test_parse_mcp_config_rejects_non_finite_or_non_numeric_timeout(timeout: Any) -> None:
     with pytest.raises(McpConfigError, match="timeout_seconds"):
         parse_mcp_config({"servers": [{"name": "x", "command": "/x", "timeout_seconds": timeout}]})
+
+
+def test_parse_mcp_config_accepts_the_bounded_timeout_ceiling() -> None:
+    servers = parse_mcp_config(
+        {"servers": [{"name": "x", "command": "/x", "timeout_seconds": 3600}]}
+    )
+
+    assert servers["x"].timeout_seconds == 3600.0

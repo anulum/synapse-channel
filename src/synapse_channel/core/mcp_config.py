@@ -28,6 +28,9 @@ from synapse_channel.core.errors import SynapseError
 MCP_CONFIG_VERSION = 1
 """Current outbound MCP policy document version."""
 
+MCP_MAX_TIMEOUT_SECONDS = 3600.0
+"""Largest admitted startup or operation deadline for one MCP server."""
+
 WILDCARD = "*"
 """Tool allowlist token that admits every advertised tool for one server."""
 
@@ -183,10 +186,21 @@ def _parse_server(entry: object, index: int) -> McpServerSpec:
     timeout = entry.get("timeout_seconds", 30.0)
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
         raise McpConfigError(f"MCP server entry {index} field 'timeout_seconds' must be a number")
-    timeout_seconds = float(timeout)
-    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0.0:
+    try:
+        timeout_seconds = float(timeout)
+    except (OverflowError, ValueError) as exc:
         raise McpConfigError(
-            f"MCP server entry {index} field 'timeout_seconds' must be positive and finite"
+            f"MCP server entry {index} field 'timeout_seconds' must be positive, finite, "
+            f"and at most {MCP_MAX_TIMEOUT_SECONDS:g} seconds"
+        ) from exc
+    if (
+        not math.isfinite(timeout_seconds)
+        or timeout_seconds <= 0.0
+        or timeout_seconds > MCP_MAX_TIMEOUT_SECONDS
+    ):
+        raise McpConfigError(
+            f"MCP server entry {index} field 'timeout_seconds' must be positive, finite, "
+            f"and at most {MCP_MAX_TIMEOUT_SECONDS:g} seconds"
         )
     digest_value = entry.get("command_sha256", "")
     if not isinstance(digest_value, str):

@@ -71,6 +71,10 @@ class McpToolError(SynapseError, RuntimeError):
     code = "mcp_tool"
 
 
+class McpDependencyError(RuntimeError):
+    """Raised when the optional outbound MCP dependency is unavailable."""
+
+
 def load_outbound_config(
     path: str | Path,
     *,
@@ -124,7 +128,7 @@ def _require_mcp(import_module: Callable[[str], Any] = importlib.import_module) 
         client_stdio = import_module("mcp.client.stdio")
         mcp_root = import_module("mcp")
     except ImportError as exc:
-        raise RuntimeError(MCP_EXTRA_HINT) from exc
+        raise McpDependencyError(MCP_EXTRA_HINT) from exc
     return client_stdio, mcp_root
 
 
@@ -210,6 +214,12 @@ class OutboundMcpClient:
                 f"tool discovery on server '{server}' timed out after "
                 f"{spec.timeout_seconds:g} seconds"
             ) from exc
+        except (McpAccessError, McpConfigError, McpToolError):
+            raise
+        except McpDependencyError:
+            raise
+        except Exception as exc:
+            raise _transport_error("tool discovery", server) from exc
         return [
             {"name": str(tool.name), "description": str(getattr(tool, "description", "") or "")}
             for tool in listed.tools
@@ -243,8 +253,19 @@ class OutboundMcpClient:
                 f"tool '{tool}' on server '{server}' timed out after "
                 f"{spec.timeout_seconds:g} seconds"
             ) from exc
+        except (McpAccessError, McpConfigError, McpToolError):
+            raise
+        except McpDependencyError:
+            raise
+        except Exception as exc:
+            raise _transport_error(f"tool {tool!r}", server) from exc
         if getattr(result, "isError", False):
             raise McpToolError(
                 f"tool '{tool}' on '{server}' returned an error: {result_text(result)}"
             )
         return result_text(result)
+
+
+def _transport_error(operation: str, server: str) -> McpToolError:
+    """Return a stable error that never reflects subprocess diagnostics."""
+    return McpToolError(f"{operation} on server {server!r} failed during MCP startup or transport")

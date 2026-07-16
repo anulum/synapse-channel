@@ -367,22 +367,26 @@ the validated executable descriptor into a sealed Linux `memfd` and launches
 that exact immutable snapshot; a configured cwd is retained through its own
 descriptor. `command_sha256` is optional but recommended and is checked against
 the bytes that actually execute. `cwd` is required, must be outside the active
-repository, and must not be group/world-writable unless the explicit
-repository-local escape hatch is used.
+repository, and must not be group/world-writable. The repository-local escape
+hatch relaxes only repository locality; it never relaxes the mode check.
 Low-level library callers that construct a spec without `cwd` are descriptor-bound
 to `/`, never to the caller's current directory.
 Executable/hash proof covers the configured command, not files named in its
-arguments. Invoke a script directly as `command` (with a shebang) so its bytes
-are snapshotted; until auxiliary-artifact pins exist, `doctor` conservatively
-warns about every command argument, including launcher flags such as `-m`.
+arguments. A shebang script is therefore rejected as `command`: the kernel
+would open its interpreter separately, outside the sealed snapshot. Configure
+a native interpreter binary as `command`; until auxiliary-artifact pins exist,
+`doctor` conservatively warns about the script and every other command argument,
+including launcher flags such as `-m`.
 The child receives no parent environment values by default. Synapse explicitly
 blanks the MCP SDK's baseline POSIX names unless approved; literal `env` entries
 are passed exactly, while `inherit_env` approves individual parent variable
 names.
 An empty tool allowlist denies every tool; `"*"` explicitly opts the whole server
-in. A positive finite `timeout_seconds` (default `30`) is the startup and
-discovery/invocation deadline. Once cancellation begins, the pinned SDK applies
-its separate audited two-second graceful process-exit window before force termination:
+in. A positive finite `timeout_seconds` greater than zero and no greater than
+`3600` (default `30`) is the startup and discovery/invocation deadline. Larger
+or non-representable values fail schema parsing. Once cancellation begins, the
+pinned SDK applies its separate audited two-second graceful process-exit window
+before force termination:
 
 ```json
 {
@@ -451,8 +455,14 @@ trust bundle also fails closed. `synapse doctor --mcp-config FILE
 --mcp-config-trust-bundle TRUST` reports signature, hash-pin, repository, and
 environment posture before an operator attempts a call. The explicit
 `--allow-repo-mcp-config` compatibility escape hatch keeps the owner-only and
-executable checks but accepts a repository-local config and is reported as a
-warning.
+executable checks but accepts a repository-local config or trust bundle and
+reports each accepted override as a warning. It never accepts group/world-writable
+config, trust, or cwd paths.
+
+Subprocess startup and transport failures cross a stable operational-error
+boundary. The synthesized CLI error never reflects raw exception-group text.
+Configured server stderr remains attached to the operator's stderr and is not
+sanitized, so treat it as trusted server output.
 
 The `mcp` extra installs the audited `mcp==1.28.1` SDK and Ed25519 verification
 dependency. Runtime startup also verifies that SDK's inherited-environment list

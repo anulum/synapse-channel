@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import shutil
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -126,6 +127,61 @@ async def test_call_tool_raises_on_error_result() -> None:
         await client.call_tool("fs", "echo")
 
 
+class _TransportFailureOpener:
+    """A session opener that fails with one secret-bearing runtime error."""
+
+    def __call__(self, _spec: McpServerSpec) -> _TransportFailureOpener:
+        return self
+
+    async def __aenter__(self) -> Any:
+        raise RuntimeError("TOP-SECRET")
+
+    async def __aexit__(self, *_args: object) -> bool:
+        return False
+
+
+@pytest.mark.parametrize("operation", ["list", "call"])
+async def test_transport_failures_are_stable_and_do_not_reflect_details(operation: str) -> None:
+    client = OutboundMcpClient({"fs": _spec()}, session_opener=_TransportFailureOpener())
+
+    with pytest.raises(McpToolError) as raised:
+        if operation == "list":
+            await client.list_tools("fs")
+        else:
+            await client.call_tool("fs", "echo")
+
+    assert "failed during MCP startup or transport" in str(raised.value)
+    assert "TOP-SECRET" not in str(raised.value)
+    assert isinstance(raised.value.__cause__, RuntimeError)
+
+
+@pytest.mark.parametrize(
+    ("operation", "failure"),
+    [
+        ("list", McpConfigError("invalid policy")),
+        ("call", McpToolError("known tool failure")),
+    ],
+)
+async def test_known_mcp_failures_keep_their_typed_boundary(
+    operation: str,
+    failure: McpConfigError | McpToolError,
+) -> None:
+    @asynccontextmanager
+    async def failing_opener(_spec: McpServerSpec) -> AsyncIterator[FakeSession]:
+        raise failure
+        yield FakeSession(tools=[])
+
+    client = OutboundMcpClient({"fs": _spec()}, session_opener=failing_opener)
+
+    with pytest.raises(type(failure)) as raised:
+        if operation == "list":
+            await client.list_tools("fs")
+        else:
+            await client.call_tool("fs", "echo")
+
+    assert raised.value is failure
+
+
 def test_server_names_are_sorted() -> None:
     client = OutboundMcpClient({"b": _spec(name="b"), "a": _spec(name="a")})
     assert client.server_names() == ["a", "b"]
@@ -174,7 +230,7 @@ async def test_default_opener_passes_the_current_stderr_stream(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     executable = tmp_path / "mcp-server"
-    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    shutil.copy2("/bin/true", executable)
     executable.chmod(0o700)
     observed: dict[str, Any] = {}
 
