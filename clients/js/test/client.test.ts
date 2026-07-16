@@ -120,9 +120,14 @@ describe("SynapseClient messaging", () => {
       worktree_object_id: "1:2",
       filesystem_namespace: "host:1",
       case_sensitive: true,
-      paths: [{ git_path: "src/a.ts", filesystem_path: "src/a.ts", object_id: "1:3" }],
+      paths: [{
+        git_path: "src/a.ts/.synapse-symbol/Worker/run",
+        filesystem_path: "src/a.ts/.synapse-symbol/Worker/run",
+        object_id: "1:3",
+        object_scope: "Worker/run",
+      }],
     };
-    client.claim("t1", ["src/a.ts"], pathIdentity);
+    client.claim("t1", ["src/a.ts/.synapse-symbol/Worker/run"], pathIdentity);
     client.release("t1");
     client.requestBoard();
 
@@ -133,7 +138,7 @@ describe("SynapseClient messaging", () => {
       type: "claim",
       task_id: "t1",
       worktree: "/repo",
-      paths: ["src/a.ts"],
+      paths: ["src/a.ts/.synapse-symbol/Worker/run"],
       path_identity: pathIdentity,
     });
     expect(envelopes[3]).toMatchObject({ type: "release", task_id: "t1" });

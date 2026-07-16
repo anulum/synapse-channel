@@ -61,6 +61,8 @@ export interface CanonicalPathIdentity {
   filesystem_path: string;
   /** Optional local filesystem object key used to detect hard-link aliases. */
   object_id: string;
+  /** Optional semantic descendant within object_id; absent means the whole object. */
+  object_scope?: string;
 }
 
 /** Additive version-1 identity for one worktree-scoped claim. */

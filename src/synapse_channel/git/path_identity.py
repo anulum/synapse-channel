@@ -37,7 +37,6 @@ from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runne
 from synapse_channel.git.semantic_scope import parse_semantic_scope, semantic_scope_path
 
 _CASE_PROBE_LIMIT = 64
-_SEMANTIC_OBJECT_IDENTITY_SEGMENT = ".synapse-fs-object"
 
 
 def _filesystem_namespace() -> str:
@@ -228,37 +227,39 @@ def _object_id(path: Path) -> str:
     return f"{metadata.st_dev:x}:{metadata.st_ino:x}"
 
 
-def _semantic_filesystem_scope(relative: str, resolved: Path, symbol: str) -> str:
-    """Return an alias-stable synthetic filesystem scope for one declaration."""
+def _semantic_filesystem_scope(relative: str, symbol: str) -> str:
+    """Return the physical-source-relative scope for one declaration."""
     try:
-        metadata = resolved.stat()
-    except FileNotFoundError:
-        filesystem_source = relative
-    except OSError as exc:
-        raise PathIdentityError("semantic claim source identity could not be read") from exc
-    else:
-        if metadata.st_ino > 0 and metadata.st_nlink > 1:
-            object_id = f"{metadata.st_dev:x}:{metadata.st_ino:x}"
-            digest = hashlib.sha256(object_id.encode()).hexdigest()
-            filesystem_source = f"{_SEMANTIC_OBJECT_IDENTITY_SEGMENT}/{digest}"
-        else:
-            filesystem_source = relative
-    try:
-        return semantic_scope_path(filesystem_source, symbol)
+        return semantic_scope_path(relative, symbol)
     except ValueError as exc:
         raise PathIdentityError("semantic claim filesystem identity is invalid") from exc
 
 
-def _resolved_claim_path(root: Path, display: str) -> tuple[str, str]:
-    """Return canonical filesystem spelling and object identity for a display.
+def _semantic_object_identity(resolved: Path, symbol: str) -> tuple[str, str]:
+    """Return the source-object key and canonical semantic sub-scope."""
+    try:
+        metadata = resolved.stat()
+    except FileNotFoundError:
+        object_id = ""
+    except OSError as exc:
+        raise PathIdentityError("semantic claim source identity could not be read") from exc
+    else:
+        object_id = f"{metadata.st_dev:x}:{metadata.st_ino:x}" if metadata.st_ino > 0 else ""
+    encoded = semantic_scope_path("_", symbol)
+    marker = "_/.synapse-symbol/"
+    return object_id, encoded.removeprefix(marker)
+
+
+def _resolved_claim_path(root: Path, display: str) -> tuple[str, str, str]:
+    """Return filesystem spelling, object identity, and object scope.
 
     Semantic claim paths are coordination descendants, not real children of the
     source file. Their physical source is resolved for alias and escape checks,
     then the synthetic suffix is rebuilt over that canonical source spelling.
-    Hard-linked sources use an object-derived comparison anchor that preserves
-    declaration ancestry across aliases. No direct object identity is attached
-    because sibling symbols intentionally share one source inode and must remain
-    independently claimable.
+    Existing semantic sources retain the physical object's identity plus an
+    object-relative declaration scope. This keeps whole-file aliases and
+    declaration ancestry conflicting across hard links while sibling symbols
+    remain independently claimable.
     """
     semantic = parse_semantic_scope(display)
     physical_display = semantic.source if semantic is not None else display
@@ -268,8 +269,13 @@ def _resolved_claim_path(root: Path, display: str) -> tuple[str, str]:
     except ValueError as exc:
         raise PathIdentityError("claim path resolves outside the Git worktree") from exc
     if semantic is not None:
-        return _semantic_filesystem_scope(relative, resolved, semantic.symbol), ""
-    return relative, _object_id(resolved)
+        object_id, object_scope = _semantic_object_identity(resolved, semantic.symbol)
+        return (
+            _semantic_filesystem_scope(relative, semantic.symbol),
+            object_id,
+            object_scope,
+        )
+    return relative, _object_id(resolved), ""
 
 
 def resolve_claim_scope_identity(
@@ -301,7 +307,10 @@ def resolve_claim_scope_identity(
             index_prefixes=index_prefixes,
             case_sensitive=case_sensitive,
         )
-        filesystem_path, object_id = _resolved_claim_path(canonical_root, display)
+        filesystem_path, object_id, object_scope = _resolved_claim_path(
+            canonical_root,
+            display,
+        )
         identities.append(
             CanonicalPathIdentity(
                 git_path=comparison_path(git_spelling, case_sensitive=case_sensitive),
@@ -310,6 +319,7 @@ def resolve_claim_scope_identity(
                     case_sensitive=case_sensitive,
                 ),
                 object_id=object_id,
+                object_scope=object_scope,
             )
         )
     try:

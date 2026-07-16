@@ -38,6 +38,7 @@ MAX_OBJECT_ID_LENGTH = 160
 """Maximum portable filesystem object-identity length accepted from a client."""
 
 _OBJECT_ID = re.compile(r"^[A-Za-z0-9_.:-]+$")
+_SEMANTIC_SCOPE_MARKER = "/.synapse-symbol/"
 
 
 class PathIdentityError(SynapseError, ValueError):
@@ -89,11 +90,15 @@ class CanonicalPathIdentity:
     ``git_path`` is derived from the index's component spelling.  ``filesystem_path``
     is the resolved path relative to the canonical worktree.  ``object_id`` is
     present only for an existing filesystem object and detects hard-link aliases.
+    ``object_scope`` is empty for the whole object and otherwise names one
+    semantic descendant within it. It refines conflict comparison only; neither
+    field grants edit or release authority.
     """
 
     git_path: str
     filesystem_path: str
     object_id: str = ""
+    object_scope: str = ""
 
     def as_dict(self) -> dict[str, str]:
         """Return the additive wire representation for this path."""
@@ -101,6 +106,7 @@ class CanonicalPathIdentity:
             "git_path": self.git_path,
             "filesystem_path": self.filesystem_path,
             "object_id": self.object_id,
+            "object_scope": self.object_scope,
         }
 
     @classmethod
@@ -115,10 +121,18 @@ class CanonicalPathIdentity:
             or normalize_path(filesystem_path) != filesystem_path
         ):
             raise PathIdentityError("claim path identity paths must be canonical and relative")
+        object_scope = _identity_string(
+            data.get("object_scope", ""),
+            field="object_scope",
+            allow_empty=True,
+        )
+        if normalize_path(object_scope) != object_scope:
+            raise PathIdentityError("claim path identity object_scope must be canonical")
         return cls(
             git_path=git_path,
             filesystem_path=filesystem_path,
             object_id=_object_identity(data.get("object_id", ""), field="object_id"),
+            object_scope=object_scope,
         )
 
 
@@ -184,6 +198,23 @@ class ClaimScopeIdentity:
             isinstance(path, Mapping) for path in raw_paths
         ):
             raise PathIdentityError("claim path identity paths must be a list of mappings")
+        paths = tuple(CanonicalPathIdentity.from_dict(path) for path in raw_paths)
+        for path in paths:
+            if not path.object_scope:
+                continue
+            _source, marker, encoded_scope = path.git_path.rpartition(_SEMANTIC_SCOPE_MARKER)
+            if not marker or not encoded_scope:
+                raise PathIdentityError(
+                    "claim path identity object_scope requires a semantic git_path"
+                )
+            if (
+                comparison_path(
+                    path.object_scope,
+                    case_sensitive=case_sensitive,
+                )
+                != encoded_scope
+            ):
+                raise PathIdentityError("claim path identity object_scope does not match git_path")
         return cls(
             version=version,
             worktree_path=worktree_path,
@@ -194,7 +225,7 @@ class ClaimScopeIdentity:
                 data.get("filesystem_namespace", ""), field="filesystem_namespace"
             ),
             case_sensitive=case_sensitive,
-            paths=tuple(CanonicalPathIdentity.from_dict(path) for path in raw_paths),
+            paths=paths,
         )
 
     def validates_display_paths(self, paths: Sequence[str]) -> bool:
@@ -285,7 +316,7 @@ def _canonical_pair_overlaps(
 ) -> bool:
     """Return whether two canonical path identities share a filesystem object/scope."""
     if object_identity_safe and a.object_id and a.object_id == b.object_id:
-        return True
+        return paths_overlap(a.object_scope, b.object_scope)
     return paths_overlap(a.git_path, b.git_path) or paths_overlap(
         a.filesystem_path, b.filesystem_path
     )
@@ -302,6 +333,10 @@ def _under_case_policy(
             case_sensitive=case_sensitive,
         ),
         object_id=identity.object_id,
+        object_scope=comparison_path(
+            identity.object_scope,
+            case_sensitive=case_sensitive,
+        ),
     )
 
 
@@ -386,7 +421,7 @@ def claim_scope_covers_path(
         case_sensitive=sensitive,
     )
     if object_identity_safe and left.object_id and left.object_id == right.object_id:
-        return True
+        return _path_covers(left.object_scope, right.object_scope)
     return _path_covers(left.git_path, right.git_path) or (
         filesystem_identity_safe and _path_covers(left.filesystem_path, right.filesystem_path)
     )

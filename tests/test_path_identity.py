@@ -59,6 +59,7 @@ def _identity(
     case_sensitive: bool = True,
     filesystem_path: str | None = None,
     object_id: str = "",
+    object_scope: str = "",
 ) -> ClaimScopeIdentity:
     """Build one valid comparison identity for pure conflict tests."""
     canonical = path if case_sensitive else path.casefold()
@@ -70,7 +71,14 @@ def _identity(
         worktree_object_id="root:1",
         filesystem_namespace="host:1",
         case_sensitive=case_sensitive,
-        paths=(CanonicalPathIdentity(canonical, filesystem, object_id),),
+        paths=(
+            CanonicalPathIdentity(
+                canonical,
+                filesystem,
+                object_id,
+                object_scope,
+            ),
+        ),
     )
 
 
@@ -251,7 +259,7 @@ def test_real_git_identity_detects_symlink_and_hardlink_aliases(tmp_path: Path) 
 def test_semantic_identity_resolves_source_without_colliding_siblings(
     tmp_path: Path,
 ) -> None:
-    """Synthetic symbol descendants inherit spelling, never source inode authority."""
+    """Synthetic siblings share source identity without sharing declaration scope."""
     repo = git_repo(tmp_path / "repo")
     source = repo / "src" / "worker.py"
     source.parent.mkdir()
@@ -267,7 +275,8 @@ def test_semantic_identity_resolves_source_without_colliding_siblings(
 
     assert displays == (first, second)
     assert [identity.filesystem_path for identity in scope.paths] == [first, second]
-    assert [identity.object_id for identity in scope.paths] == ["", ""]
+    assert scope.paths[0].object_id == scope.paths[1].object_id != ""
+    assert [identity.object_scope for identity in scope.paths] == ["first", "second"]
     assert not claim_scopes_conflict(
         str(root),
         [first],
@@ -296,8 +305,16 @@ def test_semantic_identity_preserves_hardlink_alias_hierarchy(tmp_path: Path) ->
     filesystem_scopes = [parse_semantic_scope(identity.filesystem_path) for identity in scope.paths]
     assert displays == (parent, child, sibling)
     assert all(item is not None for item in filesystem_scopes)
-    assert len({item.source for item in filesystem_scopes if item is not None}) == 1
-    assert all(identity.object_id == "" for identity in scope.paths)
+    assert {item.source for item in filesystem_scopes if item is not None} == {
+        "src/worker.py",
+        "src/worker_alias.py",
+    }
+    assert len({identity.object_id for identity in scope.paths}) == 1
+    assert [identity.object_scope for identity in scope.paths] == [
+        "Worker",
+        "Worker/run",
+        "Worker/stop",
+    ]
     assert claim_scopes_conflict(
         str(root),
         [parent],
@@ -316,6 +333,109 @@ def test_semantic_identity_preserves_hardlink_alias_hierarchy(tmp_path: Path) ->
     )
 
 
+def test_semantic_object_scope_honours_shared_case_policy() -> None:
+    """Object-relative symbols cannot bypass a case-insensitive worktree."""
+    upper = _identity(
+        path=semantic_scope_path("source.py", "Worker.Run"),
+        case_sensitive=True,
+        object_id="1:2",
+        object_scope="Worker/Run",
+    )
+    lower = _identity(
+        path=semantic_scope_path("source_alias.py", "worker.run"),
+        case_sensitive=False,
+        object_id="1:2",
+        object_scope="worker/run",
+    )
+
+    assert claim_scopes_conflict(
+        "/repo",
+        ["source.py/.synapse-symbol/Worker/Run"],
+        upper,
+        "/repo",
+        ["source_alias.py/.synapse-symbol/worker/run"],
+        lower,
+    )
+
+
+def test_whole_file_conflicts_with_semantic_scope_through_hardlink_alias(
+    tmp_path: Path,
+) -> None:
+    """A whole source object covers every semantic descendant through aliases."""
+    repo = git_repo(tmp_path / "repo")
+    source = repo / "a.py"
+    alias = repo / "b.py"
+    source.write_text("class Worker:\n    def run(self):\n        return 1\n", encoding="utf-8")
+    os.link(source, alias)
+    _commit(repo, "a.py", "b.py")
+    semantic = semantic_scope_path("b.py", "Worker.run")
+
+    root, displays, scope = resolve_claim_scope_identity(repo, ["a.py", semantic])
+
+    assert scope.paths[0].object_id == scope.paths[1].object_id != ""
+    assert scope.paths[0].object_scope == ""
+    assert scope.paths[1].object_scope == "Worker/run"
+    assert claim_scopes_conflict(
+        str(root),
+        [displays[0]],
+        _single(scope, 0),
+        str(root),
+        [displays[1]],
+        _single(scope, 1),
+    )
+    state = SynapseState()
+    first_ok, _ = state.claim(
+        "seat/whole",
+        "WHOLE",
+        worktree=str(root),
+        paths=[displays[0]],
+        path_identity=_single(scope, 0),
+    )
+    second_ok, reason = state.claim(
+        "seat/semantic",
+        "SEMANTIC",
+        worktree=str(root),
+        paths=[displays[1]],
+        path_identity=_single(scope, 1),
+    )
+    assert first_ok
+    assert not second_ok
+    assert "file scope conflicts" in reason
+
+
+def test_semantic_object_scope_survives_hardlink_creation(tmp_path: Path) -> None:
+    """Later hard-link creation cannot disconnect an existing semantic claim."""
+    repo = git_repo(tmp_path / "repo")
+    source = repo / "a.py"
+    alias = repo / "b.py"
+    source.write_text("class Worker:\n    def run(self):\n        return 1\n", encoding="utf-8")
+    _commit(repo, "a.py")
+    original = semantic_scope_path("a.py", "Worker.run")
+    root, original_displays, original_scope = resolve_claim_scope_identity(
+        repo,
+        [original],
+    )
+
+    os.link(source, alias)
+    _commit(repo, "b.py")
+    aliased = semantic_scope_path("b.py", "Worker.run")
+    _root, aliased_displays, aliased_scope = resolve_claim_scope_identity(
+        repo,
+        [aliased],
+    )
+
+    assert original_scope.paths[0].object_id == aliased_scope.paths[0].object_id != ""
+    assert original_scope.paths[0].object_scope == aliased_scope.paths[0].object_scope
+    assert claim_scopes_conflict(
+        str(root),
+        original_displays,
+        original_scope,
+        str(root),
+        aliased_displays,
+        aliased_scope,
+    )
+
+
 def test_missing_semantic_source_retains_canonical_display_scope(tmp_path: Path) -> None:
     """A missing future source remains claimable without fabricated object identity."""
     repo = git_repo(tmp_path / "repo")
@@ -326,6 +446,7 @@ def test_missing_semantic_source_retains_canonical_display_scope(tmp_path: Path)
     assert displays == (semantic,)
     assert scope.paths[0].filesystem_path == semantic
     assert scope.paths[0].object_id == ""
+    assert scope.paths[0].object_scope == "run"
 
 
 def test_unreadable_semantic_source_identity_fails_closed(
@@ -339,14 +460,10 @@ def test_unreadable_semantic_source_identity_fails_closed(
     _commit(repo, "worker.py")
     resolved_source = source.resolve()
     original_stat = Path.stat
-    source_stat_calls = 0
 
     def guarded_stat(path: Path, *args: Any, **kwargs: Any) -> os.stat_result:
-        nonlocal source_stat_calls
-        if path == resolved_source:
-            source_stat_calls += 1
-            if source_stat_calls > 1:
-                raise PermissionError("fixture denied")
+        if path == resolved_source and kwargs.get("follow_symlinks", True):
+            raise PermissionError("fixture denied")
         return original_stat(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "stat", guarded_stat)
@@ -356,11 +473,61 @@ def test_unreadable_semantic_source_identity_fails_closed(
             repo,
             [semantic_scope_path("worker.py", "run")],
         )
-    assert source_stat_calls == 2
 
 
-def test_oversized_hardlink_semantic_identity_fails_closed(tmp_path: Path) -> None:
-    """An object anchor that would exceed the path ceiling is refused."""
+def test_semantic_alias_into_reserved_scope_fails_closed(tmp_path: Path) -> None:
+    """A valid display alias cannot rebuild identity inside the reserved segment."""
+    repo = git_repo(tmp_path / "repo")
+    reserved = repo / "src" / ".synapse-symbol" / "worker.py"
+    reserved.parent.mkdir(parents=True)
+    reserved.write_text("def run():\n    return 1\n", encoding="utf-8")
+    alias = repo / "worker.py"
+    try:
+        alias.symlink_to(reserved.relative_to(repo))
+    except OSError:
+        pytest.skip("symbolic links are unavailable on this filesystem")
+    _commit(repo, "src/.synapse-symbol/worker.py", "worker.py")
+
+    with pytest.raises(PathIdentityError, match="filesystem identity is invalid"):
+        resolve_claim_scope_identity(
+            repo,
+            [semantic_scope_path("worker.py", "run")],
+        )
+
+
+def test_semantic_source_without_inode_keeps_scope_without_object_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unavailable inode disables alias comparison without losing the scope."""
+    repo = git_repo(tmp_path / "repo")
+    source = repo / "worker.py"
+    source.write_text("def run():\n    return 1\n", encoding="utf-8")
+    _commit(repo, "worker.py")
+    resolved_source = source.resolve()
+    original_stat = Path.stat
+
+    def zero_inode_stat(path: Path, *args: Any, **kwargs: Any) -> os.stat_result:
+        metadata = original_stat(path, *args, **kwargs)
+        if path != resolved_source or not kwargs.get("follow_symlinks", True):
+            return metadata
+        values = list(metadata)
+        values[1] = 0
+        return os.stat_result(values)
+
+    monkeypatch.setattr(Path, "stat", zero_inode_stat)
+
+    _root, _displays, scope = resolve_claim_scope_identity(
+        repo,
+        [semantic_scope_path("worker.py", "run")],
+    )
+
+    assert scope.paths[0].object_id == ""
+    assert scope.paths[0].object_scope == "run"
+
+
+def test_maximum_semantic_scope_retains_bounded_object_scope(tmp_path: Path) -> None:
+    """The longest valid semantic path produces a separately bounded object scope."""
     repo = git_repo(tmp_path / "repo")
     source = repo / "a.py"
     alias = repo / "b.py"
@@ -371,8 +538,12 @@ def test_oversized_hardlink_semantic_identity_fails_closed(tmp_path: Path) -> No
     symbol = "x" * (MAX_PATH_LENGTH - len(prefix))
     semantic = semantic_scope_path("a.py", symbol)
 
-    with pytest.raises(PathIdentityError, match="filesystem identity is invalid"):
-        resolve_claim_scope_identity(repo, [semantic])
+    _root, displays, scope = resolve_claim_scope_identity(repo, [semantic])
+
+    assert displays == (semantic,)
+    assert len(scope.paths[0].git_path) == MAX_PATH_LENGTH
+    assert len(scope.paths[0].object_scope) < MAX_PATH_LENGTH
+    assert ClaimScopeIdentity.from_dict(scope.as_dict()) == scope
 
 
 def test_symlink_escape_is_refused_before_claim(tmp_path: Path) -> None:

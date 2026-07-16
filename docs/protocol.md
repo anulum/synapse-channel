@@ -97,7 +97,8 @@ ignored by clients that only render the ordinary `worktree` and `paths` fields.
     {
       "git_path": "src/auth.py",
       "filesystem_path": "src/auth.py",
-      "object_id": "device:object"
+      "object_id": "device:object",
+      "object_scope": ""
     }
   ]
 }
@@ -109,14 +110,18 @@ repository-relative Unicode NFC; case folding occurs only for an insensitive
 worktree. Device/object values are compared only when both identities carry the
 same opaque filesystem namespace and worktree-root object key; this prevents
 coincident inode values on different hosts from aliasing. Empty object ids mean
-the path does not yet exist. Object equality is conflict-only: it can deny a
-competing hard-link claim, but cannot widen edit authorization or auto-release
-because inode identity is not a historical capability. The hub rejects an
-unsupported version, malformed values, or any row that does not match its
-display path before changing state. It then persists and replays the field in
-claim, handoff, journal, causality, conflict, yield, and staged-check projections;
-Git-hook release matching can consume it client-side. The hub never trusts the
-identity as authorization and never uses it to access a local path.
+the path does not yet exist. The optional `object_scope` is empty or absent for
+the whole object and otherwise carries a canonical semantic descendant. A whole
+object conflicts with every descendant, declaration ancestry conflicts, and
+sibling declarations remain independent across hard-link aliases. Object
+comparison is conflict-only: it can deny a competing hard-link claim, but cannot
+widen edit authorization or auto-release because inode identity is not a
+historical capability. The hub rejects an unsupported version, malformed values,
+or any row that does not match its display path before changing state. It then
+persists and replays the field in claim, handoff, journal, causality, conflict,
+yield, and staged-check projections; Git-hook release matching can consume it
+client-side. The hub never trusts the identity as authorization and never uses it
+to access a local path.
 
 When only one side supplies the field, the hub projects the legacy display
 under the supplied filesystem policy. Two claims without the field retain the

@@ -61,15 +61,17 @@ All notable changes to this project are documented here.
   waits for a rendered result within the bounded popup height, while closure
   tracks every bounded positive height so a collapsed search shell cannot be
   mistaken for disappearance.
-  Ambiguous, unowned, malformed, or deadline-exhausted selector states remain
-  fail-closed, and post-confirmation closure requires consecutive clean snapshots
-  rather than a single raced absence.
+  An owner-proven remap with phase-invalid geometry now fails explicitly instead
+  of counting toward clean closure. Ambiguous, unowned, malformed, or
+  deadline-exhausted selector states remain fail-closed, and post-confirmation
+  closure requires consecutive clean snapshots rather than a single raced
+  absence.
 - Filesystem-canonical Git claims now resolve synthetic semantic descendants
   through their physical source path without treating `.synapse-symbol` as a
-  real child of a file. Sibling symbols retain independent ownership because
-  synthetic rows never inherit the shared source inode as edit authority, while
-  an object-derived comparison anchor preserves declaration ancestry across
-  hard-link aliases.
+  real child of a file. A backward-compatible object-relative semantic sub-scope
+  makes whole-file aliases conflict with every declaration and preserves
+  declaration ancestry across hard links, including links created after the
+  first claim, while sibling declarations retain independent ownership.
 
 ### Changed
 

@@ -169,10 +169,13 @@ records each narrowing or widening decision, but tree-sitter output is planning
 evidence, not proof that a change is correct or complete.
 
 Filesystem-canonical identity resolves a semantic descendant through its physical
-source before rebuilding the synthetic suffix. Hard-linked source aliases use a
-private object-derived comparison anchor, so the same declaration and declaration
-ancestry still contend across aliases while sibling declarations remain separate.
-The anchor is comparison material only and never becomes a repository path.
+source before rebuilding the synthetic suffix. Existing sources carry their
+host-namespaced object key plus an object-relative semantic sub-scope. A
+whole-file alias therefore conflicts with every declaration on that object,
+declaration ancestry still contends across aliases, and sibling declarations
+remain separate even when a hard link is created after the first claim. Object
+comparison is conflict material only and never becomes a repository path or edit
+capability.
 
 ## Auto-release on commit or merge
 

@@ -411,7 +411,10 @@ The selector re-proves owned focus immediately before final confirmation, after
 all filtered-state evidence has been captured. Agent-selector discovery batches
 the visible JetBrains window geometry into one X11 query, then performs the
 more expensive root-child and transient-owner checks only for phase-valid
-selector dimensions. Initial discovery requires the exact unfiltered
+selector dimensions during discovery and filtered readiness. During closure,
+an exact-title remap with phase-invalid geometry is also owner-classified and
+fails explicitly rather than counting as an absence. Initial discovery requires
+the exact unfiltered
 `310 × 407` popup. After filtering, the result-bearing popup may shrink but
 must stay 310 pixels wide, exceed the observed 42-pixel search-only shell, and
 remain no taller than the unfiltered popup. Post-confirmation closure continues
@@ -441,10 +444,11 @@ while allowing those independently scheduled completion events in either
 observed IDEA 2026.1.4 order. Lifecycle baselines bind each log's device and
 inode, reject replacement or truncation, and reject any post-baseline chat or
 process event for an agent other than the exact pinned identity. The
-implementation keeps client orchestration, selector lifecycle, X11
-transport/input, first-run setup, and evidence capture in separate
-responsibility modules. The generated IDEA ACP entry also refuses an empty or
-relative proxy executable. IDEA starts as an isolated process-group leader;
+implementation keeps client orchestration, selector interaction lifecycle,
+selector-window discovery/classification, X11 transport/input, first-run setup,
+and evidence capture in separate responsibility modules. The generated IDEA ACP
+entry also refuses an empty or relative proxy executable. IDEA starts as an
+isolated process-group leader;
 cleanup terminates every helper with bounded
 `SIGTERM`/`SIGKILL` escalation. Its ACP initialization phase has a bounded
 three-minute budget for delayed plugin continuations on loaded headless hosts

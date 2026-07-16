@@ -16,6 +16,7 @@ import pytest
 
 from e2e.opencode_editors import (
     jetbrains_selector,
+    jetbrains_selector_windows,
     jetbrains_x11_driver,
 )
 from e2e.opencode_editors.jetbrains_selector import (
@@ -131,7 +132,7 @@ def test_agent_selector_popup_search_deduplicates_one_window(
         batched_geometry,
     )
     monkeypatch.setattr(
-        jetbrains_selector,
+        jetbrains_selector_windows,
         "_agent_selector_owner_matches",
         lambda window, project_id, **_kwargs: window == "456" and project_id == 123,
     )
@@ -165,7 +166,7 @@ def test_agent_selector_popup_search_fails_closed_on_multiple_windows(
         lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, batch, ""),
     )
     monkeypatch.setattr(
-        jetbrains_selector,
+        jetbrains_selector_windows,
         "_agent_selector_owner_matches",
         lambda _window, _project_id, **_kwargs: True,
     )
@@ -190,7 +191,7 @@ def test_agent_selector_popup_search_prefilters_geometry_before_owner_queries(
         lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, batch, ""),
     )
     monkeypatch.setattr(
-        jetbrains_selector,
+        jetbrains_selector_windows,
         "_agent_selector_owner_matches",
         record_owner_query,
     )
@@ -222,9 +223,14 @@ def test_agent_selector_geometry_tracks_lifecycle_phase(
 ) -> None:
     """Classify observed dynamic selector heights without weakening ownership."""
     monkeypatch.setattr(
-        jetbrains_selector,
+        jetbrains_selector_windows,
         "_agent_selector_owner_matches",
         lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_required_window_name",
+        lambda *_args, **_kwargs: "other",
     )
 
     matches = jetbrains_selector.owned_agent_selector_popups(
@@ -242,7 +248,7 @@ def test_filtered_selector_rejects_dynamic_unowned_popup(
 ) -> None:
     """A valid collapsed height never bypasses the project ownership proof."""
     monkeypatch.setattr(
-        jetbrains_selector,
+        jetbrains_selector_windows,
         "_agent_selector_owner_matches",
         lambda *_args, **_kwargs: False,
     )
@@ -266,7 +272,7 @@ def test_agent_selector_snapshot_rejects_exact_title_with_unowned_frame(
 ) -> None:
     """Fail immediately when a selector-shaped exact title loses project ownership."""
     monkeypatch.setattr(
-        jetbrains_selector,
+        jetbrains_selector_windows,
         "_agent_selector_owner_matches",
         lambda *_args, **_kwargs: False,
     )
@@ -889,14 +895,14 @@ def test_disappearing_window_parser_accepts_only_canonical_unique_metadata() -> 
         "  Current serial number in output stream:  43\n"
     )
     assert (
-        jetbrains_selector._is_disappearing_window_snapshot(
+        jetbrains_selector_windows._is_disappearing_window_snapshot(
             subprocess.CompletedProcess([], 1, "", diagnostic)
         )
         is True
     )
     duplicate = diagnostic + "  Serial number of failed request:  44\n"
     assert (
-        jetbrains_selector._is_disappearing_window_snapshot(
+        jetbrains_selector_windows._is_disappearing_window_snapshot(
             subprocess.CompletedProcess([], 1, "", duplicate)
         )
         is False

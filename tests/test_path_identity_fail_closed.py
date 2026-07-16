@@ -43,6 +43,7 @@ def _wire_identity() -> dict[str, Any]:
                 "git_path": "src/file.py",
                 "filesystem_path": "src/file.py",
                 "object_id": "1:3",
+                "object_scope": "",
             }
         ],
     }
@@ -64,6 +65,45 @@ def _wire_identity() -> dict[str, Any]:
                 ]
             },
             "object_id is invalid",
+        ),
+        (
+            {
+                "paths": [
+                    {
+                        "git_path": "src/file.py",
+                        "filesystem_path": "src/file.py",
+                        "object_id": "1:3",
+                        "object_scope": "../run",
+                    }
+                ]
+            },
+            "object_scope must be canonical",
+        ),
+        (
+            {
+                "paths": [
+                    {
+                        "git_path": "src/file.py",
+                        "filesystem_path": "src/file.py",
+                        "object_id": "1:3",
+                        "object_scope": "run",
+                    }
+                ]
+            },
+            "object_scope requires a semantic git_path",
+        ),
+        (
+            {
+                "paths": [
+                    {
+                        "git_path": "src/file.py/.synapse-symbol/run",
+                        "filesystem_path": "src/file.py/.synapse-symbol/run",
+                        "object_id": "1:3",
+                        "object_scope": "other",
+                    }
+                ]
+            },
+            "object_scope does not match git_path",
         ),
         ({"worktree_path": "/repo/"}, "worktree_path is not canonical"),
         ({"paths": {}}, "list of mappings"),
