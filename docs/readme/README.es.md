@@ -260,8 +260,9 @@ synapse quickstart-coding
 la exposición del hub, la presión sobre el sistema de archivos raíz y los
 waiters ausentes. Una máquina totalmente nueva puede advertir que no hay hub ni
 waiter en ejecución; eso es lo esperado antes de configurar el servicio.
-`synapse demo` arranca su propio hub local, conduce un flujo de coordinación
-planner/worker y tiene éxito cuando imprime:
+`synapse demo` arranca su propio hub local y ejecuta la ruta Claude/Codex con
+claims separados, rechazo del conflicto, handoff y receipt verificado. Tiene
+éxito cuando imprime:
 
 ```text
 success: coordination demo completed

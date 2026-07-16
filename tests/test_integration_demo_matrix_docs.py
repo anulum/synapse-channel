@@ -12,11 +12,12 @@ def _read_doc(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
-def test_integration_demo_matrix_documents_three_narrow_demos() -> None:
+def test_integration_demo_matrix_documents_the_golden_path_and_three_adapters() -> None:
     """The matrix should give users bounded demo choices, not vague promises."""
     matrix = _read_doc("docs/integration-demos.md")
 
     expected_sections = (
+        "## Demo 0: Installed five-minute golden path",
         "## Demo 1: CLI coding sessions",
         "## Demo 2: MCP host adapter",
         "## Demo 3: Local A2A bridge",
@@ -25,6 +26,7 @@ def test_integration_demo_matrix_documents_three_narrow_demos() -> None:
         assert section in matrix
 
     expected_commands = (
+        "synapse demo --output ./synapse-golden-demo",
         "synapse hub --host 127.0.0.1 --port 8876",
         "synapse git-init --name codex-1",
         "synapse git-claim --task-id DEMO-CLI --paths src --name codex-1",
@@ -37,6 +39,11 @@ def test_integration_demo_matrix_documents_three_narrow_demos() -> None:
         assert command in matrix
 
     expected_boundaries = (
+        "| Installed golden path | Supported, real local boundaries | Claude/Codex "
+        "presence, separate Git claims, deliberate conflict refusal, fail-closed "
+        "mutation guard, atomic handoff, observed verification, receipt-backed "
+        "release, static dashboard. | Uses a disposable local Git repository; it "
+        "does not launch vendor model turns or certify external client versions. |",
         "| CLI coding sessions | Supported | File-scope claims, claims release, "
         "board/status checks, direct messages. | Does not start or control the "
         "coding agent runtime. |",

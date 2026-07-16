@@ -229,8 +229,9 @@ synapse quickstart-coding
 
 `synapse doctor` 报告本地设置问题，例如身份、hub 暴露、根文件系统压力和
 缺失的 waiter。全新的机器可能会警告没有 hub 或 waiter 在运行；在服务设置
-之前这是预期的。`synapse demo` 启动自己的本地 hub，驱动一个
-planner/worker 协调流程，并在打印以下内容时成功：
+之前这是预期的。`synapse demo` 启动自己的本地 hub，执行 Claude/Codex
+分离 claim、冲突拒绝、handoff 和已验证 receipt 的完整流程，并在打印以下
+内容时成功：
 
 ```text
 success: coordination demo completed

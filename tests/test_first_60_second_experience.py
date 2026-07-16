@@ -39,20 +39,27 @@ def test_parser_routes_demo_to_installed_first_run_command() -> None:
 
 
 async def test_installed_demo_drives_core_coordination_flow() -> None:
-    log = await run_coordination_demo(_free_port())
+    result = await run_coordination_demo(_free_port())
+    log = result.narration
 
-    assert any("Two agents are online" in line for line in log)
-    assert any("ready set: ['BUILD']" in line for line in log)
-    assert any("refused" in line for line in log)
-    assert any("ready set: ['TEST']" in line for line in log)
-    assert any("handed TEST off to PLANNER" in line for line in log)
+    assert result.completed is True
+    assert any("Claude and Codex" in line for line in log)
+    assert any("CONFLICT REFUSED" in line for line in log)
+    assert any("MUTATION DENIED" in line for line in log)
+    assert any("HANDOFF" in line for line in log)
+    assert any("VERIFIED RECEIPT" in line for line in log)
 
 
-def test_cmd_demo_prints_success_criterion(capsys: pytest.CaptureFixture[str]) -> None:
-    assert cli.main(["demo"]) == 0
+def test_cmd_demo_prints_success_criterion(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    assert cli.main(["demo", "--output", str(tmp_path)]) == 0
 
     out = capsys.readouterr().out
-    assert "SYNAPSE CHANNEL — first-run demo" in out
+    assert "SYNAPSE CHANNEL — five-minute golden demo" in out
+    assert (tmp_path / "golden-demo.json").is_file()
+    assert (tmp_path / "golden-demo-dashboard.html").is_file()
     assert "success: coordination demo completed" in out
 
 
@@ -87,10 +94,10 @@ async def test_demo_run_emits_no_handshake_abort_records(
     """
     with caplog.at_level(logging.DEBUG, logger="synapse.hub.ws"):
         level_during = logging.getLogger("synapse.hub.ws").level
-        log = await run_coordination_demo(_free_port())
+        result = await run_coordination_demo(_free_port())
         assert logging.getLogger("synapse.hub.ws").level == level_during
 
-    assert any("handed TEST off to PLANNER" in line for line in log)
+    assert any("HANDOFF" in line for line in result.narration)
     handshake_records = [
         record
         for record in caplog.records

@@ -26,13 +26,13 @@ def _load(name: str) -> ModuleType:
 
 async def test_coordination_demo_drives_the_full_plane() -> None:
     demo = _load("coordination_demo")
-    log = await demo.run_demo(demo._free_port())
-    # The dependent task starts blocked, then unblocks once its dependency is done.
-    assert any("ready set: ['BUILD']" in line for line in log)
-    assert any("ready set: ['TEST']" in line for line in log)
-    # The overlapping file-scope claim is refused, and the task is handed off.
-    assert any("refused" in line for line in log)
-    assert any("handed TEST off to PLANNER" in line for line in log)
+    result = await demo.run_demo(demo._free_port())
+    assert result.completed is True
+    assert result.guard_before_handoff.allowed is False
+    assert result.guard_after_handoff.allowed is True
+    assert result.receipt["epistemic_status"] == "supported"
+    assert any("CONFLICT REFUSED" in line for line in result.narration)
+    assert any("HANDOFF" in line for line in result.narration)
 
 
 async def test_llm_team_demo_offline_reply() -> None:

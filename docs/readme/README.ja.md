@@ -257,8 +257,8 @@ synapse quickstart-coding
 逼迫、waiter の不在といったローカルセットアップの問題を報告します。真新しい
 マシンでは、ハブや waiter が動いていないと警告されるかもしれませんが、
 サービスセットアップ前ならそれは想定どおりです。`synapse demo` は自前の
-ローカルハブを起動し、planner/worker の調整フローを駆動し、次を出力すれば
-成功です。
+ローカルハブを起動し、Claude/Codex の個別 claim、競合拒否、handoff、
+検証済み receipt までを実行し、次を出力すれば成功です。
 
 ```text
 success: coordination demo completed

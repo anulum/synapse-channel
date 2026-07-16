@@ -21,9 +21,41 @@ reverse proxy, TLS stack, or webhook receiver.
 
 | Demo | Status | Supported behavior | Unsupported or still open |
 | --- | --- | --- | --- |
+| Installed golden path | Supported, real local boundaries | Claude/Codex presence, separate Git claims, deliberate conflict refusal, fail-closed mutation guard, atomic handoff, observed verification, receipt-backed release, static dashboard. | Uses a disposable local Git repository; it does not launch vendor model turns or certify external client versions. |
 | CLI coding sessions | Supported | File-scope claims, claims release, board/status checks, direct messages. | Does not start or control the coding agent runtime. |
 | MCP host adapter | Supported adapter surface | MCP tools/resources expose Synapse coordination through stdio. | Does not certify every MCP host, streaming, tool chaining, or resource templates. |
 | Local A2A bridge | Local bridge surface | Agent Card projection plus local HTTP+JSON task/message routes. | Does not claim independent A2A conformance, remote TLS deployment, or real webhook receiver validation. |
+
+## Demo 0: Installed five-minute golden path
+
+Use this immediately after installation to prove the complete coordination
+story without wiring a real repository:
+
+```bash
+python -m pip install synapse-channel
+synapse demo --output ./synapse-golden-demo
+```
+
+The command starts a real local hub and a disposable committed Git repository,
+connects `CLAUDE` and `CODEX`, grants disjoint file claims, denies Codex's
+deliberate overlap, and calls the same provider-neutral mutation guard used by
+the adapters. The guard denies before Claude atomically hands off its claim and
+allows after the transfer. Codex then runs real `unittest` and `git diff
+--check` commands, hashes both changed files, and releases with a supported
+receipt.
+
+Inspect both outputs:
+
+- `golden-demo.json` is the machine-readable completion, guard, command,
+  artifact-hash, Git, receipt, and dashboard snapshot evidence.
+- `golden-demo-dashboard.html` is the static cockpit view. Its recent-progress
+  and receipt sections show `SEPARATE CLAIMS`, `CONFLICT REFUSED`, `MUTATION
+  DENIED`, `HANDOFF`, and `VERIFIED RECEIPT`.
+
+This proves the shipped local boundaries end to end. It deliberately does not
+claim that Claude Code or Codex CLI executed model turns; real-client
+compatibility belongs to the signed compatibility matrix and provider E2E
+lanes.
 
 ## Demo 1: CLI coding sessions
 

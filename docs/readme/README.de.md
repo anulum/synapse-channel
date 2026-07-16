@@ -256,8 +256,9 @@ synapse quickstart-coding
 `synapse doctor` meldet lokale Setup-Probleme wie Identität, Hub-Exposition,
 Druck auf das Root-Dateisystem und fehlende Waiter. Eine brandneue Maschine kann
 warnen, dass kein Hub oder Waiter läuft; vor der Dienst-Einrichtung ist das zu
-erwarten. `synapse demo` startet seinen eigenen lokalen Hub, fährt einen
-Planner/Worker-Koordinationsfluss und ist erfolgreich, wenn es Folgendes ausgibt:
+erwarten. `synapse demo` startet seinen eigenen lokalen Hub, fährt den
+Claude/Codex-Pfad mit getrennten Claims, Konfliktverweigerung, Handoff und
+verifiziertem Receipt und ist erfolgreich, wenn es Folgendes ausgibt:
 
 ```text
 success: coordination demo completed

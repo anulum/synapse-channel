@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `synapse demo` is now the complete five-minute Claude/Codex golden path. It
+  starts a real local hub and disposable Git repository, grants separate file
+  claims, deliberately proves overlap refusal and fail-closed mutation denial,
+  atomically hands authority over, runs observed `unittest` and `git diff`
+  checks, hashes both changed files, and releases with a supported receipt. The
+  command writes machine-readable `golden-demo.json` evidence and a static
+  dashboard that renders every safety milestone; `--output DIR` selects a
+  persistent artifact directory.
+
 ### Security
 
 - The read-only dashboard now enforces an always-on `Host`-header boundary

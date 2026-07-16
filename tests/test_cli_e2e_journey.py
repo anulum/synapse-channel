@@ -15,17 +15,29 @@ the same event log a coordination journey writes.
 
 from __future__ import annotations
 
+import json
 import subprocess  # nosec B404 — syntax-checks generated completion scripts
 from pathlib import Path
 
 from cli_e2e_helpers import isolated_hub, run_cli
 
 
-def test_self_contained_demo_prints_success() -> None:
-    """``synapse demo`` runs its bundled coordination flow to the documented line."""
-    result = run_cli("demo", timeout=90)
+def test_self_contained_demo_prints_success(tmp_path: Path) -> None:
+    """``synapse demo`` executes the real golden path and writes its dashboard."""
+    output = tmp_path / "golden-demo"
+    result = run_cli("demo", "--output", str(output), timeout=90)
     assert result.ok(), result.output
     assert "success: coordination demo completed" in result.stdout
+    evidence_path = output / "golden-demo.json"
+    dashboard_path = output / "golden-demo-dashboard.html"
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    dashboard = dashboard_path.read_text(encoding="utf-8")
+    assert evidence["completed"] is True
+    assert evidence["guard"]["before_handoff"]["allowed"] is False
+    assert evidence["guard"]["after_handoff"]["allowed"] is True
+    assert evidence["receipt"]["epistemic_status"] == "supported"
+    for marker in ("CONFLICT REFUSED", "MUTATION DENIED", "HANDOFF", "VERIFIED RECEIPT"):
+        assert marker in dashboard
 
 
 def test_commands_overview_groups_the_surface_by_tier() -> None:

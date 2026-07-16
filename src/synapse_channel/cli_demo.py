@@ -11,21 +11,44 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
+from pathlib import Path
+from typing import Protocol, cast
 
 from synapse_channel.demo import run_installed_demo
-
-DemoRunner = Callable[[], list[str]]
-"""Callable that executes the installed demo and returns narration lines."""
+from synapse_channel.demo_artifacts import DemoArtifacts
 
 
-def _cmd_demo(args: argparse.Namespace, *, demo_runner: DemoRunner = run_installed_demo) -> int:
+class DemoRun(Protocol):
+    """Result surface consumed by the demo command.
+
+    Attributes
+    ----------
+    artifacts : DemoArtifacts
+        Evidence paths printed after successful completion.
+    """
+
+    @property
+    def artifacts(self) -> DemoArtifacts:
+        """Return the evidence artifact paths."""
+
+
+DemoRunner = Callable[[Path | None], DemoRun]
+"""Callable that executes the installed demo and returns its artifact paths."""
+
+_DEFAULT_DEMO_RUNNER = cast(DemoRunner, run_installed_demo)
+
+
+def _cmd_demo(
+    args: argparse.Namespace,
+    *,
+    demo_runner: DemoRunner = _DEFAULT_DEMO_RUNNER,
+) -> int:
     """Run the installed first-run demo and print a concrete success marker.
 
     Parameters
     ----------
     args : argparse.Namespace
-        Parsed CLI arguments. The command currently has no user-facing options;
-        the namespace is accepted for the shared CLI dispatch contract.
+        Parsed CLI arguments containing the optional artifact output directory.
     demo_runner : DemoRunner, optional
         Injectable demo runner used by tests.
 
@@ -35,9 +58,10 @@ def _cmd_demo(args: argparse.Namespace, *, demo_runner: DemoRunner = run_install
         Always ``0`` when the demo completes; exceptions from the runner are
         allowed to propagate so failures are visible.
     """
-    del args
-    print("=== SYNAPSE CHANNEL — first-run demo ===")
-    demo_runner()
+    print("=== SYNAPSE CHANNEL — five-minute golden demo ===")
+    run = demo_runner(args.output)
+    print(f"evidence: {run.artifacts.evidence_json}")
+    print(f"dashboard: {run.artifacts.dashboard_html}")
     print("success: coordination demo completed")
     return 0
 
@@ -46,6 +70,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     """Register the ``demo`` subparser on the top-level CLI."""
     demo = subparsers.add_parser(
         "demo",
-        help="Run a self-contained local coordination demo and print a success marker.",
+        help="Run the claim/conflict/handoff/receipt golden demo and write its dashboard.",
+    )
+    demo.add_argument(
+        "--output",
+        type=Path,
+        help="Directory for golden-demo.json and golden-demo-dashboard.html.",
     )
     demo.set_defaults(func=_cmd_demo)

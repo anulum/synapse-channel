@@ -16,7 +16,7 @@ everything, since they need the whole command table.
 | `synapse hub` | Run the coordination hub. |
 | `synapse commands` | List every subcommand grouped by stability tier — the quickest map of the surface. |
 | `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |
-| `synapse demo` | Run a self-contained local coordination demo and print a success marker. |
+| `synapse demo` | Run the real Claude/Codex claim → conflict refusal → mutation denial → handoff → verified receipt path and write JSON plus a static dashboard (`--output DIR` selects the destination). |
 | `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression; `--trend STORE.db` accumulates runs and renders per-metric sparkline trends (`--ascii` for a printable-ASCII trend block); `--alert` gates the run statistically against its own same-context history, exit `1` on drift. |
 | `synapse quickstart-coding` | Create a coding-fleet workspace, run the no-collision demo, and print a success marker. |
 | `synapse fleet-init` | Empty machine to working fleet in one command: doctor (`--fix`), persistent workspace scaffold, provider-seat probe, demo smoke, and a printed next-steps plan. |
@@ -162,18 +162,25 @@ hub restart shows as an honest offline line, a TTY rewrites the line in place
 while piped output appends one line per refresh, and `--json --watch` streams
 one JSON object per line (NDJSON). `--count N` stops after N refreshes;
 Ctrl-C is the normal way to stop an unbounded watch and exits `0`. `synapse
-demo` starts an ephemeral local hub, drives a planner/worker
-flow, and is successful when it prints:
+demo` starts an ephemeral local hub and disposable Git repository, connects
+Claude and Codex, enforces separate claims, refuses both a deliberate claim
+conflict and the corresponding unsafe mutation, transfers authority by atomic
+handoff, runs observed checks, and releases with a supported receipt. It
+succeeds when it prints:
+
+```text
+success: coordination demo completed
+```
+
+The command writes `golden-demo.json` and `golden-demo-dashboard.html`. Use
+`synapse demo --output ./synapse-golden-demo` to choose the artifact directory;
+without it, the command creates a temporary directory and prints both paths.
 
 For post-release local fleet restarts, `synapse doctor --redeploy-checklist`
 prints package, service, roster, durable-state, and git-hook checks. It does not
 restart services by itself; it gives operators copyable verification commands
 for the installed executable, `systemd --user` units, live roster, SQLite event
 log, and claim-aware hooks.
-
-```text
-success: coordination demo completed
-```
 
 `synapse quickstart-coding` creates a temporary workspace, runs the packaged
 two-agent coding demo, removes the temporary workspace after success, and is

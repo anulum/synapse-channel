@@ -259,8 +259,8 @@ synapse quickstart-coding
 exposição do hub, pressão no sistema de arquivos raiz e waiters ausentes. Uma
 máquina novinha pode avisar que nenhum hub ou waiter está rodando; isso é
 esperado antes da configuração do serviço. `synapse demo` inicia seu próprio
-hub local, conduz um fluxo de coordenação planner/worker e é bem-sucedido
-quando imprime:
+hub local e conduz o caminho Claude/Codex com claims separados, recusa de
+conflito, handoff e receipt verificado. Ele é bem-sucedido quando imprime:
 
 ```text
 success: coordination demo completed

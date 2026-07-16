@@ -91,6 +91,9 @@ synapse a2a-serve --endpoint-url http://127.0.0.1:8877
 
 Run this in a disposable or already-versioned repository. The A2A bridge command
 above binds to localhost; add bearer auth before any non-loopback exposure.
+The installed `synapse demo` itself uses a disposable real Git repository and
+writes evidence plus a static dashboard. Retain them at a predictable path with
+`synapse demo --output ./synapse-golden-demo`.
 
 ## Staying up to date
 

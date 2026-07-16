@@ -248,8 +248,9 @@ synapse quickstart-coding
 `synapse doctor`는 아이덴티티, 허브 노출, 루트 파일시스템 압박, waiter 부재
 같은 로컬 설정 문제를 보고합니다. 완전히 새 머신은 허브나 waiter가 돌고
 있지 않다고 경고할 수 있는데, 서비스 설정 전이라면 그게 정상입니다.
-`synapse demo`는 자체 로컬 허브를 시작해 planner/worker 코디네이션 흐름을
-구동하고, 다음을 출력하면 성공입니다.
+`synapse demo`는 자체 로컬 허브를 시작해 Claude/Codex의 분리된 claim,
+충돌 거부, handoff, 검증된 receipt 흐름을 구동하고, 다음을 출력하면
+성공입니다.
 
 ```text
 success: coordination demo completed

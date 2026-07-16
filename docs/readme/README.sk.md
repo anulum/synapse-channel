@@ -245,8 +245,9 @@ synapse quickstart-coding
 `synapse doctor` reportuje lokálne setup problémy ako identita, expozícia hubu,
 tlak na root filesystem a chýbajúce waitery. Úplne nový stroj môže varovať, že
 nebeží žiadny hub ani waiter; pred setupom služby je to očakávané. `synapse
-demo` spustí vlastný lokálny hub, prevedie planner/worker koordinačný tok
-a uspeje, keď vypíše:
+demo` spustí vlastný lokálny hub a prevedie Claude/Codex tok s oddelenými
+claimami, odmietnutím konfliktu, handoffom a overeným receiptom. Uspeje, keď
+vypíše:
 
 ```text
 success: coordination demo completed

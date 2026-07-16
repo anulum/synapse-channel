@@ -16,12 +16,25 @@ reachability, and wake-listener setup. It may warn that no hub or waiter is
 running on a fresh machine. It also warns when the checked filesystem is nearly
 full; pass `--disk-path <path>` to inspect the mount that will hold your Synapse
 state, caches, or build artefacts. The installed demo is self-contained: it
-starts a temporary local hub, runs a planner/worker coordination flow, and
+starts a temporary local hub and real Git repository, connects Claude and
+Codex, gives them separate file claims, deliberately causes an overlapping
+claim, proves the mutation guard refuses Codex, atomically hands authority over,
+and runs observed verification before releasing with a supported receipt. It
 succeeds when it prints:
 
 ```text
 success: coordination demo completed
 ```
+
+It also prints the paths to `golden-demo.json` and
+`golden-demo-dashboard.html`. Keep those artifacts in a chosen directory with:
+
+```bash
+synapse demo --output ./synapse-golden-demo
+```
+
+Open the HTML file to see the seven steps, conflict refusal, handoff, and
+receipt in the same dashboard projection operators use.
 
 `synapse quickstart-coding` creates a temporary workspace, runs the coding-agent
 no-collision demo, removes that temporary workspace after success, and succeeds
@@ -104,9 +117,25 @@ synapse team
 
 ## Multi-seat golden path (≈5 minutes)
 
-Use this when two or more coding agents share one machine. It ends in the
-**Studio command centre** — the operator front door for who is live, what is
-claimed, and what is at risk.
+Run the automated proof first. It uses the same production hub, Git claims,
+provider-neutral mutation guard, handoff, release verifier, and dashboard
+renderer as a real fleet:
+
+```bash
+python -m pip install synapse-channel
+synapse doctor
+synapse demo --output ./synapse-golden-demo
+# open ./synapse-golden-demo/golden-demo-dashboard.html
+```
+
+The machine-readable artifact must report `completed: true`, deny the guard
+before handoff, allow it after handoff, and carry a `supported` receipt whose
+observed commands exited zero. The dashboard must show `SEPARATE CLAIMS`,
+`CONFLICT REFUSED`, `MUTATION DENIED`, `HANDOFF`, and `VERIFIED RECEIPT`.
+
+Then apply the same controls to persistent agent terminals. This production
+setup ends in the **Studio command centre** — the operator front door for who
+is live, what is claimed, and what is at risk.
 
 ```bash
 # 1. Install + doctor

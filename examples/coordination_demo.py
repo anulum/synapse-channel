@@ -18,10 +18,11 @@ from __future__ import annotations
 import asyncio
 
 from synapse_channel.demo import _free_port, run_coordination_demo
+from synapse_channel.demo_scenario import GoldenDemoResult
 
 
-async def run_demo(port: int) -> list[str]:
-    """Drive the shared coordination demo against ``port`` and return its narration."""
+async def run_demo(port: int) -> GoldenDemoResult:
+    """Drive the shared golden demo against ``port`` and return its evidence."""
     return await run_coordination_demo(port)
 
 
