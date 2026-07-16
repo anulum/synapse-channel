@@ -72,14 +72,18 @@ jobs:
         run: |
           python -m venv .wheel-venv
           .wheel-venv/bin/python -m pip install --require-hashes -r .github/requirements/requirements-publish-smoke.txt
-          .wheel-venv/bin/python -m pip install --no-deps release-artifact/*.whl
+          wheel_path="$(ls release-artifact/*.whl)"
+          printf 'synapse-channel @ file://%s#sha256=%s\n' "$PWD/$wheel_path" "$(sha256sum "$wheel_path" | cut -d' ' -f1)" > .wheel-req.txt
+          .wheel-venv/bin/python -m pip install --require-hashes --no-deps -r .wheel-req.txt
           .wheel-venv/bin/python -c "import synapse_channel; print(synapse_channel.__version__)"
           .wheel-venv/bin/synapse --help >/dev/null
       - name: Install the source distribution in a clean environment and smoke it
         run: |
           python -m venv .sdist-venv
           .sdist-venv/bin/python -m pip install --require-hashes -r .github/requirements/requirements-publish-smoke.txt
-          .sdist-venv/bin/python -m pip install --no-deps release-artifact/*.tar.gz
+          sdist_path="$(ls release-artifact/*.tar.gz)"
+          printf 'synapse-channel @ file://%s#sha256=%s\n' "$PWD/$sdist_path" "$(sha256sum "$sdist_path" | cut -d' ' -f1)" > .sdist-req.txt
+          .sdist-venv/bin/python -m pip install --require-hashes --no-deps --no-build-isolation -r .sdist-req.txt
           .sdist-venv/bin/python -c "import synapse_channel; print(synapse_channel.__version__)"
           .sdist-venv/bin/synapse --help >/dev/null
       - name: Verify wheel and sdist ship the same package and the sdist has no tests

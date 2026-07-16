@@ -5,7 +5,12 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — hash-locked runtime dependency for the publish smoke venvs
-# The built wheel/sdist installs with --no-deps; this lock supplies the sole
-# runtime dependency hash-pinned, so the smoke steps fetch nothing unpinned.
+# The built wheel/sdist installs with --no-deps and no build isolation; this
+# lock supplies the sole runtime dependency plus the build backend hash-pinned,
+# so the smoke steps fetch nothing unpinned.
+setuptools==83.0.0 \
+    --hash=sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3
 websockets==16.0 \
     --hash=sha256:9b5aca38b67492ef518a8ab76851862488a478602229112c4b0d58d63a7a4d5c
+wheel==0.47.0 \
+    --hash=sha256:212281cab4dff978f6cedd499cd893e1f620791ca6ff7107cf270781e587eced
