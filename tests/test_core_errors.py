@@ -248,6 +248,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     "SandboxPathError": ("synapse_channel.core.sandbox_paths", "sandbox_path", RuntimeError),
     "SecretFileError": ("synapse_channel.core.secret_files", "secret_file", ValueError),
     "SecureModeError": ("synapse_channel.core.secure", "secure_mode", ValueError),
+    "SemanticEnforcementError": (
+        "synapse_channel.git.semantic_enforcement",
+        "semantic_enforcement",
+        RuntimeError,
+    ),
     "SqlCipherKeyError": (
         "synapse_channel.core.persistence_sqlcipher",
         "sqlcipher_key",

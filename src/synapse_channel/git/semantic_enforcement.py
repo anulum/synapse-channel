@@ -20,14 +20,17 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.scoping import normalize_path
 from synapse_channel.git.semantic_diff import SemanticDiffRecord
 from synapse_channel.git.semantic_scope import parse_semantic_scope
 from synapse_channel.path_resolution import resolve_weakly_fail_closed
 
 
-class SemanticEnforcementError(RuntimeError):
+class SemanticEnforcementError(SynapseError, RuntimeError):
     """Semantic claim state is malformed and cannot be enforced safely."""
+
+    code = "semantic_enforcement"
 
 
 def claim_paths_for_context(
