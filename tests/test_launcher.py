@@ -19,7 +19,6 @@ import pytest
 from http_server_helpers import LocalHttpResponder
 from hub_e2e_helpers import _free_port
 from synapse_channel.client.launcher import (
-    FALLBACK_MODEL,
     FAST_MODEL_PREFERENCES,
     REASON_MODEL_PREFERENCES,
     _shutdown,
@@ -29,6 +28,13 @@ from synapse_channel.client.launcher import (
     plan_team,
     run_team,
 )
+
+
+def _provider_of(argv: list[str]) -> str | None:
+    """Return the ``--provider`` value in a planned worker argv, if present."""
+    if "--provider" not in argv:
+        return None
+    return argv[argv.index("--provider") + 1]
 
 
 def _detect_with_models(preferred: list[str], models: list[str]) -> str | None:
@@ -139,10 +145,24 @@ def test_plan_team_respects_explicit_models() -> None:
     assert "y" in reason_cmd
 
 
-def test_plan_team_uses_fallback_when_detection_empty() -> None:
+def test_plan_team_falls_back_to_offline_rule_worker_when_no_model() -> None:
+    # Ollama offers nothing and no model was requested: one deterministic rule
+    # worker, no --model (the rule provider needs none), no dead Ollama worker.
     specs = plan_team(8876, detect=lambda prefs: None)
     assert [label for label, _ in specs] == ["hub", "FAST"]
-    assert FALLBACK_MODEL in specs[1][1]
+    argv = specs[1][1]
+    assert _provider_of(argv) == "rule"
+    assert "--model" not in argv
+
+
+def test_plan_team_keeps_ollama_when_a_model_is_explicit_despite_empty_detect() -> None:
+    # An explicit --model means the operator wants a real Ollama worker even
+    # when detection comes back empty; the rule fallback must not hijack it.
+    specs = plan_team(8876, fast_model="mistral", detect=lambda prefs: None)
+    assert [label for label, _ in specs] == ["hub", "FAST"]
+    argv = specs[1][1]
+    assert _provider_of(argv) == "ollama"
+    assert "--model" in argv and "mistral" in argv
 
 
 def test_plan_team_prefixes_worker_names() -> None:
@@ -208,6 +228,42 @@ def test_run_team_returns_exit_code_of_first_dead_child(
     out = capsys.readouterr().out
     assert "--uri=ws://localhost:9999 --name=USER" in out
     assert "--target='--help$(touch injected)FAST' -- \"status?\"" in out
+
+
+def test_ready_banner_does_not_bind_two_USER_names(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The listener owns the name USER; the one-shot send must NOT also bind USER
+    # (two owners of one name → hub 4009). Regression for the quickstart blocker.
+    popen, _launched = _launching_popen_factory([_python_command("import sys; sys.exit(0)")])
+    run_team(9999, no_workers=True, popen=popen, sleep=lambda _seconds: time.sleep(0.02))
+    lines = capsys.readouterr().out.splitlines()
+    listen_line = next(line for line in lines if "synapse listen" in line)
+    send_line = next(line for line in lines if "synapse send" in line)
+    assert "--name=USER" in listen_line
+    assert "--name" not in send_line
+
+
+def test_run_team_warns_and_uses_rule_worker_when_ollama_absent(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    popen, launched = _launching_popen_factory(
+        [
+            _python_command("import time; time.sleep(30)"),  # hub
+            _python_command("import sys; sys.exit(0)"),  # offline rule worker
+        ]
+    )
+    result = run_team(
+        9999,
+        popen=popen,
+        sleep=lambda _seconds: time.sleep(0.05),
+        detect=lambda prefs: None,  # Ollama offers nothing
+    )
+    assert result == 1  # the worker's zero exit maps to one
+    out = capsys.readouterr().out
+    assert "No Ollama model detected" in out
+    assert "rule-based worker" in out
+    assert all(proc.poll() is not None for proc in launched)
 
 
 def test_run_team_polls_again_while_children_alive() -> None:

@@ -331,6 +331,10 @@ Launch a hub plus one or two local model workers in one command:
 synapse team
 ```
 
+If Ollama isn't running, `synapse team` falls back to a single offline
+rule-based worker (deterministic canned replies) so the flow still works; start
+Ollama and re-run for real model replies.
+
 Then, from another terminal, watch the channel or send a message:
 
 ```bash
@@ -1408,7 +1412,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 665 |
 | Wire message types | 77 |
 | CLI subcommands | 179 |
-| Test functions | 7920 |
+| Test functions | 7923 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 57 |
 | GitHub Actions workflows | 21 |

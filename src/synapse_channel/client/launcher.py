@@ -8,10 +8,14 @@
 """Turnkey launcher for a local Synapse team backed by Ollama.
 
 This module starts a hub and one or two model workers as child processes and
-prints the command a human runs to join the channel. The orchestration is split
-into pure planning helpers (model detection and command construction) and a thin
-:func:`run_team` runner whose process spawning, sleeping, and model detection are
-all injectable, so the whole module is unit-testable without a real server.
+prints the command a human runs to join the channel. When Ollama offers no
+usable model — absent, unreachable, or empty — the team falls back to a single
+offline ``rule`` worker (deterministic canned replies) with a loud caveat,
+instead of spawning Ollama workers whose every reply would fail with
+"connection refused". The orchestration is split into pure planning helpers
+(model detection and command construction) and a thin :func:`run_team` runner
+whose process spawning, sleeping, and model detection are all injectable, so the
+whole module is unit-testable without a real server.
 """
 
 from __future__ import annotations
@@ -83,9 +87,14 @@ def build_hub_command(port: int) -> list[str]:
     return [sys.executable, "-m", "synapse_channel.cli", "hub", "--port", str(port)]
 
 
-def build_worker_command(name: str, model: str, uri: str) -> list[str]:
-    """Return the argv that starts an Ollama-backed worker named ``name``."""
-    return [
+def build_worker_command(name: str, model: str, uri: str, *, provider: str = "ollama") -> list[str]:
+    """Return the argv that starts a worker named ``name``.
+
+    The default ``ollama`` provider pins ``model``; the offline ``rule`` provider
+    needs no model, so ``--model`` is omitted for it rather than passing a name
+    the provider silently ignores.
+    """
+    argv = [
         sys.executable,
         "-m",
         "synapse_channel.cli",
@@ -95,10 +104,21 @@ def build_worker_command(name: str, model: str, uri: str) -> list[str]:
         "--uri",
         uri,
         "--provider",
-        "ollama",
-        "--model",
-        model,
+        provider,
     ]
+    if provider != "rule":
+        argv += ["--model", model]
+    return argv
+
+
+def _is_offline_team(specs: list[ProcessSpec]) -> bool:
+    """Return whether the plan fell back to an offline ``rule`` worker."""
+    for _label, argv in specs:
+        if "--provider" in argv:
+            index = argv.index("--provider")
+            if index + 1 < len(argv) and argv[index + 1] == "rule":
+                return True
+    return False
 
 
 def plan_team(
@@ -137,7 +157,18 @@ def plan_team(
     if no_workers:
         return specs
 
-    fast = fast_model or detect(FAST_MODEL_PREFERENCES) or FALLBACK_MODEL
+    fast = fast_model or detect(FAST_MODEL_PREFERENCES)
+    if fast is None and reason_model is None:
+        # No operator model hint and Ollama offers nothing usable: start one
+        # offline rule worker so the team still answers deterministically. An
+        # explicit --model (either role) keeps the Ollama provider instead.
+        fast_name = f"{prefix}FAST"
+        specs.append(
+            (fast_name, build_worker_command(fast_name, FALLBACK_MODEL, uri, provider="rule"))
+        )
+        return specs
+
+    fast = fast or FALLBACK_MODEL
     reason = reason_model or detect(REASON_MODEL_PREFERENCES) or fast
     fast_name = f"{prefix}FAST"
     specs.append((fast_name, build_worker_command(fast_name, fast, uri)))
@@ -159,7 +190,7 @@ def _print_instructions(port: int, prefix: str = "") -> None:
     print("Send a message from the command line:")
     print(
         "    synapse send "
-        f"{shell_long_option('--uri', uri)} {shell_long_option('--name', 'USER')} "
+        f"{shell_long_option('--uri', uri)} "
         f'{shell_long_option("--target", f"{prefix}FAST")} -- "status?"'
     )
     print("Workers reply when mentioned or when USER addresses the room.")
@@ -234,6 +265,12 @@ def run_team(
     )
     procs: list[tuple[str, subprocess.Popen[str]]] = []
     print(f"=== SYNAPSE CHANNEL — TEAM LAUNCH (ws://localhost:{port}) ===")
+    if _is_offline_team(specs):
+        print(
+            f"[team] No Ollama model detected at {OLLAMA_BASE_URL} — starting one OFFLINE "
+            "rule-based worker (deterministic canned replies). Start Ollama and re-run for "
+            "real model replies."
+        )
     try:
         for label, argv in specs:
             proc = popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)

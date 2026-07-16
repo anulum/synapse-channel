@@ -115,6 +115,10 @@ Bring up a hub plus one or two local model workers in one command:
 synapse team
 ```
 
+If Ollama isn't running, `synapse team` starts a single offline rule-based
+worker (deterministic canned replies) so you can still try the flow end to end;
+start Ollama and re-run for real model replies.
+
 ## Multi-seat golden path (≈5 minutes)
 
 Run the automated proof first. It uses the same production hub, Git claims,
