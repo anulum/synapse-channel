@@ -37,6 +37,11 @@ def _provider_of(argv: list[str]) -> str | None:
     return argv[argv.index("--provider") + 1]
 
 
+def _ready(_port: int) -> bool:
+    """Hub-ready stub: the launched (fake) hub is treated as listening at once."""
+    return True
+
+
 def _detect_with_models(preferred: list[str], models: list[str]) -> str | None:
     body = json.dumps({"models": [{"name": name} for name in models]}).encode("utf-8")
     with LocalHttpResponder(body=body) as server:
@@ -222,6 +227,7 @@ def test_run_team_returns_exit_code_of_first_dead_child(
         popen=popen,
         sleep=lambda _seconds: time.sleep(0.05),
         detect=lambda prefs: "m",
+        is_hub_ready=_ready,
     )
     assert result == 3
     assert all(proc.poll() is not None for proc in launched)
@@ -236,7 +242,13 @@ def test_ready_banner_does_not_bind_two_USER_names(
     # The listener owns the name USER; the one-shot send must NOT also bind USER
     # (two owners of one name → hub 4009). Regression for the quickstart blocker.
     popen, _launched = _launching_popen_factory([_python_command("import sys; sys.exit(0)")])
-    run_team(9999, no_workers=True, popen=popen, sleep=lambda _seconds: time.sleep(0.02))
+    run_team(
+        9999,
+        no_workers=True,
+        popen=popen,
+        sleep=lambda _seconds: time.sleep(0.02),
+        is_hub_ready=_ready,
+    )
     lines = capsys.readouterr().out.splitlines()
     listen_line = next(line for line in lines if "synapse listen" in line)
     send_line = next(line for line in lines if "synapse send" in line)
@@ -258,6 +270,7 @@ def test_run_team_warns_and_uses_rule_worker_when_ollama_absent(
         popen=popen,
         sleep=lambda _seconds: time.sleep(0.05),
         detect=lambda prefs: None,  # Ollama offers nothing
+        is_hub_ready=_ready,
     )
     assert result == 1  # the worker's zero exit maps to one
     out = capsys.readouterr().out
@@ -278,6 +291,7 @@ def test_run_team_polls_again_while_children_alive() -> None:
         popen=popen,
         sleep=lambda _seconds: time.sleep(0.05),
         detect=lambda prefs: "m",
+        is_hub_ready=_ready,
     )
     assert result == 5
     assert all(proc.poll() is not None for proc in launched)
@@ -290,6 +304,7 @@ def test_run_team_maps_zero_exit_to_one() -> None:
         no_workers=True,
         popen=popen,
         sleep=lambda _seconds: time.sleep(0.02),
+        is_hub_ready=_ready,
     )
     assert result == 1
     assert all(proc.poll() is not None for proc in launched)
@@ -306,9 +321,46 @@ def test_run_team_handles_keyboard_interrupt() -> None:
         no_workers=True,
         popen=popen,
         sleep=interrupting_sleep,
+        is_hub_ready=_ready,
     )
     assert result == 0
     assert all(proc.poll() is not None for proc in launched)
+
+
+def test_run_team_aborts_when_the_hub_never_binds(capsys: pytest.CaptureFixture[str]) -> None:
+    # An honest READY banner: if the hub never starts listening, don't print
+    # join instructions for a dead hub — report the failure and exit non-zero.
+    popen, launched = _launching_popen_factory([_python_command("import time; time.sleep(30)")])
+    result = run_team(
+        9999,
+        no_workers=True,
+        popen=popen,
+        sleep=lambda _seconds: time.sleep(0.001),
+        is_hub_ready=lambda _port: False,
+    )
+    assert result == 1
+    captured = capsys.readouterr()
+    assert "failed to start listening" in captured.err
+    assert "--- READY ---" not in captured.out
+    assert all(proc.poll() is not None for proc in launched)  # the dead hub was shut down
+
+
+def test_hub_is_listening_reports_connect_success_and_failure() -> None:
+    from synapse_channel.client.launcher import _hub_is_listening
+
+    class _Socket:
+        def __enter__(self) -> _Socket:
+            return self
+
+        def __exit__(self, *_exc: object) -> bool:
+            return False
+
+    assert _hub_is_listening(1234, connect=lambda _addr, timeout: _Socket()) is True
+
+    def _refuse(_addr: object, timeout: float) -> _Socket:
+        raise OSError("connection refused")
+
+    assert _hub_is_listening(1234, connect=_refuse) is False
 
 
 def test_shutdown_escalates_to_kill_on_an_unexpected_terminate_error() -> None:

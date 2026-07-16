@@ -21,6 +21,7 @@ whole module is unit-testable without a real server.
 from __future__ import annotations
 
 import json
+import socket
 import subprocess  # nosec B404 - fixed provider argv, never a shell string
 import sys
 import time
@@ -37,6 +38,11 @@ REASON_MODEL_PREFERENCES = ["gemma3:12b", "gemma4", "llama3", "gemma3:4b"]
 FALLBACK_MODEL = "llama3"
 SHUTDOWN_TIMEOUT_SECONDS = 2.0
 """Seconds to wait for a child process to exit after graceful termination."""
+
+HUB_READY_TIMEOUT_SECONDS = 5.0
+"""Seconds to wait for the hub to accept a connection before declaring it dead."""
+
+_HUB_READY_INTERVAL_SECONDS = 0.2
 
 # A planned child process: a human-readable label and the argv to spawn.
 ProcessSpec = tuple[str, list[str]]
@@ -216,6 +222,32 @@ def _shutdown(
                 proc.wait(timeout=timeout_seconds)
 
 
+def _hub_is_listening(port: int, *, connect: Callable[..., Any] = socket.create_connection) -> bool:
+    """Return whether a TCP connection to the local hub port succeeds."""
+    try:
+        with connect(("127.0.0.1", port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _await_hub_ready(
+    port: int,
+    *,
+    sleep: Callable[[float], None],
+    is_listening: Callable[[int], bool],
+    timeout_seconds: float = HUB_READY_TIMEOUT_SECONDS,
+    interval: float = _HUB_READY_INTERVAL_SECONDS,
+) -> bool:
+    """Poll the hub port until it accepts a connection or the deadline passes."""
+    attempts = max(1, int(timeout_seconds / interval))
+    for _ in range(attempts):
+        if is_listening(port):
+            return True
+        sleep(interval)
+    return False
+
+
 def run_team(
     port: int = 8876,
     *,
@@ -226,6 +258,7 @@ def run_team(
     popen: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
     sleep: Callable[[float], None] = time.sleep,
     detect: ModelDetector = detect_model,
+    is_hub_ready: Callable[[int], bool] = _hub_is_listening,
     shutdown_timeout_seconds: float = SHUTDOWN_TIMEOUT_SECONDS,
 ) -> int:
     """Spawn a hub and workers, then monitor them until one exits.
@@ -246,14 +279,18 @@ def run_team(
         ``time.sleep``-compatible delay, injectable for testing.
     detect : ModelDetector, optional
         Model-detection callable, injectable for testing.
+    is_hub_ready : Callable, optional
+        Predicate that reports whether the hub is accepting connections on the
+        port, injectable for testing. Defaults to a real TCP probe.
     shutdown_timeout_seconds : float, optional
         Seconds to wait during shutdown before killing a child process.
 
     Returns
     -------
     int
-        ``0`` on a clean ``Ctrl+C`` shutdown, otherwise the exit code of the
-        first child that terminated (or ``1`` when it exited without a code).
+        ``0`` on a clean ``Ctrl+C`` shutdown, ``1`` if the hub never started
+        listening, otherwise the exit code of the first child that terminated
+        (or ``1`` when it exited without a code).
     """
     specs = plan_team(
         port,
@@ -276,8 +313,14 @@ def run_team(
             proc = popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             procs.append((label, proc))
             print(f"[launch] {label} started (pid={proc.pid})")
-            if label == "hub":
-                sleep(0.7)
+            if label == "hub" and not _await_hub_ready(
+                port, sleep=sleep, is_listening=is_hub_ready
+            ):
+                print(
+                    f"[launch] hub failed to start listening on port {port}; aborting.",
+                    file=sys.stderr,
+                )
+                return 1
 
         _print_instructions(port, prefix)
 
