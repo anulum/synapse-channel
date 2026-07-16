@@ -38,11 +38,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.path_identity import (
-    ClaimScopeIdentity,
-    claim_scopes_conflict,
-    parse_optional_claim_scope_identity,
-)
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.replay import SNAPSHOT_KINDS
 
@@ -94,8 +89,6 @@ class CausalNode:
         Declared dependency task ids carried by a ledger declaration.
     text : str
         Best-effort human-readable summary of the event.
-    path_identity : ClaimScopeIdentity or None
-        Additive canonical identity aligned with ``paths`` when recorded.
     """
 
     seq: int
@@ -108,7 +101,6 @@ class CausalNode:
     worktree: str
     depends_on: tuple[str, ...]
     text: str
-    path_identity: ClaimScopeIdentity | None = None
 
 
 @dataclass(frozen=True)
@@ -594,14 +586,9 @@ def _latest_overlapping_release(
     for release_seq, freed in released:
         if release_seq >= claim.seq or freed.owner == claim.owner:
             continue
-        if not claim_scopes_conflict(
-            freed.worktree,
-            freed.paths,
-            freed.path_identity,
-            claim.worktree,
-            claim.paths,
-            claim.path_identity,
-        ):
+        if freed.worktree != claim.worktree:
+            continue
+        if not paths_overlap(freed.paths, claim.paths):
             continue
         latest = release_seq
     return latest
@@ -634,11 +621,6 @@ def _path_pair_overlaps(left: str, right: str) -> bool:
 def _node_from_event(event: StoredEvent) -> CausalNode:
     """Project a stored event into a causality-graph node."""
     payload = event.payload
-    path_identity = parse_optional_claim_scope_identity(payload)
-    paths = tuple(str(path) for path in payload.get("paths", ()))
-    worktree = str(payload.get("worktree", ""))
-    if path_identity is not None and not path_identity.validates_display_scope(worktree, paths):
-        raise ValueError("causality claim path identity does not match its display scope")
     return CausalNode(
         seq=event.seq,
         ts=event.ts,
@@ -646,11 +628,10 @@ def _node_from_event(event: StoredEvent) -> CausalNode:
         task_id=str(payload.get("task_id", "")),
         owner=str(payload.get("owner", "")),
         status=str(payload.get("status", "")),
-        paths=paths,
-        worktree=worktree,
+        paths=tuple(str(path) for path in payload.get("paths", ())),
+        worktree=str(payload.get("worktree", "")),
         depends_on=tuple(str(dep) for dep in payload.get("depends_on", ())),
         text=_event_text(event),
-        path_identity=path_identity,
     )
 
 
@@ -686,7 +667,7 @@ def _render_link(link: CausalLink) -> str:
 
 def _node_to_json(node: CausalNode) -> dict[str, object]:
     """Convert a node into JSON-compatible fields."""
-    result: dict[str, object] = {
+    return {
         "seq": node.seq,
         "ts": node.ts,
         "kind": node.kind,
@@ -698,9 +679,6 @@ def _node_to_json(node: CausalNode) -> dict[str, object]:
         "depends_on": list(node.depends_on),
         "text": node.text,
     }
-    if node.path_identity is not None:
-        result["path_identity"] = node.path_identity.as_dict()
-    return result
 
 
 def _link_to_json(link: CausalLink) -> dict[str, object]:

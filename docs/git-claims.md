@@ -27,11 +27,10 @@ synapse git-claim --task-id TASK-1 --paths src/auth.py --base main
 The branch is resolved locally with `git rev-parse --abbrev-ref HEAD` and sent on
 an ordinary claim, carrying the branch, the base it will merge into, and the
 declared auto-release policy. The repository root is resolved too (with
-`git rev-parse --show-toplevel` followed by strict OS canonicalisation) and set
-as the claim's worktree. A git-claim is therefore isolated to its own repository:
-two repositories that declare identically named paths never contend, while two
-claims in the *same* repository still detect an overlap. `synapse state` then
-shows the branch alongside the claim:
+`git rev-parse --show-toplevel`) and set as the claim's worktree, so a git-claim is
+isolated to its own repository: two repositories that declare identically-named
+paths never contend, while two claims in the *same* repository still detect an
+overlap. `synapse state` then shows the branch alongside the claim:
 
 ```
 Active claims (1):
@@ -49,39 +48,11 @@ Active claims (1):
 | `--base` | The branch the work merges back into (default: `main`). |
 | `--auto-release-on` | The release trigger recorded on the claim: `manual`, `commit`, or `merge` (default `merge`). |
 
-Use normal repository-relative display paths such as `src/auth.py` or
-`docs/cli.md` for narrow claims. `git-claim` binds each display to a local,
-versioned identity before sending it: Git-index component spelling, the strictly
-resolved filesystem-relative path, Unicode NFC, the worktree's actual case
-policy, and a device/object key when the target already exists. Symlinks,
-junctions, hard links, and Windows 8.3 aliases therefore cannot create a second
-claim for the same object. The human-readable `paths` remain unchanged for state
-views and denial messages.
-
-Device/object keys are local values, so the resolver also sends an opaque hashed
-host namespace and the canonical worktree root's object key. Object equality is
-trusted only when both values match; coincident inode numbers from different
-hosts cannot widen conflicts. Object equality is deliberately conflict-only: it
-can deny a competing hard-link claim, but cannot authorize an edit or release a
-lease after the filesystem object may have changed.
-
-Identity derivation is fail closed. Absolute or parent-escaping paths, broken or
-unreadable aliases, aliases outside the worktree, ambiguous case-insensitive Git
-index entries, non-canonical display spelling, an unprovable case policy, and
-identity/display mismatches are refused before the claim is
-sent. Missing final components remain claimable after their nearest existing
-ancestor has resolved inside the worktree. Case is folded only when the detected
-filesystem is case-insensitive; Linux/ext4 claims remain case-sensitive.
-
-Auto-release repeats the same local identity derivation. If that derivation
-fails, or a snapshot carries a present-invalid or scope-misaligned identity, the
-non-blocking hook returns success without releasing anything.
-
-The hub validates and compares identity values but never reads the worktree.
-Identity-aware claims compare conservatively with a legacy peer by projecting
-that peer's display paths under the known filesystem policy. Two legacy peers
-retain their historical literal-path behavior, so upgrade all Git-aware claim
-producers to close alias gaps across an entire fleet.
+Claim paths are coordination scopes, not filesystem reads. Use normal
+repository-relative paths such as `src/auth.py` or `docs/cli.md` for narrow
+claims. Absolute paths and any path containing `..` are treated as traversal-like
+declarations and widen to the whole worktree. That conservative fallback may
+over-claim, but it does not under-claim and miss a real conflict.
 
 The `--auto-release-on` value is the policy stored with the claim; a client-side
 git hook enacts it so a finished branch frees its claim without a manual step.
@@ -219,14 +190,11 @@ they never downgrade a semantic claim check to a permissive file match.
 An empty staged index returns success without resolving identity, reading a
 token, or connecting to a hub. For a non-empty index, every covering claim must:
 
-- match the canonical repository root and current non-detached branch;
+- match the canonical repository root and current non-detached branch exactly;
 - belong to one exact identity and be in `claimed` or `working` state; and
 - cover every projected staged path, either by exact semantic or literal scope,
   by directory ancestry, or through the existing empty-path whole-worktree
   meaning.
-- cover every staged path by its display-bound canonical Git identity, directory
-  ancestry, or the empty-path whole-worktree meaning. Filesystem aliases and
-  object ids remain conflict-denial evidence, never authorization.
 
 A `PROJECT:git` serialization lock cannot satisfy this check: it has no canonical
 worktree, branch, and path ownership. The checker never acquires, widens, renews,
@@ -337,10 +305,9 @@ the release receipt.
 
 ## What stays out of the hub
 
-A git-scoped claim is an ordinary claim with opaque `git` metadata plus an
-optional additive `path_identity`. The hub validates, persists, replays, and
-compares that identity but runs no git and reads no filesystem. Even symbol
-claims are ordinary canonical paths interpreted by the existing ancestry
-algebra; parsing, diff resolution, and filesystem identity derivation stay
-entirely client-side. Resist any temptation to move git execution into the hub:
-the git-agnostic hub is the whole local-first guarantee.
+A git-scoped claim is an ordinary claim with one extra field. The hub deserialises
+that field for storage and display but runs no git and reads no filesystem. Even
+symbol claims are ordinary canonical paths interpreted by the existing ancestry
+algebra; parsing and diff resolution stay entirely client-side. Resist any
+temptation to move git execution into the hub: the git-agnostic hub is the whole
+local-first guarantee.

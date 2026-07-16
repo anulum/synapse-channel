@@ -8,11 +8,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from cli_e2e_helpers import git_repo, git_run
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
@@ -21,18 +21,31 @@ from synapse_channel.git.gitclaim import GitError, run_git_claim
 from synapse_channel.git.githook import install_hooks
 
 
-def _claim_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Create and enter one real feature-branch repository for a claim journey."""
-    repo = git_repo(tmp_path / "repo")
-    git_run(repo, "branch", "-M", "feature/x")
-    monkeypatch.chdir(repo)
-    return repo
+def _branch_then_repo(branch: str, repo: str) -> Callable[[list[str]], str]:
+    """A git runner that answers branch and top-level queries distinctly."""
+
+    def runner(args: list[str]) -> str:
+        if args == ["rev-parse", "--show-toplevel"]:
+            return repo
+        return branch
+
+    return runner
 
 
-async def test_run_git_claim_granted_sends_git_context(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = _claim_repo(tmp_path, monkeypatch)
+def _branch_repo_hooks(branch: str, repo: str, hooks: str) -> Callable[[list[str]], str]:
+    """A git runner answering branch, top-level, and hooks-dir queries distinctly."""
+
+    def runner(args: list[str]) -> str:
+        if args == ["rev-parse", "--show-toplevel"]:
+            return repo
+        if args == ["rev-parse", "--git-path", "hooks"]:
+            return hooks
+        return branch
+
+    return runner
+
+
+async def test_run_git_claim_granted_sends_git_context() -> None:
     async with running_hub(SynapseHub()) as (hub, uri):
         rc = await run_git_claim(
             uri=uri,
@@ -41,14 +54,14 @@ async def test_run_git_claim_granted_sends_git_context(
             paths=["src/a.py"],
             base="develop",
             auto_release_on="commit",
+            runner=_branch_then_repo("feature/x", "/repo"),
         )
 
     assert rc == 0
     claim = hub.state.claims["T1"]
     assert claim.owner == "me"
     assert claim.paths == ("src/a.py",)
-    assert claim.worktree == str(repo.resolve())
-    assert claim.path_identity is not None
+    assert claim.worktree == "/repo"
     assert claim.git is not None
     assert claim.git.as_dict() == {
         "branch": "feature/x",
@@ -58,11 +71,8 @@ async def test_run_git_claim_granted_sends_git_context(
 
 
 async def test_run_git_claim_surfaces_name_conflict_close(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _claim_repo(tmp_path, monkeypatch)
     # Claiming under a name another live session already holds (a common slip:
     # reusing your own waiter's identity) must name the real cause, not time out
     # with a misleading "no response from hub".
@@ -74,6 +84,7 @@ async def test_run_git_claim_surfaces_name_conflict_close(
                 name="busy-name",
                 task_id="T1",
                 paths=["src/a.py"],
+                runner=_branch_then_repo("feature/x", "/repo"),
             )
         finally:
             await close_agents(holder)
@@ -86,11 +97,8 @@ async def test_run_git_claim_surfaces_name_conflict_close(
 
 
 async def test_run_git_claim_surfaces_hub_at_capacity_close(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _claim_repo(tmp_path, monkeypatch)
     async with running_hub(SynapseHub(max_clients=1)) as (_hub, uri):
         filler = await connect_agent("filler", uri)
         try:
@@ -99,6 +107,7 @@ async def test_run_git_claim_surfaces_hub_at_capacity_close(
                 name="me",
                 task_id="T1",
                 paths=["src/a.py"],
+                runner=_branch_then_repo("feature/x", "/repo"),
             )
         finally:
             await close_agents(filler)
@@ -109,8 +118,7 @@ async def test_run_git_claim_surfaces_hub_at_capacity_close(
     assert "code 4013" in out
 
 
-async def test_run_git_claim_uses_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _claim_repo(tmp_path, monkeypatch)
+async def test_run_git_claim_uses_token() -> None:
     token = "s3cret"
     async with running_hub(SynapseHub(authenticator=TokenAuthenticator([token]))) as (hub, uri):
         rc = await run_git_claim(
@@ -119,6 +127,7 @@ async def test_run_git_claim_uses_token(tmp_path: Path, monkeypatch: pytest.Monk
             task_id="T1",
             paths=["src/a.py"],
             token=token,
+            runner=_branch_then_repo("feature/x", "/repo"),
         )
 
     assert rc == 0
@@ -126,11 +135,8 @@ async def test_run_git_claim_uses_token(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 async def test_run_git_claim_warns_when_auto_release_hook_is_missing(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _claim_repo(tmp_path, monkeypatch)
     async with running_hub(SynapseHub()) as (_hub, uri):
         rc = await run_git_claim(
             uri=uri,
@@ -138,6 +144,7 @@ async def test_run_git_claim_warns_when_auto_release_hook_is_missing(
             task_id="T1",
             paths=["src"],
             auto_release_on="merge",
+            runner=_branch_repo_hooks("feature/x", "/repo", str(tmp_path)),
         )
 
     assert rc == 0
@@ -147,12 +154,9 @@ async def test_run_git_claim_warns_when_auto_release_hook_is_missing(
 
 
 async def test_run_git_claim_silent_when_hook_is_installed(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo = _claim_repo(tmp_path, monkeypatch)
-    install_hooks(uri="ws://t", name="me", hooks_dir=repo / ".git" / "hooks")
+    install_hooks(uri="ws://t", name="me", hooks_dir=tmp_path)
     async with running_hub(SynapseHub()) as (_hub, uri):
         rc = await run_git_claim(
             uri=uri,
@@ -160,6 +164,7 @@ async def test_run_git_claim_silent_when_hook_is_installed(
             task_id="T1",
             paths=["src"],
             auto_release_on="merge",
+            runner=_branch_repo_hooks("feature/x", "/repo", str(tmp_path)),
         )
 
     assert rc == 0
@@ -167,11 +172,8 @@ async def test_run_git_claim_silent_when_hook_is_installed(
 
 
 async def test_run_git_claim_no_warning_for_manual_auto_release(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _claim_repo(tmp_path, monkeypatch)
     async with running_hub(SynapseHub()) as (_hub, uri):
         rc = await run_git_claim(
             uri=uri,
@@ -179,20 +181,18 @@ async def test_run_git_claim_no_warning_for_manual_auto_release(
             task_id="T1",
             paths=["src"],
             auto_release_on="manual",
+            runner=_branch_then_repo("feature/x", "/repo"),
         )
 
     assert rc == 0
     assert "will NOT fire" not in capsys.readouterr().out
 
 
-async def test_run_git_claim_denied_by_existing_claim(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = _claim_repo(tmp_path, monkeypatch)
+async def test_run_git_claim_denied_by_existing_claim() -> None:
     async with running_hub(SynapseHub()) as (_hub, uri):
         alpha = await connect_agent("ALPHA", uri)
         try:
-            await alpha.agent.claim("BLOCK", worktree=str(repo.resolve()), paths=["src"])
+            await alpha.agent.claim("BLOCK", worktree="/repo", paths=["src"])
             await alpha.recorder.wait_for(
                 lambda message: (
                     message.get("type") == MessageType.CLAIM_GRANTED
@@ -204,6 +204,7 @@ async def test_run_git_claim_denied_by_existing_claim(
                 name="me",
                 task_id="T1",
                 paths=["src/a.py"],
+                runner=_branch_then_repo("main", "/repo"),
                 attempts=2,
             )
         finally:
@@ -212,15 +213,13 @@ async def test_run_git_claim_denied_by_existing_claim(
     assert rc == 1
 
 
-async def test_run_git_claim_unreachable_hub(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _claim_repo(tmp_path, monkeypatch)
+async def test_run_git_claim_unreachable_hub() -> None:
     rc = await run_git_claim(
         uri=f"ws://127.0.0.1:{_free_port()}",
         name="me",
         task_id="T1",
         paths=[],
+        runner=_branch_then_repo("main", "/repo"),
         ready_timeout=0.1,
         attempts=1,
     )

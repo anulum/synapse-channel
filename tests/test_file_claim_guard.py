@@ -14,7 +14,6 @@ from typing import Any
 
 import pytest
 
-from cli_e2e_helpers import git_repo, git_run
 from synapse_channel.claim_state import ClaimStateError
 from synapse_channel.file_claim_guard import (
     MutationRequest,
@@ -24,16 +23,11 @@ from synapse_channel.file_claim_guard import (
     requester_name,
     resolve_repository_targets,
 )
-from synapse_channel.git.path_identity import resolve_claim_scope_identity
 from synapse_channel.git.semantic_scope import semantic_scope_path
 
 
 def _runner(root: Path, branch: str = "main") -> Callable[[list[str]], str]:
-    def run(args: list[str]) -> str:
-        if "ls-files" in args:
-            return ""
-        if "core.ignorecase" in args:
-            return "false"
+    def run(_args: list[str]) -> str:
         return f"{root}\n{branch}"
 
     return run
@@ -75,30 +69,6 @@ def test_multi_target_resolution_deduplicates_and_requires_every_path(tmp_path: 
     )
     assert not denied.allowed
     assert "src/b.py" in denied.reason
-
-
-def test_real_hardlink_target_requires_its_own_display_claim(tmp_path: Path) -> None:
-    repo = git_repo(tmp_path / "repo")
-    owned = repo / "owned.py"
-    alias = repo / "alias.py"
-    owned.write_text("VALUE = 1\n", encoding="utf-8")
-    alias.hardlink_to(owned)
-    git_run(repo, "add", "owned.py", "alias.py")
-    git_run(repo, "commit", "-q", "-m", "hardlink fixture")
-    root, displays, identity = resolve_claim_scope_identity(repo, ["owned.py"])
-    claim = _claim(root, [displays[0]])
-    claim["path_identity"] = identity.as_dict()
-    request = MutationRequest("session", "tool", root, (Path("alias.py"),))
-
-    targets = resolve_repository_targets(request, provider="Provider")
-    verdict = decide_targets_from_snapshot(
-        {"active_claims": [claim]},
-        identity="seat/one",
-        targets=targets,
-    )
-
-    assert not verdict.allowed
-    assert "alias.py" in verdict.reason
 
 
 def test_resolution_rejects_empty_paths_and_relative_cwd(tmp_path: Path) -> None:

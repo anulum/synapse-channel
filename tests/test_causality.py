@@ -29,7 +29,6 @@ from synapse_channel.core.causality import (
     run_causality,
 )
 from synapse_channel.core.journal import EventKind
-from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.persistence import EventStore, StoredEvent
 
 
@@ -42,7 +41,6 @@ def _claim(
     paths: tuple[str, ...] = (),
     worktree: str = "wt1",
     kind: str = EventKind.CLAIM,
-    path_identity: dict[str, object] | None = None,
 ) -> StoredEvent:
     return StoredEvent(
         seq=seq,
@@ -54,7 +52,6 @@ def _claim(
             "status": status,
             "paths": list(paths),
             "worktree": worktree,
-            **({"path_identity": path_identity} if path_identity is not None else {}),
         },
     )
 
@@ -114,33 +111,6 @@ def test_build_graph_records_three_relations() -> None:
     assert dependency is not None
     assert dependency.relation == DEPENDENCY
     contention = _edge(graph.edges, 8, 9)
-    assert contention is not None
-    assert contention.relation == CONTENTION
-
-
-def test_contention_edge_uses_canonical_hardlink_identity() -> None:
-    first_identity = ClaimScopeIdentity(
-        worktree_path="wt1",
-        worktree_object_id="root:1",
-        filesystem_namespace="host:1",
-        case_sensitive=True,
-        paths=(CanonicalPathIdentity("owned.py", "owned.py", "1:2"),),
-    ).as_dict()
-    second_identity = ClaimScopeIdentity(
-        worktree_path="wt1",
-        worktree_object_id="root:1",
-        filesystem_namespace="host:1",
-        case_sensitive=True,
-        paths=(CanonicalPathIdentity("alias.py", "alias.py", "1:2"),),
-    ).as_dict()
-    graph = build_causal_graph(
-        (
-            _claim(1, "A", "alice", paths=("owned.py",), path_identity=first_identity),
-            _release(2, "A"),
-            _claim(3, "B", "bob", paths=("alias.py",), path_identity=second_identity),
-        )
-    )
-    contention = _edge(graph.edges, 2, 3)
     assert contention is not None
     assert contention.relation == CONTENTION
 

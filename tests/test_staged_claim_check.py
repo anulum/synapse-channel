@@ -30,10 +30,6 @@ def _runner(
     def run(args: list[str]) -> str:
         if args[0] == "diff":
             return raw
-        if "ls-files" in args:
-            return ""
-        if "core.ignorecase" in args:
-            return "false"
         if args == ["rev-parse", "--show-toplevel"]:
             return str(root)
         if args == ["symbolic-ref", "--quiet", "--short", "HEAD"]:
@@ -245,9 +241,9 @@ async def test_diagnostic_escapes_newlines_and_is_bounded(tmp_path: Path) -> Non
         environment={},
         state_fetcher=_fetch({"active_claims": []}),
     )
-    assert result.allowed is False
+    assert "\\n" in result.reason
     assert "\n" not in result.reason
-    assert "path" in result.reason.lower()
+    assert "(+8 more)" in result.reason
 
 
 @pytest.mark.asyncio

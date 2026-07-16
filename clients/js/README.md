@@ -53,11 +53,7 @@ client.close();
 - `new SynapseClient({ uri, name, token?, takeover?, heartbeatIntervalMs?, readyTimeoutMs? })`
 - `connect(): Promise<void>` — opens the socket, registers the identity, resolves on the hub welcome.
 - `on(type, handler)` / `onMessage(handler)` — subscribe by `MessageType` or to every frame; each returns an unsubscribe function.
-- `chat(payload, { target?, channel?, priority? })`,
-  `claim(taskId, paths?, pathIdentity?)`, `release(taskId)`. The optional
-  `ClaimScopeIdentity` is for bridges carrying output from the trusted Python
-  Git/filesystem resolver; its worktree path is sent automatically. Omit it
-  rather than inventing canonical values.
+- `chat(payload, { target?, channel?, priority? })`, `claim(taskId, paths?)`, `release(taskId)`.
 - `requestBoard()`, `requestWho()`, `requestState()`.
 - `send(type, { target?, payload?, extra? })` for any other protocol frame.
 - `close()`.

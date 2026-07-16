@@ -37,7 +37,6 @@ from synapse_channel.core.ledger import (
     LedgerTask,
     ProgressNote,
 )
-from synapse_channel.core.path_identity import parse_optional_claim_scope_identity
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import (
@@ -462,11 +461,6 @@ def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
     """Rebuild a :class:`TaskClaim` from a persisted claim snapshot."""
     raw_git = payload.get("git")
     git = GitContext.from_dict(raw_git) if isinstance(raw_git, dict) else None
-    path_identity = parse_optional_claim_scope_identity(payload)
-    paths = tuple(str(p) for p in payload.get("paths", ()))
-    worktree = str(payload.get("worktree", ""))
-    if path_identity is not None and not path_identity.validates_display_scope(worktree, paths):
-        raise ValueError("persisted claim path identity does not match its display scope")
     return TaskClaim(
         task_id=str(payload["task_id"]),
         owner=str(payload["owner"]),
@@ -475,9 +469,8 @@ def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
         lease_expires_at=float(payload["lease_expires_at"]),
         status=str(payload.get("status", "claimed")),
         data_ref=str(payload.get("data_ref", "")),
-        worktree=worktree,
-        paths=paths,
-        path_identity=path_identity,
+        worktree=str(payload.get("worktree", "")),
+        paths=tuple(str(p) for p in payload.get("paths", ())),
         epoch=int(payload.get("epoch", 0)),
         checkpoint=str(payload.get("checkpoint", "")),
         git=git,

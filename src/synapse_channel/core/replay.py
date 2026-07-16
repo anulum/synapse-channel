@@ -30,10 +30,6 @@ from typing import Any
 
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.numeric_coercion import safe_int
-from synapse_channel.core.path_identity import (
-    ClaimScopeIdentity,
-    parse_optional_claim_scope_identity,
-)
 from synapse_channel.core.persistence import EventStore, StoredEvent
 
 SNAPSHOT_KINDS = frozenset(
@@ -77,8 +73,6 @@ class ReconstructedClaim:
         Worktree label the work happens in.
     paths : tuple[str, ...]
         Declared file/directory scopes; empty means the whole worktree.
-    path_identity : ClaimScopeIdentity or None
-        Additive canonical identity aligned with ``paths`` when the claim carried one.
     epoch : int
         Lease generation observed at the fold point.
     version : int
@@ -102,7 +96,6 @@ class ReconstructedClaim:
     data_ref: str
     worktree: str
     paths: tuple[str, ...]
-    path_identity: ClaimScopeIdentity | None
     epoch: int
     version: int
     source_seq: int
@@ -451,11 +444,6 @@ def _load_events(
 def _claim_from_event(event: StoredEvent) -> ReconstructedClaim:
     """Project a winning snapshot event into a reconstructed claim."""
     payload = event.payload
-    path_identity = parse_optional_claim_scope_identity(payload)
-    paths = tuple(str(path) for path in payload.get("paths", ()))
-    worktree = str(payload.get("worktree", ""))
-    if path_identity is not None and not path_identity.validates_display_scope(worktree, paths):
-        raise ValueError("replayed claim path identity does not match its display scope")
     return ReconstructedClaim(
         task_id=str(payload.get("task_id", "")),
         owner=str(payload.get("owner", "")),
@@ -463,9 +451,8 @@ def _claim_from_event(event: StoredEvent) -> ReconstructedClaim:
         note=str(payload.get("note", "")),
         checkpoint=str(payload.get("checkpoint", "")),
         data_ref=str(payload.get("data_ref", "")),
-        worktree=worktree,
-        paths=paths,
-        path_identity=path_identity,
+        worktree=str(payload.get("worktree", "")),
+        paths=tuple(str(path) for path in payload.get("paths", ())),
         epoch=safe_int(payload.get("epoch", 0), default=0),
         version=safe_int(payload.get("version", 0), default=0),
         source_seq=event.seq,
@@ -519,7 +506,7 @@ def _claim_to_json(claim: ReconstructedClaim | None) -> dict[str, object] | None
     """Convert a reconstructed claim into JSON-compatible fields."""
     if claim is None:
         return None
-    result: dict[str, object] = {
+    return {
         "task_id": claim.task_id,
         "owner": claim.owner,
         "status": claim.status,
@@ -534,9 +521,6 @@ def _claim_to_json(claim: ReconstructedClaim | None) -> dict[str, object] | None
         "source_kind": claim.source_kind,
         "source_ts": claim.source_ts,
     }
-    if claim.path_identity is not None:
-        result["path_identity"] = claim.path_identity.as_dict()
-    return result
 
 
 def _diverged_to_json(event: DivergedEvent) -> dict[str, object]:

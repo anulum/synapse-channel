@@ -23,12 +23,6 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
-from synapse_channel.core.path_identity import (
-    ClaimScopeIdentity,
-    claim_object_ids_comparable,
-    claim_scope_covers_path,
-    parse_optional_claim_scope_identity,
-)
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.git.gitclaim import AgentFactory, GitError, GitRunner, _default_git_runner
 
@@ -74,22 +68,7 @@ def _normalise(paths: Any) -> list[str]:
     return [str(p).rstrip("/") for p in (paths or [])]
 
 
-def _scope_identity(claim: dict[str, Any], paths: list[str]) -> ClaimScopeIdentity | None:
-    """Return a validated optional canonical identity from one claim snapshot."""
-    identity = parse_optional_claim_scope_identity(claim)
-    if identity is not None and not identity.validates_display_scope(
-        str(claim.get("worktree") or ""), paths
-    ):
-        raise ValueError("claim path identity does not align with display scope")
-    return identity
-
-
-def _overlap(
-    paths_a: list[str],
-    paths_b: list[str],
-    identity_a: ClaimScopeIdentity | None = None,
-    identity_b: ClaimScopeIdentity | None = None,
-) -> list[str]:
+def _overlap(paths_a: list[str], paths_b: list[str]) -> list[str]:
     """Return the paths shared by two scopes by equality or directory containment.
 
     A whole-worktree scope (empty paths) overlaps the other scope entirely, so the
@@ -100,41 +79,10 @@ def _overlap(
     if not paths_b:
         return sorted(paths_a)
     shared: set[str] = set()
-    object_identity_safe = claim_object_ids_comparable(identity_a, identity_b)
-    for index_a, a in enumerate(paths_a):
-        for index_b, b in enumerate(paths_b):
-            row_a = identity_a.paths[index_a] if identity_a is not None else None
-            row_b = identity_b.paths[index_b] if identity_b is not None else None
-            case_sensitive = (
-                identity_a.case_sensitive and identity_b.case_sensitive
-                if identity_a is not None and identity_b is not None
-                else identity_a.case_sensitive
-                if identity_a is not None
-                else identity_b.case_sensitive
-                if identity_b is not None
-                else None
-            )
-            overlaps = claim_scope_covers_path(
-                a,
-                row_a,
-                b,
-                row_b,
-                case_sensitive=case_sensitive,
-                object_identity_safe=object_identity_safe,
-                filesystem_identity_safe=True,
-            ) or claim_scope_covers_path(
-                b,
-                row_b,
-                a,
-                row_a,
-                case_sensitive=case_sensitive,
-                object_identity_safe=object_identity_safe,
-                filesystem_identity_safe=True,
-            )
-            if overlaps:
+    for a in paths_a:
+        for b in paths_b:
+            if a == b or a.startswith(b + "/") or b.startswith(a + "/"):
                 shared.add(a if len(a) >= len(b) else b)
-                if a != b and not (a.startswith(b + "/") or b.startswith(a + "/")):
-                    shared.add(b)
     return sorted(shared)
 
 
@@ -168,13 +116,8 @@ def find_conflicts(claims: list[dict[str, Any]]) -> list[PredictedConflict]:
                 continue
             paths_a = _normalise(first.get("paths", []))
             paths_b = _normalise(second.get("paths", []))
-            try:
-                identity_a = _scope_identity(first, paths_a)
-                identity_b = _scope_identity(second, paths_b)
-            except ValueError:
-                continue
             both_whole = not paths_a and not paths_b
-            overlap = _overlap(paths_a, paths_b, identity_a, identity_b)
+            overlap = _overlap(paths_a, paths_b)
             if not overlap and not both_whole:
                 continue
             out.append(

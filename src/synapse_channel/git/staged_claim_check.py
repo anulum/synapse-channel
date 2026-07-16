@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.claim_state import ClaimStateError, fetch_state_snapshot
-from synapse_channel.core.path_identity import PathIdentityError
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.git.claim_check_context import (
     ClaimCheckConfigError,
@@ -25,7 +24,6 @@ from synapse_channel.git.claim_check_context import (
 )
 from synapse_channel.git.claim_coverage import ClaimCoverageError, decide_claim_coverage
 from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
-from synapse_channel.git.path_identity import resolve_claim_scope_identity
 from synapse_channel.git.semantic_diff import SemanticDiffRecord, resolve_staged_diff
 from synapse_channel.git.semantic_enforcement import (
     SemanticEnforcementError,
@@ -147,12 +145,6 @@ async def run_staged_claim_check(
             runner=runner,
             environment=env,
         )
-        canonical_root, canonical_paths, path_identity = resolve_claim_scope_identity(
-            context.root,
-            paths,
-            runner=runner,
-        )
-        paths = canonical_paths
         snapshot = await state_fetcher(
             uri=context.uri,
             requester=context.requester,
@@ -161,38 +153,24 @@ async def run_staged_claim_check(
         )
         coverage_paths = _coverage_paths(
             snapshot,
-            root=canonical_root,
+            root=context.root,
             branch=context.branch,
             physical_paths=paths,
             semantic_resolver=semantic_resolver,
         )
-        # Path identity binds filesystem-canonical physical paths. Semantic
-        # projection rewrites to symbol scopes; those keep the post-semantic
-        # matcher without a physical path_identity envelope.
-        if coverage_paths == paths:
-            verdict = decide_claim_coverage(
-                snapshot,
-                identity=context.identity,
-                root=canonical_root,
-                branch=context.branch,
-                paths=coverage_paths,
-                path_identity=path_identity,
-            )
-        else:
-            verdict = decide_claim_coverage(
-                snapshot,
-                identity=context.identity,
-                root=canonical_root,
-                branch=context.branch,
-                paths=coverage_paths,
-            )
+        verdict = decide_claim_coverage(
+            snapshot,
+            identity=context.identity,
+            root=context.root,
+            branch=context.branch,
+            paths=coverage_paths,
+        )
     except (
         ClaimCheckConfigError,
         ClaimCoverageError,
         ClaimStateError,
         GitError,
         OSError,
-        PathIdentityError,
         RuntimeError,
         SemanticEnforcementError,
         ValueError,

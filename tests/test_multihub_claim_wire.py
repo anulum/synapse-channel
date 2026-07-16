@@ -69,27 +69,6 @@ def test_claim_forward_request_round_trips() -> None:
     assert decode_claim_forward_request(encode_claim_forward_request(request)) == request
 
 
-def test_claim_forward_request_preserves_additive_path_identity() -> None:
-    identity = {
-        "version": 1,
-        "worktree_path": "/repo",
-        "worktree_object_id": "1:2",
-        "filesystem_namespace": "host:1",
-        "case_sensitive": True,
-        "paths": [{"git_path": "a.py", "filesystem_path": "real.py", "object_id": "1:3"}],
-    }
-    request = ClaimForwardRequest(
-        namespace="SYNAPSE-CHANNEL",
-        claimant="SYNAPSE-CHANNEL/alice",
-        task_id="task-identity",
-        claim={"paths": ["a.py"], "path_identity": identity},
-    )
-
-    decoded = decode_claim_forward_request(encode_claim_forward_request(request))
-
-    assert decoded.claim["path_identity"] == identity
-
-
 @pytest.mark.parametrize("field", [NAMESPACE_FIELD, CLAIMANT_FIELD, TASK_ID_FIELD])
 def test_encode_claim_forward_request_rejects_blank_identifiers(field: str) -> None:
     kwargs = {

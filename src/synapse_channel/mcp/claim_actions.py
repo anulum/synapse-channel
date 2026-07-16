@@ -47,7 +47,6 @@ class McpClaimActions:
             task_id,
             paths=scope,
             worktree="",
-            path_identity=None,
             git=None,
             where=where,
         )
@@ -79,7 +78,6 @@ class McpClaimActions:
             task_id,
             paths=list(scope.paths),
             worktree=scope.worktree,
-            path_identity=scope.path_identity,
             git=scope.git,
             where=where,
         )
@@ -90,7 +88,6 @@ class McpClaimActions:
         *,
         paths: list[str],
         worktree: str,
-        path_identity: dict[str, object] | None,
         git: dict[str, str] | None,
         where: str,
     ) -> str:
@@ -108,7 +105,6 @@ class McpClaimActions:
                 task_id,
                 worktree=worktree,
                 paths=paths,
-                path_identity=path_identity,
                 git=git,
             ),
         )

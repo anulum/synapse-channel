@@ -24,7 +24,6 @@ from synapse_channel.git.gitclaim import (
     resolve_branch,
     resolve_repo,
 )
-from synapse_channel.git.path_identity import resolve_claim_scope_identity
 
 
 class McpGitClaimError(SynapseError, RuntimeError):
@@ -35,17 +34,10 @@ class McpGitClaimError(SynapseError, RuntimeError):
 
 @dataclass(frozen=True)
 class McpGitClaimScope:
-    """Canonical local Git metadata attached to one MCP claim request.
-
-    ``worktree`` and ``paths`` are the human-readable claim fields;
-    ``path_identity`` is the aligned versioned comparison schema; and ``git``
-    records branch, base, and release policy without asking the hub to inspect
-    the repository.
-    """
+    """Canonical local Git metadata attached to one MCP claim request."""
 
     worktree: str
     paths: tuple[str, ...]
-    path_identity: dict[str, object]
     git: dict[str, str]
 
 
@@ -66,10 +58,6 @@ def _claim_paths(paths: Sequence[str] | None, *, whole_worktree: bool) -> tuple[
     if not normalised or "" in normalised:
         raise McpGitClaimError(
             "MCP Git claim paths must be bounded repository-relative paths without traversal."
-        )
-    if normalised != requested:
-        raise McpGitClaimError(
-            "MCP Git claim paths must already be unique canonical display paths."
         )
     return normalised
 
@@ -118,11 +106,7 @@ def resolve_mcp_git_claim_scope(
     try:
         branch = resolve_branch(runner=runner)
         raw_root = resolve_repo(runner=runner)
-        root, claim_paths, path_identity = resolve_claim_scope_identity(
-            Path(raw_root),
-            claim_paths,
-            runner=runner,
-        )
+        root = Path(raw_root).resolve(strict=True)
     except (GitError, OSError, RuntimeError, ValueError) as exc:
         raise McpGitClaimError("MCP Git claim could not resolve the current worktree.") from exc
     if not branch.strip() or not branch.isprintable() or not root.is_dir():
@@ -133,8 +117,7 @@ def resolve_mcp_git_claim_scope(
         auto_release_on=auto_release_on,
     )
     return McpGitClaimScope(
-        worktree=root.as_posix(),
+        worktree=str(root),
         paths=claim_paths,
-        path_identity=path_identity.as_dict(),
         git=context.as_dict(),
     )

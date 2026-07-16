@@ -30,17 +30,6 @@ An agent leases a task by id. The claim may declare a **file scope** — a
 `worktree` and a set of `paths`. The hub refuses a claim whose file scope
 overlaps another agent's live claim; agents in different worktrees never contend.
 
-Git-aware clients retain those fields as human-readable displays and add a
-versioned `path_identity` derived locally from the canonical worktree, Git-index
-spelling, resolved filesystem path, actual case policy, Unicode NFC, and an
-existing object's device/object key. The hub validates and compares the supplied
-identity without accessing Git or the filesystem. This makes symlink, hard-link,
-junction, case, Unicode-equivalent, and Windows short-name aliases contend while
-preserving distinct case-sensitive paths on filesystems such as Linux/ext4.
-Malformed or display-misaligned identities are refused before state mutation.
-Legacy claims remain readable; an identity-aware peer applies its known case
-policy to a legacy display, while two legacy peers keep literal comparison.
-
 Every lease:
 
 - **expires**, so a crashed agent never holds a claim forever;

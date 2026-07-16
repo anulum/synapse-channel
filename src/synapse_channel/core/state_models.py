@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from synapse_channel.core.lifecycle import TaskStatus
-from synapse_channel.core.path_identity import ClaimScopeIdentity
 from synapse_channel.core.scoping import DEFAULT_WORKTREE
 
 AUTO_RELEASE_MODES = frozenset({"manual", "commit", "merge"})
@@ -107,9 +106,6 @@ class TaskClaim:
     paths : tuple[str, ...]
         Declared file/directory paths the claim intends to touch; empty means the
         whole worktree.
-    path_identity : ClaimScopeIdentity or None
-        Optional client-derived canonical identity aligned with ``paths``.  The
-        hub compares it but never resolves paths or reads the filesystem.
     epoch : int
         Strictly-increasing lease generation. A mutation carrying a stale epoch is
         rejected, so a paused/expired agent cannot act on a superseded claim.
@@ -135,7 +131,6 @@ class TaskClaim:
     data_ref: str = ""
     worktree: str = DEFAULT_WORKTREE
     paths: tuple[str, ...] = ()
-    path_identity: ClaimScopeIdentity | None = None
     epoch: int = 0
     version: int = 0
     checkpoint: str = ""
@@ -150,7 +145,7 @@ class TaskClaim:
             A mapping with the claim's public fields, safe to embed in a
             wire message or state snapshot.
         """
-        snapshot: dict[str, Any] = {
+        return {
             "task_id": self.task_id,
             "owner": self.owner,
             "note": self.note,
@@ -165,9 +160,6 @@ class TaskClaim:
             "checkpoint": self.checkpoint,
             "git": self.git.as_dict() if self.git is not None else None,
         }
-        if self.path_identity is not None:
-            snapshot["path_identity"] = self.path_identity.as_dict()
-        return snapshot
 
 
 @dataclass

@@ -29,7 +29,6 @@ from synapse_channel.core.journal import (
     replay,
 )
 from synapse_channel.core.ledger import LedgerTask, ProgressNote
-from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import GitContext, ResourceOffer, TaskClaim
 
@@ -164,20 +163,6 @@ def test_replay_reconstructs_git_context(tmp_path: Path) -> None:
     result = replay(store, now=2000.0)
     store.close()
     assert result.state.claims["T1"].git == ctx
-
-
-def test_replay_reconstructs_additive_path_identity(tmp_path: Path) -> None:
-    identity = ClaimScopeIdentity(
-        worktree_path="wt",
-        case_sensitive=True,
-        paths=(CanonicalPathIdentity("src", "resolved/src", "1:2"),),
-    )
-    store = _store(tmp_path)
-    record_claim(store, _claim(path_identity=identity))
-    result = replay(store, now=2000.0)
-    store.close()
-
-    assert result.state.claims["T1"].path_identity == identity
 
 
 def test_replay_release_removes_claim(tmp_path: Path) -> None:
