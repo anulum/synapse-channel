@@ -94,6 +94,27 @@ def test_repository_uses_one_complete_immutable_compatibility_contract() -> None
     assert_repository_contract(contract)
 
 
+def test_compatibility_types_import_without_workflow_parser_dependency() -> None:
+    completed = subprocess.run(  # nosec B603
+        [
+            sys.executable,
+            "-S",
+            "-c",
+            (
+                "from tools.opencode_compatibility_contract import Artifact, Compatibility; "
+                "print(Artifact.__name__, Compatibility.__name__)"
+            ),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == "Artifact Compatibility\n"
+
+
 def test_repository_contract_refuses_documented_wire_identity_drift(tmp_path: Path) -> None:
     contract = load_compatibility()
     root = tmp_path / "repository"
@@ -156,7 +177,16 @@ def test_repository_contract_refuses_zed_x11_app_id_drift(tmp_path: Path) -> Non
     [
         ("advisory", "must gate every pinned real-client lane"),
         ("advisory-spaced", "must gate every pinned real-client lane"),
-        ("missing-zed", "one required zed matrix lane"),
+        ("advisory-explicit-key", "must gate every pinned real-client lane"),
+        ("advisory-step", "must gate every pinned real-client lane"),
+        ("commented-zed", "matrix lanes differ"),
+        ("duplicate-client", "matrix lanes differ"),
+        ("duplicate-key", "duplicates mapping key 'strategy'"),
+        ("wrong-client", "matrix lanes differ"),
+        ("include-not-array", "matrix.include must be an array"),
+        ("client-not-string", r"matrix.include\[0\].client must be a string"),
+        ("unhashable-key", "mapping keys must be hashable"),
+        ("malformed-yaml", "cannot parse editor workflow YAML"),
     ],
 )
 def test_repository_contract_refuses_editor_release_gate_drift(
@@ -182,15 +212,68 @@ def test_repository_contract_refuses_editor_release_gate_drift(
         shutil.copy2(source_root / relative, destination)
     workflow = root / ".github/workflows/opencode-editor-e2e.yml"
     workflow_text = workflow.read_text(encoding="utf-8")
-    if mutation.startswith("advisory"):
+    if mutation == "advisory-explicit-key":
+        workflow_text = workflow_text.replace(
+            "    strategy:\n",
+            '    ? "continue-on-error"\n    : true\n    strategy:\n',
+            1,
+        )
+    elif mutation == "advisory-step":
+        workflow_text = workflow_text.replace(
+            "    steps:\n      - uses:",
+            "    steps:\n      - continue-on-error: true\n        uses:",
+            1,
+        )
+    elif mutation.startswith("advisory"):
         separator = " :" if mutation == "advisory-spaced" else ":"
         workflow_text = workflow_text.replace(
             "    strategy:\n",
             f"    continue-on-error{separator} true\n    strategy:\n",
             1,
         )
+    elif mutation == "commented-zed":
+        workflow_text = workflow_text.replace(
+            "          - client: zed\n            timeout: 30\n",
+            "          # - client: zed\n          #   timeout: 30\n",
+            1,
+        )
+    elif mutation == "duplicate-client":
+        workflow_text = workflow_text.replace(
+            "          - client: jetbrains\n            timeout: 45\n",
+            "          - client: jetbrains\n            timeout: 45\n"
+            "          - client: neovim\n            timeout: 20\n",
+            1,
+        )
+    elif mutation == "duplicate-key":
+        workflow_text = workflow_text.replace(
+            "    strategy:\n",
+            "    strategy: {}\n    strategy:\n",
+            1,
+        )
+    elif mutation == "wrong-client":
+        workflow_text = workflow_text.replace(
+            "          - client: zed\n", "          - client: vscode\n", 1
+        )
+    elif mutation == "include-not-array":
+        workflow_text = workflow_text.replace(
+            "        include:\n",
+            "        include: neovim\n        ignored:\n",
+            1,
+        )
+    elif mutation == "client-not-string":
+        workflow_text = workflow_text.replace(
+            "          - client: neovim\n",
+            "          - client: [neovim]\n",
+            1,
+        )
+    elif mutation == "unhashable-key":
+        workflow_text = workflow_text.replace(
+            "    strategy:\n",
+            "    ? [unhashable]\n    : true\n    strategy:\n",
+            1,
+        )
     else:
-        workflow_text = workflow_text.replace("          - client: zed\n", "", 1)
+        workflow_text = workflow_text.replace("jobs:\n", "jobs: [\n", 1)
     workflow.write_text(workflow_text, encoding="utf-8")
 
     with pytest.raises(CompatibilityError, match=message):
