@@ -6,7 +6,12 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — typed WebSocket client for the coordination hub
 
-import { type Envelope, MessageType, buildEnvelope } from "./protocol.js";
+import {
+  type ClaimScopeIdentity,
+  type Envelope,
+  MessageType,
+  buildEnvelope,
+} from "./protocol.js";
 
 /** A minimal structural view of the global `WebSocket`, for injection in tests. */
 export interface WebSocketLike {
@@ -158,9 +163,20 @@ export class SynapseClient {
     this.send(MessageType.Chat, { target: options.target ?? "all", payload, extra });
   }
 
-  /** Claim a task, optionally scoped to file paths. */
-  claim(taskId: string, paths: string[] = []): void {
-    this.send(MessageType.Claim, { extra: { task_id: taskId, paths } });
+  /**
+   * Claim a task, optionally scoped to display paths and a client-derived identity.
+   *
+   * The identity is an additive wire field. Callers that cannot derive it may
+   * omit it and retain legacy literal-path comparison. Git-aware callers should
+   * use the Python resolver rather than inventing canonical values.
+   */
+  claim(taskId: string, paths: string[] = [], pathIdentity?: ClaimScopeIdentity): void {
+    const extra: Record<string, unknown> = { task_id: taskId, paths };
+    if (pathIdentity !== undefined) {
+      extra["worktree"] = pathIdentity.worktree_path;
+      extra["path_identity"] = pathIdentity;
+    }
+    this.send(MessageType.Claim, { extra });
   }
 
   /** Release a claim you own. */

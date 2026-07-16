@@ -16,6 +16,7 @@ import pytest
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.git.gitclaim import GitError
 from synapse_channel.git.gitconflict import (
@@ -94,6 +95,84 @@ def test_find_conflicts_cross_branch_overlap() -> None:
     assert conflicts[0].owner_a == "A"
     assert conflicts[0].branch_b == "feature/y"
     assert conflicts[0].paths == ("src/auth.py",)
+
+
+def test_find_conflicts_reports_hardlink_alias_display_paths() -> None:
+    first = _claim("T1", "A", "feature/x", ["owned.py"])
+    second = _claim("T2", "B", "feature/y", ["alias.py"])
+    first["path_identity"] = ClaimScopeIdentity(
+        worktree_path="/repo",
+        worktree_object_id="root:1",
+        filesystem_namespace="host:1",
+        case_sensitive=True,
+        paths=(CanonicalPathIdentity("owned.py", "owned.py", "1:2"),),
+    ).as_dict()
+    first["worktree"] = "/repo"
+    second["path_identity"] = ClaimScopeIdentity(
+        worktree_path="/repo",
+        worktree_object_id="root:1",
+        filesystem_namespace="host:1",
+        case_sensitive=True,
+        paths=(CanonicalPathIdentity("alias.py", "alias.py", "1:2"),),
+    ).as_dict()
+    second["worktree"] = "/repo"
+
+    conflicts = find_conflicts([first, second])
+
+    assert len(conflicts) == 1
+    assert conflicts[0].paths == ("alias.py", "owned.py")
+
+
+def test_predictor_remains_conservative_across_identity_aware_worktrees() -> None:
+    """Different linked-worktree roots can still merge into one target branch."""
+    first = _claim("T1", "A", "feature/x", ["same.py"])
+    second = _claim("T2", "B", "feature/y", ["same.py"])
+    first["path_identity"] = ClaimScopeIdentity(
+        worktree_path="/repo-a",
+        worktree_object_id="root:a",
+        filesystem_namespace="host:1",
+        case_sensitive=True,
+        paths=(CanonicalPathIdentity("same.py", "same.py", "1:2"),),
+    ).as_dict()
+    first["worktree"] = "/repo-a"
+    second["path_identity"] = ClaimScopeIdentity(
+        worktree_path="/repo-b",
+        worktree_object_id="root:b",
+        filesystem_namespace="host:1",
+        case_sensitive=True,
+        paths=(CanonicalPathIdentity("same.py", "same.py", "1:2"),),
+    ).as_dict()
+    second["worktree"] = "/repo-b"
+
+    conflicts = find_conflicts([first, second])
+    assert len(conflicts) == 1
+    assert conflicts[0].paths == ("same.py",)
+
+
+@pytest.mark.parametrize(
+    "invalid_identity",
+    ["invalid", {"version": 999}],
+)
+def test_find_conflicts_skips_present_invalid_identity(invalid_identity: object) -> None:
+    """One corrupt snapshot row cannot crash or participate in prediction."""
+    invalid = _claim("BAD", "X", "feature/bad", ["src/auth.py"])
+    invalid["path_identity"] = invalid_identity
+    valid_a = _claim("T1", "A", "feature/x", ["src/auth.py"])
+    valid_b = _claim("T2", "B", "feature/y", ["src/auth.py"])
+    conflicts = find_conflicts([invalid, valid_a, valid_b])
+    assert len(conflicts) == 1
+    assert {conflicts[0].owner_a, conflicts[0].owner_b} == {"A", "B"}
+
+
+def test_find_conflicts_skips_scope_misaligned_identity() -> None:
+    invalid = _claim("BAD", "X", "feature/bad", ["src/auth.py"])
+    invalid["worktree"] = "/other"
+    invalid["path_identity"] = ClaimScopeIdentity(
+        worktree_path="/repo",
+        case_sensitive=True,
+        paths=(CanonicalPathIdentity("src/auth.py", "src/auth.py"),),
+    ).as_dict()
+    assert find_conflicts([invalid, _claim("T1", "A", "feature/x", ["src/auth.py"])]) == []
 
 
 def test_find_conflicts_same_branch_is_ignored() -> None:

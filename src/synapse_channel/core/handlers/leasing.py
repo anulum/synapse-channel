@@ -34,6 +34,10 @@ from synapse_channel.core.journal import (
     record_task_update,
 )
 from synapse_channel.core.numeric_coercion import safe_float
+from synapse_channel.core.path_identity import (
+    PathIdentityError,
+    parse_optional_claim_scope_identity,
+)
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.receipts import (
     ReleaseReceipt,
@@ -93,7 +97,8 @@ def apply_claim(hub: SynapseHub, claimant: str, body: Mapping[str, Any]) -> Clai
         on whose behalf another hub forwards the request.
     body : dict[str, Any]
         The claim body: ``task_id`` (or ``payload``), and the optional ``note``,
-        ``ttl_seconds``, ``worktree``, ``paths``, and ``git`` scope.
+        ``ttl_seconds``, ``worktree``, ``paths``, additive ``path_identity``, and
+        ``git`` scope.
 
     Returns
     -------
@@ -106,6 +111,15 @@ def apply_claim(hub: SynapseHub, claimant: str, body: Mapping[str, Any]) -> Clai
     worktree = str(body.get("worktree") or "")
     raw_paths = body.get("paths")
     paths = [str(p) for p in raw_paths] if isinstance(raw_paths, list) else []
+    try:
+        path_identity = parse_optional_claim_scope_identity(body)
+    except PathIdentityError:
+        return ClaimApplication(
+            ok=False,
+            message=f"Task '{task_id}' carries an invalid path identity.",
+            task_id=task_id,
+            claim=None,
+        )
     # The git context is opaque to the hub: deserialise it for storage and
     # display, but never act on it (the hub runs no git, reads no filesystem).
     raw_git = body.get("git")
@@ -123,6 +137,7 @@ def apply_claim(hub: SynapseHub, claimant: str, body: Mapping[str, Any]) -> Clai
         ttl_seconds=ttl_val,
         worktree=worktree,
         paths=paths,
+        path_identity=path_identity,
         git=git,
     )
     if ok:
@@ -150,9 +165,10 @@ def claim_grant_fields(claim: TaskClaim) -> dict[str, Any]:
     -------
     dict[str, Any]
         The grant fields: task id, owner, note, lease expiry, status, worktree, paths,
-        epoch, version, checkpoint, and the opaque git context (``None`` when unset).
+        additive path identity, epoch, version, checkpoint, and the opaque git
+        context (``None`` when unset).
     """
-    return {
+    fields: dict[str, Any] = {
         "task_id": claim.task_id,
         "owner": claim.owner,
         "note": claim.note,
@@ -165,6 +181,9 @@ def claim_grant_fields(claim: TaskClaim) -> dict[str, Any]:
         "checkpoint": claim.checkpoint,
         "git": claim.git.as_dict() if claim.git is not None else None,
     }
+    if claim.path_identity is not None:
+        fields["path_identity"] = claim.path_identity.as_dict()
+    return fields
 
 
 async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
@@ -347,6 +366,12 @@ async def handle_handoff(
     if hub.journal is not None:
         record_handoff(hub.journal, claim)
     await _record_handoff_progress(hub, task_id, sender, to_agent, claim.note)
+    scope_fields: dict[str, Any] = {
+        "worktree": claim.worktree,
+        "paths": list(claim.paths),
+    }
+    if claim.path_identity is not None:
+        scope_fields["path_identity"] = claim.path_identity.as_dict()
     granted = hub._system(
         message,
         msg_type=MessageType.HANDOFF_GRANTED,
@@ -355,8 +380,7 @@ async def handle_handoff(
         previous_owner=sender,
         note=claim.note,
         status=claim.status,
-        worktree=claim.worktree,
-        paths=list(claim.paths),
+        **scope_fields,
         epoch=claim.epoch,
         version=claim.version,
         lease_expires_at=claim.lease_expires_at,

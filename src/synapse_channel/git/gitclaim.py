@@ -39,7 +39,7 @@ from synapse_channel.git.semantic_claim_request import (
 from synapse_channel.terminal_text import shell_command_arg, shell_long_option
 
 GitRunner = Callable[[list[str]], str]
-"""Runs a git subcommand (argv after ``git``) and returns its stripped stdout."""
+"""Runs a git subcommand and returns stdout without terminal CR/LF characters."""
 
 AgentFactory = Callable[..., SynapseAgent]
 """Factory that builds the hub client; injectable for testing."""
@@ -57,7 +57,7 @@ def _unique_ordered(values: list[str]) -> list[str]:
 
 
 def _default_git_runner(args: list[str]) -> str:
-    """Run ``git <args>`` in the current directory and return stripped stdout.
+    """Run ``git <args>`` and return stdout without terminal CR/LF characters.
 
     Parameters
     ----------
@@ -67,7 +67,7 @@ def _default_git_runner(args: list[str]) -> str:
     Returns
     -------
     str
-        The command's standard output with surrounding whitespace removed.
+        The command's standard output with terminal CR/LF characters removed.
 
     Raises
     ------
@@ -90,7 +90,7 @@ def _default_git_runner(args: list[str]) -> str:
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or "").strip() or f"git {' '.join(args)} exited non-zero"
         raise GitError(detail) from exc
-    return result.stdout.strip()
+    return result.stdout.rstrip("\r\n")
 
 
 def resolve_branch(*, runner: GitRunner = _default_git_runner) -> str:
@@ -276,6 +276,17 @@ async def run_git_claim(
             f"{len(semantic_request.diff_records)} file(s), {narrowed} narrowed"
         )
     claim_paths = _unique_ordered([*paths, *semantic_request.claim_paths])
+    try:
+        from synapse_channel.git.path_identity import resolve_claim_scope_identity
+
+        canonical_root, canonical_paths, path_identity = resolve_claim_scope_identity(
+            repo_root,
+            claim_paths,
+            runner=runner,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"claim path identity error: {exc}")
+        return 1
     context = GitContext(branch=branch, base=base, auto_release_on=auto_release_on)
 
     outcome: dict[str, Any] = {}
@@ -301,7 +312,13 @@ async def run_git_claim(
                 )
             )
             return 1
-        await agent.claim(task_id, worktree=repo, paths=claim_paths, git=context.as_dict())
+        await agent.claim(
+            task_id,
+            worktree=canonical_root.as_posix(),
+            paths=canonical_paths,
+            path_identity=path_identity.as_dict(),
+            git=context.as_dict(),
+        )
         for _ in range(attempts):
             if outcome or conn_task.done():
                 break

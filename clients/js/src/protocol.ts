@@ -53,6 +53,32 @@ export const MessageType = {
 /** A wire message-type string. */
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];
 
+/** Canonical comparison values for one human-readable claim path. */
+export interface CanonicalPathIdentity {
+  /** Git-index component spelling after NFC and filesystem case policy. */
+  git_path: string;
+  /** Resolved worktree-relative path after NFC and filesystem case policy. */
+  filesystem_path: string;
+  /** Optional local filesystem object key used to detect hard-link aliases. */
+  object_id: string;
+}
+
+/** Additive version-1 identity for one worktree-scoped claim. */
+export interface ClaimScopeIdentity {
+  /** Identity schema version. Version 1 is the only currently supported value. */
+  version: 1;
+  /** OS-canonical worktree path after NFC and filesystem case policy. */
+  worktree_path: string;
+  /** Optional local filesystem object key for the canonical worktree root. */
+  worktree_object_id: string;
+  /** Opaque host namespace proving when local object keys are comparable. */
+  filesystem_namespace: string;
+  /** Whether the originating worktree treats path case as significant. */
+  case_sensitive: boolean;
+  /** Rows aligned one-to-one with the claim envelope's display `paths`. */
+  paths: CanonicalPathIdentity[];
+}
+
 /**
  * One agent-side message envelope sent to the hub. The base fields mirror the
  * Python `build_envelope`; any additional protocol fields (for example

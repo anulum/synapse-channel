@@ -29,10 +29,17 @@ class AgentTaskMutationMixin:
         *,
         worktree: str = "",
         paths: tuple[str, ...] | list[str] = (),
+        path_identity: dict[str, object] | None = None,
         idem_key: str | None = None,
         git: dict[str, Any] | None = None,
     ) -> None:
-        """Request a scoped lease on a task."""
+        """Request a task lease with optional display and canonical path scopes.
+
+        ``paths`` remain human-readable wire values. Git-aware callers may add
+        the aligned, versioned ``path_identity`` returned by the local resolver;
+        callers that omit it retain legacy literal-path comparison. The hub
+        validates supplied identity data before mutating task state.
+        """
         extra: dict[str, Any] = {"task_id": task_id.strip(), "note": note}
         if ttl_seconds is not None:
             extra["ttl_seconds"] = float(ttl_seconds)
@@ -40,6 +47,8 @@ class AgentTaskMutationMixin:
             extra["worktree"] = worktree
         if paths:
             extra["paths"] = list(paths)
+        if path_identity is not None:
+            extra["path_identity"] = path_identity
         if idem_key:
             extra["idem_key"] = idem_key
         if git:

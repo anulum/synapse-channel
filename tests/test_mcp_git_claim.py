@@ -27,7 +27,7 @@ def test_resolve_mcp_git_claim_scope_uses_real_worktree(
     monkeypatch.chdir(repo)
 
     scope = resolve_mcp_git_claim_scope(
-        ["src/./owner.py", "src/owner.py", "tests/test_owner.py"],
+        ["src/owner.py", "tests/test_owner.py"],
         base="main",
         auto_release_on="manual",
     )
@@ -39,6 +39,10 @@ def test_resolve_mcp_git_claim_scope_uses_real_worktree(
         "base": "main",
         "auto_release_on": "manual",
     }
+    assert scope.path_identity["version"] == 1
+    identity_paths = scope.path_identity["paths"]
+    assert isinstance(identity_paths, list)
+    assert len(identity_paths) == 2
 
 
 def test_resolve_mcp_git_claim_scope_requires_explicit_whole_worktree(
@@ -67,6 +71,8 @@ def test_resolve_mcp_git_claim_scope_requires_explicit_whole_worktree(
         (["../outside"], False),
         (["/absolute"], False),
         (["line\nbreak"], False),
+        (["src/./owner.py"], False),
+        ([" owner.py"], False),
         (["src"], True),
     ],
 )
@@ -154,6 +160,7 @@ async def test_mcp_git_claim_and_release_carry_scope_and_receipt(
     assert claim.owner == "editor-seat"
     assert claim.worktree == str(repo.resolve())
     assert claim.paths == ("allowed.txt",)
+    assert claim.path_identity is not None
     assert claim.git is not None
     assert claim.git.branch == "fixture-main"
     assert released == "released 'EDITOR-GOVERNANCE' with receipt owner 'editor-seat'"
