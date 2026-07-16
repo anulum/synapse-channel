@@ -52,6 +52,14 @@ def test_exact_include_only_matrix_is_accepted() -> None:
     _assert(_workflow())
 
 
+def test_editor_workflow_executes_the_semantic_contract_directly() -> None:
+    workflow = Path(__file__).resolve().parents[1] / ".github/workflows/opencode-editor-e2e.yml"
+    text = workflow.read_text(encoding="utf-8")
+
+    assert "python -m tools.opencode_compatibility_contract --check" in text
+    assert "pytest tests/test_opencode_editor_workflow_contract.py" in text
+
+
 def test_continue_on_error_is_rejected_at_any_nested_depth() -> None:
     text = _workflow().replace(
         "      - uses: actions/checkout@pinned",

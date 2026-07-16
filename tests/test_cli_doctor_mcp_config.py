@@ -174,3 +174,24 @@ def test_mcp_doctor_never_reflects_unbound_argument_values(tmp_path: Path) -> No
     assert result.status == "warn"
     assert "unbound command arg positions: echo:0" in result.detail
     assert "TOP-SECRET" not in result.detail
+
+
+def test_mcp_doctor_sanitizes_an_integer_beyond_the_json_decoder_limit(tmp_path: Path) -> None:
+    config = tmp_path / "decoder-limit-timeout.json"
+    config.write_text(
+        '{"servers":[{"name":"echo","command":"/bin/true","cwd":"/tmp",'
+        '"timeout_seconds":' + "9" * 5001 + "}]}",
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+
+    result = diagnose_mcp_config(
+        config,
+        trust_bundle_path=None,
+        allow_repo_config=False,
+    )
+
+    assert result.status == "fail"
+    assert "invalid JSON numeric value" in result.detail
+    assert "ValueError" not in result.detail
+    assert "Exceeds the limit" not in result.detail

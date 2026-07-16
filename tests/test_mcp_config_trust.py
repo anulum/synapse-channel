@@ -222,6 +222,7 @@ def test_config_file_floor_rejects_loose_mode_symlink_and_bad_json(tmp_path: Pat
     documents = (
         ('{"version":1,"servers":[],"servers":[]}', "duplicate JSON key"),
         ("{bad", "invalid JSON"),
+        ('{"version":1,"timeout_seconds":' + "9" * 5001 + "}", "invalid JSON numeric value"),
         ("[]", "document must be a JSON object"),
     )
     for index, (content, match) in enumerate(documents):

@@ -366,6 +366,27 @@ def test_mcp_tools_rejects_an_integer_too_large_for_float_without_traceback(
     assert "Traceback" not in output
 
 
+def test_mcp_tools_sanitizes_an_integer_beyond_the_json_decoder_limit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "decoder-limit-timeout.json"
+    config.write_text(
+        '{"servers":[{"name":"echo","command":"/bin/true","cwd":"/tmp",'
+        '"timeout_seconds":' + "9" * 5001 + "}]}",
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+
+    code = _run(["mcp-tools", "echo", "--config", str(config)])
+    output = capsys.readouterr().out
+
+    assert code == 2
+    assert "invalid JSON numeric value" in output
+    assert "ValueError" not in output
+    assert "Exceeds the limit" not in output
+    assert "Traceback" not in output
+
+
 @pytest.mark.parametrize("verb", ["mcp-tools", "mcp-call"])
 def test_real_stdio_startup_failure_has_a_stable_operational_boundary(
     verb: str,

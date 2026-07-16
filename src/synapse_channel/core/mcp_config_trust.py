@@ -207,8 +207,12 @@ def _read_owner_json(path: Path, *, label: str) -> dict[str, Any]:
 
     try:
         decoded = json.loads(text, object_pairs_hook=reject_duplicates)
+    except McpConfigError:
+        raise
     except json.JSONDecodeError as exc:
         raise McpConfigError(f"{label}: invalid JSON: {exc}") from exc
+    except ValueError as exc:
+        raise McpConfigError(f"{label}: invalid JSON numeric value") from exc
     if not isinstance(decoded, dict):
         raise McpConfigError(f"{label}: document must be a JSON object")
     return decoded
