@@ -39,7 +39,12 @@ def test_git_failure_and_hub_receipt_validation_fail_closed(tmp_path: Path) -> N
         _run_git(tmp_path, "status", "--short")
     with pytest.raises(RuntimeError, match="did not return a release receipt"):
         _validated_hub_receipt(None)
-    with pytest.raises(RuntimeError, match="supported evidence"):
+    with pytest.raises(RuntimeError, match="unverified evidence"):
         _validated_hub_receipt({"epistemic_status": "unsupported"})
-    supported = {"epistemic_status": "supported", "task_id": "T1"}
-    assert _validated_hub_receipt(supported) is supported
+    # F4: the demo runtime accepts ONLY the honest ``unverified`` grade for a
+    # caller-supplied hub receipt. A hub that returns ``supported`` for evidence
+    # it never verified is fail-closed as an over-claim, not trusted.
+    with pytest.raises(RuntimeError, match="unverified evidence"):
+        _validated_hub_receipt({"epistemic_status": "supported"})
+    unverified = {"epistemic_status": "unverified", "task_id": "T1"}
+    assert _validated_hub_receipt(unverified) is unverified

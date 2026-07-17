@@ -140,7 +140,14 @@ def test_test_and_generated_selectors_resolve_current_repo_surfaces() -> None:
     assert result.returncode == 0, result.stderr + result.stdout
     payload = json.loads(result.stdout)
     assert [entry["kind"] for entry in payload] == ["test", "generated"]
-    assert payload[0]["sources"] == ["src/synapse_channel/core/receipts.py"]
+    # ``test_release_receipts.py`` exercises the release-receipt routing journey
+    # end to end, so it imports the routing filter from ``capability_observations``
+    # alongside the ``receipts`` builder/formatter. Both real sources belong in the
+    # pinned map — the cross-module import is reflected, never avoided.
+    assert payload[0]["sources"] == [
+        "src/synapse_channel/core/capability_observations.py",
+        "src/synapse_channel/core/receipts.py",
+    ]
     assert payload[0]["tests"] == ["tests/test_release_receipts.py"]
     assert payload[1]["generated"] == ["docs/_generated/capability_manifest.json"]
     assert payload[1]["claim_paths"] == ["docs/_generated/capability_manifest.json"]
@@ -161,7 +168,10 @@ def test_api_test_and_generated_selectors_resolve_directly() -> None:
     assert records[0].semantic_scopes == (
         "src/synapse_channel/core/receipts.py/.synapse-symbol/ReleaseReceipt",
     )
-    assert records[1].sources == ("src/synapse_channel/core/receipts.py",)
+    assert records[1].sources == (
+        "src/synapse_channel/core/capability_observations.py",
+        "src/synapse_channel/core/receipts.py",
+    )
     assert records[2].claim_paths == ("docs/_generated/capability_manifest.json",)
 
 

@@ -186,11 +186,28 @@ def test_forged_hub_release_evidence_is_graded_unverified_not_supported() -> Non
     assert "epistemic_status=unverified" in format_release_receipt_note(forged)
 
 
-def test_unverified_receipt_is_not_positive_routing_evidence() -> None:
-    """F4 regression: an unverified (forged) receipt is not routing trust.
+def test_receipt_routing_trust_follows_the_verified_grade() -> None:
+    """F4 regression: routing trust follows the graded receipt, end to end.
 
-    The capability trust filter must exclude ``unverified`` and ``disputed`` — a
-    forged release must never be read as positive routing evidence.
+    The full journey — ``build_release_receipt`` builds the dict,
+    ``format_release_receipt_note`` renders the board note, and the routing
+    filter ``_is_positive_receipt`` reads that note — must gate on the epistemic
+    grade, not on evidence presence:
+
+    * an ``unverified`` (forged) receipt is NOT positive routing evidence — a
+      forged release must never launder fabricated evidence into routing trust;
+    * a ``disputed`` receipt (a commitment signature was present but failed
+      verification) is likewise excluded;
+    * a genuinely ``supported`` receipt still routes as positive, so the guard
+      excludes forgeries without over-blocking honest releases.
+
+    The forged case runs the builder organically (caller-supplied evidence
+    always grades ``unverified``). No source path emits ``supported`` or
+    ``disputed`` from ``build_release_receipt`` itself — ``supported`` is applied
+    only by the signing path and ``disputed`` only by a failed-verification path
+    — so those two grades are asserted through the REAL formatter with the
+    documented grade set on the receipt, exercising the same
+    format-note -> filter wiring the routing layer relies on.
     """
     from synapse_channel.core.capability_observations import _is_positive_receipt
 
@@ -201,6 +218,18 @@ def test_unverified_receipt_is_not_positive_routing_evidence() -> None:
         approvals=["approved-by=alice"],
         freshness_seconds=1.0,
     )
-    note = format_release_receipt_note(forged)
+    assert forged["epistemic_status"] == "unverified"
+    forged_note = format_release_receipt_note(forged)
+    assert _is_positive_receipt({"kind": "assessment", "text": forged_note}) is False
 
-    assert _is_positive_receipt({"kind": "assessment", "text": note}) is False
+    disputed_note = format_release_receipt_note({**forged, "epistemic_status": "disputed"})
+    assert _is_positive_receipt({"kind": "assessment", "text": disputed_note}) is False
+
+    supported = build_release_receipt(
+        task_id="T-OK",
+        owner="release",
+        evidence=["pytest -q"],
+        freshness_seconds=1.0,
+    )
+    supported_note = format_release_receipt_note({**supported, "epistemic_status": "supported"})
+    assert _is_positive_receipt({"kind": "assessment", "text": supported_note}) is True
