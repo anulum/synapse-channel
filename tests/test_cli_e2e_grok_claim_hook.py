@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -18,10 +19,15 @@ from cli_e2e_helpers import CliResult, free_port, git_repo, isolated_hub, run_cl
 
 # Subprocess CLI journeys may chdir into a temp git repo; keep the package importable
 # via an absolute PYTHONPATH so relative ``src`` never resolves against the temp cwd.
+# Scope that PYTHONPATH to ``_CLI_ENV`` (which every journey below passes as ``env=``);
+# do NOT mutate the process-wide ``os.environ``. A module-level
+# ``os.environ["PYTHONPATH"] = ...`` leaks the src path into every later subprocess in
+# the whole pytest run — it poisoned the installed-wheel console-script gate, whose
+# checker then imported ``synapse_channel`` from src instead of the built wheel.
 _SRC = str((Path(__file__).resolve().parents[1] / "src").resolve())
 _PRIOR = os.environ.get("PYTHONPATH", "")
-os.environ["PYTHONPATH"] = _SRC + (os.pathsep + _PRIOR if _PRIOR else "")
-_CLI_ENV: dict[str, str] = {**os.environ}
+_PYTHONPATH = _SRC + (os.pathsep + _PRIOR if _PRIOR else "")
+_CLI_ENV: dict[str, str] = {**os.environ, "PYTHONPATH": _PYTHONPATH}
 
 
 def _run(
@@ -235,3 +241,30 @@ def test_cli_prints_mergeable_config_without_writing_settings(tmp_path: Path) ->
     assert "search_replace" in matcher and "write" in matcher
     assert "run_terminal_command" in matcher
     assert not (tmp_path / ".grok").exists()
+
+
+def test_module_import_does_not_leak_pythonpath_into_os_environ() -> None:
+    # Regression: importing this module must not mutate the process-wide
+    # ``os.environ["PYTHONPATH"]``. A module-level assignment leaks the src path
+    # into every later subprocess in the whole pytest run and poisoned the
+    # installed-wheel console-script gate (its checker then imported synapse_channel
+    # from src instead of the built wheel). Import the module in a fresh interpreter
+    # with a known PYTHONPATH and confirm the value is untouched.
+    tests_dir = Path(__file__).resolve().parent
+    src_dir = tests_dir.parent / "src"
+    known = os.pathsep.join([str(tests_dir), str(src_dir)])
+    child_env = {**os.environ, "PYTHONPATH": known}
+    code = (
+        "import os\n"
+        "expected = os.environ['PYTHONPATH']\n"
+        "import test_cli_e2e_grok_claim_hook\n"
+        "actual = os.environ['PYTHONPATH']\n"
+        "assert actual == expected, (expected, actual)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=child_env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
