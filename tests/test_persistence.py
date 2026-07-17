@@ -117,26 +117,29 @@ def test_durable_append_restores_normal_after_insert_failure(tmp_path: Path) -> 
 
 def test_durable_append_restores_normal_after_commit_failure(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "events.db")
+    store._conn.execute("PRAGMA foreign_keys=ON")
+    store._conn.execute("CREATE TABLE commit_guard (id INTEGER PRIMARY KEY)")
+    store._conn.execute(
+        "CREATE TABLE deferred_event_guard ("
+        "event_seq INTEGER NOT NULL, parent_id INTEGER NOT NULL, "
+        "FOREIGN KEY (parent_id) REFERENCES commit_guard(id) "
+        "DEFERRABLE INITIALLY DEFERRED)"
+    )
+    store._conn.execute(
+        "CREATE TRIGGER reject_event_commit AFTER INSERT ON events "
+        "BEGIN INSERT INTO deferred_event_guard (event_seq, parent_id) "
+        "VALUES (NEW.seq, 1); END"
+    )
+    store._conn.commit()
 
-    def deny_commit(
-        action: int,
-        operation: str | None,
-        _table: str | None,
-        _database: str | None,
-        _trigger: str | None,
-    ) -> int:
-        if action == sqlite3.SQLITE_TRANSACTION and operation == "COMMIT":
-            return sqlite3.SQLITE_DENY
-        return sqlite3.SQLITE_OK
-
-    store._conn.set_authorizer(deny_commit)
-    with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
         store.append("claim", {"task_id": "rejected"}, durable=True)
-    store._conn.set_authorizer(None)
 
     assert _synchronous_mode(store) == 1
     assert not store._conn.in_transaction
     assert store.count() == 0
+    store._conn.execute("DROP TRIGGER reject_event_commit")
+    store._conn.commit()
     assert store.append("claim", {"task_id": "accepted"}) == 1
     store.close()
 
