@@ -862,6 +862,12 @@ synapse relay ./feed.ndjson --for SCPN-CONTROL --cursor ./control.cursor
 synapse listen --name SCPN-CONTROL --for SCPN-CONTROL    # live inbox
 ```
 
+New relay rows use codec version 2: structured JSON payloads and auxiliary
+envelope fields such as task ids, lease epochs, paths, and Git context survive
+the file round trip under a compact extension mapping. The decoder also reads
+existing version-1 rows, which contain only the historical core string fields.
+Both formats retain timestamps to millisecond precision.
+
 ## Hub options
 
 ```bash

@@ -38,7 +38,7 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind, replay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType, build_envelope
-from synapse_channel.core.relay import encode_lite
+from synapse_channel.core.relay_codec import decode_lite, encode_lite
 
 
 @dataclass(frozen=True)
@@ -155,7 +155,9 @@ def probe_encode_lite(iterations: int) -> ProbeResult:
 
     Encodes ``iterations`` realistic broadcast envelopes with
     :func:`~synapse_channel.core.relay.encode_lite` and reports messages per
-    second plus the byte ratio against the full wire envelope.
+    second plus the byte ratio against the full wire envelope. The untimed
+    verification pass also counts how many task-id extension fields survive the
+    codec round trip.
     """
     envelopes = [
         build_envelope(
@@ -173,6 +175,11 @@ def probe_encode_lite(iterations: int) -> ProbeResult:
     started = time.perf_counter()
     encoded = [encode_lite(envelope) for envelope in envelopes]
     duration = time.perf_counter() - started
+    decoded = [decode_lite(lite) for lite in encoded]
+    preserved_extensions = sum(
+        restored.get("task_id") == envelope.get("task_id")
+        for envelope, restored in zip(envelopes, decoded, strict=True)
+    )
     # Serialised exactly as the relay mirror writes each line (append_jsonl).
     lite_bytes = sum(
         len(json.dumps(lite, ensure_ascii=True, separators=(",", ":")).encode("utf-8"))
@@ -187,8 +194,9 @@ def probe_encode_lite(iterations: int) -> ProbeResult:
             "raw_bytes": float(raw_bytes),
             "lite_bytes": float(lite_bytes),
             "lite_to_raw_ratio": lite_bytes / raw_bytes,
+            "extension_fields_preserved": float(preserved_extensions),
         },
-        notes=("chat envelopes with task ids; ratio is lite bytes over full wire bytes",),
+        notes=("chat envelopes with preserved task ids; ratio is lite bytes over full wire bytes",),
     )
 
 

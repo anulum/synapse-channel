@@ -39,11 +39,50 @@ async def test_relay_log_mirrors_broadcasts_in_compact_form(tmp_path: Path) -> N
             await read_until_type(ws, "chat")
 
     events, _ = read_jsonl_since(log, 0)
-    assert all(set(e) <= {"v", "i", "ty", "s", "to", "p", "t", "h", "c"} for e in events)
+    assert all(
+        set(event) <= {"v", "i", "ty", "s", "to", "p", "t", "h", "c", "x"} for event in events
+    )
     decoded = [decode_lite(e) for e in events]
     chats = [d for d in decoded if d["type"] == "chat"]
     assert chats[-1]["payload"] == "hello"
     assert chats[-1]["sender"] == "A"
+
+
+async def test_relay_log_preserves_real_claim_grant_fields(tmp_path: Path) -> None:
+    log = tmp_path / "relay.ndjson"
+    hub = SynapseHub(hub_id="syn-test", relay_log=log)
+    async with running_hub(hub) as (_, uri):
+        async with await _connect_agent(uri, "A") as ws:
+            await send_json(
+                ws,
+                sender="A",
+                type="claim",
+                task_id="SCH-RELAY-1",
+                note="relay fidelity",
+                paths=["src/relay.py"],
+                worktree="checkout-a",
+            )
+            wire_grant = await read_until_type(ws, "claim_granted")
+
+    rows, _ = read_jsonl_since(log, 0)
+    relay_grant = next(
+        decoded for row in rows if (decoded := decode_lite(row))["type"] == "claim_granted"
+    )
+
+    for field in (
+        "task_id",
+        "owner",
+        "note",
+        "lease_expires_at",
+        "status",
+        "worktree",
+        "paths",
+        "epoch",
+        "version",
+        "checkpoint",
+        "git",
+    ):
+        assert relay_grant[field] == wire_grant[field]
 
 
 async def test_relay_log_is_bounded_by_trimming(tmp_path: Path) -> None:

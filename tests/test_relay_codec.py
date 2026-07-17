@@ -8,6 +8,10 @@
 
 from __future__ import annotations
 
+import time
+
+import pytest
+
 from synapse_channel.relay import (
     LITE_KEYS,
     LITE_VERSION,
@@ -51,6 +55,15 @@ def test_encode_lite_falls_back_on_bad_timestamp_and_id() -> None:
     assert packed["s"] == "?"
 
 
+def test_encode_lite_rejects_non_finite_huge_and_boolean_numeric_fields() -> None:
+    before_ms = int(time.time() * 1000.0)
+
+    for timestamp in (float("inf"), float("nan"), 10**10_000, True):
+        packed = encode_lite({"timestamp": timestamp, "msg_id": True})
+        assert packed["t"] >= before_ms
+        assert packed["i"] == 0
+
+
 def test_encode_lite_defaults_when_id_missing() -> None:
     packed = encode_lite({"timestamp": 1.0})
     assert packed["i"] == 0
@@ -92,6 +105,88 @@ def test_decode_lite_inverts_encode_to_millisecond_precision() -> None:
         "msg_id": 7,
         "hub_id": "syn-xyz",
     }
+
+
+def test_codec_preserves_structured_payload_and_grant_extensions() -> None:
+    original = {
+        "msg_id": 9,
+        "type": "claim_granted",
+        "sender": "SynapseHub",
+        "target": "all",
+        "payload": {"result": "granted", "warnings": ["lease-shortened"]},
+        "timestamp": 1700000000.125,
+        "hub_id": "syn-xyz",
+        "task_id": "SCH-9",
+        "owner": "agent-a",
+        "lease_expires_at": 1700000300.125,
+        "paths": ["src/a.py"],
+        "epoch": 3,
+        "version": 4,
+        "git": {"branch": "main", "head": "a" * 40},
+    }
+
+    packed = encode_lite(original)
+    restored = decode_lite(packed)
+
+    assert packed["p"] == original["payload"]
+    assert packed["x"] == {
+        key: original[key]
+        for key in (
+            "task_id",
+            "owner",
+            "lease_expires_at",
+            "paths",
+            "epoch",
+            "version",
+            "git",
+        )
+    }
+    assert restored == original
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [None, True, 7, 1.25, ["nested", {"value": None}], {"items": [1, 2, 3]}],
+)
+def test_codec_preserves_every_json_payload_kind(payload: object) -> None:
+    restored = decode_lite(encode_lite({"payload": payload, "timestamp": 1.0}))
+
+    assert restored["payload"] == payload
+
+
+def test_decode_lite_keeps_legacy_version_one_semantics() -> None:
+    restored = decode_lite(
+        {
+            "v": 1,
+            "i": 3,
+            "ty": "chat",
+            "s": "A",
+            "to": "all",
+            "p": {"legacy": True},
+            "t": 1000,
+            "h": "syn-old",
+            "x": {"task_id": "must-not-be-inferred"},
+        }
+    )
+
+    assert restored["payload"] == "{'legacy': True}"
+    assert "task_id" not in restored
+
+
+def test_decode_lite_ignores_malformed_extensions_and_reserved_overrides() -> None:
+    malformed = decode_lite({"v": LITE_VERSION, "s": "A", "x": ["not", "a", "mapping"]})
+    reserved = decode_lite(
+        {
+            "v": LITE_VERSION,
+            "s": "A",
+            "x": {"sender": "spoof", "payload": "spoof", "task_id": "T1"},
+        }
+    )
+
+    assert malformed["sender"] == "A"
+    assert reserved["sender"] == "A"
+    assert reserved["payload"] == ""
+    assert reserved["task_id"] == "T1"
 
 
 def test_decode_lite_preserves_channel_id() -> None:

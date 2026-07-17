@@ -27,6 +27,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Preserve structured JSON payloads and auxiliary protocol fields in version-2
+  relay-log rows instead of stringifying payloads and dropping grant metadata.
+  Existing version-1 rows remain readable, and the relay benchmark now compares
+  the same full envelope field set rather than counting discarded fields as a
+  compression saving.
 - Recover startup around malformed SQLite event rows using non-secret typed
   markers, degrade health/metrics, and fail closed on every mutation while the
   replayed state is incomplete. `synapse compact --drop-corrupt` now provides an

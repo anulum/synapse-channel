@@ -86,20 +86,21 @@ def test_measure_message_reports_all_serialisations() -> None:
         "timestamp": 1.5,
         "msg_id": 1,
         "hub_id": "syn-x",
-        "task_id": "T",  # auxiliary field the lite format drops
+        "task_id": "T",
+        "evidence": {"checks": ["mypy", "pytest"]},
     }
     measured = bench.measure_message(env, None)
     assert measured["type"] == "chat"
     assert measured["bytes_raw_wire"] >= measured["bytes_lite"]
-    assert measured["roundtrip_core_fidelity"] is True
+    assert measured["roundtrip_envelope_fidelity"] is True
     assert set(measured) == {
         "type",
         "bytes_raw_wire",
-        "bytes_raw_core_compact",
+        "bytes_raw_compact",
         "bytes_lite",
         "tokens_raw_wire",
         "tokens_lite",
-        "roundtrip_core_fidelity",
+        "roundtrip_envelope_fidelity",
     }
 
 
@@ -108,7 +109,7 @@ def test_summarize_empty_trace_has_zero_ratios() -> None:
     assert summary["messages"] == 0
     assert summary["bytes"]["lite_vs_raw_wire_ratio"] == 0.0
     assert summary["tokens"]["lite_vs_raw_wire_ratio"] == 0.0
-    assert summary["roundtrip_core_fidelity"] is True
+    assert summary["roundtrip_envelope_fidelity"] is True
     assert summary["by_type"] == {}
 
 
@@ -123,7 +124,7 @@ def test_run_writes_results_and_returns_summary(tmp_path: Path) -> None:
     summary = bench.run(bench.DEFAULT_TRACE, results)
     assert summary["trace"] == "sample_session.json"
     assert summary["messages"] == 12
-    assert summary["roundtrip_core_fidelity"] is True
+    assert summary["roundtrip_envelope_fidelity"] is True
     written = json.loads(results.read_text(encoding="utf-8"))
     assert written["messages"] == 12
 
@@ -138,7 +139,7 @@ def test_main_runs_and_writes(tmp_path: Path, capsys: pytest.CaptureFixture[str]
     results = tmp_path / "result.json"
     assert bench.main(["--results", str(results)]) == 0
     out = capsys.readouterr().out
-    assert "core-field roundtrip fidelity: True" in out
+    assert "full-envelope roundtrip fidelity: True" in out
     assert results.exists()
 
 

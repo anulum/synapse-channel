@@ -1,159 +1,159 @@
 {
   "by_type": {
     "chat": {
-      "bytes_lite": 660,
+      "bytes_lite": 688,
       "bytes_raw_wire": 826,
       "count": 4
     },
     "claim_granted": {
-      "bytes_lite": 130,
+      "bytes_lite": 345,
       "bytes_raw_wire": 378,
       "count": 1
     },
     "presence_update": {
-      "bytes_lite": 357,
+      "bytes_lite": 578,
       "bytes_raw_wire": 643,
       "count": 3
     },
     "release_granted": {
-      "bytes_lite": 133,
+      "bytes_lite": 189,
       "bytes_raw_wire": 208,
       "count": 1
     },
     "resource_offered": {
-      "bytes_lite": 131,
+      "bytes_lite": 232,
       "bytes_raw_wire": 255,
       "count": 1
     },
     "task_updated": {
-      "bytes_lite": 251,
+      "bytes_lite": 466,
       "bytes_raw_wire": 516,
       "count": 2
     }
   },
   "bytes": {
-    "lite": 1662,
-    "lite_vs_core_compact_ratio": 0.8688,
-    "lite_vs_raw_wire_ratio": 0.5881,
-    "raw_core_compact": 1913,
+    "lite": 2498,
+    "lite_vs_raw_compact_ratio": 0.9545,
+    "lite_vs_raw_wire_ratio": 0.8839,
+    "raw_compact": 2617,
     "raw_wire": 2826
   },
   "messages": 12,
   "per_message": [
     {
-      "bytes_lite": 119,
-      "bytes_raw_core_compact": 136,
+      "bytes_lite": 189,
+      "bytes_raw_compact": 193,
       "bytes_raw_wire": 210,
-      "roundtrip_core_fidelity": true,
-      "tokens_lite": 42,
+      "roundtrip_envelope_fidelity": true,
+      "tokens_lite": 59,
       "tokens_raw_wire": 66,
       "type": "presence_update"
     },
     {
-      "bytes_lite": 119,
-      "bytes_raw_core_compact": 137,
+      "bytes_lite": 200,
+      "bytes_raw_compact": 205,
       "bytes_raw_wire": 223,
-      "roundtrip_core_fidelity": true,
-      "tokens_lite": 42,
+      "roundtrip_envelope_fidelity": true,
+      "tokens_lite": 63,
       "tokens_raw_wire": 71,
       "type": "presence_update"
     },
     {
-      "bytes_lite": 166,
-      "bytes_raw_core_compact": 194,
+      "bytes_lite": 173,
+      "bytes_raw_compact": 194,
       "bytes_raw_wire": 207,
-      "roundtrip_core_fidelity": true,
-      "tokens_lite": 54,
+      "roundtrip_envelope_fidelity": true,
+      "tokens_lite": 57,
       "tokens_raw_wire": 66,
       "type": "chat"
     },
     {
-      "bytes_lite": 130,
-      "bytes_raw_core_compact": 147,
+      "bytes_lite": 345,
+      "bytes_raw_compact": 349,
       "bytes_raw_wire": 378,
-      "roundtrip_core_fidelity": true,
-      "tokens_lite": 46,
+      "roundtrip_envelope_fidelity": true,
+      "tokens_lite": 104,
       "tokens_raw_wire": 123,
       "type": "claim_granted"
     },
     {
-      "bytes_lite": 165,
-      "bytes_raw_core_compact": 194,
+      "bytes_lite": 172,
+      "bytes_raw_compact": 194,
       "bytes_raw_wire": 207,
-      "roundtrip_core_fidelity": true,
-      "tokens_lite": 52,
+      "roundtrip_envelope_fidelity": true,
+      "tokens_lite": 55,
       "tokens_raw_wire": 64,
       "type": "chat"
     },
     {
-      "bytes_lite": 127,
-      "bytes_raw_core_compact": 144,
+      "bytes_lite": 230,
+      "bytes_raw_compact": 234,
       "bytes_raw_wire": 255,
-      "roundtrip_core_fidelity": true,
-      "tokens_lite": 45,
+      "roundtrip_envelope_fidelity": true,
+      "tokens_lite": 73,
       "tokens_raw_wire": 83,
       "type": "task_updated"
     },
     {
-      "bytes_lite": 167,
-      "bytes_raw_core_compact": 196,
+      "bytes_lite": 174,
+      "bytes_raw_compact": 196,
       "bytes_raw_wire": 209,
-      "roundtrip_core_fidelity": true,
-      "tokens_lite": 54,
+      "roundtrip_envelope_fidelity": true,
+      "tokens_lite": 57,
       "tokens_raw_wire": 66,
       "type": "chat"
     },
     {
-      "bytes_lite": 131,
-      "bytes_raw_core_compact": 148,
+      "bytes_lite": 232,
+      "bytes_raw_compact": 236,
       "bytes_raw_wire": 255,
-      "roundtrip_core_fidelity": true,
-      "tokens_lite": 46,
+      "roundtrip_envelope_fidelity": true,
+      "tokens_lite": 80,
       "tokens_raw_wire": 89,
       "type": "resource_offered"
     },
     {
-      "bytes_lite": 162,
-      "bytes_raw_core_compact": 190,
+      "bytes_lite": 169,
+      "bytes_raw_compact": 190,
       "bytes_raw_wire": 203,
-      "roundtrip_core_fidelity": true,
-      "tokens_lite": 54,
+      "roundtrip_envelope_fidelity": true,
+      "tokens_lite": 57,
       "tokens_raw_wire": 66,
       "type": "chat"
     },
     {
-      "bytes_lite": 124,
-      "bytes_raw_core_compact": 141,
+      "bytes_lite": 236,
+      "bytes_raw_compact": 240,
       "bytes_raw_wire": 261,
-      "roundtrip_core_fidelity": true,
-      "tokens_lite": 45,
+      "roundtrip_envelope_fidelity": true,
+      "tokens_lite": 81,
       "tokens_raw_wire": 92,
       "type": "task_updated"
     },
     {
-      "bytes_lite": 133,
-      "bytes_raw_core_compact": 150,
+      "bytes_lite": 189,
+      "bytes_raw_compact": 193,
       "bytes_raw_wire": 208,
-      "roundtrip_core_fidelity": true,
-      "tokens_lite": 46,
+      "roundtrip_envelope_fidelity": true,
+      "tokens_lite": 61,
       "tokens_raw_wire": 66,
       "type": "release_granted"
     },
     {
-      "bytes_lite": 119,
-      "bytes_raw_core_compact": 136,
+      "bytes_lite": 189,
+      "bytes_raw_compact": 193,
       "bytes_raw_wire": 210,
-      "roundtrip_core_fidelity": true,
-      "tokens_lite": 42,
+      "roundtrip_envelope_fidelity": true,
+      "tokens_lite": 60,
       "tokens_raw_wire": 67,
       "type": "presence_update"
     }
   ],
-  "roundtrip_core_fidelity": true,
+  "roundtrip_envelope_fidelity": true,
   "tokenizer": "cl100k_base",
   "tokens": {
-    "lite": 568,
-    "lite_vs_raw_wire_ratio": 0.6181,
+    "lite": 807,
+    "lite_vs_raw_wire_ratio": 0.8781,
     "raw_wire": 919
   },
   "trace": "sample_session.json"

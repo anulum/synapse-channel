@@ -5,16 +5,14 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — kernel-owned NDJSON relay log and compact wire format
-"""Token-thrifty NDJSON relay format and append-only log helpers.
+"""Append-only NDJSON relay-log helpers and command normalisation.
 
 The lite/heavy relay lets a token-budgeted agent observe and drive the channel
 through newline-delimited JSON files instead of a live socket. This module
-provides the halves of that bridge:
+provides the filesystem half of that bridge and re-exports the dedicated codec
+for import compatibility:
 
-* a symmetric codec — :func:`encode_lite` shrinks a full Synapse message into a
-  short-key envelope before it is logged, and :func:`decode_lite` reconstructs
-  the full envelope from it — sharing one key schema (:data:`LITE_KEYS`) so the
-  two halves can never drift apart;
+* :mod:`synapse_channel.core.relay_codec` owns the versioned compact envelope;
 * append-only log helpers (:func:`append_jsonl`, :func:`read_jsonl_since`,
   :func:`trim_jsonl_tail`) with a resumable byte cursor (:func:`load_offset`,
   :func:`save_offset`) that survives partial writes and file truncation;
@@ -30,32 +28,11 @@ import contextlib
 import json
 import os
 import tempfile
-import time
 from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.numeric_coercion import safe_int
-
-# -- lite/heavy relay codec ---------------------------------------------------
-
-LITE_VERSION = 1
-"""Schema version stamped into every lite envelope under the ``v`` key."""
-
-LITE_KEYS: dict[str, str] = {
-    "msg_id": "i",
-    "type": "ty",
-    "sender": "s",
-    "target": "to",
-    "payload": "p",
-    "timestamp": "t",
-    "hub_id": "h",
-    "channel": "c",
-}
-"""Heavy envelope field → compact relay key.
-
-The single source of truth both halves of the codec read so the lite wire
-format cannot drift between :func:`encode_lite` and :func:`decode_lite`.
-"""
+from synapse_channel.core.relay_codec import LITE_KEYS, LITE_VERSION, decode_lite, encode_lite
 
 __all__ = (
     "LITE_KEYS",
@@ -69,101 +46,6 @@ __all__ = (
     "save_offset",
     "trim_jsonl_tail",
 )
-
-
-def encode_lite(message: dict[str, Any]) -> dict[str, Any]:
-    """Pack a full Synapse message into a short-key relay envelope.
-
-    The encode half of the relay codec; :func:`decode_lite` is its inverse.
-
-    Parameters
-    ----------
-    message : dict[str, Any]
-        A full message envelope as produced by
-        :func:`synapse_channel.core.protocol.build_envelope`.
-
-    Returns
-    -------
-    dict[str, Any]
-        A mapping with single/double-letter keys: ``v`` (version), ``i``
-        (msg id), ``ty`` (type), ``s`` (sender), ``to`` (target), ``p``
-        (payload), ``t`` (millisecond timestamp), ``h`` (hub id). Malformed
-        ``timestamp``/``msg_id`` fields fall back to the current time and ``0``.
-    """
-    ts = message.get("timestamp")
-    try:
-        ts_val = float(ts) if ts is not None else time.time()
-    except (TypeError, ValueError):
-        ts_val = time.time()
-
-    msg_id = message.get("msg_id")
-    try:
-        msg_id_val = int(msg_id) if msg_id is not None else 0
-    except (TypeError, ValueError):
-        msg_id_val = 0
-
-    lite: dict[str, Any] = {
-        "v": LITE_VERSION,
-        "i": msg_id_val,
-        "ty": str(message.get("type", "chat")),
-        "s": str(message.get("sender", "?")),
-        "to": str(message.get("target", "all")),
-        "p": str(message.get("payload", "")),
-        "t": int(ts_val * 1000.0),
-        "h": str(message.get("hub_id", "")),
-        "c": "",
-    }
-    channel = str(message.get("channel") or "").strip()
-    if channel:
-        lite["c"] = channel
-    return lite
-
-
-def decode_lite(lite: dict[str, Any]) -> dict[str, Any]:
-    """Reconstruct a full message envelope from a compact relay event.
-
-    The inverse of :func:`encode_lite`. Because the lite format stores the
-    timestamp as a millisecond integer, the reconstructed ``timestamp`` is
-    precise only to the millisecond — sub-millisecond detail from the original
-    envelope is not recoverable. Missing or malformed short keys fall back to
-    the same defaults :func:`encode_lite` itself emits.
-
-    Parameters
-    ----------
-    lite : dict[str, Any]
-        A short-key envelope as produced by :func:`encode_lite`.
-
-    Returns
-    -------
-    dict[str, Any]
-        A full envelope with ``sender``, ``target``, ``type``, ``payload``,
-        ``timestamp`` (seconds), ``msg_id``, and ``hub_id``.
-    """
-    # A malformed log entry — a non-numeric, non-finite (``int(inf)`` raises
-    # OverflowError), or otherwise unconvertible value — decodes to zero rather
-    # than raising out of the reader.
-    try:
-        ts_ms = int(lite.get("t", 0))
-    except (TypeError, ValueError, OverflowError):
-        ts_ms = 0
-    try:
-        msg_id_val = int(lite.get("i", 0))
-    except (TypeError, ValueError, OverflowError):
-        msg_id_val = 0
-
-    message = {
-        "sender": str(lite.get("s", "?")),
-        "target": str(lite.get("to", "all")),
-        "type": str(lite.get("ty", "chat")),
-        "payload": str(lite.get("p", "")),
-        "timestamp": ts_ms / 1000.0,
-        "msg_id": msg_id_val,
-        "hub_id": str(lite.get("h", "")),
-    }
-    channel = str(lite.get("c") or "").strip()
-    if channel:
-        message["channel"] = channel
-    return message
 
 
 def append_jsonl(path: str | Path, payload: dict[str, Any]) -> None:

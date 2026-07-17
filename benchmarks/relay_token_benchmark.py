@@ -11,23 +11,19 @@ A token-budgeted agent can watch the channel either by reading the hub's live
 JSON frames or by tailing the compact lite relay log
 (:func:`synapse_channel.relay.encode_lite`). This benchmark replays a fixed,
 committed trace of broadcast envelopes and reports, for each and in total, the
-size of three serialisations so the saving is decomposed honestly rather than
-quoted as one inflated figure:
+size of three serialisations so the saving is decomposed honestly:
 
 * ``raw_wire`` — the full envelope with default ``json.dumps`` spacing, exactly
   what the hub broadcasts on the socket;
-* ``raw_core_compact`` — only the seven core envelope fields the lite format
-  keeps, minified; isolates the short-key win from the field-dropping win;
+* ``raw_compact`` — the same full envelope minified, isolating whitespace savings;
 * ``lite`` — :func:`~synapse_channel.relay.encode_lite` output, minified, as
   written to the relay log.
 
-The lite format is intentionally lossy: it carries the seven core fields
-(sender, target, type, payload, timestamp, msg_id, hub_id) and drops auxiliary
-fields such as ``task_id`` or ``paths``. So part of the size reduction comes
-from dropping fields and part from shorter keys plus minification — the two
-baselines above keep those two effects separate. Timestamps survive only to the
-millisecond; ``roundtrip_core_fidelity`` records whether the seven core fields
-reconstruct exactly at that precision.
+The version-2 lite format preserves every JSON payload and auxiliary envelope
+field; only timestamp precision is deliberately reduced to milliseconds.
+``roundtrip_envelope_fidelity`` compares the decoded row with an independent
+normalisation of the full input envelope, so dropped grant fields cannot hide
+behind a core-field-only oracle.
 
 Byte counts are exact and dependency-free. Token counts use ``tiktoken``'s
 ``cl100k_base`` when installed (``pip install -e ".[benchmark]"``); without it
@@ -53,8 +49,6 @@ from synapse_channel.relay import decode_lite, encode_lite
 ENCODING_NAME = "cl100k_base"
 HEURISTIC_NAME = "chars-per-token-4 (no tiktoken installed)"
 HEURISTIC_DIVISOR = 4
-
-CORE_FIELDS = ("sender", "target", "type", "payload", "timestamp", "msg_id", "hub_id")
 
 BENCHMARK_DIR = Path(__file__).resolve().parent
 DEFAULT_TRACE = BENCHMARK_DIR / "traces" / "sample_session.json"
@@ -115,9 +109,22 @@ def _compact(obj: dict[str, Any]) -> str:
     return json.dumps(obj, ensure_ascii=True, separators=(",", ":"))
 
 
-def _core_fields(envelope: dict[str, Any]) -> dict[str, Any]:
-    """Project ``envelope`` onto the core fields the lite format preserves."""
-    return {key: envelope[key] for key in CORE_FIELDS if key in envelope}
+def _expected_roundtrip(envelope: dict[str, Any]) -> dict[str, Any]:
+    """Return the full valid envelope after documented codec normalisation."""
+    expected = dict(envelope)
+    expected["sender"] = str(envelope.get("sender", "?"))
+    expected["target"] = str(envelope.get("target", "all"))
+    expected["type"] = str(envelope.get("type", "chat"))
+    expected["payload"] = envelope.get("payload", "")
+    expected["timestamp"] = int(float(envelope["timestamp"]) * 1000.0) / 1000.0
+    expected["msg_id"] = int(envelope.get("msg_id", 0))
+    expected["hub_id"] = str(envelope.get("hub_id", ""))
+    channel = str(envelope.get("channel") or "").strip()
+    if channel:
+        expected["channel"] = channel
+    else:
+        expected.pop("channel", None)
+    return expected
 
 
 def measure_message(envelope: dict[str, Any], encoder: Encoder | None) -> dict[str, Any]:
@@ -133,25 +140,25 @@ def measure_message(envelope: dict[str, Any], encoder: Encoder | None) -> dict[s
     Returns
     -------
     dict[str, Any]
-        Per-message byte and token counts for ``raw_wire``,
-        ``raw_core_compact``, and ``lite``, plus ``roundtrip_core_fidelity``.
+        Per-message byte and token counts for ``raw_wire``, ``raw_compact``,
+        and ``lite``, plus ``roundtrip_envelope_fidelity``.
     """
     lite = encode_lite(envelope)
     raw_wire = json.dumps(envelope)
-    raw_core_compact = _compact(_core_fields(envelope))
+    raw_compact = _compact(envelope)
     lite_text = _compact(lite)
 
     restored = decode_lite(lite)
-    expected = decode_lite(encode_lite(_core_fields(envelope)))
+    expected = _expected_roundtrip(envelope)
 
     return {
         "type": str(envelope.get("type", "chat")),
         "bytes_raw_wire": len(raw_wire),
-        "bytes_raw_core_compact": len(raw_core_compact),
+        "bytes_raw_compact": len(raw_compact),
         "bytes_lite": len(lite_text),
         "tokens_raw_wire": count_tokens(raw_wire, encoder),
         "tokens_lite": count_tokens(lite_text, encoder),
-        "roundtrip_core_fidelity": restored == expected,
+        "roundtrip_envelope_fidelity": restored == expected,
     }
 
 
@@ -183,7 +190,7 @@ def summarize(
     measured = [measure_message(env, encoder) for env in trace]
 
     total_raw_wire = sum(m["bytes_raw_wire"] for m in measured)
-    total_core_compact = sum(m["bytes_raw_core_compact"] for m in measured)
+    total_raw_compact = sum(m["bytes_raw_compact"] for m in measured)
     total_lite = sum(m["bytes_lite"] for m in measured)
     total_tokens_wire = sum(m["tokens_raw_wire"] for m in measured)
     total_tokens_lite = sum(m["tokens_lite"] for m in measured)
@@ -202,17 +209,17 @@ def summarize(
         "tokenizer": tokenizer,
         "bytes": {
             "raw_wire": total_raw_wire,
-            "raw_core_compact": total_core_compact,
+            "raw_compact": total_raw_compact,
             "lite": total_lite,
             "lite_vs_raw_wire_ratio": _ratio(total_lite, total_raw_wire),
-            "lite_vs_core_compact_ratio": _ratio(total_lite, total_core_compact),
+            "lite_vs_raw_compact_ratio": _ratio(total_lite, total_raw_compact),
         },
         "tokens": {
             "raw_wire": total_tokens_wire,
             "lite": total_tokens_lite,
             "lite_vs_raw_wire_ratio": _ratio(total_tokens_lite, total_tokens_wire),
         },
-        "roundtrip_core_fidelity": all(m["roundtrip_core_fidelity"] for m in measured),
+        "roundtrip_envelope_fidelity": all(m["roundtrip_envelope_fidelity"] for m in measured),
         "by_type": {k: dict(v) for k, v in sorted(by_type.items())},
         "per_message": measured,
     }
@@ -265,16 +272,16 @@ def main(argv: list[str] | None = None) -> int:
     print(f"trace: {summary['trace']} ({summary['messages']} messages)")
     print(f"tokenizer: {summary['tokenizer']}")
     print(
-        f"bytes  raw_wire={b['raw_wire']} core_compact={b['raw_core_compact']} "
+        f"bytes raw_wire={b['raw_wire']} raw_compact={b['raw_compact']} "
         f"lite={b['lite']} "
         f"(lite is {b['lite_vs_raw_wire_ratio']:.0%} of raw_wire, "
-        f"{b['lite_vs_core_compact_ratio']:.0%} of core_compact)"
+        f"{b['lite_vs_raw_compact_ratio']:.0%} of raw_compact)"
     )
     print(
         f"tokens raw_wire={t['raw_wire']} lite={t['lite']} "
         f"(lite is {t['lite_vs_raw_wire_ratio']:.0%} of raw_wire)"
     )
-    print(f"core-field roundtrip fidelity: {summary['roundtrip_core_fidelity']}")
+    print(f"full-envelope roundtrip fidelity: {summary['roundtrip_envelope_fidelity']}")
     print(f"results written to {args.results}")
     return 0
 

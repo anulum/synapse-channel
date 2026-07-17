@@ -770,10 +770,12 @@ Full operator profile, key handling, and rotation: **[at-rest encryption](docs/a
 `--relay-log` mirrors every broadcast to a newline-delimited file in a compact
 short-key form (`encode_lite`), so a token-budgeted agent can watch the channel
 by tailing a file instead of holding a socket. `synapse relay <file>` decodes it
-back to readable lines and can resume from a saved `--cursor`. The lite form
-keeps the seven core envelope fields and drops auxiliary ones; the file is bounded
-by `--relay-max-lines`. A committed benchmark measures the saving honestly —
-see [`benchmarks/`](benchmarks/).
+back to readable lines and can resume from a saved `--cursor`. Version 2 retains
+structured JSON payloads and every auxiliary envelope field under a compact
+extension mapping; the decoder remains compatible with existing version-1 logs.
+Timestamps retain millisecond precision, and `--relay-max-lines` bounds the file.
+A committed benchmark compares the same full field set in wire, minified, and
+lite forms — see [`benchmarks/`](benchmarks/).
 
 ### Exposure
 
@@ -1371,7 +1373,8 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | `lifecycle` | Typed task-status states and the legal transitions the hub enforces. |
 | `deadlock` | Wait-for cycle detection so circular hold-and-wait claims are refused. |
 | `protocol` | The on-wire message envelope and message-type constants. |
-| `relay` | Lite/heavy codec (`encode_lite`/`decode_lite`) and append-only NDJSON log helpers for file-based observers. |
+| `relay_codec` | Versioned lite/heavy envelope codec (`encode_lite`/`decode_lite`) with legacy-row compatibility. |
+| `relay` | Append-only NDJSON log, cursor, trimming, and command-normalisation helpers for file-based observers. |
 | `archive_report` | Static HTML archive reports for compacted event-store history and release receipt notes. |
 | `hub` | The routing core: connections, names, history, broadcast. |
 | `client` | The reusable async agent connection and coordination helpers. |
@@ -1408,11 +1411,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.10 |
 | Public API exports | 70 |
-| Package modules | 479 |
+| Package modules | 480 |
 | Classes | 672 |
 | Wire message types | 77 |
 | CLI subcommands | 179 |
-| Test functions | 8043 |
+| Test functions | 8049 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 57 |
 | GitHub Actions workflows | 21 |

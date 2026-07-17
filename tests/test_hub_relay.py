@@ -38,7 +38,9 @@ def test_mirror_appends_in_compact_lite_form(tmp_path: Path) -> None:
 
     events, offset = read_jsonl_since(log, 0)
     assert offset > 0
-    assert all(set(event) <= {"v", "i", "ty", "s", "to", "p", "t", "h", "c"} for event in events)
+    assert all(
+        set(event) <= {"v", "i", "ty", "s", "to", "p", "t", "h", "c", "x"} for event in events
+    )
     decoded = [decode_lite(event) for event in events]
     assert [d["payload"] for d in decoded] == ["hello", "world"]
 

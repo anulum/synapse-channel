@@ -110,7 +110,9 @@ bare `project` reaches a sole agent's inbox and, when armed bare, wakes it.
 ### Relay (log)
 
 A compact NDJSON mirror of the channel the **hub** can write with `--relay-log`, for a
-file-based observer. `synapse relay` decodes it back to readable lines.
+file-based observer. Version 2 retains structured payloads and auxiliary envelope
+fields while remaining readable alongside legacy version-1 rows. `synapse relay`
+decodes the feed back to readable lines.
 
 ### Ingest
 

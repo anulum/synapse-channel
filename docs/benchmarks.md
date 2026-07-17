@@ -22,14 +22,16 @@ evidence rather than an isolated-core claim. See the
 `relay_token_benchmark.py` measures how much the lite relay encoding shrinks a
 channel feed for a token-budgeted observer. It replays a fixed trace of broadcast
 envelopes and reports three serialisations so the saving is decomposed honestly,
-not quoted as one inflated figure: the full envelope on the wire, the same core
-fields minified, and the lite encoding.
+not quoted as one inflated figure: the full envelope on the wire, that same full
+envelope minified, and the version-2 lite encoding.
 
-On the committed 12-message trace, the lite log is **1662 of 2826 bytes (59%)**
-and **568 of 919 tokens (62%)** of the raw wire form. Holding the field set
-fixed, short keys plus minification account for the lite-vs-core ratio (87%); the
-rest of the reduction is the lite format dropping auxiliary fields an observer
-does not need. Byte counts are exact; token counts use `tiktoken` when installed.
+On the committed 12-message trace, the lite log is **2498 of 2826 bytes (88%)**
+and **807 of 919 tokens (88%)** of the raw wire form. Against the same full
+envelope minified, it is **2498 of 2617 bytes (95%)**. Every payload and
+auxiliary field present in the trace round-trips; timestamps are normalised to the
+documented millisecond precision. The older 59% byte result counted dropped grant
+and presence fields as a saving and is intentionally superseded. Byte counts are
+exact; token counts use `tiktoken` when installed.
 
 ## Routing benchmark
 

@@ -22,17 +22,16 @@ quoted as one inflated figure:
 
 - **`raw_wire`** — the full envelope with default `json.dumps` spacing, exactly
   what the hub broadcasts on the socket.
-- **`raw_core_compact`** — only the seven core envelope fields the lite format
-  keeps, minified. Isolates the short-key win from the field-dropping win.
+- **`raw_compact`** — the same full envelope minified, isolating whitespace
+  savings from the compact-key representation.
 - **`lite`** — `encode_lite` output, minified, as written to the relay log.
 
-The lite format is intentionally lossy: it carries the seven core fields
-(`sender`, `target`, `type`, `payload`, `timestamp`, `msg_id`, `hub_id`) and
-drops auxiliary fields such as `task_id` or `paths`. So part of the reduction
-comes from dropping fields and part from shorter keys plus minification — the two
-raw baselines keep those effects separate. Timestamps survive only to the
-millisecond; `roundtrip_core_fidelity` records whether the seven core fields
-reconstruct exactly at that precision.
+Version 2 retains structured JSON payloads and every auxiliary field under a
+compact extension mapping; the decoder continues to read version-1 rows.
+Timestamps survive to the millisecond. `roundtrip_envelope_fidelity` compares
+the reconstructed full envelope against an independent normalisation of the
+input, so a dropped task, lease, presence, or grant field makes the benchmark
+fail visibly.
 
 ### Metrics
 
@@ -58,15 +57,15 @@ printed.
 | Serialisation | Bytes | Tokens |
 | --- | --- | --- |
 | `raw_wire` | 2826 | 919 |
-| `raw_core_compact` | 1913 | — |
-| `lite` | 1662 | 568 |
+| `raw_compact` | 2617 | — |
+| `lite` | 2498 | 807 |
 
-On this trace the lite log is **59%** of the raw wire bytes and **62%** of the
-raw wire tokens. Holding the field set fixed, short keys plus minification alone
-account for the `lite`-vs-`raw_core_compact` ratio (**87%**); the rest of the
-reduction is the lite format dropping auxiliary fields an observer does not need.
-Core-field roundtrip fidelity is exact. These figures are specific to this
-fixture — re-run against your own trace for a representative number.
+On this trace the lite log is **88%** of the raw wire bytes and **88%** of the
+raw wire tokens. Against the same full envelope minified, it is **95%**. Full
+envelope fidelity is exact at the documented millisecond timestamp precision.
+The older 59% byte result counted discarded auxiliary fields as a saving and is
+superseded. These figures are specific to this fixture — re-run against your own
+trace for a representative number.
 
 ## `routing_benchmark.py`
 

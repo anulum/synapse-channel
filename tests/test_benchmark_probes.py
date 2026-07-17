@@ -46,6 +46,7 @@ def test_encode_lite_reports_a_real_byte_reduction() -> None:
     result = probe_encode_lite(10)
     assert 0 < result.metrics["lite_bytes"] < result.metrics["raw_bytes"]
     assert 0 < result.metrics["lite_to_raw_ratio"] < 1
+    assert result.metrics["extension_fields_preserved"] == 10.0
     assert result.metrics["messages_per_second"] > 0
 
 
