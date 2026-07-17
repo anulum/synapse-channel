@@ -47,7 +47,7 @@ from synapse_channel.core.persistence import EventStore
 class RetentionPolicy:
     """How much of the durable memory log to keep.
 
-    The two knobs are independent and additive — a sweep applies whichever are
+    The three knobs are independent and additive — a sweep applies whichever are
     set. A policy with neither set is a no-op (:attr:`is_noop`).
 
     Attributes
@@ -62,10 +62,14 @@ class RetentionPolicy:
         more than this many seconds ago. ``None`` keeps every finding; a finding
         with an open window (``valid_to`` unset) is never aged out, whatever the
         grace.
+    drop_corrupt_rows : bool
+        Explicitly delete quarantined rows at or below the settled floor. The CLI
+        requires an archive report for this destructive recovery operation.
     """
 
     max_checkpoints_per_task: int | None = None
     finding_grace_seconds: float | None = None
+    drop_corrupt_rows: bool = False
 
     def __post_init__(self) -> None:
         """Reject a policy that would corrupt replay or invert time."""
@@ -80,7 +84,11 @@ class RetentionPolicy:
     @property
     def is_noop(self) -> bool:
         """Return ``True`` when neither retention knob is set, so a sweep does nothing."""
-        return self.max_checkpoints_per_task is None and self.finding_grace_seconds is None
+        return (
+            self.max_checkpoints_per_task is None
+            and self.finding_grace_seconds is None
+            and not self.drop_corrupt_rows
+        )
 
 
 @dataclass(frozen=True)
@@ -95,16 +103,19 @@ class CompactionResult:
         Number of expired finding events deleted.
     floor_seq : int
         The floor the sweep honoured; no event above it was considered.
+    corrupt_rows_removed : int
+        Number of explicitly quarantined rows deleted.
     """
 
     checkpoints_removed: int
     findings_removed: int
     floor_seq: int
+    corrupt_rows_removed: int = 0
 
     @property
     def total_removed(self) -> int:
         """Return the total number of events the sweep deleted."""
-        return self.checkpoints_removed + self.findings_removed
+        return self.checkpoints_removed + self.findings_removed + self.corrupt_rows_removed
 
 
 def _superseded_checkpoints(store: EventStore, *, floor: int, keep: int) -> list[int]:
@@ -117,6 +128,8 @@ def _superseded_checkpoints(store: EventStore, *, floor: int, keep: int) -> list
     """
     by_task: dict[str, list[int]] = defaultdict(list)
     for event in store.read_since(0, kinds=(EventKind.CHECKPOINT,)):
+        if event.kind != EventKind.CHECKPOINT:
+            continue
         if event.seq > floor:
             continue
         by_task[str(event.payload.get("task_id", ""))].append(event.seq)
@@ -143,6 +156,8 @@ def _expired_findings(store: EventStore, *, floor: int, cutoff: float) -> list[i
     """Return findings below the floor whose validity window closed at or before ``cutoff``."""
     doomed: list[int] = []
     for event in store.read_since(0, kinds=(EventKind.FINDING,)):
+        if event.kind != EventKind.FINDING:
+            continue
         if event.seq > floor:
             continue
         valid_to = _valid_to(event.payload)
@@ -157,6 +172,7 @@ def compact(
     *,
     floor_seq: int,
     now: float | None = None,
+    dry_run: bool = False,
 ) -> CompactionResult:
     """Apply a retention policy to the durable log, deleting only below the floor.
 
@@ -175,6 +191,9 @@ def compact(
     now : float or None, optional
         Wall-clock time used to age out findings; the system clock is used when
         ``None``.
+    dry_run : bool, optional
+        Calculate and return the exact deletion counts without changing the
+        store. Used to persist a recovery archive before destructive removal.
 
     Returns
     -------
@@ -196,12 +215,18 @@ def compact(
         doomed_findings = _expired_findings(
             store, floor=floor, cutoff=ts - policy.finding_grace_seconds
         )
+    doomed_corrupt = (
+        [row.seq for row in store.corrupt_rows(through_seq=floor)]
+        if policy.drop_corrupt_rows
+        else []
+    )
 
-    seqs = doomed_checkpoints + doomed_findings
-    if seqs:
+    seqs = doomed_checkpoints + doomed_findings + doomed_corrupt
+    if seqs and not dry_run:
         store.delete(seqs)
     return CompactionResult(
         checkpoints_removed=len(doomed_checkpoints),
         findings_removed=len(doomed_findings),
         floor_seq=floor,
+        corrupt_rows_removed=len(doomed_corrupt),
     )

@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.compaction import CompactionResult
+from synapse_channel.core.event_row_recovery import CorruptEventRow
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import StoredEvent
 
@@ -63,11 +64,15 @@ class ArchiveReportOptions:
         Maximum number of rows shown in bounded sections. Values below ``1`` are
         clamped to ``1`` so an operator never receives an apparently empty report
         from a non-empty store.
+    compaction_completed : bool, optional
+        Whether removal completed. ``False`` labels a pre-delete recovery archive
+        as planned so an interrupted command never overstates deletion.
     """
 
     source_path: str
     generated_at: float
     max_items: int = 200
+    compaction_completed: bool = True
 
     @property
     def bounded_max_items(self) -> int:
@@ -143,6 +148,16 @@ def _resource_summary(payload: dict[str, Any]) -> str:
     return f"{agent} offers {kind}/{name}; capacity={capacity}"
 
 
+def _corrupt_summary(event: StoredEvent) -> str:
+    """Return the safe digest/reasons summary for one quarantined row marker."""
+    marker = CorruptEventRow.from_payload(event.seq, event.payload)
+    reasons = ",".join(reason.value for reason in marker.reasons)
+    parts = [f"reasons={reasons}", f"payload_sha256={marker.payload_sha256}"]
+    if marker.original_kind is not None:
+        parts.insert(0, f"original_kind={marker.original_kind}")
+    return "; ".join(parts)
+
+
 def _event_summary(event: StoredEvent) -> tuple[str, str]:
     """Return ``(task_id, summary)`` for one coordination event."""
     payload = event.payload
@@ -162,6 +177,8 @@ def _event_summary(event: StoredEvent) -> tuple[str, str]:
         return _event_task(payload), _progress_summary(payload)
     if event.kind == EventKind.RESOURCE:
         return "", _resource_summary(payload)
+    if event.kind == EventKind.CORRUPT:
+        return "", _corrupt_summary(event)
     return _event_task(payload), ""
 
 
@@ -306,9 +323,10 @@ def render_archive_report(
         f"<dt>Generated at</dt><dd>{escape(_stamp(options.generated_at))}</dd>"
         f"<dt>Total events before compaction</dt><dd>{len(snapshot)}</dd>"
         f"<dt>Compaction floor</dt><dd>{result.floor_seq}</dd>"
-        "<dt>Compaction result</dt>"
+        f"<dt>{'Compaction result' if options.compaction_completed else 'Planned compaction'}</dt>"
         f"<dd>removed {result.checkpoints_removed} checkpoint(s), "
-        f"{result.findings_removed} finding(s)</dd>"
+        f"{result.findings_removed} finding(s), "
+        f"{result.corrupt_rows_removed} corrupt row(s)</dd>"
         "</dl>"
     )
     body += _render_section(

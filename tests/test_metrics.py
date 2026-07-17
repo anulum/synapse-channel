@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.core.hub import SynapseHub
@@ -18,6 +19,7 @@ from synapse_channel.core.metrics import (
     health_snapshot,
     render_prometheus,
 )
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION
 
 # -- render_prometheus --------------------------------------------------------
@@ -58,6 +60,7 @@ def test_render_preserves_metric_order() -> None:
 def test_fresh_hub_reports_up_and_zeroes() -> None:
     metrics = {m.name: m.value for m in collect_hub_metrics(SynapseHub())}
     assert metrics["synapse_up"] == 1
+    assert metrics["synapse_journal_corrupt_rows"] == 0
     assert metrics["synapse_connected_clients"] == 0
     assert metrics["synapse_online_agents"] == 0
     assert metrics["synapse_active_claims"] == 0
@@ -101,6 +104,7 @@ def test_health_snapshot_reports_ok_version_uptime_and_counts() -> None:
     snapshot = health_snapshot(hub)
     assert snapshot == {
         "status": "ok",
+        "journal_corrupt_rows": 0,
         "version": __version__,
         "protocol_version": WIRE_PROTOCOL_VERSION,
         "hub_id": "syn-health",
@@ -109,6 +113,22 @@ def test_health_snapshot_reports_ok_version_uptime_and_counts() -> None:
         "online_agents": 1,
         "active_claims": 1,
     }
+
+
+def test_corrupt_journal_rows_degrade_health_and_metric(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    seq = store.append("claim", {"task_id": "T1"})
+    store._conn.execute("UPDATE events SET payload = 'bad' WHERE seq = ?", (seq,))
+    store._conn.commit()
+    hub = SynapseHub(journal=store)
+
+    snapshot = health_snapshot(hub)
+    metrics = {metric.name: metric.value for metric in collect_hub_metrics(hub)}
+
+    assert snapshot["status"] == "degraded"
+    assert snapshot["journal_corrupt_rows"] == 1
+    assert metrics["synapse_journal_corrupt_rows"] == 1
+    store.close()
 
 
 def test_health_snapshot_reports_the_config_epoch_of_a_configured_hub() -> None:

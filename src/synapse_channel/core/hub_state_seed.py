@@ -33,6 +33,7 @@ from synapse_channel.core.delivery_receipts import (
     DELIVERY_RECEIPT_EVENT_KINDS,
     restore_pending_receipts,
 )
+from synapse_channel.core.event_row_recovery import CorruptEventRow
 from synapse_channel.core.journal import replay
 from synapse_channel.core.ledger import Blackboard
 from synapse_channel.core.pending_receipts import ReceiptEntry
@@ -64,6 +65,9 @@ class SeededHubState:
     pending_receipts : tuple[tuple[int, ReceiptEntry], ...]
         Unsettled deferred-delivery receipts reconstructed from the receipt
         ledger, oldest first, ready to seed the live bounded pending store.
+    corrupt_rows : tuple[CorruptEventRow, ...]
+        Quarantined journal rows. A non-empty tuple means replayed state is
+        incomplete and the live hub must refuse every mutation.
     """
 
     state: SynapseState
@@ -73,6 +77,7 @@ class SeededHubState:
     finding_counts: Mapping[str, int]
     idempotency_seed: tuple[tuple[str, dict[str, Any]], ...]
     pending_receipts: tuple[tuple[int, ReceiptEntry], ...]
+    corrupt_rows: tuple[CorruptEventRow, ...] = ()
 
 
 def seed_hub_state(
@@ -135,6 +140,16 @@ def seed_hub_state(
                 record_count,
                 compact_hint_threshold,
             )
+        if replayed.corrupt_rows:
+            logger.error(
+                "Recovered around %d corrupt event row(s); first affected seq=%d. "
+                "Replayed state may omit affected mutations, health is degraded, and "
+                "the hub refuses all mutations. After every consumer has settled the "
+                "affected prefix, archive and remove it explicitly with `synapse compact "
+                "<db> --floor-seq <settled-seq> --drop-corrupt --archive-report <path>`.",
+                len(replayed.corrupt_rows),
+                replayed.corrupt_rows[0].seq,
+            )
         # Seeded oldest first, the bounded cache keeps the most-recent keys, so a
         # retry after a restart replays the original response instead of re-applying.
         return SeededHubState(
@@ -147,6 +162,7 @@ def seed_hub_state(
             pending_receipts=restore_pending_receipts(
                 journal.read_window(kinds=DELIVERY_RECEIPT_EVENT_KINDS)
             ),
+            corrupt_rows=replayed.corrupt_rows,
         )
     return SeededHubState(
         state=SynapseState(
@@ -165,4 +181,5 @@ def seed_hub_state(
         finding_counts={},
         idempotency_seed=(),
         pending_receipts=(),
+        corrupt_rows=(),
     )

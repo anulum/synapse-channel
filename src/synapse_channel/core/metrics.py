@@ -111,6 +111,12 @@ def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
     return [
         Metric("synapse_up", "Whether the hub is serving (always 1).", "gauge", 1),
         Metric(
+            "synapse_journal_corrupt_rows",
+            "Quarantined durable event rows; non-zero makes health degraded and mutations fail.",
+            "gauge",
+            len(hub.journal_corrupt_rows),
+        ),
+        Metric(
             "synapse_connected_clients",
             "Open WebSocket connections.",
             "gauge",
@@ -272,7 +278,8 @@ def health_snapshot(hub: SynapseHub) -> dict[str, Any]:
     Returns
     -------
     dict[str, Any]
-        ``status`` (``ok`` whenever the hub answers), the package ``version``, the
+        ``status`` (``ok`` or ``degraded`` when replay skipped corrupt rows), the
+        ``journal_corrupt_rows`` count, the package ``version``, the
         ``protocol_version`` (the wire-protocol version, decoupled from the package
         version), the ``hub_id``, the ``config_epoch`` (a fingerprint of the
         configuration posture the hub was built from — empty for an ad-hoc
@@ -287,7 +294,8 @@ def health_snapshot(hub: SynapseHub) -> dict[str, Any]:
     from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION
 
     return {
-        "status": "ok",
+        "status": "degraded" if hub.journal_corrupt_rows else "ok",
+        "journal_corrupt_rows": len(hub.journal_corrupt_rows),
         "version": __version__,
         "protocol_version": WIRE_PROTOCOL_VERSION,
         "hub_id": hub.hub_id,

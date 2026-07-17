@@ -54,6 +54,7 @@ def test_seed_starts_fresh_without_a_journal() -> None:
     assert seeded.message_seq == 0
     assert seeded.finding_counts == {}
     assert seeded.idempotency_seed == ()
+    assert seeded.corrupt_rows == ()
 
 
 def test_seed_resumes_from_an_empty_journal(
@@ -103,4 +104,24 @@ def test_seed_trims_replayed_history_to_the_bound(
         seeded = _seed(store, max_history=1, compact_hint_threshold=1000)
 
     assert len(seeded.chat_history) <= 1
+    store.close()
+
+
+def test_seed_reports_safe_degraded_recovery_guidance(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = EventStore(tmp_path / "events.db")
+    secret = "never-log-this-secret"
+    seq = store.append("claim", {"task_id": "T1", "token": secret})
+    store._conn.execute("UPDATE events SET payload = ? WHERE seq = ?", (secret, seq))
+    store._conn.commit()
+
+    with caplog.at_level("ERROR", logger="synapse.hub"):
+        seeded = _seed(store)
+
+    assert [row.seq for row in seeded.corrupt_rows] == [seq]
+    assert "health is degraded" in caplog.text
+    assert "--drop-corrupt" in caplog.text
+    assert "--archive-report" in caplog.text
+    assert secret not in caplog.text
     store.close()

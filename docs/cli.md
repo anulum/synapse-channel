@@ -971,6 +971,7 @@ synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --bearer-auth --a2a-token
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --task-timeout 300 --subscribe-timeout 1
 synapse relay ./feed.ndjson --cursor ./feed.cursor
 synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report ./compact-report.html
+synapse compact ./synapse.db --floor-seq 142 --drop-corrupt --archive-report ./corrupt-recovery.html
 synapse event-query ./synapse.db "task TASK-1 timeline"
 synapse event-query ./synapse.db "conflicts at seq 120" --json
 synapse event-query ./synapse.db "channel ops between seq 1 999999"
@@ -1084,7 +1085,20 @@ created by `synapse hub --db`. It needs either `--floor-seq <seq>` (the lowest
 sequence every read-side consumer has ingested) or `--all` (only when the whole
 log is settled). `--archive-report PATH` writes an owner-only static HTML report
 from the pre-compaction event snapshot, then records the actual checkpoint and
-finding removal counts from the compaction run. The report includes event-kind
+finding removal counts from the compaction run. A malformed stored row is read as
+a safe `corrupt_event` marker containing its sequence, validation reasons, and a
+SHA-256 payload digest — never the raw stored payload. A hub recovered around any
+such row reports degraded health and refuses every mutation while keeping
+read/query/heartbeat paths available for diagnosis.
+
+Removing a quarantined row is always explicit: pass `--drop-corrupt` plus the
+settled `--floor-seq` (or `--all` only when every consumer has settled the entire
+log). `--drop-corrupt` requires `--archive-report`, ensuring the safe digest and
+reasons survive deletion. The command writes a `Planned compaction` archive
+before changing SQLite, then atomically replaces it with the completed result;
+an archive-write failure leaves every row intact. Restart the hub after the
+offline repair and confirm
+`journal_corrupt_rows` is `0` before resuming writes. The report includes event-kind
 counts, board tasks, release receipt notes, and a bounded coordination timeline;
 `--archive-report-limit N` controls the row cap for bounded sections.
 

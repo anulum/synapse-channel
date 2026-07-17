@@ -71,6 +71,10 @@ def test_policy_is_not_noop_with_a_finding_knob() -> None:
     assert RetentionPolicy(finding_grace_seconds=0.0).is_noop is False
 
 
+def test_policy_is_not_noop_with_explicit_corrupt_row_removal() -> None:
+    assert RetentionPolicy(drop_corrupt_rows=True).is_noop is False
+
+
 def test_policy_rejects_zero_checkpoints() -> None:
     # Keeping zero would drop the newest snapshot — a claim's only survivor.
     with pytest.raises(ValueError, match="at least 1"):
@@ -96,8 +100,13 @@ def test_policy_accepts_the_minimum_boundaries() -> None:
 
 
 def test_result_total_removed_is_the_sum() -> None:
-    result = CompactionResult(checkpoints_removed=2, findings_removed=3, floor_seq=9)
-    assert result.total_removed == 5
+    result = CompactionResult(
+        checkpoints_removed=2,
+        findings_removed=3,
+        floor_seq=9,
+        corrupt_rows_removed=4,
+    )
+    assert result.total_removed == 9
 
 
 # -- compact: no-op -----------------------------------------------------------
@@ -110,6 +119,63 @@ def test_noop_policy_deletes_nothing(tmp_path: Path) -> None:
     result = compact(store, RetentionPolicy(), floor_seq=store.max_seq())
     assert result.total_removed == 0
     assert store.count() == 2
+    store.close()
+
+
+def test_corrupt_rows_require_explicit_policy_and_honour_floor(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    first = store.append(EventKind.CLAIM, {"task_id": "T1"})
+    second = store.append(EventKind.CLAIM, {"task_id": "T2"})
+    store._conn.execute("UPDATE events SET payload = 'bad' WHERE seq IN (?, ?)", (first, second))
+    store._conn.commit()
+
+    unchanged = compact(store, RetentionPolicy(max_checkpoints_per_task=1), floor_seq=second)
+    removed = compact(store, RetentionPolicy(drop_corrupt_rows=True), floor_seq=first)
+
+    assert unchanged.corrupt_rows_removed == 0
+    assert [row.seq for row in store.corrupt_rows()] == [second]
+    assert removed.corrupt_rows_removed == 1
+    store.close()
+
+
+def test_explicit_corrupt_row_removal_restores_clean_reopen(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    keep = store.append(EventKind.CHAT, {"payload": "keep"})
+    corrupt = store.append(EventKind.CLAIM, {"task_id": "T1"})
+    store._conn.execute("UPDATE events SET payload = 'not-json' WHERE seq = ?", (corrupt,))
+    store._conn.commit()
+
+    result = compact(
+        store,
+        RetentionPolicy(drop_corrupt_rows=True),
+        floor_seq=store.max_seq(),
+    )
+    store.close()
+    reopened = EventStore(db)
+
+    assert result.corrupt_rows_removed == 1
+    assert reopened.corrupt_rows() == ()
+    assert [event.seq for event in reopened.read_all()] == [keep]
+    reopened.close()
+
+
+def test_dry_run_reports_exact_corrupt_count_without_deleting(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    seq = store.append(EventKind.CLAIM, {"task_id": "T1"})
+    store._conn.execute("UPDATE events SET payload = 'bad' WHERE seq = ?", (seq,))
+    store._conn.commit()
+
+    result = compact(
+        store,
+        RetentionPolicy(drop_corrupt_rows=True),
+        floor_seq=seq,
+        dry_run=True,
+    )
+
+    assert result.corrupt_rows_removed == 1
+    assert store.count() == 1
+    assert store.corrupt_rows()[0].seq == seq
     store.close()
 
 

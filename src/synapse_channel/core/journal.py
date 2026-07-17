@@ -29,6 +29,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.core.event_row_recovery import CORRUPT_EVENT_KIND, CorruptEventRow
 from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS,
     DEFAULT_MAX_PROGRESS_PER_AUTHOR,
@@ -75,6 +76,7 @@ class EventKind:
     DELIVERY_RECEIPT_EXPIRED = "delivery_receipt_expired"
     MAILBOX_WATERMARK = "mailbox_watermark"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
+    CORRUPT = CORRUPT_EVENT_KIND
 
 
 MEMORY_KINDS = frozenset(
@@ -117,6 +119,9 @@ class ReplayResult:
     finding_counts_by_actor : dict[str, int]
         Count of replayed durable findings per hub-attested actor, used to seed
         live per-agent finding quotas after a restart.
+    corrupt_rows : tuple[CorruptEventRow, ...]
+        Quarantined rows skipped during reconstruction. Any member means the
+        projected state is incomplete and must not admit further mutations.
     """
 
     state: SynapseState
@@ -125,6 +130,7 @@ class ReplayResult:
     blackboard: Blackboard
     idempotency: list[tuple[str, dict[str, Any]]]
     finding_counts_by_actor: dict[str, int]
+    corrupt_rows: tuple[CorruptEventRow, ...] = ()
 
 
 def record_claim(store: EventStore, claim: TaskClaim) -> None:
@@ -547,6 +553,7 @@ def replay(
     )
     idempotency: OrderedDict[str, dict[str, Any]] = OrderedDict()
     finding_counts_by_actor: dict[str, int] = {}
+    corrupt_rows: list[CorruptEventRow] = []
     message_seq = 0
     epoch_seq = 0
 
@@ -554,6 +561,9 @@ def replay(
         if up_to_seq is not None and event.seq > up_to_seq:
             break
         payload = event.payload
+        if event.kind == EventKind.CORRUPT:
+            corrupt_rows.append(CorruptEventRow.from_payload(event.seq, payload))
+            continue
         # CHECKPOINT and HANDOFF carry the full claim snapshot, distinct only so
         # the memory read-side can pick them out — coordination replay reconstructs
         # the claim from them exactly as it does a CLAIM/TASK_UPDATE (and a legacy
@@ -617,4 +627,5 @@ def replay(
         blackboard=blackboard,
         idempotency=list(idempotency.items()),
         finding_counts_by_actor=dict(finding_counts_by_actor),
+        corrupt_rows=tuple(corrupt_rows),
     )

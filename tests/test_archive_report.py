@@ -228,6 +228,51 @@ def test_render_archive_report_notes_truncated_sections(tmp_path: Path) -> None:
     assert "TASK-3" in html
 
 
+def test_render_archive_report_preserves_only_safe_corrupt_row_evidence(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    seq = store.append(EventKind.CLAIM, {"task_id": "T1"})
+    secret = "private-raw-event-content"
+    store._conn.execute("UPDATE events SET payload = ? WHERE seq = ?", (secret, seq))
+    store._conn.commit()
+    marker = store.corrupt_rows()[0]
+
+    html = render_archive_report(
+        store.read_all(),
+        result=CompactionResult(
+            checkpoints_removed=0,
+            findings_removed=0,
+            floor_seq=seq,
+            corrupt_rows_removed=1,
+        ),
+        options=ArchiveReportOptions(source_path=store.path, generated_at=20.0),
+    )
+    store.close()
+
+    assert "removed 0 checkpoint(s), 0 finding(s), 1 corrupt row(s)" in html
+    assert "original_kind=claim" in html
+    assert "reasons=invalid_json" in html
+    assert marker.payload_sha256 in html
+    assert secret not in html
+
+
+def test_predelete_archive_labels_compaction_as_planned(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.append(EventKind.CHAT, {"payload": "safe"})
+    html = render_archive_report(
+        store.read_all(),
+        result=CompactionResult(checkpoints_removed=0, findings_removed=0, floor_seq=1),
+        options=ArchiveReportOptions(
+            source_path=store.path,
+            generated_at=2.0,
+            compaction_completed=False,
+        ),
+    )
+    store.close()
+
+    assert "<dt>Planned compaction</dt>" in html
+    assert "<dt>Compaction result</dt>" not in html
+
+
 def test_write_archive_report_replaces_file_and_restricts_permissions(tmp_path: Path) -> None:
     target = tmp_path / "reports" / "compact.html"
     write_archive_report(target, "<!doctype html><html><body>first</body></html>")

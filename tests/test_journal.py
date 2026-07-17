@@ -453,3 +453,22 @@ def test_record_chat_returns_the_journalled_seq(tmp_path: Path) -> None:
     store.close()
     assert second == first + 1
     assert [event.seq for event in events] == [first, second]
+
+
+def test_replay_skips_corrupt_row_but_preserves_surrounding_valid_state(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_claim(store, _claim(task_id="T1", epoch=1))
+    record_claim(store, _claim(task_id="T2", epoch=2))
+    corrupt_seq = store.max_seq()
+    record_claim(store, _claim(task_id="T3", epoch=3))
+    store._conn.execute("UPDATE events SET payload = 'not-json' WHERE seq = ?", (corrupt_seq,))
+    store._conn.commit()
+
+    result = replay(store, now=2000.0)
+
+    assert set(result.state.claims) == {"T1", "T3"}
+    assert result.state._epoch_seq == 3
+    assert len(result.corrupt_rows) == 1
+    assert result.corrupt_rows[0].seq == corrupt_seq
+    assert result.corrupt_rows[0].original_kind == EventKind.CLAIM
+    store.close()

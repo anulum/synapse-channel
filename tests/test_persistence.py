@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from synapse_channel.core.event_row_recovery import CORRUPT_EVENT_KIND, CorruptEventReason
 from synapse_channel.core.persistence import EventStore, StoredEvent
 
 
@@ -321,6 +322,79 @@ def test_vacuum_keeps_the_surviving_rows_intact(tmp_path: Path) -> None:
     store.append("chat", {"p": "after"})
     assert store.count() == 5
     store.close()
+
+
+def test_corrupt_json_row_does_not_block_any_read_api(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    store.append("chat", {"payload": "before"}, ts=1.0)
+    corrupt_seq = store.append("claim", {"task_id": "T1"}, ts=2.0)
+    store.append("chat", {"payload": "after"}, ts=3.0)
+    store._conn.execute("UPDATE events SET payload = ? WHERE seq = ?", ("{", corrupt_seq))
+    store._conn.commit()
+
+    for events in (
+        store.read_all(),
+        store.read_since(0),
+        store.read_window(min_seq=1, max_seq=3),
+        list(store.iter_events()),
+    ):
+        assert [event.kind for event in events] == ["chat", CORRUPT_EVENT_KIND, "chat"]
+        assert events[1].seq == corrupt_seq
+        assert events[1].payload["reasons"] == [CorruptEventReason.INVALID_JSON.value]
+    store.close()
+
+
+def test_corrupt_blob_is_not_exposed_and_kind_filter_still_advances(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    corrupt_seq = store.append("finding", {"statement": "classified-secret"}, ts=1.0)
+    store._conn.execute(
+        "UPDATE events SET payload = ? WHERE seq = ?",
+        (sqlite3.Binary(b"classified-secret\xff"), corrupt_seq),
+    )
+    store._conn.commit()
+
+    (event,) = store.read_since(0, kinds=("finding",))
+    assert event.kind == CORRUPT_EVENT_KIND
+    assert event.seq == corrupt_seq
+    assert event.payload["reasons"] == [CorruptEventReason.INVALID_UTF8.value]
+    assert "classified-secret" not in str(event.payload)
+    store.close()
+
+
+def test_corrupt_rows_reports_all_reasons_with_an_inclusive_ceiling(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    first = store.append("claim", {"task_id": "T1"})
+    second = store.append("chat", {"payload": "x"})
+    store._conn.execute("UPDATE events SET payload = '[]' WHERE seq = ?", (first,))
+    store._conn.execute("UPDATE events SET ts = 'bad', kind = '' WHERE seq = ?", (second,))
+    store._conn.commit()
+
+    first_only = store.corrupt_rows(through_seq=first)
+    all_rows = store.corrupt_rows()
+    assert [row.seq for row in first_only] == [first]
+    assert [row.seq for row in all_rows] == [first, second]
+    assert all_rows[0].reasons == (CorruptEventReason.PAYLOAD_NOT_OBJECT,)
+    assert all_rows[1].reasons == (
+        CorruptEventReason.INVALID_TIMESTAMP,
+        CorruptEventReason.INVALID_KIND,
+    )
+    store.close()
+
+
+def test_corrupt_row_recovery_survives_reopen(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    seq = store.append("claim", {"task_id": "T1"})
+    store._conn.execute("UPDATE events SET payload = 'null' WHERE seq = ?", (seq,))
+    store._conn.commit()
+    store.close()
+
+    reopened = EventStore(db)
+    (event,) = reopened.read_all()
+    assert event.kind == CORRUPT_EVENT_KIND
+    assert event.seq == seq
+    assert reopened.corrupt_rows()[0].seq == seq
+    reopened.close()
 
 
 def test_iter_events_streams_in_sequence_order(tmp_path: Path) -> None:

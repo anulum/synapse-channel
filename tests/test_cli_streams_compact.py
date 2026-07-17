@@ -25,6 +25,7 @@ def _compact_ns(**overrides: Any) -> argparse.Namespace:
         "db": "events.db",
         "max_checkpoints_per_task": None,
         "finding_grace_seconds": None,
+        "drop_corrupt": False,
         "floor_seq": None,
         "all": False,
         "vacuum": False,
@@ -55,6 +56,7 @@ def test_parser_compact() -> None:
             "3",
             "--all",
             "--vacuum",
+            "--drop-corrupt",
             "--archive-report",
             "report.html",
             "--archive-report-limit",
@@ -65,6 +67,7 @@ def test_parser_compact() -> None:
     assert args.max_checkpoints_per_task == 3
     assert args.all is True
     assert args.vacuum is True
+    assert args.drop_corrupt is True
     assert args.archive_report == "report.html"
     assert args.archive_report_limit == 50
     assert args.func is cli_streams._cmd_compact
@@ -106,6 +109,67 @@ def test_cmd_compact_requires_a_retention_knob(
     rc = cli_streams._cmd_compact(_compact_ns(db=str(db), all=True))
     assert rc == 2
     assert "retention knob" in capsys.readouterr().err
+
+
+def test_cmd_compact_requires_archive_report_for_corrupt_row_removal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_checkpoints(db, "T1", 1)
+
+    rc = cli_streams._cmd_compact(_compact_ns(db=str(db), all=True, drop_corrupt=True))
+
+    assert rc == 2
+    assert "requires --archive-report" in capsys.readouterr().err
+
+
+def test_cmd_compact_rejects_archive_path_that_is_the_database(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    _seed_checkpoints(db, "T1", 1)
+
+    rc = cli_streams._cmd_compact(
+        _compact_ns(db=str(db), all=True, drop_corrupt=True, archive_report=str(db))
+    )
+
+    assert rc == 2
+    assert "must not overwrite" in capsys.readouterr().err
+    store = EventStore(db)
+    assert store.count() == 1
+    store.close()
+
+
+def test_cmd_compact_keeps_corrupt_row_when_predelete_archive_write_fails(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    seq = store.append("claim", {"task_id": "T1"})
+    store._conn.execute("UPDATE events SET payload = 'bad' WHERE seq = ?", (seq,))
+    store._conn.commit()
+    store.close()
+
+    def fail_write(_path: str | Path, _html: str) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cli_streams, "write_archive_report", fail_write)
+    rc = cli_streams._cmd_compact(
+        _compact_ns(
+            db=str(db),
+            all=True,
+            drop_corrupt=True,
+            archive_report=str(tmp_path / "report.html"),
+        )
+    )
+
+    assert rc == 2
+    assert "before deletion" in capsys.readouterr().err
+    reopened = EventStore(db)
+    assert reopened.corrupt_rows()[0].seq == seq
+    reopened.close()
 
 
 def test_cmd_compact_rejects_an_invalid_policy(
@@ -201,6 +265,8 @@ def test_cmd_compact_writes_archive_report_from_pre_compaction_snapshot(
     assert "removed 2 checkpoint(s)" in output
     assert f"archive report: {report}" in output
     html = report.read_text(encoding="utf-8")
+    assert "<dt>Compaction result</dt>" in html
+    assert "<dt>Planned compaction</dt>" not in html
     assert "SYNAPSE archive report" in html
     assert "<dt>Total events before compaction</dt><dd>4</dd>" in html
     assert "removed 2 checkpoint(s), 0 finding(s)" in html
@@ -208,3 +274,41 @@ def test_cmd_compact_writes_archive_report_from_pre_compaction_snapshot(
     store = EventStore(db)
     assert store.count() == 2
     store.close()
+
+
+def test_cmd_compact_archives_digest_before_removing_settled_corrupt_row(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    seq = store.append("claim", {"task_id": "T1"})
+    secret = "raw-credential-must-not-survive"
+    store._conn.execute("UPDATE events SET payload = ? WHERE seq = ?", (secret, seq))
+    store._conn.commit()
+    digest = store.corrupt_rows()[0].payload_sha256
+    store.close()
+    report = tmp_path / "corrupt-recovery.html"
+
+    rc = cli.main(
+        [
+            "compact",
+            str(db),
+            "--all",
+            "--drop-corrupt",
+            "--archive-report",
+            str(report),
+        ]
+    )
+
+    assert rc == 0
+    assert "1 corrupt row(s)" in capsys.readouterr().out
+    html = report.read_text(encoding="utf-8")
+    assert digest in html
+    assert "<dt>Compaction result</dt>" in html
+    assert "<dt>Planned compaction</dt>" not in html
+    assert "reasons=invalid_json" in html
+    assert secret not in html
+    reopened = EventStore(db)
+    assert reopened.count() == 0
+    assert reopened.corrupt_rows() == ()
+    reopened.close()

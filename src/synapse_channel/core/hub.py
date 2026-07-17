@@ -78,6 +78,7 @@ from synapse_channel.core.hub_frame_gates import HubFrameGates
 from synapse_channel.core.hub_http import http_endpoint_response
 from synapse_channel.core.hub_identity_gate import HubIdentityGate
 from synapse_channel.core.hub_ingress import HubIngress
+from synapse_channel.core.hub_journal_recovery_gate import HubJournalRecoveryGate
 from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
 from synapse_channel.core.hub_liveness import HubLivenessView
 from synapse_channel.core.hub_relay import RelayMirror
@@ -693,6 +694,12 @@ class SynapseHub:
             compact_hint_threshold=self.compact_hint_threshold,
         )
         self.state = seeded.state
+        self.journal_corrupt_rows = seeded.corrupt_rows
+        self._journal_recovery_gate = HubJournalRecoveryGate(
+            self.journal_corrupt_rows,
+            send_json=self._send_json,
+            system=self._system,
+        )
         # The liveness query view combines the reaction store with the live roster and
         # the last-seen map (built with ``state`` above), so it is wired here, after
         # ``state`` exists. The store itself is created earlier so the connection's
@@ -1163,6 +1170,9 @@ class SynapseHub:
 
         if not await self._verify_per_message_auth(sender, msg_type, data, websocket):
             self.counters.auth_failures += 1
+            return
+
+        if await self._journal_recovery_gate.refuse_mutation(sender, msg_type, websocket):
             return
 
         disposition = await self._authorise_federation(sender, msg_type, data, websocket)

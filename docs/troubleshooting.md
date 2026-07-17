@@ -165,6 +165,34 @@ you enable `--metrics`, require `--metrics-token` so the endpoint does not leak 
 metadata. To bind an unauthenticated off-loopback hub anyway (a trusted private network),
 pass `--insecure-off-loopback` to downgrade the refusal to a warning.
 
+## The hub reports degraded health and refuses mutations
+
+Startup found one or more malformed rows in the durable SQLite event log. The hub
+recovers the valid prefix/suffix so health and read-only queries remain available,
+but the reconstructed state may omit an affected claim, release, or other mutation.
+It therefore refuses **all** state-changing frames instead of pretending the partial
+projection is authoritative. `/health` reports `status: degraded` and the
+`journal_corrupt_rows` count; `/metrics` exposes `synapse_journal_corrupt_rows`.
+
+Do not edit or delete the row ad hoc. First stop the hub and establish the lowest
+sequence every ingest consumer has already settled. Then run the offline recovery:
+
+```bash
+synapse compact ~/synapse/hub.db \
+  --floor-seq <settled-seq> \
+  --drop-corrupt \
+  --archive-report ./corrupt-recovery.html
+```
+
+The archive records only the row sequence, safe original kind, validation reasons,
+and a domain-separated SHA-256 digest; it never copies the malformed raw payload.
+It is persisted as a planned operation before deletion, so an archive-write
+failure leaves the database unchanged. Rows above the floor remain untouched.
+Restart the hub and verify health is `ok`
+and `journal_corrupt_rows` is `0` before allowing agents to mutate state again.
+Use `--all` instead of `--floor-seq` only when no read-side consumer can still need
+any event in the log.
+
 ## Still stuck?
 
 - `synapse <command> --help` documents every flag.

@@ -22,6 +22,7 @@ import argparse
 import json
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.archive_report import (
@@ -145,8 +146,22 @@ def _cmd_compact(args: argparse.Namespace) -> int:
     floor is the lowest sequence every memory consumer has already ingested: pass
     it with ``--floor-seq`` (e.g. the cursor REMANENTIA persists), or ``--all`` to
     treat the whole log as settled when no read-side consumer lags. ``--vacuum``
-    reclaims the freed disk pages afterwards.
+    reclaims the freed disk pages afterwards. Quarantined rows are removed only
+    with ``--drop-corrupt`` and a mandatory ``--archive-report``.
     """
+    if args.drop_corrupt and not args.archive_report:
+        print(
+            "compact --drop-corrupt requires --archive-report <path> so the safe "
+            "row digest and reasons survive deletion.",
+            file=sys.stderr,
+        )
+        return 2
+    if (
+        args.archive_report
+        and Path(args.archive_report).expanduser().resolve() == Path(args.db).expanduser().resolve()
+    ):
+        print("compact archive report must not overwrite the event store.", file=sys.stderr)
+        return 2
     try:
         store = EventStore(args.db, key_file=getattr(args, "db_key_file", None))
     except (ValueError, OSError, RuntimeError) as exc:
@@ -168,6 +183,7 @@ def _cmd_compact(args: argparse.Namespace) -> int:
             policy = RetentionPolicy(
                 max_checkpoints_per_task=args.max_checkpoints_per_task,
                 finding_grace_seconds=args.finding_grace_seconds,
+                drop_corrupt_rows=bool(args.drop_corrupt),
             )
         except ValueError as exc:
             print(f"invalid retention policy: {exc}", file=sys.stderr)
@@ -175,11 +191,30 @@ def _cmd_compact(args: argparse.Namespace) -> int:
         if policy.is_noop:
             print(
                 "compact needs a retention knob: --max-checkpoints-per-task N and/or "
-                "--finding-grace-seconds S.",
+                "--finding-grace-seconds S and/or --drop-corrupt.",
                 file=sys.stderr,
             )
             return 2
         archive_events = store.read_all() if args.archive_report else []
+        if args.drop_corrupt and args.archive_report:
+            preview = compact(store, policy, floor_seq=floor, dry_run=True)
+            preview_report = render_archive_report(
+                archive_events,
+                result=preview,
+                options=ArchiveReportOptions(
+                    source_path=str(args.db),
+                    generated_at=time.time(),
+                    max_items=int(args.archive_report_limit),
+                    compaction_completed=False,
+                ),
+            )
+            try:
+                write_archive_report(args.archive_report, preview_report)
+            except OSError as exc:
+                print(
+                    f"compact: cannot write archive report before deletion: {exc}", file=sys.stderr
+                )
+                return 2
         result = compact(store, policy, floor_seq=floor)
         if args.vacuum:
             store.vacuum()
@@ -200,7 +235,8 @@ def _cmd_compact(args: argparse.Namespace) -> int:
     print(
         f"compacted below seq {result.floor_seq}: removed "
         f"{result.checkpoints_removed} checkpoint(s), "
-        f"{result.findings_removed} finding(s){vacuum_note}"
+        f"{result.findings_removed} finding(s), "
+        f"{result.corrupt_rows_removed} corrupt row(s){vacuum_note}"
     )
     if args.archive_report:
         print(f"archive report: {args.archive_report}")
@@ -322,6 +358,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         metavar="S",
         help="Remove findings whose validity window closed more than S seconds ago.",
+    )
+    compact_parser.add_argument(
+        "--drop-corrupt",
+        action="store_true",
+        help=(
+            "Explicitly remove quarantined rows at or below the settled floor; "
+            "requires --archive-report."
+        ),
     )
     floor_group = compact_parser.add_mutually_exclusive_group()
     floor_group.add_argument(

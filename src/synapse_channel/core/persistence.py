@@ -37,6 +37,8 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, NamedTuple
 
+from synapse_channel.core.event_row_recovery import CorruptEventRow, decode_event_row
+
 BUSY_TIMEOUT_MS = 5000
 
 
@@ -193,6 +195,17 @@ class EventStore:
         """
         return list(self.iter_events())
 
+    @staticmethod
+    def _stored_event(row: tuple[object, object, object, object]) -> StoredEvent:
+        """Return one validated event or a non-secret corrupt-row marker."""
+        decoded = decode_event_row(row)
+        return StoredEvent(
+            seq=decoded.seq,
+            ts=decoded.ts,
+            kind=decoded.kind,
+            payload=decoded.payload,
+        )
+
     def iter_events(
         self,
         *,
@@ -236,10 +249,8 @@ class EventStore:
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY seq"
-        for seq, ts, kind, payload in self._conn.execute(sql, params):
-            yield StoredEvent(
-                seq=int(seq), ts=float(ts), kind=str(kind), payload=json.loads(payload)
-            )
+        for row in self._conn.execute(sql, params):
+            yield self._stored_event(row)
 
     def read_since(
         self,
@@ -288,10 +299,7 @@ class EventStore:
             sql += " LIMIT ?"
             params.append(max(0, int(limit)))
         rows = self._conn.execute(sql, params).fetchall()
-        return [
-            StoredEvent(seq=int(seq), ts=float(ts), kind=str(kind), payload=json.loads(payload))
-            for seq, ts, kind, payload in rows
-        ]
+        return [self._stored_event(row) for row in rows]
 
     def read_window(
         self,
@@ -354,10 +362,34 @@ class EventStore:
             sql += " LIMIT ?"
             params.append(max(0, int(limit)))
         rows = self._conn.execute(sql, params).fetchall()
-        return [
-            StoredEvent(seq=int(seq), ts=float(ts), kind=str(kind), payload=json.loads(payload))
-            for seq, ts, kind, payload in rows
-        ]
+        return [self._stored_event(row) for row in rows]
+
+    def corrupt_rows(self, *, through_seq: int | None = None) -> tuple[CorruptEventRow, ...]:
+        """Return safe forensic markers for every malformed row in sequence order.
+
+        Parameters
+        ----------
+        through_seq : int or None, optional
+            Inclusive sequence ceiling. ``None`` scans the complete event log.
+
+        Returns
+        -------
+        tuple[CorruptEventRow, ...]
+            Markers contain reasons and a raw-payload digest, never raw payload
+            bytes. This scan is the operator seam used by explicit compaction.
+        """
+        sql = "SELECT seq, ts, kind, payload FROM events"
+        params: tuple[int, ...] = ()
+        if through_seq is not None:
+            sql += " WHERE seq <= ?"
+            params = (int(through_seq),)
+        sql += " ORDER BY seq"
+        corrupt: list[CorruptEventRow] = []
+        for row in self._conn.execute(sql, params):
+            marker = decode_event_row(row).corruption
+            if marker is not None:
+                corrupt.append(marker)
+        return tuple(corrupt)
 
     def count(self) -> int:
         """Return the number of events currently stored."""

@@ -15,6 +15,9 @@ Two planes, deliberately separate:
   rejections, federation denials, waiter takeovers and quarantines, the
   dead-letter ledger). Scrape-safe: reading it does no I/O. Counters reset
   with the process — Prometheus `rate()`/`increase()` expect exactly that.
+  The `synapse_journal_corrupt_rows` gauge is the exception that describes
+  startup recovery state: non-zero makes `/health` report `degraded` and the hub
+  refuses mutations until an explicit archived offline repair.
 - **The dashboard's store feeds and the cockpit** — **log analytics**:
   `/reliability.json`, `/events.json`, `/causality.json`, `/metrics.json`
   are derived from the durable event store, deterministic over a given
@@ -62,6 +65,10 @@ happened. The signals that matter operationally:
 
 - `synapse_claims_denied_total` outpacing `synapse_claims_granted_total`
   is contention — `synapse causality contention` names the fight.
+- `synapse_journal_corrupt_rows` must be zero on a writable hub. A positive
+  value means replay quarantined malformed durable rows: queries remain live,
+  mutations fail closed, and the operator must follow the archived
+  `synapse compact --drop-corrupt` recovery runbook in the CLI reference.
 - `synapse_dead_letters` climbing means someone writes to a name nobody
   holds — `synapse doctor` names the unread addressee, `syn inbox --as`
   drains it, and the gauge falls when the addressee connects. Its companion

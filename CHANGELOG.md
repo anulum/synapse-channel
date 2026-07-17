@@ -15,6 +15,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Recover startup around malformed SQLite event rows using non-secret typed
+  markers, degrade health/metrics, and fail closed on every mutation while the
+  replayed state is incomplete. `synapse compact --drop-corrupt` now provides an
+  explicit floor-bounded repair path and requires an owner-only archive report
+  that preserves the row digest and validation reasons before deletion; a failed
+  pre-delete archive write leaves the journal unchanged.
 - Roll back a failed event-store append and restore SQLite
   `synchronous=NORMAL` after a rejected durable write, so an INSERT or commit
   error cannot leave later hub traffic running at the `FULL` durability mode.

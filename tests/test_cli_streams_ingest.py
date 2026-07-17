@@ -106,3 +106,27 @@ def test_cmd_ingest_limit_caps_the_batch(
     assert cli_streams._cmd_ingest(_ingest_ns(db=str(db), limit=1)) == 0
     lines = capsys.readouterr().out.splitlines()
     assert len(lines) == 1
+
+
+def test_cmd_ingest_surfaces_safe_corrupt_marker_and_advances_cursor(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    cursor = tmp_path / "ingest.cursor"
+    store = EventStore(db)
+    seq = store.append("claim", {"task_id": "T1"})
+    secret = "do-not-print-raw-payload"
+    store._conn.execute("UPDATE events SET payload = ? WHERE seq = ?", (secret, seq))
+    store._conn.commit()
+    store.close()
+
+    assert cli_streams._cmd_ingest(_ingest_ns(db=str(db), cursor=str(cursor))) == 0
+    first_output = capsys.readouterr().out
+    marker = json.loads(first_output)
+    assert marker["seq"] == seq
+    assert marker["kind"] == "corrupt_event"
+    assert marker["payload"]["reasons"] == ["invalid_json"]
+    assert secret not in first_output
+
+    assert cli_streams._cmd_ingest(_ingest_ns(db=str(db), cursor=str(cursor))) == 0
+    assert capsys.readouterr().out == ""
