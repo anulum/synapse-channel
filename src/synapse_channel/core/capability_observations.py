@@ -172,6 +172,8 @@ def _is_positive_receipt(payload: Mapping[str, Any]) -> bool:
         and "known_failures=" not in lowered
         and "epistemic_status=degraded" not in lowered
         and "epistemic_status=unsupported" not in lowered
+        and "epistemic_status=unverified" not in lowered
+        and "epistemic_status=disputed" not in lowered
     )
 
 

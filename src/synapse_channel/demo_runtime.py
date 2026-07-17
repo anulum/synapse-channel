@@ -219,11 +219,19 @@ def _receipt_fields(receipt: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _validated_hub_receipt(raw: object) -> dict[str, Any]:
-    """Return one supported hub receipt or raise a bounded demo failure."""
+    """Return one hub-graded release receipt or raise a bounded demo failure.
+
+    A release frame carries the receipt's caller-supplied evidence fields, not its
+    signature, so the hub grades a fresh, evidence-bearing release as
+    ``"unverified"`` — honestly present-but-not-cryptographically-verified. It does
+    not claim ``"supported"`` (reserved for the signed verify-release path), which
+    is what stops a forged release frame from laundering fabricated evidence into a
+    trusted verdict.
+    """
     if not isinstance(raw, dict):
         raise RuntimeError("hub did not return a release receipt")
-    if raw.get("epistemic_status") != "supported":
-        raise RuntimeError("hub did not accept the verified receipt as supported evidence")
+    if raw.get("epistemic_status") != "unverified":
+        raise RuntimeError("hub did not grade the release receipt as unverified evidence")
     return raw
 
 

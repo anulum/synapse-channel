@@ -13,6 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- Grade a release receipt by verification rather than by the mere presence of
+  evidence. A hub-broadcast receipt built from a release frame's caller-supplied
+  evidence is now `unverified`, never `supported`, so a forged release can no
+  longer launder fabricated evidence — a fake digest, a "ci: green" line, an
+  invented approver — into a `supported` verdict the hub relays as trust.
+  `supported` is reserved for the signed verify-release path whose declared
+  checks actually ran, and the capability routing-trust filter now excludes
+  `unverified` and `disputed` receipts so a forgery is never read as positive
+  routing evidence.
+
 ### Fixed
 
 - Recover startup around malformed SQLite event rows using non-secret typed

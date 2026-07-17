@@ -21,7 +21,17 @@ DEFAULT_RELEASE_EVIDENCE_FRESHNESS_SECONDS = 3600.0
 """Default age limit for evidence to be treated as fresh in receipt metadata."""
 
 EpistemicStatus = str
-"""Advisory evidence-status label stored on a release receipt."""
+"""Advisory evidence-status label stored on a release receipt.
+
+One of ``"unverified"`` (evidence present and fresh but not cryptographically
+verified — the default for any hub-broadcast release receipt), ``"supported"``
+(commitment signature present and verified — applied only by the signing path),
+``"disputed"`` (a commitment signature was present but failed verification),
+``"stale"`` (evidence older than the freshness window), ``"needs_freshness"``
+(no freshness supplied), ``"degraded"`` (declared known failures), or
+``"unsupported"`` (no positive evidence at all). Presence of evidence alone never
+yields ``"supported"``; only a verified signature does.
+"""
 
 
 class _ReleaseReceiptRequired(TypedDict):
@@ -158,7 +168,21 @@ def _assess_release_evidence(
     approvals: list[str],
     freshness_seconds: object,
 ) -> tuple[EpistemicStatus, list[str]]:
-    """Return the advisory evidence status for a release receipt."""
+    """Return the advisory evidence-quality status for a release receipt.
+
+    This grades the *quality* of the supplied evidence (present, fresh, stale,
+    degraded by declared failures, or absent) — it makes **no** trust judgement.
+    Presence of evidence is not verification: the values are caller-supplied
+    strings the hub cannot check, so the strongest status this returns is
+    ``"unverified"``. ``"supported"`` is reserved for a receipt whose commitment
+    carries a cryptographic signature that actually verifies, and is applied only
+    by the signing path in
+    :func:`~synapse_channel.core.release_verification.build_verified_release_receipt`
+    (checked with
+    :func:`~synapse_channel.core.receipt_signing.check_receipt_merkle_signature`).
+    Grading presence as ``"supported"`` would let a forged release frame launder
+    fabricated evidence into a trusted verdict — see the release-receipt handler.
+    """
     reasons: list[str] = []
     has_positive_evidence = (
         bool(evidence)
@@ -187,8 +211,8 @@ def _assess_release_evidence(
     if age > DEFAULT_RELEASE_EVIDENCE_FRESHNESS_SECONDS:
         reasons.append("evidence age exceeds 3600 seconds")
         return "stale", reasons
-    reasons.append("fresh evidence present")
-    return "supported", reasons
+    reasons.append("fresh evidence present but unverified")
+    return "unverified", reasons
 
 
 def release_receipt_has_evidence(receipt: ReleaseReceipt) -> bool:

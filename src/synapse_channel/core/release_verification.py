@@ -325,6 +325,20 @@ def build_verified_release_receipt(
             verification["merkle_signature"] = dict(merkle_signature)
     verified = cast(VerifiedReleaseReceipt, dict(receipt))
     verified["verification"] = verification
+    # This path executed the declared verification commands and hashed the
+    # artifacts itself, so the evidence is machine-produced, not caller-asserted:
+    # a fresh receipt with no declared failures is genuinely supported. The
+    # hub-broadcast path (build_release_receipt from a release frame) never runs
+    # commands and stays "unverified" — that separation is what stops a forged
+    # release frame from laundering fabricated evidence into a "supported" verdict.
+    if verified["epistemic_status"] == "unverified":
+        verified["epistemic_status"] = "supported"
+        reasons = list(verified["epistemic_reasons"])
+        if reasons and reasons[-1] == "fresh evidence present but unverified":
+            reasons[-1] = "fresh evidence verified by executed release checks"
+        else:
+            reasons.append("verified by executed release checks")
+        verified["epistemic_reasons"] = reasons
     return verified
 
 
