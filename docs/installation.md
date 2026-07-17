@@ -27,6 +27,16 @@ pip install -e .
 
 This installs the `synapse` console command and the `synapse_channel` package.
 
+## Published-wheel integrity
+
+The release workflow installs the exact built wheel in a clean environment
+before publication. It compares the installed console-script metadata with
+`pyproject.toml`, requires every generated wrapper, loads every declared
+callable, and refuses any `synapse_channel` module that resolves outside the
+clean environment's site-packages tree. This covers all 13 commands, including
+the short `syn`, `syn-*`, `synapse`, and `synapse-channel` entry points; checking
+only `synapse --help` would not detect an omitted alias module.
+
 ## Optional extras
 
 | Extra | Adds |

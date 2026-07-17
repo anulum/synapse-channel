@@ -27,6 +27,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Block publication unless the exact built wheel is installed in a clean
+  environment and every declared console-script wrapper loads its callable from
+  that environment's site-packages tree. The gate also refuses missing, extra,
+  duplicated, or target-drifted entry-point metadata.
 - Preserve structured JSON payloads and auxiliary protocol fields in version-2
   relay-log rows instead of stringifying payloads and dropping grant metadata.
   Existing version-1 rows remain readable, and the relay benchmark now compares
