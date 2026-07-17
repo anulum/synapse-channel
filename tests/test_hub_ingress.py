@@ -291,3 +291,53 @@ def test_remote_host_reads_a_bare_address() -> None:
 def test_remote_host_falls_back_to_unknown() -> None:
     assert HubIngress.remote_host(_Socket(None)) == "unknown"
     assert HubIngress.remote_host(object()) == "unknown"
+
+
+# -- mistyped_text_field (static) --------------------------------------------
+
+
+def test_mistyped_text_field_passes_a_well_formed_envelope() -> None:
+    data: dict[str, Any] = {
+        "sender": "agent-a",
+        "target": "all",
+        "type": "chat",
+        "channel": "ops",
+        "payload": "hello",
+    }
+    assert HubIngress.mistyped_text_field(data) is None
+
+
+def test_mistyped_text_field_passes_when_routing_fields_are_absent() -> None:
+    # Absent fields fall back to the ingress defaults, so an empty envelope is fine.
+    assert HubIngress.mistyped_text_field({}) is None
+
+
+def test_mistyped_text_field_treats_null_as_absent() -> None:
+    # JSON null decodes to None; it is absence, not a mistyped value.
+    assert HubIngress.mistyped_text_field({"sender": None, "type": None}) is None
+
+
+def test_mistyped_text_field_ignores_a_structured_payload() -> None:
+    # payload is deliberately not policed: an A2A task frame carries it as an object.
+    data: dict[str, Any] = {"sender": "agent-a", "payload": {"task": {"id": 1}}}
+    assert HubIngress.mistyped_text_field(data) is None
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("sender", ["spoof", "victim"]),
+        ("sender", True),
+        ("target", {"nested": "route"}),
+        ("type", 42),
+        ("channel", ["a"]),
+    ],
+)
+def test_mistyped_text_field_names_a_non_string_routing_field(field: str, value: Any) -> None:
+    assert HubIngress.mistyped_text_field({field: value}) == field
+
+
+def test_mistyped_text_field_reports_the_first_mistyped_field_in_order() -> None:
+    # sender is checked before target, so a frame mistyped in both names sender.
+    data: dict[str, Any] = {"sender": [1], "target": [2]}
+    assert HubIngress.mistyped_text_field(data) == "sender"

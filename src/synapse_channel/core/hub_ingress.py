@@ -36,6 +36,17 @@ from synapse_channel.core.protocol import MessageType
 
 logger = logging.getLogger("synapse.hub")
 
+_TEXT_ENVELOPE_FIELDS: tuple[str, ...] = ("sender", "target", "type", "channel")
+"""Envelope fields that name or route a frame and must be text when present.
+
+Each is consumed at ingress through ``str(data.get(field) or default)``. A bare
+``str()`` coercion turns a list, dict, bool, or number into a plausible identity or
+route — ``["a", "b"]`` becomes ``"['a', 'b']"``, ``True`` becomes ``"True"`` — so a
+client could smuggle a type-confused sender or target past name binding. ``payload``
+is deliberately excluded: a structured JSON payload is legitimate on the wire (an A2A
+task frame carries ``payload`` as an object), so it keeps its documented coercion.
+"""
+
 
 class HubIngress:
     """Guard an inbound socket before its frame is routed.
@@ -209,3 +220,20 @@ class HubIngress:
         always has a stable key.
         """
         return HubClientRegistry.remote_host(websocket)
+
+    @staticmethod
+    def mistyped_text_field(data: dict[str, Any]) -> str | None:
+        """Return the first routing field present with a non-string value, or ``None``.
+
+        Checks the identity and routing fields in :data:`_TEXT_ENVELOPE_FIELDS`. A field
+        that is absent or JSON ``null`` is fine — the ingress default applies. A field
+        present as any non-string (a list, dict, bool, or number) is a type-confused
+        envelope and names itself here, so the caller refuses the frame instead of
+        coercing it to a plausible string identity or route. ``bool`` is rejected too:
+        it is an ``int`` subclass, never a ``str``, so ``sender: true`` is caught.
+        """
+        for field in _TEXT_ENVELOPE_FIELDS:
+            value = data.get(field)
+            if value is not None and not isinstance(value, str):
+                return field
+        return None

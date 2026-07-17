@@ -1092,6 +1092,22 @@ class SynapseHub:
             )
             return
 
+        # A routing/identity field present but not a string (``sender: [..]``, ``type: true``)
+        # would otherwise be ``str()``-coerced into a plausible identity or route below. Refuse
+        # it *after* the per-host charge above — so a flood of malformed frames is still
+        # rate-limited, not merely cheaply rejected — and before coercion, so a type-confused
+        # envelope never binds a name or addresses a target it does not spell out.
+        mistyped = HubIngress.mistyped_text_field(data)
+        if mistyped is not None:
+            await self._send_json(
+                websocket,
+                self._system(
+                    f"Malformed frame: {mistyped!r} must be a string.",
+                    msg_type=MessageType.ERROR,
+                ),
+            )
+            return
+
         sender = str(data.get("sender") or "").strip() or f"anon-{id(websocket)}"
         target = str(data.get("target") or "all")
         msg_type = str(data.get("type") or MessageType.CHAT).strip().lower()

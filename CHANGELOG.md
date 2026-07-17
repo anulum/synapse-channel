@@ -30,6 +30,13 @@ All notable changes to this project are documented here.
   hostile `ttl_seconds=1e15` can no longer pin a task for longer than the
   process will ever run. Non-finite requests continue to fall back to the
   default TTL.
+- Refuse an inbound frame whose routing or identity field (`sender`, `target`,
+  `type`, `channel`) is present but not a string, instead of `str()`-coercing
+  it. A list, object, bool, or number would otherwise become a plausible
+  identity or route — `sender: ["a", "b"]` coerced to `"['a', 'b']"` — letting a
+  client bind a type-confused name or address a target it never spelled out. A
+  structured `payload` is still accepted, since an A2A task frame legitimately
+  carries one.
 
 ### Fixed
 

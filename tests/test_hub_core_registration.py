@@ -73,6 +73,43 @@ async def test_non_object_json_frame_is_refused_not_crashed_end_to_end() -> None
     assert "expected a JSON object" in second["payload"]
 
 
+async def test_mistyped_routing_field_is_refused_not_coerced_end_to_end() -> None:
+    # A routing/identity field present as a non-string would be str()-coerced into a
+    # plausible identity or route (sender ["spoof","victim"] -> "['spoof', 'victim']").
+    # It must get a clean protocol error that names the field, and — as with the
+    # non-object guard beside it — the connection must survive to serve the next frame.
+    async with running_hub() as (_, uri):
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            await websocket.send(json.dumps({"sender": ["spoof", "victim"], "type": "chat"}))
+            error = await read_until_type(websocket, "error")
+            # The socket is still alive — a mistyped type on the next frame is refused
+            # the same way rather than the connection being gone.
+            await websocket.send(json.dumps({"sender": "agent-a", "type": True}))
+            second = await read_until_type(websocket, "error")
+    assert "'sender' must be a string" in error["payload"]
+    assert "'type' must be a string" in second["payload"]
+
+
+async def test_a_mistyped_frame_is_still_charged_to_the_host_rate_limiter_end_to_end() -> None:
+    # Regression (SOL audit of F9): the mistyped-routing-field guard runs AFTER the per-host
+    # charge, so a flood of malformed object frames is still metered rather than cheaply
+    # bypassing the limiter while still forcing hub work. With burst=1, the first (mistyped)
+    # frame consumes the single host token and is refused for its bad field; the second
+    # same-host frame is then refused by the host limiter before any further work — proving
+    # the malformed frame was charged, not waved through.
+    hub = SynapseHub(host_rate_limiter=RateLimiter(rate_per_second=0.01, burst=1.0))
+    async with running_hub(hub) as (_, uri):
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            await websocket.send(json.dumps({"sender": ["flood"], "type": "chat"}))
+            first = await read_until_type(websocket, "error")
+            await websocket.send(json.dumps({"sender": "A", "type": "chat", "payload": "x"}))
+            second = await read_until_type(websocket, "error")
+    assert "'sender' must be a string" in first["payload"]
+    assert "Host rate limit exceeded" in second["payload"]
+
+
 async def test_untrusted_log_fields_are_rendered_without_control_characters(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
