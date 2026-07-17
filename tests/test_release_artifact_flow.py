@@ -27,7 +27,7 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
 
     assert (release + publish).count("python -m build") == 1
     assert "python -m build --outdir release-artifact" in build
-    assert "sha256sum *.whl *.tar.gz *-sbom.cdx.json > SHA256SUMS" in build
+    assert "sha256sum -- *.whl *.tar.gz *-sbom.cdx.json > SHA256SUMS" in build
     assert "release-artifact/synapse-channel-${GITHUB_REF_NAME}-sbom.cdx.json" in build
     assert "name: release-dist" in build
     assert "actions/upload-artifact@" in build
@@ -35,14 +35,20 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     assert 'tags: ["v*"]' in publish
     assert "workflow_dispatch:" not in publish
 
-    # The integrity gate installs the exact artifacts in clean environments and
-    # proves wheel/sdist parity before anything is signed or published; it never
-    # rebuilds, so the one verified build stays authoritative.
+    # The integrity gate installs the exact artifacts in clean environments,
+    # loads every wheel console script from installed site-packages, and proves
+    # wheel/sdist parity before signing or publication. It never rebuilds, so
+    # the one verified build stays authoritative.
     assert "needs: build" in integrity
     assert "name: release-dist" in integrity
     assert "actions/download-artifact@" in integrity
     assert "import synapse_channel" in integrity
     assert "synapse --help" in integrity
+    assert "tools/check_installed_console_scripts.py" in integrity
+    assert "--project-metadata pyproject.toml" in integrity
+    assert integrity.index("pip install --require-hashes --no-deps") < integrity.index(
+        "tools/check_installed_console_scripts.py"
+    )
     assert "tools/check_wheel_sdist_parity.py" in integrity
     assert "python -m build" not in integrity
     assert "id-token: write" not in integrity
