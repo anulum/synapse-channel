@@ -43,7 +43,7 @@ jobs:
             --output-file "release-artifact/synapse-channel-${GITHUB_REF_NAME}-sbom.cdx.json"
       - name: Record the exact release payload and digests
         working-directory: release-artifact
-        run: sha256sum *.whl *.tar.gz *-sbom.cdx.json > SHA256SUMS
+        run: sha256sum -- *.whl *.tar.gz *-sbom.cdx.json > SHA256SUMS
       - name: Preserve the canonical release payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -68,7 +68,7 @@ jobs:
         with:
           name: release-dist
           path: release-artifact/
-      - name: Install the built wheel in a clean environment and smoke it
+      - name: Install the built wheel and load every console entry point
         run: |
           python -m venv .wheel-venv
           .wheel-venv/bin/python -m pip install --require-hashes -r .github/requirements/requirements-publish-smoke.txt
@@ -76,6 +76,8 @@ jobs:
           printf 'synapse-channel @ file://%s#sha256=%s\n' "$PWD/$wheel_path" "$(sha256sum "$wheel_path" | cut -d' ' -f1)" > .wheel-req.txt
           .wheel-venv/bin/python -m pip install --require-hashes --no-deps -r .wheel-req.txt
           .wheel-venv/bin/python -c "import synapse_channel; print(synapse_channel.__version__)"
+          .wheel-venv/bin/python tools/check_installed_console_scripts.py \
+            --project-metadata pyproject.toml
           .wheel-venv/bin/synapse --help >/dev/null
       - name: Install the source distribution in a clean environment and smoke it
         run: |
