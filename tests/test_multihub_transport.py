@@ -20,7 +20,12 @@ from typing import Any, Protocol, cast
 
 import pytest
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import (
+    ConnectionClosed,
+    InvalidHandshake,
+    InvalidMessage,
+    WebSocketException,
+)
 
 from hub_e2e_helpers import _await_listening, _free_port, read_until_type, running_hub, send_json
 from synapse_channel.core.clock_skew import ClockSkew
@@ -117,6 +122,26 @@ def _connector(socket: Any, *, opened: list[str] | None = None) -> Any:
         if opened is not None:
             opened.append(_uri)
         yield socket
+
+    def factory(uri: str) -> AbstractAsyncContextManager[Any]:
+        return _open(uri)
+
+    return factory
+
+
+def _failing_connector(exc: BaseException) -> Any:
+    """Return a connector whose connection attempt raises ``exc`` on entry.
+
+    Models a peer that fails the opening handshake — the ``async with`` never yields a
+    socket, so the exception surfaces from ``__aenter__`` exactly as the ``websockets``
+    client raises :class:`~websockets.exceptions.InvalidMessage` for a malformed HTTP
+    handshake response.
+    """
+
+    @contextlib.asynccontextmanager
+    async def _open(_uri: str) -> AsyncIterator[Any]:
+        raise exc
+        yield None  # pragma: no cover - unreachable; marks this an async generator
 
     def factory(uri: str) -> AbstractAsyncContextManager[Any]:
         return _open(uri)
@@ -327,6 +352,31 @@ async def test_fetch_raises_on_a_dropped_connection() -> None:
     fetch = network_fetcher("ws://peer/", local_id="f", connector=_connector(socket))
     with pytest.raises(MultiHubFetchError, match="failed"):
         await fetch(0)
+
+
+@pytest.mark.parametrize(
+    "handshake_error",
+    [
+        InvalidMessage("did not receive a valid HTTP response"),
+        InvalidHandshake("malformed opening handshake"),
+    ],
+)
+async def test_fetch_fails_closed_on_a_malformed_peer_handshake(
+    handshake_error: WebSocketException,
+) -> None:
+    """A peer that fails the opening handshake fails the poll closed as MultiHubFetchError.
+
+    ``InvalidMessage`` (and its ``InvalidHandshake`` base) is raised by the websockets client
+    from ``__aenter__``, before any frame is exchanged. Catching the websockets base means it
+    surfaces as :class:`MultiHubFetchError` — the one type a standing watch handles per peer —
+    instead of escaping to kill the watch task and silently freeze partition detection.
+    """
+    fetch = network_fetcher(
+        "ws://peer/", local_id="f", connector=_failing_connector(handshake_error)
+    )
+    with pytest.raises(MultiHubFetchError, match="failed") as excinfo:
+        await fetch(0)
+    assert excinfo.value.__cause__ is handshake_error
 
 
 async def test_fetch_times_out_when_no_snapshot_arrives() -> None:

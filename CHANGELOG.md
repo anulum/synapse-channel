@@ -57,6 +57,14 @@ All notable changes to this project are documented here.
 - Roll back a failed event-store append and restore SQLite
   `synchronous=NORMAL` after a rejected durable write, so an INSERT or commit
   error cannot leave later hub traffic running at the `FULL` durability mode.
+- Catch a peer's malformed opening handshake in the multi-hub fetch so a failed
+  federation poll surfaces as `MultiHubFetchError` and the standing
+  partition-detection watch keeps polling every peer instead of the watch task
+  dying silently and freezing its observations. The watch now also logs at
+  `WARNING` if its loop exits on any unexpected error, and importing the agent
+  client no longer calls `logging.basicConfig`, which had clamped the whole
+  process's root logger to `ERROR` and swallowed those federation watch
+  warnings.
 
 ## [0.99.10] - 2026-07-17
 

@@ -233,6 +233,16 @@ class MultiHubWatch:
     async def run(self, *, sleeper: Sleeper = asyncio.sleep, rounds: int | None = None) -> None:
         """Poll on the bounded interval until cancelled (or for ``rounds`` rounds in tests).
 
+        Each round's per-peer faults are already absorbed by :meth:`poll_once` — an
+        unreachable or malformed peer surfaces as :class:`MultiHubFetchError`, is logged, and
+        is left to the next round — so under normal operation the loop runs indefinitely and
+        stops only on cancellation, the standing task's ordinary shutdown. Any *other*
+        exception escaping a round is unexpected (a programming fault, not a peer being
+        unreachable); it is logged at ``WARNING`` before it propagates, so an operator sees the
+        watch stop instead of the task dying silently and partition detection freezing on the
+        last observation with no signal. Cancellation is not an error and passes through
+        without such a log.
+
         Parameters
         ----------
         sleeper : Sleeper, optional
@@ -242,9 +252,16 @@ class MultiHubWatch:
             surrounding task is cancelled.
         """
         completed = 0
-        while True:
-            await self.poll_once()
-            completed += 1
-            if rounds is not None and completed >= rounds:
-                return
-            await sleeper(self.interval)
+        try:
+            while True:
+                await self.poll_once()
+                completed += 1
+                if rounds is not None and completed >= rounds:
+                    return
+                await sleeper(self.interval)
+        except Exception as exc:
+            # ``asyncio.CancelledError`` is a ``BaseException``, not ``Exception``, so ordinary
+            # shutdown never reaches here; only a genuine fault does. Log, then re-raise so the
+            # task still carries the failure for the driver's shutdown ``await``.
+            logger.warning("multihub watch stopped on an unexpected error: %s", exc)
+            raise

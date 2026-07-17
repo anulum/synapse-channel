@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import Sequence
 
 import pytest
@@ -188,6 +190,43 @@ class TestWatchRun:
             raise AssertionError(f"unexpected sleep of {seconds}s")
 
         await watch.run(sleeper=sleeper, rounds=1)
+
+    async def test_run_surfaces_an_unexpected_watch_death_at_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An exception poll_once does not absorb (not a MultiHubFetchError) stops the loop
+        but is logged at WARNING first, so the watch never dies silently."""
+
+        async def exploding_fetch(after_seq: int) -> Sequence[StoredEvent]:
+            del after_seq
+            raise RuntimeError("watch loop bug")
+
+        def factory(uri: str, *, local_id: str, token: str | None = None) -> EventFetcher:
+            del uri, local_id, token
+            return exploding_fetch
+
+        watch = MultiHubWatch({"hub-b": "ws://b"}, local_id="w", fetcher_factory=factory)
+        with caplog.at_level(logging.WARNING, logger="synapse_channel.core.multihub_watch"):
+            with pytest.raises(RuntimeError, match="watch loop bug"):
+                await watch.run(rounds=1)
+        assert "multihub watch stopped on an unexpected error" in caplog.text
+        assert "watch loop bug" in caplog.text
+
+    async def test_cancellation_stops_the_loop_without_an_error_log(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Cancellation is the standing task's ordinary shutdown: it propagates untouched and
+        is never logged as a watch death."""
+        watch = _watch({"hub-b": _ScriptedPeer([[]])})
+
+        async def cancelling_sleeper(seconds: float) -> None:
+            del seconds
+            raise asyncio.CancelledError
+
+        with caplog.at_level(logging.WARNING, logger="synapse_channel.core.multihub_watch"):
+            with pytest.raises(asyncio.CancelledError):
+                await watch.run(sleeper=cancelling_sleeper, rounds=None)
+        assert "multihub watch stopped" not in caplog.text
 
 
 class TestParseWatchPins:

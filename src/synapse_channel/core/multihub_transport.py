@@ -19,8 +19,10 @@ the peer's serving handler (:mod:`synapse_channel.core.handlers.multihub`) repli
 framed by the shared codec (:mod:`synapse_channel.core.multihub_wire`).
 
 A fetch opens a fresh connection and closes it when done, so a fetcher holds no live state
-between polls. Every failure mode — a refused or dropped connection, a hub error frame, a
-malformed or absent snapshot, or a timeout — is raised as :class:`MultiHubFetchError`. The
+between polls. Every failure mode — a refused or dropped connection, a malformed peer
+handshake, a hub error frame, a malformed or absent snapshot, or a timeout — is raised as
+:class:`MultiHubFetchError`, so a standing watch (:mod:`synapse_channel.core.multihub_watch`)
+that drives the fetcher catches one error type per peer and never dies on a peer's fault. The
 follower advances a peer's cursor only from the union it builds *after* the fetch returns, so a
 raised fetch leaves the cursor unadvanced: the same fail-closed posture the read-side already
 relies on, now extended across the network. The transport carries an optional token on its
@@ -42,7 +44,7 @@ from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol, cast
 
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import WebSocketException
 
 from synapse_channel.core.clock_skew import ClockSkew, measure_clock_skew
 from synapse_channel.core.errors import SynapseError
@@ -308,11 +310,16 @@ class _NetworkFetcher:
             raise
         except (
             OSError,
-            ConnectionClosed,
+            WebSocketException,
             asyncio.TimeoutError,
             MultiHubWireError,
             json.JSONDecodeError,
         ) as exc:
+            # ``WebSocketException`` is the websockets base for both a dropped stream
+            # (``ConnectionClosed``) and a failed opening handshake (``InvalidMessage`` /
+            # ``InvalidHandshake`` / ``InvalidStatus``). Catching the base means a peer that
+            # answers the connect with a malformed HTTP handshake fails this poll closed as a
+            # ``MultiHubFetchError`` instead of escaping to kill the standing watch task.
             msg = f"multi-hub fetch from {self._uri!r} failed: {exc}"
             raise MultiHubFetchError(msg) from exc
         return snapshot.events

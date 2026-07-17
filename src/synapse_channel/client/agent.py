@@ -18,7 +18,6 @@ the CLI, and any embedding application use to appear on the channel.
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -42,8 +41,6 @@ from synapse_channel.core.identity_keys import load_signing_key
 from synapse_channel.core.message_auth import MessageAuthKey
 from synapse_channel.core.wake_capability import WAKE_DIRECT, normalize_wake_capability
 from synapse_channel.machine_identity import machine_identity_agent_kwargs
-
-logging.basicConfig(level=logging.ERROR)
 
 __all__ = [
     "DEFAULT_HUB_URI",
