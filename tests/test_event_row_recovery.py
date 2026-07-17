@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -88,7 +89,7 @@ def test_recursive_json_failure_is_quarantined(monkeypatch: pytest.MonkeyPatch) 
     def _recurse(_text: str) -> Any:
         raise RecursionError
 
-    monkeypatch.setattr(recovery.json, "loads", _recurse)
+    monkeypatch.setattr(json, "loads", _recurse)
     decoded = decode_event_row((8, 1.0, "chat", "{}"))
     assert decoded.corruption is not None
     assert decoded.corruption.reasons == (CorruptEventReason.INVALID_JSON,)
@@ -141,7 +142,7 @@ def test_json_value_error_is_quarantined(monkeypatch: pytest.MonkeyPatch) -> Non
     def _too_large(_text: str) -> Any:
         raise ValueError("integer string conversion limit")
 
-    monkeypatch.setattr(recovery.json, "loads", _too_large)
+    monkeypatch.setattr(json, "loads", _too_large)
     decoded = decode_event_row((1, 1.0, "chat", "{}"))
     assert decoded.corruption is not None
     assert decoded.corruption.reasons == (CorruptEventReason.INVALID_JSON,)
