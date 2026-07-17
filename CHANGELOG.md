@@ -24,6 +24,12 @@ All notable changes to this project are documented here.
   checks actually ran, and the capability routing-trust filter now excludes
   `unverified` and `disputed` receipts so a forgery is never read as positive
   routing evidence.
+- Bound every task-lease TTL with a `MAXIMUM_TTL_SECONDS` ceiling (30 days) as
+  well as the existing minimum floor. A requested or default `ttl_seconds` is
+  clamped into `[MINIMUM_TTL_SECONDS, MAXIMUM_TTL_SECONDS]`, so a runaway or
+  hostile `ttl_seconds=1e15` can no longer pin a task for longer than the
+  process will ever run. Non-finite requests continue to fall back to the
+  default TTL.
 
 ### Fixed
 

@@ -47,6 +47,19 @@ from synapse_channel.core.state_scopes import find_scope_conflict
 MINIMUM_TTL_SECONDS = 30.0
 """Floor applied to every requested lease/default TTL, in seconds."""
 
+MAXIMUM_TTL_SECONDS = 2_592_000.0
+"""Ceiling applied to every requested lease/default TTL, in seconds (30 days).
+
+A lease is a liveness hint, not a durable reservation. Without a ceiling a caller
+could request ``ttl_seconds=1e15`` and pin a task for longer than the process (or
+the universe) will ever run, so the registry clamps every requested and default
+TTL into ``[MINIMUM_TTL_SECONDS, MAXIMUM_TTL_SECONDS]``. Thirty days sits far
+above any legitimate coordination lease (the default is one hour) while bounding
+a runaway or hostile request. ``inf``/``nan`` are rejected earlier by
+:func:`~synapse_channel.core.numeric_coercion.safe_float` (``finite=True``), so
+the clamp only ever sees a finite value and never fails open on a non-finite one.
+"""
+
 MAX_CLAIMS_PER_AGENT = 128
 """Most live claims one agent may hold, so a runaway agent cannot exhaust state."""
 
@@ -56,11 +69,24 @@ __all__ = [
     "LEASE_HEAP_COMPACT_FLOOR",
     "MAX_CLAIMS_PER_AGENT",
     "MAX_OFFERS_PER_AGENT",
+    "MAXIMUM_TTL_SECONDS",
     "MINIMUM_TTL_SECONDS",
     "ResourceOffer",
     "SynapseState",
     "TaskClaim",
 ]
+
+
+def _clamp_ttl(seconds: float) -> float:
+    """Clamp a finite TTL into ``[MINIMUM_TTL_SECONDS, MAXIMUM_TTL_SECONDS]``.
+
+    The caller must pass an already-finite value (every call site coerces through
+    :func:`~synapse_channel.core.numeric_coercion.safe_float` with ``finite=True``
+    first, so ``inf``/``nan`` become the finite default before reaching here). On a
+    finite input the ``min``/``max`` window is total and never propagates a
+    non-finite value, so the ceiling cannot be silently bypassed.
+    """
+    return min(max(seconds, MINIMUM_TTL_SECONDS), MAXIMUM_TTL_SECONDS)
 
 
 class SynapseState:
@@ -75,8 +101,8 @@ class SynapseState:
     ----------
     default_ttl_seconds : float, optional
         Lease duration applied to a claim when the caller does not request an
-        explicit TTL. Clamped up to :data:`MINIMUM_TTL_SECONDS`. Defaults to
-        ``3600.0``.
+        explicit TTL. Clamped into
+        ``[MINIMUM_TTL_SECONDS, MAXIMUM_TTL_SECONDS]``. Defaults to ``3600.0``.
     max_claims_per_agent : int, optional
         Most live claims one agent may hold. Clamped up to ``1``. Defaults to
         :data:`MAX_CLAIMS_PER_AGENT`.
@@ -97,10 +123,7 @@ class SynapseState:
         max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,
         max_paths_per_claim: int = MAX_DECLARED_PATHS,
     ) -> None:
-        self.default_ttl_seconds = max(
-            safe_float(default_ttl_seconds, default=3600.0),
-            MINIMUM_TTL_SECONDS,
-        )
+        self.default_ttl_seconds = _clamp_ttl(safe_float(default_ttl_seconds, default=3600.0))
         self.max_claims_per_agent = safe_int(
             max_claims_per_agent, default=MAX_CLAIMS_PER_AGENT, min_value=1
         )
@@ -202,8 +225,10 @@ class SynapseState:
         note : str, optional
             Human-readable context stored with the claim.
         ttl_seconds : float or None, optional
-            Requested lease duration, clamped up to
-            :data:`MINIMUM_TTL_SECONDS`. ``None`` uses ``default_ttl_seconds``.
+            Requested lease duration, clamped into
+            ``[MINIMUM_TTL_SECONDS, MAXIMUM_TTL_SECONDS]``. A non-finite request
+            falls back to ``default_ttl_seconds``. ``None`` uses
+            ``default_ttl_seconds``.
         now : float or None, optional
             Override for the current wall-clock time, in seconds.
         worktree : str, optional
@@ -233,9 +258,8 @@ class SynapseState:
         ttl = (
             self.default_ttl_seconds
             if ttl_seconds is None
-            else max(
-                safe_float(ttl_seconds, default=self.default_ttl_seconds, allow_bool=False),
-                MINIMUM_TTL_SECONDS,
+            else _clamp_ttl(
+                safe_float(ttl_seconds, default=self.default_ttl_seconds, allow_bool=False)
             )
         )
         norm_paths = normalize_paths(paths, self.max_paths_per_claim)

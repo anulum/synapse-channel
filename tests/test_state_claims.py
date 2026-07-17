@@ -8,7 +8,10 @@
 
 from __future__ import annotations
 
+import math
+
 from synapse_channel.core.state import (
+    MAXIMUM_TTL_SECONDS,
     MINIMUM_TTL_SECONDS,
     SynapseState,
 )
@@ -66,6 +69,46 @@ def test_explicit_ttl_above_minimum_is_honoured() -> None:
     state = SynapseState(default_ttl_seconds=300)
     state.claim("A", "TASK-6", ttl_seconds=120.0, now=1000.0)
     assert state.claims["TASK-6"].lease_expires_at == 1000.0 + 120.0
+
+
+def test_explicit_ttl_is_clamped_to_maximum() -> None:
+    # A hostile or runaway ``ttl_seconds=1e15`` must not pin a task past the
+    # ceiling: the lease is bounded to MAXIMUM_TTL_SECONDS, not the raw request.
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "TASK-7", ttl_seconds=1e15, now=1000.0)
+    assert state.claims["TASK-7"].lease_expires_at == 1000.0 + MAXIMUM_TTL_SECONDS
+
+
+def test_explicit_ttl_at_maximum_is_honoured() -> None:
+    state = SynapseState(default_ttl_seconds=300)
+    state.claim("A", "TASK-8", ttl_seconds=MAXIMUM_TTL_SECONDS, now=1000.0)
+    assert state.claims["TASK-8"].lease_expires_at == 1000.0 + MAXIMUM_TTL_SECONDS
+
+
+def test_default_ttl_is_clamped_to_maximum() -> None:
+    # The ceiling also applies to the constructor default, so an over-large
+    # ``default_ttl_seconds`` cannot become an effectively unbounded lease.
+    state = SynapseState(default_ttl_seconds=1e15)
+    assert state.default_ttl_seconds == MAXIMUM_TTL_SECONDS
+    state.claim("A", "TASK-9", now=1000.0)
+    assert state.claims["TASK-9"].lease_expires_at == 1000.0 + MAXIMUM_TTL_SECONDS
+
+
+def test_default_ttl_is_clamped_to_minimum() -> None:
+    state = SynapseState(default_ttl_seconds=1.0)
+    assert state.default_ttl_seconds == MINIMUM_TTL_SECONDS
+
+
+def test_non_finite_explicit_ttl_falls_back_to_default() -> None:
+    # inf/nan are rejected to the default by safe_float(finite=True) before the
+    # clamp window, so the ceiling never has to reason about a non-finite value
+    # (guards against the clamp-fails-open-on-NaN class).
+    state = SynapseState(default_ttl_seconds=300.0)
+    for index, bad in enumerate((math.inf, -math.inf, math.nan)):
+        task = f"TASK-NF-{index}"
+        ok, _ = state.claim("A", task, ttl_seconds=bad, now=1000.0)
+        assert ok is True
+        assert state.claims[task].lease_expires_at == 1000.0 + 300.0
 
 
 # --- update_task -------------------------------------------------------------
