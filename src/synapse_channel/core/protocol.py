@@ -234,7 +234,8 @@ def loads_bounded(raw: str | bytes, max_depth: int = MAX_JSON_DEPTH) -> Any:
     Raises
     ------
     json.JSONDecodeError
-        When the frame is malformed or nested deeper than ``max_depth``.
+        When the frame is malformed, is not decodable text (a non-UTF-8 binary
+        frame), or is nested deeper than ``max_depth``.
     """
     text = raw if isinstance(raw, str) else raw.decode("utf-8", "replace")
     if _exceeds_json_depth(text, max_depth):
@@ -251,7 +252,17 @@ def loads_bounded(raw: str | bytes, max_depth: int = MAX_JSON_DEPTH) -> Any:
         msg = f"non-finite JSON constant {constant!r} is not permitted"
         raise json.JSONDecodeError(msg, text, 0)
 
-    return json.loads(raw, parse_constant=_reject_non_finite)
+    try:
+        return json.loads(raw, parse_constant=_reject_non_finite)
+    except UnicodeDecodeError as exc:
+        # json.loads decodes bytes itself (RFC 8259 auto-detection of UTF-8/16/32),
+        # so a non-decodable binary frame raises UnicodeDecodeError, not
+        # JSONDecodeError. A frame that is not valid text is not valid JSON, so
+        # honour this function's documented contract that only JSONDecodeError
+        # escapes: every caller guards with ``except json.JSONDecodeError``, and
+        # without this an unhandled UnicodeDecodeError would kill a hub connection
+        # with a 1011 instead of returning a clean "Malformed JSON." error frame.
+        raise json.JSONDecodeError("frame is not valid UTF-8 text", text, 0) from exc
 
 
 class MessageType:

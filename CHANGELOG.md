@@ -37,6 +37,12 @@ All notable changes to this project are documented here.
   environment and every declared console-script wrapper loads its callable from
   that environment's site-packages tree. The gate also refuses missing, extra,
   duplicated, or target-drifted entry-point metadata.
+- Report a non-UTF-8 binary frame as a clean "Malformed JSON." error instead of
+  killing the hub connection with an unhandled `1011`. `loads_bounded` decodes
+  bytes through `json.loads`, which raises `UnicodeDecodeError` (not
+  `JSONDecodeError`) on an undecodable frame; it now honours its documented
+  contract and re-raises that as `JSONDecodeError`, so every caller's decode
+  guard — the hub included — covers a binary frame and the socket stays open.
 - Preserve structured JSON payloads and auxiliary protocol fields in version-2
   relay-log rows instead of stringifying payloads and dropping grant metadata.
   Existing version-1 rows remain readable, and the relay benchmark now compares

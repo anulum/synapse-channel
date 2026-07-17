@@ -357,6 +357,27 @@ def test_loads_bounded_reraises_malformed_json() -> None:
 @pytest.mark.parametrize(
     "frame",
     [
+        b"\xff\xfe\xfa",  # a UTF-16 BOM followed by an odd trailing byte
+        b"\x80\x81",  # continuation bytes with no lead byte
+        b"\xc0\xaf",  # overlong / invalid two-byte sequence
+    ],
+)
+def test_loads_bounded_reraises_a_binary_frame_as_json_error(frame: bytes) -> None:
+    # json.loads decodes bytes itself, so a non-decodable binary frame raises
+    # UnicodeDecodeError, not JSONDecodeError. loads_bounded promises only
+    # JSONDecodeError escapes, so it must re-raise: otherwise the UnicodeDecodeError
+    # escapes every caller's ``except json.JSONDecodeError`` and (in the hub) kills
+    # the connection with an unhandled 1011 instead of a clean error frame.
+    # ``pytest.raises(json.JSONDecodeError)`` is itself the contract check: a leaked
+    # UnicodeDecodeError is not a subclass of JSONDecodeError, so it would surface as
+    # an uncaught error and fail this test rather than pass it.
+    with pytest.raises(json.JSONDecodeError, match="not valid UTF-8"):
+        loads_bounded(frame)
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
         '{"x": NaN}',
         '{"x": Infinity}',
         '{"x": -Infinity}',

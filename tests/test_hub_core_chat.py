@@ -43,6 +43,32 @@ async def test_chat_is_broadcast_and_recorded_end_to_end() -> None:
             await close_agents(alpha, beta)
 
 
+async def test_a_binary_frame_gets_a_clean_error_and_keeps_the_connection() -> None:
+    # A non-UTF-8 binary frame must surface as a clean "Malformed JSON." error, not
+    # kill the socket with an unhandled 1011. loads_bounded re-raises the decoder's
+    # UnicodeDecodeError as a JSONDecodeError, which the hub's existing decode guard
+    # reports as an error while keeping the connection open for the next frame.
+    async with running_hub(SynapseHub(hub_id="syn-test")) as (_hub, uri):
+        async with connect(uri) as ws:
+            await read_until_type(ws, "welcome")
+            await ws.send(b"\xff\xfe\xfa")
+            error = await read_until_type(ws, "error")
+            assert "Malformed JSON" in error["payload"]
+            # The connection survived: a following valid frame is still served.
+            await ws.send(
+                json.dumps(
+                    {
+                        "sender": "A",
+                        "type": "state_request",
+                        "target": "System",
+                        "payload": "",
+                    }
+                )
+            )
+            snapshot = await read_until_type(ws, "state_snapshot")
+            assert snapshot["type"] == "state_snapshot"
+
+
 async def test_declared_role_is_bound_reaches_its_holder_and_shows_in_who() -> None:
     # A declares the coordinator role on its registration heartbeat; a directed chat to
     # the role must reach A (delivered, not dead-lettered) and /who must show the binding.
