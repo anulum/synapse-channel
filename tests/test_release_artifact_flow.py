@@ -114,6 +114,14 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     assert release.index("actions/download-artifact@") < release.index("sha256sum --check")
     assert release.index("sha256sum --check") < release.index("gh attestation verify")
     assert release.index("gh attestation verify") < release.index("action-gh-release@")
+    # The verified digests are also published in the release-notes body itself
+    # (a fenced "Artifact checksums (SHA-256)" section), appended AFTER the strict
+    # SHA256SUMS verification and BEFORE the GitHub Release is created, so a
+    # consumer can confirm own-provenance straight from the notes.
+    assert "## Artifact checksums (SHA-256)" in release
+    assert "cat release-artifact/SHA256SUMS" in release
+    assert release.index("sha256sum --check") < release.index("cat release-artifact/SHA256SUMS")
+    assert release.index("cat release-artifact/SHA256SUMS") < release.index("action-gh-release@")
     assert "python -m build" not in release
     assert "id-token: write" not in release
 

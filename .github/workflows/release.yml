@@ -86,7 +86,7 @@ jobs:
               --source-digest "$SOURCE_SHA" \
               --deny-self-hosted-runners
           done < release-artifact/SHA256SUMS
-      - name: Extract changelog for this tag
+      - name: Extract changelog and append artifact checksums for this tag
         env:
           SOURCE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
@@ -96,6 +96,16 @@ jobs:
             p && /^## \[/ {exit}
             p {print}
           ' CHANGELOG.md > RELEASE_NOTES.md
+          # Publish the verified wheel/sdist SHA-256 digests in the release body
+          # itself (not only the attached SHA256SUMS asset), so a consumer can
+          # confirm own-provenance straight from the notes. SHA256SUMS was already
+          # downloaded and `sha256sum --check --strict`-verified above.
+          {
+            printf '\n## Artifact checksums (SHA-256)\n\n'
+            printf '```\n'
+            cat release-artifact/SHA256SUMS
+            printf '```\n'
+          } >> RELEASE_NOTES.md
           echo "Release notes:" && cat RELEASE_NOTES.md
       - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:

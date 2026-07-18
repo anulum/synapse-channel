@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- The release workflow now publishes the verified wheel and sdist SHA-256
+  digests in the GitHub Release notes body itself (a fenced "Artifact checksums
+  (SHA-256)" section), not only as the attached `SHA256SUMS` asset, so a
+  consumer can confirm own-provenance straight from the release notes. The
+  digests are the same ones `sha256sum --check --strict`-verified before the
+  assets are attached.
+
 ### Fixed
 
 - Keep ambient agent-tmux wakes from replacing active user work with an
