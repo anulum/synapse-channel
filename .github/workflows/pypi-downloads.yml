@@ -4,7 +4,13 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — daily PyPI download snapshot recorded to the metrics branch
+# SYNAPSE CHANNEL — daily PyPI download snapshot (main seed + artifact; no metrics branch push)
+#
+# Canonical series seed: downloads/<package>.csv on the default branch.
+# Daily runs upsert into the workspace copy and upload a pinned artifact (retention 90 days).
+# Governed compact-land: a non-author lander must refresh the main seed from the latest
+# artifact (or re-run of this tool) at least every 90 days and before every release tag.
+# Do not delete origin/metrics until seed+workflow are green and the bundle archive exists.
 name: pypi-downloads
 
 on:
@@ -24,7 +30,7 @@ jobs:
   snapshot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Check out the default branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -32,32 +38,33 @@ jobs:
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - name: Snapshot downloads onto the metrics branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
+      - name: Snapshot downloads into the main CSV seed
+        id: snapshot
         run: |
           set -euo pipefail
           package="$(python tools/pypi_downloads.py --print-package)"
-          remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
-          # Keep the snapshots on a side branch so the default branch stays clean.
-          if git ls-remote --exit-code --heads "$remote" metrics >/dev/null 2>&1; then
-            git clone --depth 1 --branch metrics "$remote" metrics-branch
-          else
-            git clone --depth 1 "$remote" metrics-branch
-            git -C metrics-branch switch --orphan metrics
-            git -C metrics-branch rm -rf . >/dev/null 2>&1 || true
-          fi
+          csv_path="downloads/${package}.csv"
+          mkdir -p downloads
           python tools/pypi_downloads.py \
             --package "$package" \
-            --csv "metrics-branch/downloads/${package}.csv"
-          cd metrics-branch
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "downloads/${package}.csv"
-          if git diff --cached --quiet; then
-            echo "No download changes to record."
-            exit 0
+            --csv "$csv_path"
+          echo "package=${package}" >> "$GITHUB_OUTPUT"
+          echo "csv_path=${csv_path}" >> "$GITHUB_OUTPUT"
+          if git diff --quiet -- "$csv_path"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
-          git commit -m "metrics: pypi download snapshot for ${package}"
-          git push origin metrics
+      - name: Upload download series artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pypi-downloads-${{ steps.snapshot.outputs.package }}
+          path: ${{ steps.snapshot.outputs.csv_path }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Note compact-land obligation
+        if: steps.snapshot.outputs.changed == 'true'
+        run: |
+          echo "CSV seed changed in this workspace run."
+          echo "A governed non-author compact-land must merge the updated series to main"
+          echo "within 90 days and before the next release tag (no bot self-land)."

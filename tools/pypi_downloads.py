@@ -16,8 +16,12 @@ strips mirror-sync traffic) and the ``with_mirrors`` count. Upserting by date
 means a missed run self-heals on the next one and history is never lost, even as
 the upstream 180-day window rolls forward.
 
-The CSV is intended to live on a side branch (``metrics``) so the default branch
-stays free of daily snapshot commits; the accompanying workflow handles that.
+The CSV seed lives on the default branch under ``downloads/<package>.csv``.
+The accompanying workflow upserts the series in CI and uploads a 90-day artifact;
+a governed non-author compact-land refreshes the main seed at least every 90 days
+and before every release tag. A full ``origin/metrics`` git bundle remains the
+history archive until that side branch is deliberately retired after seed+workflow
+are green.
 """
 
 from __future__ import annotations
