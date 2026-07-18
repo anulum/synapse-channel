@@ -1972,7 +1972,31 @@ synapse task update FIX --suggested-owner SYNAPSE-CHANNEL/kimi-3dcd --expected-v
 A re-declaration with a conflicting non-empty `--project` is refused (a blank
 value keeps the existing scope); `--expected-version` refuses the write unless
 the board's current `version` matches, so two planners cannot silently
-overwrite each other's assignment.
+overwrite each other's assignment. A refusal (stale version, scope conflict)
+prints the hub's reason and exits non-zero.
+
+## synapse dispatch
+
+`synapse dispatch --project P` is the opt-in autonomous lane between the
+board and the seats: it polls the board/state/manifest/who snapshots, picks
+ready `P`-scoped tasks deterministically, pins `suggested_owner` through the
+version CAS, and sends the seat a directed wake under a stable idempotency
+key — exactly once, even across crashes (an append-only JSONL outbox in
+`~/.synapse/dispatch-outbox/` reconciles pending intents on restart: claimed
+tasks are marked delivered, re-owned tasks conflicted, unanswered ones
+retried with the same key up to `--max-attempts`).
+
+```bash
+synapse dispatch --project SYNAPSE-CHANNEL --dry-run   # print the plan, mutate nothing
+synapse dispatch --project SYNAPSE-CHANNEL --once      # a single pass
+synapse dispatch --project SYNAPSE-CHANNEL             # daemon: poll every --interval seconds
+```
+
+Seats make themselves discoverable with `synapse wait --capability-card`.
+A concurrent second dispatcher of the same project yields: the
+`dispatch:<project>` singleton lease is exclusive. The dispatcher never
+claims real tasks, approves, lands, or broadcasts — the woken agent claims
+and updates the task itself.
 
 The hub bounds the in-memory blackboard and memory-admission surfaces with
 operator-set limits: `--max-progress` for the total retained progress notes,

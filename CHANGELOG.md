@@ -37,6 +37,14 @@ All notable changes to this project are documented here.
   `persistent`/`dispatchable` keys in the manifest. `synapse wait
   --capability-card FILE` re-registers the card on every (re)connect, so
   registration self-heals across re-arms and hub restarts.
+- Opt-in ready-task dispatcher: `synapse dispatch --project P` computes a
+  deterministic plan from live board/state/manifest/who snapshots, pins
+  `suggested_owner` through the version compare-and-set guard, and wakes the
+  seat's online identity under a stable idempotency key — exactly once, even
+  across crashes, via an append-only JSONL outbox that reconciles pending
+  intents on restart. A `dispatch:<project>` singleton lease serialises
+  concurrent dispatchers; the dispatcher never claims real tasks, approves,
+  lands, or broadcasts.
 
 ### Changed
 
