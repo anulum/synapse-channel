@@ -504,7 +504,7 @@ async def handle_wait_request(
             ),
         )
         return
-    hub._waits[sender] = holder
+    hub._waits.setdefault(sender, set()).add(holder)
     await hub._send_json(
         websocket,
         hub._system(

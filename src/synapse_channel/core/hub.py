@@ -636,7 +636,7 @@ class SynapseHub:
         self.agent_sockets = self.clients.agent_sockets
         self.agent_roles = self.clients.agent_roles
         self.socket_agent = self.clients.socket_agent
-        self._waits: dict[str, str] = {}
+        self._waits: dict[str, set[str]] = {}
         self.capabilities = CapabilityRegistry(trust_bundle=capability_card_trust_bundle)
         self._connection = HubConnection(
             self.clients,
@@ -973,9 +973,12 @@ class SynapseHub:
         return safe_int(value, default=None, allow_bool=False)
 
     def _drop_waits(self, agent: str) -> None:
-        """Remove an agent's wait edge and any waits pointing at it."""
+        """Remove an agent's wait edges and every edge pointing at it."""
         self._waits.pop(agent, None)
-        self._waits = {w: h for w, h in self._waits.items() if h != agent}
+        for waiter, holders in tuple(self._waits.items()):
+            holders.discard(agent)
+            if not holders:
+                del self._waits[waiter]
 
     # -- registration + name resolution --------------------------------------
 

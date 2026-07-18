@@ -324,28 +324,47 @@ async def test_wait_for_own_task_is_denied() -> None:
     assert "already hold" in denied["payload"]
 
 
-async def test_wait_granted_for_another_holder() -> None:
+async def test_wait_granted_preserves_every_holder() -> None:
     hub = SynapseHub(hub_id="syn-test")
     async with running_hub(hub) as (_, uri):
-        async with await _connect_agent(uri, "A") as ws_a, await _connect_agent(uri, "B") as ws_b:
+        async with (
+            await _connect_agent(uri, "A") as ws_a,
+            await _connect_agent(uri, "B") as ws_b,
+            await _connect_agent(uri, "C") as ws_c,
+        ):
             await send_json(ws_a, sender="A", type="claim", task_id="T1", paths=["src"])
             await read_until_type(ws_a, "claim_granted")
+            await send_json(ws_c, sender="C", type="claim", task_id="T2", paths=["docs"])
+            await read_until_type(ws_c, "claim_granted")
             await send_json(ws_b, sender="B", type="wait_request", task_id="T1")
             granted = await read_until_type(ws_b, "wait_granted")
-            assert hub._waits["B"] == "A"
+            await send_json(ws_b, sender="B", type="wait_request", task_id="T2")
+            second_grant = await read_until_type(ws_b, "wait_granted")
+            assert hub._waits["B"] == {"A", "C"}
 
     assert granted["holder"] == "A"
+    assert second_grant["holder"] == "C"
 
 
 async def test_circular_wait_is_denied() -> None:
-    async with running_hub(SynapseHub(hub_id="syn-test")) as (_, uri):
-        async with await _connect_agent(uri, "A") as ws_a, await _connect_agent(uri, "B") as ws_b:
+    hub = SynapseHub(hub_id="syn-test")
+    async with running_hub(hub) as (_, uri):
+        async with (
+            await _connect_agent(uri, "A") as ws_a,
+            await _connect_agent(uri, "B") as ws_b,
+            await _connect_agent(uri, "C") as ws_c,
+        ):
             await send_json(ws_a, sender="A", type="claim", task_id="T1", paths=["src"])
             await read_until_type(ws_a, "claim_granted")
             await send_json(ws_b, sender="B", type="claim", task_id="T2", paths=["tests"])
             await read_until_type(ws_b, "claim_granted")
+            await send_json(ws_c, sender="C", type="claim", task_id="T3", paths=["docs"])
+            await read_until_type(ws_c, "claim_granted")
             await send_json(ws_a, sender="A", type="wait_request", task_id="T2")
             assert (await read_until_type(ws_a, "wait_granted"))["holder"] == "B"
+            await send_json(ws_a, sender="A", type="wait_request", task_id="T3")
+            assert (await read_until_type(ws_a, "wait_granted"))["holder"] == "C"
+            assert hub._waits["A"] == {"B", "C"}
             await send_json(ws_b, sender="B", type="wait_request", task_id="T1")
             denied = await read_until_type(ws_b, "wait_denied")
 
@@ -360,7 +379,7 @@ async def test_wait_clears_on_successful_claim() -> None:
             await read_until_type(ws_a, "claim_granted")
             await send_json(ws_b, sender="B", type="wait_request", task_id="T1")
             await read_until_type(ws_b, "wait_granted")
-            assert hub._waits["B"] == "A"
+            assert hub._waits["B"] == {"A"}
             await send_json(ws_b, sender="B", type="claim", task_id="T3", paths=["docs"])
             await read_until_type(ws_b, "claim_granted")
 
@@ -369,6 +388,6 @@ async def test_wait_clears_on_successful_claim() -> None:
 
 def test_drop_waits_removes_waiter_and_holders() -> None:
     hub = SynapseHub(hub_id="syn-test")
-    hub._waits = {"X": "Y", "Z": "X", "W": "Q"}
+    hub._waits = {"X": {"Y"}, "Z": {"X", "Q"}, "W": {"Q"}}
     hub._drop_waits("X")
-    assert hub._waits == {"W": "Q"}
+    assert hub._waits == {"Z": {"Q"}, "W": {"Q"}}

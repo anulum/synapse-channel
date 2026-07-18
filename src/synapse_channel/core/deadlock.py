@@ -13,23 +13,26 @@ A holds ``src/`` and waits for ``tests/`` while agent B holds ``tests/`` and wai
 for ``src/`` — neither will ever proceed. The hub is the single point that sees
 every wait, so it can refuse the request that would close the cycle.
 
-The wait-for graph is *functional*: an agent waits for at most one holder at a
-time, so the edges form a mapping ``waiter -> holder``. Cycle detection is then a
-single walk from the proposed holder back along the chain. This module is pure
-and deterministic.
+The wait-for graph is multi-edge: one agent can wait for several independently
+held tasks at once, so the edges form a mapping ``waiter -> holders``. Cycle
+detection walks every reachable holder from the proposed edge. This module is
+pure and deterministic.
 """
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 
-def would_create_cycle(waits: dict[str, str], waiter: str, holder: str) -> bool:
+
+def would_create_cycle(waits: Mapping[str, Collection[str]], waiter: str, holder: str) -> bool:
     """Return whether ``waiter`` waiting for ``holder`` would close a cycle.
 
     Parameters
     ----------
-    waits : dict[str, str]
-        The current wait-for graph mapping each waiting agent to the agent it
-        waits for.
+    waits : Mapping[str, Collection[str]]
+        The current wait-for graph mapping each waiting agent to every agent it
+        waits for. A scalar string value from the pre-multi-edge public API is
+        treated as one holder.
     waiter : str
         The agent that wants to start waiting.
     holder : str
@@ -44,11 +47,18 @@ def would_create_cycle(waits: dict[str, str], waiter: str, holder: str) -> bool:
     """
     if waiter == holder:
         return True
-    node: str | None = holder
+    pending = [holder]
     seen: set[str] = set()
-    while node is not None and node not in seen:
+    while pending:
+        node = pending.pop()
         if node == waiter:
             return True
+        if node in seen:
+            continue
         seen.add(node)
-        node = waits.get(node)
+        next_holders = waits.get(node, ())
+        if isinstance(next_holders, str):
+            pending.append(next_holders)
+        else:
+            pending.extend(next_holders)
     return False

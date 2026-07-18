@@ -20,25 +20,26 @@ def test_empty_graph_has_no_cycle() -> None:
 
 
 def test_direct_mutual_wait_is_a_cycle() -> None:
-    # A already waits for B; B waiting for A closes the loop.
-    assert would_create_cycle({"A": "B"}, "B", "A") is True
+    # Keep accepting the pre-multi-edge public representation during migration.
+    assert would_create_cycle({"ALPHA": "BETA"}, "BETA", "ALPHA") is True
 
 
 def test_independent_wait_is_safe() -> None:
     # A waits for B; C waiting for B is fine (no cycle).
-    assert would_create_cycle({"A": "B"}, "C", "B") is False
+    assert would_create_cycle({"A": {"B"}}, "C", "B") is False
 
 
-def test_transitive_cycle_is_detected() -> None:
-    # A -> B -> C already; C waiting for A closes a three-node cycle.
-    assert would_create_cycle({"A": "B", "B": "C"}, "C", "A") is True
+def test_cycle_through_one_of_multiple_edges_is_detected() -> None:
+    # A waits for B and D; the A -> B -> C branch closes when C waits for A.
+    waits = {"A": {"B", "D"}, "B": {"C"}}
+    assert would_create_cycle(waits, "C", "A") is True
 
 
 def test_transitive_chain_without_cycle_is_safe() -> None:
     # A -> B -> C already; D waiting for C extends the chain, no cycle.
-    assert would_create_cycle({"A": "B", "B": "C"}, "D", "C") is False
+    assert would_create_cycle({"A": {"B"}, "B": {"C"}}, "D", "C") is False
 
 
 def test_walk_terminates_on_preexisting_cycle() -> None:
     # A degenerate already-cyclic graph must not loop forever.
-    assert would_create_cycle({"A": "B", "B": "A"}, "C", "A") is False
+    assert would_create_cycle({"A": {"B"}, "B": {"A"}}, "C", "A") is False
