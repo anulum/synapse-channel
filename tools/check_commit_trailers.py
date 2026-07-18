@@ -27,6 +27,11 @@ from pathlib import Path
 POLICY_BASELINE = "d668a54628d974d62eed44801c65573539e302da"
 DEFAULT_AUDIT_RANGE = f"{POLICY_BASELINE}..HEAD"
 REQUIRED_AUTHORSHIP_LINE = "Authored by Anulum Fortis & Arcane Sapience (protoscience@anulum.li)"
+HISTORY_EXEMPTIONS = {
+    "872ac28c56280f959c13f804e1b8d8a08dda9406": (
+        "published with literal escaped newlines joining otherwise present trailers"
+    ),
+}
 SEAT_PREFIX_RE = re.compile(r"^\s*Seat:")
 SEAT_TRAILER_RE = re.compile(r"^Seat:\s+([A-Za-z0-9][A-Za-z0-9_-]{0,63})\s*$")
 FORBIDDEN_SEAT_PREFIXES = ("claude-", "codex-")
@@ -148,8 +153,12 @@ def _audit_range(range_spec: str, *, repo: Path | None = None) -> int:
         return 2
 
     failures: list[str] = []
+    exemptions: list[str] = []
     commits = [line for line in revisions.stdout.splitlines() if line]
     for commit in commits:
+        if reason := HISTORY_EXEMPTIONS.get(commit):
+            exemptions.append(f"{commit[:12]}: {reason}")
+            continue
         result = _run_git(git, root, "show", "-s", "--format=%B", commit)
         if result.returncode != 0:
             print(f"git show failed for {commit}: {result.stderr.strip()}", file=sys.stderr)
@@ -159,6 +168,9 @@ def _audit_range(range_spec: str, *, repo: Path | None = None) -> int:
             failures.append(f"{commit[:12]}: {'; '.join(violations)}")
 
     print(f"Audited {len(commits)} commit(s) in {range_spec}")
+    print(f"Explicit history exemptions: {len(exemptions)}")
+    for exemption in exemptions:
+        print(f"  - {exemption}")
     print(f"Violations: {len(failures)}")
     for failure in failures:
         print(f"  - {failure}")

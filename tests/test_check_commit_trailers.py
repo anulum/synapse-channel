@@ -149,6 +149,28 @@ def test_history_audit_reports_real_bad_git_commit(
     assert "Violations: 1" in output
 
 
+def test_history_audit_accepts_only_an_exact_exempt_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = _repo(tmp_path)
+    baseline = _commit(repo, "historical baseline", "base")
+    exempt = _commit(repo, "ci: missing trailers", "exempt")
+    rejected = _commit(repo, "ci: also missing trailers", "rejected")
+    monkeypatch.setattr(GATE, "HISTORY_EXEMPTIONS", {exempt: "test fixture"})
+
+    assert GATE._audit_range(f"{baseline}..{exempt}", repo=repo) == 0
+    accepted_output = capsys.readouterr().out
+    assert f"{exempt[:12]}: test fixture" in accepted_output
+    assert "Explicit history exemptions: 1" in accepted_output
+
+    assert GATE._audit_range(f"{exempt}..{rejected}", repo=repo) == 1
+    rejected_output = capsys.readouterr().out
+    assert rejected[:12] in rejected_output
+    assert "Explicit history exemptions: 0" in rejected_output
+
+
 def test_history_audit_fails_closed_without_git(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
