@@ -35,7 +35,13 @@ mismatch"``). Disambiguate on the reason text, not the code alone.
 """
 
 NAME_CONFLICT_CLOSE_CODE = 4009
-"""Hub close code emitted when the requested name is already online."""
+"""Hub close code for an online name conflict or a reserved global identity.
+
+The hub overloads ``4009``: a requested name may already be online, or the
+global name may be reserved for protocol provenance (``reason="reserved
+identity"``). Disambiguate on the reason text so an operator is not told to
+retry a name that can never register.
+"""
 
 
 class _ObservableConnection(Protocol):
@@ -173,6 +179,11 @@ def _guidance_for(code: int, reason: str) -> str | None:
     """
     reason_l = reason.lower()
     if code == NAME_CONFLICT_CLOSE_CODE:
+        if "reserved" in reason_l:
+            return (
+                "name is reserved for hub protocol provenance and cannot be registered. "
+                "Choose a non-reserved global --name or a project-scoped identity"
+            )
         return "name already online from another session. Reconnect with a unique --name"
     if code == CAPACITY_CLOSE_CODE:
         if "identity" in reason_l:

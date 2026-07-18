@@ -345,6 +345,16 @@ owner recovery, and full multi-tenant IAM remain outside this runtime. Identity
 and ACL do not replace per-message authentication, signed events, TLS, or host
 process isolation.
 
+The global agent names `SynapseHub`, `Synapse`, and `system` are reserved
+case-insensitively for hub and protocol provenance. The hub refuses their
+registration before authentication, trust-on-first-use pinning, takeover, or
+ownership-lease state can be created. The reservation applies only to the exact
+global names, so project-scoped identities such as `PROJECT/system` remain
+valid. An existing client that uses a reserved global name must migrate to a
+non-reserved name or a project-scoped identity. This naming boundary prevents a
+client from impersonating protocol provenance; it does not replace connect
+authentication, identity binding, ACL enforcement, or message authentication.
+
 The [signed capability cards](docs/signed-capability-cards.md) runtime verifies
 domain-separated Ed25519 advertisements for manifests, directories, dashboards,
 MCP resources, and A2A Agent Card projections. Card keys live in a separate,

@@ -49,6 +49,21 @@ def test_name_conflict_close_directs_to_a_unique_name() -> None:
     assert f"code {NAME_CONFLICT_CLOSE_CODE}" in message
 
 
+def test_reserved_identity_close_explains_that_retry_cannot_succeed() -> None:
+    message = describe_connect_failure(
+        "System",
+        "ws://localhost:8876",
+        close_code=NAME_CONFLICT_CLOSE_CODE,
+        close_reason="reserved identity",
+    )
+
+    assert "reserved for hub protocol provenance" in message
+    assert "cannot be registered" in message
+    assert "project-scoped identity" in message
+    assert "already online" not in message
+    assert f"code {NAME_CONFLICT_CLOSE_CODE}" in message
+
+
 def test_superseded_and_cooldown_codes_are_recognised() -> None:
     superseded = describe_connect_failure(
         "A", "ws://h", close_code=SUPERSEDED_CLOSE_CODE, close_reason="superseded"
