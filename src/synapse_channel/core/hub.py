@@ -1128,6 +1128,12 @@ class SynapseHub:
         if not was_bound and not await self._identity_gate.verify_identity(sender, data, websocket):
             return
 
+        # ``token`` is a connection credential, never application data. Keep it
+        # through first-use identity verification because the registration
+        # signature covers the complete frame, then consume it before any name
+        # resolution, routing, relay, history, or journal path can observe it.
+        data.pop("token", None)
+
         resolved = await self._resolve_sender(
             sender,
             websocket,

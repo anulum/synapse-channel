@@ -22,6 +22,7 @@ from hub_e2e_helpers import (
     read_until_type,
     running_hub,
 )
+from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
@@ -41,6 +42,37 @@ async def test_chat_is_broadcast_and_recorded_end_to_end() -> None:
             assert hub.chat_history[-1]["payload"] == "hello"
         finally:
             await close_agents(alpha, beta)
+
+
+async def test_bearer_token_is_not_routed_retained_or_journalled(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(
+        hub_id="syn-test",
+        authenticator=TokenAuthenticator(["s3cret"]),
+        journal=store,
+    )
+    async with running_hub(hub) as (_, uri):
+        alpha = await connect_agent("ALPHA", uri, token="s3cret")
+        beta = await connect_agent("BETA", uri, token="s3cret")
+        try:
+            await alpha.agent.send_message(
+                "chat",
+                target="all",
+                payload="credential stays at ingress",
+                token="s3cret",
+            )
+            relayed = await beta.recorder.wait_for(
+                lambda message: message.get("payload") == "credential stays at ingress"
+            )
+            assert "token" not in relayed
+            assert "token" not in hub.chat_history[-1]
+        finally:
+            await close_agents(alpha, beta)
+
+    events = store.read_all()
+    store.close()
+    assert all("token" not in event.payload for event in events)
+    assert all("s3cret" not in json.dumps(event.payload) for event in events)
 
 
 async def test_a_binary_frame_gets_a_clean_error_and_keeps_the_connection() -> None:
