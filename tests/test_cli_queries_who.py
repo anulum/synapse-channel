@@ -463,3 +463,50 @@ async def test_who_under_a_foreign_key_fails_loudly_not_silently(
     assert code == 1
     out = capsys.readouterr().out
     assert "identity proof refused" in out
+
+
+async def test_who_recovers_from_a_stale_subject_pin_without_replacing_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The roster remains readable while a genuine key change stays pinned."""
+    name = "USER"
+    pins = tmp_path / "pins.json"
+    machine_a = machine_identity_agent_kwargs(base=tmp_path / "machine-a")
+    machine_b_home = tmp_path / "machine-b"
+    monkeypatch.setenv("XDG_DATA_HOME", str(machine_b_home))
+
+    async with running_hub(SynapseHub(identity_pin_path=pins)) as (hub, uri):
+        owner = SynapseAgent(name, None, uri=uri, verbose=False, **machine_a)
+        owner_task = asyncio.create_task(owner.connect())
+        assert await owner.wait_until_ready(3.0)
+        for _ in range(60):
+            if hub._identity_pins.pinned(name) is not None:
+                break
+            await asyncio.sleep(0.05)
+        original_pin = hub._identity_pins.pinned(name)
+        assert original_pin is not None
+        owner.running = False
+        owner_task.cancel()
+        for _ in range(60):
+            if name not in hub.clients.agent_sockets:
+                break
+            await asyncio.sleep(0.05)
+
+        peer = SynapseAgent("PEER", None, uri=uri, verbose=False)
+        peer_task = asyncio.create_task(peer.connect())
+        assert await peer.wait_until_ready(3.0)
+        try:
+            code = await cli_queries._who(uri=uri, name=name)
+        finally:
+            peer.running = False
+            peer_task.cancel()
+
+        assert hub._identity_pins.pinned(name) == original_pin
+
+    assert code == 0
+    output = capsys.readouterr().out
+    assert "PEER" in output
+    assert "identity proof refused" not in output
+    assert "query/who-" not in output

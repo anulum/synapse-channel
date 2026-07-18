@@ -190,6 +190,9 @@ async def _arm(
         if code == 4:
             print(f"[{name}] another connection holds this name; disarming.")
             return 0
+        if code == 5:
+            print(f"[{name}] identity recovery required; disarming without restart.")
+            return 0
         if reconnect_delay > 0:
             await sleep_runner(reconnect_delay)
     return 0

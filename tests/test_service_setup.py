@@ -56,7 +56,7 @@ def test_render_arm_unit_uses_non_llm_synapse_arm(
     assert "ExecStart=/usr/bin/synapse arm" in unit
     assert "--directed-only" in unit
     assert "--mailbox" in unit
-    assert "Restart=always" in unit
+    assert "Restart=on-failure" in unit
     assert "Wants=synapse-hub.service" not in unit
     assert "After=synapse-hub.service" in unit
 
@@ -185,7 +185,7 @@ def test_checked_in_arm_template_matches_generated_runtime_contract() -> None:
     assert "After=synapse-hub.service" in template
     assert "Wants=synapse-hub.service" not in template
     assert "--directed-only --mailbox --uri=ws://localhost:8876" in template
-    assert "Restart=always" in template
+    assert "Restart=on-failure" in template
 
 
 def test_install_arm_service_writes_only_waiter_unit(tmp_path: Path) -> None:

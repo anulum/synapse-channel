@@ -15,9 +15,80 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
-from synapse_channel.connect_failures import describe_connect_failure
+from synapse_channel.connect_failures import describe_connect_failure, is_identity_refused_close
 
 AgentFactory = Callable[..., SynapseAgent]
+
+
+async def _query_attempt(
+    *,
+    uri: str,
+    connect_name: str,
+    failure_name: str,
+    token: str | None,
+    response_type: str,
+    request: Callable[[SynapseAgent], Awaitable[None]],
+    render: Callable[[Any], None],
+    transform: Callable[[dict[str, Any]], Any],
+    agent_factory: AgentFactory,
+    attempts: int,
+    ready_timeout: float,
+    suppress_identity_refusal: bool,
+) -> tuple[int, bool]:
+    """Run one query connection and classify an identity-only refusal."""
+    results: list[Any] = []
+
+    async def collect(data: dict[str, Any]) -> None:
+        if data.get("type") == response_type:
+            results.append(transform(data))
+
+    agent = agent_factory(connect_name, collect, uri=uri, verbose=False, token=token)
+    conn_task = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=ready_timeout):
+            identity_refused = is_identity_refused_close(
+                agent.last_close_code, agent.last_close_reason
+            )
+            if not (identity_refused and suppress_identity_refusal):
+                print(
+                    describe_connect_failure(
+                        failure_name,
+                        uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                    )
+                )
+            return 1, identity_refused
+        await request(agent)
+        for _ in range(attempts):
+            if results:
+                break
+            if agent.last_close_code is not None:
+                break
+            await asyncio.sleep(0.05)
+        if results:
+            render(results[-1])
+            return 0, False
+        if agent.last_close_code is not None:
+            identity_refused = is_identity_refused_close(
+                agent.last_close_code, agent.last_close_reason
+            )
+            if not (identity_refused and suppress_identity_refusal):
+                print(
+                    describe_connect_failure(
+                        failure_name,
+                        uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                    )
+                )
+            return 1, identity_refused
+        return 0, False
+    finally:
+        agent.running = False
+        conn_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await conn_task
 
 
 async def _drop_message(_data: dict[str, Any]) -> None:
@@ -42,6 +113,7 @@ async def _query_hub(
     agent_factory: AgentFactory = SynapseAgent,
     attempts: int = 50,
     ready_timeout: float = 5.0,
+    identity_fallback_name: str | None = None,
 ) -> int:
     """Connect, issue one request, await the matching reply, render it, and exit.
 
@@ -71,59 +143,45 @@ async def _query_hub(
     ready_timeout : float, optional
         Seconds to wait for the welcome handshake before treating the hub as
         unreachable. Defaults to ``5.0``.
+    identity_fallback_name : str or None, optional
+        A separately scoped signed identity used only when the primary name is
+        refused with the exact identity-binding close class. Network, capacity,
+        ownership, and protocol failures never trigger the fallback.
 
     Returns
     -------
     int
         ``0`` once a reply is rendered (or none arrives), ``1`` when the hub is unreachable.
     """
-    results: list[Any] = []
-
-    async def collect(data: dict[str, Any]) -> None:
-        if data.get("type") == response_type:
-            results.append(transform(data))
-
-    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    conn_task = asyncio.create_task(agent.connect())
-    try:
-        if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(
-                describe_connect_failure(
-                    name,
-                    uri,
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
-                )
-            )
-            return 1
-        await request(agent)
-        for _ in range(attempts):
-            if results:
-                break
-            if agent.last_close_code is not None:
-                break
-            await asyncio.sleep(0.05)
-        if results:
-            render(results[-1])
-            return 0
-        if agent.last_close_code is not None:
-            # The hub accepted the welcome, then closed the socket before it
-            # answered — an identity-pin refusal (4013), an ownership-lease
-            # refusal (4016), or a takeover. Without this the query would print
-            # nothing and exit 0, the silent sink a pinned name under a
-            # borrowed key produced (2026-07-10). Surface the reason and fail.
-            print(
-                describe_connect_failure(
-                    name,
-                    uri,
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
-                )
-            )
-            return 1
-        return 0
-    finally:
-        agent.running = False
-        conn_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await conn_task
+    fallback = str(identity_fallback_name or "").strip()
+    primary_code, identity_refused = await _query_attempt(
+        uri=uri,
+        connect_name=name,
+        failure_name=name,
+        token=token,
+        response_type=response_type,
+        request=request,
+        render=render,
+        transform=transform,
+        agent_factory=agent_factory,
+        attempts=attempts,
+        ready_timeout=ready_timeout,
+        suppress_identity_refusal=bool(fallback and fallback != name),
+    )
+    if not identity_refused or not fallback or fallback == name:
+        return primary_code
+    fallback_code, _ = await _query_attempt(
+        uri=uri,
+        connect_name=fallback,
+        failure_name=name,
+        token=token,
+        response_type=response_type,
+        request=request,
+        render=render,
+        transform=transform,
+        agent_factory=agent_factory,
+        attempts=attempts,
+        ready_timeout=ready_timeout,
+        suppress_identity_refusal=False,
+    )
+    return fallback_code

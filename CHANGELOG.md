@@ -40,6 +40,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Keep `synapse who` usable when its requested subject is pinned to a retired
+  machine key: the read-only query retries under a bounded identity derived
+  from the current Ed25519 public key without removing or replacing the stale
+  pin. A permanent `synapse arm` now returns a distinct identity-recovery
+  verdict, and generated/checked-in systemd arm units use `Restart=on-failure`
+  so a fail-closed `4013` stop cannot become a restart storm.
 - Block publication unless the exact built wheel is installed in a clean
   environment and every declared console-script wrapper loads its callable from
   that environment's site-packages tree. The gate also refuses missing, extra,

@@ -33,7 +33,7 @@ Type=simple
 Environment=SYN_PROJECT=%I
 Environment=SYN_IDENTITY=%I
 ExecStart=%h/.local/bin/synapse arm --name=%I-rx --for=%I --directed-only --mailbox --uri=ws://localhost:8876
-Restart=always
+Restart=on-failure
 RestartSec=2
 NoNewPrivileges=yes
 UMask=0077

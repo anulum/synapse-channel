@@ -12,12 +12,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from typing import Any
 
 from synapse_channel.cli_query_rendering import _render_who, _render_who_me
 from synapse_channel.cli_query_transport import AgentFactory, _query_hub
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.mailbox_pending import parse_pending_counts
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.machine_identity import who_query_identity
 from synapse_channel.observed_peers import (
     ObservedPeerSpec,
     fetch_observed_peers,
@@ -71,6 +73,29 @@ async def _who(
         ``0`` once a roster is printed, ``1`` when the hub could not be reached.
     """
     query_name = f"{name}-who" if me else name
+    fallback_name = who_query_identity(query_name)
+
+    def transform(
+        data: dict[str, Any],
+    ) -> tuple[
+        list[str],
+        dict[str, Any] | None,
+        dict[str, Any] | None,
+        dict[str, int] | None,
+    ]:
+        """Remove the internal fallback actor from the rendered roster."""
+        online = [str(agent) for agent in data.get("online_agents", [])]
+        if fallback_name is not None:
+            online = [agent for agent in online if agent != fallback_name]
+        return (
+            online,
+            data.get("agent_liveness") if isinstance(data.get("agent_liveness"), dict) else None,
+            data.get("wake_capabilities")
+            if isinstance(data.get("wake_capabilities"), dict)
+            else None,
+            parse_pending_counts(data.get("mailbox_pending")),
+        )
+
     observed = await fetch_observed_peers(
         observed_peers,
         fetcher_factory=network_observed_fetcher_factory(
@@ -86,14 +111,7 @@ async def _who(
         token=token,
         agent_factory=agent_factory,
         response_type=MessageType.WHO_SNAPSHOT,
-        transform=lambda data: (
-            [str(agent) for agent in data.get("online_agents", [])],
-            data.get("agent_liveness") if isinstance(data.get("agent_liveness"), dict) else None,
-            data.get("wake_capabilities")
-            if isinstance(data.get("wake_capabilities"), dict)
-            else None,
-            parse_pending_counts(data.get("mailbox_pending")),
-        ),
+        transform=transform,
         request=lambda agent: agent.request_who(),
         render=(
             (
@@ -119,6 +137,7 @@ async def _who(
             )
         ),
         ready_timeout=ready_timeout,
+        identity_fallback_name=fallback_name,
     )
 
 

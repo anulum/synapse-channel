@@ -23,6 +23,7 @@ from synapse_channel.machine_identity import (
     ensure_machine_identity,
     identity_dir,
     machine_identity_agent_kwargs,
+    who_query_identity,
 )
 
 
@@ -109,6 +110,28 @@ def test_the_key_id_is_a_stable_digest_of_the_public_key(tmp_path: Path) -> None
     other = ensure_machine_identity(base=tmp_path / "other-machine")
     assert other.key_id != machine.key_id
     assert other.public_key != machine.public_key
+
+
+def test_who_query_identity_is_scoped_to_subject_and_machine_key(tmp_path: Path) -> None:
+    subject = "SYNAPSE-CHANNEL/operator"
+    first = who_query_identity(subject, base=tmp_path / "machine-a")
+    again = who_query_identity(subject, base=tmp_path / "machine-a")
+    other_subject = who_query_identity("SYNAPSE-CHANNEL/auditor", base=tmp_path / "machine-a")
+    other_machine = who_query_identity(subject, base=tmp_path / "machine-b")
+
+    assert first == again
+    assert first is not None
+    assert first.startswith("query/who-")
+    assert len(first) == len("query/who-") + 24
+    assert subject not in first
+    assert other_subject != first
+    assert other_machine != first
+
+
+def test_who_query_identity_degrades_when_the_machine_key_is_invalid(tmp_path: Path) -> None:
+    machine = ensure_machine_identity(base=tmp_path)
+    machine.key_path.write_text("not a pem", encoding="utf-8")
+    assert who_query_identity("USER", base=tmp_path) is None
 
 
 def _block_cryptography(monkeypatch: pytest.MonkeyPatch) -> None:

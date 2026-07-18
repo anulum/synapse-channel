@@ -140,9 +140,9 @@ async def _wait(
         timeout with nothing received, ``3`` when the connection dropped while
         waiting (so the caller knows to re-arm rather than treat it as a timeout),
         ``4`` when a newer connection took the name over or an ownership lease
-        held by another identity refused the claim (the caller must *yield*,
-        not re-arm — reconnecting would evict the legitimate holder, or feed a
-        refusal that can never succeed without the lease token).
+        held by another identity refused the claim (the caller must *yield*),
+        and ``5`` when the identity pin or binding refused this key (the caller
+        must stop and surface the governed recovery path, never re-arm).
     """
     received: list[dict[str, Any]] = []
 
@@ -222,9 +222,10 @@ async def _wait(
                 # yield instead of hammering the refusal.
                 return 4
             if is_identity_refused_close(agent.last_close_code, agent.last_close_reason):
-                # The name is pinned to (or requires) an identity key this
-                # process does not hold — the same yield verdict.
-                return 4
+                # The name is pinned to (or requires) another identity key.
+                # Distinguish this from an ordinary ownership yield so a
+                # service manager stops instead of crash-looping the refusal.
+                return 5
             return 1
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
@@ -271,14 +272,20 @@ async def _wait(
                 # steal the identity from each other indefinitely.
                 print(f"[{name}] superseded by a newer waiter; yielding.")
                 return 4
-            if is_name_owned_close(
-                agent.last_close_code, agent.last_close_reason
-            ) or is_identity_refused_close(agent.last_close_code, agent.last_close_reason):
+            if is_identity_refused_close(agent.last_close_code, agent.last_close_reason):
+                print(
+                    describe_connect_failure(
+                        name,
+                        uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                    )
+                )
+                return 5
+            if is_name_owned_close(agent.last_close_code, agent.last_close_reason):
                 # On an open hub the welcome precedes registration, so an
-                # ownership-lease or identity-pin refusal lands after
-                # readiness. It is a yield verdict either way: re-arming
-                # without the lease token or the pinned key would only hammer
-                # a refusal that can never pass.
+                # ownership-lease refusal can land after readiness. Re-arming
+                # without the lease token would only hammer the same refusal.
                 print(
                     describe_connect_failure(
                         name,

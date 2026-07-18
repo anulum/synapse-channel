@@ -681,6 +681,27 @@ async def test_arm_disarms_after_a_takeover_displacement(
     assert "another connection holds this name; disarming" in capsys.readouterr().out
 
 
+async def test_arm_stops_cleanly_when_identity_recovery_is_required(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A stale pin stops a permanent arm instead of feeding systemd restarts."""
+    from synapse_channel import cli_arm
+
+    async def identity_refused(**_kwargs: object) -> int:
+        return 5
+
+    code = await cli_arm._arm(
+        uri="ws://unused",
+        name="X-rx",
+        for_name="X",
+        reconnect_delay=0.0,
+        wait_runner=identity_refused,
+    )
+
+    assert code == 0
+    assert "identity recovery required; disarming without restart" in capsys.readouterr().out
+
+
 async def test_takeover_refused_at_handshake_yields(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -934,7 +955,7 @@ async def test_wait_zero_config_machine_identity_pins_and_protects_the_waiter(
             identity_key_path=machine_b.get("identity_key_path"),
             identity_key_id=str(machine_b.get("identity_key_id", "")),
         )
-        assert squatter == 4
+        assert squatter == 5
         assert "identity" in capsys.readouterr().out
 
         observer = await connect_agent("OBSERVER", uri)

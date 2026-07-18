@@ -186,3 +186,44 @@ def machine_identity_agent_kwargs(*, base: Path | None = None) -> dict[str, Any]
         "identity_key_path": str(machine.key_path),
         "identity_key_id": machine.key_id,
     }
+
+
+def who_query_identity(subject: str, *, base: Path | None = None) -> str | None:
+    """Return a stable read-only query identity scoped to this machine key.
+
+    A roster query normally connects under the operator-supplied subject. If
+    that name is pinned to a retired machine key, the hub correctly refuses the
+    genuine key change with ``4013``. This alias gives ``synapse who`` one
+    narrow recovery path: retry the read-only query under a name derived from
+    the current public key without removing or replacing the protected pin.
+
+    The alias is stable across processes that hold the same Ed25519 key and
+    changes when the key changes. Only a digest is exposed in the name; neither
+    private material nor the operator's subject is embedded. Provisioning
+    remains best-effort, matching :func:`machine_identity_agent_kwargs`.
+
+    Parameters
+    ----------
+    subject : str
+        Requested roster-query identity, included only in the digest domain.
+    base : pathlib.Path or None, optional
+        Data-home override forwarded to :func:`ensure_machine_identity`.
+
+    Returns
+    -------
+    str or None
+        A bounded ``query/who-*`` identity, or ``None`` when no machine key is
+        available and a signed fallback cannot be authenticated.
+    """
+    try:
+        machine = ensure_machine_identity(base=base)
+    except (IdentityKeyError, ImportError):
+        return None
+    material = (
+        b"synapse-who-query\x00"
+        + subject.encode("utf-8")
+        + b"\x00"
+        + machine.public_key.encode("ascii")
+    )
+    digest = hashlib.sha256(material).hexdigest()[:24]
+    return f"query/who-{digest}"

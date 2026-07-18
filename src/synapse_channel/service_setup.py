@@ -248,7 +248,7 @@ def render_arm_unit(
         "Environment=SYN_IDENTITY=%I\n"
         f"ExecStart={executable} arm --name=%I-rx --for=%I --directed-only "
         f"--mailbox --uri={hub_uri}{extra_argument}\n"
-        "Restart=always\n"
+        "Restart=on-failure\n"
         "RestartSec=2\n"
         + hardening_directives(write_paths=LISTENER_WRITE_PATHS, nofile=LISTENER_NOFILE)
         + "\n"
