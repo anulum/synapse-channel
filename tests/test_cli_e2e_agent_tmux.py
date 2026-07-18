@@ -113,6 +113,9 @@ def test_agent_tmux_starts_reports_and_injects_the_fixed_prompt(tmp_path: Path) 
         pane = _normalise(_capture_pane(session))
         assert _normalise(build_wake_prompt(_IDENTITY)) in pane
         assert _IDENTITY in pane
+        assert "continue any active user-directed task" in pane
+        assert "wait only when otherwise idle" in pane
+        assert "; stop and wait." not in pane
 
 
 def test_agent_tmux_status_reports_a_missing_session() -> None:

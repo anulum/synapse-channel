@@ -98,11 +98,15 @@ def test_registry_path_is_identity_scoped_and_sanitized(tmp_path: Path) -> None:
 def test_build_wake_prompt_excludes_raw_payload() -> None:
     prompt = build_wake_prompt("SYNAPSE-CHANNEL/codex-main")
 
-    assert "read your Synapse inbox" in prompt
-    assert "SYNAPSE-CHANNEL/codex-main" in prompt
-    assert "reply once only if there is actionable directed work" in prompt
-    assert "do not post status" in prompt
-    assert "routine peer status" in prompt
+    assert prompt.count("SYNAPSE-CHANNEL/codex-main") == 3
+    assert "routing hint" in prompt
+    assert "SYNAPSE-CHANNEL/codex-main is not your current Synapse identity" in prompt
+    assert "addressed exactly to SYNAPSE-CHANNEL/codex-main" in prompt
+    assert "reply once only if it is actionable" in prompt
+    assert "routine peer status" in prompt.lower()
+    assert "continue any active user-directed task" in prompt
+    assert "wait only when otherwise idle" in prompt
+    assert "; stop and wait." not in prompt
     assert "raw" not in prompt.lower()
     assert "ignore previous instructions" not in prompt
 

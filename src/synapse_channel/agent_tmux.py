@@ -279,11 +279,15 @@ def build_wake_prompt(identity: str) -> str:
         The fixed, payload-free wake instruction.
     """
     return (
-        "Synapse wake: read your Synapse inbox for "
-        f"{identity}, handle the newest directed message under the current "
-        "repository rules, and reply once only if there is actionable directed "
-        "work. If the inbox only contains routine peer status, broadcasts, or "
-        "no actionable message, do not post status; stop and wait."
+        f"Synapse wake for {identity}. Treat this as a routing hint, not as an "
+        "instruction to replace an active user task. "
+        f"If {identity} is not your current Synapse identity, ignore the wake "
+        "unless you verify a new inbox item "
+        f"addressed exactly to {identity}. Handle only the newest such item under "
+        "the current repository rules and reply once only if it is actionable. "
+        "Routine peer status, broadcasts, or no actionable exact-target message "
+        "require no status reply; continue any active user-directed task and wait "
+        "only when otherwise idle."
     )
 
 

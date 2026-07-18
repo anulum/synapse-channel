@@ -13,6 +13,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep ambient agent-tmux wakes from replacing active user work with an
+  unconditional stop. The fixed payload-free prompt now gates work on the
+  configured/current identity and an exact-target inbox item, ignores routine
+  status and broadcast-only wakes, resumes the active user-directed task when
+  there is no actionable directed work, and waits only when otherwise idle.
+
 ## [0.99.11] - 2026-07-18
 
 ### Security
