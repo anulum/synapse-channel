@@ -18,8 +18,9 @@ clear. The figures below are reproducible from the repository.
 - A test suite across the `tests/` tree exercises every package module. The
   current test-function, module, and surface counts are in the README's capability
   inventory, which CI keeps in sync with the source tree.
-- CI keeps aggregate line and branch coverage above the enforced **98%** floor;
-  current Python 3.10–3.13 reports are above 99%.
+- CI enforces an aggregate line-and-branch coverage floor of **98%**. The
+  Codecov report for `main` measured **98.85%** on 2026-07-18; its badge rounds
+  that value to 99%, so the badge is not evidence that coverage exceeds 99%.
 - Tests are designed to be deterministic: time and remote transports are injected
   where practical, while end-to-end cases use throwaway localhost services and
   external hardware or network paths remain explicitly gated.
@@ -43,7 +44,7 @@ Every change must clear these gates (run locally with `make preflight`):
 | Release claim hygiene | `tools/check_release_claim_hygiene.py --check` | changelog/release prose has no agent-authorship, quality-label, or conformance overclaims |
 | Commercial claim hygiene | `tools/check_commercial_claim_hygiene.py --check` | commercial docs preserve the AGPL/commercial boundary and no feature-split claims |
 | Types | `mypy` (strict) | no errors |
-| Tests + coverage | `pytest --cov` | pass, ≥ 98% (currently above 99%) |
+| Tests + coverage | `pytest --cov` | pass, ≥ 98% |
 | Licensing | `reuse lint` | REUSE 3.x compliant |
 | Spelling | `typos` | clean |
 | Security lint | `bandit` | clean |

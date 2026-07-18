@@ -15,6 +15,9 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Validation documentation now reports the enforced 98% coverage floor and
+  the dated 98.85% Codecov measurement separately; it no longer turns the
+  badge's rounded 99% display into an unsupported "above 99%" claim.
 - The release workflow now publishes the verified wheel and sdist SHA-256
   digests in the GitHub Release notes body itself (a fenced "Artifact checksums
   (SHA-256)" section), not only as the attached `SHA256SUMS` asset, so a
