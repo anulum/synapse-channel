@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- Reserve the global agent names `SynapseHub`, `Synapse`, and `system`
+  case-insensitively so a client cannot impersonate hub or protocol provenance.
+  Registration is refused before authentication, trust-on-first-use pinning,
+  takeover, or ownership-lease state changes. Project-scoped identities such as
+  `PROJECT/system` remain valid; clients using a reserved global name must
+  migrate to a non-reserved or project-scoped identity.
+
 ### Added
 
 - Board tasks carry an optional project scope and a monotonic version, with an
