@@ -21,6 +21,11 @@ All notable changes to this project are documented here.
   consumer can confirm own-provenance straight from the release notes. The
   digests are the same ones `sha256sum --check --strict`-verified before the
   assets are attached.
+- The identity-and-ACL guide now carries an end-to-end worked example for
+  recovering a changed machine key through the governed pin reclaim: a
+  copy-paste `identity-pin-reclaim` ACL grant, the fresh-TOFU recovery-operator
+  recipe that sidesteps the bootstrap paradox, and the exact `synapse identity
+  reclaim` invocation with its compare-and-swap and audit-trail guarantees.
 
 ### Fixed
 

@@ -113,6 +113,69 @@ bundles remain the multi-tenant graduation). General credential rotation and
 revocation tooling, owner recovery beyond the governed stale-pin path, and
 read-surface ACLs (metrics, dashboard, event-query) remain design targets.
 
+### Recovering a changed machine key — worked example
+
+When a machine's Ed25519 key is regenerated (a fresh install, a wiped identity
+directory), every name this hub pinned to the old key is refused on reconnect
+with the identity-pin mismatch — the correct trust-on-first-use posture, but it
+needs a governed way back in that does not wipe the whole pin store. The governed
+reclaim above is that path; here is the end-to-end recipe. Which operator holds
+the grant and how widely it is scoped are the owner's ratification, not a default.
+
+1. **Provision the reclaim grant (owner)** in an ACL policy file the owner
+   controls, scoped to a dedicated recovery-operator project namespace so only
+   that operator — never a live seat self-granting — may reclaim:
+
+   ```json
+   {
+     "rules": [
+       {
+         "permission": "identity-pin-reclaim",
+         "target_kind": "agent",
+         "target_pattern": "*",
+         "namespace": "recovery-ops",
+         "reason": "designated recovery operator may reclaim stale machine-key pins"
+       }
+     ]
+   }
+   ```
+
+2. **Start the hub reading that grant**: `synapse hub --db <path> --acl-policy
+   <file>`. The `--db` is required — the reclaim writes a mandatory durable audit
+   event. The `identity-pin-reclaim` verb is always enforced against this grant,
+   even when general `--require-acl` enforcement is off.
+
+3. **Connect the recovery operator under a FRESH identity** in the granted
+   namespace (`recovery-ops/<agent>`). Because that name is unpinned it
+   trust-on-first-use-pins to the current machine key and binds, sidestepping the
+   bootstrap paradox that an operator whose own name is stale cannot bind to run
+   the reclaim.
+
+4. **Reclaim each stale name**, giving the exact key id observed in the pin file
+   (the compare-and-swap guard) and a reason for the audit trail:
+
+   ```
+   synapse identity reclaim <stale-name> \
+     --operator recovery-ops/<agent> \
+     --expected-key-id <old-key-id> \
+     --reason "machine key rotated after reinstall"
+   ```
+
+   The safe path accepts an offline name whose ownership lease has lapsed under
+   `--lease-offline-ttl`, or a socket-up holder that has gone unreactive for that
+   TTL. A live, reacting holder requires an explicit `--break-glass`, recorded in
+   the audit event alongside the operator, the previous key id, and the reason.
+
+5. **Reconnect the recovered name** with its new key. Removal is compare-and-swap
+   only and never installs a replacement, so the next valid signed registration
+   trust-on-first-use-pins the name to the new machine key and normal operation
+   resumes.
+
+A genuinely different public key stays operator-gated at every step: nothing here
+performs a silent key rotation or lets a name self-reclaim. This recovers a
+lost or rotated key, not a compromised one — a real credential leak is out of
+scope and must be handled by revocation, not reclaim.
+
 ## Identity model
 
 An identity record should separate the stable actor from the terminal, process,
