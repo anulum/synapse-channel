@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.11] - 2026-07-18
+
 ### Security
 
 - Grade a release receipt by verification rather than by the mere presence of
