@@ -13,6 +13,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Board tasks carry an optional project scope and a monotonic version, with an
+  `expected_version` compare-and-set guard on `ledger_task`/`ledger_task_update`
+  and matching `synapse task declare --project/--expected-version` and
+  `task update --project/--expected-version` flags. A re-declaration with a
+  conflicting non-empty scope is refused, the guard refuses stale writers, and
+  both fields journal and replay durably.
+- Persistent capability registration for automated dispatch: an `advertise`
+  with `persist: true` registers a project-scoped seat's card so it survives
+  disconnects (24-hour refresh TTL), with `dispatchable` opt-out, a structural
+  `-rx` sidecar path for wake listeners registering their seat, and additive
+  `persistent`/`dispatchable` keys in the manifest. `synapse wait
+  --capability-card FILE` re-registers the card on every (re)connect, so
+  registration self-heals across re-arms and hub restarts.
+
 ### Changed
 
 - Validation documentation now reports the enforced 98% coverage floor and

@@ -36,6 +36,9 @@ class AgentCapabilityMixin:
         | None = None,
         meta: dict[str, Any] | None = None,
         manifest_digest: str = "",
+        persist: bool = False,
+        dispatchable: bool | None = None,
+        agent: str | None = None,
     ) -> None:
         """Advertise this agent's capability card to the hub.
 
@@ -56,9 +59,23 @@ class AgentCapabilityMixin:
             Additional descriptive metadata.
         manifest_digest : str, optional
             Digest of the package/tool manifest this advertisement describes.
+        persist : bool, optional
+            When ``True``, register a persistent dispatch card (survives
+            disconnect, 24h refresh TTL) instead of a live session card. The
+            hub refuses this for identities that are not project-scoped seats.
+        dispatchable : bool or None, optional
+            Opt the persistent registration in or out of automated dispatch;
+            only meaningful with ``persist=True``.
+        agent : str or None, optional
+            Register the card for this identity instead of the connection name;
+            the hub only honours the connection's own identity or the identity
+            whose ``-rx`` sidecar the connection is (a wake listener
+            registering its seat).
         """
         if self._capability_card_key is None:
             extra: dict[str, Any] = {}
+            if agent:
+                extra["agent"] = agent
             if description:
                 extra["description"] = description
             if skills:
@@ -75,9 +92,18 @@ class AgentCapabilityMixin:
                 extra["meta"] = meta
             if manifest_digest:
                 extra["manifest_digest"] = manifest_digest
+            if persist:
+                extra["persist"] = True
+            if dispatchable is not None:
+                extra["dispatchable"] = dispatchable
             await self.send_message(MessageType.ADVERTISE, target="System", **extra)
             return
 
+        if agent is not None and agent != self.name:
+            raise ValueError(
+                "a signed capability card can only advertise its own identity; "
+                "the 'agent' override is reserved for unsigned sidecar registrations"
+            )
         card = normalized_capability_card(
             self.name,
             description=description,
@@ -112,4 +138,8 @@ class AgentCapabilityMixin:
             )
             if card.get(key)
         }
+        if persist:
+            extra["persist"] = True
+        if dispatchable is not None:
+            extra["dispatchable"] = dispatchable
         await self.send_message(MessageType.ADVERTISE, target="System", **extra)

@@ -72,7 +72,8 @@ async def _task_action(
     Returns
     -------
     int
-        ``0`` once the confirmation is printed, ``1`` when the hub was unreachable.
+        ``0`` once the confirmation is printed, ``1`` when the hub is
+        unreachable or refuses the write (the refusal text is printed).
     """
     return await _query_hub(
         uri=uri,
@@ -84,6 +85,7 @@ async def _task_action(
         render=lambda data: print(render(data)),
         attempts=attempts,
         ready_timeout=ready_timeout,
+        surface_error=True,
     )
 
 
@@ -94,7 +96,13 @@ def _cmd_task_declare(
     deps = tuple(args.depends_on) if args.depends_on else ()
 
     async def send(agent: SynapseAgent) -> None:
-        await agent.post_task(args.task_id, title=args.title, depends_on=deps)
+        await agent.post_task(
+            args.task_id,
+            title=args.title,
+            depends_on=deps,
+            project=getattr(args, "project", ""),
+            expected_version=getattr(args, "expected_version", None),
+        )
 
     def render(msg: dict[str, Any]) -> str:
         task = msg.get("task", {})
@@ -121,7 +129,11 @@ def _cmd_task_update(
 
     async def send(agent: SynapseAgent) -> None:
         await agent.update_ledger_task(
-            args.task_id, status=args.status, suggested_owner=args.suggested_owner
+            args.task_id,
+            status=args.status,
+            suggested_owner=args.suggested_owner,
+            project=getattr(args, "project", None),
+            expected_version=getattr(args, "expected_version", None),
         )
 
     def render(msg: dict[str, Any]) -> str:
@@ -194,6 +206,17 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         help="Task id this one depends on (repeatable).",
     )
+    declare.add_argument(
+        "--project",
+        default="",
+        help="Project namespace scope (empty keeps an existing scope on re-declare).",
+    )
+    declare.add_argument(
+        "--expected-version",
+        type=int,
+        default=None,
+        help="Compare-and-set guard: refuse unless the board version matches.",
+    )
     _add_task_common(declare)
     declare.set_defaults(func=_cmd_task_declare)
 
@@ -201,6 +224,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     update.add_argument("task_id")
     update.add_argument("--status", default=None, help="New status, e.g. done.")
     update.add_argument("--suggested-owner", default=None)
+    update.add_argument("--project", default=None, help="Replacement project scope.")
+    update.add_argument(
+        "--expected-version",
+        type=int,
+        default=None,
+        help="Compare-and-set guard: refuse unless the board version matches.",
+    )
     _add_task_common(update)
     update.set_defaults(func=_cmd_task_update)
 

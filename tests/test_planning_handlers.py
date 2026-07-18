@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
@@ -159,6 +160,8 @@ class TestHandleLedgerTaskUpdate:
             "task_id": "t1",
             "status": "done",
             "suggested_owner": "bob",
+            "project": None,
+            "expected_version": None,
         }
         assert hub.broadcasts[0]["msg_type"] == MessageType.LEDGER_TASK_UPDATED
         assert len(log["task"]) == 1
@@ -172,6 +175,8 @@ class TestHandleLedgerTaskUpdate:
             "task_id": "t1",
             "status": None,
             "suggested_owner": None,
+            "project": None,
+            "expected_version": None,
         }
         assert hub.broadcasts
         assert log["task"] == []
@@ -240,3 +245,63 @@ class TestHandleLedgerProgress:
         assert hub.broadcasts == []
         assert hub.sent[0]["msg_type"] == MessageType.ERROR
         assert hub.sent[0]["text"] == "not-a-note"
+
+
+class TestJournalFailureRollback:
+    """A journal append failure must roll the mutation back completely."""
+
+    async def test_declare_new_task_is_popped_on_journal_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _raise(_journal: Any, _payload: Any) -> None:
+            raise sqlite3.OperationalError("disk full")
+
+        monkeypatch.setattr(planning, "record_ledger_task", _raise)
+        board = _FakeBlackboard()
+        hub = _FakeHub(board, journal=object())
+        await planning.handle_ledger_task(
+            _as_hub(hub), "alice", {"task_id": "t1", "title": "Do"}, object()
+        )
+        assert "t1" not in board.tasks
+        assert hub.broadcasts == []
+        assert "rolled back" in hub.sent[-1]["text"]
+
+    async def test_declare_existing_task_is_restored_on_journal_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _raise(_journal: Any, _payload: Any) -> None:
+            raise sqlite3.OperationalError("disk full")
+
+        monkeypatch.setattr(planning, "record_ledger_task", _raise)
+        board = _FakeBlackboard()
+        prior = _FakeTask("t1")
+        prior.marker = "pre-mutation"  # type: ignore[attr-defined]
+        board.tasks["t1"] = prior
+        hub = _FakeHub(board, journal=object())
+        await planning.handle_ledger_task(
+            _as_hub(hub), "alice", {"task_id": "t1", "title": "Do"}, object()
+        )
+        restored = board.tasks["t1"]
+        assert getattr(restored, "marker", None) == "pre-mutation"
+        assert hub.broadcasts == []
+        assert "rolled back" in hub.sent[-1]["text"]
+
+    async def test_update_is_restored_on_journal_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _raise(_journal: Any, _payload: Any) -> None:
+            raise sqlite3.OperationalError("disk full")
+
+        monkeypatch.setattr(planning, "record_ledger_task", _raise)
+        board = _FakeBlackboard()
+        prior = _FakeTask("t1")
+        prior.marker = "pre-mutation"  # type: ignore[attr-defined]
+        board.tasks["t1"] = prior
+        hub = _FakeHub(board, journal=object())
+        await planning.handle_ledger_task_update(
+            _as_hub(hub), "alice", {"task_id": "t1", "status": "done"}, object()
+        )
+        restored = board.tasks["t1"]
+        assert getattr(restored, "marker", None) == "pre-mutation"
+        assert hub.broadcasts == []
+        assert "rolled back" in hub.sent[-1]["text"]

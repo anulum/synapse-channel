@@ -449,6 +449,8 @@ def _ledger_task_from_payload(payload: dict[str, Any]) -> LedgerTask:
         depends_on=tuple(str(d) for d in payload.get("depends_on", ())),
         status=str(payload.get("status", "open")),
         suggested_owner=str(payload.get("suggested_owner", "")),
+        project=str(payload.get("project", "")),
+        version=int(payload.get("version", 1)),
         created_by=str(payload.get("created_by", "")),
     )
 

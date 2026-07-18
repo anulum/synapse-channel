@@ -28,6 +28,8 @@ class AgentLedgerMixin:
         description: str = "",
         depends_on: tuple[str, ...] | list[str] = (),
         suggested_owner: str = "",
+        project: str = "",
+        expected_version: int | None = None,
     ) -> None:
         """Declare or re-declare a task on the shared plan."""
         extra: dict[str, Any] = {"task_id": task_id.strip(), "title": title}
@@ -37,6 +39,10 @@ class AgentLedgerMixin:
             extra["depends_on"] = list(depends_on)
         if suggested_owner:
             extra["suggested_owner"] = suggested_owner
+        if project:
+            extra["project"] = project
+        if expected_version is not None:
+            extra["expected_version"] = expected_version
         await self.send_message(MessageType.LEDGER_TASK, target="System", **extra)
 
     async def update_ledger_task(
@@ -45,13 +51,19 @@ class AgentLedgerMixin:
         *,
         status: str | None = None,
         suggested_owner: str | None = None,
+        project: str | None = None,
+        expected_version: int | None = None,
     ) -> None:
-        """Change a plan task's planning status or suggested owner."""
+        """Change a plan task's planning status, suggested owner, or scope."""
         extra: dict[str, Any] = {"task_id": task_id.strip()}
         if status is not None:
             extra["status"] = status
         if suggested_owner is not None:
             extra["suggested_owner"] = suggested_owner
+        if project is not None:
+            extra["project"] = project
+        if expected_version is not None:
+            extra["expected_version"] = expected_version
         await self.send_message(MessageType.LEDGER_TASK_UPDATE, target="System", **extra)
 
     async def post_progress(

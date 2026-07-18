@@ -685,7 +685,20 @@ act, and re-launch `synapse wait`. It costs nothing while it waits.
 ```bash
 synapse wait --name api-dev-rx --for api-dev   # blocks; prints + exits on a message for api-dev
 synapse wait --for api-dev --timeout 60        # give up after 60s (exit 2) instead of waiting forever
+synapse wait --for api-dev --capability-card card.json   # re-register a dispatch card on every (re)connect
 ```
+
+With `--capability-card FILE` the waiter re-registers a persistent dispatch
+card for its `--for` identity on every connect — so automated dispatch can
+discover the seat across reconnects and hub restarts. The file is JSON:
+`{"description": ..., "skills": [...], "task_classes": [...], "model": ...,
+"dispatchable": true|false}`. An unreadable or malformed card is reported and
+the wait continues unregistered — a lost registration never silences the
+waiter. The registration is reserved for project-scoped seats
+(`<project>/<seat>`) and is sent unsigned from the waiter's `-rx` name for its
+bare identity. While the wait blocks, the card is re-advertised every
+`--capability-refresh-seconds` (default 21600 = 6h; `0` disables), so a
+healthy long-lived waiter never lets its 24-hour registration lapse.
 
 `synapse arm` states its binding out loud before it holds the socket: the first line
 names exactly whose messages it wakes on (`waiting for messages to <identity>`), and
@@ -1946,6 +1959,20 @@ synapse task update BUILD --status done        # TEST now unblocks
 synapse task progress TEST "started" --kind note
 syn ack TEST --evidence "pytest tests/test_feature.py -q" --artifact coverage.xml
 ```
+
+Tasks carry an optional project scope and a monotonic version for
+compare-and-set updates:
+
+```bash
+synapse task declare FIX --title "Repair parser" --project SYNAPSE-CHANNEL
+synapse task declare FIX --title "Repair parser" --expected-version 0   # create only if absent
+synapse task update FIX --suggested-owner SYNAPSE-CHANNEL/kimi-3dcd --expected-version 2
+```
+
+A re-declaration with a conflicting non-empty `--project` is refused (a blank
+value keeps the existing scope); `--expected-version` refuses the write unless
+the board's current `version` matches, so two planners cannot silently
+overwrite each other's assignment.
 
 The hub bounds the in-memory blackboard and memory-admission surfaces with
 operator-set limits: `--max-progress` for the total retained progress notes,

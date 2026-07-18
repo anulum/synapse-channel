@@ -124,6 +124,23 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     wait.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )
+    wait.add_argument(
+        "--capability-card",
+        default=None,
+        metavar="FILE",
+        help="JSON dispatch card re-registered for the waited-for identity on every "
+        "(re)connect (persistent advertise), so automated dispatch can discover "
+        "this seat across reconnects and hub restarts.",
+    )
+    wait.add_argument(
+        "--capability-refresh-seconds",
+        type=float,
+        default=21_600.0,
+        metavar="SECONDS",
+        help="Re-advertise the --capability-card at this interval while waiting "
+        "(default 21600 = 6h), so a long-lived waiter's 24h registration never "
+        "lapses; 0 disables.",
+    )
     wait.set_defaults(func=_cmd_wait)
 
     listen = subparsers.add_parser("listen", help="Stream channel messages until interrupted.")

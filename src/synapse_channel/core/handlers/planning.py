@@ -16,14 +16,35 @@ to the sender.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import copy
+import sqlite3
+from typing import TYPE_CHECKING, Any, cast
 
 from synapse_channel.core.journal import record_ledger_progress, record_ledger_task
-from synapse_channel.core.ledger import ProgressNote
+from synapse_channel.core.ledger import LedgerTask, ProgressNote
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
+
+_JOURNAL_FAILURES = (sqlite3.Error, TypeError, ValueError, OSError)
+"""Exception classes a journal append may surface to a planning handler."""
+
+
+def _expected_version(data: dict[str, Any]) -> tuple[int | None, str | None]:
+    """Parse the optional CAS guard, refusing mistyped values.
+
+    Returns ``(version, None)`` when the key is absent, null, or a valid
+    integer, and ``(None, reason)`` when the value is present but not an
+    integer (booleans included) — a type-confused guard must fail closed at
+    ingress rather than silently coerce.
+    """
+    if "expected_version" not in data or data["expected_version"] is None:
+        return None, None
+    raw = data["expected_version"]
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None, "Malformed frame: 'expected_version' must be an integer."
+    return raw, None
 
 
 async def handle_ledger_task(
@@ -33,6 +54,15 @@ async def handle_ledger_task(
     task_id = str(data.get("task_id") or "").strip()
     raw_deps = data.get("depends_on")
     depends_on = [str(d) for d in raw_deps] if isinstance(raw_deps, list) else []
+    expected, version_error = _expected_version(data)
+    if version_error is not None:
+        await hub._send_json(
+            websocket,
+            hub._system(version_error, msg_type=MessageType.ERROR, target=sender),
+        )
+        return
+    prior = hub.blackboard.tasks.get(task_id)
+    prior_snapshot = copy.deepcopy(prior) if prior is not None else None
     ok, message = hub.blackboard.post_task(
         task_id=task_id,
         title=str(data.get("title") or ""),
@@ -40,11 +70,30 @@ async def handle_ledger_task(
         description=str(data.get("description") or ""),
         depends_on=depends_on,
         suggested_owner=str(data.get("suggested_owner") or ""),
+        project=str(data.get("project") or ""),
+        expected_version=expected,
     )
     if ok:
         task = hub.blackboard.tasks[task_id]
         if hub.journal is not None:
-            record_ledger_task(hub.journal, task)
+            try:
+                record_ledger_task(hub.journal, task)
+            except _JOURNAL_FAILURES as exc:
+                # Never let memory diverge from the durable log: without the
+                # event, replay would resurrect the OLD state after restart.
+                if prior_snapshot is None:
+                    hub.blackboard.tasks.pop(task_id, None)
+                else:
+                    hub.blackboard.tasks[task_id] = prior_snapshot
+                await hub._send_json(
+                    websocket,
+                    hub._system(
+                        f"Task '{task_id}' was not journalled ({exc}); mutation rolled back.",
+                        msg_type=MessageType.ERROR,
+                        target=sender,
+                    ),
+                )
+                return
         await hub._broadcast(
             hub._system(
                 message,
@@ -63,15 +112,41 @@ async def handle_ledger_task_update(
     task_id = str(data.get("task_id") or "").strip()
     status = data.get("status")
     suggested_owner = data.get("suggested_owner")
+    project = data.get("project")
+    expected, version_error = _expected_version(data)
+    if version_error is not None:
+        await hub._send_json(
+            websocket,
+            hub._system(version_error, msg_type=MessageType.ERROR, target=sender),
+        )
+        return
+    prior_snapshot = copy.deepcopy(hub.blackboard.tasks.get(task_id))
     ok, message = hub.blackboard.update_task(
         task_id,
         status=str(status) if status is not None else None,
         suggested_owner=str(suggested_owner) if suggested_owner is not None else None,
+        project=str(project) if project is not None else None,
+        expected_version=expected,
     )
     if ok:
         task = hub.blackboard.tasks[task_id]
         if hub.journal is not None:
-            record_ledger_task(hub.journal, task)
+            try:
+                record_ledger_task(hub.journal, task)
+            except _JOURNAL_FAILURES as exc:
+                # Never let memory diverge from the durable log: without the
+                # event, replay would resurrect the OLD state after restart.
+                # ``update_task`` refuses unknown ids, so the snapshot exists.
+                hub.blackboard.tasks[task_id] = cast("LedgerTask", prior_snapshot)
+                await hub._send_json(
+                    websocket,
+                    hub._system(
+                        f"Task '{task_id}' was not journalled ({exc}); mutation rolled back.",
+                        msg_type=MessageType.ERROR,
+                        target=sender,
+                    ),
+                )
+                return
         await hub._broadcast(
             hub._system(
                 message,

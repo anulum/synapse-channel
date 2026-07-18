@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import random
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -43,6 +44,61 @@ WaitRunner = Callable[..., Coroutine[Any, Any, int]]
 AsyncRunner = Callable[[Coroutine[Any, Any, int]], int]
 
 
+def _load_dispatch_card(path: Path) -> dict[str, Any] | None:
+    """Load and validate a JSON dispatch card for persistent registration.
+
+    Returns advertise keyword arguments (``description``/``skills``/
+    ``task_classes``/``model``/``dispatchable``) or ``None`` after printing the
+    reason the file is unusable. A bad card must never take the waiter dark —
+    the caller continues unregistered either way.
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(
+            f"capability card {path}: unreadable or invalid JSON ({exc}); continuing unregistered."
+        )
+        return None
+    if not isinstance(raw, dict):
+        print(f"capability card {path}: top level must be a JSON object; continuing unregistered.")
+        return None
+    kwargs: dict[str, Any] = {}
+    description = raw.get("description")
+    if description is not None:
+        if not isinstance(description, str):
+            print(
+                f"capability card {path}: 'description' must be a string; continuing unregistered."
+            )
+            return None
+        kwargs["description"] = description
+    for key in ("skills", "task_classes"):
+        value = raw.get(key)
+        if value is not None:
+            if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                print(
+                    f"capability card {path}: '{key}' must be a list of strings; "
+                    "continuing unregistered."
+                )
+                return None
+            kwargs[key] = value
+    model = raw.get("model")
+    if model is not None:
+        if not isinstance(model, str):
+            print(f"capability card {path}: 'model' must be a string; continuing unregistered.")
+            return None
+        kwargs["model"] = model
+    dispatchable = raw.get("dispatchable")
+    if dispatchable is not None:
+        if not isinstance(dispatchable, bool):
+            print(
+                f"capability card {path}: 'dispatchable' must be a boolean; "
+                "continuing unregistered."
+            )
+            return None
+        kwargs["dispatchable"] = dispatchable
+    return kwargs
+
+
 async def _wait(
     *,
     uri: str,
@@ -63,6 +119,8 @@ async def _wait(
     owner_lease_path: Path | None = None,
     identity_key_path: str | None = None,
     identity_key_id: str = "",
+    capability_card_path: Path | None = None,
+    capability_refresh_seconds: float = 21_600.0,
 ) -> int:
     """Block until one message addressed to ``for_name`` arrives, print it, and exit.
 
@@ -132,6 +190,16 @@ async def _wait(
         waiter name to this machine. ``None`` registers unsigned.
     identity_key_id : str, optional
         Key id carried in the registration signature envelope.
+    capability_card_path : pathlib.Path or None, optional
+        JSON dispatch card re-registered for ``for_name`` on every (re)connect
+        (persistent advertise), so automated dispatch can discover this seat
+        across reconnects and hub restarts. An unreadable or malformed card is
+        reported and the wait continues unregistered — registration is
+        best-effort and must never silence the waiter.
+    capability_refresh_seconds : float, optional
+        Re-advertise the card at this interval while the wait blocks (default
+        21,600 seconds = 6 hours), so a healthy long-lived waiter never lets
+        its 24-hour registration lapse. ``0`` disables periodic refresh.
 
     Returns
     -------
@@ -227,11 +295,34 @@ async def _wait(
                 # service manager stops instead of crash-looping the refusal.
                 return 5
             return 1
+        card_kwargs = (
+            _load_dispatch_card(capability_card_path) if capability_card_path is not None else None
+        )
+        last_advertise = 0.0
+
+        async def _refresh_registration() -> None:
+            """Best-effort persistent (re)advertise; never darkens the waiter."""
+            nonlocal last_advertise
+            if card_kwargs is None:
+                return
+            try:
+                await agent.advertise(agent=for_name, persist=True, **card_kwargs)
+            except Exception as exc:  # a dark waiter is worse than a lost registration
+                print(f"[{name}] capability card advertise failed ({exc}); continuing.")
+            last_advertise = asyncio.get_event_loop().time()
+
+        await _refresh_registration()
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
         while not received and (timeout <= 0 or loop.time() < deadline):
             if conn_task.done():
                 break  # the socket closed (hub restart, superseded, network)
+            if (
+                capability_card_path is not None
+                and capability_refresh_seconds > 0
+                and loop.time() - last_advertise >= capability_refresh_seconds
+            ):
+                await _refresh_registration()
             await asyncio.sleep(poll_interval)
         if received:
             # Snapshot the burst BEFORE any await: a frame arriving during the
@@ -368,6 +459,9 @@ def _cmd_wait(
             return 0
 
     machine = machine_identity_agent_kwargs()
+    capability_card_path = (
+        Path(args.capability_card) if getattr(args, "capability_card", None) else None
+    )
     return async_runner(
         wait_runner(
             uri=args.uri,
@@ -383,5 +477,7 @@ def _cmd_wait(
             owner_lease_path=lease_path(connect_name),
             identity_key_path=machine.get("identity_key_path"),
             identity_key_id=str(machine.get("identity_key_id", "")),
+            capability_card_path=capability_card_path,
+            capability_refresh_seconds=float(getattr(args, "capability_refresh_seconds", 21_600.0)),
         )
     )

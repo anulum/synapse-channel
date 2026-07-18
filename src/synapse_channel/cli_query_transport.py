@@ -16,6 +16,7 @@ from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.connect_failures import describe_connect_failure, is_identity_refused_close
+from synapse_channel.core.protocol import MessageType
 
 AgentFactory = Callable[..., SynapseAgent]
 
@@ -34,13 +35,17 @@ async def _query_attempt(
     attempts: int,
     ready_timeout: float,
     suppress_identity_refusal: bool,
+    surface_error: bool = False,
 ) -> tuple[int, bool]:
     """Run one query connection and classify an identity-only refusal."""
     results: list[Any] = []
+    errors: list[str] = []
 
     async def collect(data: dict[str, Any]) -> None:
         if data.get("type") == response_type:
             results.append(transform(data))
+        elif surface_error and data.get("type") == MessageType.ERROR:
+            errors.append(str(data.get("payload") or "hub refused the request"))
 
     agent = agent_factory(connect_name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
@@ -61,7 +66,7 @@ async def _query_attempt(
             return 1, identity_refused
         await request(agent)
         for _ in range(attempts):
-            if results:
+            if results or (surface_error and errors):
                 break
             if agent.last_close_code is not None:
                 break
@@ -69,6 +74,9 @@ async def _query_attempt(
         if results:
             render(results[-1])
             return 0, False
+        if surface_error and errors:
+            print(errors[-1])
+            return 1, False
         if agent.last_close_code is not None:
             identity_refused = is_identity_refused_close(
                 agent.last_close_code, agent.last_close_reason
@@ -114,6 +122,7 @@ async def _query_hub(
     attempts: int = 50,
     ready_timeout: float = 5.0,
     identity_fallback_name: str | None = None,
+    surface_error: bool = False,
 ) -> int:
     """Connect, issue one request, await the matching reply, render it, and exit.
 
@@ -147,11 +156,15 @@ async def _query_hub(
         A separately scoped signed identity used only when the primary name is
         refused with the exact identity-binding close class. Network, capacity,
         ownership, and protocol failures never trigger the fallback.
+    surface_error : bool, optional
+        When ``True``, a hub ``error`` reply to the request is printed and the
+        command exits ``1`` instead of falling through to a silent ``0``.
 
     Returns
     -------
     int
-        ``0`` once a reply is rendered (or none arrives), ``1`` when the hub is unreachable.
+        ``0`` once a reply is rendered (or none arrives), ``1`` when the hub is
+        unreachable or, with ``surface_error``, when the hub refuses the request.
     """
     fallback = str(identity_fallback_name or "").strip()
     primary_code, identity_refused = await _query_attempt(
@@ -167,6 +180,7 @@ async def _query_hub(
         attempts=attempts,
         ready_timeout=ready_timeout,
         suppress_identity_refusal=bool(fallback and fallback != name),
+        surface_error=surface_error,
     )
     if not identity_refused or not fallback or fallback == name:
         return primary_code
@@ -183,5 +197,6 @@ async def _query_hub(
         attempts=attempts,
         ready_timeout=ready_timeout,
         suppress_identity_refusal=False,
+        surface_error=surface_error,
     )
     return fallback_code

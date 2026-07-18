@@ -32,6 +32,8 @@ def test_ledger_task_as_dict_roundtrips_fields() -> None:
         "depends_on": ["T0"],
         "status": "in_progress",
         "suggested_owner": "FAST",
+        "project": "",
+        "version": 1,
         "created_by": "PLANNER",
         "created_at": 1.0,
         "updated_at": 2.0,

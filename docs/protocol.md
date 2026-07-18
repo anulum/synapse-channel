@@ -146,6 +146,32 @@ sequence, signing/expiry timestamps, card digest, and signature value. Both fiel
 are additive: unsigned clients retain their legacy outbound shape, while projected
 cards expose `project`, `manifest_digest`, `signature`, and `verification`.
 
+An `advertise` message may also carry the additive `persist`, `dispatchable`,
+and `agent` fields. With `persist: true` the card becomes a persistent dispatch
+registration: it survives the sender's disconnect and expires only when not
+refreshed within 24 hours, so automated dispatch can discover a project seat
+across reconnects. `dispatchable` (boolean, default `true`) opts the
+registration in or out of automated dispatch. `agent` names the identity the
+card belongs to; the hub honours it only when it equals the connection name or
+the connection is that identity's `-rx` sidecar (a wake listener registering
+its seat). Persistent registration requires a project-scoped seat identity
+(`<project>/<seat>`); non-boolean flags, a foreign `agent`, or an unscoped
+identity are refused with a private `error`. Projected cards in
+`capability_advertised` and `manifest_snapshot` carry the additive
+`persistent`/`dispatchable` keys, merged onto the agent's single manifest
+entry; legacy consumers ignore them.
+
+A `ledger_task` may carry the additive `project` string (a namespace scope for
+the task; absent means unscoped, and a re-declaration with a conflicting
+non-empty scope is refused) and both `ledger_task` and `ledger_task_update`
+may carry the additive `expected_version` integer — a compare-and-set guard
+refused with a private `error` unless the task's current monotonic `version`
+matches (an absent task counts as version `0`). `ledger_task_update` may also
+carry `project` to re-scope. Every accepted mutation increments `version`;
+task projections in `ledger_task_posted`, `ledger_task_updated`, and
+`board_snapshot` carry `project` and `version`. A non-integer
+`expected_version` (booleans included) is refused as malformed.
+
 ## Hub → agent
 
 - **Session:** `welcome`, `presence_update`, `name_conflict`, `auth_denied`,

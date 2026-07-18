@@ -82,6 +82,13 @@ class LedgerTask:
         Coarse planning status from :data:`LEDGER_TASK_STATUSES`.
     suggested_owner : str
         Optional agent name proposed to take the task; advisory only.
+    project : str
+        Optional project namespace the task belongs to. ``""`` means unscoped
+        (legacy); an unscoped task is never eligible for automated dispatch.
+    version : int
+        Monotonic mutation counter: ``1`` at declaration, ``+1`` on every
+        accepted re-declare or update. Enables compare-and-set via
+        ``expected_version``.
     created_by : str
         Agent that first declared the task.
     created_at : float
@@ -98,6 +105,8 @@ class LedgerTask:
     depends_on: tuple[str, ...] = ()
     status: str = DEFAULT_LEDGER_TASK_STATUS
     suggested_owner: str = ""
+    project: str = ""
+    version: int = 1
     created_by: str = ""
 
     def as_dict(self) -> dict[str, Any]:
@@ -109,6 +118,8 @@ class LedgerTask:
             "depends_on": list(self.depends_on),
             "status": self.status,
             "suggested_owner": self.suggested_owner,
+            "project": self.project,
+            "version": self.version,
             "created_by": self.created_by,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -204,6 +215,8 @@ class Blackboard:
         description: str = "",
         depends_on: tuple[str, ...] | list[str] = (),
         suggested_owner: str = "",
+        project: str = "",
+        expected_version: int | None = None,
         now: float | None = None,
     ) -> tuple[bool, str]:
         """Declare or re-declare a task on the plan (an upsert).
@@ -220,6 +233,15 @@ class Blackboard:
             Prerequisite task ids; self-references and duplicates are dropped.
         suggested_owner : str, optional
             Advisory proposed owner.
+        project : str, optional
+            Project namespace. On a first declaration ``""`` leaves the task
+            unscoped; on a re-declaration ``""`` keeps the existing scope, and
+            a non-empty value conflicting with an already-scoped task is
+            refused (fail-closed against accidental re-scoping).
+        expected_version : int or None, optional
+            Compare-and-set guard: when given, the mutation is refused unless
+            the task's current ``version`` equals it (a missing task counts as
+            version ``0``).
         now : float or None, optional
             Override for the current wall-clock time, in seconds.
 
@@ -227,7 +249,8 @@ class Blackboard:
         -------
         tuple[bool, str]
             ``(True, message)`` on success, ``(False, reason)`` when the id or
-            title is missing or the dependencies would form a cycle.
+            title is missing, the dependencies would form a cycle, the project
+            scope conflicts, or the version check fails.
         """
         tid = task_id.strip()
         name = title.strip()
@@ -241,7 +264,14 @@ class Blackboard:
             return False, f"Task '{tid}' dependencies would form a cycle."
 
         ts = time.time() if now is None else float(now)
+        scope = project.strip()
         existing = self.tasks.get(tid)
+        current_version = existing.version if existing is not None else 0
+        if expected_version is not None and expected_version != current_version:
+            return False, (
+                f"Task '{tid}' version conflict: expected v{expected_version}, "
+                f"board has v{current_version}."
+            )
         if existing is None:
             self.tasks[tid] = LedgerTask(
                 task_id=tid,
@@ -251,14 +281,23 @@ class Blackboard:
                 description=description.strip(),
                 depends_on=deps,
                 suggested_owner=suggested_owner.strip(),
+                project=scope,
                 created_by=author,
             )
             return True, f"Task '{tid}' declared by {author}."
 
+        if scope and existing.project and scope != existing.project:
+            return False, (
+                f"Task '{tid}' project conflict: already scoped to "
+                f"'{existing.project}', cannot re-scope to '{scope}'."
+            )
         existing.title = name
         existing.description = description.strip()
         existing.depends_on = deps
         existing.suggested_owner = suggested_owner.strip()
+        if scope:
+            existing.project = scope
+        existing.version += 1
         existing.updated_at = ts
         return True, f"Task '{tid}' re-declared by {author}."
 
@@ -268,9 +307,11 @@ class Blackboard:
         *,
         status: str | None = None,
         suggested_owner: str | None = None,
+        project: str | None = None,
+        expected_version: int | None = None,
         now: float | None = None,
     ) -> tuple[bool, str]:
-        """Change a declared task's planning status or suggested owner.
+        """Change a declared task's planning status, owner, or project scope.
 
         Parameters
         ----------
@@ -280,6 +321,11 @@ class Blackboard:
             New planning status; must be in :data:`LEDGER_TASK_STATUSES`.
         suggested_owner : str or None, optional
             Replacement advisory owner (``""`` clears it).
+        project : str or None, optional
+            Replacement project scope (``""`` clears it).
+        expected_version : int or None, optional
+            Compare-and-set guard: when given, the update is refused unless the
+            task's current ``version`` equals it.
         now : float or None, optional
             Override for the current wall-clock time, in seconds.
 
@@ -287,20 +333,30 @@ class Blackboard:
         -------
         tuple[bool, str]
             ``(True, message)`` on success, ``(False, reason)`` when the task is
-            unknown or the status is not a recognised planning status.
+            unknown, the status is not a recognised planning status, or the
+            version check fails.
         """
-        task = self.tasks.get(task_id.strip())
+        tid = task_id.strip()
+        task = self.tasks.get(tid)
         if task is None:
-            return False, f"Task '{task_id}' is not on the board."
+            return False, f"Task '{tid}' is not on the board."
         if status is not None and status not in LEDGER_TASK_STATUSES:
             return False, f"Unknown ledger status '{status}'."
+        if expected_version is not None and expected_version != task.version:
+            return False, (
+                f"Task '{tid}' version conflict: expected v{expected_version}, "
+                f"board has v{task.version}."
+            )
 
         if status is not None:
             task.status = status
         if suggested_owner is not None:
             task.suggested_owner = suggested_owner.strip()
+        if project is not None:
+            task.project = project.strip()
+        task.version += 1
         task.updated_at = time.time() if now is None else float(now)
-        return True, f"Task '{task_id}' plan updated."
+        return True, f"Task '{tid}' plan updated."
 
     def post_progress(
         self,
