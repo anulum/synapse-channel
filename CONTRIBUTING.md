@@ -112,3 +112,49 @@ grows a second responsibility, prefer extracting a new module over widening it.
 The wire protocol and coordination model are described in
 [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`TEAM_PROTOCOL.md`](TEAM_PROTOCOL.md);
 read those before changing message types or the hub state machine.
+
+## Releasing
+
+Cutting a release is owner-gated and runs the mandatory release gate:
+
+1. **Bump** the version across every carrier — `pyproject.toml`,
+   `src/synapse_channel/__init__.py`, `CITATION.cff`, `.zenodo.json`,
+   `server.json`, and the `README.md` citation — until
+   `python tools/check_version_sync.py` reports a single in-sync version;
+   regenerate the capability snapshot and open the `CHANGELOG.md` `[X.Y.Z]`
+   section. Land the bump on a CI-green base.
+2. **Gate.** Run the seven-phase release certification (code hygiene, security
+   `0/0/0`, metadata and version-consistency, git hygiene, build plus clean-env
+   install smoke, release mechanics, post-tag plan). For this public repository
+   the heavy phases are the push-then-CI matrix at the exact head SHA, and the GO
+   report cites CI-green there. Any blocker is a NO-GO.
+3. **Tag.** Only after the GO report, a distinct-terminal second eye, and the
+   owner's explicit publish-go, cut an **annotated** tag at the exact release
+   commit: `git tag -a vX.Y.Z <commit>`. The tag is tag-triggered — pushing it
+   runs the OIDC trusted-publish to PyPI, which is **irreversible**.
+4. **Verify** post-tag: the PyPI version is live with `yanked=false`, the
+   published wheel and sdist SHA-256 digests match the build provenance (the
+   release workflow prints them in the GitHub Release notes), and the tag
+   dereferences to the exact release commit.
+
+### Signed tags (recommended)
+
+Signing a release tag lets a consumer verify it came from a maintainer. The
+lowest-burden option is **SSH signing** with the key you already push with:
+
+```
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
+```
+
+Register that public key on GitHub as a **Signing Key** (Settings → SSH and GPG
+keys → New SSH key → key type *Signing Key*), then cut the tag with `-s`:
+
+```
+git tag -s vX.Y.Z <commit>
+git verify-tag vX.Y.Z
+```
+
+Once maintainers sign tags, `.github/workflows/release.yml` can enforce it by
+running `git verify-tag "$tag"` in its tag-validation step before any asset is
+published.
