@@ -53,6 +53,13 @@ path = ["clients/**"]
 SPDX-FileCopyrightText = "1998-2026 Miroslav Šotek <protoscience@anulum.li>"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
+# --- Generated project metrics (AGPL-3.0-or-later) ---
+
+[[annotations]]
+path = ["downloads/synapse-channel.csv"]
+SPDX-FileCopyrightText = "1998-2026 Miroslav Šotek <protoscience@anulum.li>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
 # --- Vendored Studio font binaries (OFL-1.1) ---
 
 [[annotations]]
