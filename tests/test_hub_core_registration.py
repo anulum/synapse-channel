@@ -200,3 +200,30 @@ async def test_anonymous_sender_gets_generated_name_end_to_end() -> None:
             await websocket.send(json.dumps({"type": "heartbeat"}))
             await read_until_type(websocket, "presence_update")
             assert any(name.startswith("anon-") for name in hub.agent_sockets)
+
+
+@pytest.mark.parametrize("reserved_name", ["SynapseHub", "system", "SYNAPSE"])
+async def test_reserved_protocol_identity_is_refused_end_to_end(reserved_name: str) -> None:
+    async with running_hub() as (hub, uri):
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            await websocket.send(
+                json.dumps(
+                    {
+                        "sender": reserved_name,
+                        "type": "heartbeat",
+                        "takeover": True,
+                        "lease": True,
+                    }
+                )
+            )
+            refused = await read_until_type(websocket, "name_conflict")
+            with pytest.raises(ConnectionClosedError) as exc_info:
+                await websocket.recv()
+
+    assert refused["target"] == reserved_name
+    assert "reserved for hub protocol provenance" in refused["payload"]
+    assert exc_info.value.rcvd is not None
+    assert exc_info.value.rcvd.code == 4009
+    assert exc_info.value.rcvd.reason == "reserved identity"
+    assert reserved_name not in hub.agent_sockets

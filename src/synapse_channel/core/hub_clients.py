@@ -16,10 +16,13 @@ from typing import Any
 from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL, NameOwnership
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.protocol import SENDER_HUB, MessageType
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN, normalize_wake_capability
 
 logger = logging.getLogger("synapse.hub")
+
+_RESERVED_AGENT_NAMES = frozenset({SENDER_HUB.casefold(), "synapse", "system"})
+"""Global names reserved for hub and protocol provenance."""
 
 
 class HubClientRegistry:
@@ -156,6 +159,16 @@ class HubClientRegistry:
     def is_bound(self, websocket: Any) -> bool:
         """Return whether the socket has already bound an agent name."""
         return websocket in self.socket_agent
+
+    @staticmethod
+    def is_reserved_sender(sender: str) -> bool:
+        """Return whether ``sender`` impersonates a global protocol identity.
+
+        Matching is case-insensitive because downstream presentation layers may
+        normalise case. Only the complete global name is reserved; a project-scoped
+        identity such as ``PROJ/system`` remains an ordinary agent address.
+        """
+        return sender.casefold() in _RESERVED_AGENT_NAMES
 
     def bound_agent(self, websocket: Any) -> str | None:
         """Return the agent name bound to the socket, if any."""
@@ -342,6 +355,24 @@ class HubClientRegistry:
         socket or observe the name unheld mid-takeover. The lease mint shares
         that atomic prefix (see :meth:`_admit_owner`).
         """
+        if self.is_reserved_sender(sender):
+            logger.warning(
+                "reserved identity refused sender=%s requester_host=%s",
+                sender,
+                self.remote_host(websocket),
+            )
+            await send_json(
+                websocket,
+                system(
+                    f"Name '{sender}' is reserved for hub protocol provenance. "
+                    "Choose a non-reserved agent name.",
+                    msg_type=MessageType.NAME_CONFLICT,
+                    target=sender,
+                ),
+            )
+            await self.close_socket(websocket, code=4009, reason="reserved identity")
+            return None
+
         known_sender = self.socket_agent.get(websocket)
         if known_sender is None:
             if self.ownership.is_leased(sender) and not self.ownership.matches(sender, owner_lease):

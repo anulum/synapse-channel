@@ -115,6 +115,33 @@ async def test_zero_config_first_use_pins_the_name_to_the_machine_key(tmp_path: 
         await _close(owner, task)
 
 
+async def test_reserved_hub_identity_is_refused_before_tofu_can_pin_it(tmp_path: Path) -> None:
+    reserved_name = "SynapseHub"
+    hub = SynapseHub(hub_id="syn-tofu", identity_pin_path=tmp_path / "pins.json")
+    refusals: list[dict[str, Any]] = []
+
+    async def collect(frame: dict[str, Any]) -> None:
+        refusals.append(frame)
+
+    async with running_hub(hub) as (_, uri):
+        attacker = SynapseAgent(
+            reserved_name,
+            collect,
+            uri=uri,
+            verbose=False,
+            **_machine(tmp_path, "machine-a"),
+        )
+        task = await _run_until_closed_or_ready(attacker)
+        code, reason = await _await_refused(attacker)
+        assert code == 4009
+        assert reason == "reserved identity"
+        assert hub._identity_pins.pinned(reserved_name) is None
+        assert reserved_name not in hub.agent_sockets
+        refusal = next(frame for frame in refusals if frame.get("type") == "name_conflict")
+        assert "reserved for hub protocol provenance" in refusal["payload"]
+        task.cancel()
+
+
 async def test_a_different_machine_key_is_refused_on_a_pinned_name(tmp_path: Path) -> None:
     hub = SynapseHub(hub_id="syn-tofu", identity_pin_path=tmp_path / "pins.json")
     refusals: list[dict[str, Any]] = []

@@ -1116,6 +1116,15 @@ class SynapseHub:
         msg_type = str(data.get("type") or MessageType.CHAT).strip().lower()
         payload = str(data.get("payload") or "")
 
+        # Hub/protocol identities are provenance markers, never agent names. Refuse
+        # them before authentication or trust-on-first-use identity verification so
+        # a signed hostile registration cannot leave a durable pin behind for a name
+        # that no client is ever allowed to own. The registry repeats the predicate
+        # at its binding boundary so direct callers cannot bypass this early guard.
+        if self.clients.is_reserved_sender(sender):
+            await self._resolve_sender(sender, websocket)
+            return
+
         # Capture whether this socket was already bound before authorising, so a
         # secured hub can send the withheld welcome the moment it first authenticates.
         was_bound = self.clients.is_bound(websocket)

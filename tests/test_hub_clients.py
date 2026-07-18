@@ -204,6 +204,72 @@ def test_agent_binding_helpers_report_existing_socket_state() -> None:
     assert not registry.set_agent_socket("agent", socket)
 
 
+@pytest.mark.parametrize(
+    "reserved_name",
+    ["SynapseHub", "synapsehub", "Synapse", "SYNAPSE", "system", "System"],
+)
+async def test_resolve_sender_refuses_reserved_protocol_identities(
+    reserved_name: str,
+) -> None:
+    registry = _registry()
+    socket = _Socket()
+    sent_messages: list[dict[str, Any]] = []
+
+    async def send_json(_websocket: Any, message: dict[str, Any]) -> None:
+        sent_messages.append(message)
+
+    def system(payload: str, *, msg_type: str, target: str) -> dict[str, Any]:
+        return {"payload": payload, "target": target, "type": msg_type}
+
+    assert (
+        await registry.resolve_sender(
+            reserved_name,
+            socket,
+            takeover=True,
+            lease_requested=True,
+            owner_lease="attacker-token",
+            send_json=send_json,
+            system=system,
+        )
+        is None
+    )
+
+    assert socket.close_calls == [(4009, "reserved identity")]
+    assert sent_messages == [
+        {
+            "payload": f"Name '{reserved_name}' is reserved for hub protocol provenance. "
+            "Choose a non-reserved agent name.",
+            "target": reserved_name,
+            "type": "name_conflict",
+        }
+    ]
+    assert reserved_name not in registry.socket_agent.values()
+    assert reserved_name not in registry.agent_sockets
+    assert not registry.ownership.is_leased(reserved_name)
+
+
+async def test_project_scoped_system_segment_is_not_globally_reserved() -> None:
+    registry = _registry()
+    socket = _Socket()
+
+    async def send_json(_websocket: Any, _message: dict[str, Any]) -> None:
+        raise AssertionError("a project-scoped identity must not be refused")
+
+    def system(payload: str, *, msg_type: str, target: str) -> dict[str, Any]:
+        return {"payload": payload, "target": target, "type": msg_type}
+
+    assert (
+        await registry.resolve_sender(
+            "PROJ/system",
+            socket,
+            takeover=False,
+            send_json=send_json,
+            system=system,
+        )
+        == "PROJ/system"
+    )
+
+
 async def test_resolve_sender_denies_name_switch_and_reports_system_message() -> None:
     registry = _registry()
     socket = _Socket()
