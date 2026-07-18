@@ -157,4 +157,13 @@ git verify-tag vX.Y.Z
 
 Once maintainers sign tags, `.github/workflows/release.yml` can enforce it by
 running `git verify-tag "$tag"` in its tag-validation step before any asset is
-published.
+published. That local (and CI) `git verify-tag` additionally needs an *allowed
+signers* file mapping the signer to its key: GitHub's server-side "Verified"
+badge works from the registered Signing Key alone, but the local check does not,
+and without it `git verify-tag` fails with `no principal matched`. Configure it
+before wiring the CI enforcement:
+
+```
+git config --global gpg.ssh.allowedSignersFile ~/.config/git/allowed_signers
+# each allowed_signers line: <signer-email-or-principal> <key-type> <public-key>
+```
