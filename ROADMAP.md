@@ -28,6 +28,62 @@ their real maturity:
 - **Research candidate** means no commitment to ship; it must earn its
   complexity and evidence.
 
+## Ecosystem direction: a governed AI development loop
+
+SYNAPSE CHANNEL is one component of a broader local-first development system.
+The long-term direction connects six independently bounded products into a
+continuous evidence loop:
+
+```mermaid
+flowchart LR
+    O["Human owner<br/>intent, policy, and release authority"]
+    D["DIRECTOR-AI<br/>decomposition and routing"]
+    C["DIRECTOR-CLASS-AI<br/>capability classification"]
+    S["SYNAPSE CHANNEL<br/>claims, mailbox, plan, and receipts"]
+    F["SYNAPSE CHANNEL FLEET<br/>multi-seat and multi-host execution"]
+    W["Candidate change<br/>tests and evidence"]
+    R["RIGOR-FOUNDRY<br/>verification and admission"]
+    L["Accepted change<br/>with provenance"]
+    M["REMANENTIA<br/>bounded verified memory"]
+
+    O --> D
+    O --> R
+    D <--> C
+    D --> S
+    S <--> F
+    F --> W
+    W --> R
+    R -->|accept| L
+    R -->|reject with findings| D
+    L --> M
+    M --> D
+    M --> S
+```
+
+The intended responsibilities are deliberately separate:
+
+- **DIRECTOR-AI** turns owner intent into bounded work and routes it;
+  **DIRECTOR-CLASS-AI** supplies capability and role classification.
+- **SYNAPSE CHANNEL** coordinates identities, claims, tasks, handoffs, and
+  receipts; **SYNAPSE CHANNEL FLEET** extends that coordination across seats,
+  hosts, and model providers.
+- **RIGOR-FOUNDRY** admits or rejects candidate changes against explicit,
+  reproducible gates. A model's confidence is not admission evidence.
+- **REMANENTIA** preserves bounded, attributable, verified context so later
+  cycles can learn without treating every generated output as truth.
+- The **human owner** retains policy, release, and irreversible authority.
+
+The target is **self-evolving, never self-authorizing**: agents may propose,
+implement, challenge, and improve the system, while independent roles and
+fail-closed evidence gates decide what becomes durable state. "Slop-free" is an
+engineering objective measured through provenance, review separation,
+reproducible tests, and explicit admission criteria—not an absolute claim that
+automation cannot fail.
+
+This diagram states an ecosystem direction, not a shipped cross-project
+contract. Each product's own roadmap remains authoritative for its current
+interfaces, maturity, and release commitments.
+
 ## Shipped foundation
 
 ### Coordination, durability, and recovery
