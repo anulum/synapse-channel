@@ -354,6 +354,13 @@ def test_loads_bounded_reraises_malformed_json() -> None:
         loads_bounded("{not json")
 
 
+@pytest.mark.parametrize("sign", ["", "-"])
+def test_loads_bounded_rejects_an_oversized_integer_as_json_error(sign: str) -> None:
+    frame = f'{{"n":{sign}{"9" * 5000}}}'
+    with pytest.raises(json.JSONDecodeError, match="integer literal is too long"):
+        loads_bounded(frame)
+
+
 @pytest.mark.parametrize(
     "frame",
     [
@@ -394,13 +401,14 @@ def test_loads_bounded_rejects_non_finite_constants(frame: str) -> None:
         loads_bounded(frame)
 
 
-def test_loads_bounded_keeps_finite_floats() -> None:
+def test_loads_bounded_keeps_ordinary_finite_numbers() -> None:
     # The rejection must not touch ordinary finite numbers, including exponents.
-    assert loads_bounded('{"ts": 123.5, "neg": -3.2, "big": 1e10, "n": 42}') == {
+    assert loads_bounded('{"ts": 123.5, "neg": -3.2, "big": 1e10, "n": 42, "neg_int": -7}') == {
         "ts": 123.5,
         "neg": -3.2,
         "big": 1e10,
         "n": 42,
+        "neg_int": -7,
     }
 
 

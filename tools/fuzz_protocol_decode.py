@@ -54,6 +54,7 @@ def _seed_inputs() -> tuple[bytes, ...]:
     """Return deterministic seeds that exercise normal and hostile frames."""
     shallow_nested = ("[" * MAX_JSON_DEPTH + "]" * MAX_JSON_DEPTH).encode()
     too_deep = ("[" * (MAX_JSON_DEPTH + 1024) + "]" * (MAX_JSON_DEPTH + 1024)).encode()
+    oversized_integer = ('{"n":' + "9" * 5000 + "}").encode()
     quoted_brackets = b'{"payload": "[[[[[[[[]]]]]]]]"}'
     return (
         b'{"sender": "agent", "type": "chat", "payload": "ok"}',
@@ -63,6 +64,7 @@ def _seed_inputs() -> tuple[bytes, ...]:
         quoted_brackets,
         shallow_nested,
         too_deep,
+        oversized_integer,
         b"",
     )
 

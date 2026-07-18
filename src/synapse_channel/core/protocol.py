@@ -252,8 +252,21 @@ def loads_bounded(raw: str | bytes, max_depth: int = MAX_JSON_DEPTH) -> Any:
         msg = f"non-finite JSON constant {constant!r} is not permitted"
         raise json.JSONDecodeError(msg, text, 0)
 
+    def _parse_bounded_int(integer: str) -> int:
+        try:
+            return int(integer)
+        except ValueError as exc:
+            # CPython's integer-string conversion limit rejects an adversarially
+            # long literal with ValueError. Preserve that interpreter policy, but
+            # normalize its exception to the one every frame caller already handles.
+            raise json.JSONDecodeError("JSON integer literal is too long", text, 0) from exc
+
     try:
-        return json.loads(raw, parse_constant=_reject_non_finite)
+        return json.loads(
+            raw,
+            parse_constant=_reject_non_finite,
+            parse_int=_parse_bounded_int,
+        )
     except UnicodeDecodeError as exc:
         # json.loads decodes bytes itself (RFC 8259 auto-detection of UTF-8/16/32),
         # so a non-decodable binary frame raises UnicodeDecodeError, not

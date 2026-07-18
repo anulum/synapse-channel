@@ -64,6 +64,13 @@ def test_seed_corpus_exercises_depth_and_malformed_inputs() -> None:
     assert results.crashed == 0
 
 
+def test_fuzz_one_input_rejects_an_oversized_integer_without_crashing() -> None:
+    harness = _load_harness()
+    payload = ('{"n":' + "9" * 5000 + "}").encode()
+
+    assert harness.run_seed_corpus([payload]).crashed == 0
+
+
 def test_seed_corpus_counts_unexpected_decoder_crashes(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     harness = _load_harness()
 

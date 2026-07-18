@@ -173,6 +173,16 @@ def test_bad_json_returns_a2a_problem_json() -> None:
     assert body["title"] == "Invalid JSON"
 
 
+def test_oversized_json_integer_returns_a2a_problem_json() -> None:
+    payload = ('{"n":' + "9" * 5000 + "}").encode()
+    harness = HandlerHarness("POST", "/message:send", body=payload)
+
+    status, body = harness.run()
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert body["title"] == "Invalid JSON"
+
+
 def test_oversized_json_body_is_rejected_before_parse() -> None:
     harness = HandlerHarness(
         "POST",

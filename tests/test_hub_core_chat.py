@@ -101,6 +101,28 @@ async def test_a_binary_frame_gets_a_clean_error_and_keeps_the_connection() -> N
             assert snapshot["type"] == "state_snapshot"
 
 
+async def test_an_oversized_integer_gets_a_clean_error_and_keeps_the_connection() -> None:
+    async with running_hub(SynapseHub(hub_id="syn-test")) as (_hub, uri):
+        async with connect(uri) as ws:
+            await read_until_type(ws, "welcome")
+            await ws.send('{"sender":"A","type":"state_request","n":' + "9" * 5000 + "}")
+            error = await read_until_type(ws, "error")
+            assert "Malformed JSON" in error["payload"]
+
+            await ws.send(
+                json.dumps(
+                    {
+                        "sender": "A",
+                        "type": "state_request",
+                        "target": "System",
+                        "payload": "",
+                    }
+                )
+            )
+            snapshot = await read_until_type(ws, "state_snapshot")
+            assert snapshot["type"] == "state_snapshot"
+
+
 async def test_declared_role_is_bound_reaches_its_holder_and_shows_in_who() -> None:
     # A declares the coordinator role on its registration heartbeat; a directed chat to
     # the role must reach A (delivered, not dead-lettered) and /who must show the binding.
