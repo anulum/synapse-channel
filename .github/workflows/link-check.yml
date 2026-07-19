@@ -39,11 +39,17 @@ concurrency:
 jobs:
   public-docs:
     runs-on: ubuntu-latest
+    # One full lychee pass plus one bounded retry, reports, and gate.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - name: Check tracked Markdown links
-        id: lychee
+
+      # Attempt 1 may fail on transient network (ECONNRESET, flaky CDN) and
+      # continues only so a single full retry can run. Server errors stay
+      # non-accepted; badge *targets* remain checked.
+      - name: Check tracked Markdown links (attempt 1)
+        id: lychee_attempt_1
+        continue-on-error: true
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           # Badge *targets* (pypi.org, securityscorecards.dev/viewer, …) stay
@@ -69,12 +75,60 @@ jobs:
           failIfEmpty: true
           format: markdown
           jobSummary: true
-          output: lychee/report.md
-      - name: Upload link report
+          output: lychee/report-attempt-1.md
+
+      - name: Upload link report (attempt 1)
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: link-check-report
-          path: lychee/report.md
+          name: link-check-report-attempt-1
+          path: lychee/report-attempt-1.md
           if-no-files-found: error
           retention-days: 30
+
+      # Second full run only after attempt 1 failed. No continue-on-error: a
+      # second failure must fail the job (no false-green).
+      - name: Check tracked Markdown links (attempt 2)
+        id: lychee_attempt_2
+        if: steps.lychee_attempt_1.outcome == 'failure'
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            --root-dir "${{ github.workspace }}"
+            --verbose
+            --no-progress
+            --exclude-all-private
+            --exclude '^https?://img\.shields\.io/'
+            --exclude '^https?://api\.securityscorecards\.dev/'
+            --min-tls TLSv1_2
+            --max-concurrency 32
+            --max-redirects 10
+            --max-retries 3
+            --retry-wait-time 5
+            --timeout 20
+            --accept 200,204,206,301,302,303,307,308,403,429
+            './**/*.md'
+          fail: true
+          failIfEmpty: true
+          format: markdown
+          jobSummary: true
+          output: lychee/report-attempt-2.md
+
+      - name: Upload link report (attempt 2)
+        if: always() && steps.lychee_attempt_1.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: link-check-report-attempt-2
+          path: lychee/report-attempt-2.md
+          if-no-files-found: error
+          retention-days: 30
+
+      # Explicit persistent-failure gate: attempt 1 failure is only allowed when
+      # attempt 2 ran and succeeded. Otherwise the job fails with a clear signal.
+      - name: Fail when link check did not succeed within two attempts
+        if: >-
+          steps.lychee_attempt_1.outcome == 'failure' &&
+          steps.lychee_attempt_2.outcome != 'success'
+        run: |
+          echo "::error::Link check failed after the bounded two-attempt gate (attempt 1=${{ steps.lychee_attempt_1.outcome }}, attempt 2=${{ steps.lychee_attempt_2.outcome }})."
+          exit 1
