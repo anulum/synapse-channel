@@ -84,6 +84,7 @@ class AgentSendMixin:
         memory_tag: str = "",
         channel: str = "",
         metadata: Mapping[str, Any] | None = None,
+        client_msg_id: str = "",
     ) -> None:
         """Send a chat message to the room, a single agent, or a private channel.
 
@@ -105,6 +106,9 @@ class AgentSendMixin:
             Structured caller metadata forwarded as an opaque ``metadata`` field
             on the chat envelope. The hub preserves it for receivers and journal
             readers, but does not interpret it.
+        client_msg_id : str, optional
+            Stable sender-chosen identity for at-least-once retry deduplication.
+            The hub echoes it; receivers deduplicate by ``(sender, client_msg_id)``.
         """
         extra: dict[str, Any] = {}
         if priority:
@@ -115,6 +119,8 @@ class AgentSendMixin:
             extra["channel"] = channel
         if metadata is not None:
             extra["metadata"] = dict(metadata)
+        if client_msg_id:
+            extra["client_msg_id"] = client_msg_id
         await self.send_message(MessageType.CHAT, target=target, payload=payload, **extra)
 
     async def ack(self: _OutboundAgent, seq: int, *, mailbox_for: str = "") -> bool:

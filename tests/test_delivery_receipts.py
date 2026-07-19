@@ -40,6 +40,7 @@ def test_restore_pending_receipts_keeps_unsettled_immediate_failures() -> None:
                 message_seq=10,
                 delivered=False,
                 recipients=(),
+                client_msg_id="retry-10",
             ),
         ),
         _event(
@@ -66,7 +67,15 @@ def test_restore_pending_receipts_keeps_unsettled_immediate_failures() -> None:
     )
 
     assert restore_pending_receipts(events) == (
-        (10, ReceiptEntry(sender="ALICE", target="BOB", message_id=5)),
+        (
+            10,
+            ReceiptEntry(
+                sender="ALICE",
+                target="BOB",
+                message_id=5,
+                client_msg_id="retry-10",
+            ),
+        ),
     )
 
 
@@ -127,7 +136,13 @@ def test_receipt_event_matching_and_json_are_stable() -> None:
     event = _event(
         7,
         EventKind.DELIVERY_RECEIPT_REQUESTED,
-        requested_receipt_payload(sender="ALICE", target="BOB", message_id=5, message_seq=10),
+        requested_receipt_payload(
+            sender="ALICE",
+            target="BOB",
+            message_id=5,
+            message_seq=10,
+            client_msg_id="retry-10",
+        ),
     )
 
     assert receipt_event_matches(event, "ALICE")
@@ -137,6 +152,7 @@ def test_receipt_event_matching_and_json_are_stable() -> None:
     payload = receipt_event_to_json(event)
     assert payload["phase"] == "requested"
     assert payload["message_seq"] == 10
+    assert payload["client_msg_id"] == "retry-10"
     assert "phase=requested" in format_receipt_event(event)
 
 

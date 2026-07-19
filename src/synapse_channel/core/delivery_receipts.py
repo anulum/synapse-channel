@@ -44,14 +44,18 @@ def requested_receipt_payload(
     target: str,
     message_id: int,
     message_seq: int,
+    client_msg_id: str = "",
 ) -> dict[str, Any]:
     """Return the audit payload for a sender requesting a delivery receipt."""
-    return {
+    payload: dict[str, Any] = {
         "sender": sender,
         "target": target,
         "message_id": int(message_id),
         "message_seq": int(message_seq),
     }
+    if client_msg_id:
+        payload["client_msg_id"] = client_msg_id
+    return payload
 
 
 def immediate_receipt_payload(
@@ -67,11 +71,12 @@ def immediate_receipt_payload(
     reason: str = "",
     dead_lettered: bool = False,
     recipient_wake_capabilities: Mapping[str, str] | None = None,
+    client_msg_id: str = "",
 ) -> dict[str, Any]:
     """Return the audit payload for the hub's immediate receipt verdict."""
     live = [str(recipient) for recipient in recipients]
     matched = live if matched_recipients is None else [str(item) for item in matched_recipients]
-    return {
+    payload: dict[str, Any] = {
         "sender": sender,
         "target": target,
         "message_id": int(message_id),
@@ -85,6 +90,9 @@ def immediate_receipt_payload(
         "dead_lettered": bool(dead_lettered),
         "recipient_wake_capabilities": dict(recipient_wake_capabilities or {}),
     }
+    if client_msg_id:
+        payload["client_msg_id"] = client_msg_id
+    return payload
 
 
 def deferred_receipt_payload(
@@ -94,7 +102,7 @@ def deferred_receipt_payload(
     recipient: str,
 ) -> dict[str, Any]:
     """Return the audit payload for a mailbox ``ack`` settling a pending receipt."""
-    return {
+    payload: dict[str, Any] = {
         "sender": entry.sender,
         "target": entry.target,
         "message_id": entry.message_id,
@@ -104,6 +112,9 @@ def deferred_receipt_payload(
         "recipients": [recipient],
         "acked_by": recipient,
     }
+    if entry.client_msg_id:
+        payload["client_msg_id"] = entry.client_msg_id
+    return payload
 
 
 def expired_receipt_payload(
@@ -113,7 +124,7 @@ def expired_receipt_payload(
     reason: str,
 ) -> dict[str, Any]:
     """Return the audit payload for a pending receipt leaving the bounded window."""
-    return {
+    payload: dict[str, Any] = {
         "sender": entry.sender,
         "target": entry.target,
         "message_id": entry.message_id,
@@ -124,6 +135,9 @@ def expired_receipt_payload(
         "reason": reason,
         "recipients": [],
     }
+    if entry.client_msg_id:
+        payload["client_msg_id"] = entry.client_msg_id
+    return payload
 
 
 def restore_pending_receipts(
@@ -147,12 +161,14 @@ def restore_pending_receipts(
             message_id = _optional_int(payload.get("message_id"))
             sender = _clean(payload.get("sender"))
             target = _clean(payload.get("target"))
+            client_msg_id = _clean(payload.get("client_msg_id"))
             if message_seq is not None and message_id is not None and sender and target:
                 pending.remember(
                     message_seq,
                     sender=sender,
                     target=target,
                     message_id=message_id,
+                    client_msg_id=client_msg_id,
                 )
         elif event.kind in {
             EventKind.DELIVERY_RECEIPT_DEFERRED,
@@ -197,6 +213,7 @@ def receipt_event_to_json(event: StoredEvent) -> dict[str, Any]:
         "target": str(payload.get("target", "")),
         "message_id": _optional_int(payload.get("message_id")),
         "message_seq": _optional_int(payload.get("message_seq")),
+        "client_msg_id": _clean(payload.get("client_msg_id")),
         "delivered": payload.get("delivered"),
         "deferred": bool(payload.get("deferred", False)),
         "expired": bool(payload.get("expired", False)),

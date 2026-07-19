@@ -60,6 +60,34 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("synapse.messaging")
 
+MAX_CLIENT_MSG_ID_BYTES = 256
+"""Maximum UTF-8 size of the optional receiver-side chat dedupe identity."""
+
+
+def _normalize_client_msg_id(data: dict[str, Any]) -> str:
+    """Retain one bounded printable sender-chosen chat identity, else omit it.
+
+    The hub deliberately does not suppress chat retries: delivery is at-least-once.
+    Instead, every live, retained, journalled, replayed, and receipted copy echoes this
+    identity so receivers can deduplicate by ``(sender, client_msg_id)``. Invalid or
+    oversized identifiers are removed rather than turning a chat into a connection
+    error; the message still follows ordinary at-least-once semantics.
+    """
+    raw = data.get("client_msg_id")
+    if not isinstance(raw, str):
+        data.pop("client_msg_id", None)
+        return ""
+    value = raw.strip()
+    if (
+        not value
+        or len(value.encode("utf-8")) > MAX_CLIENT_MSG_ID_BYTES
+        or any(ord(char) < 0x20 or ord(char) == 0x7F for char in value)
+    ):
+        data.pop("client_msg_id", None)
+        return ""
+    data["client_msg_id"] = value
+    return value
+
 
 def _client_timestamp(raw: Any) -> float | None:
     """Return a finite client send time when usable, else ``None``.
@@ -121,6 +149,7 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
     ``client_timestamp`` advisory metadata and cannot poison those order keys.
     """
     _stamp_chat_times(data)
+    client_msg_id = _normalize_client_msg_id(data)
     data["type"] = MessageType.CHAT
     data["hub_id"] = hub.hub_id
     data["msg_id"] = hub._next_msg_id()
@@ -167,6 +196,7 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
             message_seq=message_seq,
             decision=delivery,
             directed=directed,
+            client_msg_id=client_msg_id,
         )
     if hub.private_directed_messages and directed:
         # Recipient routing: a directed message reaches only its recipients (and their
@@ -201,6 +231,7 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
             message_seq=message_seq,
             decision=delivery,
             directed=directed,
+            client_msg_id=client_msg_id,
         )
 
 
@@ -320,6 +351,7 @@ async def _route_channel_chat(
             target=channel,
             msg_id=int(data["msg_id"]),
             decision=classify_delivery_liveness(recipients, ()),
+            client_msg_id=str(data.get("client_msg_id") or ""),
         )
 
 
@@ -416,6 +448,7 @@ async def handle_ack(hub: SynapseHub, sender: str, data: dict[str, Any], websock
             delivered=True,
             deferred=True,
             recipients=[recipient],
+            **({"client_msg_id": entry.client_msg_id} if entry.client_msg_id else {}),
         ),
     )
 

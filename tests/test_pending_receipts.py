@@ -29,6 +29,22 @@ class TestRememberPeekClaim:
         assert len(store) == 1
         assert store.peek(7) is not None
 
+    def test_client_message_identity_survives_pending_storage(self) -> None:
+        store = PendingReceipts()
+        store.remember(
+            7,
+            sender="ALICE",
+            target="BOB",
+            message_id=3,
+            client_msg_id="retry-7",
+        )
+        assert store.peek(7) == ReceiptEntry(
+            sender="ALICE",
+            target="BOB",
+            message_id=3,
+            client_msg_id="retry-7",
+        )
+
     def test_claim_pops_and_returns_the_entry(self) -> None:
         store = PendingReceipts()
         store.remember(7, sender="ALICE", target="BOB", message_id=3)

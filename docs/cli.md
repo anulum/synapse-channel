@@ -813,7 +813,11 @@ and avoids the hub's duplicate-name refusal for the short-lived sender.
 Every directed `synapse send` asks the hub for a delivery receipt. The reply
 includes `delivered`, `message_target`, `message_id`, consume-live `recipients`,
 all socket-level `matched_recipients`, `stale_recipients`, a machine-readable
-`reason`, and whether the hub `dead_lettered` it. A socket match counts as live
+`reason`, the optional sender-supplied `client_msg_id`, and whether the hub
+`dead_lettered` it. Programmatic clients that retry chat reuse a bounded printable
+`client_msg_id` and receivers deduplicate on `(sender, client_msg_id)`; the hub
+remains intentionally at-least-once and gives each attempt a new `msg_id` / `seq`.
+A socket match counts as live
 only when the recipient reacted within the configured liveness window or has a
 fresh `-rx` waiter; otherwise the CLI prints `delivery failed: no live recipient
 matched ...` and exits `1`, the same as an offline target. The message is still

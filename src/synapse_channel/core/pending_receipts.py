@@ -11,10 +11,10 @@ When a sender asks for a delivery receipt on a directed message and no recipient
 is consume-live, the hub answers ``delivered: false`` at once — honest for that
 instant — but the message can still arrive through a later replay or a stale
 socket's transport ACK. This store closes that gap: it remembers the few facts a
-*deferred* receipt needs — the durable journal ``seq``, who sent it, and the
-target it was addressed to — keyed on the ``seq`` the recipient echoes back in
-its ``ACK``. On that ACK the hub can finally tell the original sender
-``delivered: true, deferred: true`` and forget the entry.
+*deferred* receipt needs — the durable journal ``seq``, who sent it, the target it
+was addressed to, and an optional bounded client dedupe identity — keyed on the
+``seq`` the recipient echoes back in its ``ACK``. On that ACK the hub can finally
+tell the original sender ``delivered: true, deferred: true`` and forget the entry.
 
 It holds no message body (the journal already does) and is bounded: a flood of
 receipt-requested messages to blackholed targets evicts the oldest pending entry
@@ -34,7 +34,8 @@ DEFAULT_PENDING_RECEIPTS = 1024
 A receipt-requested directed message that reaches no consume-live recipient adds
 one entry; the oldest is evicted once the bound is crossed, so a burst of messages
 to blackholed targets cannot grow the hub without limit. The window is generous
-because an entry is small (a seq and two names) and is claimed the moment its
+because an entry is small (a seq, two names, and an optional bounded id) and is
+claimed the moment its
 recipient reconnects and acks, so only genuinely unacked messages occupy slots.
 """
 
@@ -54,11 +55,14 @@ class ReceiptEntry:
         The original per-hub message id the sender saw on the chat and immediate
         receipt. The deferred receipt uses it to link the later acknowledgement to
         the same logical message, while ``seq`` remains the durable resume cursor.
+    client_msg_id : str
+        Optional sender-chosen dedupe identity echoed across retries and receipts.
     """
 
     sender: str
     target: str
     message_id: int
+    client_msg_id: str = ""
 
 
 class PendingReceipts:
@@ -85,7 +89,13 @@ class PendingReceipts:
         return tuple(self._entries.items())
 
     def remember(
-        self, seq: int, *, sender: str, target: str, message_id: int
+        self,
+        seq: int,
+        *,
+        sender: str,
+        target: str,
+        message_id: int,
+        client_msg_id: str = "",
     ) -> tuple[int, ReceiptEntry] | None:
         """Record that the directed message at ``seq`` awaits a deferred receipt.
 
@@ -103,6 +113,8 @@ class PendingReceipts:
             The name, project, or role it was addressed to.
         message_id : int
             Original per-hub message id stamped on the chat.
+        client_msg_id : str, optional
+            Sender-chosen dedupe identity retained for a deferred receipt.
 
         Returns
         -------
@@ -110,7 +122,12 @@ class PendingReceipts:
             The evicted pending receipt, if the bounded store had to drop one.
         """
         self._entries.pop(seq, None)
-        self._entries[seq] = ReceiptEntry(sender=sender, target=target, message_id=message_id)
+        self._entries[seq] = ReceiptEntry(
+            sender=sender,
+            target=target,
+            message_id=message_id,
+            client_msg_id=client_msg_id,
+        )
         if len(self._entries) > self.max_entries:
             oldest = next(iter(self._entries))
             evicted = self._entries.pop(oldest)
@@ -133,6 +150,7 @@ class PendingReceipts:
                 sender=entry.sender,
                 target=entry.target,
                 message_id=entry.message_id,
+                client_msg_id=entry.client_msg_id,
             )
 
     def peek(self, seq: int) -> ReceiptEntry | None:

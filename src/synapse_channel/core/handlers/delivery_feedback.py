@@ -146,6 +146,7 @@ async def send_delivery_receipt(
     decision: DeliveryLiveness,
     message_seq: int | None = None,
     dead_lettered: bool = False,
+    client_msg_id: str = "",
 ) -> None:
     """Send and, when possible, journal one authoritative delivery receipt.
 
@@ -165,6 +166,8 @@ async def send_delivery_receipt(
         Durable chat sequence, when the hub has a journal.
     dead_lettered : bool, optional
         Whether the directed message was recorded in the blackhole ledger.
+    client_msg_id : str, optional
+        Sender-chosen identity echoed so retries can be correlated downstream.
     """
     capabilities = _recipient_wake_capabilities(hub, decision.matched_recipients)
     if decision.delivered:
@@ -191,8 +194,10 @@ async def send_delivery_receipt(
                 reason=decision.reason,
                 dead_lettered=recorded_dead_letter,
                 recipient_wake_capabilities=capabilities,
+                client_msg_id=client_msg_id,
             ),
         )
+    correlation = {"client_msg_id": client_msg_id} if client_msg_id else {}
     await hub._send_json(
         websocket,
         hub._system(
@@ -208,6 +213,7 @@ async def send_delivery_receipt(
             reason=decision.reason,
             dead_lettered=recorded_dead_letter,
             recipient_wake_capabilities=capabilities,
+            **correlation,
         ),
     )
 
@@ -222,6 +228,7 @@ async def send_and_track_delivery_receipt(
     message_seq: int | None,
     decision: DeliveryLiveness,
     directed: bool,
+    client_msg_id: str = "",
 ) -> None:
     """Audit, send, and retain the deferred path for one requested receipt.
 
@@ -241,6 +248,8 @@ async def send_and_track_delivery_receipt(
         Consume-liveness partition computed before routing.
     directed : bool
         Whether this target is eligible for dead-letter and deferred-replay handling.
+    client_msg_id : str, optional
+        Sender-chosen identity echoed by immediate and deferred receipts.
 
     Notes
     -----
@@ -257,6 +266,7 @@ async def send_and_track_delivery_receipt(
                 target=target,
                 message_id=msg_id,
                 message_seq=message_seq,
+                client_msg_id=client_msg_id,
             ),
         )
     await send_delivery_receipt(
@@ -268,6 +278,7 @@ async def send_and_track_delivery_receipt(
         message_seq=message_seq,
         decision=decision,
         dead_lettered=directed and not decision.delivered,
+        client_msg_id=client_msg_id,
     )
     if decision.delivered or not directed or message_seq is None:
         return
@@ -276,6 +287,7 @@ async def send_and_track_delivery_receipt(
         sender=sender,
         target=target,
         message_id=msg_id,
+        client_msg_id=client_msg_id,
     )
     if evicted is not None and hub.journal is not None:
         evicted_seq, evicted_entry = evicted

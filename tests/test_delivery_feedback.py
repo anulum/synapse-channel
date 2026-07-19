@@ -35,7 +35,16 @@ class _FakePending:
         self.evicted = evicted
         self.calls: list[tuple[int, str, str, int]] = []
 
-    def remember(self, seq: int, *, sender: str, target: str, message_id: int) -> Any:
+    def remember(
+        self,
+        seq: int,
+        *,
+        sender: str,
+        target: str,
+        message_id: int,
+        client_msg_id: str = "",
+    ) -> Any:
+        del client_msg_id
         self.calls.append((seq, sender, target, message_id))
         return self.evicted
 

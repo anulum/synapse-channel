@@ -46,6 +46,93 @@ async def test_chat_is_broadcast_and_recorded_end_to_end() -> None:
             await close_agents(alpha, beta)
 
 
+async def test_chat_retries_echo_client_identity_without_suppressing_attempts(
+    tmp_path: Path,
+) -> None:
+    store = EventStore(tmp_path / "events.db")
+    async with running_hub(SynapseHub(journal=store, max_history=1)) as (hub, uri):
+        async with connect(uri) as bob_ws:
+            await read_until_type(bob_ws, "welcome")
+            await bob_ws.send(
+                json.dumps(
+                    {
+                        "sender": "BOB",
+                        "type": "heartbeat",
+                        "target": "System",
+                        "payload": "online",
+                    }
+                )
+            )
+            for _ in range(2):
+                async with connect(uri) as alice_ws:
+                    await read_until_type(alice_ws, "welcome")
+                    await alice_ws.send(
+                        json.dumps(
+                            {
+                                "sender": "ALICE",
+                                "type": "chat",
+                                "target": "all",
+                                "payload": "retryable",
+                                "client_msg_id": "send-42",
+                                "receipt_requested": True,
+                            }
+                        )
+                    )
+                    delivered = await read_until_type(bob_ws, "chat")
+                    receipt = await read_until_type(alice_ws, "delivery_receipt")
+                    assert delivered["client_msg_id"] == "send-42"
+                    assert receipt["client_msg_id"] == "send-42"
+
+    chat_events = [event for event in store.read_all() if event.kind == EventKind.CHAT]
+    store.close()
+    assert len(chat_events) == 2
+    assert {event.payload["client_msg_id"] for event in chat_events} == {"send-42"}
+    assert chat_events[0].payload["msg_id"] != chat_events[1].payload["msg_id"]
+    assert len(hub.chat_history) == 1
+    assert hub.chat_history[0]["client_msg_id"] == "send-42"
+
+
+async def test_chat_normalizes_client_identity_through_the_wire() -> None:
+    async with running_hub(SynapseHub()) as (_, uri):
+        async with connect(uri) as alice, connect(uri) as bob:
+            await read_until_type(alice, "welcome")
+            await read_until_type(bob, "welcome")
+            await bob.send(
+                json.dumps(
+                    {
+                        "sender": "BOB",
+                        "type": "heartbeat",
+                        "target": "System",
+                        "payload": "online",
+                    }
+                )
+            )
+            candidates: tuple[object, ...] = (
+                "  retry-7  ",
+                123,
+                "",
+                "contains\ncontrol",
+                "é" * 129,
+            )
+            for candidate in candidates:
+                await alice.send(
+                    json.dumps(
+                        {
+                            "sender": "ALICE",
+                            "type": "chat",
+                            "target": "all",
+                            "payload": "retryable",
+                            "client_msg_id": candidate,
+                        }
+                    )
+                )
+                delivered = await read_until_type(bob, "chat")
+                if candidate == "  retry-7  ":
+                    assert delivered["client_msg_id"] == "retry-7"
+                else:
+                    assert "client_msg_id" not in delivered
+
+
 async def test_bearer_token_is_not_routed_retained_or_journalled(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "events.db")
     hub = SynapseHub(
@@ -601,6 +688,7 @@ async def test_ack_settles_a_dead_lettered_directed_message_with_a_deferred_rece
                         "target": "BOB",
                         "payload": "urgent",
                         "receipt_requested": True,
+                        "client_msg_id": "urgent-1",
                     }
                 )
             )
@@ -636,6 +724,7 @@ async def test_ack_settles_a_dead_lettered_directed_message_with_a_deferred_rece
     assert deferred["target"] == "ALICE"
     assert deferred["message_target"] == "BOB"
     assert deferred["recipients"] == ["BOB"]
+    assert deferred["client_msg_id"] == "urgent-1"
     assert len(hub.pending_receipts) == 0
     assert [event.kind for event in receipt_events] == [
         EventKind.DELIVERY_RECEIPT_REQUESTED,
@@ -645,6 +734,7 @@ async def test_ack_settles_a_dead_lettered_directed_message_with_a_deferred_rece
     assert receipt_events[1].payload["delivered"] is False
     assert receipt_events[2].payload["delivered"] is True
     assert receipt_events[2].payload["message_seq"] == seq
+    assert receipt_events[2].payload["client_msg_id"] == "urgent-1"
 
 
 async def test_pending_delivery_receipt_survives_restart_and_offline_sender(
@@ -667,6 +757,7 @@ async def test_pending_delivery_receipt_survives_restart_and_offline_sender(
                         "target": "BOB",
                         "payload": "restart-safe",
                         "receipt_requested": True,
+                        "client_msg_id": "restart-17",
                     }
                 )
             )
@@ -689,6 +780,7 @@ async def test_pending_delivery_receipt_survives_restart_and_offline_sender(
                 )
             )
             replayed = await read_until_type(bob_ws, "chat")
+            assert replayed["client_msg_id"] == "restart-17"
             await bob_ws.send(json.dumps({"sender": "BOB", "type": "ack", "seq": replayed["seq"]}))
             await collect_available(bob_ws)
         assert len(hub.pending_receipts) == 0
@@ -723,6 +815,7 @@ async def test_pending_delivery_receipt_survives_restart_and_offline_sender(
     assert query.receipt_events == tuple(receipt_events)
     assert query.receipt_events[-1].kind == EventKind.DELIVERY_RECEIPT_DEFERRED
     assert query.receipt_events[-1].payload["delivered"] is True
+    assert query.receipt_events[-1].payload["client_msg_id"] == "restart-17"
 
 
 async def test_ack_from_a_non_recipient_leaves_the_pending_receipt_for_the_real_one(

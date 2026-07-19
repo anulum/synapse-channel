@@ -292,6 +292,17 @@ totals, while `--all-mailbox-pending` expands the retained map. Older clients
 ignore the WHO field; older hubs ignore the additive ACK identity and keep their
 receipt-only ACK behavior.
 
+**Chat retry identity.** Chat delivery is explicitly **at least once**. The hub
+does not consume `idem_key` for chat and does not suppress a retry. A sender that
+may retry across reconnects instead supplies an optional printable
+`client_msg_id` of at most 256 UTF-8 bytes. The hub echoes the normalized value on
+live delivery, bounded history, the durable chat row, mailbox replay, immediate /
+deferred receipt frames, and the durable receipt ledger. Receivers deduplicate on
+`(sender, client_msg_id)`; `msg_id` and durable `seq` identify individual delivery
+attempts and therefore differ across retries. Missing or invalid `client_msg_id`
+keeps ordinary at-least-once behavior. The hub never treats this caller-chosen
+identity as authentication or authorization.
+
 **Consume-live immediate receipts.** For a directed chat, the hub partitions
 socket-level matches using the same reaction-plus-waiter liveness policy exposed
 by WHO. At least one consume-live match yields `delivered: true`. If sockets match
@@ -327,6 +338,8 @@ lifecycle as audit-only events:
 immediate failures re-seed the bounded pending-receipt store, so a later mailbox
 `ack` can still journal the deferred verdict even if the original sender is offline.
 Operators can query the ledger with `synapse event-query <db> "receipts <agent>"`.
+When supplied, `client_msg_id` is included in every receipt phase so a sender can
+correlate the durable final verdict with its original retry identity.
 Mailbox watermarks are separate `mailbox_watermark` events: losing the newest
 normal-durability watermark in a power failure can cause safe replay/recount, not
 loss of an unseen message body.

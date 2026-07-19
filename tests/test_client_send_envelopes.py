@@ -93,6 +93,14 @@ async def test_chat_memory_tag_rides_the_envelope_only_when_set() -> None:
     assert urgent["priority"] is True
 
 
+async def test_chat_can_carry_a_stable_client_dedupe_identity() -> None:
+    async with connected_recording_agent("A") as (agent, messages):
+        await agent.chat("retryable", target="B", client_msg_id="send-42")
+        await wait_for_recorded_count(messages, 2)
+
+    assert messages[-1]["client_msg_id"] == "send-42"
+
+
 async def test_record_finding_emits_envelope() -> None:
     async with connected_recording_agent("SCPN-CONTROL/agent-1") as (agent, messages):
         await agent.record_finding(
