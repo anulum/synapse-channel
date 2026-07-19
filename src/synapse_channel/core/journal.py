@@ -23,6 +23,8 @@ high-volume chat and the soft resource offers use ordinary commits.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -55,6 +57,7 @@ class EventKind:
     """Durable event kind tags written to the log."""
 
     CLAIM = "claim"
+    CLAIM_DENIAL = "claim_denial"
     RELEASE = "release"
     TASK_UPDATE = "task_update"
     CHECKPOINT = "checkpoint"
@@ -136,6 +139,42 @@ class ReplayResult:
 def record_claim(store: EventStore, claim: TaskClaim) -> None:
     """Append a durable event capturing a claim or renewal."""
     store.append(EventKind.CLAIM, claim.as_persisted_dict(), durable=True)
+
+
+def record_claim_denial(
+    store: EventStore,
+    *,
+    claimant: str,
+    task_id: str,
+    reason_code: str,
+    worktree: str,
+    paths: list[str],
+) -> int:
+    """Append bounded, content-minimized evidence for a refused claim.
+
+    The audit row deliberately excludes the request note, Git metadata, raw task
+    id, and raw paths.  A caller that already knows the attempted identifiers can
+    correlate them by digest without turning the evidence log into a second copy
+    of repository or prompt content.
+    """
+    claimant_text = str(claimant)
+    scope = json.dumps(
+        {"paths": [str(path) for path in paths], "worktree": str(worktree)},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    payload = {
+        "claimant": claimant_text[:256],
+        "claimant_sha256": hashlib.sha256(claimant_text.encode("utf-8")).hexdigest(),
+        "claimant_truncated": len(claimant_text) > 256,
+        "decision": "deny",
+        "path_count": len(paths),
+        "reason_code": str(reason_code),
+        "scope_sha256": hashlib.sha256(scope).hexdigest(),
+        "task_id_sha256": hashlib.sha256(str(task_id).encode("utf-8")).hexdigest(),
+    }
+    return store.append(EventKind.CLAIM_DENIAL, payload, durable=True)
 
 
 def record_release(store: EventStore, task_id: str) -> None:

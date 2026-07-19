@@ -28,6 +28,7 @@ from synapse_channel.core.deadlock import prune_waits, would_create_cycle
 from synapse_channel.core.journal import (
     record_checkpoint,
     record_claim,
+    record_claim_denial,
     record_handoff,
     record_ledger_progress,
     record_release,
@@ -45,6 +46,7 @@ from synapse_channel.core.receipts import (
     format_release_receipt_note,
     release_receipt_has_evidence,
 )
+from synapse_channel.core.scoping import normalize_paths
 from synapse_channel.core.state import GitContext
 from synapse_channel.core.state_transaction import durable_state_transaction
 
@@ -68,12 +70,53 @@ class ClaimApplication:
         a denial can still address the right task.
     claim : TaskClaim or None
         The granted lease on success, or ``None`` when the claim was refused.
+    reason_code : str
+        Stable machine-readable denial category, empty on success.
     """
 
     ok: bool
     message: str
     task_id: str
     claim: TaskClaim | None
+    reason_code: str = ""
+
+
+def _claim_denial_reason(message: str) -> str:
+    """Map the closed set of state refusal messages to stable evidence codes."""
+    if message == "Task ID is required.":
+        return "TASK_ID_REQUIRED"
+    if "path identity" in message:
+        return "PATH_IDENTITY_INVALID"
+    if "is already claimed by" in message:
+        return "LEASE_LIVE"
+    if "file scope conflicts with" in message:
+        return "SCOPE_CONFLICT"
+    if "principal claim quota" in message:
+        return "QUOTA_EXCEEDED"
+    return "CLAIM_DENIED"
+
+
+def _record_denial(
+    hub: SynapseHub,
+    *,
+    claimant: str,
+    task_id: str,
+    reason_code: str,
+    worktree: str,
+    paths: list[str],
+) -> None:
+    """Persist one claim refusal when the hub has a durable journal."""
+    if hub.journal is None:
+        return
+    normalized_paths = list(normalize_paths(paths, hub.state.max_paths_per_claim))
+    record_claim_denial(
+        hub.journal,
+        claimant=claimant,
+        task_id=task_id,
+        reason_code=reason_code,
+        worktree=worktree,
+        paths=normalized_paths,
+    )
 
 
 def apply_claim(
@@ -124,11 +167,21 @@ def apply_claim(
     try:
         path_identity = parse_optional_claim_scope_identity(body)
     except PathIdentityError:
+        reason_code = "PATH_IDENTITY_INVALID"
+        _record_denial(
+            hub,
+            claimant=claimant,
+            task_id=task_id,
+            reason_code=reason_code,
+            worktree=worktree,
+            paths=paths,
+        )
         return ClaimApplication(
             ok=False,
             message=f"Task '{task_id}' carries an invalid path identity.",
             task_id=task_id,
             claim=None,
+            reason_code=reason_code,
         )
     # The git context is opaque to the hub: deserialise it for storage and
     # display, but never act on it (the hub runs no git, reads no filesystem).
@@ -155,6 +208,16 @@ def apply_claim(
         claim = hub.state.claims.get(task_id) if ok else None
         if claim is not None and hub.journal is not None:
             record_claim(hub.journal, claim)
+        elif not ok:
+            reason_code = _claim_denial_reason(message)
+            _record_denial(
+                hub,
+                claimant=claimant,
+                task_id=task_id,
+                reason_code=reason_code,
+                worktree=worktree,
+                paths=paths,
+            )
     if claim is not None:
         # Only the SATISFIED wait is cleared: a claim or renewal for task U must
         # never erase the claimant's still-open wait on an unrelated task T.
@@ -164,7 +227,13 @@ def apply_claim(
             if not waited:
                 hub._waits.pop(claimant, None)
         return ClaimApplication(ok=True, message=message, task_id=task_id, claim=claim)
-    return ClaimApplication(ok=False, message=message, task_id=task_id, claim=None)
+    return ClaimApplication(
+        ok=False,
+        message=message,
+        task_id=task_id,
+        claim=None,
+        reason_code=reason_code,
+    )
 
 
 def claim_grant_fields(claim: TaskClaim) -> dict[str, Any]:
@@ -230,6 +299,7 @@ async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], webso
             msg_type=MessageType.CLAIM_DENIED,
             target=sender,
             task_id=application.task_id,
+            reason_code=application.reason_code,
         ),
     )
 

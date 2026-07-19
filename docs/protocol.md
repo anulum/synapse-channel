@@ -135,6 +135,24 @@ under the supplied filesystem policy. Two claims without the field retain the
 version-2 literal-path behavior. This supports rolling upgrades but means a
 fleet closes every alias gap only after all Git-aware claim producers upgrade.
 
+### Durable claim-denial evidence
+
+When a hub has a durable event journal, every refusal made by its authoritative
+local claim application appends a `claim_denial` event with `durable=true`.
+This includes a forwarded claim that the owning hub applies locally. For a
+direct client, the append completes before the private `claim_denied` reply is
+emitted. The reply carries the same stable
+`reason_code`: `TASK_ID_REQUIRED`, `PATH_IDENTITY_INVALID`, `LEASE_LIVE`,
+`SCOPE_CONFLICT`, `QUOTA_EXCEEDED`, or the conservative fallback
+`CLAIM_DENIED`.
+
+The evidence row is deliberately content-minimized. It contains the bounded
+claimant identity plus its full digest, decision and reason, path count, and SHA-256 correlations for
+the task id and declared scope. It never stores the request note, raw task id,
+raw worktree or paths, Git metadata, message bodies, prompts, or file contents.
+The event is audit-only during restart replay: it survives restart but cannot
+create or alter a lease.
+
 An `advertise` message may include `contracts`, either as a list of contract
 objects or as a task-class keyed mapping. The hub normalizes valid entries into
 the manifest shape:
