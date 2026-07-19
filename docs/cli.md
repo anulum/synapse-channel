@@ -1911,6 +1911,16 @@ Operational boundaries:
   one queued update for that wait. Persisted task recovery restores task
   snapshots only; it does not rebuild durable subscription streams across
   restarts or bridge replicas.
+- `--max-concurrent-requests` (default `32`) is the hard ceiling on concurrent
+  in-flight A2A HTTP handlers. Extra accepted connections receive deterministic
+  `503 Service Unavailable` with reason `A2A_HTTP_CAPACITY_EXHAUSTED` and never
+  enter the request handler. The admission slot is released on normal completion,
+  parse error, read timeout, client disconnect, and handler exception.
+- `--request-read-timeout` (default `30` seconds) is the wall-clock budget to
+  finish reading one declared HTTP request body. Incomplete or stalled bodies
+  receive deterministic `408 Request Timeout` with reason `A2A_HTTP_READ_TIMEOUT`
+  before JSON-RPC or message dispatch. The existing `1 MiB` body cap still
+  applies first.
 - Caller-supplied `taskId` and `contextId` values are restricted to bridge-safe
   characters. Duplicate caller task ids are rejected.
 - Webhook URLs must be HTTP(S), include a host, omit embedded credentials, and not

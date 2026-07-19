@@ -112,4 +112,22 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=0.0,
         help="Seconds a task subscription waits for one queued lifecycle update.",
     )
+    serve.add_argument(
+        "--max-concurrent-requests",
+        type=int,
+        default=32,
+        help=(
+            "Hard ceiling on concurrent in-flight A2A HTTP requests "
+            "(default 32). Extra connections receive 503 immediately."
+        ),
+    )
+    serve.add_argument(
+        "--request-read-timeout",
+        type=float,
+        default=30.0,
+        help=(
+            "Wall-clock seconds allowed to finish reading one HTTP request body "
+            "(default 30). Incomplete or stalled bodies receive 408."
+        ),
+    )
     serve.set_defaults(func=_cmd_a2a_serve)

@@ -161,9 +161,31 @@ def _cmd_a2a_serve(
         subscribe_wait_seconds=args.subscribe_timeout,
     )
     bridge_ref["bridge"] = bridge
+    max_concurrent = int(getattr(args, "max_concurrent_requests", 32))
+    read_timeout = float(getattr(args, "request_read_timeout", 30.0))
+    if max_concurrent < 1:
+        print(
+            f"[{args.name}] --max-concurrent-requests must be >= 1.",
+            file=sys.stderr,
+        )
+        runtime.stop()
+        return 2
+    if read_timeout <= 0.0:
+        print(
+            f"[{args.name}] --request-read-timeout must be > 0.",
+            file=sys.stderr,
+        )
+        runtime.stop()
+        return 2
     try:
         print(f"[{args.name}] A2A bridge listening on http://{args.host}:{args.port}")
-        server_runner(bridge=bridge, host=args.host, port=args.port)
+        server_runner(
+            bridge=bridge,
+            host=args.host,
+            port=args.port,
+            max_concurrent_requests=max_concurrent,
+            request_read_timeout_seconds=read_timeout,
+        )
     except KeyboardInterrupt:
         print(f"\n[{args.name}] A2A bridge stopped by user.")
     finally:

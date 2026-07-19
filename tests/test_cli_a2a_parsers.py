@@ -128,6 +128,8 @@ class TestServeParser:
         assert args.state_file is None
         assert args.task_timeout == pytest.approx(300.0)
         assert args.subscribe_timeout == pytest.approx(0.0)
+        assert args.max_concurrent_requests == 32
+        assert args.request_read_timeout == pytest.approx(30.0)
 
     def test_numeric_arguments_are_coerced(self) -> None:
         parser = _registered_parser()
@@ -142,12 +144,18 @@ class TestServeParser:
                 "12.5",
                 "--subscribe-timeout",
                 "3.0",
+                "--max-concurrent-requests",
+                "4",
+                "--request-read-timeout",
+                "1.5",
             ]
         )
         assert args.port == 9999
         assert isinstance(args.port, int)
         assert args.task_timeout == pytest.approx(12.5)
         assert args.subscribe_timeout == pytest.approx(3.0)
+        assert args.max_concurrent_requests == 4
+        assert args.request_read_timeout == pytest.approx(1.5)
 
     def test_allow_origin_appends_each_value(self) -> None:
         parser = _registered_parser()

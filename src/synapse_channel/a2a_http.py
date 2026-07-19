@@ -10,6 +10,9 @@
 from __future__ import annotations
 
 import json
+import socket
+import threading
+import time
 from collections.abc import Iterable
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,12 +33,107 @@ if TYPE_CHECKING:
     from synapse_channel.a2a_server import A2ABridge
 
 MAX_A2A_JSON_BODY_BYTES = 1024 * 1024
+"""Upper bound for one JSON request body before the edge refuses the request."""
+
+DEFAULT_MAX_CONCURRENT_A2A_REQUESTS = 32
+"""Default concurrent in-flight HTTP requests admitted by the A2A edge."""
+
+DEFAULT_A2A_REQUEST_READ_TIMEOUT_SECONDS = 30.0
+"""Default wall-clock budget for reading one request (headers and body)."""
 
 bearer_token_matches = _protocol.bearer_token_matches
 non_negative_int = _protocol.non_negative_int
 origin_allowed = _protocol.origin_allowed
 parse_push_config_path = _protocol.parse_push_config_path
 problem_response = _protocol.problem_response
+
+
+class A2AHTTPServer(ThreadingHTTPServer):
+    """Threading A2A HTTP server with bounded concurrent admission.
+
+    Each accepted connection must acquire one admission slot before a worker
+    thread is started. When the ceiling is full the server writes a deterministic
+    ``503`` problem response on the accepted socket and closes it without
+    invoking the request handler. Every admitted path — normal completion, parse
+    error, read timeout, client disconnect, or handler exception — releases the
+    slot exactly once so capacity cannot leak.
+    """
+
+    daemon_threads = True
+
+    def __init__(
+        self,
+        server_address: tuple[str, int] | tuple[str, int, int, int],
+        RequestHandlerClass: type[BaseHTTPRequestHandler],
+        *,
+        max_concurrent_requests: int = DEFAULT_MAX_CONCURRENT_A2A_REQUESTS,
+        request_read_timeout_seconds: float = DEFAULT_A2A_REQUEST_READ_TIMEOUT_SECONDS,
+    ) -> None:
+        if max_concurrent_requests < 1:
+            raise ValueError("max_concurrent_requests must be >= 1")
+        if request_read_timeout_seconds <= 0.0:
+            raise ValueError("request_read_timeout_seconds must be > 0")
+        self.max_concurrent_requests = int(max_concurrent_requests)
+        self.request_read_timeout_seconds = float(request_read_timeout_seconds)
+        self._admission = threading.BoundedSemaphore(self.max_concurrent_requests)
+        super().__init__(server_address, RequestHandlerClass)
+
+    def process_request(
+        self,
+        request: socket.socket | tuple[bytes, socket.socket],
+        client_address: Any,
+    ) -> None:
+        """Admit one connection or refuse with ``503`` when capacity is full."""
+        if not self._admission.acquire(blocking=False):
+            self._send_capacity_refusal(request)
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._admission.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        """Run one handler and always release the admission slot afterward."""
+        try:
+            self.finish_request(request, client_address)
+        except Exception:
+            self.handle_error(request, client_address)
+        finally:
+            self.shutdown_request(request)
+            self._admission.release()
+
+    def finish_request(self, request: Any, client_address: Any) -> None:
+        """Apply the read deadline to the accepted socket before handling."""
+        sock = request[1] if isinstance(request, tuple) else request
+        if isinstance(sock, socket.socket):
+            sock.settimeout(self.request_read_timeout_seconds)
+        super().finish_request(request, client_address)
+
+    def _send_capacity_refusal(self, request: Any) -> None:
+        """Write a deterministic capacity-exhausted response on ``request``."""
+        body = problem_response(
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            "Service Unavailable",
+            "A2A HTTP concurrent request capacity is exhausted",
+            reason="A2A_HTTP_CAPACITY_EXHAUSTED",
+        )
+        raw = json.dumps(_protocol.to_wire_json(body), sort_keys=True).encode("utf-8")
+        header = (
+            f"HTTP/1.1 {int(HTTPStatus.SERVICE_UNAVAILABLE)} Service Unavailable\r\n"
+            f"Content-Type: {_protocol.HTTP_JSON_MEDIA_TYPE}\r\n"
+            f"Content-Length: {len(raw)}\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+        ).encode("ascii")
+        sock = request[1] if isinstance(request, tuple) else request
+        if not isinstance(sock, socket.socket):
+            return
+        try:
+            sock.sendall(header + raw)
+        except OSError:
+            return
 
 
 def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
@@ -92,6 +190,66 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(raw)
 
+        def _request_read_timeout_seconds(self) -> float:
+            """Return the server-configured wall-clock body/header read budget."""
+            server = self.server
+            timeout = getattr(
+                server,
+                "request_read_timeout_seconds",
+                DEFAULT_A2A_REQUEST_READ_TIMEOUT_SECONDS,
+            )
+            try:
+                value = float(timeout)
+            except (TypeError, ValueError):
+                return DEFAULT_A2A_REQUEST_READ_TIMEOUT_SECONDS
+            return value if value > 0.0 else DEFAULT_A2A_REQUEST_READ_TIMEOUT_SECONDS
+
+        def _send_read_timeout(self, detail: str = "Request body read timed out") -> None:
+            """Refuse a request whose body could not be fully read in time."""
+            self._send_json(
+                HTTPStatus.REQUEST_TIMEOUT,
+                problem_response(
+                    HTTPStatus.REQUEST_TIMEOUT,
+                    "Request Timeout",
+                    detail,
+                    reason="A2A_HTTP_READ_TIMEOUT",
+                ),
+            )
+
+        def _read_body_exactly(self, length: int) -> bytes | None:
+            """Read exactly ``length`` body bytes under a wall-clock deadline.
+
+            Returns ``None`` after sending a deterministic timeout response when
+            the deadline expires, the peer stalls, or the connection closes before
+            the declared ``Content-Length`` is satisfied.
+            """
+            if length <= 0:
+                return b""
+            deadline = time.monotonic() + self._request_read_timeout_seconds()
+            chunks: list[bytes] = []
+            remaining = length
+            while remaining > 0:
+                budget = deadline - time.monotonic()
+                if budget <= 0.0:
+                    self._send_read_timeout()
+                    return None
+                if isinstance(self.connection, socket.socket):
+                    self.connection.settimeout(budget)
+                try:
+                    chunk = self.rfile.read(remaining)
+                except TimeoutError:
+                    self._send_read_timeout()
+                    return None
+                except OSError:
+                    self._send_read_timeout("Request body read failed")
+                    return None
+                if not chunk:
+                    self._send_read_timeout("Request body incomplete")
+                    return None
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            return b"".join(chunks)
+
         def _read_json(self) -> JsonMap | None:
             content_type = self.headers.get("Content-Type", "")
             if not is_supported_json_media_type(content_type):
@@ -114,7 +272,9 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                     problem_response(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request body too large"),
                 )
                 return None
-            raw = self.rfile.read(max(length, 0))
+            raw = self._read_body_exactly(max(length, 0))
+            if raw is None:
+                return None
             try:
                 data = loads_bounded(raw if raw else "{}")
             except (UnicodeDecodeError, json.JSONDecodeError):
@@ -451,7 +611,9 @@ def make_a2a_http_server(
     bridge: A2ABridge,
     host: str,
     port: int,
-) -> ThreadingHTTPServer:
+    max_concurrent_requests: int = DEFAULT_MAX_CONCURRENT_A2A_REQUESTS,
+    request_read_timeout_seconds: float = DEFAULT_A2A_REQUEST_READ_TIMEOUT_SECONDS,
+) -> A2AHTTPServer:
     """Build a stdlib A2A HTTP server for callers that manage its lifecycle.
 
     Parameters
@@ -462,13 +624,22 @@ def make_a2a_http_server(
         Host interface to bind.
     port : int
         TCP port to bind.
+    max_concurrent_requests : int, optional
+        Hard ceiling on concurrent in-flight HTTP requests (default 32).
+    request_read_timeout_seconds : float, optional
+        Wall-clock budget for reading one request body (default 30s).
 
     Returns
     -------
-    ThreadingHTTPServer
-        Configured HTTP server.
+    A2AHTTPServer
+        Configured HTTP server with bounded admission and read deadlines.
     """
-    return ThreadingHTTPServer((host, port), build_a2a_handler(bridge))
+    return A2AHTTPServer(
+        (host, port),
+        build_a2a_handler(bridge),
+        max_concurrent_requests=max_concurrent_requests,
+        request_read_timeout_seconds=request_read_timeout_seconds,
+    )
 
 
 def serve_a2a_http(
@@ -476,6 +647,8 @@ def serve_a2a_http(
     bridge: A2ABridge,
     host: str,
     port: int,
+    max_concurrent_requests: int = DEFAULT_MAX_CONCURRENT_A2A_REQUESTS,
+    request_read_timeout_seconds: float = DEFAULT_A2A_REQUEST_READ_TIMEOUT_SECONDS,
 ) -> (
     None
 ):  # pragma: no cover - blocking process wrapper; server factory is covered by real HTTP tests.
@@ -489,8 +662,18 @@ def serve_a2a_http(
         Host interface to bind.
     port : int
         TCP port to bind.
+    max_concurrent_requests : int, optional
+        Hard ceiling on concurrent in-flight HTTP requests (default 32).
+    request_read_timeout_seconds : float, optional
+        Wall-clock budget for reading one request body (default 30s).
     """
-    server = make_a2a_http_server(bridge=bridge, host=host, port=port)
+    server = make_a2a_http_server(
+        bridge=bridge,
+        host=host,
+        port=port,
+        max_concurrent_requests=max_concurrent_requests,
+        request_read_timeout_seconds=request_read_timeout_seconds,
+    )
     try:
         server.serve_forever()
     finally:

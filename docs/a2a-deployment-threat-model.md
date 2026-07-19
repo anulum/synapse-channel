@@ -104,6 +104,8 @@ no list configured the check is a no-op.
 | --- | --- |
 | Client sends an over-large JSON body. | Bridge returns `413 Request body too large` before dispatch. |
 | Client sends deeply nested JSON. | Bridge rejects the body through bounded JSON parsing before dispatch. |
+| Client opens more concurrent HTTP requests than the configured ceiling. | Bridge admits at most `--max-concurrent-requests` in-flight handlers and answers extras with deterministic `503` (`A2A_HTTP_CAPACITY_EXHAUSTED`) without starting additional worker threads. Capacity is released on normal completion, parse error, timeout, disconnect, and handler exception. |
+| Client stalls or incompletely delivers a declared request body. | Bridge applies `--request-read-timeout` as a wall-clock body-read deadline and returns deterministic `408` (`A2A_HTTP_READ_TIMEOUT`) before dispatch. |
 | Client configures `localhost`, loopback, private, link-local, CGNAT, or other non-routable webhook URLs, or a name that rebinds to one after validation. | Delivery pins the once-resolved address and rejects any non-globally-routable target before the socket is opened. |
 | Client configures a public-looking host that resolves to a local address. | Delivery rejects the target before sending. |
 | Webhook receiver redirects to a local address. | Redirect handler validates and rejects the new target before following it. |
