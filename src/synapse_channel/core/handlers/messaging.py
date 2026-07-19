@@ -61,19 +61,50 @@ if TYPE_CHECKING:
 logger = logging.getLogger("synapse.messaging")
 
 
-def _client_timestamp(raw: Any, now: float) -> float:
-    """Return the client's send time if it is a usable instant, else the hub clock.
+def _client_timestamp(raw: Any) -> float | None:
+    """Return a finite client send time when usable, else ``None``.
 
-    A chat's ``timestamp`` is advisory metadata the client may stamp. A missing,
-    falsy, non-numeric, non-finite, or double-overflowing value falls back to the
-    hub's authoritative ``now`` — a bare ``float`` would otherwise raise on a
-    string, list, or huge integer (dropping the sender's connection out of the
-    frame handler), or admit ``inf``/``nan`` into the retained history, the
-    broadcast, and the dead-letter ledger's ordering key.
+    A chat frame may carry an optional client-stamped instant. Only a finite
+    numeric value is retained, and only as *advisory* metadata
+    (``client_timestamp``). Missing, falsy, boolean, non-numeric, non-finite, or
+    double-overflowing values are discarded rather than raised on (a bare
+    ``float`` would otherwise drop the sender's connection out of the frame
+    handler). The hub never uses this value to order history or dead letters.
     """
     if not raw or isinstance(raw, bool) or not isinstance(raw, (int, float)):
-        return now
-    return safe_float(raw, default=now, allow_bool=False)
+        return None
+    # ``safe_float`` maps non-finite and overflowing inputs to ``default``.
+    candidate = safe_float(raw, default=float("nan"), allow_bool=False)
+    if candidate != candidate:  # NaN sentinel from safe_float failure / non-finite
+        return None
+    return candidate
+
+
+def _stamp_chat_times(data: dict[str, Any], *, now: float | None = None) -> float:
+    """Stamp authoritative hub time; retain finite client time only as advisory.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        Inbound chat frame (mutated in place).
+    now : float or None, optional
+        Hub wall-clock override for tests; ``None`` uses :func:`time.time`.
+
+    Returns
+    -------
+    float
+        The hub-authoritative ``timestamp`` written onto the frame (also used
+        for dead-letter ordering and history retention).
+    """
+    hub_now = time.time() if now is None else float(now)
+    # Client-supplied advisory field is never trusted as-is; re-derive only from
+    # a finite value presented on the envelope ``timestamp`` before overwrite.
+    data.pop("client_timestamp", None)
+    advisory = _client_timestamp(data.get("timestamp"))
+    data["timestamp"] = hub_now
+    if advisory is not None:
+        data["client_timestamp"] = advisory
+    return hub_now
 
 
 async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
@@ -84,8 +115,12 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
     public chat history. It is still mirrored to the relay log and journalled,
     tagged with its channel so relay and event-query can filter it — see
     :func:`_route_channel_chat`.
+
+    ``timestamp`` is always the hub's wall clock (authoritative for history and
+    dead-letter ordering). A finite client-supplied instant is preserved only as
+    ``client_timestamp`` advisory metadata and cannot poison those order keys.
     """
-    data["timestamp"] = _client_timestamp(data.get("timestamp"), time.time())
+    _stamp_chat_times(data)
     data["type"] = MessageType.CHAT
     data["hub_id"] = hub.hub_id
     data["msg_id"] = hub._next_msg_id()

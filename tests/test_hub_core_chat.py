@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from pathlib import Path
 from typing import Any
 
@@ -172,7 +173,9 @@ async def test_declared_role_is_bound_reaches_its_holder_and_shows_in_who() -> N
     assert all(entry["target"] != "proj/coordinator" for entry in hub.dead_letters.snapshot())
 
 
-async def test_chat_preserves_supplied_timestamp_and_increments_seq_end_to_end() -> None:
+async def test_chat_keeps_client_time_advisory_and_stamps_hub_time_end_to_end() -> None:
+    """Finite client time is retained as client_timestamp; timestamp is hub time."""
+    before = time.time()
     async with running_hub() as (_, uri):
         async with connect(uri) as websocket:
             await read_until_type(websocket, "welcome")
@@ -182,8 +185,49 @@ async def test_chat_preserves_supplied_timestamp_and_increments_seq_end_to_end()
             first = await read_until_type(websocket, "chat")
             await websocket.send(json.dumps({"sender": "A", "type": "chat", "payload": "2"}))
             second = await read_until_type(websocket, "chat")
-    assert first["timestamp"] == 1700.0
+    after = time.time()
+    assert first["client_timestamp"] == 1700.0
+    assert isinstance(first["timestamp"], (int, float))
+    assert isinstance(second["timestamp"], (int, float))
+    first_ts = float(first["timestamp"])
+    second_ts = float(second["timestamp"])
+    assert before <= first_ts <= after
+    assert first_ts != 1700.0
+    assert "client_timestamp" not in second
+    assert before <= second_ts <= after
     assert [first["msg_id"], second["msg_id"]] == [1, 2]
+
+
+async def test_byzantine_future_timestamp_does_not_poison_dead_letter_order_end_to_end() -> None:
+    """A future client stamp must not become the dead-letter last_ts ordering key."""
+    future = time.time() + 10_000_000.0
+    before = time.time()
+    async with running_hub() as (hub, uri):
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            await websocket.send(
+                json.dumps(
+                    {
+                        "sender": "A",
+                        "type": "chat",
+                        "target": "nobody-online",
+                        "payload": "miss",
+                        "timestamp": future,
+                    }
+                )
+            )
+            frame = await read_until_type(websocket, "chat")
+        snapshot = hub.dead_letters.snapshot()
+    after = time.time()
+    assert frame["client_timestamp"] == future
+    assert isinstance(frame["timestamp"], (int, float))
+    hub_ts = float(frame["timestamp"])
+    assert before <= hub_ts <= after
+    entry = next(item for item in snapshot if item["target"] == "nobody-online")
+    assert isinstance(entry["last_ts"], (int, float))
+    last_ts = float(entry["last_ts"])
+    assert before <= last_ts <= after + 1.0
+    assert last_ts < future
 
 
 async def test_chat_with_a_non_numeric_timestamp_is_stamped_not_crashed_end_to_end() -> None:

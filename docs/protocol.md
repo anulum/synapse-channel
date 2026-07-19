@@ -5,6 +5,13 @@ Every message is a JSON envelope with a small, fixed shape: `sender`, `target`,
 `hub_id`. The `type` field selects the message; the values, grouped by concern,
 are below.
 
+For inbound `chat` frames the hub overwrites `timestamp` with its own wall
+clock. That hub stamp is the only value used to order retained chat history and
+the dead-letter ledger. A finite client-supplied instant is kept only as
+optional advisory metadata on `client_timestamp`; non-finite or malformed client
+values are discarded. A Byzantine future or backdated client stamp therefore
+cannot poison history or dead-letter ordering.
+
 A state-mutating message may carry an `idem_key` so a retry after a reconnect is
 applied once. On a secured hub, the first message of a connection must carry a
 `token`.
