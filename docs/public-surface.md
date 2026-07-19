@@ -80,7 +80,7 @@ enforcement or widen trust.
 Newer or advisory surfaces still settling; shape may change before 1.0. Use them,
 but pin to a version if you depend on their exact behaviour.
 
-`auto-action`  `benchmark`  `deliberate`  `memory-recall`  `participant`  `resource-bids`  `route-task`
+`auto-action`  `benchmark`  `deliberate`  `dispatch`  `memory-recall`  `participant`  `resource-bids`  `route-task`
 `sandbox`  `ttl-advice`  `workflow`
 
 ## Architecture and staged-profile documentation
