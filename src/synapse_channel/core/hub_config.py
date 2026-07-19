@@ -264,6 +264,8 @@ class HubConfig:
     default_ttl_seconds: float = 3600.0
     hub_id: str | None = None
     journal: EventStore | None = None
+    anti_rollback_checkpoint: bool = True
+    checkpoint_store_path: str | Path | None = None
     clock: Callable[[], float] | None = None
     rate_limiter: RateLimiter | None = None
     host_rate_limiter: RateLimiter | None = None

@@ -1175,6 +1175,17 @@ Transparency), so a leaf hash cannot be forged as an interior node. It commits
 what the log contains — integrity and inclusion — complementing `reproduce` (a
 per-task digest) with a log-wide, incrementally provable commitment.
 
+A hub with a journal also persists that commitment as a hash-chained checkpoint
+OUTSIDE the log — an owner-only `<db>.checkpoint.db` beside it — and verifies
+the log against the newest link before serving: a tail-truncated or replaced
+log is a hard `AntiRollbackError` at startup, not a quiet restart, and a
+verified tip is anchored as the next chain link. `synapse merkle checkpoint
+./synapse.db` shows the newest link, and `--verify` re-checks the log against
+it (exit `0` clean, `2` on detection). This is the local anti-rollback layer;
+external witnessing stays owner-gated. An intentional rewrite such as
+`synapse compact` trips the detector by design; the operator remedy is to
+remove the checkpoint store and let the hub anchor a fresh chain.
+
 Use `synapse reliability ./synapse.db` for evidence-only reliability memory. It
 tracks stale claims, declared failed-check evidence, broken handoff candidates,
 and merge-conflict frequency as audit signals, not scores. It does not rank
@@ -1411,11 +1422,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.11 |
 | Public API exports | 70 |
-| Package modules | 483 |
-| Classes | 680 |
+| Package modules | 484 |
+| Classes | 683 |
 | Wire message types | 77 |
-| CLI subcommands | 180 |
-| Test functions | 8238 |
+| CLI subcommands | 181 |
+| Test functions | 8262 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 57 |
 | GitHub Actions workflows | 21 |

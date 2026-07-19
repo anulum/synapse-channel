@@ -15,6 +15,15 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Persist a hash-chained, owner-only Merkle checkpoint of the durable event
+  log OUTSIDE the log it attests, and verify it fail-closed before the hub
+  serves: a log shorter than its checkpoint (tail truncation) or a recomputed
+  prefix root that differs (log replacement) now raises `AntiRollbackError`
+  at startup instead of restarting silently. Once verified, the hub anchors
+  the current state as the newest chain link. `synapse merkle checkpoint`
+  shows the newest link or verifies the log against it (exit 0 clean / 2
+  detection, JSON verdict). This is the local anti-rollback layer only;
+  external witnessing stays owner-gated and out of scope.
 - Serve the multi-hub event log only under an operator-configured
   `MultiHubServingPolicy`: a hub with no policy now refuses every peer
   (fail-closed) instead of serving the entire log to any unauthenticated

@@ -91,6 +91,7 @@ from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS_PER_TASK,
 )
 from synapse_channel.core.mailbox_pending import MailboxPendingTracker
+from synapse_channel.core.merkle_checkpoint import MerkleCheckpointStore, checkpoint_path_for
 from synapse_channel.core.message_auth import (
     DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
     EventSignatureTrustBundle,
@@ -414,6 +415,17 @@ class SynapseHub:
         answered with an error frame. The file is re-read per request, so the offered
         material rotates without a restart; a fetched offer stays untrusted until the
         fetching operator compares fingerprints out-of-band and imports it explicitly.
+    anti_rollback_checkpoint : bool, optional
+        When ``True`` (the default) and a journal is attached, the hub verifies the
+        durable log against its persisted Merkle checkpoint BEFORE serving — a
+        truncated tail or a rewritten prefix raises
+        :class:`~synapse_channel.core.merkle_checkpoint.AntiRollbackError` at startup
+        instead of restarting silently — then anchors the current state as the
+        newest hash-chained checkpoint link.
+    checkpoint_store_path : str or Path or None, optional
+        Override for the checkpoint database location; defaults to
+        ``<journal path>.checkpoint.db`` beside the event store. The checkpoint
+        store must live outside the log it attests.
     """
 
     def __init__(
@@ -484,8 +496,29 @@ class SynapseHub:
         federation_bundle: FederationBundle | None = None,
         federation_cert_source: PeerCertificateSource = live_peer_certificate_der,
         federation_offer_path: str | Path | None = None,
+        anti_rollback_checkpoint: bool = True,
+        checkpoint_store_path: str | Path | None = None,
     ) -> None:
         self.journal = journal
+        self._checkpoint_store: MerkleCheckpointStore | None
+        if (
+            anti_rollback_checkpoint
+            and isinstance(journal, EventStore)
+            and journal.path != ":memory:"
+        ):
+            checkpoint_path = (
+                Path(checkpoint_store_path)
+                if checkpoint_store_path
+                else (checkpoint_path_for(journal.path))
+            )
+            self._checkpoint_store = MerkleCheckpointStore(checkpoint_path)
+            # Fail closed BEFORE serving: a truncated or rewritten log is a
+            # hard error at startup, never a quiet restart. Only then anchor
+            # the current state as the newest chain link.
+            self._checkpoint_store.verify(journal)
+            self._checkpoint_store.anchor(journal)
+        else:
+            self._checkpoint_store = None
         self.enable_metrics = bool(enable_metrics)
         self.auth_timeout = max(safe_float(auth_timeout, default=DEFAULT_AUTH_TIMEOUT), 0.1)
         self.metrics_token = metrics_token or None

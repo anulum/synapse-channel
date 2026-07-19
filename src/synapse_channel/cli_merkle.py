@@ -11,6 +11,8 @@
 against an expected root); ``merkle prove`` emits an ``O(log n)`` inclusion proof
 for one event; ``merkle verify`` checks such a proof offline, with no event store
 — the light-client verification a follower runs against a trusted root; ``merkle
+checkpoint`` shows the persisted anti-rollback checkpoint chain's newest link or
+verifies the log against it fail-closed; ``merkle
 keygen`` creates the hub deployment's receipt-signing keypair, whose private half
 signs receipt commitments (``verify-release --signing-key``) and whose public
 half verifies them (``policy-check --trusted-signing-key``).
@@ -34,6 +36,13 @@ from synapse_channel.core.merkle import (
     verify_inclusion,
     verify_root,
 )
+from synapse_channel.core.merkle_checkpoint import (
+    AntiRollbackError,
+    MerkleCheckpoint,
+    MerkleCheckpointStore,
+    checkpoint_path_for,
+)
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.receipt_signing import (
     ReceiptSigningError,
     generate_receipt_signing_key,
@@ -140,6 +149,108 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_checkpoint(args: argparse.Namespace) -> int:
+    """Show the newest persisted checkpoint, or verify the log against it.
+
+    Without ``--verify`` this is a read-only inspection of the checkpoint
+    store: it prints the newest chain link and never creates files. With
+    ``--verify`` the durable log is checked against the newest checkpoint
+    exactly as hub startup does — fail-closed, exit 0 clean / 2 detection —
+    and a first run without any checkpoint is clean by construction.
+    """
+    db_path = Path(args.db)
+    if not db_path.exists():
+        print(f"missing event store: {db_path}", file=sys.stderr)
+        return 2
+    checkpoint_path = (
+        Path(args.checkpoint_db) if args.checkpoint_db else checkpoint_path_for(db_path)
+    )
+    if not checkpoint_path.exists():
+        if args.verify:
+            reason = "no checkpoint recorded yet — first run is clean by construction"
+            if args.json:
+                _emit_verify_verdict(valid=True, seq=-1, root="", reason=reason)
+            else:
+                print(reason)
+            return 0
+        print(f"no checkpoint store at {checkpoint_path} (first run)", file=sys.stderr)
+        return 1
+    if not args.verify:
+        checkpoints = MerkleCheckpointStore(checkpoint_path)
+        try:
+            latest = checkpoints.latest()
+        finally:
+            checkpoints.close()
+        if latest is None:
+            print(f"no checkpoint recorded in {checkpoint_path}", file=sys.stderr)
+            return 1
+        _emit_checkpoint(latest, json_mode=args.json)
+        return 0
+    try:
+        events = EventStore(db_path, key_file=getattr(args, "db_key_file", None))
+    except (ValueError, OSError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    try:
+        checkpoints = MerkleCheckpointStore(checkpoint_path)
+        try:
+            latest = checkpoints.latest()
+            try:
+                checkpoints.verify(events)
+            except AntiRollbackError as exc:
+                reason = str(exc)
+                if args.json:
+                    _emit_verify_verdict(
+                        valid=False,
+                        seq=latest.seq if latest is not None else -1,
+                        root=latest.root if latest is not None else "",
+                        reason=reason,
+                    )
+                else:
+                    print(reason, file=sys.stderr)
+                return 2
+        finally:
+            checkpoints.close()
+    finally:
+        events.close()
+    if latest is None:
+        reason = "no checkpoint recorded yet — first run is clean by construction"
+        if args.json:
+            _emit_verify_verdict(valid=True, seq=-1, root="", reason=reason)
+        else:
+            print(reason)
+        return 0
+    if args.json:
+        _emit_verify_verdict(valid=True, seq=latest.seq, root=latest.root, reason="")
+    else:
+        print(f"log verified against checkpoint seq {latest.seq}: root {latest.root}")
+    return 0
+
+
+def _emit_checkpoint(latest: MerkleCheckpoint, *, json_mode: bool) -> None:
+    """Print one checkpoint, machine-readable with ``--json``."""
+    if json_mode:
+        print(
+            json.dumps(
+                {
+                    "seq": latest.seq,
+                    "root": latest.root,
+                    "created_at": latest.created_at,
+                    "prev_hash": latest.prev_hash,
+                    "checkpoint_hash": latest.checkpoint_hash,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+    print(f"latest checkpoint: seq {latest.seq}")
+    print(f"  root:            {latest.root}")
+    print(f"  created_at:      {latest.created_at}")
+    print(f"  prev_hash:       {latest.prev_hash or '(genesis)'}")
+    print(f"  checkpoint_hash: {latest.checkpoint_hash}")
+
+
 def _cmd_keygen(args: argparse.Namespace) -> int:
     """Generate the hub deployment's receipt-signing keypair."""
     try:
@@ -216,6 +327,30 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Emit a machine-readable verdict to stdout instead of a stderr line.",
     )
     verify.set_defaults(func=_cmd_verify)
+
+    checkpoint = actions.add_parser(
+        "checkpoint",
+        help="Show or verify the log's persisted anti-rollback checkpoint.",
+    )
+    checkpoint.add_argument("db", help="Path to the hub event store, e.g. ~/synapse/hub.db.")
+    checkpoint.add_argument(
+        "--db-key-file",
+        default=None,
+        help="Owner-only SQLCipher key for an encrypted event store.",
+    )
+    checkpoint.add_argument(
+        "--checkpoint-db",
+        default=None,
+        metavar="PATH",
+        help="Override the checkpoint store location (default: DB.checkpoint.db).",
+    )
+    checkpoint.add_argument(
+        "--verify",
+        action="store_true",
+        help="Verify the log against the newest checkpoint; exit 0 clean, 2 on detection.",
+    )
+    checkpoint.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    checkpoint.set_defaults(func=_cmd_checkpoint)
 
     keygen = actions.add_parser(
         "keygen",
