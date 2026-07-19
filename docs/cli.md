@@ -2138,13 +2138,16 @@ a relay that carries no reason, so a team or production deployment can hold ever
 cross-hub action to an auditable why.
 
 A hub can also require **two-person approval**: an authorised relay is not applied on its
-own but recorded pending, and carried out only when a second, *different* operator relays
-the same action (same namespace and task). The first relay returns exit `3` and a "pending"
-verdict; the same operator repeating it stays pending (no self-approval); a second operator
-completes the quorum and the peer applies it. Both the pending request and the approval are
-audited, so a governed cross-hub release under this policy names two distinct operators in
-the log. The policy is a hub setting (`require_two_person_relay`), off by default; break-glass
-does not bypass it — an emergency still needs a second operator.
+own but recorded pending, and carried out only when a second, *distinct verified federation
+principal* relays the same action (same namespace and task). Distinctness is bound to the
+federation trust domain after live mutual-TLS authentication — the descriptive `--operator` label,
+sender name, configured signing-key id, and certificate are not separate identities. Aliases and
+key or certificate rotation within one domain cannot manufacture quorum. The first relay returns
+exit `3`; another label backed by the
+same verified principal stays pending; a distinct principal completes the quorum and the peer
+applies it. Both opaque principal fingerprints and human-readable labels are audited. The
+policy is a hub setting (`require_two_person_relay`), off by default; break-glass does not bypass
+it — an emergency still needs a second verified principal.
 
 The relay can also go **through** the operator's own hub instead of straight to the
 peer: point `--peer` at your local hub, and if that hub is configured with a relay

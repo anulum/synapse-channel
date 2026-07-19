@@ -31,48 +31,58 @@ def _request(
     )
 
 
+def _principal(name: str) -> str:
+    return f"federation-peer:{name}"
+
+
 def test_first_request_is_recorded_pending() -> None:
     ledger = RelayApprovalLedger()
 
-    outcome = ledger.submit(_request("alice"))
+    outcome = ledger.submit(_request("alice"), principal=_principal("peer-a"))
 
     assert outcome.status is ApprovalStatus.RECORDED
     assert outcome.requester == "alice"
     assert outcome.approver == ""
+    assert outcome.requester_principal == _principal("peer-a")
+    assert outcome.approver_principal == ""
     assert ledger.pending_count == 1
 
 
 def test_second_distinct_operator_approves() -> None:
     ledger = RelayApprovalLedger()
-    ledger.submit(_request("alice"))
+    ledger.submit(_request("alice"), principal=_principal("peer-a"))
 
-    outcome = ledger.submit(_request("bob"))
+    outcome = ledger.submit(_request("bob"), principal=_principal("peer-b"))
 
     assert outcome.status is ApprovalStatus.APPROVED
     assert outcome.requester == "alice"
     assert outcome.approver == "bob"
+    assert outcome.requester_principal == _principal("peer-a")
+    assert outcome.approver_principal == _principal("peer-b")
     assert ledger.pending_count == 0  # the pending record is cleared on approval
 
 
-def test_same_operator_repeat_stays_pending() -> None:
-    # An operator cannot approve their own request; a repeat leaves it awaiting a different one.
+def test_same_verified_principal_alias_stays_pending() -> None:
+    # Human-readable aliases do not create a second identity boundary.
     ledger = RelayApprovalLedger()
-    ledger.submit(_request("alice"))
+    ledger.submit(_request("alice"), principal=_principal("peer-a"))
 
-    outcome = ledger.submit(_request("alice"))
+    outcome = ledger.submit(_request("bob"), principal=_principal("peer-a"))
 
     assert outcome.status is ApprovalStatus.AWAITING
     assert outcome.requester == "alice"
     assert outcome.approver == ""
+    assert outcome.requester_principal == _principal("peer-a")
+    assert outcome.approver_principal == ""
     assert ledger.pending_count == 1
 
 
 def test_different_task_is_a_separate_quorum() -> None:
     ledger = RelayApprovalLedger()
-    ledger.submit(_request("alice", task="MY-NS/build"))
+    ledger.submit(_request("alice", task="MY-NS/build"), principal=_principal("peer-a"))
 
     # A second operator on a *different* task does not approve the first task's request.
-    outcome = ledger.submit(_request("bob", task="MY-NS/lint"))
+    outcome = ledger.submit(_request("bob", task="MY-NS/lint"), principal=_principal("peer-b"))
 
     assert outcome.status is ApprovalStatus.RECORDED
     assert ledger.pending_count == 2
@@ -82,9 +92,9 @@ def test_approval_key_strips_the_task_id() -> None:
     # The key matches the stripped task id the apply path uses, so surrounding space cannot
     # split one action into two separate quorums.
     ledger = RelayApprovalLedger()
-    ledger.submit(_request("alice", task="  MY-NS/build  "))
+    ledger.submit(_request("alice", task="  MY-NS/build  "), principal=_principal("peer-a"))
 
-    outcome = ledger.submit(_request("bob", task="MY-NS/build"))
+    outcome = ledger.submit(_request("bob", task="MY-NS/build"), principal=_principal("peer-b"))
 
     assert outcome.status is ApprovalStatus.APPROVED
     assert outcome.approver == "bob"
@@ -99,10 +109,10 @@ def test_key_from_request_uses_action_namespace_and_stripped_task() -> None:
 def test_full_cycle_returns_to_empty_and_can_repeat() -> None:
     # After an approval the same target can be requested again (a fresh quorum), not auto-approved.
     ledger = RelayApprovalLedger()
-    ledger.submit(_request("alice"))
-    ledger.submit(_request("bob"))  # approved, cleared
+    ledger.submit(_request("alice"), principal=_principal("peer-a"))
+    ledger.submit(_request("bob"), principal=_principal("peer-b"))  # approved, cleared
 
-    again = ledger.submit(_request("carol"))
+    again = ledger.submit(_request("carol"), principal=_principal("peer-c"))
 
     assert again.status is ApprovalStatus.RECORDED
     assert ledger.pending_count == 1
@@ -110,13 +120,16 @@ def test_full_cycle_returns_to_empty_and_can_repeat() -> None:
 
 def test_withdraw_drops_a_pending_record() -> None:
     ledger = RelayApprovalLedger()
-    ledger.submit(_request("alice"))
+    ledger.submit(_request("alice"), principal=_principal("peer-a"))
     key = RelayApprovalKey.from_request(_request("alice"))
 
     assert ledger.withdraw(key) is True
     assert ledger.pending_count == 0
     # A subsequent operator now starts a fresh quorum rather than approving the withdrawn one.
-    assert ledger.submit(_request("bob")).status is ApprovalStatus.RECORDED
+    assert (
+        ledger.submit(_request("bob"), principal=_principal("peer-b")).status
+        is ApprovalStatus.RECORDED
+    )
 
 
 def test_withdraw_of_unknown_key_is_false() -> None:
@@ -127,17 +140,25 @@ def test_withdraw_of_unknown_key_is_false() -> None:
 
 def test_capacity_evicts_the_oldest_pending() -> None:
     ledger = RelayApprovalLedger(capacity=2)
-    ledger.submit(_request("alice", task="MY-NS/a"))
-    ledger.submit(_request("alice", task="MY-NS/b"))
+    ledger.submit(_request("alice", task="MY-NS/a"), principal=_principal("peer-a"))
+    ledger.submit(_request("alice", task="MY-NS/b"), principal=_principal("peer-a"))
 
-    ledger.submit(_request("alice", task="MY-NS/c"))  # at capacity → evicts the oldest (task a)
+    ledger.submit(
+        _request("alice", task="MY-NS/c"), principal=_principal("peer-a")
+    )  # at capacity → evicts the oldest (task a)
 
     assert ledger.pending_count == 2
     # The evicted request is gone: a second operator on task a starts a fresh quorum (which in
     # turn evicts the now-oldest pending, task b).
-    assert ledger.submit(_request("bob", task="MY-NS/a")).status is ApprovalStatus.RECORDED
+    assert (
+        ledger.submit(_request("bob", task="MY-NS/a"), principal=_principal("peer-b")).status
+        is ApprovalStatus.RECORDED
+    )
     # Task c was never evicted, so a second, different operator still approves it.
-    assert ledger.submit(_request("bob", task="MY-NS/c")).status is ApprovalStatus.APPROVED
+    assert (
+        ledger.submit(_request("bob", task="MY-NS/c"), principal=_principal("peer-b")).status
+        is ApprovalStatus.APPROVED
+    )
 
 
 def test_capacity_below_one_is_rejected() -> None:
@@ -147,8 +168,8 @@ def test_capacity_below_one_is_rejected() -> None:
 
 def test_pending_lists_records_oldest_first() -> None:
     ledger = RelayApprovalLedger()
-    ledger.submit(_request("alice", task="MY-NS/a"))
-    ledger.submit(_request("carol", task="MY-NS/b"))
+    ledger.submit(_request("alice", task="MY-NS/a"), principal=_principal("peer-a"))
+    ledger.submit(_request("carol", task="MY-NS/b"), principal=_principal("peer-c"))
 
     assert ledger.pending() == [
         {"action": RELAY_RELEASE, "namespace": "MY-NS", "task_id": "MY-NS/a", "requester": "alice"},
@@ -162,7 +183,7 @@ def test_pending_is_empty_without_any_awaiting() -> None:
 
 def test_pending_records_the_stripped_task_id() -> None:
     ledger = RelayApprovalLedger()
-    ledger.submit(_request("alice", task="  MY-NS/build  "))
+    ledger.submit(_request("alice", task="  MY-NS/build  "), principal=_principal("peer-a"))
 
     assert ledger.pending() == [
         {
@@ -177,7 +198,16 @@ def test_pending_records_the_stripped_task_id() -> None:
 def test_pending_drops_an_approved_record() -> None:
     # A completed quorum clears its pending record, so it no longer appears in the pending view.
     ledger = RelayApprovalLedger()
-    ledger.submit(_request("alice"))
-    ledger.submit(_request("bob"))  # a second, different operator approves → cleared
+    ledger.submit(_request("alice"), principal=_principal("peer-a"))
+    ledger.submit(
+        _request("bob"), principal=_principal("peer-b")
+    )  # a second verified principal approves → cleared
 
     assert ledger.pending() == []
+
+
+def test_blank_verified_principal_is_rejected_fail_closed() -> None:
+    ledger = RelayApprovalLedger()
+
+    with pytest.raises(ValueError, match="verified relay principal is required"):
+        ledger.submit(_request("alice"), principal="")

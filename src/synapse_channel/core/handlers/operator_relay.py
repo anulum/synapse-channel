@@ -35,14 +35,15 @@ lease was revoked, so a former holder does not keep acting on a dropped lease.
 A hub configured for two-person approval adds one more gate *after* the authorisation gate: an
 authorised relay is not applied on its own, but recorded pending in the hub's
 :class:`~synapse_channel.core.operator_relay_approval.RelayApprovalLedger` and answered ``pending``;
-only a second, different operator submitting the same action carries it out, and both the pending
-request and the approval are audited, so a governed cross-hub release under this policy leaves a
-trail naming two distinct operators.
+only a second, distinct verified federation principal submitting the same action carries it out.
+Both opaque principal fingerprints and descriptive operator labels are audited, so aliases from
+one mutually authenticated peer cannot manufacture a quorum.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.journal import (
@@ -73,7 +74,15 @@ RELAY_STATUS_PENDING = "pending"
 """Audit status: the relay was recorded under two-person policy, awaiting a second operator."""
 
 _PENDING_DETAIL = "recorded; awaiting approval by a second operator"
-_AWAITING_DETAIL = "already recorded by this operator; awaiting a different second operator"
+_AWAITING_DETAIL = "already recorded by this verified principal; awaiting a distinct principal"
+
+
+@dataclass(frozen=True, slots=True)
+class _RelayAuthorisation:
+    """Relay-policy decision plus the verified peer principal that produced it."""
+
+    decision: RelayDecision
+    principal: str = ""
 
 
 async def handle_operator_relay_request(
@@ -108,7 +117,8 @@ async def handle_operator_relay_request(
         )
         return
 
-    decision = _authorise(hub, sender, request, websocket)
+    authorisation = _authorise(hub, sender, request, websocket)
+    decision = authorisation.decision
     if not decision.allowed:
         logger.warning(
             "Refused operator relay %r from peer %r in namespace %r: %s",
@@ -135,7 +145,7 @@ async def handle_operator_relay_request(
     # An allow decision guarantees the action is registered; the sole registered action is a
     # force-release, so applying it here is exhaustive for this slice.
     if hub.require_two_person_relay:
-        result = _apply_with_two_person(hub, sender, request)
+        result = _apply_with_two_person(hub, sender, request, authorisation.principal)
     else:
         result = _apply_release(hub, sender, request)
     await _send_result(hub, websocket, sender, result)
@@ -143,7 +153,7 @@ async def handle_operator_relay_request(
 
 def _authorise(
     hub: SynapseHub, sender: str, request: RelayActionRequest, websocket: Any
-) -> RelayDecision:
+) -> _RelayAuthorisation:
     """Compose the peer, scope, and ownership gates into one relay authorisation decision.
 
     The peer gate reads the live certificate through the hub's serving policy; a hub with no
@@ -156,36 +166,49 @@ def _authorise(
     require_reason = hub.require_relay_reason
     policy = hub.multihub_serving_policy
     if policy is None:
-        return authorise_relay(
-            request,
-            peer_authorised=False,
-            scope=(),
-            owns_namespace=owns_namespace,
-            require_reason=require_reason,
+        return _RelayAuthorisation(
+            authorise_relay(
+                request,
+                peer_authorised=False,
+                scope=(),
+                owns_namespace=owns_namespace,
+                require_reason=require_reason,
+            )
         )
     authorisation = policy.authorise(sender=sender, websocket=websocket)
-    return authorise_relay(
-        request,
-        peer_authorised=authorisation.allowed,
-        scope=authorisation.scope,
-        owns_namespace=owns_namespace,
-        require_reason=require_reason,
+    peer_authorised = authorisation.allowed and bool(authorisation.principal)
+    return _RelayAuthorisation(
+        authorise_relay(
+            request,
+            peer_authorised=peer_authorised,
+            scope=authorisation.scope,
+            owns_namespace=owns_namespace,
+            require_reason=require_reason,
+        ),
+        principal=authorisation.principal if peer_authorised else "",
     )
 
 
 def _apply_with_two_person(
-    hub: SynapseHub, sender: str, request: RelayActionRequest
+    hub: SynapseHub, sender: str, request: RelayActionRequest, principal: str
 ) -> RelayActionResult:
-    """Apply a relay only once a second, different operator has approved it.
+    """Apply a relay only once a second, distinct verified principal has approved it.
 
-    The already-authorised request is submitted to the hub's approval ledger. A second, different
-    operator completing the quorum applies the release (recording who approved); a first request or
-    a repeat from the same operator is recorded pending, audited as such, and answered ``pending``
-    so the initiator learns it is waiting on a second operator rather than refused.
+    The already-authorised request and its verified peer principal are submitted to the hub's
+    approval ledger. A second, different principal completing the quorum applies the release; a
+    first request or an alias from the same principal remains pending and is audited as such.
     """
-    outcome = hub.relay_approvals.submit(request)
+    outcome = hub.relay_approvals.submit(request, principal=principal)
     if outcome.status is ApprovalStatus.APPROVED:
-        return _apply_release(hub, sender, request, approver=outcome.approver)
+        return _apply_release(
+            hub,
+            sender,
+            request,
+            requester=outcome.requester,
+            approver=outcome.approver,
+            requester_principal=outcome.requester_principal,
+            approver_principal=outcome.approver_principal,
+        )
     _audit_pending(hub, sender, request, outcome)
     detail = _PENDING_DETAIL if outcome.status is ApprovalStatus.RECORDED else _AWAITING_DETAIL
     return RelayActionResult(
@@ -200,7 +223,14 @@ def _apply_with_two_person(
 
 
 def _apply_release(
-    hub: SynapseHub, sender: str, request: RelayActionRequest, *, approver: str = ""
+    hub: SynapseHub,
+    sender: str,
+    request: RelayActionRequest,
+    *,
+    requester: str = "",
+    approver: str = "",
+    requester_principal: str = "",
+    approver_principal: str = "",
 ) -> RelayActionResult:
     """Force-release the targeted lease, audit the relay, and notify this hub's agents.
 
@@ -227,7 +257,10 @@ def _apply_release(
                 "status": RELAY_STATUS_APPLIED,
                 "peer": sender,
                 "operator": request.operator,
+                "requester": requester,
                 "approver": approver,
+                "requester_principal": requester_principal,
+                "approver_principal": approver_principal,
                 "origin_hub_id": request.origin_hub_id,
                 "reason": request.reason,
                 "break_glass": request.break_glass,
@@ -269,6 +302,7 @@ def _audit_pending(
             "peer": sender,
             "operator": request.operator,
             "requester": outcome.requester,
+            "requester_principal": outcome.requester_principal,
             "origin_hub_id": request.origin_hub_id,
             "reason": request.reason,
             "break_glass": request.break_glass,

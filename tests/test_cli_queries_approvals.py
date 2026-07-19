@@ -34,7 +34,9 @@ async def test_approvals_lists_the_pending_quorum_with_the_remedy(
 ) -> None:
     # A relay awaiting its second operator rides in the state snapshot; the query renders it.
     hub = SynapseHub()
-    hub.relay_approvals.submit(_pending("alice", task="MY-NS/build"))
+    hub.relay_approvals.submit(
+        _pending("alice", task="MY-NS/build"), principal="federation-peer:test"
+    )
     async with running_hub(hub) as (_, uri):
         code = await cli_queries._approvals(uri=uri, name="U")
 

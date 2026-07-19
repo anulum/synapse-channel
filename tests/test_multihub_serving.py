@@ -190,6 +190,83 @@ def test_authorises_a_trusted_peer(tmp_path: Path) -> None:
     assert decision.allowed
     assert decision.reason == AUTHORISED
     assert decision.scope == _SCOPE
+    assert decision.principal.startswith("federation-peer:")
+
+
+def test_verified_principal_is_stable_across_sender_aliases(tmp_path: Path) -> None:
+    certfile = _write_cert(tmp_path)
+    pin = certificate_sha256_pin(certfile)
+    base = _policy(pin, _der(certfile))
+    grant = base.grants[_SENDER]
+    policy = MultiHubServingPolicy(
+        federation=base.federation,
+        mtls=base.mtls,
+        grants={_SENDER: grant, "peer-alias": grant},
+        clock=base.clock,
+        cert_source=base.cert_source,
+    )
+
+    first = policy.authorise(sender=_SENDER, websocket=object())
+    alias = policy.authorise(sender="peer-alias", websocket=object())
+
+    assert first.allowed and alias.allowed
+    assert first.principal == alias.principal
+
+
+def test_verified_principal_survives_certificate_rotation(tmp_path: Path) -> None:
+    first_cert = _write_cert(tmp_path / "first")
+    second_cert = _write_cert(tmp_path / "second")
+    first_pin = certificate_sha256_pin(first_cert)
+    second_pin = certificate_sha256_pin(second_cert)
+
+    first = _policy(first_pin, _der(first_cert)).authorise(sender=_SENDER, websocket=object())
+    second = _policy(second_pin, _der(second_cert)).authorise(sender=_SENDER, websocket=object())
+
+    assert first.allowed and second.allowed
+    assert first.principal == second.principal
+
+
+def test_verified_principal_survives_signing_key_rotation(tmp_path: Path) -> None:
+    certfile = _write_cert(tmp_path)
+    pin = certificate_sha256_pin(certfile)
+    rotated_key = "SYNAPSE-CHANNEL:main:2026-07"
+    federation = FederationBundle(
+        [
+            FederationPeer(
+                domain_id=_DOMAIN,
+                namespaces=frozenset({_NAMESPACE}),
+                certificate_pins=frozenset({pin}),
+                signing_key_ids=frozenset({_KEY, rotated_key}),
+                scope_grants=_SCOPE,
+            )
+        ]
+    )
+    mtls = MTLSPeerTrustBundle(
+        peers={
+            _DOMAIN: MTLSTrustedPeer(
+                peer_id=_DOMAIN,
+                certificate_pins=frozenset({pin}),
+                signing_key_ids=frozenset({_KEY, rotated_key}),
+                projects=frozenset({_NAMESPACE}),
+            )
+        }
+    )
+    policy = MultiHubServingPolicy(
+        federation=federation,
+        mtls=mtls,
+        grants={
+            "old-key": MultiHubServingGrant(_DOMAIN, _NAMESPACE, _KEY),
+            "new-key": MultiHubServingGrant(_DOMAIN, _NAMESPACE, rotated_key),
+        },
+        clock=lambda: 0.0,
+        cert_source=lambda _websocket: _der(certfile),
+    )
+
+    old = policy.authorise(sender="old-key", websocket=object())
+    new = policy.authorise(sender="new-key", websocket=object())
+
+    assert old.allowed and new.allowed
+    assert old.principal == new.principal
 
 
 def test_refuses_a_sender_without_a_grant(tmp_path: Path) -> None:
@@ -198,6 +275,7 @@ def test_refuses_a_sender_without_a_grant(tmp_path: Path) -> None:
     decision = _policy(pin, _der(certfile)).authorise(sender="stranger", websocket=object())
     assert not decision.allowed
     assert decision.reason == MTLSVerificationResult.UNKNOWN_PEER.value
+    assert decision.principal == ""
 
 
 def test_refuses_a_connection_with_no_certificate(tmp_path: Path) -> None:

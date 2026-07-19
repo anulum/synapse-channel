@@ -76,7 +76,9 @@ def _write_peer_cert(tmp_path: Path) -> tuple[str, bytes]:
     return pin, der
 
 
-def _serving_policy(pin: str, der: bytes, *, sender: str = "peer") -> MultiHubServingPolicy:
+def _serving_policy(
+    pin: str, der: bytes, *, sender: str = "peer", aliases: tuple[str, ...] = ()
+) -> MultiHubServingPolicy:
     """Build a serving policy trusting ``sender`` to relay a *release* into the namespace."""
     return MultiHubServingPolicy(
         federation=FederationBundle(
@@ -101,9 +103,57 @@ def _serving_policy(pin: str, der: bytes, *, sender: str = "peer") -> MultiHubSe
             }
         ),
         grants={
-            sender: MultiHubServingGrant(
+            alias: MultiHubServingGrant(
                 domain_id=_DOMAIN, namespace=_NAMESPACE, signing_key_id=_KEY
             )
+            for alias in (sender, *aliases)
+        },
+        clock=lambda: 0.0,
+        cert_source=lambda _websocket: der,
+    )
+
+
+def _serving_policy_with_distinct_approver(pin: str, der: bytes) -> MultiHubServingPolicy:
+    """Trust two independently keyed federation principals for the same release scope."""
+    approver_domain = "domain-c"
+    approver_key = "SYNAPSE-CHANNEL:approver:2026-07"
+    peers = [
+        FederationPeer(
+            domain_id=_DOMAIN,
+            namespaces=frozenset({_NAMESPACE}),
+            certificate_pins=frozenset({pin}),
+            signing_key_ids=frozenset({_KEY}),
+            scope_grants=(ScopeGrant(verb="release", namespace=_NAMESPACE),),
+        ),
+        FederationPeer(
+            domain_id=approver_domain,
+            namespaces=frozenset({_NAMESPACE}),
+            certificate_pins=frozenset({pin}),
+            signing_key_ids=frozenset({approver_key}),
+            scope_grants=(ScopeGrant(verb="release", namespace=_NAMESPACE),),
+        ),
+    ]
+    return MultiHubServingPolicy(
+        federation=FederationBundle(peers),
+        mtls=MTLSPeerTrustBundle(
+            peers={
+                _DOMAIN: MTLSTrustedPeer(
+                    peer_id=_DOMAIN,
+                    certificate_pins=frozenset({pin}),
+                    signing_key_ids=frozenset({_KEY}),
+                    projects=frozenset({_NAMESPACE}),
+                ),
+                approver_domain: MTLSTrustedPeer(
+                    peer_id=approver_domain,
+                    certificate_pins=frozenset({pin}),
+                    signing_key_ids=frozenset({approver_key}),
+                    projects=frozenset({_NAMESPACE}),
+                ),
+            }
+        ),
+        grants={
+            "peer": MultiHubServingGrant(_DOMAIN, _NAMESPACE, _KEY),
+            "peer-approver": MultiHubServingGrant(approver_domain, _NAMESPACE, approver_key),
         },
         clock=lambda: 0.0,
         cert_source=lambda _websocket: der,
@@ -161,10 +211,12 @@ async def _connect(uri: str, name: str) -> ClientConnection:
     return websocket
 
 
-async def _relay(uri: str, request: RelayActionRequest) -> RelayActionResult:
+async def _relay(
+    uri: str, request: RelayActionRequest, *, sender: str = "peer"
+) -> RelayActionResult:
     """Relay one action as a peer hub and decode the result reply."""
-    async with await _connect(uri, "peer") as ws:
-        await send_json(ws, sender="peer", type=_REQUEST, **encode_relay_request(request))
+    async with await _connect(uri, sender) as ws:
+        await send_json(ws, sender=sender, type=_REQUEST, **encode_relay_request(request))
         message = await read_until_type(ws, _REPLY)
     return decode_relay_result(message)
 
@@ -311,7 +363,7 @@ async def test_two_person_relay_records_pending_then_applies_on_a_second_operato
     pin, der = _write_peer_cert(tmp_path)
     journal = EventStore(tmp_path / "events.db")
     hub = _acting_hub(
-        policy=_serving_policy(pin, der),
+        policy=_serving_policy_with_distinct_approver(pin, der),
         ownership=_owns(),
         journal=journal,
         require_two_person_relay=True,
@@ -325,7 +377,11 @@ async def test_two_person_relay_records_pending_then_applies_on_a_second_operato
         assert "awaiting approval by a second operator" in first.detail
         assert hub.state.claims["t1"].owner == _HOLDER
 
-        second = await _relay(uri, _request(reason="confirmed", operator="bob"))
+        second = await _relay(
+            uri,
+            _request(reason="confirmed", operator="bob"),
+            sender="peer-approver",
+        )
         assert second.applied is True
         assert second.pending is False
     assert "t1" not in hub.state.claims  # the second, different operator carried it out
@@ -335,10 +391,14 @@ async def test_two_person_relay_records_pending_then_applies_on_a_second_operato
     assert pending["status"] == "pending"
     assert pending["applied"] is False
     assert pending["requester"] == "alice"
+    assert pending["requester_principal"].startswith("federation-peer:")
     assert applied["status"] == "applied"
     assert applied["applied"] is True
     assert applied["operator"] == "bob"
     assert applied["approver"] == "bob"  # the approving second operator is recorded
+    assert applied["requester_principal"] == pending["requester_principal"]
+    assert applied["approver_principal"].startswith("federation-peer:")
+    assert applied["approver_principal"] != applied["requester_principal"]
 
 
 async def test_two_person_relay_pending_without_a_journal_does_not_audit(tmp_path: Path) -> None:
@@ -359,11 +419,13 @@ async def test_two_person_relay_pending_without_a_journal_does_not_audit(tmp_pat
     assert hub.relay_approvals.pending_count == 1
 
 
-async def test_two_person_relay_refuses_self_approval(tmp_path: Path) -> None:
+async def test_two_person_relay_refuses_alias_approval_from_the_same_principal(
+    tmp_path: Path,
+) -> None:
     pin, der = _write_peer_cert(tmp_path)
     journal = EventStore(tmp_path / "events.db")
     hub = _acting_hub(
-        policy=_serving_policy(pin, der),
+        policy=_serving_policy(pin, der, aliases=("peer-alias",)),
         ownership=_owns(),
         journal=journal,
         require_two_person_relay=True,
@@ -371,11 +433,16 @@ async def test_two_person_relay_refuses_self_approval(tmp_path: Path) -> None:
     hub.state.claim(_HOLDER, "t1")
     async with running_hub(hub) as (_, uri):
         first = await _relay(uri, _request(reason="wedged", operator="alice"))
-        repeat = await _relay(uri, _request(reason="again", operator="alice"))
-    # The same operator cannot complete the quorum: the lease stays held.
+        repeat = await _relay(
+            uri,
+            _request(reason="again", operator="bob"),
+            sender="peer-alias",
+        )
+    # A different label and sender alias backed by the same verified trust material cannot
+    # complete the quorum: the lease stays held.
     assert first.pending is True
     assert repeat.pending is True
-    assert "awaiting a different second operator" in repeat.detail
+    assert "awaiting a distinct principal" in repeat.detail
     assert hub.state.claims["t1"].owner == _HOLDER
     # Nothing was released, so no release event was journalled.
     assert EventKind.RELEASE not in [e.kind for e in journal.read_all()]

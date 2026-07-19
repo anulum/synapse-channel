@@ -26,6 +26,7 @@ file and policy, leaving the live connection to the transport.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,6 +49,8 @@ SIGNATURE_UNVERIFIED = "signature_unverified"
 
 ACL_DENIED = "acl_denied"
 """Refusal reason when the local ACL denies the mapped scope."""
+
+_PEER_PRINCIPAL_DOMAIN = b"synapse-channel:multihub-peer-principal:v1\x00"
 
 
 @dataclass(frozen=True)
@@ -85,11 +88,33 @@ class MultiHubAuthorisation:
         refusing layer's reason (a federation deny reason, an mTLS result, or a local one).
     scope : tuple[ScopeGrant, ...]
         The bounded local scope the peering maps for the namespace when allowed; empty on a deny.
+    principal : str
+        Opaque, stable identity derived from the federation trust domain after the live certificate
+        passes that domain's mutual-TLS policy. Empty on a deny. Security decisions that need peer
+        distinctness MUST use this value rather than a sender or operator label.
     """
 
     allowed: bool
     reason: str
     scope: tuple[ScopeGrant, ...] = field(default_factory=tuple)
+    principal: str = ""
+
+
+def verified_peer_principal(*, domain_id: str) -> str:
+    """Return an opaque principal bound to the peer's verified trust material.
+
+    The live certificate must first satisfy the domain's pinned mutual-TLS policy but is not itself
+    the stable identity, so certificate rotation cannot manufacture a second approver. The grant's
+    signing-key id is also excluded because relay frames do not yet prove possession of that key;
+    rotating it within one domain cannot manufacture quorum either. Audit records receive only a
+    domain-separated SHA-256 fingerprint, never the configured domain id.
+    """
+    digest = hashlib.sha256()
+    digest.update(_PEER_PRINCIPAL_DOMAIN)
+    encoded = domain_id.encode("utf-8")
+    digest.update(len(encoded).to_bytes(4, "big"))
+    digest.update(encoded)
+    return f"federation-peer:{digest.hexdigest()}"
 
 
 def authorise_multihub_pull(
@@ -216,7 +241,14 @@ def authorise_multihub_peer(
         decision, mtls_ok=mtls_ok, signature_ok=signature_ok, acl_ok=acl_ok
     )
     if allowed:
-        return MultiHubAuthorisation(allowed=True, reason=AUTHORISED, scope=decision.scope)
+        return MultiHubAuthorisation(
+            allowed=True,
+            reason=AUTHORISED,
+            scope=decision.scope,
+            principal=verified_peer_principal(
+                domain_id=domain_id,
+            ),
+        )
     if not decision.allowed:
         reason = decision.reason
     elif not mtls_ok:
