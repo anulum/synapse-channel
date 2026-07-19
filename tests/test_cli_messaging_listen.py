@@ -231,3 +231,60 @@ async def test_listen_max_reached_with_no_open_connection(
     )
     assert code == 0
     assert "A: hi" in capsys.readouterr().out
+
+
+async def test_listen_exits_nonzero_on_post_welcome_name_conflict(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Close 4009 after welcome must not leave a silent exit-0 dead listener."""
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        holder = await connect_agent("DUP", uri)
+        try:
+            code = await cli_messaging._listen(uri=uri, name="DUP", ready_timeout=3.0)
+        finally:
+            await close_agents(holder)
+
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "code 4009" in out or "name conflict" in out
+    assert "name already online" in out
+
+
+async def test_listen_exits_nonzero_when_hub_closes_mid_stream(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A hub-initiated death after a healthy listen session is terminal (nonzero)."""
+
+    class _DiesAfterReady:
+        def __init__(self, name: str, callback: Any, **_kwargs: Any) -> None:
+            del callback
+            self.name = name
+            self.running = True
+            self.connection = None
+            self.last_close_code: int | None = None
+            self.last_close_reason = ""
+            self._ready = asyncio.Event()
+
+        async def connect(self) -> None:
+            self._ready.set()
+            # Die after the post-welcome grace so the mid-stream path is exercised
+            # (not only closed_after_ready).
+            await asyncio.sleep(0.4)
+            self.last_close_code = 4009
+            self.last_close_reason = "name conflict"
+            self.running = False
+
+        async def wait_until_ready(self, timeout: float) -> bool:
+            del timeout
+            await self._ready.wait()
+            return True
+
+    code = await cli_messaging._listen(
+        uri="ws://unused",
+        name="L",
+        ready_timeout=1.0,
+        agent_factory=cast("AgentFactory", _DiesAfterReady),
+    )
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "code 4009" in out or "name conflict" in out

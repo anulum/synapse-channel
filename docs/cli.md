@@ -985,6 +985,15 @@ example `synapse send --target remanentia/FAST "status?"`.
 
 ## Observing
 
+`synapse listen` streams chat (and optional presence) until it stops. An intentional
+stop — Ctrl+C, or a finite message cap in tests/tools — exits `0`. If the hub
+refuses the name (close `4009` name conflict, including after the welcome
+handshake) or the socket dies for any other hub-initiated reason while listening,
+the process exits **nonzero** and prints the close code and reason via the same
+connect-failure wording as `send`. There is no silent dead listener: a lost
+connection never leaves the process advertised as a healthy long-running listen
+with exit `0`.
+
 ```bash
 synapse listen --name USER
 synapse board

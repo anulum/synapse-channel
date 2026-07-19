@@ -59,7 +59,13 @@ async def _listen(
     Returns
     -------
     int
-        ``0`` once the connection closes, ``1`` when the hub was unreachable.
+        ``0`` when the listener stops intentionally (message cap or a clean
+        client-side close after a successful session start with
+        ``max_messages=0``). ``1`` when the hub was unreachable, refused the
+        name (including post-welcome close ``4009`` name conflict), or the
+        connection died while listening for any other hub-initiated reason.
+        There is no silent dead listener: a lost socket always exits nonzero
+        with the close code and reason when the hub supplied them.
     """
     try:
         decrypt_key = load_payload_key(decrypt_key_file) if decrypt_key_file else None
@@ -67,9 +73,10 @@ async def _listen(
         print(f"decryption key failed: {exc}")
         return 1
     printed = 0
+    intentional_stop = False
 
     async def show(data: dict[str, Any]) -> None:
-        nonlocal printed
+        nonlocal printed, intentional_stop
         msg_type = data.get("type")
         did_print = False
         if msg_type == MessageType.CHAT:
@@ -86,6 +93,7 @@ async def _listen(
         if did_print and max_messages is not None:
             printed += 1
             if printed >= max_messages:
+                intentional_stop = True
                 agent.running = False
                 if agent.connection is not None:
                     await agent.connection.close()
@@ -103,13 +111,65 @@ async def _listen(
                 )
             )
             return 1
+        # Finite zero-cap probe: connected successfully, then stop without listening.
         if max_messages == 0:
+            intentional_stop = True
+            agent.running = False
+            if agent.connection is not None:
+                await agent.connection.close()
             return 0
+        # Name conflicts (4009) often land after welcome. Wait only for a hub
+        # close *code* so an intentional client stop cannot look like a refusal.
+        if await _hub_close_code_after_ready(agent):
+            print(
+                describe_connect_failure(
+                    name,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
+            return 1
         await conn_task
-        return 0
+        if intentional_stop:
+            return 0
+        # Hub-initiated death while listening: never exit 0 without a reason.
+        print(
+            describe_connect_failure(
+                name,
+                uri,
+                close_code=agent.last_close_code,
+                close_reason=agent.last_close_reason,
+            )
+        )
+        return 1
     finally:
         agent.running = False
-        conn_task.cancel()
+        if not conn_task.done():
+            conn_task.cancel()
+            try:
+                await conn_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+
+async def _hub_close_code_after_ready(
+    agent: Any,
+    *,
+    grace_seconds: float = 0.25,
+) -> bool:
+    """Return whether the hub recorded a close code shortly after welcome.
+
+    Unlike :func:`closed_after_ready`, this ignores ``running`` alone so a
+    client-side stop (message cap) cannot be misread as a post-welcome refusal.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max(0.0, grace_seconds)
+    while loop.time() < deadline:
+        if agent.last_close_code is not None:
+            return True
+        await asyncio.sleep(0.02)
+    return agent.last_close_code is not None
 
 
 def _cmd_listen(
