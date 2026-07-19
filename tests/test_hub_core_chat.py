@@ -81,9 +81,13 @@ async def test_a_binary_frame_gets_a_clean_error_and_keeps_the_connection() -> N
     # kill the socket with an unhandled 1011. loads_bounded re-raises the decoder's
     # UnicodeDecodeError as a JSONDecodeError, which the hub's existing decode guard
     # reports as an error while keeping the connection open for the next frame.
+    # Open hubs require a name-binding first frame (WF3), so register before the
+    # malformed probe — product close 4010 on pre-bind junk is intentional.
     async with running_hub(SynapseHub(hub_id="syn-test")) as (_hub, uri):
         async with connect(uri) as ws:
             await read_until_type(ws, "welcome")
+            await ws.send(json.dumps({"sender": "A", "type": "heartbeat", "payload": "online"}))
+            await read_until_type(ws, "presence_update")
             await ws.send(b"\xff\xfe\xfa")
             error = await read_until_type(ws, "error")
             assert "Malformed JSON" in error["payload"]
@@ -103,9 +107,13 @@ async def test_a_binary_frame_gets_a_clean_error_and_keeps_the_connection() -> N
 
 
 async def test_an_oversized_integer_gets_a_clean_error_and_keeps_the_connection() -> None:
+    # Open hubs require a name-binding first frame (WF3), so register before the
+    # oversized-integer probe — product close 4010 on pre-bind junk is intentional.
     async with running_hub(SynapseHub(hub_id="syn-test")) as (_hub, uri):
         async with connect(uri) as ws:
             await read_until_type(ws, "welcome")
+            await ws.send(json.dumps({"sender": "A", "type": "heartbeat", "payload": "online"}))
+            await read_until_type(ws, "presence_update")
             await ws.send('{"sender":"A","type":"state_request","n":' + "9" * 5000 + "}")
             error = await read_until_type(ws, "error")
             assert "Malformed JSON" in error["payload"]
