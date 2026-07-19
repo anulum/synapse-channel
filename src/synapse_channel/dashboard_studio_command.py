@@ -9,9 +9,9 @@
 
 The shell is hub-independent and contains no mutable coordination behaviour.
 Focused package assets own the instrument layout, snapshot polling, durable-feed
-polling, and safe board-column DOM rendering. The only inline script is a
-server-authored, secret-free runtime configuration containing fixed feed paths
-and the bounded poll interval.
+polling, and safe board-column DOM rendering. A non-executable JSON data block
+carries the server-authored, secret-free runtime configuration containing fixed
+feed paths and the bounded poll interval.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ STUDIO_COMMAND_SCRIPTS = (
 
 
 def _runtime_config(*, poll_seconds: int) -> str:
-    """Return the secret-free JavaScript runtime configuration."""
+    """Return the secret-free runtime configuration as compact JSON data."""
     payload = {
         "accessUrl": DASHBOARD_ACCESS_PATH,
         "eventsUrl": EVENTS_FEED_PATH,
@@ -60,7 +60,7 @@ def _runtime_config(*, poll_seconds: int) -> str:
         "snapshotUrl": STUDIO_SNAPSHOT_PATH,
     }
     encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-    return f"window.__SYN_STUDIO__ = Object.freeze({encoded});"
+    return encoded
 
 
 def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> str:
@@ -189,7 +189,7 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
       </div>
     </main>
   </div>
-  <script>{runtime_config}</script>
+  <script id="syn-studio-config" type="application/json">{runtime_config}</script>
 {scripts}
 </body>
 </html>

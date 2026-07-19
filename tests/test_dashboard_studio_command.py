@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+import json
+import re
+
 from synapse_channel.dashboard_access_http import DASHBOARD_ACCESS_PATH
 from synapse_channel.dashboard_studio import STUDIO_REFERENCE_PATH
 from synapse_channel.dashboard_studio_command import (
@@ -87,13 +90,24 @@ def test_page_carries_the_accessible_claims_fallback_and_board_boundary() -> Non
 
 
 def test_runtime_config_binds_only_fixed_paths_and_poll_interval() -> None:
-    script = _runtime_config(poll_seconds=8)
-    assert f'"snapshotUrl":"{STUDIO_SNAPSHOT_PATH}"' in script
-    assert f'"accessUrl":"{DASHBOARD_ACCESS_PATH}"' in script
-    assert f'"eventsUrl":"{EVENTS_FEED_PATH}"' in script
-    assert f'"operatorActionsUrl":"{OPERATOR_ACTIONS_FEED_PATH}"' in script
-    assert '"pollMs":8000' in script
-    assert "Object.freeze" in script
+    assert json.loads(_runtime_config(poll_seconds=8)) == {
+        "accessUrl": DASHBOARD_ACCESS_PATH,
+        "eventsUrl": EVENTS_FEED_PATH,
+        "operatorActionsUrl": OPERATOR_ACTIONS_FEED_PATH,
+        "pollMs": 8000,
+        "snapshotUrl": STUDIO_SNAPSHOT_PATH,
+    }
+
+
+def test_runtime_config_is_inert_json_not_inline_executable_code() -> None:
+    html = render_studio_command_html()
+    match = re.search(
+        r'<script id="syn-studio-config" type="application/json">([^<]+)</script>', html
+    )
+    assert match is not None
+    assert json.loads(match.group(1))["pollMs"] == DEFAULT_POLL_SECONDS * 1000
+    assert "<script>" not in html
+    assert "window.__SYN_STUDIO__" not in html
 
 
 def test_access_asset_precedes_the_self_starting_command_asset() -> None:

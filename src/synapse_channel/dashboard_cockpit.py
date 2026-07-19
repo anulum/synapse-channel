@@ -16,6 +16,7 @@ owns presentation and fixed asset lookup only; it never reaches the hub.
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from pathlib import Path
 from typing import Final
@@ -129,6 +130,16 @@ def render_cockpit_html(*, refresh_seconds: int, fallback_html: str) -> str:
         Complete HTML page.
     """
     refresh = max(1, int(refresh_seconds))
+    runtime_config = json.dumps(
+        {
+            "receiptsUrl": "receipts.json",
+            "refreshSeconds": refresh,
+            "snapshotUrl": "snapshot.json",
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
     fleet_panel = (
         '<section class="panel fleet" id="fleet"><div class="panel__head"><h2>Fleet</h2></div>'
         '<div class="panel__body"><svg class="fleet__svg" id="fleet-svg"></svg>'
@@ -187,13 +198,7 @@ def render_cockpit_html(*, refresh_seconds: int, fallback_html: str) -> str:
     </div>
   </div>
   <noscript><div class="noscript-fallback">{fallback_html}</div></noscript>
-  <script>
-    window.__SYN_COCKPIT__ = {{
-      refreshSeconds: {refresh},
-      snapshotUrl: "snapshot.json",
-      receiptsUrl: "receipts.json"
-    }};
-  </script>
+  <script id="syn-cockpit-config" type="application/json">{runtime_config}</script>
   <script src="risk-panel.js"></script>
   <script src="cockpit.js"></script>
 </body>

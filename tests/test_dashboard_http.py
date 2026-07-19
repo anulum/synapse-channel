@@ -489,6 +489,9 @@ def test_dashboard_responses_carry_browser_hardening_headers() -> None:
     assert "base-uri 'none'" in csp
     assert "object-src 'none'" in csp
     assert "default-src 'self'" in csp
+    assert "script-src 'self';" in csp
+    assert "script-src 'self' 'unsafe-inline'" not in csp
+    assert "style-src 'self' 'unsafe-inline'" in csp
 
 
 def test_dashboard_public_docs_describe_local_readonly_surface() -> None:

@@ -405,13 +405,15 @@ OPERATOR_RATE_WINDOW_SECONDS: Final = 60.0
 
 # The dashboard and cockpit are self-contained — no CDN, external font, or remote
 # script — so a same-origin content policy costs nothing and blocks injected remote
-# resources. `'unsafe-inline'` for script/style is retained deliberately: the
-# server-rendered pages carry inline `<script>`/`<style>` and there is no nonce
-# pipeline; `data:` images cover embedded favicons and glyphs. The framing and
-# base-uri directives are the clickjacking and base-tag-injection guards.
+# resources. Runtime configuration is carried in inert ``application/json`` blocks;
+# executable JavaScript therefore comes only from same-origin assets, including an
+# operator-supplied ``--cockpit-dist``. Inline styles remain allowed until the
+# server-rendered and dynamic style attributes have migrated to classes. ``data:``
+# images cover embedded favicons and glyphs. The framing and base-uri directives are
+# the clickjacking and base-tag-injection guards.
 _CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline'; "
+    "script-src 'self'; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
     "connect-src 'self'; "

@@ -8,11 +8,21 @@
 "use strict";
 
 (function () {
-  const cfg = window.__SYN_COCKPIT__ || {
+  const fallbackConfig = Object.freeze({
     refreshSeconds: 5,
     snapshotUrl: "/snapshot.json",
     receiptsUrl: "/receipts.json",
-  };
+  });
+  const configNode = document.getElementById("syn-cockpit-config");
+  let cfg = fallbackConfig;
+  if (configNode) {
+    try {
+      const parsed = JSON.parse(configNode.textContent || "");
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) cfg = parsed;
+    } catch (_error) {
+      cfg = fallbackConfig;
+    }
+  }
   const REFRESH_MS = Math.max(1, Number(cfg.refreshSeconds) || 5) * 1000;
   const SNAPSHOT_URL = cfg.snapshotUrl || "/snapshot.json";
   const RECEIPTS_URL = cfg.receiptsUrl || "/receipts.json";

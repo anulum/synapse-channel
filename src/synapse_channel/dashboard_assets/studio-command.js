@@ -8,7 +8,16 @@
 "use strict";
 
 (function () {
-  const config = window.__SYN_STUDIO__ || {};
+  const configNode = document.getElementById("syn-studio-config");
+  let config = {};
+  if (configNode) {
+    try {
+      const parsed = JSON.parse(configNode.textContent || "");
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) config = parsed;
+    } catch (_error) {
+      config = {};
+    }
+  }
   const snapshotUrl = String(config.snapshotUrl || "/studio.json");
   const pollMs = Math.max(1000, Number(config.pollMs) || 5000);
   const reduceMotion = typeof matchMedia === "function" &&

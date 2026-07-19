@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 from urllib.request import Request, urlopen
 
 import pytest
@@ -138,17 +140,32 @@ def test_render_cockpit_html_embeds_shell_and_fallback() -> None:
         'href="risk-panel.css"',
         'src="risk-panel.js"',
         'src="cockpit.js"',
-        "refreshSeconds: 5",
-        'receiptsUrl: "receipts.json"',
+        'id="syn-cockpit-config" type="application/json"',
         "<noscript>",
         "FALLBACK-MARKER",
     ):
         assert needle in html, needle
+    match = re.search(
+        r'<script id="syn-cockpit-config" type="application/json">([^<]+)</script>', html
+    )
+    assert match is not None
+    assert json.loads(match.group(1)) == {
+        "receiptsUrl": "receipts.json",
+        "refreshSeconds": 5,
+        "snapshotUrl": "snapshot.json",
+    }
+    assert "<script>" not in html
+    assert "window.__SYN_COCKPIT__" not in html
     assert html.index('src="risk-panel.js"') < html.index('src="cockpit.js"')
 
 
 def test_render_cockpit_html_coerces_refresh_floor() -> None:
-    assert "refreshSeconds: 1" in render_cockpit_html(refresh_seconds=0, fallback_html="")
+    html = render_cockpit_html(refresh_seconds=0, fallback_html="")
+    match = re.search(
+        r'<script id="syn-cockpit-config" type="application/json">([^<]+)</script>', html
+    )
+    assert match is not None
+    assert json.loads(match.group(1))["refreshSeconds"] == 1
 
 
 # ---------- real HTTP asset serving ----------
