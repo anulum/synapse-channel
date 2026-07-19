@@ -61,8 +61,10 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
     name : str
         Unique agent name presented to the hub.
     on_message_callback : MessageCallback or None, optional
-        Coroutine called with every decoded inbound message. Self-originated
-        chat echoes are filtered out before the callback runs.
+        Preferred: an ``async def`` called with every decoded inbound message.
+        A synchronous callable that returns ``None`` is accepted for
+        compatibility (only awaitables are awaited). Self-originated chat
+        echoes are filtered out before the callback runs.
     uri : str, optional
         Hub WebSocket URI. Defaults to :data:`DEFAULT_HUB_URI`.
     heartbeat_interval : float, optional

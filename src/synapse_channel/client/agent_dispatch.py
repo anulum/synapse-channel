@@ -9,14 +9,23 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from synapse_channel.core.protocol import MessageType, read_protocol_version
 
 MessageCallback = Callable[[dict[str, Any]], Awaitable[None]]
-"""Async callback invoked with each decoded inbound message."""
+"""Preferred inbound callback: ``async def callback(data) -> None``.
+
+Runtime compatibility (K3-B1): a synchronous callable that returns ``None`` is
+also accepted by :func:`invoke_message_callback`, which awaits only when
+:func:`inspect.isawaitable` is true. Type checkers still see the preferred
+async contract so Protocol structural typing for :class:`SynapseAgent` stays
+valid; callers that pass a sync callback may cast it to
+:data:`MessageCallback`.
+"""
 
 
 class _DispatchAgent(Protocol):
@@ -40,6 +49,30 @@ class _DispatchAgent(Protocol):
 
     async def _track_mailbox_frame(self, data: dict[str, Any]) -> None:
         """Advance the mailbox cursor and ack an accepted chat frame."""
+
+
+async def invoke_message_callback(
+    callback: MessageCallback | Callable[[dict[str, Any]], None],
+    data: dict[str, Any],
+) -> None:
+    """Invoke ``callback`` and await only when it returned an awaitable.
+
+    Parameters
+    ----------
+    callback :
+        Preferred async coroutine callback, or a sync callable returning ``None``.
+    data : dict[str, Any]
+        The decoded inbound message.
+
+    Raises
+    ------
+    BaseException
+        Whatever the callback raises on invoke, or whatever awaiting its
+        awaitable result raises. Nothing is caught here.
+    """
+    result: Any = cast(Any, callback)(data)
+    if inspect.isawaitable(result):
+        await result
 
 
 class AgentDispatchMixin:
@@ -83,7 +116,7 @@ class AgentDispatchMixin:
         if data.get("sender") == self.name and data.get("type") == MessageType.CHAT:
             return
         if self.callback is not None:
-            await self.callback(data)
+            await invoke_message_callback(self.callback, data)
 
     async def _track_mailbox_frame(self: _DispatchAgent, data: dict[str, Any]) -> None:
         """Advance the mailbox cursor and ack an accepted chat frame.
