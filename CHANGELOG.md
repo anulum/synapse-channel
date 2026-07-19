@@ -15,6 +15,13 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Key wait edges by the waited task instead of the incumbent holder and
+  resolve ownership live at cycle-check time: a claim, renewal, or handoff
+  for one task can no longer erase a wait on an unrelated task, and a
+  release, lease expiry, handoff, or disconnect can no longer leave a stale
+  agent edge that refuses a later legitimate wait as a false-positive
+  deadlock. Wait edges prune on release and on every heartbeat-driven lease
+  expiry.
 - Reserve the global agent names `SynapseHub`, `Synapse`, and `system`
   case-insensitively so a client cannot impersonate hub or protocol provenance.
   Registration is refused before authentication, trust-on-first-use pinning,

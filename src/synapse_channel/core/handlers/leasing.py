@@ -24,7 +24,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.core.deadlock import would_create_cycle
+from synapse_channel.core.deadlock import prune_waits, would_create_cycle
 from synapse_channel.core.journal import (
     record_checkpoint,
     record_claim,
@@ -142,7 +142,13 @@ def apply_claim(hub: SynapseHub, claimant: str, body: Mapping[str, Any]) -> Clai
     )
     if ok:
         claim = hub.state.claims[task_id]
-        hub._waits.pop(claimant, None)  # a successful claim means no longer blocked
+        # Only the SATISFIED wait is cleared: a claim or renewal for task U must
+        # never erase the claimant's still-open wait on an unrelated task T.
+        waited = hub._waits.get(claimant)
+        if waited is not None:
+            waited.discard(task_id)
+            if not waited:
+                hub._waits.pop(claimant, None)
         if hub.journal is not None:
             record_claim(hub.journal, claim)
         return ClaimApplication(ok=True, message=message, task_id=task_id, claim=claim)
@@ -257,6 +263,9 @@ async def handle_release(
     task_id = str(data.get("task_id") or data.get("payload") or "").strip()
     ok, message = hub.state.release(sender, task_id, epoch=hub._optional_int(data, "epoch"))
     if ok:
+        # A released task has no holder: prune its wait edges so they cannot
+        # refuse a later legitimate wait as a false-positive deadlock.
+        hub._waits = prune_waits(hub._waits, hub.state.claims)
         if hub.journal is not None:
             record_release(hub.journal, task_id)
         receipt = build_release_receipt(
@@ -362,7 +371,13 @@ async def handle_handoff(
         return
 
     claim = hub.state.claims[task_id]
-    hub._waits.pop(to_agent, None)  # receiving the task clears any wait for it
+    # Receiving task X clears only the recipient's wait on X, never a wait on
+    # an unrelated task the recipient is still blocked on.
+    waited = hub._waits.get(to_agent)
+    if waited is not None:
+        waited.discard(task_id)
+        if not waited:
+            hub._waits.pop(to_agent, None)
     if hub.journal is not None:
         record_handoff(hub.journal, claim)
     await _record_handoff_progress(hub, task_id, sender, to_agent, claim.note)
@@ -492,7 +507,7 @@ async def handle_wait_request(
             ),
         )
         return
-    if would_create_cycle(hub._waits, sender, holder):
+    if would_create_cycle(hub._waits, hub.state.claims, sender, holder):
         await hub._send_json(
             websocket,
             hub._system(
@@ -504,7 +519,10 @@ async def handle_wait_request(
             ),
         )
         return
-    hub._waits.setdefault(sender, set()).add(holder)
+    # The edge keys the waited TASK, not the incumbent holder: ownership is
+    # resolved live at cycle-check time, so a later handoff or release can
+    # never leave a stale agent edge behind.
+    hub._waits.setdefault(sender, set()).add(task_id)
     await hub._send_json(
         websocket,
         hub._system(

@@ -62,6 +62,7 @@ from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCA
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
 from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_letter
 from synapse_channel.core.dead_letters import DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS, DeadLetterLedger
+from synapse_channel.core.deadlock import prune_waits
 from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.hub_broadcast import HubBroadcaster
@@ -973,12 +974,13 @@ class SynapseHub:
         return safe_int(value, default=None, allow_bool=False)
 
     def _drop_waits(self, agent: str) -> None:
-        """Remove an agent's wait edges and every edge pointing at it."""
+        """Remove a disconnecting agent's outgoing wait edges.
+
+        Edges key waited tasks, not incumbent holders, so nothing points *at*
+        the agent; a holder going offline is covered by lease expiry plus the
+        live ownership resolution at cycle-check time.
+        """
         self._waits.pop(agent, None)
-        for waiter, holders in tuple(self._waits.items()):
-            holders.discard(agent)
-            if not holders:
-                del self._waits[waiter]
 
     # -- registration + name resolution --------------------------------------
 
@@ -1157,6 +1159,9 @@ class SynapseHub:
             await self._send_welcome(websocket)
 
         self.state.heartbeat(sender)
+        # A heartbeat can expire leases; a wait on a task that just lost its
+        # holder is stale and must not refuse later legitimate waits (WF-5).
+        self._waits = prune_waits(self._waits, self.state.claims)
         is_new_agent = self.clients.set_agent_socket(sender, websocket)
         if not was_bound or msg_type != MessageType.HEARTBEAT:
             self.dead_letters.clear(sender)
