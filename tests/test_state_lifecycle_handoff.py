@@ -119,6 +119,32 @@ def test_handoff_rejects_stale_epoch() -> None:
     assert state.claims["T1"].owner == "A"  # unchanged
 
 
+def test_handoff_refuses_when_recipient_is_at_claim_cap() -> None:
+    """BUG-7: handoff must not grow a recipient past max_claims_per_agent."""
+    state = SynapseState(default_ttl_seconds=10_000.0, max_claims_per_agent=2)
+    assert state.claim("A", "SOURCE", now=0.0, worktree="wtA")[0]
+    assert state.claim("B", "B0", now=0.0, worktree="wtB0")[0]
+    assert state.claim("B", "B1", now=0.0, worktree="wtB1")[0]
+    ok, reason = state.handoff("A", "SOURCE", "B", now=1.0)
+    assert ok is False
+    assert "maximum 2 claims" in reason
+    assert state.claims["SOURCE"].owner == "A"
+    assert state.claims["B0"].owner == "B"
+    assert state.claims["B1"].owner == "B"
+
+
+def test_handoff_succeeds_when_recipient_has_remaining_claim_budget() -> None:
+    """A recipient under the cap still receives the task atomically."""
+    state = SynapseState(default_ttl_seconds=10_000.0, max_claims_per_agent=2)
+    assert state.claim("A", "SOURCE", now=0.0, worktree="wtA")[0]
+    assert state.claim("B", "B0", now=0.0, worktree="wtB0")[0]
+    ok, message = state.handoff("A", "SOURCE", "B", now=1.0)
+    assert ok is True
+    assert "handed from A to B" in message
+    assert state.claims["SOURCE"].owner == "B"
+    assert "SOURCE" in state.claims and "B0" in state.claims
+
+
 def test_handoff_preserves_checkpoint() -> None:
     state = SynapseState(default_ttl_seconds=300)
     state.claim("A", "T1", now=1000.0)

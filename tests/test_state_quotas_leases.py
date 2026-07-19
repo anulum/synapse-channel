@@ -51,6 +51,22 @@ def test_claim_cap_honours_a_custom_limit() -> None:
     assert "maximum 2 claims" in message
 
 
+def test_handoff_obeys_the_same_claim_cap_as_direct_acquisition() -> None:
+    """BUG-7: recipient at the live-claim bound cannot accept a handoff."""
+    state = SynapseState(default_ttl_seconds=10_000.0, max_claims_per_agent=1)
+    assert state.claim("donor", "GIFT", now=0.0, worktree="wt-donor")[0] is True
+    assert state.claim("full", "HELD", now=0.0, worktree="wt-full")[0] is True
+    refused, message = state.handoff("donor", "GIFT", "full", now=1.0)
+    assert refused is False
+    assert "maximum 1 claims" in message
+    assert state.claims["GIFT"].owner == "donor"
+    # Freeing a slot then accepting the handoff preserves the invariant.
+    assert state.release("full", "HELD", now=2.0)[0] is True
+    accepted, _ = state.handoff("donor", "GIFT", "full", now=3.0)
+    assert accepted is True
+    assert state.claims["GIFT"].owner == "full"
+
+
 def test_offer_cap_honours_a_custom_limit() -> None:
     state = SynapseState(max_offers_per_agent=2)
     assert state.offer_resource("A", kind="llm", name="m0", now=0.0) is not None

@@ -618,7 +618,9 @@ class SynapseState:
         tuple[bool, str]
             ``(True, message)`` on success, ``(False, reason)`` when the task is
             missing an id, unclaimed, owned by another agent, handed to its own
-            owner, given no target, or carries a stale epoch.
+            owner, given no target, carries a stale epoch, or the recipient
+            already holds the live-claim cap (the same invariant as direct
+            :meth:`claim`).
         """
         task = task_id.strip()
         if not task:
@@ -638,6 +640,14 @@ class SynapseState:
             return False, f"Task '{task}' is already owned by {agent}."
         if epoch is not None and epoch != claim.epoch:
             return False, f"Task '{task}' epoch is stale (current {claim.epoch})."
+        # Same live-claim cap as direct acquisition: a handoff must not grow the
+        # recipient past max_claims_per_agent (BUG-7). Refuse before mutation so
+        # ownership and journal stay consistent.
+        if self._claims_owned_by(target) >= self.max_claims_per_agent:
+            return (
+                False,
+                f"Agent {target} holds the maximum {self.max_claims_per_agent} claims.",
+            )
 
         moved = TaskClaim(
             task_id=task,
