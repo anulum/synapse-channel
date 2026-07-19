@@ -294,6 +294,25 @@ async def test_authenticate_or_close_times_out() -> None:
     assert socket.closed == [(4012, "auth timeout")]
 
 
+async def test_authenticate_or_close_open_hub_registration_timeout() -> None:
+    clients = _registry()
+    conn = _connection(clients, authenticator=None, auth_timeout=0.05)
+    socket = _Socket(recv_exc=asyncio.TimeoutError())
+
+    assert await conn.authenticate_or_close(socket) is False
+    assert socket.closed == [(4012, "registration timeout")]
+
+
+async def test_authenticate_or_close_open_hub_refuses_unbound_first_frame() -> None:
+    clients = _registry()
+    router = _Router(clients, bind=None)
+    conn = _connection(clients, authenticator=None, router=router)
+    socket = _Socket(("frame",))
+
+    assert await conn.authenticate_or_close(socket) is False
+    assert socket.closed == [(4010, "registration required")]
+
+
 async def test_authenticate_or_close_on_a_dropped_socket() -> None:
     clients = _registry()
     conn = _connection(clients, authenticator=TokenAuthenticator(["t"]))
@@ -375,7 +394,7 @@ async def test_handler_refuses_an_unauthenticated_burst() -> None:
 
 async def test_handler_open_hub_pumps_frames_then_unregisters() -> None:
     clients = _registry()
-    router = _Router()
+    router = _Router(clients, bind="agent")
     recorder = _Recorder()
     conn = _connection(clients, router=router, recorder=recorder)
     socket = _Socket(("one", "two"))
@@ -385,6 +404,30 @@ async def test_handler_open_hub_pumps_frames_then_unregisters() -> None:
     assert recorder.sent[0][1]["type"] == MessageType.WELCOME  # open hub welcomes on connect
     assert router.seen == ["one", "two"]
     assert socket not in clients.connected_clients  # unregistered in the finally
+
+
+async def test_handler_open_hub_times_out_without_registration() -> None:
+    clients = _registry()
+    conn = _connection(clients, authenticator=None, auth_timeout=0.05)
+    socket = _Socket(recv_exc=asyncio.TimeoutError())
+
+    await conn.handler(socket)
+
+    assert socket.closed == [(4012, "registration timeout")]
+    assert socket not in clients.connected_clients
+
+
+async def test_handler_open_hub_refuses_unbound_first_frame() -> None:
+    clients = _registry()
+    router = _Router(clients, bind=None)
+    conn = _connection(clients, authenticator=None, router=router)
+    socket = _Socket(("no-name",))
+
+    await conn.handler(socket)
+
+    assert socket.closed == [(4010, "registration required")]
+    assert router.seen == ["no-name"]
+    assert socket not in clients.connected_clients
 
 
 async def test_handler_secured_hub_authenticates_then_pumps() -> None:
@@ -415,7 +458,7 @@ async def test_handler_secured_hub_returns_when_auth_fails() -> None:
 
 async def test_handler_suppresses_connection_closed_mid_stream() -> None:
     clients = _registry()
-    router = _Router()
+    router = _Router(clients, bind="agent")
     conn = _connection(clients, router=router)
     socket = _Socket(("one",), iter_exc=ConnectionClosed(None, None))
 

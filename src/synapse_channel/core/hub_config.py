@@ -58,6 +58,7 @@ from synapse_channel.core.hub import (
     DEFAULT_AUTH_TIMEOUT,
     DEFAULT_COMPACT_HINT_THRESHOLD,
     DEFAULT_MAX_CLIENTS,
+    DEFAULT_MAX_CONNECTIONS_PER_HOST,
     DEFAULT_MAX_FINDINGS_PER_AGENT,
     DEFAULT_MAX_HISTORY,
     DEFAULT_MAX_MSG_BYTES,
@@ -126,7 +127,7 @@ class HubLimits:
     max_msg_bytes: int = DEFAULT_MAX_MSG_BYTES
     max_clients: int = DEFAULT_MAX_CLIENTS
     max_unauth_clients: int | None = None
-    max_connections_per_host: int | None = None
+    max_connections_per_host: int | None = DEFAULT_MAX_CONNECTIONS_PER_HOST
     max_progress: int = DEFAULT_MAX_PROGRESS
     max_progress_per_author: int = DEFAULT_MAX_PROGRESS_PER_AUTHOR
     max_progress_per_task: int = DEFAULT_MAX_PROGRESS_PER_TASK

@@ -24,6 +24,13 @@ All notable changes to this project are documented here.
   shows the newest link or verifies the log against it (exit 0 clean / 2
   detection, JSON verdict). This is the local anti-rollback layer only;
   external witnessing stays owner-gated and out of scope.
+- Bound open-hub idle sockets and single-host connection floods by default:
+  `--max-connections-per-host` now defaults to **32** (pass `0` to disable),
+  and every hub — open or secured — reaps a socket that does not bind a name
+  within `--auth-timeout` (close code `4012`; open hubs use reason
+  `registration timeout`). Secure mode clamps the open default down to its
+  stricter per-host ceiling rather than refusing `hub --secure` solely for
+  inheriting the open default.
 - Serve the multi-hub event log only under an operator-configured
   `MultiHubServingPolicy`: a hub with no policy now refuses every peer
   (fail-closed) instead of serving the entire log to any unauthenticated

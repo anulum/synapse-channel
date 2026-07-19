@@ -36,7 +36,11 @@ from synapse_channel.core.capability_card_trust import (
 from synapse_channel.core.federation import FederationBundle, bundle_can_authorise
 from synapse_channel.core.federation_store import FederationStoreError, bundle_from_store
 from synapse_channel.core.federation_wire import FederationWireError, decode_federation_offer
-from synapse_channel.core.hub import InsecureBindError, SynapseHub
+from synapse_channel.core.hub import (
+    DEFAULT_MAX_CONNECTIONS_PER_HOST,
+    InsecureBindError,
+    SynapseHub,
+)
 from synapse_channel.core.hub_config import HubConfig, config_fingerprint
 from synapse_channel.core.hub_exposure import guard_exposure
 from synapse_channel.core.identity_binding import IdentityBindingError, load_identity_trust_bundle
@@ -67,6 +71,21 @@ _PRECHECK_LOGGER = logging.getLogger(__name__ + ".exposure_precheck")
 _PRECHECK_LOGGER.addHandler(logging.NullHandler())
 _PRECHECK_LOGGER.propagate = False
 """Silent sink for the pre-store exposure check: serve() owns the warning pass."""
+
+
+def _resolve_max_connections_per_host(raw: int | None) -> int | None:
+    """Map CLI ``--max-connections-per-host`` to the hub keyword.
+
+    ``None`` (parser default, before any secure/auto fill) becomes
+    :data:`~synapse_channel.core.hub.DEFAULT_MAX_CONNECTIONS_PER_HOST`. ``0`` or
+    a negative value disables the per-host cap (``None`` to the hub). A positive
+    integer is the enforced ceiling.
+    """
+    if raw is None:
+        return DEFAULT_MAX_CONNECTIONS_PER_HOST
+    if raw <= 0:
+        return None
+    return int(raw)
 
 
 def _parse_namespace_owners(values: list[str]) -> dict[str, str]:
@@ -192,12 +211,16 @@ def _apply_auto_rate_policy(args: argparse.Namespace) -> None:
         bridge_exposed=bridge_exposed,
         multi_seat=multi_seat,
     )
+    # Treat an omitted CLI value as disabled for auto-fill decisions so an
+    # exposed posture can still inject the secure connection ceiling; the hub
+    # kwargs path later resolves a bare default to DEFAULT_MAX_CONNECTIONS_PER_HOST.
+    raw_host_cap = getattr(args, "max_connections_per_host", None)
     operator = RateLimits(
         agent_rate=float(args.rate),
         agent_burst=float(args.burst),
         host_rate=float(args.host_rate),
         host_burst=float(args.host_burst),
-        max_connections_per_host=int(args.max_connections_per_host),
+        max_connections_per_host=(0 if raw_host_cap is None else int(raw_host_cap)),
     )
     decision = decide_auto_rate_policy(
         posture,
@@ -506,8 +529,8 @@ def _cmd_hub(
         "authenticator": authenticator,
         "max_clients": args.max_clients,
         "max_unauth_clients": args.max_unauth_clients,
-        "max_connections_per_host": (
-            args.max_connections_per_host if args.max_connections_per_host > 0 else None
+        "max_connections_per_host": _resolve_max_connections_per_host(
+            getattr(args, "max_connections_per_host", None)
         ),
         "max_msg_bytes": args.max_msg_kb * 1024,
         "max_claims_per_agent": args.max_claims_per_agent,

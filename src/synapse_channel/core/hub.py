@@ -185,7 +185,22 @@ DEFAULT_TAKEOVER_OSCILLATION_THRESHOLD = 5
 DEFAULT_TAKEOVER_QUARANTINE = 60.0
 """Seconds a thrashing name is pinned to its current owner, refusing all takeovers."""
 DEFAULT_AUTH_TIMEOUT = 10.0
-"""Seconds a secured hub waits for an authenticated first frame before closing a socket."""
+"""Seconds to wait for a name-binding first frame before closing an idle socket.
+
+Applies on both open and secured hubs: a secured hub additionally requires the
+first frame to authenticate; an open hub only requires a registration that binds
+a name. Idle sockets that never bind are reaped so they cannot hold capacity or
+per-host slots indefinitely.
+"""
+DEFAULT_MAX_CONNECTIONS_PER_HOST = 32
+"""Default simultaneous sockets admitted from one remote host.
+
+A multi-terminal workstation (command socket + ``-rx`` waiter per seat, plus
+presence) routinely opens many sockets from one host. ``32`` admits a modest
+local fleet while still bounding a single-host connection flood. Pass ``None``
+(or CLI ``--max-connections-per-host 0``) to disable the cap; ``--secure`` clamps
+to the stricter secure-mode ceiling.
+"""
 DEFAULT_SHUTDOWN_CLOSE_TIMEOUT = 5.0
 """Seconds allowed for WebSocket close handshakes during hub shutdown."""
 MAX_LOG_PAYLOAD = 120
@@ -293,11 +308,11 @@ class SynapseHub:
         same port as the WebSocket endpoint, for scraping and container probes.
         Off by default — a plain WebSocket hub serves no HTTP.
     auth_timeout : float, optional
-        On a secured hub (``authenticator`` set), seconds to wait for an
-        authenticated first frame before closing the socket. Until a socket
-        authenticates it is never shown the roster (no ``WELCOME``) and an idle
-        unauthenticated socket is reaped at this deadline so it cannot hold a
-        connection slot. Ignored on an open hub. Defaults to
+        Seconds to wait for a name-binding first frame before closing the socket
+        (code ``4012``). On a secured hub the first frame must also authenticate
+        and the roster is withheld until then; on an open hub the welcome is still
+        sent on connect, but an idle socket that never registers is reaped so it
+        cannot hold a connection or per-host slot. Defaults to
         :data:`DEFAULT_AUTH_TIMEOUT`.
     max_unauth_clients : int or None, optional
         On a secured hub, the most sockets allowed in their pre-auth window at once;
@@ -309,7 +324,9 @@ class SynapseHub:
         Maximum simultaneous sockets admitted from one remote host. This is
         distinct from the total ``max_clients`` ceiling and the frame-rate
         ``host_rate_limiter``; it counts open sockets, including sockets still in
-        their authentication window. ``None`` disables the per-host connection cap.
+        their first-frame window. Defaults to
+        :data:`DEFAULT_MAX_CONNECTIONS_PER_HOST`. ``None`` disables the per-host
+        connection cap.
     shutdown_close_timeout : float, optional
         Seconds allowed for active WebSocket close handshakes after ``SIGTERM`` or
         ``SIGINT`` asks the hub to stop. The timeout is passed to the WebSocket
@@ -450,7 +467,7 @@ class SynapseHub:
         authenticator: TokenAuthenticator | None = None,
         max_clients: int = DEFAULT_MAX_CLIENTS,
         max_unauth_clients: int | None = None,
-        max_connections_per_host: int | None = None,
+        max_connections_per_host: int | None = DEFAULT_MAX_CONNECTIONS_PER_HOST,
         max_msg_bytes: int = DEFAULT_MAX_MSG_BYTES,
         max_claims_per_agent: int = MAX_CLAIMS_PER_AGENT,
         max_offers_per_agent: int = MAX_OFFERS_PER_AGENT,

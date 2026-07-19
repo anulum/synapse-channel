@@ -91,6 +91,19 @@ def test_disabled_rate_values_receive_exact_preset_defaults() -> None:
     assert args.max_connections_per_host == SECURE_MAX_CONNECTIONS_PER_HOST
 
 
+def test_open_hub_default_connection_cap_is_clamped_under_secure() -> None:
+    """Parser default is looser than secure; ``--secure`` clamps rather than fails."""
+    from synapse_channel.core.hub import DEFAULT_MAX_CONNECTIONS_PER_HOST
+
+    args = _complete_args(max_connections_per_host=DEFAULT_MAX_CONNECTIONS_PER_HOST)
+
+    report = apply_secure_hub_profile(args)
+
+    assert report is not None
+    assert args.max_connections_per_host == SECURE_MAX_CONNECTIONS_PER_HOST
+    assert any("clamped from open default" in line for line in report.effective_limits)
+
+
 def test_stricter_positive_limits_survive() -> None:
     args = _complete_args(rate=25.0, host_rate=200.0, max_connections_per_host=4)
 

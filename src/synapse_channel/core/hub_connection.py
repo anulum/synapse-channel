@@ -61,10 +61,12 @@ class HubConnection:
     authenticator : TokenAuthenticator or None
         When set, the hub is secured: a socket is welcomed only after its first
         frame authenticates, and an unauthenticated-burst ceiling applies. ``None``
-        leaves the hub open, so a socket is welcomed on connect.
+        leaves the hub open, so a socket is welcomed on connect, but it must still
+        bind a name on its first frame within ``auth_timeout``.
     auth_timeout : float
-        Seconds a secured hub waits for an authenticated first frame before closing
-        an idle socket (already clamped by the hub).
+        Seconds to wait for a name-binding first frame before closing an idle
+        socket (already clamped by the hub). Secured hubs also require the first
+        frame to authenticate; open hubs only require registration.
     rate_limiter : RateLimiter or None
         The per-agent frame limiter, whose bucket for an agent is forgotten when the
         agent disconnects; ``None`` when rate limiting is disabled.
@@ -168,47 +170,52 @@ class HubConnection:
         )
 
     async def authenticate_or_close(self, websocket: Any) -> bool:
-        """On a secured hub, process the first frame under the auth deadline.
+        """Process the first frame under the bind/auth deadline.
 
-        Reads one frame within ``auth_timeout``, routes it (which authenticates
-        and binds the sender, then sends the withheld welcome), and reports whether
-        the socket is now an authenticated, bound client. A socket that sends
-        nothing in time is closed (``4012``) so an idle unauthenticated connection
-        cannot hold a slot; a first frame that fails to authenticate or bind is
-        closed (``4010``).
+        Reads one frame within ``auth_timeout``, routes it, and reports whether
+        the socket is now a bound client. On a secured hub the first frame must
+        also authenticate (the token gate lives inside the message router and
+        the withheld welcome is sent only after bind). On an open hub only a
+        name-binding registration is required. A socket that sends nothing in
+        time is closed (``4012``) so an idle connection cannot hold a slot; a
+        first frame that fails to bind is closed (``4010``).
 
         Returns
         -------
         bool
-            ``True`` when the socket authenticated and bound a name, ``False``
-            when it timed out, disconnected, or failed to authenticate (the socket
-            is closed in every ``False`` case).
+            ``True`` when the socket bound a name, ``False`` when it timed out,
+            disconnected, or failed to bind (the socket is closed in every
+            ``False`` case that is not an already-dropped peer).
         """
+        secured = self._authenticator is not None
         try:
             first = await asyncio.wait_for(websocket.recv(), timeout=self._auth_timeout)
         except asyncio.TimeoutError:
-            await websocket.close(code=4012, reason="auth timeout")
+            reason = "auth timeout" if secured else "registration timeout"
+            await websocket.close(code=4012, reason=reason)
             return False
         except ConnectionClosed:
             return False
         await self._handle_message(first, websocket)
         if not self._clients.is_bound(websocket):
-            # The first frame did not authenticate and bind a name; the token gate
-            # may already have closed the socket, so closing again is suppressed.
+            # The first frame did not authenticate and/or bind a name; the token
+            # gate may already have closed the socket, so closing again is
+            # suppressed.
+            reason = "auth required" if secured else "registration required"
             with contextlib.suppress(Exception):
-                await websocket.close(code=4010, reason="auth required")
+                await websocket.close(code=4010, reason=reason)
             return False
         return True
 
     async def handler(self, websocket: Any) -> None:
         """Serve one client connection from registration to disconnect.
 
-        On a secured hub the first frame must authenticate within ``auth_timeout``
-        before the connection joins the channel (see :meth:`authenticate_or_close`).
-        A separate unauthenticated-burst cap refuses a new socket (code ``4014``)
-        while that many sockets are still in their pre-auth window, so an
-        authentication-stall burst cannot occupy the connection table for the whole
-        timeout.
+        Every hub — open or secured — requires a name-binding first frame within
+        ``auth_timeout`` (see :meth:`authenticate_or_close`) so idle sockets cannot
+        hold capacity or per-host slots forever. On a secured hub the first frame
+        must also authenticate, and a separate unauthenticated-burst cap refuses a
+        new socket (code ``4014``) while that many sockets are still in their
+        pre-auth window.
         """
         if self._clients.at_capacity():
             await websocket.close(code=4013, reason="hub at capacity")
@@ -224,11 +231,13 @@ class HubConnection:
             if self._authenticator is not None:
                 self._clients.add_unauthenticated(websocket)
                 try:
-                    authenticated = await self.authenticate_or_close(websocket)
+                    admitted = await self.authenticate_or_close(websocket)
                 finally:
                     self._clients.discard_unauthenticated(websocket)
-                if not authenticated:
-                    return
+            else:
+                admitted = await self.authenticate_or_close(websocket)
+            if not admitted:
+                return
             async for raw in websocket:
                 await self._handle_message(raw, websocket)
         except ConnectionClosed:

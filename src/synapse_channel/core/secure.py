@@ -27,6 +27,7 @@ import math
 from dataclasses import dataclass
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.hub import DEFAULT_MAX_CONNECTIONS_PER_HOST
 from synapse_channel.core.paranoid import apply_paranoid_hub_profile
 from synapse_channel.core.team_secure import apply_team_secure_hub_profile
 
@@ -269,6 +270,13 @@ def _apply_connection_ceiling(args: argparse.Namespace) -> str:
         args.max_connections_per_host = SECURE_MAX_CONNECTIONS_PER_HOST
         return f"{SECURE_MAX_CONNECTIONS_PER_HOST}"
     if current > SECURE_MAX_CONNECTIONS_PER_HOST:
+        # The open-hub parser default is deliberately looser than the secure
+        # ceiling. Inherit-and-clamp so ``synapse hub --secure`` does not fail
+        # solely because the operator left the open default in place; any other
+        # explicit value above the ceiling still fails closed.
+        if current == DEFAULT_MAX_CONNECTIONS_PER_HOST:
+            args.max_connections_per_host = SECURE_MAX_CONNECTIONS_PER_HOST
+            return f"{SECURE_MAX_CONNECTIONS_PER_HOST} (clamped from open default {current})"
         raise SecureModeError(
             f"secure mode caps --max-connections-per-host at "
             f"{SECURE_MAX_CONNECTIONS_PER_HOST}; {current} would weaken the secure "

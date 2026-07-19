@@ -889,7 +889,7 @@ synapse hub --port 8876 --db ./synapse.db          # crash-safe persistence
 synapse hub --port 8876 --rate 5 --burst 20        # per-agent rate limiting
 synapse hub --port 8876 --relay-log ./feed.ndjson  # mirror the channel to a file
 synapse hub --max-clients 32 --max-msg-kb 256      # cap connections and frame size
-synapse hub --max-connections-per-host 4           # cap simultaneous sockets from one host
+synapse hub --max-connections-per-host 4           # tighten the per-host socket cap (default 32; 0 disables)
 synapse hub --max-progress-per-task 500            # cap retained board progress per task id
 synapse hub --max-findings-per-agent 200           # cap durable findings admitted per agent
 synapse hub --shutdown-close-timeout 5             # bound active socket close handshakes
@@ -904,15 +904,17 @@ Binding a non-loopback host without a token (and, with `--metrics`, a metrics
 token) is **refused** by default — the hub will not start exposed by accident;
 `--insecure-off-loopback` downgrades that to a warning for a trusted private
 network. `--max-connections-per-host` is a connection-count cap keyed by the
-remote host; it is separate from `--host-rate`, which meters inbound frames from
-that host. Without `--secure`, disabled flood limits (`--rate` / `--burst` /
-`--host-rate` / `--host-burst` / `--max-connections-per-host` left at `0`) may
-still be filled automatically when the hub starts in an exposed posture
-(off-loopback bind, connect token, multi-seat intent, or bridge exposed). Use
-`--expect-multi-seat` (default off) when more than one seat is expected without
-`--team-secure` / identity material, and `--bridge-exposed` (default off) when
-an A2A or MCP bridge is knowingly reachable against this hub — the hub does not
-detect those processes automatically. Details:
+remote host (default **32**; pass `0` to disable); it is separate from
+`--host-rate`, which meters inbound frames from that host. Open and secured
+hubs both reap sockets that never bind a name within `--auth-timeout` (default
+10s; close code `4012`). Without `--secure`, disabled flood limits (`--rate` /
+`--burst` / `--host-rate` / `--host-burst` / `--max-connections-per-host` left
+at `0`) may still be filled automatically when the hub starts in an exposed
+posture (off-loopback bind, connect token, multi-seat intent, or bridge
+exposed). Use `--expect-multi-seat` (default off) when more than one seat is
+expected without `--team-secure` / identity material, and `--bridge-exposed`
+(default off) when an A2A or MCP bridge is knowingly reachable against this hub
+— the hub does not detect those processes automatically. Details:
 [Auto flood-enable (REV-SEC-06)](secure-mode.md#auto-flood-enable-without-secure-rev-sec-06). Native `wss://` uses `--tls-certfile` plus `--tls-keyfile`; it protects
 the transport but does not replace `--token` for off-loopback binds. Supply the
 token with `--token-file` or the `SYNAPSE_TOKEN`

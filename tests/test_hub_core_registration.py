@@ -59,10 +59,15 @@ async def test_non_object_json_frame_is_refused_not_crashed_end_to_end() -> None
     # A valid-JSON frame need not be an object: a list, null, or a bare number all
     # decode cleanly, then data.get("sender") would raise AttributeError and drop
     # the socket with a 1011. It must get a clean protocol error, and the
-    # connection must survive to serve the next frame.
+    # connection must survive to serve the next frame. Open hubs require a
+    # name-binding first frame before other traffic, so register first.
     async with running_hub() as (_, uri):
         async with connect(uri) as websocket:
             await read_until_type(websocket, "welcome")
+            await websocket.send(
+                json.dumps({"sender": "agent-a", "type": "heartbeat", "payload": "online"})
+            )
+            await read_until_type(websocket, "presence_update")
             await websocket.send(json.dumps(["not", "a", "dict"]))
             error = await read_until_type(websocket, "error")
             # The connection is still alive — a second non-object frame is refused
@@ -78,9 +83,14 @@ async def test_mistyped_routing_field_is_refused_not_coerced_end_to_end() -> Non
     # plausible identity or route (sender ["spoof","victim"] -> "['spoof', 'victim']").
     # It must get a clean protocol error that names the field, and — as with the
     # non-object guard beside it — the connection must survive to serve the next frame.
+    # Open hubs require a name-binding first frame, so register before the mistyped ones.
     async with running_hub() as (_, uri):
         async with connect(uri) as websocket:
             await read_until_type(websocket, "welcome")
+            await websocket.send(
+                json.dumps({"sender": "agent-a", "type": "heartbeat", "payload": "online"})
+            )
+            await read_until_type(websocket, "presence_update")
             await websocket.send(json.dumps({"sender": ["spoof", "victim"], "type": "chat"}))
             error = await read_until_type(websocket, "error")
             # The socket is still alive — a mistyped type on the next frame is refused
@@ -94,14 +104,18 @@ async def test_mistyped_routing_field_is_refused_not_coerced_end_to_end() -> Non
 async def test_a_mistyped_frame_is_still_charged_to_the_host_rate_limiter_end_to_end() -> None:
     # Regression (SOL audit of F9): the mistyped-routing-field guard runs AFTER the per-host
     # charge, so a flood of malformed object frames is still metered rather than cheaply
-    # bypassing the limiter while still forcing hub work. With burst=1, the first (mistyped)
-    # frame consumes the single host token and is refused for its bad field; the second
-    # same-host frame is then refused by the host limiter before any further work — proving
-    # the malformed frame was charged, not waved through.
-    hub = SynapseHub(host_rate_limiter=RateLimiter(rate_per_second=0.01, burst=1.0))
+    # bypassing the limiter while still forcing hub work. Open hubs require a name-binding
+    # first frame, so burst=2: registration consumes one host token, the mistyped frame
+    # consumes the second and is refused for its bad field, then the next same-host frame
+    # is refused by the host limiter — proving the malformed frame was charged.
+    hub = SynapseHub(host_rate_limiter=RateLimiter(rate_per_second=0.01, burst=2.0))
     async with running_hub(hub) as (_, uri):
         async with connect(uri) as websocket:
             await read_until_type(websocket, "welcome")
+            await websocket.send(
+                json.dumps({"sender": "A", "type": "heartbeat", "payload": "online"})
+            )
+            await read_until_type(websocket, "presence_update")
             await websocket.send(json.dumps({"sender": ["flood"], "type": "chat"}))
             first = await read_until_type(websocket, "error")
             await websocket.send(json.dumps({"sender": "A", "type": "chat", "payload": "x"}))

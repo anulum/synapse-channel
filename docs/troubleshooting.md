@@ -108,13 +108,16 @@ A hub started with `--token <secret>` requires that token. Present it with `--to
 `--token-file <path>` (so it is not visible in `ps`), or the `SYNAPSE_TOKEN` environment
 variable — precedence is `--token` → `--token-file` → env. An unauthenticated socket gets
 no welcome or roster and is closed after `--auth-timeout` seconds (default 10), so an idle
-connection cannot sit on the `--max-clients` budget.
+connection cannot sit on the `--max-clients` budget. On an **open** hub the same
+deadline applies to the first name-binding registration (`4012` reason
+`registration timeout`); a first frame that does not bind is closed with
+`registration required` (`4010`).
 
 ## A client is closed with `too many connections from host`
 
-The hub was started with `--max-connections-per-host <n>` and that remote host
-already has `n` sockets open. Close stale clients, raise the cap for trusted
-local fan-out, or leave the flag at `0` to disable the per-host connection-count
+The hub enforces `--max-connections-per-host` (default **32**) and that remote
+host already has that many sockets open. Close stale clients, raise the cap for
+trusted local fan-out, or pass `0` to disable the per-host connection-count
 limit. This is separate from `--host-rate`, which meters frames rather than open
 sockets.
 

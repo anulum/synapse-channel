@@ -288,10 +288,12 @@ operator on one machine. Before exposing it beyond `localhost`:
   token presented over plaintext `ws://` logs a startup advisory — the shared
   token and every coordination frame are readable on the network path. Treat
   token-without-TLS as the fallback for a trusted LAN, not the team default.
-- For shared or exposed hosts, cap connection churn from one remote host with
-  `--max-connections-per-host <n>`. This counts simultaneous sockets, including
-  sockets still authenticating, and complements `--host-rate`, which limits frame
-  rate rather than connection count.
+- Per-host connection churn is capped by default (`--max-connections-per-host`,
+  default **32**; pass `0` to disable). This counts simultaneous sockets,
+  including sockets still in their first-frame window, and complements
+  `--host-rate`, which limits frame rate rather than connection count. Idle
+  sockets that never register a name are also reaped after `--auth-timeout` on
+  both open and secured hubs.
 - In compose, change the port mapping to `8876:8876` **and** set `SYNAPSE_TOKEN`
   (uncomment the `command:` block). Clients then pass `--token "$SYNAPSE_TOKEN"`.
 - The token is a proportionate gate (constant-time check), not a cryptographic

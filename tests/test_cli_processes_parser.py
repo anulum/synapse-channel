@@ -317,9 +317,16 @@ def test_parser_hub_max_unauth_clients() -> None:
 
 
 def test_parser_hub_max_connections_per_host() -> None:
-    assert cli.build_parser().parse_args(["hub"]).max_connections_per_host == 0
+    from synapse_channel.core.hub import DEFAULT_MAX_CONNECTIONS_PER_HOST
+
+    assert (
+        cli.build_parser().parse_args(["hub"]).max_connections_per_host
+        == DEFAULT_MAX_CONNECTIONS_PER_HOST
+    )
     args = cli.build_parser().parse_args(["hub", "--max-connections-per-host", "2"])
     assert args.max_connections_per_host == 2
+    disabled = cli.build_parser().parse_args(["hub", "--max-connections-per-host", "0"])
+    assert disabled.max_connections_per_host == 0
 
 
 def test_parser_hub_insecure_off_loopback() -> None:

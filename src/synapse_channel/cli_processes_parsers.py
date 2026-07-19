@@ -39,6 +39,7 @@ from synapse_channel.core.hub import (
     DEFAULT_COMPACT_HINT_THRESHOLD,
     DEFAULT_HOST,
     DEFAULT_MAX_CLIENTS,
+    DEFAULT_MAX_CONNECTIONS_PER_HOST,
     DEFAULT_MAX_FINDINGS_PER_AGENT,
     DEFAULT_MAX_HISTORY,
     DEFAULT_MAX_MSG_BYTES,
@@ -209,9 +210,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     hub.add_argument(
         "--max-connections-per-host",
         type=int,
-        default=0,
-        help="Maximum simultaneous sockets admitted from one remote host; 0 disables "
-        "the per-host connection-count cap.",
+        default=DEFAULT_MAX_CONNECTIONS_PER_HOST,
+        help=(
+            "Maximum simultaneous sockets admitted from one remote host "
+            f"(default {DEFAULT_MAX_CONNECTIONS_PER_HOST}); 0 disables the "
+            "per-host connection-count cap."
+        ),
     )
     hub.add_argument(
         "--max-msg-kb",
