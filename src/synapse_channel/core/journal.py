@@ -58,6 +58,7 @@ class EventKind:
 
     CLAIM = "claim"
     CLAIM_DENIAL = "claim_denial"
+    GUARD_DENIAL = "guard_denial"
     RELEASE = "release"
     TASK_UPDATE = "task_update"
     CHECKPOINT = "checkpoint"
@@ -175,6 +176,11 @@ def record_claim_denial(
         "task_id_sha256": hashlib.sha256(str(task_id).encode("utf-8")).hexdigest(),
     }
     return store.append(EventKind.CLAIM_DENIAL, payload, durable=True)
+
+
+def record_guard_denial(store: EventStore, evidence: Mapping[str, Any]) -> int:
+    """Append one validated, digest-only guard refusal as durable evidence."""
+    return store.append(EventKind.GUARD_DENIAL, dict(evidence), durable=True)
 
 
 def record_release(store: EventStore, task_id: str) -> None:

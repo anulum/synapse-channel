@@ -43,12 +43,12 @@ The ACL model and its evaluation are implemented in
   below.
 - `synapse hub --acl-policy <file> --require-acl` turns the same deny-by-default
   evaluation into runtime enforcement: a mutating frame (chat, claim, release,
-  task update, handoff, checkpoint, board, finding) is mapped to the structured
-  accesses it needs and refused with an error before routing if the authenticated
-  sender's identity is not allowed. Authentication stays the per-message
-  authentication layer; this is the authorisation layer. Enforcement is opt-in
-  and off by default, ungated verbs and read surfaces still pass, and a missing
-  policy or shared-token local hub is unchanged.
+  task update, handoff, checkpoint, board, finding, guard-denial evidence) is
+  mapped to the structured accesses it needs and refused with an error before
+  routing if the authenticated sender's identity is not allowed. Authentication
+  stays the per-message authentication layer; this is the authorisation layer.
+  Enforcement is opt-in and off by default, ungated verbs and read surfaces still
+  pass, and a missing policy or shared-token local hub is unchanged.
 - **Hub-authoritative name-ownership lease** (`core/name_ownership.py`): a name
   has exactly one owner across reconnects, not merely per socket. A registration
   that declares `lease: true` on a free name is granted an opaque `owner_lease`
@@ -221,6 +221,7 @@ permission vocabulary should stay small and auditable:
 | `mailbox` | Replay another identity's directed backlog via a mailbox heartbeat (`mailbox_for`). Target kind `agent`. Self and `-rx` sidecars do not need a grant. |
 | `role-claim` | Bind a role on the heartbeat when `--require-role-claim` is on. Target kind `role` (`<project>/<role>`). Complements the role-grant store. |
 | `identity-pin-reclaim` | Remove one exact stale TOFU pin after the liveness, expected-key, requester-binding, and durable-audit gates pass. Target kind `agent`. Always enforced for this verb. |
+| `evidence` | Append authenticated, content-minimized enforcement evidence. The shipped `guard_denial` target is `evidence:guard-denial`; the handler additionally requires connect-token provenance and a durable journal. |
 
 Each rule should include an allowed verb, a target pattern, an optional channel
 or project namespace constraint, and a decision reason suitable for receipts and

@@ -1426,9 +1426,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Public API exports | 70 |
 | Package modules | 488 |
 | Classes | 691 |
-| Wire message types | 77 |
+| Wire message types | 79 |
 | CLI subcommands | 181 |
-| Test functions | 8383 |
+| Test functions | 8385 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 57 |
 | GitHub Actions workflows | 22 |
@@ -1468,6 +1468,9 @@ opt-in and deny-by-default:
   `--tls-certfile --tls-keyfile` alone is server TLS, not mTLS.
 - **Deny-by-default ACL** — `--acl-policy` with `--require-acl` rejects mutating frames
   from identities the policy does not grant.
+- **Authenticated guard evidence** — native file-claim hook denials can be
+  journalled through a separately token-authenticated, digest-only
+  `guard_denial` frame; open or journal-free hubs refuse the evidence path.
 - **Bounded resources** — connection, frame-size, JSON-depth, rate, and history caps
   keep one runaway agent from exhausting the hub.
 - **One-flag strict mode** — [`synapse hub --paranoid`](https://anulum.github.io/synapse-channel/paranoid-mode/)

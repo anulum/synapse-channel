@@ -13,6 +13,7 @@ import pytest
 from synapse_channel.core.acl import (
     BOARD,
     CLAIM,
+    EVIDENCE,
     MESSAGE,
     PIN_RECLAIM,
     RELEASE,
@@ -104,6 +105,12 @@ def test_release_checkpoint_and_board_verbs() -> None:
         (BOARD, Target("board", "T1"))
     ]
     assert required_accesses(MessageType.LEDGER_TASK, {}) == [(BOARD, Target("board", "*"))]
+
+
+def test_guard_denial_maps_to_evidence_permission() -> None:
+    assert required_accesses(MessageType.GUARD_DENIAL, {}) == [
+        (EVIDENCE, Target("evidence", "guard-denial"))
+    ]
 
 
 def test_ungated_verbs_require_no_access() -> None:

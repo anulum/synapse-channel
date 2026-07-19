@@ -21,9 +21,11 @@ from synapse_channel.core.path_identity import ClaimScopeIdentity, PathIdentityE
 from synapse_channel.git.claim_coverage import ClaimCoverageError, decide_claim_coverage
 from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
 from synapse_channel.git.path_identity import resolve_claim_scope_identity
+from synapse_channel.guard_evidence import submit_guard_denial
 from synapse_channel.path_resolution import resolve_weakly_fail_closed
 
 StateFetcher = Callable[..., Awaitable[dict[str, Any]]]
+DenialRecorder = Callable[..., Awaitable[bool]]
 
 
 class ClaimRequest(Protocol):
@@ -94,6 +96,7 @@ class GuardVerdict:
 
     allowed: bool
     reason: str = ""
+    reason_code: str = ""
 
 
 def _existing_anchor(path: Path) -> Path:
@@ -287,18 +290,21 @@ def decide_targets_from_snapshot(
         return GuardVerdict(
             False,
             f"Synapse {noun} required before {_path_list(missing_paths)} can be edited.",
+            "GUARD_NO_CLAIM",
         )
     if ownership:
         return GuardVerdict(
             False,
             "Synapse claim ownership is missing or ambiguous for: "
             f"{_path_list(tuple(dict.fromkeys(ownership)))}.",
+            "GUARD_OWNERSHIP_AMBIGUOUS",
         )
     if non_editable:
         return GuardVerdict(
             False,
             "The covering Synapse claim is not in an editable task state for: "
             f"{_path_list(tuple(dict.fromkeys(non_editable)))}.",
+            "GUARD_NOT_EDITABLE",
         )
     return GuardVerdict(True)
 
@@ -321,24 +327,52 @@ async def evaluate_mutation_request(
     timeout: float,
     state_fetcher: StateFetcher = fetch_state_snapshot,
     git_runner: GitRunner = _default_git_runner,
+    denial_recorder: DenialRecorder = submit_guard_denial,
 ) -> GuardVerdict:
     """Evaluate one provider mutation against the authoritative live claims."""
     try:
         targets = resolve_repository_targets(request, provider=provider, runner=git_runner)
-        snapshot = await state_fetcher(
+    except FileClaimGuardError as exc:
+        verdict = GuardVerdict(False, str(exc), "GUARD_TARGET_INVALID")
+        targets = ()
+    else:
+        try:
+            snapshot = await state_fetcher(
+                uri=uri,
+                requester=requester_name(request, identity),
+                token=token,
+                timeout=timeout,
+            )
+        except ClaimStateError as exc:
+            verdict = GuardVerdict(False, str(exc), "GUARD_STATE_UNREACHABLE")
+        else:
+            verdict = decide_targets_from_snapshot(
+                snapshot,
+                identity=identity,
+                targets=targets,
+                allow_semantic_source=request.allow_semantic_source,
+            )
+
+    if verdict.allowed:
+        return verdict
+    evidence_paths = tuple(target.relative_path for target in targets)
+    try:
+        await denial_recorder(
+            provider=provider,
+            identity=identity,
+            session_id=request.session_id,
+            tool_use_id=request.tool_use_id,
+            paths=evidence_paths,
+            reason_code=verdict.reason_code,
             uri=uri,
-            requester=requester_name(request, identity),
             token=token,
             timeout=timeout,
         )
-        return decide_targets_from_snapshot(
-            snapshot,
-            identity=identity,
-            targets=targets,
-            allow_semantic_source=request.allow_semantic_source,
-        )
-    except (FileClaimGuardError, ClaimStateError) as exc:
-        return GuardVerdict(False, str(exc))
+    except Exception:
+        # Evidence is supplemental. A recorder failure must never turn a denied
+        # mutation into an allow or replace the actionable provider-facing reason.
+        pass
+    return verdict
 
 
 def denial_payload(reason: str) -> dict[str, Any]:

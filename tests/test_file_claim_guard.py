@@ -75,6 +75,7 @@ def test_multi_target_resolution_deduplicates_and_requires_every_path(tmp_path: 
     )
     assert not denied.allowed
     assert "src/b.py" in denied.reason
+    assert denied.reason_code == "GUARD_NO_CLAIM"
 
 
 def test_real_hardlink_target_requires_its_own_display_claim(tmp_path: Path) -> None:
@@ -130,6 +131,7 @@ def test_precise_edit_can_use_one_unambiguous_symbol_claim(tmp_path: Path) -> No
     )
     assert not denied.allowed
     assert "claim required" in denied.reason
+    assert denied.reason_code == "GUARD_NO_CLAIM"
 
     allowed = decide_targets_from_snapshot(
         {"active_claims": [_claim(tmp_path, [owner_scope])]},
@@ -149,6 +151,7 @@ def test_precise_edit_can_use_one_unambiguous_symbol_claim(tmp_path: Path) -> No
     )
     assert not ambiguous.allowed
     assert "ambiguous" in ambiguous.reason
+    assert ambiguous.reason_code == "GUARD_OWNERSHIP_AMBIGUOUS"
 
 
 def test_requester_pool_is_stable_and_bounded(tmp_path: Path) -> None:
@@ -164,8 +167,14 @@ def test_requester_pool_is_stable_and_bounded(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_evaluation_converts_authoritative_state_failure_to_denial(tmp_path: Path) -> None:
+    recorded: list[dict[str, Any]] = []
+
     async def unavailable(**_kwargs: object) -> dict[str, Any]:
         raise ClaimStateError("hub unavailable")
+
+    async def record(**kwargs: Any) -> bool:
+        recorded.append(kwargs)
+        return True
 
     verdict = await evaluate_mutation_request(
         MutationRequest("session", "tool", tmp_path, (Path("new.py"),)),
@@ -176,9 +185,13 @@ async def test_evaluation_converts_authoritative_state_failure_to_denial(tmp_pat
         timeout=0.1,
         state_fetcher=unavailable,
         git_runner=_runner(tmp_path),
+        denial_recorder=record,
     )
     assert not verdict.allowed
     assert verdict.reason == "hub unavailable"
+    assert verdict.reason_code == "GUARD_STATE_UNREACHABLE"
+    assert recorded[0]["reason_code"] == "GUARD_STATE_UNREACHABLE"
+    assert recorded[0]["paths"] == ("new.py",)
 
 
 @pytest.mark.asyncio
@@ -206,3 +219,28 @@ async def test_evaluation_propagates_precise_semantic_permission(tmp_path: Path)
         git_runner=_runner(tmp_path),
     )
     assert verdict.allowed
+
+
+@pytest.mark.asyncio
+async def test_evidence_failure_never_weakens_the_guard_denial(tmp_path: Path) -> None:
+    async def snapshot(**_kwargs: object) -> dict[str, Any]:
+        return {"active_claims": []}
+
+    async def broken_recorder(**_kwargs: object) -> bool:
+        raise RuntimeError("evidence transport unavailable")
+
+    verdict = await evaluate_mutation_request(
+        MutationRequest("session", "tool", tmp_path, (Path("new.py"),)),
+        provider="Provider",
+        identity="seat/one",
+        uri="ws://hub",
+        token="token",
+        timeout=0.1,
+        state_fetcher=snapshot,
+        git_runner=_runner(tmp_path),
+        denial_recorder=broken_recorder,
+    )
+
+    assert not verdict.allowed
+    assert verdict.reason_code == "GUARD_NO_CLAIM"
+    assert "new.py" in verdict.reason

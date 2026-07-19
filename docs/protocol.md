@@ -86,6 +86,9 @@ does not add agent grades to protocol envelopes.
   pin after the always-on ACL, requester-binding, owner-liveness, expected-key,
   and durable-audit gates pass. It is emitted only by an explicit operator
   command, never automatically by a client.
+- **Guard evidence:** `guard_denial` admits one content-minimized native
+  file-guard refusal; `guard_denial_recorded` acknowledges its durable sequence.
+  The authenticated durable contract is defined below.
 
 ### Canonical claim-path identity
 
@@ -152,6 +155,43 @@ the task id and declared scope. It never stores the request note, raw task id,
 raw worktree or paths, Git metadata, message bodies, prompts, or file contents.
 The event is audit-only during restart replay: it survives restart but cannot
 create or alter a lease.
+
+### Authenticated guard-denial evidence
+
+A provider file-claim hook that denies a native mutation may open a separate,
+token-authenticated connection and send `guard_denial`. The shipped reporter
+reuses the same bounded, digest-only `claim-hook/<owner>-<slot>` connection name
+as its authoritative state query, so it does not create a second unbounded
+identity namespace. The hub accepts the verb only when both connect
+authentication and a durable journal are configured. An open hub has no
+credential principal to attest, and a journal-free hub cannot meet the
+durability contract, so either posture returns
+`error_code: guard_evidence_unavailable` without recording anything.
+
+The request carries only a closed provider name, a closed `reason_code`, a
+bounded `path_count`, and lowercase SHA-256 values named `actor_sha256`,
+`call_sha256`, and `scope_sha256`. The allowed denial reasons are
+`GUARD_NO_CLAIM`, `GUARD_NOT_EDITABLE`, `GUARD_OWNERSHIP_AMBIGUOUS`,
+`GUARD_STATE_UNREACHABLE`, and `GUARD_TARGET_INVALID`. The frame's `payload` is
+empty. Raw actor/session/tool identifiers, paths, worktrees, branches, prompts,
+message bodies, and file contents are never sent by the shipped reporter and
+therefore never enter this audit row.
+
+Those client digests are correlation metadata, not authenticated identity. The
+record's provenance is the server-derived connect-token principal on the bound
+socket; the hub stores only its SHA-256 digest plus a digest of the recorder
+name. Rotating an asserted sender name cannot rotate this credential bucket.
+With `--require-acl`, the sender also needs the `evidence` permission on target
+`evidence:guard-denial`.
+
+An accepted request appends `guard_denial` with full durability before returning
+`guard_denial_recorded {audit_seq, call_sha256, reason_code}`. The verb supports
+the ordinary durable `idem_key` contract, so reconnect retries replay the first
+acknowledgement instead of appending a second denial. A fixed per-credential
+sliding window (100 events and 256 KiB per 60 seconds) rejects excess evidence
+before journal growth. Evidence reporting is supplemental and fail-closed: if
+the second connection or append fails, the original tool call remains denied.
+During restart replay the row is audit-only and cannot create or change a claim.
 
 An `advertise` message may include `contracts`, either as a list of contract
 objects or as a task-class keyed mapping. The hub normalizes valid entries into

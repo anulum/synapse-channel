@@ -320,6 +320,7 @@ class MessageType:
     OPERATOR_RELAY_REQUEST = "operator_relay_request"
     FEDERATION_OFFER_REQUEST = "federation_offer_request"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
+    GUARD_DENIAL = "guard_denial"
 
     # Hub -> agent.
     SYSTEM = "system"
@@ -327,6 +328,7 @@ class MessageType:
     PRESENCE_UPDATE = "presence_update"
     CLAIM_GRANTED = "claim_granted"
     CLAIM_DENIED = "claim_denied"
+    GUARD_DENIAL_RECORDED = "guard_denial_recorded"
     RELEASE_GRANTED = "release_granted"
     RELEASE_DENIED = "release_denied"
     TASK_UPDATED = "task_updated"

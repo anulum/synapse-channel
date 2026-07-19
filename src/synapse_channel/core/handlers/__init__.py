@@ -30,6 +30,7 @@ from synapse_channel.core.handlers.channels import (
 )
 from synapse_channel.core.handlers.dead_letter_forwarding import handle_dead_letter_forwarding
 from synapse_channel.core.handlers.federation_offer import handle_federation_offer_request
+from synapse_channel.core.handlers.guard_evidence import handle_guard_denial
 from synapse_channel.core.handlers.identity_pins import handle_identity_pin_reclaim
 from synapse_channel.core.handlers.leasing import (
     handle_checkpoint,
@@ -99,6 +100,7 @@ DISPATCH: dict[str, Handler] = {
     MessageType.DEAD_LETTER_FORWARDING: handle_dead_letter_forwarding,
     MessageType.FEDERATION_OFFER_REQUEST: handle_federation_offer_request,
     MessageType.IDENTITY_PIN_RECLAIM: handle_identity_pin_reclaim,
+    MessageType.GUARD_DENIAL: handle_guard_denial,
     **{alias: handle_resource for alias in RESOURCE_TYPE_ALIASES},
 }
 

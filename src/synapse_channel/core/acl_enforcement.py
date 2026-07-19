@@ -35,6 +35,7 @@ from typing import Any
 from synapse_channel.core.acl import (
     BOARD,
     CLAIM,
+    EVIDENCE,
     MESSAGE,
     PIN_RECLAIM,
     RELEASE,
@@ -72,6 +73,7 @@ GATED_MUTATIONS = (
             MessageType.RELEASE,
             MessageType.ADVERTISE,
             MessageType.IDENTITY_PIN_RECLAIM,
+            MessageType.GUARD_DENIAL,
         }
     )
     | _BOARD_TYPES
@@ -156,6 +158,8 @@ def required_accesses(msg_type: str, data: dict[str, Any]) -> list[tuple[str, Ta
         return [(BOARD, Target("capability", str(data.get("agent") or "*")))]
     if msg_type == MessageType.IDENTITY_PIN_RECLAIM:
         return [(PIN_RECLAIM, Target("agent", str(data.get("pin_name") or "")))]
+    if msg_type == MessageType.GUARD_DENIAL:
+        return [(EVIDENCE, Target("evidence", "guard-denial"))]
     if msg_type in _CHANNEL_TYPES:
         return [(MESSAGE, Target("channel", str(data.get("channel") or "")))]
     return []

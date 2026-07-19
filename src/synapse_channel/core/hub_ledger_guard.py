@@ -37,6 +37,7 @@ _MUTATING_TYPES = (
             MessageType.TASK_UPDATE,
             MessageType.HANDOFF,
             MessageType.CHECKPOINT,
+            MessageType.GUARD_DENIAL,
         }
     )
     | RESOURCE_TYPE_ALIASES

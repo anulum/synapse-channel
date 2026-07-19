@@ -559,6 +559,11 @@ class SynapseHub:
         self.rate_limiter = rate_limiter
         self.host_rate_limiter = host_rate_limiter
         self.durable_ingress_quota = durable_ingress_quota
+        self.guard_evidence_quota = DurableIngressQuota(
+            max_events=100,
+            max_bytes=262_144,
+            window_seconds=60.0,
+        )
         self.authenticator = authenticator
         if isinstance(per_message_auth_keys, Mapping):
             self.per_message_auth_keys = dict(per_message_auth_keys)

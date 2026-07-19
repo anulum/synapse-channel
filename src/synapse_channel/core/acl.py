@@ -42,6 +42,7 @@ OBSERVE = "observe"
 MAILBOX = "mailbox"
 ROLE_CLAIM = "role-claim"
 PIN_RECLAIM = "identity-pin-reclaim"
+EVIDENCE = "evidence"
 
 PERMISSIONS = frozenset(
     {
@@ -58,6 +59,7 @@ PERMISSIONS = frozenset(
         MAILBOX,
         ROLE_CLAIM,
         PIN_RECLAIM,
+        EVIDENCE,
     }
 )
 """The auditable permission vocabulary an ACL rule may grant.
@@ -87,6 +89,11 @@ one stale trust-on-first-use identity pin. Target kind is ``agent``. Unlike the
 general mutation switch, this grant is always enforced by the reclaim handler,
 even when ``--require-acl`` is off, because no open-hub compatibility posture
 may silently make identity recovery public.
+
+``EVIDENCE`` grants an authenticated recorder the right to append a bounded
+enforcement record. The shipped guard-denial target is
+``evidence:guard-denial``; its handler separately requires connect-token
+provenance and a durable journal.
 """
 
 WOULD_ALLOW = "would_allow"

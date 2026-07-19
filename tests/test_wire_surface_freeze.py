@@ -67,6 +67,8 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "FINDING": "finding",
     "FINDING_RECORDED": "finding_recorded",
     "FINDING_REJECTED": "finding_rejected",
+    "GUARD_DENIAL": "guard_denial",
+    "GUARD_DENIAL_RECORDED": "guard_denial_recorded",
     "HANDOFF": "handoff",
     "HANDOFF_DENIED": "handoff_denied",
     "HANDOFF_GRANTED": "handoff_granted",
