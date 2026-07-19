@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from synapse_channel.core.hub_config import HubConfig
 
-import websockets
+from websockets.asyncio.server import serve
 from websockets.http11 import Request, Response
 
 from synapse_channel.core.acl import (
@@ -1397,8 +1397,14 @@ class SynapseHub:
 
         Thin wrapper over
         :meth:`~synapse_channel.core.hub_connection.HubConnection.handler`, kept as
-        the entry point :meth:`serve` hands to ``websockets.serve``.
+        the entry point :meth:`serve` hands to the modern asyncio server API.
+        ``websockets`` 13.0 invokes this callback after ``process_request`` has
+        already returned a non-upgrade HTTP response; later releases skip it.
+        Ignore that closed probe connection instead of registering it as an agent.
         """
+        response = getattr(websocket, "response", None)
+        if response is not None and response.status_code != 101:
+            return
         await self._connection.handler(websocket)
 
     def _install_signal_handlers(
@@ -1475,7 +1481,7 @@ class SynapseHub:
         self._install_signal_handlers(asyncio.get_running_loop(), stop)
         async with (
             self._dark_seats.running(),
-            websockets.serve(
+            serve(
                 self.handler,
                 host,
                 port,

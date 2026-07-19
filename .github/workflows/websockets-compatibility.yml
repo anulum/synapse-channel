@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — declared websockets floor, latest, and pre-release canary
+name: websockets-compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+jobs:
+  build-wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --require-hashes -r .github/requirements/requirements-tools.txt
+      - name: Build the wheel once for every compatibility lane
+        run: python -m build --wheel --outdir compatibility-dist
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: websockets-compatibility-wheel
+          path: compatibility-dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  smoke:
+    needs: build-wheel
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: declared-floor
+            expected: "13.0"
+          - lane: latest-stable
+            expected: ""
+          - lane: pre-release-canary
+            expected: ""
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: websockets-compatibility-wheel
+          path: compatibility-dist/
+      - name: Install the built wheel with the selected websockets lane
+        env:
+          COMPAT_LANE: ${{ matrix.lane }}
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/compat-venv"
+          python_bin="$RUNNER_TEMP/compat-venv/bin/python"
+          case "$COMPAT_LANE" in
+            declared-floor) "$python_bin" -m pip install --only-binary=:all: 'websockets==13.0' ;;
+            latest-stable) "$python_bin" -m pip install --only-binary=:all: --upgrade websockets ;;
+            pre-release-canary) "$python_bin" -m pip install --only-binary=:all: --pre --upgrade websockets ;;
+            *) echo "unknown compatibility lane: $COMPAT_LANE" >&2; exit 2 ;;
+          esac
+          wheel_path="$(ls compatibility-dist/*.whl)"
+          printf 'synapse-channel @ file://%s#sha256=%s\n' \
+            "$PWD/$wheel_path" "$(sha256sum "$wheel_path" | cut -d' ' -f1)" \
+            > "$RUNNER_TEMP/compat-wheel.txt"
+          "$python_bin" -m pip install --require-hashes --no-deps \
+            -r "$RUNNER_TEMP/compat-wheel.txt"
+      - name: Exercise the installed hub, WebSocket upgrade, health, and metrics
+        env:
+          EXPECTED_WEBSOCKETS: ${{ matrix.expected }}
+        run: >-
+          "$RUNNER_TEMP/compat-venv/bin/python"
+          tools/websockets_compatibility_smoke.py
+          --forbid-package-root "$GITHUB_WORKSPACE/src"
+          --expected-websockets "$EXPECTED_WEBSOCKETS"
