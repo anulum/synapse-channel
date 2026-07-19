@@ -142,7 +142,7 @@ tools wait for the hub's grant or denial; query tools return JSON.
 
 | Tool | Effect |
 |---|---|
-| `synapse_claim(task_id, paths?)` | Take a work lease, optionally scoped to file paths. |
+| `synapse_claim(task_id, paths?)` | Take a work lease. Inside Git, an explicit file scope carries the same canonical worktree/path identity as `synapse_git_claim`; outside Git it retains the legacy shared namespace. |
 | `synapse_git_claim(task_id, paths?, base?, auto_release_on?, whole_worktree?)` | Resolve the MCP process's real Git worktree, branch, Git-index spelling, filesystem aliases, case policy, and existing object identities, then take a mutation-compatible canonical claim. Bounded paths are mandatory unless `whole_worktree=true` is explicit. |
 | `synapse_release(task_id, evidence?, changed_files?, confidence?)` | Release a lease you hold and validate the hub-attested receipt; supplied evidence is persisted as an assessment note. |
 | `synapse_send(target, message)` | Send a chat to an agent, a group glob, or `all`. |
@@ -174,8 +174,11 @@ a local child process; exposing that wrapper would turn an MCP call into
 arbitrary shell execution. Through MCP, use
 `synapse_git_claim(task_id, paths)` before a mutation guarded by the
 OpenCode/Codex/Kimi/Gemini hooks. The plain `synapse_claim` tool remains for
-coordination-only leases, but it does not attach the resolved worktree and
-branch or canonical path identity needed by file mutation guards. After verification, call
+coordination leases. A path-scoped call now attaches the resolved worktree and
+canonical path identity when the MCP process runs inside Git, so it cannot
+bypass an overlapping `synapse_git_claim`; it still carries no branch or
+auto-release policy and therefore does not replace `synapse_git_claim` for
+guarded mutation workflows. After verification, call
 `synapse_release` with bounded evidence and changed-file names. The host remains
 responsible for commands and file I/O; the MCP face never exposes arbitrary
 shell execution.

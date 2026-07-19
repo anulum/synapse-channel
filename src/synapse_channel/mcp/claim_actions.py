@@ -14,6 +14,10 @@ from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.git.ordinary_claim import (
+    OrdinaryClaimScopeError,
+    resolve_ordinary_claim_scope,
+)
 from synapse_channel.mcp.git_claim import McpGitClaimError, resolve_mcp_git_claim_scope
 
 Matcher = Callable[[dict[str, Any]], bool]
@@ -42,12 +46,23 @@ class McpClaimActions:
     async def claim(self, task_id: str, paths: list[str] | None = None) -> str:
         """Claim a task lease, optionally scoped to ordinary paths."""
         scope = list(paths or [])
+        worktree = ""
+        path_identity: dict[str, object] | None = None
+        if scope:
+            try:
+                resolved_scope = resolve_ordinary_claim_scope(scope)
+            except OrdinaryClaimScopeError as exc:
+                return f"claim refused: {exc}"
+            if resolved_scope is not None:
+                scope = list(resolved_scope.paths)
+                worktree = resolved_scope.worktree
+                path_identity = resolved_scope.path_identity
         where = ", ".join(scope) if scope else "the whole worktree"
         return await self._claim(
             task_id,
             paths=scope,
-            worktree="",
-            path_identity=None,
+            worktree=worktree,
+            path_identity=path_identity,
             git=None,
             where=where,
         )

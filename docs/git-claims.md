@@ -83,6 +83,15 @@ that peer's display paths under the known filesystem policy. Two legacy peers
 retain their historical literal-path behavior, so upgrade all Git-aware claim
 producers to close alias gaps across an entire fleet.
 
+First-party ordinary file claims participate in the same identity model.
+When `synapse lock --paths ...` or MCP `synapse_claim(..., paths=[...])` runs
+inside a Git checkout, the client resolves the canonical worktree and aligned
+path identity before contacting the hub. An overlapping ordinary, MCP, or
+`git-claim` scope therefore contends in one physical checkout, while linked Git
+worktrees remain isolated. Outside Git, ordinary claims retain the historical
+shared worktree namespace. A keyless `synapse lock` remains a deliberately
+separate named mutex keyed by its task id and never probes Git.
+
 The `--auto-release-on` value is the policy stored with the claim; a client-side
 git hook enacts it so a finished branch frees its claim without a manual step.
 

@@ -11,15 +11,18 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
+from cli_e2e_helpers import git_repo
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_locking
 from synapse_channel.cli_locking import AgentFactory
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.mcp.git_claim import resolve_mcp_git_claim_scope
 
 
 def test_parser_lock() -> None:
@@ -42,8 +45,9 @@ async def test_lock_runs_command_holding_lease() -> None:
             ran.append(command)
             claim = hub.state.claims["g"]
             assert claim.owner == "X"
-            assert claim.worktree == ""
+            assert claim.worktree == Path.cwd().resolve().as_posix()
             assert claim.paths == ("src",)
+            assert claim.path_identity is not None
             return 0
 
         code = await cli_locking._lock(
@@ -107,6 +111,59 @@ async def test_lock_keyless_namespaces_worktree_to_task_id() -> None:
         )
 
     assert code == 0
+
+
+async def test_lock_path_scope_contends_with_git_claim_in_same_checkout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The ordinary CLI lock cannot bypass an overlapping Git-aware claim."""
+    repo = git_repo(tmp_path / "repo")
+    source = repo / "src" / "owned.py"
+    source.parent.mkdir()
+    source.write_text("owned = True\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    scope = resolve_mcp_git_claim_scope(
+        ["src/owned.py"],
+        base="main",
+        auto_release_on="manual",
+    )
+
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        holder = await connect_agent("git-owner", uri)
+        await holder.agent.claim(
+            "GIT-OWNER",
+            worktree=scope.worktree,
+            paths=list(scope.paths),
+            path_identity=scope.path_identity,
+            git=scope.git,
+        )
+        await holder.recorder.wait_for(
+            lambda message: (
+                message.get("type") == MessageType.CLAIM_GRANTED
+                and message.get("task_id") == "GIT-OWNER"
+            )
+        )
+
+        async def never_runs(_command: list[str]) -> int:
+            raise AssertionError("overlapping ordinary lock must not run")
+
+        try:
+            code = await cli_locking._lock(
+                uri=uri,
+                name="plain-owner",
+                task_id="PLAIN-OWNER",
+                command=["true"],
+                paths=["src/owned.py"],
+                wait_timeout=0.0,
+                runner=never_runs,
+            )
+        finally:
+            await close_agents(holder)
+
+    assert code == 1
+    assert "file scope conflicts" in capsys.readouterr().out
 
 
 async def test_lock_fails_fast_when_held(capsys: pytest.CaptureFixture[str]) -> None:

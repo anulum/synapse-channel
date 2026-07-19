@@ -31,6 +31,10 @@ from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import describe_connect_failure, explain_silent_outcome
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.receipts import build_release_receipt
+from synapse_channel.git.ordinary_claim import (
+    OrdinaryClaimScopeError,
+    resolve_ordinary_claim_scope,
+)
 
 logger = logging.getLogger("synapse.lock")
 
@@ -159,6 +163,22 @@ async def _lock(
         The command's exit code, or ``1`` when the hub was unreachable or the lease
         could not be acquired within ``wait_timeout``.
     """
+    lock_worktree = task_id
+    lock_paths = paths
+    path_identity: dict[str, object] | None = None
+    if paths:
+        try:
+            resolved_scope = resolve_ordinary_claim_scope(paths)
+        except OrdinaryClaimScopeError as exc:
+            print(f"Could not acquire lock '{task_id}': {exc}")
+            return 1
+        if resolved_scope is None:
+            lock_worktree = ""
+        else:
+            lock_worktree = resolved_scope.worktree
+            lock_paths = list(resolved_scope.paths)
+            path_identity = resolved_scope.path_identity
+
     outcome: dict[str, Any] = {}
 
     async def collect(data: dict[str, Any]) -> None:
@@ -186,16 +206,14 @@ async def _lock(
             return 1
         loop = asyncio.get_event_loop()
         deadline = loop.time() + wait_timeout
-        # A keyless lock (no explicit --paths) is a pure named mutex: scope its
-        # claim to its own task-id namespace so two different locks never contend
-        # for the hub's shared default worktree (a `<repo>:git` push-lock must not
-        # block an unrelated repo's lock or claim). With explicit paths the caller
-        # wants real file-scope overlap, so the claim stays in the shared tree
-        # where declared paths are compared.
-        lock_worktree = "" if paths else task_id
         while True:
             outcome.clear()
-            await agent.claim(task_id, worktree=lock_worktree, paths=paths)
+            await agent.claim(
+                task_id,
+                worktree=lock_worktree,
+                paths=lock_paths,
+                path_identity=path_identity,
+            )
             for _ in range(attempts):
                 if outcome or conn_task.done():
                     break
