@@ -46,6 +46,7 @@ from synapse_channel.core.receipts import (
     release_receipt_has_evidence,
 )
 from synapse_channel.core.state import GitContext
+from synapse_channel.core.state_transaction import durable_state_transaction
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
@@ -139,19 +140,22 @@ def apply_claim(
     # frame handler or planting an ``inf``/``nan`` lease expiry.
     ttl_val = safe_float(ttl_seconds, default=None, allow_bool=False)
 
-    ok, message = hub.state.claim(
-        claimant,
-        task_id,
-        note=note,
-        ttl_seconds=ttl_val,
-        quota_principal=quota_principal,
-        worktree=worktree,
-        paths=paths,
-        path_identity=path_identity,
-        git=git,
-    )
-    if ok:
-        claim = hub.state.claims[task_id]
+    with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
+        ok, message = hub.state.claim(
+            claimant,
+            task_id,
+            note=note,
+            ttl_seconds=ttl_val,
+            quota_principal=quota_principal,
+            worktree=worktree,
+            paths=paths,
+            path_identity=path_identity,
+            git=git,
+        )
+        claim = hub.state.claims.get(task_id) if ok else None
+        if claim is not None and hub.journal is not None:
+            record_claim(hub.journal, claim)
+    if claim is not None:
         # Only the SATISFIED wait is cleared: a claim or renewal for task U must
         # never erase the claimant's still-open wait on an unrelated task T.
         waited = hub._waits.get(claimant)
@@ -159,8 +163,6 @@ def apply_claim(
             waited.discard(task_id)
             if not waited:
                 hub._waits.pop(claimant, None)
-        if hub.journal is not None:
-            record_claim(hub.journal, claim)
         return ClaimApplication(ok=True, message=message, task_id=task_id, claim=claim)
     return ClaimApplication(ok=False, message=message, task_id=task_id, claim=None)
 
@@ -241,19 +243,20 @@ async def handle_task_update(
     note = data.get("note")
     data_ref = data.get("data_ref")
 
-    ok, message = hub.state.update_task(
-        sender,
-        task_id,
-        status=str(status) if status else None,
-        note=str(note) if note is not None else None,
-        data_ref=str(data_ref) if data_ref is not None else None,
-        epoch=hub._optional_int(data, "epoch"),
-        expected_version=hub._optional_int(data, "expected_version"),
-    )
-    if ok:
-        claim = hub.state.claims.get(task_id)
-        if hub.journal is not None:
-            record_task_update(hub.journal, hub.state.claims[task_id])
+    with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
+        ok, message = hub.state.update_task(
+            sender,
+            task_id,
+            status=str(status) if status else None,
+            note=str(note) if note is not None else None,
+            data_ref=str(data_ref) if data_ref is not None else None,
+            epoch=hub._optional_int(data, "epoch"),
+            expected_version=hub._optional_int(data, "expected_version"),
+        )
+        claim = hub.state.claims.get(task_id) if ok else None
+        if claim is not None and hub.journal is not None:
+            record_task_update(hub.journal, claim)
+    if claim is not None:
         updated = hub._system(
             message,
             msg_type=MessageType.TASK_UPDATED,
@@ -276,13 +279,14 @@ async def handle_release(
 ) -> None:
     """Release a task and broadcast it, or deny the sender."""
     task_id = str(data.get("task_id") or data.get("payload") or "").strip()
-    ok, message = hub.state.release(sender, task_id, epoch=hub._optional_int(data, "epoch"))
+    with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
+        ok, message = hub.state.release(sender, task_id, epoch=hub._optional_int(data, "epoch"))
+        if ok and hub.journal is not None:
+            record_release(hub.journal, task_id)
     if ok:
         # A released task has no holder: prune its wait edges so they cannot
         # refuse a later legitimate wait as a false-positive deadlock.
         hub._waits = prune_waits(hub._waits, hub.state.claims)
-        if hub.journal is not None:
-            record_release(hub.journal, task_id)
         receipt = build_release_receipt(
             task_id=task_id,
             owner=sender,
@@ -366,14 +370,23 @@ async def handle_handoff(
         )
         return
 
-    ok, message = hub.state.handoff(
-        sender,
+    with durable_state_transaction(
+        hub.state,
         task_id,
-        to_agent,
-        note=str(note) if note is not None else None,
-        epoch=hub._optional_int(data, "epoch"),
-    )
-    if not ok:
+        enabled=hub.journal is not None,
+        restore_presence=(to_agent,),
+    ):
+        ok, message = hub.state.handoff(
+            sender,
+            task_id,
+            to_agent,
+            note=str(note) if note is not None else None,
+            epoch=hub._optional_int(data, "epoch"),
+        )
+        claim = hub.state.claims.get(task_id) if ok else None
+        if claim is not None and hub.journal is not None:
+            record_handoff(hub.journal, claim)
+    if claim is None:
         await hub._send_json(
             websocket,
             hub._system(
@@ -385,7 +398,6 @@ async def handle_handoff(
         )
         return
 
-    claim = hub.state.claims[task_id]
     # Receiving task X clears only the recipient's wait on X, never a wait on
     # an unrelated task the recipient is still blocked on.
     waited = hub._waits.get(to_agent)
@@ -393,8 +405,6 @@ async def handle_handoff(
         waited.discard(task_id)
         if not waited:
             hub._waits.pop(to_agent, None)
-    if hub.journal is not None:
-        record_handoff(hub.journal, claim)
     await _record_handoff_progress(hub, task_id, sender, to_agent, claim.note)
     scope_fields: dict[str, Any] = {
         "worktree": claim.worktree,
@@ -447,13 +457,17 @@ async def handle_checkpoint(
     """
     task_id = str(data.get("task_id") or "").strip()
     checkpoint = str(data.get("checkpoint") or data.get("payload") or "")
-    ok, message = hub.state.save_checkpoint(
-        sender, task_id, checkpoint, epoch=hub._optional_int(data, "epoch")
-    )
-    if ok:
-        claim = hub.state.claims[task_id]
-        if hub.journal is not None:
+    with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
+        ok, message = hub.state.save_checkpoint(
+            sender,
+            task_id,
+            checkpoint,
+            epoch=hub._optional_int(data, "epoch"),
+        )
+        claim = hub.state.claims.get(task_id) if ok else None
+        if claim is not None and hub.journal is not None:
             record_checkpoint(hub.journal, claim)
+    if claim is not None:
         saved = hub._system(
             message,
             msg_type=MessageType.CHECKPOINT_SAVED,

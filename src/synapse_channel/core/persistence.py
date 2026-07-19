@@ -30,9 +30,10 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from types import TracebackType
 from typing import Any, NamedTuple
@@ -40,6 +41,8 @@ from typing import Any, NamedTuple
 from synapse_channel.core.event_row_recovery import CorruptEventRow, decode_event_row
 
 BUSY_TIMEOUT_MS = 5000
+
+logger = logging.getLogger(__name__)
 
 
 class StoredEvent(NamedTuple):
@@ -166,24 +169,77 @@ class EventStore:
         Notes
         -----
         A failed database write is rolled back. Durable attempts restore the
-        connection to ``synchronous=NORMAL`` before the failure propagates.
+        connection to ``synchronous=NORMAL``. If that cleanup alone fails after
+        COMMIT, the append remains successful and the cleanup failure is logged;
+        reporting a write failure at that point would contradict durable truth.
+        """
+        return self.append_batch(((kind, payload),), ts=ts, durable=durable)[0]
+
+    def append_batch(
+        self,
+        events: Iterable[tuple[str, Mapping[str, Any]]],
+        *,
+        ts: float | None = None,
+        durable: bool = False,
+    ) -> tuple[int, ...]:
+        """Append several events in one SQLite transaction.
+
+        The whole batch commits or rolls back as one unit. All rows share one
+        timestamp so adjacent state and provenance events describe the same
+        authoritative transition.
+
+        Parameters
+        ----------
+        events : iterable[tuple[str, Mapping[str, Any]]]
+            Ordered ``(kind, payload)`` pairs.
+        ts : float or None, optional
+            Shared timestamp; the system clock is used when omitted.
+        durable : bool, optional
+            Use ``synchronous=FULL`` for the batch commit.
+
+        Returns
+        -------
+        tuple[int, ...]
+            Assigned sequence numbers in input order. An empty input returns
+            an empty tuple without opening a transaction.
         """
         stamp = time.time() if ts is None else float(ts)
-        raw = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+        rows = [
+            (
+                stamp,
+                str(kind),
+                json.dumps(dict(payload), ensure_ascii=True, separators=(",", ":")),
+            )
+            for kind, payload in events
+        ]
+        if not rows:
+            return ()
         if durable:
             self._conn.execute("PRAGMA synchronous=FULL")
         try:
-            cursor = self._conn.execute(
-                "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", (stamp, kind, raw)
-            )
+            sequences = []
+            for row in rows:
+                cursor = self._conn.execute(
+                    "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", row
+                )
+                sequences.append(int(cursor.lastrowid or 0))
             self._conn.commit()
         except BaseException:
             self._conn.rollback()
             raise
         finally:
             if durable:
-                self._conn.execute("PRAGMA synchronous=NORMAL")
-        return int(cursor.lastrowid or 0)
+                try:
+                    self._conn.execute("PRAGMA synchronous=NORMAL")
+                except BaseException:
+                    # The transaction outcome is already final. Reporting a
+                    # post-commit cleanup error as append failure would make a
+                    # caller roll back live state while the event remains
+                    # durable. FULL is correctness-safe (only slower), so keep
+                    # the committed outcome authoritative and make cleanup
+                    # failure observable without inverting journal truth.
+                    logger.exception("Could not restore SQLite synchronous=NORMAL")
+        return tuple(sequences)
 
     def read_all(self) -> list[StoredEvent]:
         """Return every event in insertion order.

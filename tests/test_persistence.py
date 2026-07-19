@@ -14,11 +14,27 @@ import stat
 import sys
 import types
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from synapse_channel.core.event_row_recovery import CORRUPT_EVENT_KIND, CorruptEventReason
 from synapse_channel.core.persistence import EventStore, StoredEvent
+
+
+class _PostCommitResetFailure:
+    """Connection proxy that fails only after a durable commit has succeeded."""
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self._connection = connection
+
+    def execute(self, sql: str, *args: Any) -> Any:
+        if sql == "PRAGMA synchronous=NORMAL":
+            raise sqlite3.OperationalError("post-commit reset failed")
+        return self._connection.execute(sql, *args)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)
 
 
 def _synchronous_mode(store: EventStore) -> int:
@@ -69,6 +85,59 @@ def test_append_and_read_all_preserves_order(tmp_path: Path) -> None:
     assert events[0].payload == {"task_id": "T1"}
     assert events[0].ts == 1.0
     assert events[0].seq < events[1].seq
+
+
+def test_append_batch_commits_adjacent_rows_with_one_timestamp(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    sequences = store.append_batch(
+        (("release", {"task_id": "T1"}), ("operator_relay", {"task_id": "T1"})),
+        ts=12.5,
+        durable=True,
+    )
+
+    events = store.read_all()
+    assert sequences == (1, 2)
+    assert [event.kind for event in events] == ["release", "operator_relay"]
+    assert [event.ts for event in events] == [12.5, 12.5]
+    assert _synchronous_mode(store) == 1
+    store.close()
+
+
+def test_append_batch_rolls_back_every_row_when_a_later_insert_fails(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    store._conn.execute(
+        "CREATE TRIGGER reject_relay BEFORE INSERT ON events "
+        "WHEN NEW.kind = 'operator_relay' "
+        "BEGIN SELECT RAISE(FAIL, 'forced second insert failure'); END"
+    )
+    store._conn.commit()
+
+    with pytest.raises(sqlite3.IntegrityError, match="forced second insert failure"):
+        store.append_batch(
+            (("release", {"task_id": "T1"}), ("operator_relay", {"task_id": "T1"})),
+            durable=True,
+        )
+
+    assert store.count() == 0
+    assert not store._conn.in_transaction
+    assert _synchronous_mode(store) == 1
+    store.close()
+
+
+def test_durable_append_never_reports_post_commit_cleanup_as_write_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = EventStore(tmp_path / "events.db")
+    monkeypatch.setattr(store, "_conn", _PostCommitResetFailure(store._conn))
+
+    sequence = store.append("claim", {"task_id": "T1"}, durable=True)
+
+    assert sequence == 1
+    assert [(event.kind, event.payload) for event in store.read_all()] == [
+        ("claim", {"task_id": "T1"})
+    ]
+    assert "Could not restore SQLite synchronous=NORMAL" in caplog.text
+    store.close()
 
 
 def test_stored_event_is_named_tuple() -> None:

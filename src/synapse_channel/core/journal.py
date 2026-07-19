@@ -190,6 +190,22 @@ def record_operator_relay(store: EventStore, provenance: Mapping[str, Any]) -> N
     store.append(EventKind.OPERATOR_RELAY, dict(provenance), durable=True)
 
 
+def record_operator_release(store: EventStore, task_id: str, provenance: Mapping[str, Any]) -> None:
+    """Atomically append a force-release projection and its relay provenance.
+
+    Replay needs the ordinary ``release`` row, while auditors need the adjacent
+    ``operator_relay`` row. They describe one governed mutation and therefore
+    must never commit independently.
+    """
+    store.append_batch(
+        (
+            (EventKind.RELEASE, {"task_id": task_id}),
+            (EventKind.OPERATOR_RELAY, dict(provenance)),
+        ),
+        durable=True,
+    )
+
+
 def record_identity_pin_reclaim(store: EventStore, provenance: Mapping[str, Any]) -> int:
     """Append the mandatory durable audit event for an applied pin reclaim.
 

@@ -10,12 +10,14 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from websockets.asyncio.client import ClientConnection, connect
 
 from hub_e2e_helpers import read_until_type, running_hub, send_json
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
+from synapse_channel.core.handlers import operator_relay as relay_handlers
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHubServingPolicy
@@ -235,10 +237,11 @@ async def test_applies_a_relayed_release_and_audits_it(tmp_path: Path) -> None:
     assert "t1" not in hub.state.claims
     # Journalled twice: a release keeps state reconstruction correct, an operator_relay
     # event records the cross-hub provenance the release alone never carries.
-    kinds = [event.kind for event in journal.read_all()]
-    assert EventKind.RELEASE in kinds
-    assert EventKind.OPERATOR_RELAY in kinds
-    audit = next(e.payload for e in journal.read_all() if e.kind == EventKind.OPERATOR_RELAY)
+    events = journal.read_all()
+    assert [event.kind for event in events] == [EventKind.RELEASE, EventKind.OPERATOR_RELAY]
+    assert events[1].seq == events[0].seq + 1
+    assert events[1].ts == events[0].ts
+    audit = events[1].payload
     assert audit["action"] == "release"
     assert audit["direction"] == "in"  # the applying (owning) side of the two-hub trail
     assert audit["peer"] == "peer"
@@ -248,6 +251,28 @@ async def test_applies_a_relayed_release_and_audits_it(tmp_path: Path) -> None:
     assert audit["break_glass"] is True
     assert audit["previous_owner"] == _HOLDER
     assert audit["applied"] is True
+
+
+def test_relay_journal_failure_restores_claim_and_commits_no_partial_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = EventStore(tmp_path / "events.db")
+    hub = _acting_hub(policy=None, ownership=None, journal=journal)
+    assert hub.state.claim(_HOLDER, "t1")[0]
+    before = hub.state.claims["t1"]
+    before_snapshot = before.as_persisted_dict()
+
+    def fail_batch(_store: EventStore, _task_id: str, _provenance: object) -> None:
+        raise OSError("relay journal unavailable")
+
+    monkeypatch.setattr(relay_handlers, "record_operator_release", fail_batch)
+    with pytest.raises(OSError, match="relay journal unavailable"):
+        relay_handlers._apply_release(hub, "peer", _request())
+
+    assert hub.state.claims["t1"] is before
+    assert hub.state.claims["t1"].as_persisted_dict() == before_snapshot
+    assert journal.read_all() == []
+    journal.close()
 
 
 async def test_refuses_a_relay_without_a_reason_when_the_hub_requires_one(tmp_path: Path) -> None:

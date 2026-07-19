@@ -49,7 +49,7 @@ from typing import TYPE_CHECKING, Any
 from synapse_channel.core.journal import (
     RELAY_DIRECTION_IN,
     record_operator_relay,
-    record_release,
+    record_operator_release,
 )
 from synapse_channel.core.operator_relay import RelayDecision, authorise_relay
 from synapse_channel.core.operator_relay_approval import ApprovalOutcome, ApprovalStatus
@@ -61,6 +61,7 @@ from synapse_channel.core.operator_relay_wire import (
     encode_relay_result,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.state_transaction import durable_state_transaction
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
@@ -242,33 +243,35 @@ def _apply_release(
     Under two-person approval ``approver`` names the second operator whose approval carried it out,
     empty for a single-operator relay.
     """
-    existing = hub.state.claims.get(request.task_id.strip())
+    task_id = request.task_id.strip()
+    existing = hub.state.claims.get(task_id)
     previous_owner = existing.owner if existing is not None else ""
-    applied, detail = hub.state.force_release(request.task_id, by=request.operator)
-    if applied and hub.journal is not None:
-        record_release(hub.journal, request.task_id.strip())
-        record_operator_relay(
-            hub.journal,
-            {
-                "action": request.action,
-                "namespace": request.namespace,
-                "task_id": request.task_id.strip(),
-                "direction": RELAY_DIRECTION_IN,
-                "status": RELAY_STATUS_APPLIED,
-                "peer": sender,
-                "operator": request.operator,
-                "requester": requester,
-                "approver": approver,
-                "requester_principal": requester_principal,
-                "approver_principal": approver_principal,
-                "origin_hub_id": request.origin_hub_id,
-                "reason": request.reason,
-                "break_glass": request.break_glass,
-                "previous_owner": previous_owner,
-                "applied": True,
-                "detail": detail,
-            },
-        )
+    with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
+        applied, detail = hub.state.force_release(request.task_id, by=request.operator)
+        if applied and hub.journal is not None:
+            record_operator_release(
+                hub.journal,
+                task_id,
+                {
+                    "action": request.action,
+                    "namespace": request.namespace,
+                    "task_id": task_id,
+                    "direction": RELAY_DIRECTION_IN,
+                    "status": RELAY_STATUS_APPLIED,
+                    "peer": sender,
+                    "operator": request.operator,
+                    "requester": requester,
+                    "approver": approver,
+                    "requester_principal": requester_principal,
+                    "approver_principal": approver_principal,
+                    "origin_hub_id": request.origin_hub_id,
+                    "reason": request.reason,
+                    "break_glass": request.break_glass,
+                    "previous_owner": previous_owner,
+                    "applied": True,
+                    "detail": detail,
+                },
+            )
     return RelayActionResult(
         applied=applied,
         action=request.action,
