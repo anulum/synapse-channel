@@ -135,7 +135,7 @@ class ReplayResult:
 
 def record_claim(store: EventStore, claim: TaskClaim) -> None:
     """Append a durable event capturing a claim or renewal."""
-    store.append(EventKind.CLAIM, claim.as_dict(), durable=True)
+    store.append(EventKind.CLAIM, claim.as_persisted_dict(), durable=True)
 
 
 def record_release(store: EventStore, task_id: str) -> None:
@@ -145,7 +145,7 @@ def record_release(store: EventStore, task_id: str) -> None:
 
 def record_task_update(store: EventStore, claim: TaskClaim) -> None:
     """Append a durable event with the post-update claim snapshot."""
-    store.append(EventKind.TASK_UPDATE, claim.as_dict(), durable=True)
+    store.append(EventKind.TASK_UPDATE, claim.as_persisted_dict(), durable=True)
 
 
 RELAY_DIRECTION_IN = "in"
@@ -309,7 +309,7 @@ def record_checkpoint(store: EventStore, claim: TaskClaim) -> None:
     re-deriving them from generic claim snapshots; coordination replay treats it
     identically to a claim.
     """
-    store.append(EventKind.CHECKPOINT, claim.as_dict(), durable=True)
+    store.append(EventKind.CHECKPOINT, claim.as_persisted_dict(), durable=True)
 
 
 def record_handoff(store: EventStore, claim: TaskClaim) -> None:
@@ -320,7 +320,7 @@ def record_handoff(store: EventStore, claim: TaskClaim) -> None:
     event would. The distinct kind lets the read-side trace ownership transfers
     apart from ordinary claims; coordination replay treats it identically.
     """
-    store.append(EventKind.HANDOFF, claim.as_dict(), durable=True)
+    store.append(EventKind.HANDOFF, claim.as_persisted_dict(), durable=True)
 
 
 def record_resource(store: EventStore, offer: ResourceOffer) -> None:
@@ -481,6 +481,10 @@ def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
         note=str(payload.get("note", "")),
         claimed_at=float(payload["claimed_at"]),
         lease_expires_at=float(payload["lease_expires_at"]),
+        # Old logs predate principal-bound quotas. Charging those claims to their
+        # recorded owner preserves the historical per-agent behaviour without
+        # granting a restart-time free budget.
+        quota_principal=str(payload.get("quota_principal") or payload["owner"]),
         status=str(payload.get("status", "claimed")),
         data_ref=str(payload.get("data_ref", "")),
         worktree=worktree,

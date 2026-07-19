@@ -136,6 +136,20 @@ def test_drop_client_removes_only_active_agent_bindings() -> None:
     assert registry.drop_client(current_socket) == "agent"
 
 
+def test_quota_principal_binding_is_first_write_and_dropped_with_socket() -> None:
+    registry = _registry()
+    socket = _Socket()
+
+    assert registry.quota_principal(socket, fallback_agent="A") == "legacy-agent:A"
+    registry.set_quota_principal(socket, "open-host:127.0.0.1")
+    registry.set_quota_principal(socket, "client-asserted-replacement")
+    assert registry.quota_principal(socket, fallback_agent="A") == "open-host:127.0.0.1"
+
+    registry.add_client(socket)
+    assert registry.drop_client(socket) is None
+    assert registry.quota_principal(socket, fallback_agent="A") == "legacy-agent:A"
+
+
 def test_drop_client_releases_wake_capability_binding() -> None:
     registry = _registry()
     socket = _Socket()

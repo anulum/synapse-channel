@@ -67,6 +67,40 @@ def test_handoff_obeys_the_same_claim_cap_as_direct_acquisition() -> None:
     assert state.claims["GIFT"].owner == "full"
 
 
+def test_claim_cap_follows_principal_across_rotated_names() -> None:
+    state = SynapseState(default_ttl_seconds=10_000.0, max_claims_per_agent=2)
+    principal = "auth-token:stable"
+
+    assert state.claim("A", "T0", now=0.0, worktree="wt0", quota_principal=principal)[0]
+    assert state.claim("A-ROTATED", "T1", now=0.0, worktree="wt1", quota_principal=principal)[0]
+    refused, message = state.claim(
+        "A-ROTATED-AGAIN", "T2", now=0.0, worktree="wt2", quota_principal=principal
+    )
+
+    assert refused is False
+    assert "principal claim quota" in message
+    assert state.claim(
+        "B", "B0", now=0.0, worktree="wtB", quota_principal="auth-token:independent"
+    )[0]
+
+
+def test_handoff_keeps_original_charge_until_recipient_renews() -> None:
+    state = SynapseState(default_ttl_seconds=10_000.0, max_claims_per_agent=1)
+    assert state.claim("A", "T0", now=0.0, worktree="wt0", quota_principal="principal-a")[0]
+    assert state.handoff("A", "T0", "B", now=1.0)[0]
+    moved = state.claims["T0"]
+    assert moved.owner == "B"
+    assert moved.quota_principal == "principal-a"
+
+    # B proves its own principal on renewal, transferring the charge. Both A and
+    # B then have their independent capacity accounted correctly.
+    assert state.claim("B", "T0", now=2.0, worktree="wt0", quota_principal="principal-b")[0]
+    assert state.claim("A", "A1", now=2.0, worktree="wtA", quota_principal="principal-a")[0]
+    assert (
+        state.claim("B", "B1", now=2.0, worktree="wtB", quota_principal="principal-b")[0] is False
+    )
+
+
 def test_offer_cap_honours_a_custom_limit() -> None:
     state = SynapseState(max_offers_per_agent=2)
     assert state.offer_resource("A", kind="llm", name="m0", now=0.0) is not None

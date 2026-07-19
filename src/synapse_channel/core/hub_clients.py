@@ -73,6 +73,7 @@ class HubClientRegistry:
         self.socket_agent: dict[Any, str] = {}
         self.agent_roles: dict[str, tuple[str, ...]] = {}
         self.agent_wake_capabilities: dict[str, str] = {}
+        self.socket_quota_principals: dict[Any, str] = {}
         self._socket_hosts: dict[Any, str] = {}
         self._host_counts: dict[str, int] = {}
 
@@ -102,6 +103,7 @@ class HubClientRegistry:
     def drop_client(self, websocket: Any) -> str | None:
         """Drop a socket and return the active agent name that disappeared, if any."""
         self.connected_clients.discard(websocket)
+        self.socket_quota_principals.pop(websocket, None)
         host = self._socket_hosts.pop(websocket, None)
         if host is not None:
             remaining = self._host_counts.get(host, 0) - 1
@@ -159,6 +161,27 @@ class HubClientRegistry:
     def is_bound(self, websocket: Any) -> bool:
         """Return whether the socket has already bound an agent name."""
         return websocket in self.socket_agent
+
+    def set_quota_principal(self, websocket: Any, principal: str) -> None:
+        """Bind a non-empty claim-quota principal to one admitted socket.
+
+        The binding is connection metadata, never a client-asserted frame field.
+        Secured connections receive a credential fingerprint; open connections
+        receive the ingress-derived remote-host fallback. Re-registration on the
+        same socket cannot replace it because authentication runs only once.
+        """
+        value = principal.strip()
+        if value:
+            self.socket_quota_principals.setdefault(websocket, value)
+
+    def quota_principal(self, websocket: Any, *, fallback_agent: str) -> str:
+        """Return the socket's quota bucket or a compatibility fallback.
+
+        Production ingress always binds a principal before sender resolution. The
+        agent fallback preserves direct/unit integrations that invoke handlers
+        without traversing ingress; it does not weaken the network path.
+        """
+        return self.socket_quota_principals.get(websocket, f"legacy-agent:{fallback_agent}")
 
     @staticmethod
     def is_reserved_sender(sender: str) -> bool:

@@ -201,6 +201,7 @@ class SynapseState:
         ttl_seconds: float | None = None,
         now: float | None = None,
         *,
+        quota_principal: str | None = None,
         worktree: str = DEFAULT_WORKTREE,
         paths: tuple[str, ...] | list[str] = (),
         path_identity: ClaimScopeIdentity | None = None,
@@ -242,6 +243,9 @@ class SynapseState:
             Branch context to attach to the claim; ``None`` leaves it unset. A
             renewal replaces it with the supplied value, so a git-aware client
             keeps the branch current by passing it on every claim.
+        quota_principal : str or None, optional
+            Stable server-derived identity bucket charged for the claim. ``None``
+            preserves the direct-call compatibility behaviour by using ``agent``.
 
         Returns
         -------
@@ -253,6 +257,7 @@ class SynapseState:
         task = task_id.strip()
         if not task:
             return False, "Task ID is required."
+        principal = str(quota_principal or agent).strip() or agent
 
         ts = time.time() if now is None else float(now)
         ttl = (
@@ -287,12 +292,22 @@ class SynapseState:
                 f"Task '{task}' file scope conflicts with '{other_id}' held by {other_owner}.",
             )
 
-        # Cap the live claims one agent may hold so a runaway agent cannot exhaust
-        # state. Renewing or taking over a claim the agent already owns is free; only
-        # a claim on a task the agent does not yet hold counts toward the cap.
+        # Cap the live claims one server-derived principal may hold so rotating an
+        # asserted agent name cannot multiply the budget. A same-principal renewal
+        # is free. If a task moved to this owner while still charged to a different
+        # principal, its first renewal transfers the charge only when the new bucket
+        # has capacity.
         owns_task = existing is not None and existing.owner == agent
-        if not owns_task and self._claims_owned_by(agent) >= self.max_claims_per_agent:
-            return False, f"Agent {agent} holds the maximum {self.max_claims_per_agent} claims."
+        existing_principal = (
+            (existing.quota_principal or existing.owner) if existing is not None else ""
+        )
+        same_principal = owns_task and existing_principal == principal
+        if not same_principal and self._claims_owned_by(principal) >= self.max_claims_per_agent:
+            return (
+                False,
+                f"Agent {agent} principal claim quota holds the maximum "
+                f"{self.max_claims_per_agent} claims.",
+            )
 
         # Carry the checkpoint forward: the same owner renewing keeps its own; a
         # new owner taking over an expired task resumes the retained checkpoint.
@@ -307,6 +322,7 @@ class SynapseState:
             note=note.strip(),
             claimed_at=ts,
             lease_expires_at=ts + ttl,
+            quota_principal=principal,
             worktree=worktree,
             paths=norm_paths,
             path_identity=path_identity,
@@ -318,9 +334,13 @@ class SynapseState:
         self._track_lease(claim)
         return True, f"Task '{task}' claimed by {agent}."
 
-    def _claims_owned_by(self, agent: str) -> int:
-        """Return how many live claims ``agent`` currently holds."""
-        return sum(1 for claim in self.claims.values() if claim.owner == agent)
+    def _claims_owned_by(self, quota_principal: str) -> int:
+        """Return how many live claims are charged to ``quota_principal``."""
+        return sum(
+            1
+            for claim in self.claims.values()
+            if (claim.quota_principal or claim.owner) == quota_principal
+        )
 
     def _offers_by(self, agent: str) -> int:
         """Return how many live resource offers ``agent`` currently holds."""
@@ -655,6 +675,11 @@ class SynapseState:
             note=note.strip() if note is not None else claim.note,
             claimed_at=ts,
             lease_expires_at=ts + self.default_ttl_seconds,
+            # A handoff cannot assert the recipient's identity. Keep the claim
+            # charged to the proven sender until the recipient renews through its
+            # own admitted connection, at which point claim() transfers the bucket
+            # subject to the recipient's quota.
+            quota_principal=claim.quota_principal or claim.owner,
             status=claim.status,
             data_ref=claim.data_ref,
             worktree=claim.worktree,

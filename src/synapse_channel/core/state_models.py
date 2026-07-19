@@ -96,6 +96,10 @@ class TaskClaim:
         Wall-clock time, in seconds, when the claim was last (re)acquired.
     lease_expires_at : float
         Wall-clock time, in seconds, after which the claim auto-expires.
+    quota_principal : str
+        Internal stable bucket charged for this claim. It is intentionally absent
+        from public snapshots and wire grants; durable journal writers use
+        :meth:`as_persisted_dict` so restarts cannot reset a principal's budget.
     status : str
         Exact claim lifecycle marker: ``claimed``, ``working``,
         ``input_required``, ``done``, or ``failed``.
@@ -131,6 +135,7 @@ class TaskClaim:
     note: str
     claimed_at: float
     lease_expires_at: float
+    quota_principal: str = ""
     status: str = TaskStatus.CLAIMED
     data_ref: str = ""
     worktree: str = DEFAULT_WORKTREE
@@ -167,6 +172,18 @@ class TaskClaim:
         }
         if self.path_identity is not None:
             snapshot["path_identity"] = self.path_identity.as_dict()
+        return snapshot
+
+    def as_persisted_dict(self) -> dict[str, Any]:
+        """Return a durable snapshot including private quota accounting.
+
+        Public state and protocol views use :meth:`as_dict`, which omits the
+        credential-derived principal. The append-only journal needs the bucket so
+        replay preserves quota enforcement across a hub restart.
+        """
+        snapshot = self.as_dict()
+        if self.quota_principal:
+            snapshot["quota_principal"] = self.quota_principal
         return snapshot
 
 

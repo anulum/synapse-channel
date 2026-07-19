@@ -75,7 +75,13 @@ class ClaimApplication:
     claim: TaskClaim | None
 
 
-def apply_claim(hub: SynapseHub, claimant: str, body: Mapping[str, Any]) -> ClaimApplication:
+def apply_claim(
+    hub: SynapseHub,
+    claimant: str,
+    body: Mapping[str, Any],
+    *,
+    quota_principal: str | None = None,
+) -> ClaimApplication:
     """Apply a scoped claim to the hub's state on a claimant's behalf, journalling a grant.
 
     This is the authoritative grant core, shared by a direct claim and a claim forwarded
@@ -99,6 +105,9 @@ def apply_claim(hub: SynapseHub, claimant: str, body: Mapping[str, Any]) -> Clai
         The claim body: ``task_id`` (or ``payload``), and the optional ``note``,
         ``ttl_seconds``, ``worktree``, ``paths``, additive ``path_identity``, and
         ``git`` scope.
+    quota_principal : str or None, optional
+        Stable server-derived bucket charged for the claim. ``None`` preserves
+        compatibility for direct internal callers by falling back to ``claimant``.
 
     Returns
     -------
@@ -135,6 +144,7 @@ def apply_claim(hub: SynapseHub, claimant: str, body: Mapping[str, Any]) -> Clai
         task_id,
         note=note,
         ttl_seconds=ttl_val,
+        quota_principal=quota_principal,
         worktree=worktree,
         paths=paths,
         path_identity=path_identity,
@@ -194,7 +204,12 @@ def claim_grant_fields(claim: TaskClaim) -> dict[str, Any]:
 
 async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
     """Apply a scoped claim request and broadcast the grant, or deny the sender."""
-    application = apply_claim(hub, sender, data)
+    application = apply_claim(
+        hub,
+        sender,
+        data,
+        quota_principal=hub.clients.quota_principal(websocket, fallback_agent=sender),
+    )
     if application.claim is not None:
         hub.counters.claims_granted += 1
         grant = hub._system(

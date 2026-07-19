@@ -133,6 +133,62 @@ def test_replay_reconstructs_claim_scope_and_epoch(tmp_path: Path) -> None:
     assert result.state.last_seen["A"] == 1000.0
 
 
+def test_replay_preserves_private_claim_quota_principal(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_claim(store, _claim(quota_principal="auth-token:stable"))
+    event = store.read_all()[0]
+    result = replay(store, now=2000.0)
+    store.close()
+
+    assert event.payload["quota_principal"] == "auth-token:stable"
+    claim = result.state.claims["T1"]
+    assert claim.quota_principal == "auth-token:stable"
+    assert "quota_principal" not in claim.as_dict()
+
+
+def test_replayed_principal_quota_cannot_be_reset_by_name_rotation(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_claim(
+        store,
+        _claim(
+            task_id="T1",
+            owner="A",
+            worktree="wt1",
+            quota_principal="auth-token:stable",
+        ),
+    )
+    record_claim(
+        store,
+        _claim(
+            task_id="T2",
+            owner="A-ROTATED",
+            worktree="wt2",
+            quota_principal="auth-token:stable",
+        ),
+    )
+    result = replay(store, now=2000.0, max_claims_per_agent=2)
+    store.close()
+
+    refused, message = result.state.claim(
+        "A-ROTATED-AGAIN",
+        "T3",
+        now=2001.0,
+        worktree="wt3",
+        quota_principal="auth-token:stable",
+    )
+    assert refused is False
+    assert "principal claim quota" in message
+
+
+def test_replay_legacy_claim_charges_quota_to_recorded_owner(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.append(EventKind.CLAIM, _claim().as_dict(), durable=True)
+    result = replay(store, now=2000.0)
+    store.close()
+
+    assert result.state.claims["T1"].quota_principal == "A"
+
+
 def test_replay_seeds_custom_per_agent_quotas(tmp_path: Path) -> None:
     store = _store(tmp_path)
     result = replay(store, max_claims_per_agent=7, max_offers_per_agent=3)

@@ -418,6 +418,31 @@ restart the service, and the fleet re-arms against the fresh hub on its own. Pic
 quiet moment, announce before and after, and never start a restart that would strand
 a client too old to exit-on-drop.
 
+## Claim-quota principals
+
+`--max-claims-per-agent` is enforced against a hub-derived **quota principal**, not
+the sender name written in a frame. On a token-protected hub, every connection using
+the same connect token shares one claim budget even when that token permits several
+agent names. Separate tokens retain separate budgets. The hub stores only a
+domain-separated credential fingerprint in private claim-journal snapshots; it does
+not expose that fingerprint in claim grants, public state snapshots, operator text
+logs, or error text.
+
+An open hub has no authenticated identity, so it fails conservatively to a remote-host
+bucket. On the default loopback deployment that means all unsigned local connections
+share the configured claim cap. This is the explicit compatibility fallback that
+prevents a process from reconnecting as `agent-1`, `agent-2`, and so on to freeze an
+unbounded number of scopes. If local workers need independent quota budgets, protect
+the hub with distinct high-entropy connect tokens. Forwarded claims are charged to
+the already-authorised federation peer, never to the nested claimant name asserted by
+that peer.
+
+Handoffs keep their original quota charge until the receiving agent renews the lease
+through its own admitted connection. That renewal transfers the charge only if the
+recipient principal still has capacity, preventing offline handoffs to invented names
+from becoming a quota bypass. Legacy journal rows without a principal remain charged
+to their recorded owner after replay.
+
 ## Fleet-wide announcements
 
 A broadcast (`--target all`, a `--priority` message, or any `CEO` message) wakes

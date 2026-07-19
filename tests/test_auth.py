@@ -53,3 +53,23 @@ def test_non_ascii_token_matches_and_mismatches() -> None:
     auth = TokenAuthenticator(["pärli"])
     assert auth.authenticate("pärli", "A")[0] is True
     assert auth.authenticate("parli", "A")[0] is False
+
+
+def test_quota_principal_is_stable_across_names_but_distinct_per_token() -> None:
+    auth = TokenAuthenticator(["alpha-secret", "beta-secret"])
+
+    alpha_a = auth.authenticate_with_principal("alpha-secret", "A")
+    alpha_alias = auth.authenticate_with_principal("alpha-secret", "A-ROTATED")
+    beta = auth.authenticate_with_principal("beta-secret", "B")
+
+    assert alpha_a[:2] == (True, "Authenticated.")
+    assert alpha_a[2] is not None
+    assert alpha_a[2] == alpha_alias[2]
+    assert alpha_a[2] != beta[2]
+    assert "alpha-secret" not in alpha_a[2]
+
+
+def test_refused_authentication_has_no_quota_principal() -> None:
+    auth = TokenAuthenticator({"secret": ["A"]})
+    assert auth.authenticate_with_principal("wrong", "A")[2] is None
+    assert auth.authenticate_with_principal("secret", "B")[2] is None

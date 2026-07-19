@@ -123,10 +123,23 @@ class HubIngress:
             ``True`` when the message may proceed, ``False`` when it was refused
             and the socket closed.
         """
-        if self._authenticator is None or self._clients.socket_agent.get(websocket) is not None:
+        if self._clients.socket_agent.get(websocket) is not None:
             return True
-        ok, reason = self._authenticator.authenticate(str(data.get("token") or ""), sender)
+        if self._authenticator is None:
+            # An open hub has no credential identity. Charge every connection from
+            # one network principal to the same conservative bucket, so cycling
+            # asserted names cannot multiply the claim cap. On the default loopback
+            # posture this intentionally makes the cap host-wide.
+            host = self.remote_host(websocket)
+            self._clients.set_quota_principal(websocket, f"open-host:{host}")
+            return True
+        ok, reason, principal = self._authenticator.authenticate_with_principal(
+            str(data.get("token") or ""), sender
+        )
         if ok:
+            if principal is None:  # defensive: a successful credential must identify a bucket
+                raise RuntimeError("authenticated connection has no quota principal")
+            self._clients.set_quota_principal(websocket, principal)
             return True
         await self._send_json(
             websocket,

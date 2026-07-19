@@ -102,10 +102,12 @@ def _ingress(
 
 
 async def test_authorise_open_hub_admits_without_checks() -> None:
-    ingress, rec = _ingress(_registry())
-    socket = _Socket()
+    clients = _registry()
+    ingress, rec = _ingress(clients)
+    socket = _Socket(("127.0.0.1", 4000))
 
     assert await ingress.authorise("a", {}, socket) is True
+    assert clients.quota_principal(socket, fallback_agent="a") == "open-host:127.0.0.1"
     assert rec.sent == []
     assert socket.closed == []
 
@@ -124,12 +126,29 @@ async def test_authorise_trusts_an_already_bound_socket() -> None:
 
 
 async def test_authorise_admits_a_valid_first_token() -> None:
-    ingress, rec = _ingress(_registry(), authenticator=TokenAuthenticator(["secret"]))
+    clients = _registry()
+    ingress, rec = _ingress(clients, authenticator=TokenAuthenticator(["secret"]))
     socket = _Socket()
 
     assert await ingress.authorise("a", {"token": "secret"}, socket) is True
+    principal = clients.quota_principal(socket, fallback_agent="a")
+    assert principal.startswith("auth-token:")
+    assert "secret" not in principal
     assert rec.sent == []
     assert socket.closed == []
+
+
+async def test_authorise_same_token_binds_rotated_names_to_one_quota_principal() -> None:
+    clients = _registry()
+    ingress, _ = _ingress(clients, authenticator=TokenAuthenticator(["secret"]))
+    first = _Socket(("10.0.0.1", 4000))
+    rotated = _Socket(("10.0.0.2", 4000))
+
+    assert await ingress.authorise("agent-a", {"token": "secret"}, first) is True
+    assert await ingress.authorise("agent-b", {"token": "secret"}, rotated) is True
+    assert clients.quota_principal(first, fallback_agent="agent-a") == clients.quota_principal(
+        rotated, fallback_agent="agent-b"
+    )
 
 
 async def test_authorise_refuses_and_closes_on_a_wrong_token() -> None:

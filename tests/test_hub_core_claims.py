@@ -12,6 +12,7 @@ import math
 from pathlib import Path
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
+from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 
 
@@ -41,6 +42,58 @@ async def test_claim_denied_goes_to_second_agent_end_to_end() -> None:
             assert denied["task_id"] == "T1"
         finally:
             await close_agents(alpha, beta)
+
+
+async def test_claim_quota_is_principal_bound_across_name_rotation_end_to_end() -> None:
+    hub = SynapseHub(
+        hub_id="syn-test",
+        authenticator=TokenAuthenticator(
+            {"shared-secret": ["ALPHA", "ALPHA-ROTATED"], "independent-secret": ["BETA"]}
+        ),
+        max_claims_per_agent=1,
+    )
+    async with running_hub(hub) as (_, uri):
+        alpha = await connect_agent("ALPHA", uri, token="shared-secret")
+        rotated = await connect_agent("ALPHA-ROTATED", uri, token="shared-secret")
+        beta = await connect_agent("BETA", uri, token="independent-secret")
+        try:
+            await alpha.agent.claim("T1", worktree="wt-alpha")
+            await alpha.recorder.wait_for(
+                lambda m: m.get("type") == "claim_granted" and m.get("task_id") == "T1"
+            )
+
+            await rotated.agent.claim("T2", worktree="wt-rotated")
+            denied = await rotated.recorder.wait_for(
+                lambda m: m.get("type") == "claim_denied" and m.get("task_id") == "T2"
+            )
+            assert "principal claim quota" in denied["payload"]
+
+            await beta.agent.claim("T3", worktree="wt-beta")
+            granted = await beta.recorder.wait_for(
+                lambda m: m.get("type") == "claim_granted" and m.get("task_id") == "T3"
+            )
+            assert granted["owner"] == "BETA"
+        finally:
+            await close_agents(alpha, rotated, beta)
+
+
+async def test_open_hub_fallback_is_host_bound_across_names_end_to_end() -> None:
+    hub = SynapseHub(hub_id="syn-test", max_claims_per_agent=1)
+    async with running_hub(hub) as (_, uri):
+        first = await connect_agent("OPEN-A", uri)
+        rotated = await connect_agent("OPEN-B", uri)
+        try:
+            await first.agent.claim("T1", worktree="wt-a")
+            await first.recorder.wait_for(
+                lambda m: m.get("type") == "claim_granted" and m.get("task_id") == "T1"
+            )
+            await rotated.agent.claim("T2", worktree="wt-b")
+            denied = await rotated.recorder.wait_for(
+                lambda m: m.get("type") == "claim_denied" and m.get("task_id") == "T2"
+            )
+            assert "principal claim quota" in denied["payload"]
+        finally:
+            await close_agents(first, rotated)
 
 
 async def test_claim_with_invalid_ttl_falls_back_to_default_end_to_end() -> None:

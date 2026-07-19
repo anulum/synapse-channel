@@ -112,7 +112,15 @@ async def handle_multihub_claim_request(
         )
         return
 
-    application = apply_claim(hub, request.claimant, request.claim)
+    # The serving policy has authenticated the peer, but the nested claimant is
+    # still a peer assertion. Charge every alias forwarded by one peer to that
+    # peer's stable bucket so name rotation cannot multiply the owning hub's cap.
+    application = apply_claim(
+        hub,
+        request.claimant,
+        request.claim,
+        quota_principal=f"federation-peer:{sender}",
+    )
     if application.claim is not None:
         hub.counters.claims_granted += 1
         grant_fields = claim_grant_fields(application.claim)

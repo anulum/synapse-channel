@@ -24,8 +24,12 @@ it.
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 from collections.abc import Iterable, Mapping
+
+_QUOTA_PRINCIPAL_DOMAIN = b"synapse-channel:claim-quota-principal:v1\x00"
+"""Domain prefix for non-secret, stable connect-token quota buckets."""
 
 
 class TokenAuthenticator:
@@ -77,13 +81,33 @@ class TokenAuthenticator:
             ``(True, message)`` when the token is valid and permits the agent,
             otherwise ``(False, reason)``.
         """
+        ok, reason, _principal = self.authenticate_with_principal(token, agent)
+        return ok, reason
+
+    def authenticate_with_principal(self, token: str, agent: str) -> tuple[bool, str, str | None]:
+        """Authenticate and return the stable quota bucket for the credential.
+
+        The principal is a domain-separated SHA-256 fingerprint of the matched
+        connect token. It is deliberately not the asserted agent name: every name
+        admitted by one credential shares one claim budget, so reconnecting under
+        aliases cannot multiply the quota. The raw token is never returned or
+        logged. Callers must keep the fingerprint internal; it is persisted only in
+        private claim snapshots so a restart preserves the same budget.
+
+        Returns
+        -------
+        tuple[bool, str, str or None]
+            Authentication verdict, human-readable reason, and the stable quota
+            principal on success. Refusals always carry ``None``.
+        """
         candidate = str(token)
         if not candidate:
-            return False, "Authentication token required."
+            return False, "Authentication token required.", None
         probe = candidate.encode("utf-8")
         for known, allowed in self._tokens.items():
             if hmac.compare_digest(known.encode("utf-8"), probe):
                 if allowed and agent not in allowed:
-                    return False, f"Token is not authorised for agent '{agent}'."
-                return True, "Authenticated."
-        return False, "Invalid authentication token."
+                    return False, f"Token is not authorised for agent '{agent}'.", None
+                digest = hashlib.sha256(_QUOTA_PRINCIPAL_DOMAIN + probe).hexdigest()
+                return True, "Authenticated.", f"auth-token:{digest}"
+        return False, "Invalid authentication token.", None
