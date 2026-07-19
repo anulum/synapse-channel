@@ -223,6 +223,12 @@ def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
             hub.counters.rate_limited,
         ),
         Metric(
+            "synapse_durable_ingress_refused_total",
+            "Chat frames refused by the per-principal durable-ingress quota since start.",
+            "counter",
+            hub.counters.durable_ingress_refused,
+        ),
+        Metric(
             "synapse_federation_denied_total",
             "Frames refused by the federation gate since start.",
             "counter",

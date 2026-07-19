@@ -63,6 +63,7 @@ from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
 from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_letter
 from synapse_channel.core.dead_letters import DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS, DeadLetterLedger
 from synapse_channel.core.deadlock import prune_waits
+from synapse_channel.core.durable_ingress import DurableIngressQuota
 from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.hub_broadcast import HubBroadcaster
@@ -239,6 +240,11 @@ class SynapseHub:
         bucket keyed by the connection's remote host, so a single host cannot flood
         the hub by cycling agent names or with bare heartbeats. Independent of and
         additional to ``rate_limiter``; ``None`` disables the per-host ceiling.
+    durable_ingress_quota : DurableIngressQuota or None, optional
+        When given, each accepted chat is charged to the connection's
+        server-derived quota principal (events and serialized chat-frame bytes in a sliding
+        window). Over-quota chats are refused before history or journal growth so
+        one principal cannot fill the durable log; ``None`` disables the bound.
     max_history : int, optional
         Maximum chat messages retained in memory; the oldest are dropped beyond
         this bound so history cannot grow without limit. The durable log (when a
@@ -453,6 +459,7 @@ class SynapseHub:
         journal: EventStore | None = None,
         rate_limiter: RateLimiter | None = None,
         host_rate_limiter: RateLimiter | None = None,
+        durable_ingress_quota: DurableIngressQuota | None = None,
         max_history: int = DEFAULT_MAX_HISTORY,
         relay_log: str | Path | None = None,
         relay_max_lines: int = DEFAULT_RELAY_MAX_LINES,
@@ -551,6 +558,7 @@ class SynapseHub:
         self.insecure_off_loopback = bool(insecure_off_loopback)
         self.rate_limiter = rate_limiter
         self.host_rate_limiter = host_rate_limiter
+        self.durable_ingress_quota = durable_ingress_quota
         self.authenticator = authenticator
         if isinstance(per_message_auth_keys, Mapping):
             self.per_message_auth_keys = dict(per_message_auth_keys)

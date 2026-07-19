@@ -147,9 +147,32 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
     ``timestamp`` is always the hub's wall clock (authoritative for history and
     dead-letter ordering). A finite client-supplied instant is preserved only as
     ``client_timestamp`` advisory metadata and cannot poison those order keys.
+
+    When the hub has a :class:`~synapse_channel.core.durable_ingress.DurableIngressQuota`,
+    the chat is charged to the connection's server-derived quota principal and
+    refused before history or journal growth when the sliding window is full.
     """
+    from synapse_channel.core.durable_ingress import chat_frame_bytes
+
     _stamp_chat_times(data)
     client_msg_id = _normalize_client_msg_id(data)
+    if hub.durable_ingress_quota is not None:
+        principal = hub.clients.quota_principal(websocket, fallback_agent=sender)
+        reason = hub.durable_ingress_quota.allow(
+            principal,
+            nbytes=chat_frame_bytes(data),
+        )
+        if reason:
+            hub.counters.durable_ingress_refused += 1
+            await hub._send_json(
+                websocket,
+                hub._system(
+                    f"Durable ingress quota exceeded ({reason}).",
+                    msg_type=MessageType.ERROR,
+                    target=sender,
+                ),
+            )
+            return
     data["type"] = MessageType.CHAT
     data["hub_id"] = hub.hub_id
     data["msg_id"] = hub._next_msg_id()

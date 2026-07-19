@@ -53,6 +53,7 @@ from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
 from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_letter
+from synapse_channel.core.durable_ingress import DurableIngressQuota
 from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.hub import (
     DEFAULT_AUTH_TIMEOUT,
@@ -272,6 +273,7 @@ class HubConfig:
     clock: Callable[[], float] | None = None
     rate_limiter: RateLimiter | None = None
     host_rate_limiter: RateLimiter | None = None
+    durable_ingress_quota: DurableIngressQuota | None = None
     relay_log: str | Path | None = None
     relay_max_lines: int = DEFAULT_RELAY_MAX_LINES
     shutdown_close_timeout: float = DEFAULT_SHUTDOWN_CLOSE_TIMEOUT

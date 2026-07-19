@@ -81,6 +81,17 @@ def _finite_limit(value: str) -> float:
     return parsed
 
 
+def _non_negative_int(value: str) -> int:
+    """Parse an integer limit whose zero value disables the policy."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{value!r} is not an integer") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError(f"{value!r} must be a non-negative integer")
+    return parsed
+
+
 def _add_logging_args(parser: argparse.ArgumentParser) -> None:
     """Add the shared ``--log-format`` / ``--log-level`` options to a daemon parser."""
     parser.add_argument(
@@ -139,6 +150,30 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         type=_finite_limit,
         default=40.0,
         help="Per-host burst allowance for --host-rate.",
+    )
+    hub.add_argument(
+        "--durable-ingress-events",
+        type=_non_negative_int,
+        default=0,
+        help=(
+            "Max accepted chat events per principal inside --durable-ingress-window; "
+            "0 disables durable-ingress quotas (default)."
+        ),
+    )
+    hub.add_argument(
+        "--durable-ingress-bytes",
+        type=_non_negative_int,
+        default=0,
+        help=(
+            "Max accepted serialized chat-frame bytes per principal inside the window; "
+            "0 disables unless --durable-ingress-events is set (then defaults to 1 MiB)."
+        ),
+    )
+    hub.add_argument(
+        "--durable-ingress-window",
+        type=_finite_limit,
+        default=60.0,
+        help="Sliding window seconds for durable-ingress event/frame-byte quotas.",
     )
     hub.add_argument(
         "--max-history",

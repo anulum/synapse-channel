@@ -171,6 +171,7 @@ def test_fresh_hub_reports_zero_decision_counters() -> None:
         "synapse_chat_broadcast_total",
         "synapse_auth_failures_total",
         "synapse_rate_limited_total",
+        "synapse_durable_ingress_refused_total",
         "synapse_federation_denied_total",
         "synapse_forwarded_claims_total",
         "synapse_forwarded_claims_granted_total",
@@ -194,6 +195,7 @@ def test_counters_and_gauges_surface_hub_decisions() -> None:
     hub.counters.chat_broadcast = 4
     hub.counters.auth_failures = 5
     hub.counters.rate_limited = 6
+    hub.counters.durable_ingress_refused = 15
     hub.counters.federation_denied = 8
     hub.counters.forwarded_claims = 11
     hub.counters.forwarded_claims_granted = 12
@@ -219,6 +221,7 @@ def test_counters_and_gauges_surface_hub_decisions() -> None:
     assert by_name["synapse_chat_broadcast_total"] == 4
     assert by_name["synapse_auth_failures_total"] == 5
     assert by_name["synapse_rate_limited_total"] == 6
+    assert by_name["synapse_durable_ingress_refused_total"] == 15
     assert by_name["synapse_federation_denied_total"] == 8
     assert by_name["synapse_forwarded_claims_total"] == 11
     assert by_name["synapse_forwarded_claims_granted_total"] == 12

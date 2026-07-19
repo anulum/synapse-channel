@@ -17,6 +17,9 @@ from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secure import (
     SECURE_AGENT_BURST,
     SECURE_AGENT_RATE,
+    SECURE_DURABLE_INGRESS_BYTES,
+    SECURE_DURABLE_INGRESS_EVENTS,
+    SECURE_DURABLE_INGRESS_WINDOW,
     SECURE_HOST_BURST,
     SECURE_HOST_RATE,
     SECURE_MAX_CONNECTIONS_PER_HOST,
@@ -51,6 +54,9 @@ def _complete_args(**overrides: object) -> argparse.Namespace:
         "burst": 20.0,
         "host_rate": 0.0,
         "host_burst": 40.0,
+        "durable_ingress_events": 0,
+        "durable_ingress_bytes": 0,
+        "durable_ingress_window": 60.0,
         "max_connections_per_host": 0,
     }
     base.update(overrides)
@@ -89,6 +95,9 @@ def test_disabled_rate_values_receive_exact_preset_defaults() -> None:
     assert args.host_rate == SECURE_HOST_RATE
     assert args.host_burst == 100.0
     assert args.max_connections_per_host == SECURE_MAX_CONNECTIONS_PER_HOST
+    assert args.durable_ingress_events == SECURE_DURABLE_INGRESS_EVENTS
+    assert args.durable_ingress_bytes == SECURE_DURABLE_INGRESS_BYTES
+    assert args.durable_ingress_window == SECURE_DURABLE_INGRESS_WINDOW
 
 
 def test_open_hub_default_connection_cap_is_clamped_under_secure() -> None:
@@ -105,13 +114,44 @@ def test_open_hub_default_connection_cap_is_clamped_under_secure() -> None:
 
 
 def test_stricter_positive_limits_survive() -> None:
-    args = _complete_args(rate=25.0, host_rate=200.0, max_connections_per_host=4)
+    args = _complete_args(
+        rate=25.0,
+        host_rate=200.0,
+        max_connections_per_host=4,
+        durable_ingress_events=50,
+        durable_ingress_bytes=524_288,
+        durable_ingress_window=120.0,
+    )
 
     apply_secure_hub_profile(args)
 
     assert args.rate == 25.0
     assert args.host_rate == 200.0
     assert args.max_connections_per_host == 4
+    assert args.durable_ingress_events == 50
+    assert args.durable_ingress_bytes == 524_288
+    assert args.durable_ingress_window == 120.0
+
+
+@pytest.mark.parametrize(
+    ("overrides", "flag"),
+    [
+        ({"durable_ingress_events": SECURE_DURABLE_INGRESS_EVENTS + 1}, "--durable-ingress-events"),
+        ({"durable_ingress_bytes": SECURE_DURABLE_INGRESS_BYTES + 1}, "--durable-ingress-bytes"),
+        (
+            {"durable_ingress_window": SECURE_DURABLE_INGRESS_WINDOW - 1.0},
+            "--durable-ingress-window",
+        ),
+        ({"durable_ingress_window": float("nan")}, "--durable-ingress-window"),
+    ],
+)
+def test_weaker_durable_ingress_limits_fail_closed(
+    overrides: dict[str, float | int], flag: str
+) -> None:
+    args = _complete_args(**overrides)
+
+    with pytest.raises(SecureModeError, match=flag):
+        apply_secure_hub_profile(args)
 
 
 @pytest.mark.parametrize(

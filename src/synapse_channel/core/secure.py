@@ -35,6 +35,11 @@ from synapse_channel.core.team_secure import apply_team_secure_hub_profile
 #: parser value is disabled. A stricter positive value is preserved.
 SECURE_AGENT_RATE: float = 100.0
 SECURE_AGENT_BURST: float = 20.0
+#: Per-principal durable chat ingress (events / serialized frame bytes / window seconds)
+#: applied when --secure leaves the durable-ingress flags disabled.
+SECURE_DURABLE_INGRESS_EVENTS: int = 100
+SECURE_DURABLE_INGRESS_BYTES: int = 1_048_576
+SECURE_DURABLE_INGRESS_WINDOW: float = 60.0
 #: Per-host frame rate ceiling (frames/second) and burst applied when disabled.
 SECURE_HOST_RATE: float = 500.0
 SECURE_HOST_BURST: float = 100.0
@@ -235,11 +240,17 @@ def apply_secure_hub_profile(args: argparse.Namespace) -> SecureHubReport | None
             default_burst=SECURE_HOST_BURST,
         ),
         "connections/host " + _apply_connection_ceiling(args),
+        "durable-ingress " + _apply_durable_ingress_ceiling(args),
     )
 
     # Both profiles require a connect token, so dedupe the shared line while keeping
     # the composed order.
-    composed = (*paranoid_report.enforced, *team_report.enforced, "bounded flood limits")
+    composed = (
+        *paranoid_report.enforced,
+        *team_report.enforced,
+        "bounded flood limits",
+        "bounded durable-ingress quotas",
+    )
     enforced = tuple(dict.fromkeys(composed))
     # The paranoid report lists hooks IT does not compose; any entry whose stated
     # remedy is composing team-secure is enforced by this umbrella, so copying it
@@ -253,6 +264,55 @@ def apply_secure_hub_profile(args: argparse.Namespace) -> SecureHubReport | None
         effective_limits=effective_limits,
         missing_hooks=missing_hooks,
     )
+
+
+def _apply_durable_ingress_ceiling(args: argparse.Namespace) -> str:
+    """Apply fail-closed durable-ingress ceilings under ``--secure``."""
+    raw_events = getattr(args, "durable_ingress_events", 0)
+    raw_bytes = getattr(args, "durable_ingress_bytes", 0)
+    raw_window = getattr(args, "durable_ingress_window", 0.0)
+    try:
+        events = int(raw_events or 0)
+        nbytes = int(raw_bytes or 0)
+        window = float(raw_window or 0.0)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise SecureModeError(
+            "secure mode requires numeric --durable-ingress-events, "
+            "--durable-ingress-bytes, and --durable-ingress-window values"
+        ) from exc
+    if not math.isfinite(window):
+        raise SecureModeError(
+            f"secure mode requires a finite --durable-ingress-window; got {raw_window!r}"
+        )
+    operator_supplied = bool(
+        events > 0 or nbytes > 0 or (window > 0.0 and window != SECURE_DURABLE_INGRESS_WINDOW)
+    )
+    if events <= 0:
+        args.durable_ingress_events = SECURE_DURABLE_INGRESS_EVENTS
+        events = SECURE_DURABLE_INGRESS_EVENTS
+    if nbytes <= 0:
+        args.durable_ingress_bytes = SECURE_DURABLE_INGRESS_BYTES
+        nbytes = SECURE_DURABLE_INGRESS_BYTES
+    if window <= 0.0:
+        args.durable_ingress_window = SECURE_DURABLE_INGRESS_WINDOW
+        window = SECURE_DURABLE_INGRESS_WINDOW
+    if events > SECURE_DURABLE_INGRESS_EVENTS:
+        raise SecureModeError(
+            f"secure mode caps --durable-ingress-events at "
+            f"{SECURE_DURABLE_INGRESS_EVENTS}; got {events}"
+        )
+    if nbytes > SECURE_DURABLE_INGRESS_BYTES:
+        raise SecureModeError(
+            f"secure mode caps --durable-ingress-bytes at "
+            f"{SECURE_DURABLE_INGRESS_BYTES}; got {nbytes}"
+        )
+    if window < SECURE_DURABLE_INGRESS_WINDOW:
+        raise SecureModeError(
+            f"secure mode requires --durable-ingress-window at least "
+            f"{SECURE_DURABLE_INGRESS_WINDOW:g}s; got {window:g}s"
+        )
+    suffix = " (operator)" if operator_supplied else ""
+    return f"{events} events / {nbytes} B / {window:g}s{suffix}"
 
 
 def _apply_connection_ceiling(args: argparse.Namespace) -> str:

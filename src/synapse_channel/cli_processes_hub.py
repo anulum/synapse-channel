@@ -332,6 +332,21 @@ def _cmd_hub(
         if args.host_rate > 0
         else None
     )
+    durable_ingress_quota = None
+    ingress_events = int(getattr(args, "durable_ingress_events", 0) or 0)
+    ingress_bytes = int(getattr(args, "durable_ingress_bytes", 0) or 0)
+    if ingress_events > 0 or ingress_bytes > 0:
+        from synapse_channel.core.durable_ingress import (
+            DEFAULT_MAX_BYTES,
+            DEFAULT_MAX_EVENTS,
+            DurableIngressQuota,
+        )
+
+        durable_ingress_quota = DurableIngressQuota(
+            max_events=ingress_events if ingress_events > 0 else DEFAULT_MAX_EVENTS,
+            max_bytes=ingress_bytes if ingress_bytes > 0 else DEFAULT_MAX_BYTES,
+            window_seconds=float(getattr(args, "durable_ingress_window", 60.0) or 60.0),
+        )
     try:
         message_auth_keys = _parse_message_auth_keys(args.message_auth_key)
     except ValueError as exc:
@@ -518,6 +533,7 @@ def _cmd_hub(
         "journal": journal,
         "rate_limiter": limiter,
         "host_rate_limiter": host_limiter,
+        "durable_ingress_quota": durable_ingress_quota,
         "max_history": args.max_history,
         "max_progress": args.max_progress,
         "max_progress_per_author": args.max_progress_per_author,

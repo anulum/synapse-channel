@@ -163,6 +163,9 @@ def test_cmd_hub_secure_applies_the_composed_posture(
     assert captured["host_rate_limiter"].rate_per_second == 500.0
     assert captured["host_rate_limiter"].burst == 100.0
     assert captured["max_connections_per_host"] == 10
+    assert captured["durable_ingress_quota"].max_events == 100
+    assert captured["durable_ingress_quota"].max_bytes == 1_048_576
+    assert captured["durable_ingress_quota"].window_seconds == 60.0
 
     err = capsys.readouterr().err
     assert "secure mode enforced:" in err

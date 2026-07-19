@@ -303,6 +303,18 @@ attempts and therefore differ across retries. Missing or invalid `client_msg_id`
 keeps ordinary at-least-once behavior. The hub never treats this caller-chosen
 identity as authentication or authorization.
 
+**Durable ingress quotas.** Optional per-principal sliding-window bounds cap how
+many chat events and serialized chat-frame bytes a server-derived quota principal may have
+*accepted* inside a window. The hub charges the connect-token fingerprint (or the
+open-host bucket), not the free-form sender name, so name rotation cannot multiply
+the budget. A refusal is an `error` frame
+(`Durable ingress quota exceeded (events|bytes|oversized|principal-capacity).`)
+and happens *before*
+bounded history or the durable journal grow; admitted chats still journal normally.
+`--secure` enables the default window when the operator left the flags disabled.
+The bounded principal table evicts only expired buckets; when every slot is active,
+new principals fail closed instead of resetting another principal's quota.
+
 **Consume-live immediate receipts.** For a directed chat, the hub partitions
 socket-level matches using the same reaction-plus-waiter liveness policy exposed
 by WHO. At least one consume-live match yields `delivered: true`. If sockets match

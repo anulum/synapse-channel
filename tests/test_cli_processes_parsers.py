@@ -57,6 +57,20 @@ class TestFiniteLimit:
             cli_processes_parsers._finite_limit("-1")
 
 
+class TestNonNegativeInt:
+    """Cover the integer quota parser used by durable ingress bounds."""
+
+    def test_zero_and_positive_values_are_accepted(self) -> None:
+        assert cli_processes_parsers._non_negative_int("0") == 0
+        assert cli_processes_parsers._non_negative_int("7") == 7
+
+    def test_non_integer_and_negative_values_are_rejected(self) -> None:
+        with pytest.raises(argparse.ArgumentTypeError, match="is not an integer"):
+            cli_processes_parsers._non_negative_int("1.5")
+        with pytest.raises(argparse.ArgumentTypeError, match="non-negative integer"):
+            cli_processes_parsers._non_negative_int("-1")
+
+
 class TestLoggingArguments:
     """The shared logging options are attached to daemon subcommands."""
 
@@ -85,6 +99,9 @@ class TestHubParser:
         assert isinstance(args.port, int)
         assert args.rate == pytest.approx(0.0)
         assert args.burst == pytest.approx(20.0)
+        assert args.durable_ingress_events == 0
+        assert args.durable_ingress_bytes == 0
+        assert args.durable_ingress_window == pytest.approx(60.0)
         assert args.warn_stale_recipients is DEFAULT_WARN_STALE_RECIPIENTS
         assert args.namespace_owner == []
         assert args.multihub_watch == []
@@ -99,6 +116,27 @@ class TestHubParser:
         args = _parser().parse_args(["hub", "--rate", "5.5", "--burst", "10"])
         assert args.rate == pytest.approx(5.5)
         assert args.burst == pytest.approx(10.0)
+
+    def test_durable_ingress_flags_parse_as_one_runtime_policy(self) -> None:
+        args = _parser().parse_args(
+            [
+                "hub",
+                "--durable-ingress-events",
+                "25",
+                "--durable-ingress-bytes",
+                "4096",
+                "--durable-ingress-window",
+                "120",
+            ]
+        )
+
+        assert args.durable_ingress_events == 25
+        assert args.durable_ingress_bytes == 4096
+        assert args.durable_ingress_window == pytest.approx(120.0)
+
+    def test_durable_ingress_window_rejects_a_negative_value(self) -> None:
+        with pytest.raises(SystemExit):
+            _parser().parse_args(["hub", "--durable-ingress-window", "-1"])
 
     def test_boolean_optional_action_toggles_both_ways(self) -> None:
         armed = _parser().parse_args(["hub", "--warn-stale-recipients"])

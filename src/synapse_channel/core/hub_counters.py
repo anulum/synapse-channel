@@ -48,6 +48,9 @@ class HubCounters:
         Frames refused by required per-message authentication.
     rate_limited : int
         Frames refused by the per-sender rate limiter.
+    durable_ingress_refused : int
+        Chat frames refused by the per-principal durable-ingress quota
+        (events or serialized chat-frame bytes inside the sliding window).
     federation_denied : int
         Frames refused by the federation gate (peered key without a
         resolvable single peer, scope mismatch, or unverified signature).
@@ -72,6 +75,7 @@ class HubCounters:
     chat_broadcast: int = 0
     auth_failures: int = 0
     rate_limited: int = 0
+    durable_ingress_refused: int = 0
     federation_denied: int = 0
     forwarded_claims: int = 0
     forwarded_claims_granted: int = 0

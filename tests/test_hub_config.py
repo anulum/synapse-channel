@@ -98,6 +98,7 @@ def test_default_config_builds_the_same_hub_as_bare_construction() -> None:
         "acl_policy",
         "rate_limiter",
         "host_rate_limiter",
+        "durable_ingress_quota",
         "relay_log",
         "relay_max_lines",
         "journal",

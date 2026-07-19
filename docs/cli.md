@@ -895,6 +895,8 @@ Both formats retain timestamps to millisecond precision.
 synapse hub --port 8876
 synapse hub --port 8876 --db ./synapse.db          # crash-safe persistence
 synapse hub --port 8876 --rate 5 --burst 20        # per-agent rate limiting
+synapse hub --port 8876 --durable-ingress-events 100 --durable-ingress-bytes 1048576
+# per-principal accepted chat events/serialized-frame bytes inside --durable-ingress-window
 synapse hub --port 8876 --relay-log ./feed.ndjson  # mirror the channel to a file
 synapse hub --max-clients 32 --max-msg-kb 256      # cap connections and frame size
 synapse hub --max-connections-per-host 4           # tighten the per-host socket cap (default 32; 0 disables)
