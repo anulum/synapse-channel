@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
 from websockets.asyncio.client import connect
 from websockets.exceptions import (
     ConnectionClosed,
@@ -29,8 +31,10 @@ from websockets.exceptions import (
 
 from hub_e2e_helpers import _await_listening, _free_port, read_until_type, running_hub, send_json
 from synapse_channel.core.clock_skew import ClockSkew
+from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 from synapse_channel.core.multihub_federation import MultiHubAuthorisation
 from synapse_channel.core.multihub_follower import MultiHubFollower
+from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHubServingPolicy
 from synapse_channel.core.multihub_transport import (
     MultiHubFetchError,
     _live_certificate_pin,
@@ -52,7 +56,12 @@ from synapse_channel.core.protocol import (
     MessageType,
     ProtocolNegotiation,
 )
-from synapse_channel.core.tls import build_server_ssl_context, certificate_sha256_pin
+from synapse_channel.core.tls import (
+    MTLSPeerTrustBundle,
+    MTLSTrustedPeer,
+    build_server_ssl_context,
+    certificate_sha256_pin,
+)
 
 _REQUEST = MessageType.MULTIHUB_LOG_REQUEST
 _SNAPSHOT = MessageType.MULTIHUB_LOG_SNAPSHOT
@@ -432,11 +441,83 @@ async def _seed_chats(uri: str, count: int) -> None:
             await read_until_type(ws, "chat")
 
 
+_DOMAIN = "domain-follow"
+_NAMESPACE = "SYNAPSE-CHANNEL"
+_KEY = "SYNAPSE-CHANNEL:main:2026-06"
+
+
+def _serving_policy(pin: str, der: bytes, senders: tuple[str, ...]) -> MultiHubServingPolicy:
+    """Trust ``pin`` and grant ``senders`` a read of the log; the cert is injected
+    because the plaintext harness has no mutual-TLS handshake to read it from."""
+    return MultiHubServingPolicy(
+        federation=FederationBundle(
+            [
+                FederationPeer(
+                    domain_id=_DOMAIN,
+                    namespaces=frozenset({_NAMESPACE}),
+                    certificate_pins=frozenset({pin}),
+                    signing_key_ids=frozenset({_KEY}),
+                    scope_grants=(ScopeGrant(verb="read", namespace=_NAMESPACE),),
+                )
+            ]
+        ),
+        mtls=MTLSPeerTrustBundle(
+            peers={
+                _DOMAIN: MTLSTrustedPeer(
+                    peer_id=_DOMAIN,
+                    certificate_pins=frozenset({pin}),
+                    signing_key_ids=frozenset({_KEY}),
+                    projects=frozenset({_NAMESPACE}),
+                )
+            }
+        ),
+        grants={
+            sender: MultiHubServingGrant(
+                domain_id=_DOMAIN, namespace=_NAMESPACE, signing_key_id=_KEY
+            )
+            for sender in senders
+        },
+        clock=lambda: 0.0,
+        cert_source=lambda _websocket: der,
+    )
+
+
 async def test_network_fetcher_pulls_a_real_hubs_log(tmp_path: Any) -> None:
     store = EventStore(tmp_path / "events.db")
     from synapse_channel.core.hub import SynapseHub
 
-    hub = SynapseHub(hub_id="syn-peer", journal=store)
+    certfile = tmp_path / "peer-cert.pem"
+    keyfile = tmp_path / "peer-key.pem"
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-days",
+            "1",
+            "-subj",
+            "/CN=peer",
+            "-keyout",
+            str(keyfile),
+            "-out",
+            str(certfile),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    pin = certificate_sha256_pin(certfile)
+    der = x509.load_pem_x509_certificate(certfile.read_bytes()).public_bytes(
+        serialization.Encoding.DER
+    )
+    hub = SynapseHub(
+        hub_id="syn-peer",
+        journal=store,
+        multihub_serving_policy=_serving_policy(pin, der, ("follower", "f2")),
+    )
     async with running_hub(hub) as (_, uri):
         await _seed_chats(uri, 3)
         fetch = network_fetcher(uri, local_id="follower")
@@ -512,7 +593,14 @@ async def test_pinned_pull_accepts_a_self_signed_wss_peer(tmp_path: Path) -> Non
     store = EventStore(tmp_path / "events.db")
     from synapse_channel.core.hub import SynapseHub
 
-    hub = SynapseHub(hub_id="syn-pinned", journal=store)
+    der = x509.load_pem_x509_certificate(certfile.read_bytes()).public_bytes(
+        serialization.Encoding.DER
+    )
+    hub = SynapseHub(
+        hub_id="syn-pinned",
+        journal=store,
+        multihub_serving_policy=_serving_policy(pin, der, ("follower",)),
+    )
     port = _free_port()
     task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
     try:
@@ -535,10 +623,18 @@ async def test_pinned_pull_rejects_a_mismatched_certificate_pin(tmp_path: Path) 
     """A wrong pin fails the pull closed before any snapshot frame is trusted."""
     certfile, keyfile = _write_self_signed_cert(tmp_path)
     server_context = build_server_ssl_context(certfile=certfile, keyfile=keyfile)
+    pin = certificate_sha256_pin(certfile)
     store = EventStore(tmp_path / "events.db")
     from synapse_channel.core.hub import SynapseHub
 
-    hub = SynapseHub(hub_id="syn-pinned", journal=store)
+    der = x509.load_pem_x509_certificate(certfile.read_bytes()).public_bytes(
+        serialization.Encoding.DER
+    )
+    hub = SynapseHub(
+        hub_id="syn-pinned",
+        journal=store,
+        multihub_serving_policy=_serving_policy(pin, der, ("follower",)),
+    )
     port = _free_port()
     task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
     try:

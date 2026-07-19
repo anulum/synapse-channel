@@ -134,8 +134,11 @@ async def _pull(uri: str, **request: Any) -> LogSnapshot:
 
 
 async def test_serves_the_whole_log_from_the_zero_cursor(tmp_path: Path) -> None:
+    pin, der = _write_peer_cert(tmp_path)
     store = EventStore(tmp_path / "events.db")
-    hub = SynapseHub(hub_id="syn-a", journal=store)
+    hub = SynapseHub(
+        hub_id="syn-a", journal=store, multihub_serving_policy=_serving_policy(pin, der)
+    )
     async with running_hub(hub) as (_, uri):
         await _seed_chats(uri, 3)
         snapshot = await _pull(uri, after_seq=0)
@@ -147,8 +150,11 @@ async def test_serves_the_whole_log_from_the_zero_cursor(tmp_path: Path) -> None
 
 
 async def test_respects_the_batch_limit(tmp_path: Path) -> None:
+    pin, der = _write_peer_cert(tmp_path)
     store = EventStore(tmp_path / "events.db")
-    hub = SynapseHub(hub_id="syn-a", journal=store)
+    hub = SynapseHub(
+        hub_id="syn-a", journal=store, multihub_serving_policy=_serving_policy(pin, der)
+    )
     async with running_hub(hub) as (_, uri):
         await _seed_chats(uri, 3)
         snapshot = await _pull(uri, after_seq=0, limit=1)
@@ -159,8 +165,11 @@ async def test_respects_the_batch_limit(tmp_path: Path) -> None:
 
 
 async def test_serves_only_events_past_the_cursor(tmp_path: Path) -> None:
+    pin, der = _write_peer_cert(tmp_path)
     store = EventStore(tmp_path / "events.db")
-    hub = SynapseHub(hub_id="syn-a", journal=store)
+    hub = SynapseHub(
+        hub_id="syn-a", journal=store, multihub_serving_policy=_serving_policy(pin, der)
+    )
     async with running_hub(hub) as (_, uri):
         await _seed_chats(uri, 3)
         snapshot = await _pull(uri, after_seq=1)
@@ -171,8 +180,11 @@ async def test_serves_only_events_past_the_cursor(tmp_path: Path) -> None:
 
 
 async def test_empty_batch_does_not_move_the_cursor(tmp_path: Path) -> None:
+    pin, der = _write_peer_cert(tmp_path)
     store = EventStore(tmp_path / "events.db")
-    hub = SynapseHub(hub_id="syn-a", journal=store)
+    hub = SynapseHub(
+        hub_id="syn-a", journal=store, multihub_serving_policy=_serving_policy(pin, der)
+    )
     async with running_hub(hub) as (_, uri):
         await _seed_chats(uri, 3)
         snapshot = await _pull(uri, after_seq=3)
@@ -182,8 +194,9 @@ async def test_empty_batch_does_not_move_the_cursor(tmp_path: Path) -> None:
     assert snapshot.log_end_seq == 3
 
 
-async def test_hub_without_a_journal_serves_an_empty_snapshot() -> None:
-    hub = SynapseHub(hub_id="syn-a")
+async def test_hub_without_a_journal_serves_an_empty_snapshot(tmp_path: Path) -> None:
+    pin, der = _write_peer_cert(tmp_path)
+    hub = SynapseHub(hub_id="syn-a", multihub_serving_policy=_serving_policy(pin, der))
     async with running_hub(hub) as (_, uri):
         snapshot = await _pull(uri, after_seq=5)
     assert snapshot.events == ()
@@ -192,11 +205,28 @@ async def test_hub_without_a_journal_serves_an_empty_snapshot() -> None:
 
 
 async def test_a_malformed_request_is_answered_with_an_empty_snapshot(tmp_path: Path) -> None:
+    pin, der = _write_peer_cert(tmp_path)
     store = EventStore(tmp_path / "events.db")
-    hub = SynapseHub(hub_id="syn-a", journal=store)
+    hub = SynapseHub(
+        hub_id="syn-a", journal=store, multihub_serving_policy=_serving_policy(pin, der)
+    )
     async with running_hub(hub) as (_, uri):
         await _seed_chats(uri, 2)
         snapshot = await _pull(uri, after_seq="not-a-number")
+    store.close()
+    assert snapshot.events == ()
+    assert snapshot.next_cursor == 0
+    assert snapshot.log_end_seq is None
+
+
+async def test_a_hub_without_a_policy_refuses_every_peer(tmp_path: Path) -> None:
+    # Fail-closed default (W3-C1): no serving policy, no log — an unauthenticated
+    # frame from any peer is answered with an empty snapshot that leaks nothing.
+    store = EventStore(tmp_path / "events.db")
+    hub = SynapseHub(hub_id="syn-a", journal=store)
+    async with running_hub(hub) as (_, uri):
+        await _seed_chats(uri, 3)
+        snapshot = await _pull(uri, after_seq=0)
     store.close()
     assert snapshot.events == ()
     assert snapshot.next_cursor == 0

@@ -78,7 +78,8 @@ contested namespace, have shipped:
   connection and runs the same `authorise_multihub_peer` composition the following side
   enforces; a peer with no operator grant, no client certificate, or an untrusted pin is
   answered with an empty snapshot — the same shape as "no new events", so the refusal leaks
-  nothing. A hub with no policy serves as before, so the gate is strictly opt-in.
+  nothing. A hub with no policy refuses every peer — the gate is fail-closed by
+  default.
 
 - `core/multihub_watch.py` — the hub's own standing follower: polls each operator-named
   peer over that same pull, folds the observed claims with the gate's namespace

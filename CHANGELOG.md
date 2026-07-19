@@ -15,6 +15,11 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Serve the multi-hub event log only under an operator-configured
+  `MultiHubServingPolicy`: a hub with no policy now refuses every peer
+  (fail-closed) instead of serving the entire log to any unauthenticated
+  frame, matching the operator-relay posture. A refused peer receives an
+  empty snapshot that leaks neither the log nor the grant's existence.
 - Key wait edges by the waited task instead of the incumbent holder and
   resolve ownership live at cycle-check time: a claim, renewal, or handoff
   for one task can no longer erase a wait on an unrelated task, and a

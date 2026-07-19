@@ -56,7 +56,7 @@ async def handle_multihub_log_request(
     authorised against the peer's live certificate first; a refused peer is answered with an
     empty snapshot anchored at its requested cursor — the same shape as "no new events", so the
     refusal leaks neither the log nor whether the peer or its grant exists. With no policy the
-    hub serves as before.
+    hub refuses every peer: the fail-closed default.
 
     Parameters
     ----------
@@ -96,14 +96,20 @@ async def handle_multihub_log_request(
 def _serving_authorised(hub: SynapseHub, sender: str, websocket: Any) -> bool:
     """Return whether the hub's serving policy permits ``sender`` to pull the log.
 
-    A hub with no :class:`~synapse_channel.core.multihub_serving.MultiHubServingPolicy` serves
-    every peer (the gate is opt-in). When a policy is configured, the decision is taken from the
-    peer's live certificate; a refusal is logged once so an operator sees a peer being turned
-    away without the refusal reaching the peer.
+    A hub with no :class:`~synapse_channel.core.multihub_serving.MultiHubServingPolicy`
+    refuses every peer — the event log is coordination state, and serving it to an
+    unauthenticated peer is never the safe default (fail-closed, matching the
+    operator-relay posture). When a policy is configured, the decision is taken from the
+    peer's live certificate; a refusal is logged once so an operator sees a peer being
+    turned away without the refusal reaching the peer.
     """
     policy = hub.multihub_serving_policy
     if policy is None:
-        return True
+        logger.warning(
+            "Refused multi-hub log to peer %r: no serving policy configured (fail-closed default)",
+            sender,
+        )
+        return False
     decision = policy.authorise(sender=sender, websocket=websocket)
     if not decision.allowed:
         logger.warning("Refused multi-hub log to peer %r: %s", sender, decision.reason)
