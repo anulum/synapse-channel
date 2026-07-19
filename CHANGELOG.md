@@ -15,6 +15,13 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Always install a WebSocket handshake Origin/Host guard on the core hub
+  (even when metrics are disabled): browser Origins require an explicit
+  concrete `--allow-origin` allow-list; Host authorities are derived from
+  the loopback bind and optional `--advertised-host` (no wildcard trust);
+  origin-less native clients remain compatible only through a trusted Host;
+  disallowed upgrades receive a deterministic `403` before the socket
+  upgrades and cannot read history.
 - Persist a hash-chained, owner-only Merkle checkpoint of the durable event
   log OUTSIDE the log it attests, and verify it fail-closed before the hub
   serves: a log shorter than its checkpoint (tail truncation) or a recomputed

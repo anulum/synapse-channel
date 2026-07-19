@@ -194,6 +194,8 @@ class HubMetricsConfig:
     enable_metrics: bool = False
     metrics_token: str | None = None
     metrics_query_token_ok: bool = False
+    allowed_origins: tuple[str, ...] = ()
+    advertised_host: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -383,6 +383,24 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Bind a non-loopback host even without a token (and metrics token); by "
         "default such an exposed bind is refused rather than only warned about.",
     )
+    hub.add_argument(
+        "--allow-origin",
+        action="append",
+        default=[],
+        metavar="ORIGIN",
+        help="Admit browser WebSocket handshakes from this exact concrete Origin "
+        "(scheme://host[:port]); repeat to allow several. Opaque 'null' and wildcards "
+        "are refused. Without this list every Origin-bearing browser handshake is "
+        "rejected; native clients without Origin still require a trusted Host.",
+    )
+    hub.add_argument(
+        "--advertised-host",
+        default=None,
+        metavar="HOST[:PORT]",
+        help="Trusted Host authority clients use when the bind is not loopback "
+        "(or behind a reverse proxy). Required for fail-closed Host checks on "
+        "0.0.0.0/:: binds; never invents a wildcard trust.",
+    )
     hub.set_defaults(func=_cmd_hub)
 
     worker = subparsers.add_parser("worker", help="Run an on-channel model worker.")

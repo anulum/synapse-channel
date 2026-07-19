@@ -482,6 +482,8 @@ class SynapseHub:
         auth_timeout: float = DEFAULT_AUTH_TIMEOUT,
         metrics_token: str | None = None,
         metrics_query_token_ok: bool = False,
+        allowed_origins: tuple[str, ...] | list[str] = (),
+        advertised_host: str | None = None,
         insecure_off_loopback: bool = False,
         clock: Callable[[], float] | None = None,
         per_message_auth_keys: Mapping[str, MessageAuthKey] | list[MessageAuthKey] | None = None,
@@ -540,6 +542,12 @@ class SynapseHub:
         self.auth_timeout = max(safe_float(auth_timeout, default=DEFAULT_AUTH_TIMEOUT), 0.1)
         self.metrics_token = metrics_token or None
         self.metrics_query_token_ok = bool(metrics_query_token_ok)
+        from synapse_channel.core.hub_handshake import normalise_allow_origins
+
+        self.allowed_origins = normalise_allow_origins(tuple(allowed_origins or ()))
+        self.advertised_host = (advertised_host or "").strip() or None
+        self._bind_host = DEFAULT_HOST
+        self._bind_port = DEFAULT_PORT
         self.insecure_off_loopback = bool(insecure_off_loopback)
         self.rate_limiter = rate_limiter
         self.host_rate_limiter = host_rate_limiter
@@ -1405,17 +1413,37 @@ class SynapseHub:
         HubConnection.install_signal_handlers(loop, stop)
 
     def _process_request(self, _connection: Any, request: Request) -> Response | None:
-        """``websockets`` request hook serving ``/metrics`` and ``/health`` over HTTP.
+        """``websockets`` request hook: metrics/health HTTP plus handshake Origin/Host guard.
 
-        Delegates to :func:`~synapse_channel.core.hub_http.http_endpoint_response`,
-        which renders the Prometheus exposition for ``/metrics`` and a JSON liveness
-        document for ``/health`` (enforcing :attr:`metrics_token` on both), and returns
-        ``None`` for any other path so the connection upgrades to WebSocket as usual.
-        Returning a :class:`~websockets.http11.Response` short-circuits the handshake
-        and sends that HTTP response instead. Installed only when :attr:`enable_metrics`
-        is set.
+        Always installed so browser Origin/Host enforcement runs even when metrics
+        are disabled. Metrics and health paths still delegate to
+        :func:`~synapse_channel.core.hub_http.http_endpoint_response` (only when
+        :attr:`enable_metrics` is set); every other path must pass the handshake
+        boundary before the WebSocket upgrade proceeds.
         """
-        return http_endpoint_response(self, request)
+        from synapse_channel.core.hub_handshake import (
+            handshake_guard_response,
+            trusted_host_authorities,
+        )
+
+        route = request.path.split("?", 1)[0]
+        if self.enable_metrics and route in ("/metrics", "/health"):
+            return http_endpoint_response(self, request)
+        if not self.enable_metrics and route in ("/metrics", "/health"):
+            # Metrics off: do not upgrade probe paths to WebSocket either.
+            from synapse_channel.core.hub_handshake import http_forbidden
+
+            return http_forbidden("metrics disabled")
+        authorities = trusted_host_authorities(
+            bind_host=self._bind_host,
+            bind_port=self._bind_port,
+            advertised_host=self.advertised_host,
+        )
+        return handshake_guard_response(
+            request,
+            allowed_origins=self.allowed_origins,
+            trusted_authorities=authorities,
+        )
 
     async def serve(
         self,
@@ -1426,8 +1454,9 @@ class SynapseHub:
     ) -> None:
         """Run the hub's WebSocket server until cancelled.
 
-        With :attr:`enable_metrics` set, the same port also answers HTTP
-        ``GET /metrics`` and ``GET /health`` (see :meth:`_process_request`).
+        Always installs :meth:`_process_request` so Origin/Host handshake policy
+        applies to every upgrade. With :attr:`enable_metrics` set, the same port
+        also answers HTTP ``GET /metrics`` and ``GET /health``.
 
         Parameters
         ----------
@@ -1440,6 +1469,8 @@ class SynapseHub:
             ``wss://`` instead of plain ``ws://``.
         """
         self._guard_exposure(host, tls_active=ssl_context is not None)
+        self._bind_host = host
+        self._bind_port = int(port)
         stop = asyncio.Event()
         self._install_signal_handlers(asyncio.get_running_loop(), stop)
         async with (
@@ -1453,7 +1484,7 @@ class SynapseHub:
                 ping_interval=DEFAULT_PING_INTERVAL,
                 ping_timeout=DEFAULT_PING_TIMEOUT,
                 close_timeout=self.shutdown_close_timeout,
-                process_request=self._process_request if self.enable_metrics else None,
+                process_request=self._process_request,
                 ssl=ssl_context,
                 logger=ws_server_logger,
             ),

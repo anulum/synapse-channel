@@ -890,6 +890,8 @@ synapse hub --port 8876 --rate 5 --burst 20        # per-agent rate limiting
 synapse hub --port 8876 --relay-log ./feed.ndjson  # mirror the channel to a file
 synapse hub --max-clients 32 --max-msg-kb 256      # cap connections and frame size
 synapse hub --max-connections-per-host 4           # tighten the per-host socket cap (default 32; 0 disables)
+synapse hub --allow-origin https://app.example     # admit that browser Origin (repeatable; default: none)
+synapse hub --advertised-host hub.example:8876     # trusted Host when bind is not loopback / behind a proxy
 synapse hub --max-progress-per-task 500            # cap retained board progress per task id
 synapse hub --max-findings-per-agent 200           # cap durable findings admitted per agent
 synapse hub --shutdown-close-timeout 5             # bound active socket close handshakes
@@ -905,7 +907,13 @@ token) is **refused** by default — the hub will not start exposed by accident;
 `--insecure-off-loopback` downgrades that to a warning for a trusted private
 network. `--max-connections-per-host` is a connection-count cap keyed by the
 remote host (default **32**; pass `0` to disable); it is separate from
-`--host-rate`, which meters inbound frames from that host. Open and secured
+`--host-rate`, which meters inbound frames from that host. The hub always
+installs a handshake guard: browser `Origin` values are refused unless listed
+via `--allow-origin` (concrete `scheme://host[:port]` only; never `null` or
+wildcards), and every upgrade — browser or native — must present a `Host`
+authority derived from the loopback bind and/or `--advertised-host`. Without
+`--advertised-host`, a bind-all address (`0.0.0.0` / `::`) admits no Host and
+fail-closes. Metrics/health keep their token gates when `--metrics` is on. Open and secured
 hubs both reap sockets that never bind a name within `--auth-timeout` (default
 10s; close code `4012`). Without `--secure`, disabled flood limits (`--rate` /
 `--burst` / `--host-rate` / `--host-burst` / `--max-connections-per-host` left

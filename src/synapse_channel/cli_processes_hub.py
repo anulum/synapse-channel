@@ -544,6 +544,8 @@ def _cmd_hub(
         "auth_timeout": args.auth_timeout,
         "metrics_token": args.metrics_token,
         "metrics_query_token_ok": args.metrics_query_token_ok,
+        "allowed_origins": tuple(getattr(args, "allow_origin", ()) or ()),
+        "advertised_host": getattr(args, "advertised_host", None) or None,
         "per_message_auth_keys": message_auth_keys,
         "require_per_message_auth": args.require_message_auth,
         "per_message_auth_window_seconds": args.message_auth_window_seconds,
