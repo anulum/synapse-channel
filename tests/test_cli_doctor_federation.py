@@ -23,7 +23,12 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from websockets.asyncio.client import connect
 
-from hub_e2e_helpers import read_until_type, running_hub, send_json
+from hub_e2e_helpers import (
+    authorised_multihub_serving_policy,
+    read_until_type,
+    running_hub,
+    send_json,
+)
 from synapse_channel.cli_doctor_federation import (
     FederationDoctorError,
     FederationDoctorPeer,
@@ -458,7 +463,11 @@ async def test_probe_federation_peer_ignores_unusable_welcome_timestamp() -> Non
 
 async def test_probe_federation_peer_reports_log_end_seq_from_real_hub(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "events.db")
-    hub = SynapseHub(hub_id="syn-a", journal=store)
+    hub = SynapseHub(
+        hub_id="syn-a",
+        journal=store,
+        multihub_serving_policy=authorised_multihub_serving_policy("doctor"),
+    )
     try:
         async with running_hub(hub) as (_, uri):
             async with connect(uri) as writer:

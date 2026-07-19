@@ -15,10 +15,14 @@ of them touches the workstation the suite runs on.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
 from cli_e2e_helpers import git_repo, isolated_hub, run_cli
+from hub_e2e_helpers import authorised_multihub_serving_policy, running_hub
+from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.persistence import EventStore
 
 
 def test_git_hook_install_then_test_reports_resolved_hooks(tmp_path: Path) -> None:
@@ -82,15 +86,35 @@ def test_multihub_observe_folds_a_peer_logs_board(tmp_path: Path) -> None:
         assert "PEER-1" in payload["board"]
 
 
-def test_multihub_follow_pulls_a_peers_board_over_a_connection(tmp_path: Path) -> None:
+async def test_multihub_follow_pulls_a_peers_board_over_a_connection(tmp_path: Path) -> None:
     """``multihub follow`` dials a live peer hub and pulls its board snapshot."""
-    with isolated_hub(tmp_path) as hub:
-        run_cli("task", "declare", "FOLLOW-1", "--title", "followed task", uri=hub.uri)
+    store = EventStore(tmp_path / "follow-hub.db")
+    hub = SynapseHub(
+        hub_id="syn-follow",
+        journal=store,
+        multihub_serving_policy=authorised_multihub_serving_policy("watcher"),
+    )
+    try:
+        async with running_hub(hub) as (_, uri):
+            declared = await asyncio.to_thread(
+                run_cli, "task", "declare", "FOLLOW-1", "--title", "followed task", uri=uri
+            )
+            assert declared.ok(), declared.output
 
-        # follow selects the peer with --peer-uri, not the local --uri default.
-        followed = run_cli(
-            "multihub", "follow", "--peer-uri", hub.uri, "--local-id", "watcher", "--json"
-        )
-        assert followed.ok(), followed.output
-        payload = json.loads(followed.stdout)
-        assert "FOLLOW-1" in payload["board"]
+            # follow selects the peer with --peer-uri, not the local --uri default.
+            followed = await asyncio.to_thread(
+                run_cli,
+                "multihub",
+                "follow",
+                "--peer-uri",
+                uri,
+                "--local-id",
+                "watcher",
+                "--json",
+            )
+    finally:
+        store.close()
+
+    assert followed.ok(), followed.output
+    payload = json.loads(followed.stdout)
+    assert "FOLLOW-1" in payload["board"]

@@ -14,12 +14,28 @@ import json
 import socket
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.x509.oid import NameOID
 from websockets.asyncio.connection import Connection
 
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHubServingPolicy
+from synapse_channel.core.tls import (
+    MTLSPeerTrustBundle,
+    MTLSTrustedPeer,
+    certificate_sha256_pin_from_der,
+)
+
+_MULTIHUB_DOMAIN = "test-follower-domain"
+_MULTIHUB_NAMESPACE = "SYNAPSE-CHANNEL"
+_MULTIHUB_KEY_ID = "test-follower-key"
 
 
 def _free_port() -> int:
@@ -81,6 +97,76 @@ async def running_hub(hub: SynapseHub | None = None) -> AsyncIterator[tuple[Syna
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+
+
+def authorised_multihub_serving_policy(*senders: str) -> MultiHubServingPolicy:
+    """Build a serving policy that trusts the named test peer identities.
+
+    The socket harness is plaintext, so the policy's certificate source injects
+    a valid DER certificate. Production keeps reading the certificate from the
+    live mutual-TLS connection.
+
+    Parameters
+    ----------
+    senders : str
+        Peer identities allowed to pull the test hub's event log.
+
+    Returns
+    -------
+    MultiHubServingPolicy
+        A complete federation and mutual-TLS policy for the named peers.
+    """
+    key = ed25519.Ed25519PrivateKey.generate()
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "synapse-test-peer")])
+    now = datetime.now(timezone.utc)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(hours=1))
+        .sign(key, algorithm=None)
+    )
+    der = certificate.public_bytes(serialization.Encoding.DER)
+    pin = certificate_sha256_pin_from_der(der)
+    federation = FederationBundle(
+        [
+            FederationPeer(
+                domain_id=_MULTIHUB_DOMAIN,
+                namespaces=frozenset({_MULTIHUB_NAMESPACE}),
+                certificate_pins=frozenset({pin}),
+                signing_key_ids=frozenset({_MULTIHUB_KEY_ID}),
+                scope_grants=(ScopeGrant("read", _MULTIHUB_NAMESPACE),),
+            )
+        ]
+    )
+    mtls = MTLSPeerTrustBundle(
+        peers={
+            _MULTIHUB_DOMAIN: MTLSTrustedPeer(
+                peer_id=_MULTIHUB_DOMAIN,
+                certificate_pins=frozenset({pin}),
+                signing_key_ids=frozenset({_MULTIHUB_KEY_ID}),
+                projects=frozenset({_MULTIHUB_NAMESPACE}),
+            )
+        }
+    )
+    grants = {
+        sender: MultiHubServingGrant(
+            domain_id=_MULTIHUB_DOMAIN,
+            namespace=_MULTIHUB_NAMESPACE,
+            signing_key_id=_MULTIHUB_KEY_ID,
+        )
+        for sender in senders
+    }
+    return MultiHubServingPolicy(
+        federation=federation,
+        mtls=mtls,
+        grants=grants,
+        clock=lambda: 0.0,
+        cert_source=lambda _websocket: der,
+    )
 
 
 class Recorder:
