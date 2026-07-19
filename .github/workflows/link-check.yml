@@ -46,11 +46,17 @@ jobs:
         id: lychee
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
+          # Badge *targets* (pypi.org, securityscorecards.dev/viewer, …) stay
+          # checked. Only volatile badge *image* endpoints are excluded: shields
+          # CDN timeouts and the OpenSSF scorecard badge redirect loop on
+          # api.securityscorecards.dev. No broad external-link suppression.
           args: >-
             --root-dir "${{ github.workspace }}"
             --verbose
             --no-progress
             --exclude-all-private
+            --exclude '^https?://img\.shields\.io/'
+            --exclude '^https?://api\.securityscorecards\.dev/'
             --min-tls TLSv1_2
             --max-concurrency 32
             --max-redirects 10
