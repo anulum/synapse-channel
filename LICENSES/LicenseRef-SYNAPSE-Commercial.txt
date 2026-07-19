@@ -7,7 +7,7 @@ closed-source and SaaS use; there is no difference in the code or feature set be
 the two, only in the licence terms.
 
 The full commercial terms are in COMMERCIAL-LICENSE.md at the repository root, and the
-current tiers and prices are published at https://anulum.li/synapse/pricing.html. A
+current tiers and prices are published at https://www.remanentia.com/synapse/pricing.html. A
 commercial license is purchased from ANULUM Institute; for custom, OEM, academic, or
 non-profit terms contact protoscience@anulum.li.
 

@@ -35,19 +35,21 @@ AGPL-3.0 licence already covers you.
 ## Tiers
 
 The current tiers, prices (USD), and what each grants are published at
-**<https://anulum.li/synapse/pricing.html>** and sold through Polar.sh. In summary:
+**<https://www.remanentia.com/synapse/pricing.html>** and sold through Polar.sh. In summary:
 
 | Tier | Who it is for | Grant |
 | --- | --- | --- |
 | **Community** (free, AGPL-3.0) | OSS, research, personal | full feature set, copyleft applies |
-| **Commercial Licence** | an org whose policy or product cannot use AGPL | AGPL-copyleft exemption on its own — same code, different terms, signed certificate |
-| **Pro** | a solo developer or small team shipping one closed-source project | copyleft exemption for **one** developer, the mobile app with push, email support |
-| **Team** | a company shipping closed-source or SaaS | exemption for **unlimited** projects within one legal entity, a managed observability dashboard, priority security patches, named support |
-| **Business / Enterprise** | regulated or multi-organisation deployments | SLA with indemnification, a **managed federation gateway**, SSO, audit exports, compliance — contact us |
+| **Organisation Licence — USD 490/yr** | one legal entity that only needs commercial permission | AGPL-copyleft exemption only; no hosted service, dashboard, SLA, support, or Fleet entitlement |
+| **Pro — USD 19/mo or 190/yr** | one developer shipping closed-source products or private hosted services | copyleft exemption for **one** developer, mobile app with push, email support |
+| **Team — USD 39/user/mo or 390/user/yr** | a company shipping closed-source or SaaS; minimum 3 seats | exemption for unlimited projects within one legal entity, hosted dashboard while operational data stays local, security-patch SLA, onboarding |
+| **FLEET Enterprise — quote** | regulated, multi-hub, or multi-organisation deployments | separately entitled private software with managed federation, SSO, audit exports, compliance support, and a deployment-specific SLA |
 
 There is **no feature difference** between the open-source and commercial builds.
 The package on PyPI *is* the full product; a commercial licence changes only the
 **licence terms**, not the code.
+SYNAPSE CHANNEL FLEET is a separately entitled private product, not a hidden
+commercial build of this repository.
 
 ## Grant (commercial tiers)
 
@@ -92,7 +94,7 @@ opening a pull request.
 
 ## Buy / contact
 
-- Buy a licence: **<https://anulum.li/synapse/pricing.html>** (Polar.sh, USD; local
+- Buy a licence: **<https://www.remanentia.com/synapse/pricing.html>** (Polar.sh, USD; local
   currency shown at checkout, CHF invoicing on request).
 - Custom, OEM, academic, or non-profit terms: **protoscience@anulum.li**.
 - For custom evaluation, include the legal entity, product/service name,

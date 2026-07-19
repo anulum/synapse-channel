@@ -28,7 +28,7 @@ SYNAPSE CHANNEL — repository overview
   <a href="https://pypi.org/project/synapse-channel/"><img src="https://img.shields.io/pypi/dm/synapse-channel" alt="PyPI downloads"></a>
   <a href="https://pepy.tech/project/synapse-channel"><img src="https://static.pepy.tech/badge/synapse-channel" alt="Total downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
-  <a href="https://anulum.li/synapse/pricing.html"><img src="https://img.shields.io/badge/commercial%20licence-available-0a7d3c" alt="Commercial licence available"></a>
+  <a href="https://www.remanentia.com/synapse/pricing.html"><img src="https://img.shields.io/badge/commercial%20licence-available-0a7d3c" alt="Commercial licence available"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
   <a href="https://codecov.io/gh/anulum/synapse-channel"><img src="https://codecov.io/gh/anulum/synapse-channel/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://api.reuse.software/info/github.com/anulum/synapse-channel"><img src="https://api.reuse.software/badge/github.com/anulum/synapse-channel" alt="REUSE status"></a>
@@ -55,6 +55,8 @@ WebSocket hub is the shared source of truth for **presence**, **work claims**,
 **chat**, **task status**, and **resource offers**: agents address each other
 across projects and share one plan, while file-scope claims keep the agents in any
 one repository off each other's files.
+
+> **Project lineage:** SYNAPSE CHANNEL dates back to **September 2025**.
 
 The bus is transport-light (one dependency, `websockets`), hub-centric by design
 (one place owns presence, leases, and history), and runs entirely on the local
@@ -1426,7 +1428,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 691 |
 | Wire message types | 77 |
 | CLI subcommands | 181 |
-| Test functions | 8374 |
+| Test functions | 8380 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 57 |
 | GitHub Actions workflows | 22 |
@@ -1649,16 +1651,19 @@ convenience on top of the free core, and nothing is ever moved behind a paywall.
 | Layer | For | What you add |
 | --- | --- | --- |
 | **Community** — free (AGPL-3.0) | self-hosting, research, personal, internal | the whole platform, unlimited; copyleft applies |
-| **Commercial Licence** | an org whose policy or product cannot use AGPL | the right to use and embed it **without** the AGPL copyleft — same code, different terms, with a signed certificate |
-| **Pro** | an individual or small team depending on it daily | priority support and the published **mobile app with push** (the self-hosted cockpit stays free) |
-| **Team** | a team owning a shared fleet | a **managed observability dashboard** (your hubs and data stay local), priority security patches, and named support |
-| **Business / Enterprise** | regulated or multi-organisation deployments | an **SLA with indemnification**, audit exports, a **managed federation gateway**, and SSO |
+| **Organisation Licence — USD 490/yr** | one legal entity that only needs commercial permission | the right to use and embed it **without** the AGPL copyleft; no hosted service, dashboard, SLA, support, or Fleet entitlement |
+| **Pro — USD 19/mo or 190/yr** | one developer shipping closed-source products or private hosted services | commercial permission for one developer, mobile app with push, and email support |
+| **Team — USD 39/user/mo or 390/user/yr** | a team owning shared coordination workflows; minimum 3 seats | unlimited projects in one legal entity, hosted dashboard while operational data stays local, security-patch SLA, and onboarding |
+| **FLEET Enterprise — quote** | regulated, multi-hub, or multi-organisation deployments | separately entitled private software with managed federation, SSO, audit exports, compliance support, and a deployment-specific SLA |
+
+SYNAPSE CHANNEL FLEET is separately entitled private software, not a hidden
+commercial build of the public core.
 
 <p align="center">
-  <a href="https://anulum.li/synapse/pricing.html"><img src="https://img.shields.io/badge/View_plans_%26_buy-anulum.li%2Fsynapse-0a7d3c?style=for-the-badge" alt="View plans and buy a commercial licence"></a>
+  <a href="https://www.remanentia.com/synapse/pricing.html"><img src="https://img.shields.io/badge/View_plans_%26_buy-remanentia.com%2Fsynapse-0a7d3c?style=for-the-badge" alt="View plans and buy a commercial licence"></a>
 </p>
 
-Plans and checkout are at **[anulum.li/synapse/pricing.html](https://anulum.li/synapse/pricing.html)** (Polar.sh, USD; each buyer sees their local currency at checkout, CHF invoicing on request). For enterprise, OEM, academic, non-profit, managed-hosting, or co-ownership terms, write to [protoscience@anulum.li](mailto:protoscience@anulum.li) with the evaluation details listed in [`docs/commercial.md`](docs/commercial.md). The full terms are in [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md).
+Plans and checkout are at **[remanentia.com/synapse/pricing.html](https://www.remanentia.com/synapse/pricing.html)** (Polar.sh, USD; each buyer sees their local currency at checkout, CHF invoicing on request). For enterprise, OEM, academic, non-profit, managed-hosting, or co-ownership terms, write to [protoscience@anulum.li](mailto:protoscience@anulum.li) with the evaluation details listed in [`docs/commercial.md`](docs/commercial.md). The full terms are in [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md).
 
 ## How to cite
 
@@ -1680,7 +1685,7 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
 
 Dual-licensed: **AGPL-3.0-or-later**, with a commercial licence available — see
 [Commercial use](#commercial-use) for the plans and
-[pricing](https://anulum.li/synapse/pricing.html). [`LICENSE`](LICENSE) holds the full
+[pricing](https://www.remanentia.com/synapse/pricing.html). [`LICENSE`](LICENSE) holds the full
 AGPL text, [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md) the commercial terms, and
 [`NOTICE.md`](NOTICE.md) the licensing boundary. The repository is
 [REUSE](https://reuse.software/) 3.x compliant.

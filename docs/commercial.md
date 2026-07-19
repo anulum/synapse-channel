@@ -25,18 +25,21 @@ core — nothing is ever moved behind a paywall.
 | Plan | For | What it adds |
 | --- | --- | --- |
 | **Community** — free (AGPL-3.0) | open source, research, personal, internal | the whole product, unlimited; copyleft applies |
-| **Commercial Licence** | an org whose policy or product cannot use AGPL | the copyleft exemption on its own — same code, different terms, with a signed certificate |
-| **Pro** | a solo developer or small team shipping one closed-source project | a commercial licence for one developer, the mobile app with push, and email support |
-| **Team** | a company owning a shared fleet | unlimited projects in one legal entity, a managed observability dashboard (your hubs and data stay local), priority security patches, and named support |
-| **Business / Enterprise** | regulated or multi-organisation deployments | an SLA with indemnification, a **managed federation gateway**, SSO, audit exports, and compliance support |
+| **Organisation Licence — USD 490/yr** | one legal entity that only needs commercial permission | the copyleft exemption on its own; no hosted service, dashboard, SLA, support, or Fleet entitlement |
+| **Pro — USD 19/mo or 190/yr** | one developer shipping closed-source products or private hosted services | commercial permission for one developer, the mobile app with push, and email support |
+| **Team — USD 39/user/mo or 390/user/yr** | a company owning shared coordination workflows; minimum 3 seats | unlimited projects in one legal entity, hosted dashboard while operational data stays local, security-patch SLA, and onboarding |
+| **FLEET Enterprise — quote** | regulated, multi-hub, or multi-organisation deployments | separately entitled private software with managed federation, SSO, audit exports, compliance support, and a deployment-specific SLA |
+
+SYNAPSE CHANNEL FLEET is separately entitled private software, not a hidden
+commercial build of the public core.
 
 An optional **Supporter** (name-your-price) contribution funds the research and lists you
 in `BACKERS`; it grants no extra rights, because the free core already holds none back.
 
-[![View plans and buy a commercial licence](https://img.shields.io/badge/View_plans_%26_buy-anulum.li%2Fsynapse-0a7d3c?style=for-the-badge)](https://anulum.li/synapse/pricing.html)
+[![View plans and buy a commercial licence](https://img.shields.io/badge/View_plans_%26_buy-remanentia.com%2Fsynapse-0a7d3c?style=for-the-badge)](https://www.remanentia.com/synapse/pricing.html)
 
 Plans, current prices, and checkout are at
-[**anulum.li/synapse/pricing.html**](https://anulum.li/synapse/pricing.html) (handled by
+[**remanentia.com/synapse/pricing.html**](https://www.remanentia.com/synapse/pricing.html) (handled by
 Polar.sh in **USD**; each buyer sees their local currency at checkout, CHF invoicing on
 request). For enterprise, OEM, academic, non-profit, managed-hosting, or co-ownership
 terms, write to [protoscience@anulum.li](mailto:protoscience@anulum.li).
