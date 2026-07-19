@@ -818,9 +818,13 @@ only when the recipient reacted within the configured liveness window or has a
 fresh `-rx` waiter; otherwise the CLI prints `delivery failed: no live recipient
 matched ...` and exits `1`, the same as an offline target. The message is still
 journalled and best-effort routed to the stale socket, so a later mailbox replay
-can settle its deferred receipt. `--require-recipient` additionally prints a
-positive `delivered to ...` receipt and fails if an older hub returns no receipt;
-without the flag, receiptless older hubs retain their historical success result.
+can settle its deferred receipt. The follow-up receipt frame is online-only for the
+original sender; when that sender is offline at acknowledgement time, inspect the
+durable verdict with `synapse event-query <db> "receipts <sender>"` instead. Receipt
+frames are not replayed through the chat mailbox. `--require-recipient` additionally
+prints a positive `delivered to ...` receipt and fails if an older hub returns no
+receipt; without the flag, receiptless older hubs retain their historical success
+result.
 
 For selected sensitive bodies, `synapse send --encrypt-key-file` replaces the
 plain payload with an AES-256-GCM envelope whose authenticated data binds the

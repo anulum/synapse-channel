@@ -311,9 +311,12 @@ recipient reconnects, drains the replayed message, and sends
 `ack: {seq, mailbox_for?}`, the hub re-checks that the logical mailbox identity is
 a genuine recipient of the original target and then
 sends the *original* sender a second `delivery_receipt` marked
-`delivered: true, deferred: true` — closing the gap where the sender was told "not
-delivered" and never learnt the message arrived. A spoofed ack from a client the
-message was not addressed to neither fabricates a receipt nor drops the pending one.
+`delivered: true, deferred: true` when that sender is still live. This notification
+is deliberately online-only: if the original sender is offline at ack time, the hub
+does not mailbox-replay receipt frames on a later reconnect. The durable receipt
+ledger below is the authoritative recovery path, queryable by sender identity after
+restart. A spoofed ack from a client the message was not addressed to neither
+fabricates a receipt nor drops the pending one.
 The `ack` verb arrived at wire version `2`; a client emits it only when the hub
 advertises that version or newer.
 

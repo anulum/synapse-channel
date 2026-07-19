@@ -23,6 +23,7 @@ from hub_e2e_helpers import (
     read_until_type,
     running_hub,
 )
+from synapse_channel.core import event_query
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
@@ -651,7 +652,8 @@ async def test_pending_delivery_receipt_survives_restart_and_offline_sender(
 ) -> None:
     # The receipt ledger re-seeds pending deferred receipts on restart. BOB can ack
     # ALICE's replayed message after ALICE has disconnected; the live frame is not
-    # delivered, but the final deferred verdict is durable and queryable.
+    # delivered. Receipt frames are intentionally not mailbox-replayed to ALICE;
+    # the final deferred verdict is instead durable and deterministically queryable.
     db = tmp_path / "events.db"
     store = EventStore(db)
     async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
@@ -691,13 +693,36 @@ async def test_pending_delivery_receipt_survives_restart_and_offline_sender(
             await collect_available(bob_ws)
         assert len(hub.pending_receipts) == 0
 
+        async with connect(uri) as alice_ws:
+            await read_until_type(alice_ws, "welcome")
+            await alice_ws.send(
+                json.dumps(
+                    {
+                        "sender": "ALICE",
+                        "type": "heartbeat",
+                        "target": "System",
+                        "payload": "online",
+                        "mailbox": True,
+                        "since_seq": 0,
+                    }
+                )
+            )
+            replayed_to_sender = await collect_available(alice_ws)
+            assert not any(
+                message.get("type") == "delivery_receipt" for message in replayed_to_sender
+            )
+
     receipt_events = [
         event for event in store.read_all() if event.kind.startswith("delivery_receipt_")
     ]
+    query = event_query.run_query(db, "receipts ALICE")
     store.close()
     assert receipt_events[-1].kind == EventKind.DELIVERY_RECEIPT_DEFERRED
     assert receipt_events[-1].payload["acked_by"] == "BOB"
     assert receipt_events[-1].payload["sender"] == "ALICE"
+    assert query.receipt_events == tuple(receipt_events)
+    assert query.receipt_events[-1].kind == EventKind.DELIVERY_RECEIPT_DEFERRED
+    assert query.receipt_events[-1].payload["delivered"] is True
 
 
 async def test_ack_from_a_non_recipient_leaves_the_pending_receipt_for_the_real_one(
