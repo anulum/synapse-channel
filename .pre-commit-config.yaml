@@ -51,7 +51,7 @@ repos:
     hooks:
       - id: staged-claim-coverage
         name: every staged path has an owned Synapse claim
-        entry: .venv/bin/python -m synapse_channel.cli git-claim-check --staged
+        entry: python tools/run_staged_claim_hook.py
         language: system
         stages: [pre-commit]
         always_run: true
