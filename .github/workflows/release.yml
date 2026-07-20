@@ -27,7 +27,7 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: write
       contents: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -115,3 +115,8 @@ jobs:
           files: |
             release-artifact/*
             release-provenance/*
+      - name: Dispatch the immutable release image publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: gh workflow run docker.yml --ref main --field release_tag="$RELEASE_TAG"

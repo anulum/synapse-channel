@@ -267,9 +267,11 @@ docker run -d --name synapse-hub -p 127.0.0.1:8876:8876 -v synapse-data:/data \
   --insecure-off-loopback
 ```
 
-On a release the `docker` workflow publishes `ghcr.io/anulum/synapse-channel`; on every
-change to the image or the compose file it also runs a compose smoke that waits for the
-container to report healthy.
+After the verified GitHub Release is created, the release workflow dispatches the
+`docker` workflow with its immutable `vX.Y.Z` tag. The image is published as that tag
+and `latest` at `ghcr.io/anulum/synapse-channel`. The dispatch is also the bounded
+recovery path if registry publication needs to be retried. Every change to the image
+or compose file runs a compose smoke that waits for the container to report healthy.
 
 ## Exposure and security
 

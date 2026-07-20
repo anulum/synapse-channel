@@ -124,6 +124,10 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     assert release.index("cat release-artifact/SHA256SUMS") < release.index("action-gh-release@")
     assert "python -m build" not in release
     assert "id-token: write" not in release
+    assert "actions: write" in release
+    assert "gh workflow run docker.yml --ref main" in release
+    assert '--field release_tag="$RELEASE_TAG"' in release
+    assert release.index("action-gh-release@") < release.index("gh workflow run docker.yml")
 
     assert "gh release download vX.Y.Z" in security
     assert "sha256sum --check SHA256SUMS" in security

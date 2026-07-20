@@ -117,3 +117,24 @@ def test_docker_workflow_smoke_tests_the_compose_file() -> None:
     run_scripts = " ".join(str(step.get("run", "")) for step in steps)
     assert "docker compose up" in run_scripts
     assert "synapse health --uri ws://127.0.0.1:8876" in run_scripts
+
+
+def test_docker_workflow_can_publish_an_immutable_release_tag_after_automation() -> None:
+    """A trusted dispatch must publish the named tag, never mutable main content."""
+    source = DOCKER_WORKFLOW.read_text(encoding="utf-8")
+    workflow = _load(DOCKER_WORKFLOW)
+    image = workflow["jobs"]["image"]
+    steps = image["steps"]
+
+    assert "\n  workflow_dispatch:" in source
+    assert "release_tag:" in source
+    assert "ref: ${{ inputs.release_tag || github.ref }}" in source
+    assert 'git rev-list -n 1 "$RELEASE_TAG"' in source
+    assert "^v[0-9]+\\.[0-9]+\\.[0-9]+" in source
+
+    login = next(step for step in steps if step.get("name") == "Log in to GHCR")
+    build = next(step for step in steps if step.get("name") == "Build (and push on release)")
+    assert "github.event_name == 'workflow_dispatch'" in login["if"]
+    assert "github.event_name == 'workflow_dispatch'" in str(build["with"]["push"])
+    assert "type=raw,value=${{ inputs.release_tag }}" in source
+    assert "type=raw,value=latest" in source
