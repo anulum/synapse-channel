@@ -20,6 +20,7 @@ import pytest
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 from synapse_channel.mailbox_cursor import load_cursor
@@ -797,17 +798,19 @@ async def test_wait_marks_an_era_old_replayed_directed_message_as_stale(
     # A directive sent 90 days ago replays to a fresh mailbox waiter (lost or
     # absent cursor) and surfaces WITH the age marker.
     store = EventStore(tmp_path / "events.db")
+    sent_at = time.time() - 90 * 86400
+    store.append(
+        EventKind.CHAT,
+        {
+            "type": "chat",
+            "sender": "SENDER",
+            "target": "BOB",
+            "payload": "upgrade synapse to 0.27.0",
+            "timestamp": sent_at,
+        },
+        ts=sent_at,
+    )
     async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
-        handle = await connect_agent("SENDER", uri)
-        try:
-            await handle.agent.send_message(
-                "chat",
-                target="BOB",
-                payload="upgrade synapse to 0.27.0",
-                timestamp=time.time() - 90 * 86400,
-            )
-        finally:
-            await close_agents(handle)
         code = await cli_messaging._wait(
             uri=uri,
             name="BOB-rx",

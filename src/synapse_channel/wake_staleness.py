@@ -20,8 +20,8 @@ This module makes "era-old" detectable in-protocol at the moment of reading:
 a surfaced message older than :data:`STALE_AFTER_SECONDS` is prefixed with an
 unambiguous replay marker carrying its age, so a stale directive can never
 present itself in the same shape as a live one. The hub keeps a numeric
-client send-time verbatim on the chat envelope, so the age is the sender's
-clock against the reader's; a missing or unusable timestamp yields no marker
+hub-authoritative acceptance time on the chat envelope, so replay age does not
+trust the sender's clock. A missing or unusable timestamp yields no marker
 (fail-open to the old presentation — an unknown age is not evidence of
 staleness). The richer delivery-receipt/state model and formal directive TTL
 semantics are the v1.0 follow-up; this marker is the v0.99.9 minimal safety
@@ -50,8 +50,8 @@ def message_age_seconds(frame: Mapping[str, Any], *, now: float | None = None) -
     Parameters
     ----------
     frame : Mapping[str, Any]
-        The chat envelope; its advisory ``timestamp`` is the sender's epoch
-        send-time, preserved verbatim by the hub when numeric.
+        The chat envelope; ``timestamp`` is the hub-authoritative epoch time at
+        which the message was accepted and journalled.
     now : float or None, optional
         The reader's clock, injectable for testing; ``time.time()`` when
         ``None``.
