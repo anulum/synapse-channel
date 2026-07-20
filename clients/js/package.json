@@ -35,7 +35,7 @@
   "author": "Anulum Fortis & Arcane Sapience <protoscience@anulum.li>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/anulum/synapse-channel",
+    "url": "git+https://github.com/anulum/synapse-channel.git",
     "directory": "clients/js"
   },
   "devDependencies": {
