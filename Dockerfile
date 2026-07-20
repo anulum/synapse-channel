@@ -31,7 +31,7 @@ VOLUME ["/data"]
 
 # A liveness probe so orchestrators can tell whether the hub accepts connections.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD ["synapse", "health"]
+    CMD ["synapse", "health", "--uri", "ws://127.0.0.1:8876"]
 
 # Bind 0.0.0.0 so the port is reachable across the container boundary; an
 # in-container loopback bind would leave published ports dead. The bind is
@@ -41,4 +41,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 # See SECURITY.md "Container image bind posture" and docs/deployment.md.
 ENTRYPOINT ["synapse"]
 CMD ["hub", "--host", "0.0.0.0", "--port", "8876", \
+     "--advertised-host", "127.0.0.1:8876", \
      "--db", "/data/hub.db", "--relay-log", "/data/feed.ndjson"]

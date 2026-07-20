@@ -16,6 +16,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "docker-compose.yml"
 DOCKER_WORKFLOW = ROOT / ".github" / "workflows" / "docker.yml"
+DOCKERFILE = ROOT / "Dockerfile"
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -66,6 +67,15 @@ def test_compose_off_loopback_bind_is_published_on_loopback_only() -> None:
         assert str(mapping).startswith("127.0.0.1:"), (
             f"off-loopback bind must be published on loopback only, got {mapping!r}"
         )
+
+
+def test_container_health_uses_the_declared_concrete_host_authority() -> None:
+    """Wildcard binds must not make the Host guard reject the liveness probe."""
+    authority = "127.0.0.1:8876"
+    assert f"--advertised-host={authority}" in _hub_command()
+    dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+    assert f'"--advertised-host", "{authority}"' in dockerfile
+    assert f'"--uri", "ws://{authority}"' in dockerfile
 
 
 def test_compose_off_loopback_hub_sits_on_a_dedicated_single_service_network() -> None:

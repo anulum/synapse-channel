@@ -36,6 +36,8 @@ services:
       - hub
       - --host=0.0.0.0
       - --port=8876
+      # Bind the WebSocket Host guard to the loopback authority published above.
+      - --advertised-host=127.0.0.1:8876
       - --db=/data/hub.db
       - --relay-log=/data/feed.ndjson
       - --insecure-off-loopback
@@ -45,9 +47,10 @@ services:
 
 networks:
   # Dedicated single-service network. Any container joined here can reach the
-  # unauthenticated hub on hub:8876 (container-to-container traffic ignores the
-  # host publish flags), so keep untrusted services off this network — or add
-  # the --token line above before sharing it.
+  # unauthenticated hub on hub:8876 at the TCP layer regardless of host publish
+  # flags. The shipped Host guard admits only 127.0.0.1:8876, so peers receive
+  # 403 until the operator configures their concrete authority.
+  # Therefore, keep untrusted services off this network — or add the --token line above.
   hub-isolated:
     driver: bridge
 
