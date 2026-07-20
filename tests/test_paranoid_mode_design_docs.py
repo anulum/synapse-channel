@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import re
+import shlex
 from pathlib import Path
+
+from synapse_channel import cli
+from synapse_channel.core.paranoid import apply_paranoid_hub_profile
 
 ROOT = Path(__file__).resolve().parents[1]
 PARANOID_DOC = ROOT / "docs" / "paranoid-mode.md"
+QUICKSTART_DOC = ROOT / "docs" / "quickstart.md"
+CLI_DOC = ROOT / "docs" / "cli.md"
 
 
 def _read(path: Path) -> str:
@@ -16,6 +23,19 @@ def _read(path: Path) -> str:
 def _collapsed(path: Path) -> str:
     """Return lowercase documentation text with normalized whitespace."""
     return " ".join(_read(path).lower().split())
+
+
+def _documented_paranoid_args(path: Path) -> list[str]:
+    """Extract the public paranoid command as production CLI arguments."""
+    match = re.search(
+        r"```bash\n(?P<command>synapse hub --paranoid .*?)\n```",
+        _read(path),
+        flags=re.DOTALL,
+    )
+    if match is None:
+        raise AssertionError(f"missing paranoid command in {path}")
+    command = match.group("command").replace("\\\n", " ")
+    return shlex.split(command)[1:]
 
 
 def test_paranoid_mode_design_is_publicly_discoverable() -> None:
@@ -83,3 +103,21 @@ def test_paranoid_mode_design_keeps_boundary_claims_clear() -> None:
     )
     for boundary in required_boundaries:
         assert boundary in text
+
+
+def test_public_paranoid_commands_satisfy_the_runtime_policy() -> None:
+    """Copy-paste paranoid examples must include every production requirement."""
+    for path in (PARANOID_DOC, QUICKSTART_DOC, CLI_DOC):
+        args = cli.build_parser().parse_args(_documented_paranoid_args(path))
+
+        assert args.token_file == "~/.config/synapse/token"
+        assert args.message_auth_key_file == "~/.config/synapse/message-auth.keys"
+
+        # Secret files are resolved after parsing and before policy application in
+        # the production startup path. Model that boundary without reading secrets.
+        args.token = "resolved-token"
+        args.message_auth_key = ["main:resolved-secret:project/agent"]
+        report = apply_paranoid_hub_profile(args)
+
+        assert report is not None
+        assert "native WSS (TLS) required" in report.enforced

@@ -238,11 +238,26 @@ guide before agents edit files. The A2A bridge step is optional and local-only:
 it validates the HTTP+JSON bridge shape for local tools, but it is not an
 external conformance claim. Do not bind it off-loopback without bearer auth.
 
-For a stricter local hub profile, use `synapse hub --paranoid --db <path>
---token-file <path>`. Paranoid hub mode requires a shared-secret token, durable
-event log, and metrics bearer token when metrics are enabled; it disables metrics
-query tokens and the insecure off-loopback override while printing the hardening
-hooks that are still missing.
+For the strict hub profile, supply every control that paranoid mode enforces:
+
+```bash
+synapse hub --paranoid \
+  --db ~/synapse/hub.db \
+  --token-file ~/.config/synapse/token \
+  --message-auth-key-file ~/.config/synapse/message-auth.keys \
+  --require-message-auth \
+  --acl-policy ~/.config/synapse/acl.json \
+  --require-acl \
+  --tls-certfile ~/.config/synapse/tls/server.crt \
+  --tls-keyfile ~/.config/synapse/tls/server.key
+```
+
+Paranoid hub mode refuses partial configuration: it requires a shared-secret
+token, durable event log, per-message authentication, ACL enforcement, and
+native TLS. It also requires a metrics bearer token when metrics are enabled,
+disables metrics query tokens and the insecure off-loopback override, and prints
+the hardening hooks that remain outside the profile. Keep token and HMAC entries
+in owner-only files; see [Paranoid mode](paranoid-mode.md) before exposing a hub.
 
 The loopback-only `--metrics-query-token-ok` compatibility flag is deprecated,
 warns when parsed, and is scheduled for removal in 0.101.0. Send metrics tokens

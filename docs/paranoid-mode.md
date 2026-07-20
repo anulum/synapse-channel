@@ -115,11 +115,27 @@ isolation.
 
 ## Command shape
 
-The hub runtime switch is available now:
+The hub runtime switch is available now. Supply every enforced control; the
+profile deliberately refuses a partial command. Keep the token and HMAC entries
+in owner-only files, and replace the policy and certificate paths with files
+prepared for the deployment:
 
 ```bash
-synapse hub --paranoid --db ~/synapse/hub.db --token-file ~/.config/synapse/token
+synapse hub --paranoid \
+  --db ~/synapse/hub.db \
+  --token-file ~/.config/synapse/token \
+  --message-auth-key-file ~/.config/synapse/message-auth.keys \
+  --require-message-auth \
+  --acl-policy ~/.config/synapse/acl.json \
+  --require-acl \
+  --tls-certfile ~/.config/synapse/tls/server.crt \
+  --tls-keyfile ~/.config/synapse/tls/server.key
 ```
+
+This is a strict profile, not a security shortcut. See
+[per-message authentication](per-message-authentication.md),
+[identity and ACL policy](identity-and-acl.md), and
+[deployment](deployment.md) before exposing the hub beyond loopback.
 
 Future commands should support dry-run first:
 

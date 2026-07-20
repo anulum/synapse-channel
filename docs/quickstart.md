@@ -102,6 +102,27 @@ optional and local-only; it exposes an Agent Card and HTTP+JSON bridge for local
 interop experiments, not an external conformance claim. Do not bind it
 off-loopback without bearer auth.
 
+## Strict exposed-hub profile
+
+The trial commands above are loopback-oriented. Before exposing a hub, supply
+every control required by the strict profile; a partial command fails closed:
+
+```bash
+synapse hub --paranoid \
+  --db ~/synapse/hub.db \
+  --token-file ~/.config/synapse/token \
+  --message-auth-key-file ~/.config/synapse/message-auth.keys \
+  --require-message-auth \
+  --acl-policy ~/.config/synapse/acl.json \
+  --require-acl \
+  --tls-certfile ~/.config/synapse/tls/server.crt \
+  --tls-keyfile ~/.config/synapse/tls/server.key
+```
+
+Keep token and HMAC entries in owner-only files and replace the ACL and TLS
+paths with deployment-specific files. Read [Paranoid mode](paranoid-mode.md)
+for the enforced controls, missing hooks, and exposure boundaries.
+
 A complete session — declare a plan with a dependency, complete a task, and watch the
 dependent task unblock:
 
