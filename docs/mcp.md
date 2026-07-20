@@ -269,7 +269,7 @@ face directly for package launchers; humans can keep using `synapse mcp`.
 
 The official MCP Registry is still a preview and its published versions are
 immutable. SYNAPSE CHANNEL is already active there: the live record was version
-`0.99.2` when re-verified on 2026-07-14. Registry metadata does not automatically
+`0.99.2` when re-verified on 2026-07-20. Registry metadata does not automatically
 follow PyPI or this repository, so the newer version in `server.json` is a
 prepared update until the registry query returns that exact version. Check live
 publication rather than inferring it from local metadata. The official
@@ -281,13 +281,13 @@ published version immutable.
 Release operators use the following fail-closed order. Publishing is an owner
 action: preparation and validation do not authorise it.
 
-1. Release `synapse-channel==0.99.7` to PyPI through the normal attested tag
+1. Release `synapse-channel==0.99.12` to PyPI through the normal attested tag
    workflow. Wait until both the wheel and source archive are publicly visible,
    then verify the package and ownership marker:
 
    ```bash
-   .venv/bin/python tools/verify_mcp_registry_release.py \
-     --phase package --expect-version 0.99.7 --json
+   PYTHONPATH=. .venv/bin/python tools/verify_mcp_registry_release.py \
+     --phase package --expect-version 0.99.12 --json
    ```
 
 2. Download the audited official Linux publisher release and verify it before
@@ -304,20 +304,25 @@ action: preparation and validation do not authorise it.
    ./mcp-publisher validate server.json
    ```
 
-3. After explicit owner approval, authenticate as the `anulum` GitHub namespace
-   owner and publish the exact file. The interactive token is handled by the
-   publisher and is never written to repository files or shell arguments:
+3. After explicit owner approval, dispatch the repository's `mcp-registry`
+   workflow with the immutable release tag. It verifies the tag, PyPI boundary,
+   publisher checksum, and `server.json`, then authenticates through GitHub
+   Actions OIDC (`id-token: write`) without a repository secret:
 
    ```bash
-   ./mcp-publisher login github
-   ./mcp-publisher publish server.json
+   gh workflow run mcp-registry.yml --ref main \
+     --field release_tag=v0.99.12
    ```
+
+   Future successful release workflows dispatch this publication automatically.
+   Interactive recovery remains available with `./mcp-publisher login github`
+   followed by `./mcp-publisher publish server.json`.
 
 4. Require the public record itself to prove completion:
 
    ```bash
-   .venv/bin/python tools/verify_mcp_registry_release.py \
-     --phase registry --expect-version 0.99.7 --json
+   PYTHONPATH=. .venv/bin/python tools/verify_mcp_registry_release.py \
+     --phase registry --expect-version 0.99.12 --json
    ```
 
 The verifier exits `0` only when the requested boundary matches, `1` for public

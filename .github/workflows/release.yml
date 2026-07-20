@@ -120,3 +120,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: gh workflow run docker.yml --ref main --field release_tag="$RELEASE_TAG"
+      - name: Dispatch the immutable MCP Registry publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: gh workflow run mcp-registry.yml --ref main --field release_tag="$RELEASE_TAG"

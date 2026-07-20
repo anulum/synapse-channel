@@ -14,12 +14,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 PUBLISH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "publish.yml"
+MCP_REGISTRY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "mcp-registry.yml"
 SECURITY_POLICY = REPO_ROOT / "SECURITY.md"
 
 
 def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     publish = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
+    mcp_registry = MCP_REGISTRY_WORKFLOW.read_text(encoding="utf-8")
     security = SECURITY_POLICY.read_text(encoding="utf-8")
     build, after_build = publish.split("\n  integrity:", maxsplit=1)
     integrity, after_integrity = after_build.split("\n  attest:", maxsplit=1)
@@ -126,8 +128,45 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     assert "id-token: write" not in release
     assert "actions: write" in release
     assert "gh workflow run docker.yml --ref main" in release
+    assert "gh workflow run mcp-registry.yml --ref main" in release
     assert '--field release_tag="$RELEASE_TAG"' in release
     assert release.index("action-gh-release@") < release.index("gh workflow run docker.yml")
+    assert release.index("gh workflow run docker.yml") < release.index(
+        "gh workflow run mcp-registry.yml"
+    )
+
+    # MCP Registry publication is a recovery-safe, tag-bound OIDC workflow.
+    # It publishes metadata only after proving that the immutable PyPI package
+    # and the checked-out server.json describe the same release.
+    assert "workflow_dispatch:" in mcp_registry
+    assert "release_tag:" in mcp_registry
+    assert "permissions: {}" in mcp_registry
+    assert mcp_registry.count("id-token: write") == 1
+    assert "contents: read" in mcp_registry
+    assert "ref: refs/tags/${{ inputs.release_tag }}" in mcp_registry
+    assert 'git show-ref --verify --quiet "$tag_ref"' in mcp_registry
+    assert 'git rev-parse "$tag_ref^{commit}"' in mcp_registry
+    assert 'metadata_version" != "$version' in mcp_registry
+    assert "--phase package" in mcp_registry
+    assert "--phase registry" in mcp_registry
+    assert "PYTHONPATH=. python tools/verify_mcp_registry_release.py" in mcp_registry
+    assert "releases/download/v1.7.9/mcp-publisher_linux_amd64.tar.gz" in mcp_registry
+    assert "ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac" in mcp_registry
+    assert "sha256sum --check --strict" in mcp_registry
+    assert "./mcp-publisher validate server.json" in mcp_registry
+    assert "./mcp-publisher login github-oidc" in mcp_registry
+    assert "./mcp-publisher publish server.json" in mcp_registry
+    assert "steps.existing.outputs.published != 'true'" in mcp_registry
+    assert "secrets." not in mcp_registry
+    assert mcp_registry.index("--phase package") < mcp_registry.index(
+        "./mcp-publisher login github-oidc"
+    )
+    assert mcp_registry.index("./mcp-publisher validate server.json") < mcp_registry.index(
+        "./mcp-publisher login github-oidc"
+    )
+    assert mcp_registry.index("./mcp-publisher login github-oidc") < mcp_registry.index(
+        "./mcp-publisher publish server.json"
+    )
 
     assert "gh release download vX.Y.Z" in security
     assert "sha256sum --check SHA256SUMS" in security
