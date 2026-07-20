@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from synapse_channel.core.deadlock import prune_waits, would_create_cycle
 from synapse_channel.core.journal import (
@@ -39,6 +39,7 @@ from synapse_channel.core.path_identity import (
     PathIdentityError,
     parse_optional_claim_scope_identity,
 )
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.receipts import (
     ReleaseReceipt,
@@ -47,12 +48,29 @@ from synapse_channel.core.receipts import (
     release_receipt_has_evidence,
 )
 from synapse_channel.core.scoping import normalize_paths
-from synapse_channel.core.state import GitContext
+from synapse_channel.core.state import GitContext, SynapseState
 from synapse_channel.core.state_transaction import durable_state_transaction
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
     from synapse_channel.core.state_models import TaskClaim
+
+
+class _ClaimMutationHub(Protocol):
+    """Minimal state/journal surface shared by live and candidate claims."""
+
+    state: SynapseState
+    journal: EventStore | None
+    _waits: dict[str, set[str]]
+
+
+@dataclass
+class _CandidateClaimHub:
+    """Private claim context used by the async copy-on-write actor."""
+
+    state: SynapseState
+    _waits: dict[str, set[str]]
+    journal: EventStore | None = None
 
 
 @dataclass(frozen=True)
@@ -97,7 +115,7 @@ def _claim_denial_reason(message: str) -> str:
 
 
 def _record_denial(
-    hub: SynapseHub,
+    hub: _ClaimMutationHub,
     *,
     claimant: str,
     task_id: str,
@@ -119,8 +137,22 @@ def _record_denial(
     )
 
 
+def _clear_satisfied_wait(
+    waits: dict[str, set[str]],
+    claimant: str,
+    task_id: str,
+) -> None:
+    """Clear only ``claimant``'s wait on the task it just acquired."""
+    waited = waits.get(claimant)
+    if waited is None:
+        return
+    waited.discard(task_id)
+    if not waited:
+        waits.pop(claimant, None)
+
+
 def apply_claim(
-    hub: SynapseHub,
+    hub: _ClaimMutationHub,
     claimant: str,
     body: Mapping[str, Any],
     *,
@@ -221,11 +253,7 @@ def apply_claim(
     if claim is not None:
         # Only the SATISFIED wait is cleared: a claim or renewal for task U must
         # never erase the claimant's still-open wait on an unrelated task T.
-        waited = hub._waits.get(claimant)
-        if waited is not None:
-            waited.discard(task_id)
-            if not waited:
-                hub._waits.pop(claimant, None)
+        _clear_satisfied_wait(hub._waits, claimant, task_id)
         return ClaimApplication(ok=True, message=message, task_id=task_id, claim=claim)
     return ClaimApplication(
         ok=False,
@@ -234,6 +262,58 @@ def apply_claim(
         claim=None,
         reason_code=reason_code,
     )
+
+
+async def apply_claim_async(
+    hub: SynapseHub,
+    claimant: str,
+    body: Mapping[str, Any],
+    *,
+    quota_principal: str | None = None,
+) -> ClaimApplication:
+    """Apply and persist a claim through the serialized off-loop actor."""
+    journal = hub.journal
+
+    def mutate(state: SynapseState) -> ClaimApplication:
+        candidate_context = _CandidateClaimHub(
+            state=state,
+            _waits={waiter: set(tasks) for waiter, tasks in hub._waits.items()},
+        )
+        return apply_claim(
+            candidate_context,
+            claimant,
+            body,
+            quota_principal=quota_principal,
+        )
+
+    def persist(application: ClaimApplication) -> None:
+        if journal is None:
+            raise RuntimeError("claim persistence requested without a journal")
+        if application.claim is not None:
+            record_claim(journal, application.claim)
+            return
+        raw_paths = body.get("paths")
+        paths = [str(path) for path in raw_paths] if isinstance(raw_paths, list) else []
+        _record_denial(
+            hub,
+            claimant=claimant,
+            task_id=application.task_id,
+            reason_code=application.reason_code,
+            worktree=str(body.get("worktree") or ""),
+            paths=paths,
+        )
+
+    def publish(application: ClaimApplication) -> None:
+        if application.claim is not None:
+            _clear_satisfied_wait(hub._waits, claimant, application.task_id)
+
+    application = await hub.state_mutations.run(
+        hub.state,
+        mutate,
+        persist=persist if journal is not None else None,
+        publish=publish,
+    )
+    return application
 
 
 def claim_grant_fields(claim: TaskClaim) -> dict[str, Any]:
@@ -275,7 +355,7 @@ def claim_grant_fields(claim: TaskClaim) -> dict[str, Any]:
 
 async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
     """Apply a scoped claim request and broadcast the grant, or deny the sender."""
-    application = apply_claim(
+    application = await apply_claim_async(
         hub,
         sender,
         data,
@@ -312,9 +392,10 @@ async def handle_task_update(
     status = data.get("status")
     note = data.get("note")
     data_ref = data.get("data_ref")
+    journal = hub.journal
 
-    with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
-        ok, message = hub.state.update_task(
+    def mutate(state: SynapseState) -> tuple[bool, str, TaskClaim | None]:
+        ok, message = state.update_task(
             sender,
             task_id,
             status=str(status) if status else None,
@@ -323,9 +404,20 @@ async def handle_task_update(
             epoch=hub._optional_int(data, "epoch"),
             expected_version=hub._optional_int(data, "expected_version"),
         )
-        claim = hub.state.claims.get(task_id) if ok else None
-        if claim is not None and hub.journal is not None:
-            record_task_update(hub.journal, claim)
+        return ok, message, state.claims.get(task_id) if ok else None
+
+    def persist(result: tuple[bool, str, TaskClaim | None]) -> None:
+        if journal is None:
+            raise RuntimeError("task-update persistence requested without a journal")
+        claim = result[2]
+        if claim is not None:
+            record_task_update(journal, claim)
+
+    ok, message, claim = await hub.state_mutations.run(
+        hub.state,
+        mutate,
+        persist=persist if journal is not None else None,
+    )
     if claim is not None:
         updated = hub._system(
             message,
@@ -349,14 +441,30 @@ async def handle_release(
 ) -> None:
     """Release a task and broadcast it, or deny the sender."""
     task_id = str(data.get("task_id") or data.get("payload") or "").strip()
-    with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
-        ok, message = hub.state.release(sender, task_id, epoch=hub._optional_int(data, "epoch"))
-        if ok and hub.journal is not None:
-            record_release(hub.journal, task_id)
+    journal = hub.journal
+
+    def mutate(state: SynapseState) -> tuple[bool, str]:
+        return state.release(sender, task_id, epoch=hub._optional_int(data, "epoch"))
+
+    def persist(result: tuple[bool, str]) -> None:
+        if journal is None:
+            raise RuntimeError("release persistence requested without a journal")
+        if result[0]:
+            record_release(journal, task_id)
+
+    def publish(result: tuple[bool, str]) -> None:
+        if result[0]:
+            # A released task has no holder: prune its wait edges so they
+            # cannot refuse a later legitimate wait as a false positive.
+            hub._waits = prune_waits(hub._waits, hub.state.claims)
+
+    ok, message = await hub.state_mutations.run(
+        hub.state,
+        mutate,
+        persist=persist if journal is not None else None,
+        publish=publish,
+    )
     if ok:
-        # A released task has no holder: prune its wait edges so they cannot
-        # refuse a later legitimate wait as a false-positive deadlock.
-        hub._waits = prune_waits(hub._waits, hub.state.claims)
         receipt = build_release_receipt(
             task_id=task_id,
             owner=sender,
@@ -427,6 +535,7 @@ async def handle_handoff(
     task_id = str(data.get("task_id") or "").strip()
     to_agent = str(data.get("to_agent") or data.get("target") or "").strip()
     note = data.get("note")
+    journal = hub.journal
 
     if to_agent and to_agent not in hub.agent_sockets:
         await hub._send_json(
@@ -440,22 +549,33 @@ async def handle_handoff(
         )
         return
 
-    with durable_state_transaction(
-        hub.state,
-        task_id,
-        enabled=hub.journal is not None,
-        restore_presence=(to_agent,),
-    ):
-        ok, message = hub.state.handoff(
+    def mutate(state: SynapseState) -> tuple[bool, str, TaskClaim | None]:
+        ok, message = state.handoff(
             sender,
             task_id,
             to_agent,
             note=str(note) if note is not None else None,
             epoch=hub._optional_int(data, "epoch"),
         )
-        claim = hub.state.claims.get(task_id) if ok else None
-        if claim is not None and hub.journal is not None:
-            record_handoff(hub.journal, claim)
+        return ok, message, state.claims.get(task_id) if ok else None
+
+    def persist(result: tuple[bool, str, TaskClaim | None]) -> None:
+        if journal is None:
+            raise RuntimeError("handoff persistence requested without a journal")
+        claim = result[2]
+        if claim is not None:
+            record_handoff(journal, claim)
+
+    def publish(result: tuple[bool, str, TaskClaim | None]) -> None:
+        if result[2] is not None:
+            _clear_satisfied_wait(hub._waits, to_agent, task_id)
+
+    ok, message, claim = await hub.state_mutations.run(
+        hub.state,
+        mutate,
+        persist=persist if journal is not None else None,
+        publish=publish,
+    )
     if claim is None:
         await hub._send_json(
             websocket,
@@ -470,11 +590,6 @@ async def handle_handoff(
 
     # Receiving task X clears only the recipient's wait on X, never a wait on
     # an unrelated task the recipient is still blocked on.
-    waited = hub._waits.get(to_agent)
-    if waited is not None:
-        waited.discard(task_id)
-        if not waited:
-            hub._waits.pop(to_agent, None)
     await _record_handoff_progress(hub, task_id, sender, to_agent, claim.note)
     scope_fields: dict[str, Any] = {
         "worktree": claim.worktree,
@@ -527,16 +642,29 @@ async def handle_checkpoint(
     """
     task_id = str(data.get("task_id") or "").strip()
     checkpoint = str(data.get("checkpoint") or data.get("payload") or "")
-    with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
-        ok, message = hub.state.save_checkpoint(
+    journal = hub.journal
+
+    def mutate(state: SynapseState) -> tuple[bool, str, TaskClaim | None]:
+        ok, message = state.save_checkpoint(
             sender,
             task_id,
             checkpoint,
             epoch=hub._optional_int(data, "epoch"),
         )
-        claim = hub.state.claims.get(task_id) if ok else None
-        if claim is not None and hub.journal is not None:
-            record_checkpoint(hub.journal, claim)
+        return ok, message, state.claims.get(task_id) if ok else None
+
+    def persist(result: tuple[bool, str, TaskClaim | None]) -> None:
+        if journal is None:
+            raise RuntimeError("checkpoint persistence requested without a journal")
+        claim = result[2]
+        if claim is not None:
+            record_checkpoint(journal, claim)
+
+    ok, message, claim = await hub.state_mutations.run(
+        hub.state,
+        mutate,
+        persist=persist if journal is not None else None,
+    )
     if claim is not None:
         saved = hub._system(
             message,

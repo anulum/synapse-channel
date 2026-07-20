@@ -137,6 +137,7 @@ from synapse_channel.core.state import (
     MAX_CLAIMS_PER_AGENT,
     MAX_OFFERS_PER_AGENT,
 )
+from synapse_channel.core.state_transaction import SerializedStateMutationActor
 from synapse_channel.core.terminal_text import terminal_text
 
 logger = logging.getLogger("synapse.hub")
@@ -778,6 +779,7 @@ class SynapseHub:
             compact_hint_threshold=self.compact_hint_threshold,
         )
         self.state = seeded.state
+        self.state_mutations = SerializedStateMutationActor()
         self.journal_corrupt_rows = seeded.corrupt_rows
         self._journal_recovery_gate = HubJournalRecoveryGate(
             self.journal_corrupt_rows,
@@ -1002,14 +1004,14 @@ class SynapseHub:
         """Serialise and send one message to a single socket (handler surface)."""
         await self._broadcaster.send_json(websocket, data)
 
-    def _mirror_to_relay(self, data: dict[str, Any]) -> None:
+    async def _mirror_to_relay(self, data: dict[str, Any]) -> None:
         """Mirror one broadcast to the lite relay log via :class:`RelayMirror`.
 
         Kept as a thin wrapper because :mod:`synapse_channel.core.messaging` calls
         ``hub._mirror_to_relay`` directly; the append, lite encoding, and bounded
         trimming live in :class:`~synapse_channel.core.hub_relay.RelayMirror`.
         """
-        self._relay.mirror(data)
+        await self._relay.mirror_async(data)
 
     async def _broadcast(self, data: dict[str, Any]) -> None:
         """Send one message to every connected socket, ignoring failures."""
@@ -1241,10 +1243,19 @@ class SynapseHub:
         if self.authenticator is not None and not was_bound:
             await self._send_welcome(websocket)
 
-        self.state.heartbeat(sender)
-        # A heartbeat can expire leases; a wait on a task that just lost its
-        # holder is stale and must not refuse later legitimate waits (WF-5).
-        self._waits = prune_waits(self._waits, self.state.claims)
+        def touch_state(state: Any) -> None:
+            state.heartbeat(sender)
+
+        def publish_heartbeat(_result: None) -> None:
+            # A heartbeat can expire leases; a wait on a task that just lost
+            # its holder is stale and must not refuse a later legitimate wait.
+            self._waits = prune_waits(self._waits, self.state.claims)
+
+        await self.state_mutations.run(
+            self.state,
+            touch_state,
+            publish=publish_heartbeat,
+        )
         is_new_agent = self.clients.set_agent_socket(sender, websocket)
         if not was_bound or msg_type != MessageType.HEARTBEAT:
             self.dead_letters.clear(sender)

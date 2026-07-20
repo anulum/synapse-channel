@@ -13,6 +13,7 @@ import sqlite3
 import stat
 import sys
 import types
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +86,28 @@ def test_append_and_read_all_preserves_order(tmp_path: Path) -> None:
     assert events[0].payload == {"task_id": "T1"}
     assert events[0].ts == 1.0
     assert events[0].seq < events[1].seq
+
+
+def test_event_store_serializes_cross_thread_appends(tmp_path: Path) -> None:
+    """One store safely orders worker-thread writes on its shared connection."""
+    store = EventStore(tmp_path / "events.db")
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        sequences = list(
+            pool.map(
+                lambda number: store.append(
+                    "claim",
+                    {"task_id": f"T{number}"},
+                    durable=True,
+                ),
+                range(64),
+            )
+        )
+
+    events = store.read_all()
+    assert len(set(sequences)) == 64
+    assert [event.seq for event in events] == list(range(1, 65))
+    assert {event.payload["task_id"] for event in events} == {f"T{number}" for number in range(64)}
+    store.close()
 
 
 def test_append_batch_commits_adjacent_rows_with_one_timestamp(tmp_path: Path) -> None:

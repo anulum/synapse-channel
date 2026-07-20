@@ -19,6 +19,7 @@ many lines have accrued since the last trim, bounding it to roughly twice that.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,7 @@ class RelayMirror:
         self._log_path = log_path
         self._max_lines = max_lines
         self._appends = 0
+        self._lock = asyncio.Lock()
 
     @property
     def log_path(self) -> Path | None:
@@ -70,3 +72,20 @@ class RelayMirror:
         if self._appends >= self._max_lines:
             trim_jsonl_tail(self._log_path, self._max_lines)
             self._appends = 0
+
+    async def mirror_async(self, data: dict[str, Any]) -> None:
+        """Serialize one mirror operation in a worker thread.
+
+        Cancellation waits for the uncancellable filesystem operation before
+        releasing the lock, so a later append can never race a still-running
+        trim from a cancelled connection handler.
+        """
+        if self._log_path is None:
+            return
+        async with self._lock:
+            operation = asyncio.create_task(asyncio.to_thread(self.mirror, data))
+            try:
+                await asyncio.shield(operation)
+            except asyncio.CancelledError:
+                await operation
+                raise

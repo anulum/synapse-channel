@@ -16,16 +16,19 @@ exceptional path.
 
 from __future__ import annotations
 
+import asyncio
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from copy import copy
+from copy import copy, deepcopy
 from dataclasses import dataclass, fields
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
     from synapse_channel.core.state import SynapseState
     from synapse_channel.core.state_models import TaskClaim
+
+MutationResult = TypeVar("MutationResult")
 
 
 @dataclass(frozen=True)
@@ -69,7 +72,8 @@ class _TaskStateSnapshot:
         if self.claim is None or expired:
             state.claims.pop(self.task_id, None)
         else:
-            assert self.claim_value is not None
+            if self.claim_value is None:
+                raise RuntimeError("transaction snapshot lost its live claim value")
             for field in fields(self.claim_value):
                 setattr(self.claim, field.name, getattr(self.claim_value, field.name))
             state.claims[self.task_id] = self.claim
@@ -111,3 +115,59 @@ def durable_state_transaction(
         if snapshot is not None:
             snapshot.restore(state)
         raise
+
+
+class SerializedStateMutationActor:
+    """Serialize durable state transitions without blocking the event loop.
+
+    A durable transition is first applied to a private deep copy.  Its journal
+    append then runs in a worker thread while the live state remains unchanged.
+    Only a successful append publishes the candidate, synchronously and without
+    yielding.  The actor lock orders concurrent state mutations and prevents a
+    heartbeat or another transition from being lost while one append is in
+    flight.
+
+    Non-durable hubs mutate the live state directly under the same lock.  This
+    keeps one ordering model without paying the copy cost when there is no I/O
+    boundary to cross.
+    """
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+
+    async def run(
+        self,
+        state: SynapseState,
+        mutate: Callable[[SynapseState], MutationResult],
+        *,
+        persist: Callable[[MutationResult], None] | None = None,
+        publish: Callable[[MutationResult], None] | None = None,
+    ) -> MutationResult:
+        """Apply one serialized mutation and publish it only after persistence."""
+        async with self._lock:
+            if persist is None:
+                result = mutate(state)
+                if publish is not None:
+                    publish(result)
+                return result
+
+            candidate = deepcopy(state)
+            result = mutate(candidate)
+            append = asyncio.create_task(asyncio.to_thread(persist, result))
+            cancelled = False
+            try:
+                await asyncio.shield(append)
+            except asyncio.CancelledError:
+                # A worker thread cannot be cancelled.  Keep the mutation lock,
+                # wait for its authoritative outcome, and publish a committed
+                # candidate before propagating cancellation.  Otherwise shutdown
+                # could close the journal around an in-flight append or leave a
+                # durable event whose live state was discarded.
+                cancelled = True
+                await append
+            state.publish_from(candidate)
+            if publish is not None:
+                publish(result)
+            if cancelled:
+                raise asyncio.CancelledError
+            return result

@@ -156,6 +156,38 @@ class SynapseState:
         self._epoch_seq += 1
         return self._epoch_seq
 
+    def publish_from(self, candidate: SynapseState) -> None:
+        """Atomically publish a privately mutated candidate state.
+
+        Durable hub mutations are prepared on a deep copy while the current
+        state remains visible to readers.  After the matching journal append
+        commits, the event-loop mutation actor calls this synchronous method;
+        because it contains no await, readers observe either the complete old
+        state or the complete committed state, never a provisional mutation.
+
+        ``last_seen`` is updated in place because the hub liveness view retains
+        that mapping by reference.  The other registries are reached through
+        ``hub.state`` on every read and can therefore be replaced wholesale.
+        Configuration is immutable for a running hub and must agree between the
+        authoritative state and its clone.
+        """
+        if (
+            candidate.default_ttl_seconds != self.default_ttl_seconds
+            or candidate.max_claims_per_agent != self.max_claims_per_agent
+            or candidate.max_offers_per_agent != self.max_offers_per_agent
+            or candidate.max_paths_per_claim != self.max_paths_per_claim
+        ):
+            raise ValueError("candidate state configuration does not match the live hub")
+
+        self.last_seen.clear()
+        self.last_seen.update(candidate.last_seen)
+        self.claims = candidate.claims
+        self._resource_registry = candidate._resource_registry
+        self.resources = self._resource_registry.resources
+        self.expired_checkpoints = candidate.expired_checkpoints
+        self._epoch_seq = candidate._epoch_seq
+        self._lease_index = candidate._lease_index
+
     def _track_lease(self, claim: TaskClaim) -> None:
         """Index a claim's lease for expiry, keeping the heap proportional to live claims.
 

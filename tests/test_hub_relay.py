@@ -8,10 +8,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
 from pathlib import Path
 
+import pytest
+
 from synapse_channel.core.hub_relay import RelayMirror
+from synapse_channel.core.relay import append_jsonl as relay_append_jsonl
 from synapse_channel.relay import decode_lite, read_jsonl_since
 
 
@@ -76,3 +81,59 @@ def test_mirror_resets_its_append_counter_after_a_trim(tmp_path: Path) -> None:
     payloads = [event.get("payload") for event in decoded]
     assert payloads[-1] == "2"
     assert len(lines) <= mirror.max_lines + 1
+
+
+async def test_async_mirror_keeps_file_io_off_the_event_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stalled filesystem append does not stall unrelated coroutines."""
+    log = tmp_path / "relay.ndjson"
+    mirror = RelayMirror(log, max_lines=8)
+    append_started = threading.Event()
+    allow_append = threading.Event()
+    original_append = relay_append_jsonl
+
+    def delayed_append(path: Path, data: dict[str, object]) -> None:
+        append_started.set()
+        assert allow_append.wait(timeout=2.0)
+        original_append(path, data)
+
+    monkeypatch.setattr("synapse_channel.core.hub_relay.append_jsonl", delayed_append)
+    operation = asyncio.create_task(mirror.mirror_async(_message("hello")))
+    assert await asyncio.to_thread(append_started.wait, 1.0)
+
+    await asyncio.sleep(0)
+    assert not operation.done()
+    allow_append.set()
+    await operation
+
+    events, _offset = read_jsonl_since(log, 0)
+    assert [decode_lite(event)["payload"] for event in events] == ["hello"]
+
+
+async def test_async_mirror_finishes_append_before_propagating_cancellation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cancellation cannot release the relay lock around a live worker."""
+    log = tmp_path / "relay.ndjson"
+    mirror = RelayMirror(log, max_lines=8)
+    append_started = threading.Event()
+    allow_append = threading.Event()
+    original_append = relay_append_jsonl
+
+    def delayed_append(path: Path, data: dict[str, object]) -> None:
+        append_started.set()
+        assert allow_append.wait(timeout=2.0)
+        original_append(path, data)
+
+    monkeypatch.setattr("synapse_channel.core.hub_relay.append_jsonl", delayed_append)
+    operation = asyncio.create_task(mirror.mirror_async(_message("kept")))
+    assert await asyncio.to_thread(append_started.wait, 1.0)
+    operation.cancel()
+    allow_append.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await operation
+
+    events, _offset = read_jsonl_since(log, 0)
+    assert [decode_lite(event)["payload"] for event in events] == ["kept"]

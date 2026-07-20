@@ -29,8 +29,8 @@ remote agent's behalf, so the gate is stricter and fails closed at every step:
 * a malformed request — which carries no namespace or claimant to grant under — is answered with
   an error frame and grants nothing.
 
-A granted claim is applied through the one authoritative grant core
-(:func:`~synapse_channel.core.handlers.leasing.apply_claim`) and broadcast to this hub's own
+A granted claim is applied through the one authoritative async grant core
+(:func:`~synapse_channel.core.handlers.leasing.apply_claim_async`) and broadcast to this hub's own
 agents, exactly as a direct claim is, then the same grant fields are relayed back so the
 forwarding hub can hand its client an authentic ``CLAIM_GRANTED``.
 """
@@ -41,7 +41,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.core.handlers.leasing import apply_claim, claim_grant_fields
+from synapse_channel.core.handlers.leasing import apply_claim_async, claim_grant_fields
 from synapse_channel.core.multihub_claim_wire import (
     ClaimForwardRequest,
     ClaimForwardResult,
@@ -115,7 +115,7 @@ async def handle_multihub_claim_request(
     # The serving policy has authenticated the peer, but the nested claimant is
     # still a peer assertion. Charge every alias forwarded by one peer to that
     # peer's stable bucket so name rotation cannot multiply the owning hub's cap.
-    application = apply_claim(
+    application = await apply_claim_async(
         hub,
         request.claimant,
         request.claim,

@@ -42,6 +42,7 @@ one mutually authenticated peer cannot manufacture a quorum.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -61,6 +62,7 @@ from synapse_channel.core.operator_relay_wire import (
     encode_relay_result,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.state import SynapseState
 from synapse_channel.core.state_transaction import durable_state_transaction
 
 if TYPE_CHECKING:
@@ -146,9 +148,9 @@ async def handle_operator_relay_request(
     # An allow decision guarantees the action is registered; the sole registered action is a
     # force-release, so applying it here is exhaustive for this slice.
     if hub.require_two_person_relay:
-        result = _apply_with_two_person(hub, sender, request, authorisation.principal)
+        result = await _apply_with_two_person_async(hub, sender, request, authorisation.principal)
     else:
-        result = _apply_release(hub, sender, request)
+        result = await _apply_release_async(hub, sender, request)
     await _send_result(hub, websocket, sender, result)
 
 
@@ -223,6 +225,93 @@ def _apply_with_two_person(
     )
 
 
+async def _apply_with_two_person_async(
+    hub: SynapseHub, sender: str, request: RelayActionRequest, principal: str
+) -> RelayActionResult:
+    """Async production path for the two-person relay gate."""
+    outcome = hub.relay_approvals.submit(request, principal=principal)
+    if outcome.status is ApprovalStatus.APPROVED:
+        return await _apply_release_async(
+            hub,
+            sender,
+            request,
+            requester=outcome.requester,
+            approver=outcome.approver,
+            requester_principal=outcome.requester_principal,
+            approver_principal=outcome.approver_principal,
+        )
+    if hub.journal is not None:
+        await asyncio.to_thread(_audit_pending, hub, sender, request, outcome)
+    detail = _PENDING_DETAIL if outcome.status is ApprovalStatus.RECORDED else _AWAITING_DETAIL
+    return RelayActionResult(
+        applied=False,
+        action=request.action,
+        namespace=request.namespace,
+        task_id=request.task_id,
+        owner_hub_id=hub.hub_id,
+        detail=detail,
+        pending=True,
+    )
+
+
+@dataclass(frozen=True)
+class _ReleaseApplication:
+    """Candidate release result plus its durable provenance payload."""
+
+    result: RelayActionResult
+    audit_payload: dict[str, Any] | None
+
+
+def _prepare_release(
+    state: SynapseState,
+    *,
+    hub_id: str,
+    sender: str,
+    request: RelayActionRequest,
+    requester: str = "",
+    approver: str = "",
+    requester_principal: str = "",
+    approver_principal: str = "",
+) -> _ReleaseApplication:
+    """Apply a force-release to one state object and build its audit payload."""
+    task_id = request.task_id.strip()
+    existing = state.claims.get(task_id)
+    previous_owner = existing.owner if existing is not None else ""
+    applied, detail = state.force_release(request.task_id, by=request.operator)
+    payload = None
+    if applied:
+        payload = {
+            "action": request.action,
+            "namespace": request.namespace,
+            "task_id": task_id,
+            "direction": RELAY_DIRECTION_IN,
+            "status": RELAY_STATUS_APPLIED,
+            "peer": sender,
+            "operator": request.operator,
+            "requester": requester,
+            "approver": approver,
+            "requester_principal": requester_principal,
+            "approver_principal": approver_principal,
+            "origin_hub_id": request.origin_hub_id,
+            "reason": request.reason,
+            "break_glass": request.break_glass,
+            "previous_owner": previous_owner,
+            "applied": True,
+            "detail": detail,
+        }
+    return _ReleaseApplication(
+        result=RelayActionResult(
+            applied=applied,
+            action=request.action,
+            namespace=request.namespace,
+            task_id=request.task_id,
+            owner_hub_id=hub_id,
+            detail=detail,
+        ),
+        audit_payload=payload,
+    )
+
+
 def _apply_release(
     hub: SynapseHub,
     sender: str,
@@ -244,42 +333,60 @@ def _apply_release(
     empty for a single-operator relay.
     """
     task_id = request.task_id.strip()
-    existing = hub.state.claims.get(task_id)
-    previous_owner = existing.owner if existing is not None else ""
     with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
-        applied, detail = hub.state.force_release(request.task_id, by=request.operator)
-        if applied and hub.journal is not None:
-            record_operator_release(
-                hub.journal,
-                task_id,
-                {
-                    "action": request.action,
-                    "namespace": request.namespace,
-                    "task_id": task_id,
-                    "direction": RELAY_DIRECTION_IN,
-                    "status": RELAY_STATUS_APPLIED,
-                    "peer": sender,
-                    "operator": request.operator,
-                    "requester": requester,
-                    "approver": approver,
-                    "requester_principal": requester_principal,
-                    "approver_principal": approver_principal,
-                    "origin_hub_id": request.origin_hub_id,
-                    "reason": request.reason,
-                    "break_glass": request.break_glass,
-                    "previous_owner": previous_owner,
-                    "applied": True,
-                    "detail": detail,
-                },
-            )
-    return RelayActionResult(
-        applied=applied,
-        action=request.action,
-        namespace=request.namespace,
-        task_id=request.task_id,
-        owner_hub_id=hub.hub_id,
-        detail=detail,
+        application = _prepare_release(
+            hub.state,
+            hub_id=hub.hub_id,
+            sender=sender,
+            request=request,
+            requester=requester,
+            approver=approver,
+            requester_principal=requester_principal,
+            approver_principal=approver_principal,
+        )
+        if application.audit_payload is not None and hub.journal is not None:
+            record_operator_release(hub.journal, task_id, application.audit_payload)
+    return application.result
+
+
+async def _apply_release_async(
+    hub: SynapseHub,
+    sender: str,
+    request: RelayActionRequest,
+    *,
+    requester: str = "",
+    approver: str = "",
+    requester_principal: str = "",
+    approver_principal: str = "",
+) -> RelayActionResult:
+    """Apply a relay through the copy-on-write actor and persist off-loop."""
+    task_id = request.task_id.strip()
+    journal = hub.journal
+
+    def mutate(state: SynapseState) -> _ReleaseApplication:
+        return _prepare_release(
+            state,
+            hub_id=hub.hub_id,
+            sender=sender,
+            request=request,
+            requester=requester,
+            approver=approver,
+            requester_principal=requester_principal,
+            approver_principal=approver_principal,
+        )
+
+    def persist(application: _ReleaseApplication) -> None:
+        if journal is None:
+            raise RuntimeError("operator-release persistence requested without a journal")
+        if application.audit_payload is not None:
+            record_operator_release(journal, task_id, application.audit_payload)
+
+    application = await hub.state_mutations.run(
+        hub.state,
+        mutate,
+        persist=persist if journal is not None else None,
     )
+    return application.result
 
 
 def _audit_pending(

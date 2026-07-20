@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING, Any
 from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.journal import record_resource
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.state import SynapseState
+from synapse_channel.core.state_models import ResourceOffer
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
@@ -153,6 +155,7 @@ async def handle_resource(
     name = str(data.get("name") or data.get("resource_name") or "").strip()
     capacity = data.get("capacity", 1)
     meta = data.get("meta") or {}
+    journal = hub.journal
 
     if not kind or not name:
         await hub._send_json(
@@ -165,7 +168,28 @@ async def handle_resource(
         )
         return
 
-    key = hub.state.offer_resource(sender, kind=kind, name=name, capacity=capacity, meta=meta)
+    def mutate(state: SynapseState) -> tuple[str | None, ResourceOffer | None]:
+        key = state.offer_resource(
+            sender,
+            kind=kind,
+            name=name,
+            capacity=capacity,
+            meta=meta,
+        )
+        return key, state.resources.get(key) if key is not None else None
+
+    def persist(result: tuple[str | None, ResourceOffer | None]) -> None:
+        if journal is None:
+            raise RuntimeError("resource persistence requested without a journal")
+        offer = result[1]
+        if offer is not None:
+            record_resource(journal, offer)
+
+    key, _offer = await hub.state_mutations.run(
+        hub.state,
+        mutate,
+        persist=persist if journal is not None else None,
+    )
     if key is None:
         await hub._send_json(
             websocket,
@@ -176,8 +200,6 @@ async def handle_resource(
             ),
         )
         return
-    if hub.journal is not None:
-        record_resource(hub.journal, hub.state.resources[key])
     offered = hub._system(
         f"Resource offered by {sender}",
         msg_type=MessageType.RESOURCE_OFFERED,

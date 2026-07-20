@@ -69,7 +69,7 @@ class HubBroadcaster:
         The message is mirrored to the relay log first — even with no socket
         connected — so the log captures it for a later observer.
         """
-        self._relay.mirror(data)
+        await self._relay.mirror_async(data)
         clients = self._clients.connected_clients
         if not clients:
             return
@@ -122,7 +122,7 @@ class HubBroadcaster:
         given, back to ``sender_socket`` so the sender still sees its own message.
         Each socket is sent at most once, and a name with no live socket is skipped.
         """
-        self._relay.mirror(data)
+        await self._relay.mirror_async(data)
         sockets: set[Any] = set()
         if sender_socket is not None:
             sockets.add(sender_socket)

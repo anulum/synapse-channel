@@ -24,6 +24,11 @@ Every failed append is rolled back before the connection is reused. A durable
 attempt also restores ``synchronous=NORMAL`` before its database exception
 propagates, so one rejected write cannot leave later high-volume traffic at the
 ``FULL`` setting.
+
+The connection permits worker-thread use and every operation is serialized by
+one per-store reentrant lock.  Async hub paths may therefore move a complete
+append off the event loop without allowing concurrent reads, maintenance, or a
+second writer to use the DB-API connection at the same time.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ import contextlib
 import json
 import logging
 import os
+import threading
 import time
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
@@ -92,9 +98,15 @@ class EventStore:
         aef_outbox_kinds: Iterable[str] = (),
     ) -> None:
         self.path = str(path)
+        self._lock = threading.RLock()
         from synapse_channel.core.persistence_sqlcipher import connect_event_store
 
-        self._conn, self._encrypted = connect_event_store(self.path, key=key, key_file=key_file)
+        self._conn, self._encrypted = connect_event_store(
+            self.path,
+            key=key,
+            key_file=key_file,
+            check_same_thread=False,
+        )
         # The event log holds chat, findings, and recall telemetry, so restrict
         # it to the owner (0o600) where the platform supports it — encryption
         # does not replace permissions.
@@ -229,37 +241,38 @@ class EventStore:
         ]
         if not rows:
             return ()
-        if durable:
-            self._conn.execute("PRAGMA synchronous=FULL")
-        try:
-            sequences = []
-            for row in rows:
-                cursor = self._conn.execute(
-                    "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", row
-                )
-                sequence = int(cursor.lastrowid or 0)
-                sequences.append(sequence)
-                if row[1] in self._aef_outbox_kinds:
-                    self._conn.execute(
-                        "INSERT INTO aef_outbox (legacy_seq, receipt_id) VALUES (?, NULL)",
-                        (sequence,),
-                    )
-            self._conn.commit()
-        except BaseException:
-            self._conn.rollback()
-            raise
-        finally:
+        with self._lock:
             if durable:
-                try:
-                    self._conn.execute("PRAGMA synchronous=NORMAL")
-                except BaseException:
-                    # The transaction outcome is already final. Reporting a
-                    # post-commit cleanup error as append failure would make a
-                    # caller roll back live state while the event remains
-                    # durable. FULL is correctness-safe (only slower), so keep
-                    # the committed outcome authoritative and make cleanup
-                    # failure observable without inverting journal truth.
-                    logger.exception("Could not restore SQLite synchronous=NORMAL")
+                self._conn.execute("PRAGMA synchronous=FULL")
+            try:
+                sequences = []
+                for row in rows:
+                    cursor = self._conn.execute(
+                        "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", row
+                    )
+                    sequence = int(cursor.lastrowid or 0)
+                    sequences.append(sequence)
+                    if row[1] in self._aef_outbox_kinds:
+                        self._conn.execute(
+                            "INSERT INTO aef_outbox (legacy_seq, receipt_id) VALUES (?, NULL)",
+                            (sequence,),
+                        )
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
+            finally:
+                if durable:
+                    try:
+                        self._conn.execute("PRAGMA synchronous=NORMAL")
+                    except BaseException:
+                        # The transaction outcome is already final. Reporting a
+                        # post-commit cleanup error as append failure would make a
+                        # caller roll back live state while the event remains
+                        # durable. FULL is correctness-safe (only slower), so keep
+                        # the committed outcome authoritative and make cleanup
+                        # failure observable without inverting journal truth.
+                        logger.exception("Could not restore SQLite synchronous=NORMAL")
         return tuple(sequences)
 
     def pending_aef_events(self, *, limit: int = 100) -> tuple[StoredEvent, ...]:
@@ -268,12 +281,13 @@ class EventStore:
             raise ValueError("AEF outbox limit must be an integer from 1 through 10000")
         if not self._has_aef_outbox:
             return ()
-        rows = self._conn.execute(
-            "SELECT e.seq, e.ts, e.kind, e.payload "
-            "FROM aef_outbox AS o JOIN events AS e ON e.seq = o.legacy_seq "
-            "WHERE o.receipt_id IS NULL ORDER BY e.seq LIMIT ?",
-            (limit,),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT e.seq, e.ts, e.kind, e.payload "
+                "FROM aef_outbox AS o JOIN events AS e ON e.seq = o.legacy_seq "
+                "WHERE o.receipt_id IS NULL ORDER BY e.seq LIMIT ?",
+                (limit,),
+            ).fetchall()
         return tuple(self._stored_event(row) for row in rows)
 
     def mark_aef_delivered(self, legacy_seq: int, receipt_id: str) -> None:
@@ -282,34 +296,36 @@ class EventStore:
             raise ValueError("AEF outbox sequence must be a positive integer")
         if not isinstance(receipt_id, str) or not receipt_id:
             raise ValueError("AEF outbox receipt id must be non-empty text")
-        self._conn.execute("PRAGMA synchronous=FULL")
-        try:
-            row = self._conn.execute(
-                "SELECT receipt_id FROM aef_outbox WHERE legacy_seq = ?", (legacy_seq,)
-            ).fetchone()
-            if row is None:
-                raise KeyError(f"legacy sequence {legacy_seq} is not queued for AEF")
-            current = row[0]
-            if current is not None and str(current) != receipt_id:
-                raise ValueError("AEF outbox sequence is already bound to another receipt")
-            self._conn.execute(
-                "UPDATE aef_outbox SET receipt_id = ? WHERE legacy_seq = ?",
-                (receipt_id, legacy_seq),
-            )
-            self._conn.commit()
-        except BaseException:
-            self._conn.rollback()
-            raise
-        finally:
-            self._conn.execute("PRAGMA synchronous=NORMAL")
+        with self._lock:
+            self._conn.execute("PRAGMA synchronous=FULL")
+            try:
+                row = self._conn.execute(
+                    "SELECT receipt_id FROM aef_outbox WHERE legacy_seq = ?", (legacy_seq,)
+                ).fetchone()
+                if row is None:
+                    raise KeyError(f"legacy sequence {legacy_seq} is not queued for AEF")
+                current = row[0]
+                if current is not None and str(current) != receipt_id:
+                    raise ValueError("AEF outbox sequence is already bound to another receipt")
+                self._conn.execute(
+                    "UPDATE aef_outbox SET receipt_id = ? WHERE legacy_seq = ?",
+                    (receipt_id, legacy_seq),
+                )
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
+            finally:
+                self._conn.execute("PRAGMA synchronous=NORMAL")
 
     def aef_delivery(self, legacy_seq: int) -> str | None:
         """Return the delivered receipt id, or ``None`` for pending/absent rows."""
         if not self._has_aef_outbox:
             return None
-        row = self._conn.execute(
-            "SELECT receipt_id FROM aef_outbox WHERE legacy_seq = ?", (legacy_seq,)
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT receipt_id FROM aef_outbox WHERE legacy_seq = ?", (legacy_seq,)
+            ).fetchone()
         return None if row is None or row[0] is None else str(row[0])
 
     def read_all(self) -> list[StoredEvent]:
@@ -376,8 +392,9 @@ class EventStore:
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY seq"
-        for row in self._conn.execute(sql, params):
-            yield self._stored_event(row)
+        with self._lock:
+            for row in self._conn.execute(sql, params):
+                yield self._stored_event(row)
 
     def read_since(
         self,
@@ -425,7 +442,8 @@ class EventStore:
         if limit is not None:
             sql += " LIMIT ?"
             params.append(max(0, int(limit)))
-        rows = self._conn.execute(sql, params).fetchall()
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
         return [self._stored_event(row) for row in rows]
 
     def read_window(
@@ -488,7 +506,8 @@ class EventStore:
         if limit is not None:
             sql += " LIMIT ?"
             params.append(max(0, int(limit)))
-        rows = self._conn.execute(sql, params).fetchall()
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
         return [self._stored_event(row) for row in rows]
 
     def corrupt_rows(self, *, through_seq: int | None = None) -> tuple[CorruptEventRow, ...]:
@@ -512,15 +531,17 @@ class EventStore:
             params = (int(through_seq),)
         sql += " ORDER BY seq"
         corrupt: list[CorruptEventRow] = []
-        for row in self._conn.execute(sql, params):
-            marker = decode_event_row(row).corruption
-            if marker is not None:
-                corrupt.append(marker)
+        with self._lock:
+            for row in self._conn.execute(sql, params):
+                marker = decode_event_row(row).corruption
+                if marker is not None:
+                    corrupt.append(marker)
         return tuple(corrupt)
 
     def count(self) -> int:
         """Return the number of events currently stored."""
-        row = self._conn.execute("SELECT COUNT(*) FROM events").fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT COUNT(*) FROM events").fetchone()
         return int(row[0])
 
     def max_seq(self) -> int:
@@ -530,7 +551,8 @@ class EventStore:
         lagging behind, the whole log up to the latest sequence may be compacted
         (see :mod:`synapse_channel.core.compaction`).
         """
-        row = self._conn.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()
         return int(row[0])
 
     def delete(self, seqs: Iterable[int]) -> int:
@@ -570,8 +592,9 @@ class EventStore:
                 " AND NOT EXISTS (SELECT 1 FROM aef_outbox "
                 "WHERE legacy_seq = events.seq AND receipt_id IS NULL)"
             )
-        cursor = self._conn.executemany(sql, ((seq,) for seq in seq_list))
-        self._conn.commit()
+        with self._lock:
+            cursor = self._conn.executemany(sql, ((seq,) for seq in seq_list))
+            self._conn.commit()
         return int(cursor.rowcount)
 
     def vacuum(self) -> None:
@@ -582,12 +605,14 @@ class EventStore:
         ``VACUUM`` rewrites the database to release the free pages. It rewrites the
         whole database, so call it from a maintenance path, not the hot loop.
         """
-        self._conn.commit()  # VACUUM cannot run inside an open transaction
-        self._conn.execute("VACUUM")
+        with self._lock:
+            self._conn.commit()  # VACUUM cannot run inside an open transaction
+            self._conn.execute("VACUUM")
 
     def close(self) -> None:
         """Close the underlying database connection."""
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
     def __enter__(self) -> EventStore:
         """Enter a context manager that closes the store on exit."""

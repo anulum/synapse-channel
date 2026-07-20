@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -189,6 +191,146 @@ def test_post_commit_cleanup_failure_keeps_durable_and_live_claim_aligned(
     events = [event for event in store.read_all() if event.kind == EventKind.CLAIM]
     assert len(events) == 1
     assert events[0].payload["task_id"] == "T1"
+    store.close()
+
+
+async def test_async_claim_keeps_provisional_state_private_and_event_loop_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A slow durable append neither publishes early nor blocks unrelated tasks."""
+    hub, store = _journalled_hub(tmp_path / "events.db")
+    append_started = threading.Event()
+    allow_commit = threading.Event()
+
+    def delayed_record_claim(target: EventStore, claim: TaskClaim) -> None:
+        append_started.set()
+        assert allow_commit.wait(timeout=2.0)
+        record_claim(target, claim)
+
+    monkeypatch.setattr(leasing, "record_claim", delayed_record_claim)
+    claim_task = asyncio.create_task(
+        leasing.apply_claim_async(hub, "A", {"task_id": "T1", "paths": ["src/a.py"]})
+    )
+    assert await asyncio.to_thread(append_started.wait, 1.0)
+
+    # The worker is stalled before COMMIT. Readers still see the complete old
+    # state, while the event loop continues to schedule unrelated coroutines.
+    assert "T1" not in hub.state.claims
+    ticked = False
+
+    async def tick() -> None:
+        nonlocal ticked
+        await asyncio.sleep(0)
+        ticked = True
+
+    await tick()
+    assert ticked
+    allow_commit.set()
+    result = await claim_task
+
+    assert result.ok
+    assert hub.state.claims["T1"] is result.claim
+    assert [event.kind for event in store.read_all()] == [EventKind.CLAIM]
+    store.close()
+
+
+async def test_async_claim_append_failure_never_publishes_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The async actor discards a candidate when its durable append fails."""
+    hub, store = _journalled_hub(tmp_path / "events.db")
+    old_presence = hub.state.last_seen
+    monkeypatch.setattr(leasing, "record_claim", _fail_record_claim)
+
+    with pytest.raises(OSError, match="journal unavailable"):
+        await leasing.apply_claim_async(
+            hub,
+            "A",
+            {"task_id": "T1", "paths": ["src/a.py"]},
+        )
+
+    assert "T1" not in hub.state.claims
+    assert hub.state.last_seen is old_presence
+    assert store.read_all() == []
+    store.close()
+
+
+async def test_async_claims_are_serialized_across_candidate_commit_boundary(tmp_path: Path) -> None:
+    """Two concurrent overlapping candidates cannot both commit from stale state."""
+    hub, store = _journalled_hub(tmp_path / "events.db")
+    first, second = await asyncio.gather(
+        leasing.apply_claim_async(hub, "A", {"task_id": "TA", "paths": ["src/a.py"]}),
+        leasing.apply_claim_async(hub, "B", {"task_id": "TB", "paths": ["src/a.py"]}),
+    )
+
+    assert [first.ok, second.ok].count(True) == 1
+    assert len(hub.state.claims) == 1
+    events = store.read_all()
+    assert [event.kind for event in events] == [EventKind.CLAIM, EventKind.CLAIM_DENIAL]
+    store.close()
+
+
+async def test_concurrent_heartbeat_cannot_be_lost_behind_candidate_publish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An expiry requested during append runs after publish and cannot be resurrected."""
+    hub, store = _journalled_hub(tmp_path / "events.db")
+    clock = [100.0]
+    monkeypatch.setattr("synapse_channel.core.state.time.time", lambda: clock[0])
+    assert hub.state.claim("OLD", "T0", ttl_seconds=30.0, paths=["src/old.py"])[0]
+    append_started = threading.Event()
+    allow_commit = threading.Event()
+
+    def delayed_record_claim(target: EventStore, claim: TaskClaim) -> None:
+        append_started.set()
+        assert allow_commit.wait(timeout=2.0)
+        record_claim(target, claim)
+
+    monkeypatch.setattr(leasing, "record_claim", delayed_record_claim)
+    claim_task = asyncio.create_task(
+        leasing.apply_claim_async(hub, "A", {"task_id": "T1", "paths": ["src/new.py"]})
+    )
+    assert await asyncio.to_thread(append_started.wait, 1.0)
+
+    clock[0] = 200.0
+    heartbeat_task = asyncio.create_task(
+        hub.state_mutations.run(hub.state, lambda state: state.heartbeat("B"))
+    )
+    await asyncio.sleep(0)
+    assert not heartbeat_task.done()
+    allow_commit.set()
+    await claim_task
+    await heartbeat_task
+
+    assert "T0" not in hub.state.claims
+    assert "T1" in hub.state.claims
+    store.close()
+
+
+async def test_cancellation_waits_for_authoritative_append_before_propagating(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cancellation cannot strand a committed event without its live state."""
+    hub, store = _journalled_hub(tmp_path / "events.db")
+    append_started = threading.Event()
+    allow_commit = threading.Event()
+
+    def delayed_record_claim(target: EventStore, claim: TaskClaim) -> None:
+        append_started.set()
+        assert allow_commit.wait(timeout=2.0)
+        record_claim(target, claim)
+
+    monkeypatch.setattr(leasing, "record_claim", delayed_record_claim)
+    claim_task = asyncio.create_task(leasing.apply_claim_async(hub, "A", {"task_id": "T1"}))
+    assert await asyncio.to_thread(append_started.wait, 1.0)
+    claim_task.cancel()
+    allow_commit.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await claim_task
+
+    assert "T1" in hub.state.claims
+    assert [event.kind for event in store.read_all()] == [EventKind.CLAIM]
     store.close()
 
 

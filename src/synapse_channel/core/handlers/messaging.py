@@ -363,7 +363,7 @@ async def _route_channel_chat(
     hub.channels.retain_message(channel, data, max_messages=hub.max_history)
     if hub.journal is not None:
         record_chat(hub.journal, data)
-    hub._mirror_to_relay(data)
+    await hub._mirror_to_relay(data)
     for member in recipients:
         await hub._send_to_agent(member, data)
     if bool(data.get("receipt_requested")):

@@ -114,6 +114,9 @@ def apply_sqlcipher_key(conn: Any, key: bytes) -> None:
         An open SQLCipher connection.
     key : bytes
         Raw 32-byte key material.
+    check_same_thread : bool, optional
+        Forwarded to the DB-API connection. EventStore disables the affinity
+        check and provides its own per-connection lock.
 
     Raises
     ------
@@ -131,7 +134,12 @@ def apply_sqlcipher_key(conn: Any, key: bytes) -> None:
         ) from exc
 
 
-def connect_sqlcipher(path: str | Path, key: bytes) -> Any:
+def connect_sqlcipher(
+    path: str | Path,
+    key: bytes,
+    *,
+    check_same_thread: bool = True,
+) -> Any:
     """Open a SQLCipher database at ``path`` with the given raw key.
 
     Parameters
@@ -154,7 +162,7 @@ def connect_sqlcipher(path: str | Path, key: bytes) -> Any:
         When the key cannot open the database.
     """
     sqlcipher = import_sqlcipher_module()
-    conn = sqlcipher.connect(str(path))
+    conn = sqlcipher.connect(str(path), check_same_thread=check_same_thread)
     try:
         apply_sqlcipher_key(conn, key)
     except Exception:
@@ -168,6 +176,7 @@ def connect_event_store(
     *,
     key: bytes | None = None,
     key_file: str | Path | None = None,
+    check_same_thread: bool = True,
 ) -> tuple[Any, bool]:
     """Open a stock or SQLCipher connection for the event store.
 
@@ -180,6 +189,8 @@ def connect_event_store(
         disagree; when both are set, ``key`` wins.
     key_file : str or pathlib.Path or None, optional
         Owner-only 32-byte key file (checked via :func:`load_key_file`).
+    check_same_thread : bool, optional
+        Forwarded to the selected SQLite driver.
 
     Returns
     -------
@@ -200,7 +211,7 @@ def connect_event_store(
     if material is None and key_file is not None:
         material = load_key_file(key_file)
     if material is None:
-        conn = sqlite3.connect(str(path))
+        conn = sqlite3.connect(str(path), check_same_thread=check_same_thread)
         try:
             # SQLCipher files open under stock sqlite3 but fail on the first real
             # page read — surface a key-file hint instead of "file is not a database".
@@ -213,7 +224,7 @@ def connect_event_store(
                 "synapse hub --db-key-file"
             ) from exc
         return conn, False
-    return connect_sqlcipher(path, material), True
+    return connect_sqlcipher(path, material, check_same_thread=check_same_thread), True
 
 
 def rekey_sqlcipher_store(
