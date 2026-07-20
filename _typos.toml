@@ -19,6 +19,8 @@ extend-exclude = [
     "*.db",
     "*.ndjson",
     "benchmarks/results/*.json",
+    # Signatures are opaque base64url and cannot be spell-corrected.
+    "tests/fixtures/aef_receipt_v0_1.json",
     # Translated READMEs are non-English by definition; the checker's English
     # dictionary misreads legitimate foreign words (e.g. French "sur") as typos.
     "docs/readme/*.md",

@@ -19,6 +19,7 @@ from synapse_channel.core.aef_time import (
     current_epoch_ms,
     epoch_ms_to_legacy_seconds,
     legacy_seconds_to_epoch_ms,
+    validate_epoch_ms,
 )
 
 
@@ -108,3 +109,13 @@ def test_current_epoch_ms_defaults_to_the_host_nanosecond_clock() -> None:
 def test_current_epoch_ms_rejects_an_out_of_range_clock() -> None:
     with pytest.raises(AefTimestampError, match="I-JSON exact integer range"):
         current_epoch_ms(clock_ns=lambda: (IJSON_MAX_INTEGER + 1) * 1_000_000)
+
+
+def test_public_validator_preserves_canonical_integer_milliseconds() -> None:
+    assert validate_epoch_ms(1_783_940_400_000) == 1_783_940_400_000
+
+
+@pytest.mark.parametrize("value", [True, 1.5, "1783940400000", IJSON_MAX_INTEGER + 1])
+def test_public_validator_rejects_noncanonical_timestamps(value: object) -> None:
+    with pytest.raises(AefTimestampError):
+        validate_epoch_ms(value)

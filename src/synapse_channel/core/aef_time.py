@@ -29,6 +29,27 @@ class AefTimestampError(ValueError):
     """Raised when a value cannot be projected into an AEF v0.1 timestamp."""
 
 
+def validate_epoch_ms(timestamp_ms: object) -> int:
+    """Return a canonical AEF epoch-millisecond value.
+
+    Parameters
+    ----------
+    timestamp_ms:
+        Candidate integer Unix epoch milliseconds.
+
+    Returns
+    -------
+    int
+        The validated non-boolean integer in the I-JSON exact range.
+
+    Raises
+    ------
+    AefTimestampError
+        If the value is not a canonical AEF timestamp.
+    """
+    return _require_epoch_ms(timestamp_ms)
+
+
 def current_epoch_ms(*, clock_ns: Callable[[], int] | None = None) -> int:
     """Return the local wall clock as integer Unix epoch milliseconds.
 

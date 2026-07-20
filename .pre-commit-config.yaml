@@ -40,8 +40,8 @@ repos:
         stages: [pre-commit]
         # pre-commit passes staged filenames as explicit arguments, which
         # bypasses the _typos.toml files.extend-exclude walker rule; the
-        # translated READMEs are non-English and must be excluded here too.
-        exclude: ^docs/readme/
+        # translated READMEs and opaque AEF signatures must be excluded here too.
+        exclude: ^(docs/readme/|tests/fixtures/aef_receipt_v0_1\.json$)
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
