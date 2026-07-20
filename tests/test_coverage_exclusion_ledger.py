@@ -29,6 +29,10 @@ Justification classes
 ``env-defensive``
     Guards for host environments the suite cannot fabricate (``getuser``
     failure, stream-specific refusals).
+``validated-helper-boundary``
+    Defensive private-helper guards whose public callers validate the same
+    structure before dispatch, making the duplicate rejection unreachable
+    through the supported API.
 ``entrypoint``
     ``if __name__ == "__main__"`` dispatch lines.
 ``interpreter-guard``
@@ -64,6 +68,10 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/cli_doctor_federation.py": (5, "protocol-body"),
     "src/synapse_channel/cli_relay.py": (1, "env-defensive"),
     "src/synapse_channel/commit.py": (2, "protocol-body"),
+    "src/synapse_channel/core/aef_verification.py": (
+        3,
+        "protocol-body + validated-helper-boundary",
+    ),
     "src/synapse_channel/core/at_rest.py": (3, "optional-import + typing-only"),
     "src/synapse_channel/core/at_rest_cloud_hsm.py": (1, "optional-import"),
     "src/synapse_channel/core/at_rest_counter.py": (2, "protocol-body"),
