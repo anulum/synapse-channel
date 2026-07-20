@@ -80,7 +80,13 @@ class EventKind:
     DELIVERY_RECEIPT_EXPIRED = "delivery_receipt_expired"
     MAILBOX_WATERMARK = "mailbox_watermark"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
+    MULTIHUB_PARTITION = "multihub_partition"
+    MULTIHUB_HEAL = "multihub_heal"
     CORRUPT = CORRUPT_EVENT_KIND
+
+
+_UNVERIFIED_PARTITION_CONTESTER = "<unverified-persisted-contester>"
+"""Fail-closed marker for a named partition row with malformed contestants."""
 
 
 MEMORY_KINDS = frozenset(
@@ -266,6 +272,45 @@ def record_identity_pin_reclaim(store: EventStore, provenance: Mapping[str, Any]
         Monotonic journal sequence of the audit event.
     """
     return store.append(EventKind.IDENTITY_PIN_RECLAIM, dict(provenance), durable=True)
+
+
+def record_multihub_ownership_transitions(
+    store: EventStore, transitions: list[tuple[str, Mapping[str, Any]]]
+) -> tuple[int, ...]:
+    """Append one observation round's partition/heal transitions atomically.
+
+    These rows are audit-only: coordination replay skips them, while the standing
+    multi-hub watch folds them separately to restore unresolved partition
+    suspicion after a restart.  A round is one durable transaction so an
+    operator never observes only half of a simultaneous heal/partition change.
+    """
+    return store.append_batch(transitions, durable=True)
+
+
+def restore_active_multihub_partitions(store: EventStore) -> dict[str, tuple[str, ...]]:
+    """Fold durable partition/heal events into the unresolved partition set.
+
+    A named partition row with malformed contestants restores a synthetic
+    contestant, so malformed evidence cannot silently reopen grants. A heal is
+    applied only when it carries the successful-observation marker written by
+    :class:`~synapse_channel.core.multihub_watch.MultiHubWatch`.
+    """
+    active: dict[str, tuple[str, ...]] = {}
+    for event in store.iter_events(kinds=(EventKind.MULTIHUB_PARTITION, EventKind.MULTIHUB_HEAL)):
+        namespace = str(event.payload.get("namespace") or "").strip()
+        if not namespace:
+            continue
+        if event.kind == EventKind.MULTIHUB_HEAL:
+            if event.payload.get("observation_refreshed") is True:
+                active.pop(namespace, None)
+            continue
+        raw_contesting = event.payload.get("contesting_hubs")
+        if not isinstance(raw_contesting, list):
+            active[namespace] = (_UNVERIFIED_PARTITION_CONTESTER,)
+            continue
+        contesting = tuple(sorted({str(hub).strip() for hub in raw_contesting if str(hub).strip()}))
+        active[namespace] = contesting or (_UNVERIFIED_PARTITION_CONTESTER,)
+    return active
 
 
 def record_dead_letter_escalation(store: EventStore, provenance: Mapping[str, Any]) -> None:

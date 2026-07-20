@@ -10,10 +10,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Sequence
+from pathlib import Path
 
 import pytest
 
-from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal import EventKind, restore_active_multihub_partitions
 from synapse_channel.core.multihub_follower import EventFetcher
 from synapse_channel.core.multihub_transport import MultiHubFetchError
 from synapse_channel.core.multihub_watch import (
@@ -23,7 +24,8 @@ from synapse_channel.core.multihub_watch import (
     parse_watch_peers,
     parse_watch_pins,
 )
-from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.namespace_ownership import NamespaceOwnership
+from synapse_channel.core.persistence import EventStore, StoredEvent
 
 
 def _claim(seq: int, owner: str) -> StoredEvent:
@@ -31,6 +33,11 @@ def _claim(seq: int, owner: str) -> StoredEvent:
     return StoredEvent(
         seq=seq, ts=float(seq), kind=EventKind.CLAIM, payload={"task_id": f"T{seq}", "owner": owner}
     )
+
+
+def _release(seq: int, task_id: str) -> StoredEvent:
+    """One journalled release event, as a peer's log would serve it."""
+    return StoredEvent(seq=seq, ts=float(seq), kind=EventKind.RELEASE, payload={"task_id": task_id})
 
 
 class _ScriptedPeer:
@@ -51,7 +58,11 @@ class _ScriptedPeer:
 
 
 def _watch(
-    peers: dict[str, _ScriptedPeer], *, interval: float = DEFAULT_WATCH_INTERVAL
+    peers: dict[str, _ScriptedPeer],
+    *,
+    interval: float = DEFAULT_WATCH_INTERVAL,
+    ownership: NamespaceOwnership | None = None,
+    journal: EventStore | None = None,
 ) -> MultiHubWatch:
     """Build a watch whose transport is the scripted peers instead of sockets."""
     captured: dict[str, _ScriptedPeer] = dict(peers)
@@ -66,6 +77,8 @@ def _watch(
         interval=interval,
         namespace_of=lambda agent: agent.split("/", 1)[0] if "/" in agent else "",
         fetcher_factory=factory,
+        namespace_ownership=ownership,
+        journal=journal,
     )
 
 
@@ -141,6 +154,276 @@ class TestWatchPolling:
         )
         await watch.poll_once()
         assert watch.observed_asserting_hubs("SYNAPSE-CHANNEL") == ("hub-b",)
+
+
+class TestDurableOwnershipTransitions:
+    @staticmethod
+    def _ownership(**owners: str) -> NamespaceOwnership:
+        return NamespaceOwnership(owners=owners, local_hub_id="syn-a")
+
+    async def test_partition_and_heal_are_durable_transition_events(self, tmp_path: Path) -> None:
+        store = EventStore(tmp_path / "hub.db")
+        peer = _ScriptedPeer([[_claim(1, "OWNED/alice")], [_release(2, "T1")]])
+        watch = _watch({"hub-b": peer}, ownership=self._ownership(OWNED="syn-a"), journal=store)
+
+        await watch.poll_once()
+        await watch.poll_once()
+
+        events = store.read_all()
+        assert [event.kind for event in events] == [
+            EventKind.MULTIHUB_PARTITION,
+            EventKind.MULTIHUB_HEAL,
+        ]
+        assert events[0].payload == {
+            "namespace": "OWNED",
+            "local_hub_id": "syn-a",
+            "owner_hub_id": "syn-a",
+            "contesting_hubs": ["hub-b"],
+            "outcome": "partitioned",
+            "transition": "entered",
+        }
+        assert events[1].payload == {
+            "namespace": "OWNED",
+            "local_hub_id": "syn-a",
+            "owner_hub_id": "syn-a",
+            "previous_contesting_hubs": ["hub-b"],
+            "outcome": "local",
+            "observation_refreshed": True,
+        }
+
+    async def test_configured_remote_owner_is_not_mislabelled_a_partition(
+        self, tmp_path: Path
+    ) -> None:
+        store = EventStore(tmp_path / "hub.db")
+        watch = _watch(
+            {"hub-b": _ScriptedPeer([[_claim(1, "THEIRS/alice")]])},
+            ownership=self._ownership(THEIRS="hub-b"),
+            journal=store,
+        )
+
+        await watch.poll_once()
+
+        assert watch.observed_asserting_hubs("THEIRS") == ("hub-b",)
+        assert store.read_all() == []
+
+    async def test_steady_partition_is_not_rejournalled(self, tmp_path: Path) -> None:
+        store = EventStore(tmp_path / "hub.db")
+        watch = _watch(
+            {"hub-b": _ScriptedPeer([[_claim(1, "OWNED/alice")], []])},
+            ownership=self._ownership(OWNED="syn-a"),
+            journal=store,
+        )
+
+        await watch.poll_once()
+        await watch.poll_once()
+
+        assert [event.kind for event in store.read_all()] == [EventKind.MULTIHUB_PARTITION]
+
+    async def test_failed_round_retains_partition_without_false_heal(self, tmp_path: Path) -> None:
+        store = EventStore(tmp_path / "hub.db")
+        watch = _watch(
+            {"hub-b": _ScriptedPeer([[_claim(1, "OWNED/alice")]], then_fail=True)},
+            ownership=self._ownership(OWNED="syn-a"),
+            journal=store,
+        )
+
+        await watch.poll_once()
+        await watch.poll_once()
+
+        assert watch.observed_asserting_hubs("OWNED") == ("hub-b",)
+        assert [event.kind for event in store.read_all()] == [EventKind.MULTIHUB_PARTITION]
+
+    async def test_restart_restores_suspicion_then_observed_release_heals(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "hub.db"
+        first_store = EventStore(path)
+        ownership = self._ownership(OWNED="syn-a")
+        first = _watch(
+            {"hub-b": _ScriptedPeer([[_claim(1, "OWNED/alice")]])},
+            ownership=ownership,
+            journal=first_store,
+        )
+        await first.poll_once()
+        first_store.close()
+
+        reopened = EventStore(path)
+        restarted = _watch(
+            {"hub-b": _ScriptedPeer([[_claim(1, "OWNED/alice"), _release(2, "T1")]])},
+            ownership=ownership,
+            journal=reopened,
+        )
+        assert restarted.observed_asserting_hubs("OWNED") == ("hub-b",)
+
+        await restarted.poll_once()
+
+        assert restarted.observed_asserting_hubs("OWNED") == ()
+        assert [event.kind for event in reopened.read_all()] == [
+            EventKind.MULTIHUB_PARTITION,
+            EventKind.MULTIHUB_HEAL,
+        ]
+
+    async def test_restart_empty_history_cannot_prove_a_heal(self, tmp_path: Path) -> None:
+        path = tmp_path / "hub.db"
+        first_store = EventStore(path)
+        ownership = self._ownership(OWNED="syn-a")
+        first = _watch(
+            {"hub-b": _ScriptedPeer([[_claim(1, "OWNED/alice")]])},
+            ownership=ownership,
+            journal=first_store,
+        )
+        await first.poll_once()
+        first_store.close()
+
+        reopened = EventStore(path)
+        restarted = _watch({"hub-b": _ScriptedPeer([[]])}, ownership=ownership, journal=reopened)
+
+        await restarted.poll_once()
+
+        assert restarted.observed_asserting_hubs("OWNED") == ("hub-b",)
+        assert [event.kind for event in reopened.read_all()] == [EventKind.MULTIHUB_PARTITION]
+
+    async def test_restart_partial_round_cannot_heal_an_unreached_contester(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "hub.db"
+        first_store = EventStore(path)
+        ownership = self._ownership(OWNED="syn-a")
+        first = _watch(
+            {"hub-b": _ScriptedPeer([[_claim(1, "OWNED/alice")]])},
+            ownership=ownership,
+            journal=first_store,
+        )
+        await first.poll_once()
+        first_store.close()
+
+        reopened = EventStore(path)
+        restarted = _watch(
+            {
+                "hub-b": _ScriptedPeer([], then_fail=True),
+                "hub-c": _ScriptedPeer([[]]),
+            },
+            ownership=ownership,
+            journal=reopened,
+        )
+
+        await restarted.poll_once()
+
+        assert restarted.observed_asserting_hubs("OWNED") == ("hub-b",)
+        assert [event.kind for event in reopened.read_all()] == [EventKind.MULTIHUB_PARTITION]
+
+    async def test_successful_round_heals_a_deconfigured_contester(self, tmp_path: Path) -> None:
+        path = tmp_path / "hub.db"
+        first_store = EventStore(path)
+        ownership = self._ownership(OWNED="syn-a")
+        first = _watch(
+            {"hub-b": _ScriptedPeer([[_claim(1, "OWNED/alice")]])},
+            ownership=ownership,
+            journal=first_store,
+        )
+        await first.poll_once()
+        first_store.close()
+
+        reopened = EventStore(path)
+        restarted = _watch(
+            {"hub-c": _ScriptedPeer([[]])},
+            ownership=ownership,
+            journal=reopened,
+        )
+
+        await restarted.poll_once()
+
+        assert restarted.observed_asserting_hubs("OWNED") == ()
+        assert [event.kind for event in reopened.read_all()] == [
+            EventKind.MULTIHUB_PARTITION,
+            EventKind.MULTIHUB_HEAL,
+        ]
+
+    async def test_successful_round_heals_a_synthetic_restored_contester(
+        self, tmp_path: Path
+    ) -> None:
+        store = EventStore(tmp_path / "hub.db")
+        store.append(
+            EventKind.MULTIHUB_PARTITION,
+            {"namespace": "OWNED", "contesting_hubs": "malformed"},
+            durable=True,
+        )
+        watch = _watch(
+            {"hub-b": _ScriptedPeer([[]])},
+            ownership=self._ownership(OWNED="syn-a"),
+            journal=store,
+        )
+
+        await watch.poll_once()
+
+        assert watch.observed_asserting_hubs("OWNED") == ()
+        assert [event.kind for event in store.read_all()] == [
+            EventKind.MULTIHUB_PARTITION,
+            EventKind.MULTIHUB_HEAL,
+        ]
+
+    async def test_equal_task_release_updates_but_does_not_false_heal(self, tmp_path: Path) -> None:
+        store = EventStore(tmp_path / "hub.db")
+        watch = _watch(
+            {
+                "hub-b": _ScriptedPeer([[_claim(1, "OWNED/alice")], [], []]),
+                "hub-c": _ScriptedPeer([[], [_claim(1, "OWNED/bob")], [_release(2, "T1")]]),
+            },
+            ownership=self._ownership(OWNED="syn-a"),
+            journal=store,
+        )
+
+        await watch.poll_once()
+        await watch.poll_once()
+        await watch.poll_once()
+
+        events = store.read_all()
+        assert [event.kind for event in events] == [
+            EventKind.MULTIHUB_PARTITION,
+            EventKind.MULTIHUB_PARTITION,
+            EventKind.MULTIHUB_PARTITION,
+        ]
+        assert [event.payload["transition"] for event in events] == [
+            "entered",
+            "updated",
+            "updated",
+        ]
+        assert events[1].payload["contesting_hubs"] == ["hub-b", "hub-c"]
+        assert events[2].payload["contesting_hubs"] == ["hub-b"]
+
+    def test_restore_folds_updates_and_only_verified_heals(self, tmp_path: Path) -> None:
+        store = EventStore(tmp_path / "hub.db")
+        store.append(EventKind.CHAT, {"payload": "irrelevant"})
+        store.append(EventKind.MULTIHUB_PARTITION, {"namespace": ""})
+        store.append(
+            EventKind.MULTIHUB_PARTITION,
+            {"namespace": "MALFORMED", "contesting_hubs": "hub-x"},
+        )
+        store.append(
+            EventKind.MULTIHUB_PARTITION,
+            {"namespace": "EMPTY", "contesting_hubs": []},
+        )
+        store.append(
+            EventKind.MULTIHUB_PARTITION,
+            {"namespace": "OWNED", "contesting_hubs": [" hub-b ", "hub-b", ""]},
+        )
+        store.append(
+            EventKind.MULTIHUB_PARTITION,
+            {"namespace": "OWNED", "contesting_hubs": ["hub-c"]},
+        )
+        store.append(EventKind.MULTIHUB_HEAL, {"namespace": "OWNED"})
+
+        active = restore_active_multihub_partitions(store)
+
+        assert active["OWNED"] == ("hub-c",)
+        assert active["MALFORMED"] == ("<unverified-persisted-contester>",)
+        assert active["EMPTY"] == ("<unverified-persisted-contester>",)
+
+        store.append(
+            EventKind.MULTIHUB_HEAL,
+            {"namespace": "OWNED", "observation_refreshed": True},
+        )
+        assert "OWNED" not in restore_active_multihub_partitions(store)
 
 
 class TestWatchConstruction:

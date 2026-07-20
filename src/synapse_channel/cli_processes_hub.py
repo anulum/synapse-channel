@@ -525,6 +525,8 @@ def _cmd_hub(
                 token=args.multihub_watch_token,
                 interval=args.multihub_watch_interval,
                 pins=parse_watch_pins(args.multihub_watch_pin, watch_peers),
+                namespace_ownership=namespace_ownership,
+                journal=journal,
             )
     except ValueError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)

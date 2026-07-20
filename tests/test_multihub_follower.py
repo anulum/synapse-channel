@@ -103,6 +103,24 @@ async def test_poll_merges_multiple_peers_by_timestamp() -> None:
     assert follower.peers() == ("east", "west")
 
 
+async def test_partition_assertions_do_not_cross_clear_equal_task_ids() -> None:
+    east = _FakePeer([_stored(1, 1.0, EventKind.CLAIM, task_id="T", owner="OWNED/alice")])
+    west = _FakePeer(
+        [
+            _stored(1, 2.0, EventKind.CLAIM, task_id="T", owner="OWNED/bob"),
+            _stored(2, 3.0, EventKind.RELEASE, task_id="T"),
+        ]
+    )
+    follower = MultiHubFollower()
+
+    await follower.poll("east", east.fetch)
+    await follower.poll("west", west.fetch)
+
+    assert follower.asserting_owners(project_of=lambda owner: owner.split("/", 1)[0]) == {
+        "OWNED": frozenset({"east"})
+    }
+
+
 async def test_poll_on_an_empty_peer_keeps_an_empty_view() -> None:
     follower = MultiHubFollower()
     state = await follower.poll("east", _FakePeer([]).fetch)

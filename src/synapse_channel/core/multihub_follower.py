@@ -32,7 +32,11 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol
 
 from synapse_channel.core.clock_skew import ClockSkew
-from synapse_channel.core.multihub_fold import ObservedState, fold_observed_state
+from synapse_channel.core.multihub_fold import (
+    ObservedState,
+    asserting_owners_from_events,
+    fold_observed_state,
+)
 from synapse_channel.core.multihub_merge import HubEvent, hub_cursors, merge_event_logs, tag_events
 from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.protocol import ProtocolNegotiation
@@ -104,6 +108,10 @@ class MultiHubFollower:
     def observed(self) -> ObservedState:
         """Return the observed state folded from the full accumulated union."""
         return fold_observed_state(merge_event_logs(self._events.values()))
+
+    def asserting_owners(self, *, project_of: Callable[[str], str]) -> dict[str, frozenset[str]]:
+        """Return the per-hub live-claim authority signal for partition detection."""
+        return asserting_owners_from_events(self._events.values(), project_of=project_of)
 
     def cursor(self, peer_id: str) -> int:
         """Return the highest ``seq`` consumed for ``peer_id`` (``0`` if never polled)."""

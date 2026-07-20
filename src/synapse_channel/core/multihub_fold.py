@@ -135,6 +135,37 @@ def asserting_owners(
     return {namespace: frozenset(hubs) for namespace, hubs in owners.items()}
 
 
+def asserting_owners_from_events(
+    events: Iterable[HubEvent], *, project_of: Callable[[str], str]
+) -> dict[str, frozenset[str]]:
+    """Derive asserting hubs without collapsing equal task ids across hubs.
+
+    The general observed-state projection is last-writer-wins by ``task_id`` for
+    display.  Partition detection needs a stricter identity: one hub's release
+    of task ``T`` must never clear another hub's independently recorded claim on
+    its own task ``T``.  This fold therefore keys live claims by
+    ``(hub_id, task_id)`` and orders each hub by its authoritative local sequence.
+    """
+    live: dict[tuple[str, str], Mapping[str, Any]] = {}
+    for event in sorted(events, key=lambda item: (item.hub_id, item.seq)):
+        task_id = _task_id_of(event)
+        if not task_id:
+            continue
+        identity = (event.hub_id, task_id)
+        if event.kind in _CLAIM_KINDS:
+            live[identity] = event.payload
+        elif event.kind == EventKind.RELEASE:
+            live.pop(identity, None)
+
+    owners: dict[str, set[str]] = {}
+    for (hub_id, _task_id), claim in live.items():
+        owner = str(claim.get("owner", "")).strip()
+        namespace = project_of(owner) if owner else ""
+        if namespace:
+            owners.setdefault(namespace, set()).add(hub_id)
+    return {namespace: frozenset(hubs) for namespace, hubs in owners.items()}
+
+
 def _task_id_of(event: HubEvent) -> str:
     """Return the stripped ``task_id`` an event carries, or ``""`` when absent."""
     return str(event.payload.get("task_id", "")).strip()

@@ -907,8 +907,7 @@ def test_cmd_hub_rejects_a_malformed_watch_peer(
     assert "PEER=URI" in capsys.readouterr().err
 
 
-def test_cmd_hub_wires_ownership_and_the_watch_feed(tmp_path: Path) -> None:
-    del tmp_path
+def test_cmd_hub_wires_ownership_watch_feed_and_transition_journal(tmp_path: Path) -> None:
     from synapse_channel.core.multihub_watch import MultiHubWatch
     from synapse_channel.core.namespace_ownership import NamespaceOwnership
 
@@ -924,6 +923,7 @@ def test_cmd_hub_wires_ownership_and_the_watch_feed(tmp_path: Path) -> None:
         closed.append("closed")
 
     ns = _hub_ns(
+        db=str(tmp_path / "hub.db"),
         hub_id="syn-a",
         namespace_owner=["OWNED=syn-a", "THEIRS=syn-b"],
         multihub_watch=["hub-b=ws://b:8876"],
@@ -939,6 +939,8 @@ def test_cmd_hub_wires_ownership_and_the_watch_feed(tmp_path: Path) -> None:
     watch = feed.__self__
     assert isinstance(watch, MultiHubWatch)
     assert watch.interval == 7.0
+    assert watch._namespace_ownership is ownership
+    assert watch._journal is not None
     assert closed == ["closed"]
 
 

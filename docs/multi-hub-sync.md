@@ -42,7 +42,14 @@ named peer on a bounded interval and folds the observed claims into the assertio
 ownership gate consumes. Naming a peer is the operator confirmation for the always-on
 outbound connection — nothing is auto-discovered — and a failed poll keeps the last
 successful observation, so an outage never lets a contested namespace silently resume
-granting. An operator can still wire the feed by hand (`asserting_owners` over a
+granting. When the hub has a durable journal, entering or changing a contested
+namespace appends `multihub_partition` at FULL durability; a successful,
+non-empty history refresh from every persisted contestant that proves the namespace
+uncontested appends `multihub_heal`. An empty or failed refresh is not healing evidence. An
+unresolved partition is restored into the refusing assertion feed after restart,
+and an entirely failed poll cannot manufacture a heal. Both events project through
+the universal-receipt view as `federation` evidence without changing coordination
+replay. An operator can still wire the feed by hand (`asserting_owners` over a
 follower's view) in library deployments. The
 read-side CRDT layer, the cross-host event-log pull that lets one hub *observe* another over
 a real connection, the **serving-side** gate that lets a hub refuse to serve its log to an
@@ -58,6 +65,9 @@ contested namespace, have shipped:
   board (last-writer-wins per task), the grow-only progress ledger, and the **observed
   claim** view — the latest claim each peer reports, tagged with its hub, marked advisory,
   cleared on release, and **never granted**.
+  Partition detection uses a stricter sibling fold keyed by `(hub_id, task_id)`, so a
+  release from one hub cannot erase another hub's equal-named task from the authority
+  signal even though the general display view remains last-writer-wins by task id.
 - `core/multihub_follower.py` — a read-only `MultiHubFollower` that tracks a per-peer
   `seq` cursor, fetches a peer's events past it through an injected transport
   (`store_fetcher` reads a peer `EventStore` over its `read_since` seam), folds the union,
@@ -314,7 +324,8 @@ names the owner, fail-closed. Runtime partition detection ships too, opt-in: a h
 an `observed_asserting_hubs` feed resolves a namespace a peer is observed contesting to
 *partitioned* and refuses the claim, even on its own local grant path; `asserting_owners`
 builds that feed from a follower's observed claims. What is **not** yet built is the hub
-auto-populating that feed from a standing follower of its own — today the operator wires it.
+auto-discovering peers: the hub populates the feed only from the operator-named standing
+follower configured by repeatable `--multihub-watch PEER=URI` flags.
 
 ## Sync transport
 
@@ -351,8 +362,8 @@ deliberately conservative.
   single-owner-per-namespace, not claim merging, and fails closed on an ownership
   partition. The ownership resolution, the local refusal of an unowned namespace, the
   forwarding of a remote-owned claim to its owner, refusing a contested namespace on
-  observed assertions, and the hub's own standing follower feeding those assertions
-  (`--multihub-watch`) all ship.
+  observed assertions, the hub's own standing follower feeding those assertions
+  (`--multihub-watch`), and durable partition/heal transition evidence all ship.
 - It does **not** add a new always-on wire surface casually — the pull is a request/snapshot
   message pair on the existing hub server, reusing the event log, `read_since` seam, and
   mTLS peer bundles; it adds no always-on cross-hub service to the local core.
@@ -361,5 +372,7 @@ deliberately conservative.
 - It does **not** introduce a global consensus cluster. There is no single global
   leader; authority is partitioned by namespace, each hub local-authoritative for
   its own.
-- It makes **no multi-host claim-safety guarantee today** and changes nothing in the
-  shipped single-hub runtime: the cross-host pull is observe-only.
+- It makes **no multi-host claim-safety guarantee for two default/unconfigured hubs**:
+  the cross-host pull is observe-only. Multi-host mutual exclusion requires an explicit,
+  consistent namespace-owner map plus the standing watch; the durable transition events
+  evidence that posture but do not replace it with consensus.

@@ -47,6 +47,8 @@ UNIVERSAL_RECEIPT_EVENT_KINDS = DELIVERY_RECEIPT_EVENT_KINDS | {
     EventKind.LEDGER_PROGRESS,
     EventKind.OPERATOR_RELAY,
     EventKind.SANDBOX_RUN,
+    EventKind.MULTIHUB_PARTITION,
+    EventKind.MULTIHUB_HEAL,
 }
 """Event kinds worth loading when building the universal receipt view."""
 
@@ -129,6 +131,8 @@ def universal_receipt_from_event(event: StoredEvent) -> UniversalReceipt | None:
         return _operator_relay_receipt(event)
     if event.kind == EventKind.DEAD_LETTER_FORWARDING:
         return _cross_hub_receipt(event)
+    if event.kind in {EventKind.MULTIHUB_PARTITION, EventKind.MULTIHUB_HEAL}:
+        return _multihub_ownership_receipt(event)
     if event.kind == EventKind.LEDGER_PROGRESS:
         return _progress_receipt(event)
     return None
@@ -256,6 +260,25 @@ def _cross_hub_receipt(event: StoredEvent) -> UniversalReceipt:
         kind="cross-hub",
         subject=target,
         actor=origin_hub,
+        status=status,
+        summary=summary,
+        payload=payload,
+    )
+
+
+def _multihub_ownership_receipt(event: StoredEvent) -> UniversalReceipt:
+    """Project a durable namespace partition/heal transition."""
+    payload = _object_payload(event.payload)
+    namespace = _text(payload, "namespace")
+    local_hub = _text(payload, "local_hub_id")
+    healed = event.kind == EventKind.MULTIHUB_HEAL
+    status = "healed" if healed else "partitioned"
+    summary = f"namespace {namespace or '<unknown>'} {status} on {local_hub or 'hub'}"
+    return _receipt(
+        event,
+        kind="federation",
+        subject=namespace,
+        actor=local_hub,
         status=status,
         summary=summary,
         payload=payload,

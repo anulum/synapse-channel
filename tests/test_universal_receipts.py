@@ -140,6 +140,41 @@ def test_sandbox_operator_and_cross_hub_events_project_to_the_shared_shape() -> 
     assert rows[2]["status"] == "recorded"
 
 
+def test_multihub_partition_and_heal_project_as_federation_receipts() -> None:
+    partition = _event(
+        30,
+        EventKind.MULTIHUB_PARTITION,
+        {
+            "namespace": "OWNED",
+            "local_hub_id": "syn-a",
+            "owner_hub_id": "syn-a",
+            "contesting_hubs": ["hub-b"],
+            "outcome": "partitioned",
+        },
+    )
+    heal = _event(
+        31,
+        EventKind.MULTIHUB_HEAL,
+        {
+            "namespace": "OWNED",
+            "local_hub_id": "syn-a",
+            "owner_hub_id": "syn-a",
+            "previous_contesting_hubs": ["hub-b"],
+            "outcome": "local",
+        },
+    )
+
+    receipts = universal_receipts_from_events((partition, heal))
+
+    assert [(receipt.kind, receipt.status) for receipt in receipts] == [
+        ("federation", "partitioned"),
+        ("federation", "healed"),
+    ]
+    assert receipts[0].subject == "OWNED"
+    assert receipts[0].actor == "syn-a"
+    assert universal_receipt_matches(receipts[1], "hub-b")
+
+
 def test_sandbox_operator_and_selector_fallbacks_are_stable() -> None:
     sandbox = _event(
         16,

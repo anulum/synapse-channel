@@ -37,13 +37,19 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 
 from synapse_channel.core.acl_enforcement import project_of
-from synapse_channel.core.multihub_fold import asserting_owners
+from synapse_channel.core.journal import (
+    EventKind,
+    record_multihub_ownership_transitions,
+    restore_active_multihub_partitions,
+)
 from synapse_channel.core.multihub_follower import EventFetcher, MultiHubFollower
 from synapse_channel.core.multihub_transport import (
     MultiHubFetchError,
     network_fetcher,
     pinned_connector,
 )
+from synapse_channel.core.namespace_ownership import NamespaceOwnership, OwnershipOutcome
+from synapse_channel.core.persistence import EventStore
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +168,14 @@ class MultiHubWatch:
         :func:`parse_watch_pins`). A pinned peer's ``wss://`` connection is
         trusted by live certificate pin instead of CA chain; a mismatch fails
         that poll closed. Peers absent from the map use the default transport.
+    namespace_ownership : NamespaceOwnership or None, optional
+        Static ownership map used to distinguish a real contest from the
+        configured remote owner asserting its own namespace.  Required for
+        durable partition/heal evidence; observation still works when absent.
+    journal : EventStore or None, optional
+        Durable audit store.  When both this and ``namespace_ownership`` are
+        present, entering, changing, and healing a contested namespace is
+        committed at ``FULL`` durability.
     """
 
     def __init__(
@@ -175,10 +189,14 @@ class MultiHubWatch:
         follower: MultiHubFollower | None = None,
         fetcher_factory: FetcherFactory = network_fetcher,
         pins: Mapping[str, str] | None = None,
+        namespace_ownership: NamespaceOwnership | None = None,
+        journal: EventStore | None = None,
     ) -> None:
         self.interval = max(float(interval), MIN_WATCH_INTERVAL)
         self._namespace_of = namespace_of
         self._follower = follower if follower is not None else MultiHubFollower()
+        self._namespace_ownership = namespace_ownership
+        self._journal = journal
         self._fetchers: dict[str, EventFetcher] = {}
         for peer, uri in peers.items():
             extra: dict[str, object] = {}
@@ -187,7 +205,17 @@ class MultiHubWatch:
                 # the connector fails the poll closed on any mismatch.
                 extra["connector"] = pinned_connector(pins[peer])
             self._fetchers[peer] = fetcher_factory(uri, local_id=local_id, token=token, **extra)
-        self._assertions: dict[str, frozenset[str]] = {}
+        self._partitioned = (
+            restore_active_multihub_partitions(journal)
+            if journal is not None and namespace_ownership is not None
+            else {}
+        )
+        # An unresolved durable partition must refuse immediately after restart,
+        # before the first peer poll.  Seed the live assertion feed from the
+        # persisted contestants; a successful observation round may later heal it.
+        self._assertions: dict[str, frozenset[str]] = {
+            namespace: frozenset(contesting) for namespace, contesting in self._partitioned.items()
+        }
 
     def observed_asserting_hubs(self, namespace: str) -> tuple[str, ...]:
         """Return the hub ids last observed asserting authority over ``namespace``.
@@ -215,20 +243,99 @@ class MultiHubWatch:
         """
         outcomes: dict[str, str | None] = {}
         answered = False
+        failed: set[str] = set()
         for peer, fetch in self._fetchers.items():
             try:
                 await self._follower.poll(peer, fetch)
             except MultiHubFetchError as exc:
                 outcomes[peer] = str(exc)
+                failed.add(peer)
                 logger.warning("multihub watch: poll of peer %r failed: %s", peer, exc)
                 continue
             outcomes[peer] = None
             answered = True
         if answered:
-            self._assertions = asserting_owners(
-                self._follower.observed(), project_of=self._namespace_of
-            )
+            observed = self._follower.asserting_owners(project_of=self._namespace_of)
+            refreshed = dict(observed)
+            # After restart the follower's in-memory event union is empty, but
+            # unresolved partition contestants were restored from the journal.
+            # If one of those peers fails while another peer answers, or returns
+            # no durable history at all, preserve its suspicion. Partial/empty
+            # success must not fabricate a heal for a contestant whose release
+            # was never re-observed.
+            for namespace, contesting in self._partitioned.items():
+                retained = {
+                    peer
+                    for peer in contesting
+                    if peer in self._fetchers
+                    and (peer in failed or self._follower.cursor(peer) == 0)
+                }
+                if retained:
+                    refreshed[namespace] = frozenset(
+                        set(refreshed.get(namespace, frozenset())) | retained
+                    )
+            self._record_ownership_transitions(refreshed)
+            self._assertions = refreshed
         return outcomes
+
+    def _record_ownership_transitions(self, refreshed: Mapping[str, frozenset[str]]) -> None:
+        """Durably record changed partition state before publishing the new feed.
+
+        Only a successful observation round reaches this method.  Consequently
+        an unreachable peer cannot manufacture a heal: failed rounds retain the
+        old assertion view and the restored unresolved-partition set.
+        """
+        ownership = self._namespace_ownership
+        journal = self._journal
+        if ownership is None or journal is None:
+            return
+        transitions: list[tuple[str, Mapping[str, object]]] = []
+        next_partitioned = dict(self._partitioned)
+        namespaces = set(refreshed) | set(self._partitioned)
+        for namespace in sorted(namespaces):
+            decision = ownership.resolve(
+                namespace, asserting_hubs=refreshed.get(namespace, frozenset())
+            )
+            if decision.outcome is OwnershipOutcome.PARTITIONED:
+                contesting = tuple(decision.contesting)
+                if self._partitioned.get(namespace) == contesting:
+                    continue
+                transitions.append(
+                    (
+                        EventKind.MULTIHUB_PARTITION,
+                        {
+                            "namespace": namespace,
+                            "local_hub_id": ownership.local_hub_id,
+                            "owner_hub_id": ownership.owner_of(namespace) or "",
+                            "contesting_hubs": list(contesting),
+                            "outcome": OwnershipOutcome.PARTITIONED.value,
+                            "transition": (
+                                "entered" if namespace not in self._partitioned else "updated"
+                            ),
+                        },
+                    )
+                )
+                next_partitioned[namespace] = contesting
+                continue
+            previous = self._partitioned.get(namespace)
+            if previous is None:
+                continue
+            transitions.append(
+                (
+                    EventKind.MULTIHUB_HEAL,
+                    {
+                        "namespace": namespace,
+                        "local_hub_id": ownership.local_hub_id,
+                        "owner_hub_id": decision.owner_hub_id or "",
+                        "previous_contesting_hubs": list(previous),
+                        "outcome": decision.outcome.value,
+                        "observation_refreshed": True,
+                    },
+                )
+            )
+            next_partitioned.pop(namespace, None)
+        record_multihub_ownership_transitions(journal, transitions)
+        self._partitioned = next_partitioned
 
     async def run(self, *, sleeper: Sleeper = asyncio.sleep, rounds: int | None = None) -> None:
         """Poll on the bounded interval until cancelled (or for ``rounds`` rounds in tests).

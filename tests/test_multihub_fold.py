@@ -14,6 +14,7 @@ from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_fold import (
     ObservedState,
     asserting_owners,
+    asserting_owners_from_events,
     fold_observed_state,
 )
 from synapse_channel.core.multihub_merge import HubEvent, merge_event_logs
@@ -139,3 +140,25 @@ def test_asserting_owners_skips_an_owner_with_no_namespace() -> None:
 
 def test_asserting_owners_of_an_empty_view_is_empty() -> None:
     assert asserting_owners(ObservedState(), project_of=_project_of) == {}
+
+
+def test_asserting_owners_from_events_keeps_equal_task_ids_isolated_per_hub() -> None:
+    events = [
+        _ev("hub-b", 1, 1.0, EventKind.CLAIM, task_id="T", owner="OWNED/alice"),
+        _ev("hub-c", 1, 2.0, EventKind.CLAIM, task_id="T", owner="OWNED/bob"),
+        _ev("hub-c", 2, 3.0, EventKind.RELEASE, task_id="T"),
+    ]
+
+    assert asserting_owners_from_events(events, project_of=_project_of) == {
+        "OWNED": frozenset({"hub-b"})
+    }
+
+
+def test_asserting_owners_from_events_ignores_non_claim_lifecycle_noise() -> None:
+    events = [
+        _ev("hub-a", 1, 1.0, EventKind.CLAIM, owner="OWNED/no-task"),
+        _ev("hub-a", 2, 2.0, EventKind.CHAT, task_id="T", owner="OWNED/alice"),
+        _ev("hub-a", 3, 3.0, EventKind.CLAIM, task_id="T", owner="bare-agent"),
+    ]
+
+    assert asserting_owners_from_events(events, project_of=_project_of) == {}
