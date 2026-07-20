@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,8 @@ from synapse_channel.path_resolution import resolve_weakly_fail_closed
 
 StateFetcher = Callable[..., Awaitable[dict[str, Any]]]
 DenialRecorder = Callable[..., Awaitable[bool]]
+
+logger = logging.getLogger(__name__)
 
 
 class ClaimRequest(Protocol):
@@ -343,7 +346,7 @@ async def evaluate_mutation_request(
                 token=token,
                 timeout=timeout,
             )
-        except ClaimStateError as exc:
+        except (ClaimStateError, FileClaimGuardError) as exc:
             verdict = GuardVerdict(False, str(exc), "GUARD_STATE_UNREACHABLE")
         else:
             verdict = decide_targets_from_snapshot(
@@ -368,10 +371,13 @@ async def evaluate_mutation_request(
             token=token,
             timeout=timeout,
         )
-    except Exception:
+    except Exception as exc:
         # Evidence is supplemental. A recorder failure must never turn a denied
         # mutation into an allow or replace the actionable provider-facing reason.
-        pass
+        logger.warning(
+            "Guard denial evidence recording failed (%s); preserving denial.",
+            type(exc).__name__,
+        )
     return verdict
 
 

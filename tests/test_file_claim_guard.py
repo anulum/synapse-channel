@@ -222,7 +222,9 @@ async def test_evaluation_propagates_precise_semantic_permission(tmp_path: Path)
 
 
 @pytest.mark.asyncio
-async def test_evidence_failure_never_weakens_the_guard_denial(tmp_path: Path) -> None:
+async def test_evidence_failure_never_weakens_the_guard_denial(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     async def snapshot(**_kwargs: object) -> dict[str, Any]:
         return {"active_claims": []}
 
@@ -244,3 +246,5 @@ async def test_evidence_failure_never_weakens_the_guard_denial(tmp_path: Path) -
     assert not verdict.allowed
     assert verdict.reason_code == "GUARD_NO_CLAIM"
     assert "new.py" in verdict.reason
+    assert "RuntimeError" in caplog.text
+    assert "evidence transport unavailable" not in caplog.text
