@@ -75,10 +75,14 @@ identity, Ed25519 signatures, key policy, freshness, and signed-tree-head
 inclusion under explicit trust and caller-supplied time. Its conformance fixture
 covers all ten accepted receipt and inclusion vectors; the source vector token
 `INVALID_EXPIRED` is recorded as a source correction to the normative `EXPIRED`
-verdict. The bundled `AefReceiptIndex` is deliberately in-memory and makes no
-restart guarantee. Native AEF log emission, a durable replay/conflict index,
-and the dual-format migration remain separate from the historical event log and
-its Merkle tree; neither serializer is reinterpreted as the other.
+verdict. `AefReceiptIndex` remains the explicit ephemeral batch boundary;
+`AefDurableReceiptIndex` persists accepted `(log_id, seq, receipt_id)` identities
+with a FULL-synchronous atomic transaction, so replays and conflicting sequence
+claims remain detectable across restarts and concurrent verifier processes. Its
+table may coexist in the hub database but never reads or writes legacy event
+rows. Native AEF log emission and the dual-format migration remain separate from
+the historical event log and its Merkle tree; neither serializer is
+reinterpreted as the other.
 
 Before closeout, `python tools/test_ownership_map.py --check` can map changed
 source files to likely owning tests. The map uses AST imports and a conservative

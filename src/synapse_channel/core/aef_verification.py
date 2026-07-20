@@ -25,7 +25,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import TypeGuard
+from typing import Protocol, TypeGuard
 
 from synapse_channel.core.aef_canonical import AefCanonicalizationError, canonical_json
 from synapse_channel.core.aef_domain import AEF_RECEIPT_DOMAIN, AEF_STH_DOMAIN, AefDomain
@@ -154,6 +154,25 @@ class AefReceiptIndex:
         self._by_sequence[(log_id, seq)] = receipt_id
         self._receipt_ids.add((log_id, receipt_id))
 
+    def classify_and_remember(
+        self, log_id: str, seq: int, receipt_id: str
+    ) -> AefVerdictCode | None:
+        """Atomically classify and record one receipt in this process."""
+        verdict = self.classify(log_id, seq, receipt_id)
+        if verdict is None:
+            self.remember(log_id, seq, receipt_id)
+        return verdict
+
+
+class AefReplayIndex(Protocol):
+    """Replay/conflict boundary shared by ephemeral and durable indexes."""
+
+    def classify_and_remember(
+        self, log_id: str, seq: int, receipt_id: str
+    ) -> AefVerdictCode | None:
+        """Classify and record one validated identity as one atomic operation."""
+        ...  # pragma: no cover - structural typing declaration
+
 
 class AefInclusionVerdict(str, Enum):
     """Closed outcome of receipt inclusion against a signed tree head."""
@@ -177,7 +196,7 @@ def verify_aef_receipt(
     *,
     trust_store: AefTrustStore,
     now_ms: int,
-    seen: AefReceiptIndex | None = None,
+    seen: AefReplayIndex | None = None,
 ) -> AefVerification:
     """Verify one AEF v0.1 receipt under explicit trust and time inputs.
 
@@ -226,10 +245,9 @@ def verify_aef_receipt(
     if expires_at is not None and validate_epoch_ms(expires_at) < trusted_now:
         return _result(AefVerdictCode.EXPIRED, receipt_id, key_id, "expired")
     if seen is not None:
-        replay = seen.classify(log_id, seq, receipt_id)
+        replay = seen.classify_and_remember(log_id, seq, receipt_id)
         if replay is not None:
             return _result(replay, receipt_id, key_id, replay.value.lower())
-        seen.remember(log_id, seq, receipt_id)
     return _result(AefVerdictCode.VALID, receipt_id, key_id, "verified")
 
 
@@ -386,10 +404,10 @@ def _verify_document_signature(
 
     envelope = document.get("signature")
     if not isinstance(envelope, Mapping) or envelope.get("domain") != str(expected_domain):
-        return False
+        return False  # pragma: no cover - public boundaries validate this first
     value = envelope.get("value")
     if not isinstance(value, str):
-        return False
+        return False  # pragma: no cover - public boundaries validate this first
     unsigned = dict(document)
     unsigned_envelope = dict(envelope)
     unsigned_envelope.pop("value", None)

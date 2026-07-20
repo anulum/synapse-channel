@@ -19,6 +19,7 @@ import pytest
 
 from synapse_channel.core.aef_canonical import canonical_json
 from synapse_channel.core.aef_domain import AEF_RECEIPT_DOMAIN
+from synapse_channel.core.aef_replay_store import AefDurableReceiptIndex
 from synapse_channel.core.aef_verdict import AefVerdictCode
 from synapse_channel.core.aef_verification import (
     AefInclusionVerdict,
@@ -272,6 +273,15 @@ def test_wrong_length_signature_is_rejected() -> None:
     assert result.verdict is AefVerdictCode.INVALID_SIGNATURE
 
 
+def test_standard_base64_signature_is_not_accepted_as_canonical_base64url() -> None:
+    receipt = _receipt("v01-valid-lease-grant")
+    receipt["signature"]["value"] = base64.b64encode(b"\xfb" * 64).decode("ascii")
+
+    result = verify_aef_receipt(receipt, trust_store=_trust_store(), now_ms=1_783_941_000_000)
+
+    assert result.verdict is AefVerdictCode.INVALID_SIGNATURE
+
+
 @pytest.mark.parametrize(
     ("receipt_type", "action", "subject"),
     [
@@ -373,6 +383,42 @@ def test_inclusion_refuses_untrusted_and_malformed_tree_heads() -> None:
     assert malformed is AefInclusionVerdict.STH_INVALID
 
 
+def test_inclusion_checks_the_bound_sth_key_and_key_policy() -> None:
+    vector = _VECTORS["v06-inclusion-pass"]
+    inclusion = vector["inclusion"]
+    wrong_key = copy.deepcopy(inclusion["sth"])
+    wrong_key["signature"]["key_id"] = "0" * 16
+
+    unbound = verify_aef_inclusion(
+        vector["receipt"], wrong_key, inclusion["proof"], trust_store=_trust_store()
+    )
+    revoked = verify_aef_inclusion(
+        vector["receipt"],
+        inclusion["sth"],
+        inclusion["proof"],
+        trust_store=_trust_store(revoked=True),
+    )
+
+    assert unbound is AefInclusionVerdict.STH_UNTRUSTED
+    assert revoked is AefInclusionVerdict.STH_INVALID
+
+
+def test_invalid_hex_and_optional_path_items_fail_at_the_receipt_boundary() -> None:
+    bad_log = _receipt("v01-valid-lease-grant")
+    bad_log["log_id"] = "g" * 64
+    bad_paths = _receipt("v01-valid-lease-grant")
+    bad_paths["subject"]["paths"] = [1]
+
+    assert (
+        verify_aef_receipt(bad_log, trust_store=_trust_store(), now_ms=1_783_941_000_000).verdict
+        is AefVerdictCode.MALFORMED
+    )
+    assert (
+        verify_aef_receipt(bad_paths, trust_store=_trust_store(), now_ms=1_783_941_000_000).verdict
+        is AefVerdictCode.MALFORMED
+    )
+
+
 @pytest.mark.parametrize(
     ("sth_mutation", "proof_mutation", "expected"),
     [
@@ -454,6 +500,40 @@ def test_receipt_index_detects_reused_identity_at_a_different_sequence() -> None
     index.remember(_LOG_ID, 1, receipt_id)
 
     assert index.classify(_LOG_ID, 2, receipt_id) is AefVerdictCode.REPLAYED
+
+
+def test_receipt_index_classify_and_remember_is_one_operation() -> None:
+    index = AefReceiptIndex()
+    receipt_id = "aef1:" + "2" * 64
+
+    assert index.classify_and_remember(_LOG_ID, 2, receipt_id) is None
+    assert index.classify_and_remember(_LOG_ID, 2, receipt_id) is AefVerdictCode.REPLAYED
+    assert (
+        index.classify_and_remember(_LOG_ID, 2, "aef1:" + "3" * 64) is AefVerdictCode.CHAIN_CONFLICT
+    )
+
+
+def test_verifier_rejects_a_replay_after_the_durable_index_restarts(tmp_path: Path) -> None:
+    receipt = _receipt("v01-valid-lease-grant")
+    path = tmp_path / "verified.db"
+
+    with AefDurableReceiptIndex(path) as index:
+        first = verify_aef_receipt(
+            receipt,
+            trust_store=_trust_store(),
+            now_ms=1_783_941_000_000,
+            seen=index,
+        )
+    with AefDurableReceiptIndex(path) as reopened:
+        replay = verify_aef_receipt(
+            receipt,
+            trust_store=_trust_store(),
+            now_ms=1_783_941_000_000,
+            seen=reopened,
+        )
+
+    assert first.verdict is AefVerdictCode.VALID
+    assert replay.verdict is AefVerdictCode.REPLAYED
 
 
 def test_fixture_is_a_complete_ten_vector_conformance_set() -> None:
