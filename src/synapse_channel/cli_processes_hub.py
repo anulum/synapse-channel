@@ -53,6 +53,10 @@ from synapse_channel.core.hub_exposure import guard_exposure
 from synapse_channel.core.identity_binding import IdentityBindingError, load_identity_trust_bundle
 from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.message_auth import MessageAuthKey
+from synapse_channel.core.message_auth_durable import (
+    DurableMessageAuthReplayStore,
+    SequenceFloorMode,
+)
 from synapse_channel.core.multihub_watch import MultiHubWatch, parse_watch_peers, parse_watch_pins
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_profile
@@ -276,6 +280,9 @@ def _cmd_hub(
     runner: Callable[[Coroutine[Any, Any, None]], None] = _run,
     hub_factory: Callable[..., SynapseHub] = SynapseHub,
     store_factory: Callable[..., EventStore] = EventStore,
+    replay_store_factory: Callable[..., DurableMessageAuthReplayStore] = (
+        DurableMessageAuthReplayStore
+    ),
     logging_configurator: Callable[..., object] = configure_logging,
     tls_context_factory: Callable[..., ssl.SSLContext | None] = build_server_ssl_context,
 ) -> int:
@@ -331,6 +338,43 @@ def _cmd_hub(
     if db_key_file and not args.db:
         print("synapse hub: --db-key-file requires --db", file=sys.stderr)
         return 2
+    replay_db_arg = getattr(args, "message_auth_replay_db", None)
+    try:
+        sequence_floor_mode = SequenceFloorMode(
+            getattr(args, "message_auth_sequence_floor_mode", "off")
+        )
+    except ValueError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
+    if replay_db_arg and not args.require_message_auth:
+        print(
+            "synapse hub: --message-auth-replay-db requires --require-message-auth",
+            file=sys.stderr,
+        )
+        return 2
+    if sequence_floor_mode is not SequenceFloorMode.OFF and not args.require_message_auth:
+        print(
+            "synapse hub: --message-auth-sequence-floor-mode requires --require-message-auth",
+            file=sys.stderr,
+        )
+        return 2
+    message_auth_replay_path = replay_db_arg
+    if message_auth_replay_path is None and args.require_message_auth and args.db:
+        message_auth_replay_path = f"{args.db}.message-auth.db"
+    if sequence_floor_mode is not SequenceFloorMode.OFF and message_auth_replay_path is None:
+        print(
+            "synapse hub: --message-auth-sequence-floor-mode requires a durable replay "
+            "ledger; pass --db or --message-auth-replay-db",
+            file=sys.stderr,
+        )
+        return 2
+    if args.require_message_auth and message_auth_replay_path is None:
+        print(
+            "synapse hub: WARNING --require-message-auth without --db or "
+            "--message-auth-replay-db uses a process-local nonce cache; a restart "
+            "reopens still-fresh nonces.",
+            file=sys.stderr,
+        )
     aef_signing_key_path = getattr(args, "aef_signing_key", None)
     if aef_signing_key_path and not args.db:
         print("synapse hub: --aef-signing-key requires --db", file=sys.stderr)
@@ -599,6 +643,25 @@ def _cmd_hub(
     except ValueError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
+    message_auth_replay_store: DurableMessageAuthReplayStore | None = None
+    if message_auth_replay_path is not None:
+        try:
+            message_auth_replay_store = replay_store_factory(
+                message_auth_replay_path,
+                max_entries=args.message_auth_replay_capacity,
+                window_seconds=args.message_auth_window_seconds,
+                key_file=db_key_file,
+            )
+        except Exception as exc:  # noqa: BLE001 — security store startup fails closed
+            if journal is not None:
+                journal.close()
+            print(f"synapse hub: cannot open message-auth replay ledger: {exc}", file=sys.stderr)
+            return 2
+        print(
+            "synapse hub: durable message-auth replay enabled "
+            f"(sequence_floor={sequence_floor_mode.value})",
+            file=sys.stderr,
+        )
     hub_kwargs: dict[str, Any] = {
         "journal": journal,
         "rate_limiter": limiter,
@@ -636,6 +699,8 @@ def _cmd_hub(
         "require_per_message_auth": args.require_message_auth,
         "per_message_auth_window_seconds": args.message_auth_window_seconds,
         "per_message_auth_replay_capacity": args.message_auth_replay_capacity,
+        "per_message_auth_replay_store": message_auth_replay_store,
+        "per_message_auth_sequence_floor_mode": sequence_floor_mode,
         "capability_card_trust_bundle": capability_card_trust_bundle,
         "acl_policy": acl_policy,
         "require_acl": args.require_acl,
@@ -683,6 +748,8 @@ def _cmd_hub(
     except KeyboardInterrupt:
         print("\nHub stopped by user.")
     finally:
+        if message_auth_replay_store is not None:
+            message_auth_replay_store.close()
         if journal is not None:
             journal.close()
     return 0

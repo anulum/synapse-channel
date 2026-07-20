@@ -142,7 +142,24 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
         "--message-auth-replay-capacity",
         type=int,
         default=4096,
-        help="Maximum in-memory nonce entries retained for replay detection.",
+        help="Maximum live nonce entries retained for replay detection in the "
+        "process-local cache and optional durable ledger.",
+    )
+    hub.add_argument(
+        "--message-auth-replay-db",
+        default=None,
+        metavar="PATH",
+        help="Crash-durable authenticated-frame nonce ledger. With "
+        "--require-message-auth and --db, defaults to <DB>.message-auth.db. "
+        "An explicit path is required for a durable in-memory hub.",
+    )
+    hub.add_argument(
+        "--message-auth-sequence-floor-mode",
+        choices=("off", "compat", "strict"),
+        default="off",
+        help="Durable per-key/sender sequence policy. 'off' persists nonces only; "
+        "'compat' records a high-water mark without rejecting lower fresh nonces; "
+        "'strict' rejects sequence values at or below the durable floor.",
     )
     hub.add_argument(
         "--acl-policy",

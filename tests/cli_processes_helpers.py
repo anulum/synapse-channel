@@ -75,6 +75,8 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "require_message_auth": False,
         "message_auth_window_seconds": 10.0,
         "message_auth_replay_capacity": 4096,
+        "message_auth_replay_db": None,
+        "message_auth_sequence_floor_mode": "off",
         "acl_policy": "",
         "require_acl": False,
         "role_grants": "",

@@ -1450,7 +1450,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 709 |
 | Wire message types | 79 |
 | CLI subcommands | 181 |
-| Test functions | 8566 |
+| Test functions | 8573 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 57 |
 | GitHub Actions workflows | 22 |
@@ -1482,7 +1482,11 @@ opt-in and deny-by-default:
   process list).
 - **Per-message authentication** — `--message-auth-key` with
   `--require-message-auth` demands sender-bound HMAC authentication on selected
-  mutating frames after connect authentication.
+  mutating frames after connect authentication. With `--db`, the CLI also
+  persists accepted nonces in `<DB>.message-auth.db`, so replay refusal survives
+  restart; `--db-key-file` encrypts both stores. A journal-free authenticated
+  hub warns that its nonce cache is process-local unless
+  `--message-auth-replay-db` is supplied.
 - **Signed events and trusted peers** — embedded hubs can accept Ed25519 event
   signatures as the per-message alternative, and guarded multi-hub/federation
   paths compose live certificate pins with operator-confirmed peer policy. The

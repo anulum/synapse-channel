@@ -80,6 +80,10 @@ from synapse_channel.core.message_auth import (
     EventSignatureTrustBundle,
     MessageAuthKey,
 )
+from synapse_channel.core.message_auth_durable import (
+    DurableMessageAuthReplayStore,
+    SequenceFloorMode,
+)
 from synapse_channel.core.multihub_claim_transport import (
     ClaimForwarder,
     ClaimForwardPeer,
@@ -176,6 +180,8 @@ class HubAuthConfig:
     require_per_message_auth: bool = False
     per_message_auth_window_seconds: float = DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS
     per_message_auth_replay_capacity: int = 4096
+    per_message_auth_replay_store: DurableMessageAuthReplayStore | None = None
+    per_message_auth_sequence_floor_mode: SequenceFloorMode | str = SequenceFloorMode.OFF
     signed_event_trust_bundle: EventSignatureTrustBundle | None = None
     capability_card_trust_bundle: CapabilityCardTrustBundle | None = None
     acl_policy: AclPolicy | None = None

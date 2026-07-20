@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import ssl
+import time
 from collections.abc import Coroutine
 from pathlib import Path
 from ssl import SSLContext
@@ -27,6 +28,14 @@ from synapse_channel.core.hub import (
 )
 from synapse_channel.core.hub_config import HubConfig, config_fingerprint
 from synapse_channel.core.identity_keys import generate_signing_key, public_key_b64
+from synapse_channel.core.message_auth import (
+    MessageAuthKey,
+    VerificationResult,
+    sign_frame,
+    verify_frame,
+)
+from synapse_channel.core.message_auth_durable import SequenceFloorMode
+from synapse_channel.core.protocol import build_envelope
 from synapse_channel.core.ratelimit import RateLimiter
 
 
@@ -723,6 +732,87 @@ def test_cmd_hub_threads_message_authentication_options() -> None:
     assert captured["per_message_auth_keys"][0].key_id == "main"
     assert captured["per_message_auth_keys"][0].secret == b"shared-secret"
     assert captured["per_message_auth_keys"][0].senders == frozenset({"ALPHA", "BETA"})
+    assert captured["per_message_auth_replay_store"] is None
+    assert captured["per_message_auth_sequence_floor_mode"] is SequenceFloorMode.OFF
+
+
+def test_cmd_hub_auto_durable_replay_survives_runtime_restart(tmp_path: Path) -> None:
+    """A journalled authenticated hub refuses the same fresh frame after restart."""
+    db = tmp_path / "hub.db"
+    hubs: list[SynapseHub] = []
+    now = time.time()
+    key = MessageAuthKey(
+        key_id="main",
+        secret=b"shared-secret",
+        senders=frozenset({"ALPHA"}),
+    )
+    frame = sign_frame(
+        build_envelope("ALPHA", "claim", target="System", task_id="T1", now=now),
+        key=key,
+        nonce="restart-proof",
+        sequence=1,
+        timestamp=now,
+    )
+    outcomes: list[VerificationResult] = []
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        hub = SynapseHub(**kwargs)
+        hubs.append(hub)
+        return hub
+
+    def verify_then_close(coro: Coroutine[Any, Any, None]) -> None:
+        hub = hubs[-1]
+        outcomes.append(
+            verify_frame(
+                frame,
+                keys=hub.per_message_auth_keys,
+                replay_cache=hub._message_replay,
+                now=now + len(outcomes) * 0.1,
+                required_sender="ALPHA",
+            )
+        )
+        coro.close()
+
+    args = _hub_ns(
+        db=str(db),
+        message_auth_key=["main:shared-secret:ALPHA"],
+        require_message_auth=True,
+    )
+    assert cli_processes._cmd_hub(args, runner=verify_then_close, hub_factory=build_hub) == 0
+    assert cli_processes._cmd_hub(args, runner=verify_then_close, hub_factory=build_hub) == 0
+
+    assert outcomes == [VerificationResult.OK, VerificationResult.REPLAYED]
+    assert Path(f"{db}.message-auth.db").is_file()
+
+
+def test_cmd_hub_requires_durable_store_for_sequence_floor(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(
+                message_auth_key=["main:shared-secret:ALPHA"],
+                require_message_auth=True,
+                message_auth_sequence_floor_mode="strict",
+            ),
+            runner=_close_runner,
+        )
+        == 2
+    )
+    assert "requires a durable replay ledger" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_unused_explicit_replay_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(message_auth_replay_db=str(tmp_path / "unused.db")),
+            runner=_close_runner,
+        )
+        == 2
+    )
+    assert "requires --require-message-auth" in capsys.readouterr().err
 
 
 def test_cmd_hub_rejects_malformed_message_auth_key(capsys: pytest.CaptureFixture[str]) -> None:

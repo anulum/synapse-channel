@@ -33,6 +33,8 @@ def test_security_argument_defaults_preserve_local_first_posture(
     assert args.metrics_query_token_ok is False
     assert args.message_auth_key == []
     assert args.require_message_auth is False
+    assert args.message_auth_replay_db is None
+    assert args.message_auth_sequence_floor_mode == "off"
     assert args.require_acl is False
     assert args.require_role_claim is False
     assert args.require_identity_binding is False
@@ -70,6 +72,10 @@ def test_security_argument_registrar_accepts_complete_explicit_surface(
             "--message-auth-key",
             "key-id:fixture-hmac:ALPHA",
             "--require-message-auth",
+            "--message-auth-replay-db",
+            "replay.db",
+            "--message-auth-sequence-floor-mode",
+            "strict",
             "--acl-policy",
             "acl.json",
             "--require-acl",
@@ -105,6 +111,8 @@ def test_security_argument_registrar_accepts_complete_explicit_surface(
     assert args.metrics_query_token_ok is True
     assert args.message_auth_key == ["key-id:fixture-hmac:ALPHA"]
     assert args.require_message_auth is True
+    assert args.message_auth_replay_db == "replay.db"
+    assert args.message_auth_sequence_floor_mode == "strict"
     assert args.acl_policy == "acl.json"
     assert args.require_acl is True
     assert args.role_grants == "roles.json"

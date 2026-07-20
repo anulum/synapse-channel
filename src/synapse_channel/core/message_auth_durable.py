@@ -42,13 +42,13 @@ from __future__ import annotations
 
 import contextlib
 import os
-import sqlite3
 import threading
 from enum import Enum
 from pathlib import Path
 from types import TracebackType
 
 from synapse_channel.core.persistence import BUSY_TIMEOUT_MS
+from synapse_channel.core.persistence_sqlcipher import connect_event_store
 
 
 class SequenceFloorMode(str, Enum):
@@ -83,6 +83,10 @@ class DurableMessageAuthReplayStore:
         identities (same capacity policy as the in-memory cache).
     window_seconds :
         Nonce retention age matched to the verification timestamp window.
+    key_file, key :
+        Optional SQLCipher key material. The replay ledger follows the same
+        encrypted-at-rest posture as the authoritative hub journal when the
+        CLI derives both stores from ``--db-key-file``.
     """
 
     def __init__(
@@ -91,6 +95,8 @@ class DurableMessageAuthReplayStore:
         *,
         max_entries: int,
         window_seconds: float,
+        key_file: str | Path | None = None,
+        key: bytes | None = None,
     ) -> None:
         self.path = str(path)
         self.max_entries = max(int(max_entries), 1)
@@ -99,7 +105,11 @@ class DurableMessageAuthReplayStore:
         if self.path != ":memory:" and not self.path.startswith("file:"):
             parent = Path(self.path).expanduser().resolve().parent
             parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
+        self._conn, self._encrypted = connect_event_store(
+            self.path,
+            key=key,
+            key_file=key_file,
+        )
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=FULL")
         self._conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
@@ -127,6 +137,11 @@ class DurableMessageAuthReplayStore:
         self._restrict(self.path)
         self._restrict(f"{self.path}-wal")
         self._restrict(f"{self.path}-shm")
+
+    @property
+    def encrypted(self) -> bool:
+        """Return whether SQLCipher protects this replay ledger at rest."""
+        return self._encrypted
 
     def admit(
         self,

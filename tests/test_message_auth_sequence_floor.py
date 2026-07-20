@@ -9,10 +9,12 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 
+from synapse_channel.core import message_auth_durable
 from synapse_channel.core.message_auth import (
     MessageAuthKey,
     MessageReplayCache,
@@ -370,3 +372,76 @@ def test_concurrent_same_nonce_only_one_accepts(tmp_path: Path) -> None:
     outcomes = {first, second}
     assert DurableAdmitResult.ACCEPTED in outcomes
     assert DurableAdmitResult.REPLAYED in outcomes
+
+
+def test_plaintext_store_reports_unencrypted(tmp_path: Path) -> None:
+    with DurableMessageAuthReplayStore(
+        tmp_path / "plain.sqlite",
+        max_entries=8,
+        window_seconds=30.0,
+    ) as store:
+        assert store.encrypted is False
+
+
+def test_memory_store_skips_filesystem_and_rejects_empty_identity() -> None:
+    with DurableMessageAuthReplayStore(
+        ":memory:",
+        max_entries=8,
+        window_seconds=30.0,
+    ) as store:
+        assert store.floor("missing", "sender") is None
+        with pytest.raises(ValueError, match="identity fields"):
+            store.admit(
+                key_id="",
+                sender=_SENDER,
+                nonce="nonce",
+                sequence=1,
+                timestamp=1.0,
+                now=1.0,
+            )
+
+
+def test_store_passes_key_file_to_encrypted_connector(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    def connect(
+        path: str | Path,
+        *,
+        key: bytes | None = None,
+        key_file: str | Path | None = None,
+    ) -> tuple[sqlite3.Connection, bool]:
+        captured.update(path=str(path), key=key, key_file=key_file)
+        return sqlite3.connect(path), True
+
+    monkeypatch.setattr(message_auth_durable, "connect_event_store", connect)
+    key_file = tmp_path / "hub.key"
+    with DurableMessageAuthReplayStore(
+        tmp_path / "encrypted.sqlite",
+        max_entries=8,
+        window_seconds=30.0,
+        key_file=key_file,
+    ) as store:
+        assert store.encrypted is True
+    assert captured == {
+        "path": str(tmp_path / "encrypted.sqlite"),
+        "key": None,
+        "key_file": key_file,
+    }
+
+
+def test_non_sqlite_driver_fault_fails_closed() -> None:
+    class DriverFaultStore:
+        def admit(self, **_kwargs: object) -> DurableAdmitResult:
+            raise RuntimeError("driver-specific failure")
+
+    cache = MessageReplayCache(
+        window_seconds=30.0,
+        max_entries=8,
+        durable=DriverFaultStore(),  # type: ignore[arg-type]
+    )
+    assert (
+        _verify(_signed(nonce="driver-fault", sequence=1, timestamp=1.0), cache, now=1.0)
+        == VerificationResult.REPLAYED
+    )

@@ -99,6 +99,10 @@ from synapse_channel.core.message_auth import (
     MessageAuthKey,
     MessageReplayCache,
 )
+from synapse_channel.core.message_auth_durable import (
+    DurableMessageAuthReplayStore,
+    SequenceFloorMode,
+)
 from synapse_channel.core.multihub_claim_transport import (
     ClaimForwarder,
     ClaimForwardPeer,
@@ -497,6 +501,8 @@ class SynapseHub:
         require_per_message_auth: bool = False,
         per_message_auth_window_seconds: float = DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
         per_message_auth_replay_capacity: int = 4096,
+        per_message_auth_replay_store: DurableMessageAuthReplayStore | None = None,
+        per_message_auth_sequence_floor_mode: SequenceFloorMode | str = SequenceFloorMode.OFF,
         signed_event_trust_bundle: EventSignatureTrustBundle | None = None,
         capability_card_trust_bundle: CapabilityCardTrustBundle | None = None,
         acl_policy: AclPolicy | None = None,
@@ -570,11 +576,17 @@ class SynapseHub:
         else:
             self.per_message_auth_keys = {key.key_id: key for key in (per_message_auth_keys or [])}
         self.require_per_message_auth = bool(require_per_message_auth)
+        self.per_message_auth_replay_store = per_message_auth_replay_store
+        self.per_message_auth_sequence_floor_mode = SequenceFloorMode(
+            per_message_auth_sequence_floor_mode
+        )
         self._message_replay = MessageReplayCache(
             window_seconds=safe_float(
                 per_message_auth_window_seconds, default=DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS
             ),
             max_entries=safe_int(per_message_auth_replay_capacity, default=4096, min_value=1),
+            durable=self.per_message_auth_replay_store,
+            sequence_floor_mode=self.per_message_auth_sequence_floor_mode,
         )
         self.signed_event_trust_bundle = signed_event_trust_bundle
         self.capability_card_trust_bundle = capability_card_trust_bundle

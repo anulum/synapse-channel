@@ -21,6 +21,7 @@ use. Operators opt in explicitly:
 
 ```bash
 synapse hub \
+  --db ~/synapse/hub.db \
   --token "$SYNAPSE_TOKEN" \
   --message-auth-key main:"$SYNAPSE_MESSAGE_AUTH_SECRET":project/agent \
   --require-message-auth
@@ -126,20 +127,29 @@ Per-message authentication includes replay protection:
   fresh idempotency key on signed mutating frames that did not already provide
   one.
 
-### Present default: process-local cache
+### Runtime default: durable with a journal, process-local without one
 
-The hub's default replay cache is **in-memory only** (process-local). A hub
-restart clears accepted nonce history, so a captured signed frame that is still
-inside the timestamp window can verify again after restart. The tighter default
-window and signed-client idempotency keys bound that residual window. Durable
-command idempotency is separate: a journal-backed hub may replay an
-already-applied mutating response by idempotency key without restoring
-per-message-auth nonce memory.
+When `--require-message-auth` is paired with `--db`, the CLI automatically
+opens a separate FULL-synchronous nonce ledger at `<DB>.message-auth.db`.
+Accepted nonce history therefore survives a hub restart. `--db-key-file`
+protects both the authoritative journal and this derived replay ledger through
+SQLCipher; the CLI never silently creates a plaintext replay sidecar beside an
+encrypted journal. Override the location with `--message-auth-replay-db`.
+
+Without either `--db` or `--message-auth-replay-db`, the cache remains
+**in-memory only** and the CLI prints a warning. A restart then clears accepted
+nonce history, so a captured signed frame still inside the timestamp window can
+verify again. The tighter default window and signed-client idempotency keys
+bound that compatibility residual. Durable command idempotency is separate: a
+journal-backed hub may replay an already-applied mutating response by
+idempotency key without restoring per-message-auth nonce memory.
 
 ### Optional durable nonces and sequence floors (REV-SEC-07)
 
-Embedders may attach a `DurableMessageAuthReplayStore` to `MessageReplayCache`
-so accepted nonces survive process restart. Sequence floors remain **opt-in**:
+The hub CLI attaches `DurableMessageAuthReplayStore` automatically when
+`--require-message-auth` and `--db` are both present. Embedders may attach the
+same store directly to `MessageReplayCache`. Sequence floors remain **opt-in**
+through `--message-auth-sequence-floor-mode`:
 
 | Mode | Behaviour |
 |------|-----------|
@@ -148,7 +158,9 @@ so accepted nonces survive process restart. Sequence floors remain **opt-in**:
 | `strict` | `sequence <= floor` for that `(key_id, sender)` is refused as `sequence_mismatch`. Clients must keep counters monotonic across restarts. |
 
 Durable I/O faults fail closed (verification refuses the frame). Capacity-full
-behaviour matches the in-memory cache. Design notes:
+behaviour matches the in-memory cache. `compat` and `strict` are refused at
+startup unless a durable replay path exists; an in-memory sequence floor would
+misrepresent its restart guarantee. Design notes:
 `docs/internal/DESIGN_REV_SEC_07_sequence_floor_2026-07-20.md`.
 
 Verification produces stable **verification result** strings: `ok`, `missing`,

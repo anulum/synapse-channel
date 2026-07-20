@@ -13,7 +13,6 @@ import base64
 import copy
 import hmac
 import json
-import sqlite3
 import time
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -364,8 +363,10 @@ class MessageReplayCache:
                     now=now_float,
                     mode=self.sequence_floor_mode,
                 )
-            except (OSError, sqlite3.Error, ValueError):
-                # Fail closed: a durable-path fault must not admit a frame.
+            except Exception:  # noqa: BLE001 — driver faults must fail closed
+                # Fail closed: SQLCipher and third-party DB-API drivers do not
+                # necessarily inherit sqlite3.Error. No durable-path fault may
+                # admit an authenticated frame.
                 return VerificationResult.REPLAYED
             if durable_result is DurableAdmitResult.REPLAYED:
                 return VerificationResult.REPLAYED
