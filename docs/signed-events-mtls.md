@@ -71,9 +71,10 @@ fields:
 ```json
 {
   "signature": {
-    "version": 1,
+    "version": 2,
     "key_id": "project:main:2026-06",
     "algorithm": "ed25519",
+    "domain": "aef:legacy-event:v0.1",
     "signed_at": 1782648000.0,
     "nonce": "base64-url-nonce",
     "sequence": 1,
@@ -82,10 +83,26 @@ fields:
 }
 ```
 
-The signed bytes should be a **canonical payload** derived from the stable event
-fields, not from arbitrary JSON formatting. Canonicalisation should sort object
-keys, preserve integer and string values exactly, reject duplicate keys before
-signing, and exclude the signature value itself.
+Version 2 signs `ASCII("aef:legacy-event:v0.1") || 0x00 || canonical_event`.
+The explicit `legacy-event` purpose is intentional: this profile still uses the
+historical event-frame serializer and float timestamps, so it is
+domain-separated but is not mislabelled as a complete AEF/JCS receipt. The
+domain also remains inside the signed envelope, so neither a cross-purpose
+signature nor a version rewrite can verify. The canonical event derives from
+stable event fields rather than arbitrary JSON formatting, sorts object keys,
+preserves integer and string values exactly, and excludes only the signature
+value itself.
+
+The verifier retains an explicit migration path for historical version-1
+envelopes: v1 must omit `domain` and verifies against the original bare
+canonical event bytes. New signers emit v2. Version 2 never falls back to v1;
+an unknown version or missing/wrong v2 domain fails closed. This compatibility
+rule preserves already-issued signatures without treating them as AEF evidence.
+Connection-identity registration is also intentionally v1 during rolling
+upgrades: registration happens before admission, so an upgraded client cannot
+negotiate v2 with an older hub. Coordination events use v2; the bootstrap
+profile stays explicit and isolated until a version-negotiation mechanism
+exists.
 
 ## Replay protection
 
@@ -103,7 +120,7 @@ should bind:
 Verification produces an explicit **verification result** for operators, policy
 checks, and postmortems: `valid`, `missing_signature`, `expired`,
 `unknown_key`, `revoked_key`, `bad_signature`, `sender_mismatch`,
-`project_scope_mismatch`, `sequence_mismatch`, or `replayed`. A failed
+`project_scope_mismatch`, `sequence_mismatch`, `invalid_domain`, or `replayed`. A failed
 verification result is surfaced on the hub `error` frame when signed-event
 verification is used as the required mutating-frame authentication path.
 

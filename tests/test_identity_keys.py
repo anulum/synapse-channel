@@ -121,6 +121,8 @@ def test_sign_registration_produces_a_frame_the_hub_verifies(tmp_path: Path) -> 
     )
     result = verify_registration(frame, trust_bundle=bundle, now=1000.0, required_sender=_SENDER)
 
+    assert frame["signature"]["version"] == 1
+    assert "domain" not in frame["signature"]
     assert result is SignedEventVerificationResult.VALID
 
 

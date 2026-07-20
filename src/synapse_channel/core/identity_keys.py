@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.errors import SynapseError
-from synapse_channel.core.message_auth import sign_event_frame
+from synapse_channel.core.message_auth import sign_legacy_event_frame
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -135,12 +135,13 @@ def sign_registration(
 ) -> dict[str, Any]:
     """Return ``frame`` with an Ed25519 identity signature the hub verifies at registration.
 
-    A thin wrapper over :func:`~synapse_channel.core.message_auth.sign_event_frame`: the
-    connecting agent signs its registration heartbeat so the hub can bind the claimed
-    identity. The ``nonce`` and monotonic ``sequence`` make each registration signature
-    single-use against the hub's replay cache.
+    Registration is a pre-admission bootstrap and cannot negotiate the new AEF
+    event-signature profile. It therefore emits the exact legacy-v1 profile so
+    upgraded clients can still prove identity to a hub that has not restarted
+    into the v2 verifier. The ``nonce`` and monotonic ``sequence`` make each
+    registration signature single-use against the hub's replay cache.
     """
-    return sign_event_frame(
+    return sign_legacy_event_frame(
         frame,
         key_id=key_id,
         private_key=private_key,

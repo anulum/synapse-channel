@@ -21,6 +21,7 @@ from enum import Enum
 from hashlib import sha256
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.aef_domain import AEF_LEGACY_EVENT_DOMAIN, aef_signature_preimage
 from synapse_channel.core.protocol import RESOURCE_TYPE_ALIASES, MessageType
 
 if TYPE_CHECKING:
@@ -34,6 +35,12 @@ AUTH_ALGORITHM = "hmac-sha256"
 
 EVENT_SIGNATURE_ALGORITHM = "ed25519"
 """Event signature algorithm value carried in signed event metadata."""
+
+LEGACY_EVENT_SIGNATURE_VERSION = 1
+"""Historical bare-canonical event-signature envelope version."""
+
+EVENT_SIGNATURE_VERSION = 2
+"""Domain-separated event-signature envelope version emitted by new signers."""
 
 DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS = 10.0
 """Default signed-frame past timestamp window in seconds."""
@@ -84,6 +91,7 @@ class SignedEventVerificationResult(str, Enum):
     UNKNOWN_KEY = "unknown_key"
     REVOKED_KEY = "revoked_key"
     BAD_SIGNATURE = "bad_signature"
+    INVALID_DOMAIN = "invalid_domain"
     SENDER_MISMATCH = "sender_mismatch"
     PROJECT_SCOPE_MISMATCH = "project_scope_mismatch"
     SEQUENCE_MISMATCH = "sequence_mismatch"
@@ -444,16 +452,72 @@ def sign_event_frame(
     dict[str, Any]
         Signed frame containing a ``signature`` envelope.
     """
+    return _sign_event_frame_profile(
+        frame,
+        key_id=key_id,
+        private_key=private_key,
+        nonce=nonce,
+        sequence=sequence,
+        signed_at=signed_at,
+        version=EVENT_SIGNATURE_VERSION,
+        domain=str(AEF_LEGACY_EVENT_DOMAIN),
+    )
+
+
+def sign_legacy_event_frame(
+    frame: Mapping[str, Any],
+    *,
+    key_id: str,
+    private_key: Ed25519PrivateKey,
+    nonce: str,
+    sequence: int,
+    signed_at: float | None = None,
+) -> dict[str, Any]:
+    """Emit the historical v1 profile for rolling-upgrade bootstrap traffic.
+
+    New coordination events use :func:`sign_event_frame`. Connection identity
+    registration cannot negotiate a profile before admission, so it remains v1
+    until a separately versioned bootstrap protocol exists.
+    """
+    return _sign_event_frame_profile(
+        frame,
+        key_id=key_id,
+        private_key=private_key,
+        nonce=nonce,
+        sequence=sequence,
+        signed_at=signed_at,
+        version=LEGACY_EVENT_SIGNATURE_VERSION,
+        domain=None,
+    )
+
+
+def _sign_event_frame_profile(
+    frame: Mapping[str, Any],
+    *,
+    key_id: str,
+    private_key: Ed25519PrivateKey,
+    nonce: str,
+    sequence: int,
+    signed_at: float | None,
+    version: int,
+    domain: str | None,
+) -> dict[str, Any]:
     signed = copy.deepcopy(dict(frame))
-    signed["signature"] = {
-        "version": 1,
+    envelope: dict[str, Any] = {
+        "version": version,
         "key_id": str(key_id),
         "algorithm": EVENT_SIGNATURE_ALGORITHM,
         "nonce": str(nonce),
         "sequence": int(sequence),
         "signed_at": time.time() if signed_at is None else float(signed_at),
     }
-    signature = private_key.sign(canonical_event_frame(signed))
+    if domain is not None:
+        envelope["domain"] = domain
+    signed["signature"] = envelope
+    payload = canonical_event_frame(signed)
+    if domain is not None:
+        payload = aef_signature_preimage(domain, payload)
+    signature = private_key.sign(payload)
     signed["signature"]["value"] = base64.b64encode(signature).decode("ascii")
     return signed
 
@@ -508,6 +572,21 @@ def verify_event_signature(
         return SignedEventVerificationResult.PROJECT_SCOPE_MISMATCH
     if str(signature.get("algorithm") or "") != EVENT_SIGNATURE_ALGORITHM:
         return SignedEventVerificationResult.BAD_SIGNATURE
+    signature_version = signature.get("version")
+    if isinstance(signature_version, bool) or not isinstance(signature_version, int):
+        return SignedEventVerificationResult.BAD_SIGNATURE
+    if signature_version == LEGACY_EVENT_SIGNATURE_VERSION:
+        if "domain" in signature:
+            return SignedEventVerificationResult.INVALID_DOMAIN
+        signed_payload = canonical_event_frame(frame)
+    elif signature_version == EVENT_SIGNATURE_VERSION:
+        if signature.get("domain") != str(AEF_LEGACY_EVENT_DOMAIN):
+            return SignedEventVerificationResult.INVALID_DOMAIN
+        signed_payload = aef_signature_preimage(
+            AEF_LEGACY_EVENT_DOMAIN, canonical_event_frame(frame)
+        )
+    else:
+        return SignedEventVerificationResult.BAD_SIGNATURE
     try:
         signed_at = float(signature["signed_at"])
         sequence_raw = signature["sequence"]
@@ -528,7 +607,7 @@ def verify_event_signature(
 
     try:
         decoded_signature = base64.b64decode(supplied, validate=True)
-        key.verifier().verify(decoded_signature, canonical_event_frame(frame))
+        key.verifier().verify(decoded_signature, signed_payload)
     except (InvalidSignature, ValueError):
         return SignedEventVerificationResult.BAD_SIGNATURE
     if not trust_bundle.replay_cache.remember(

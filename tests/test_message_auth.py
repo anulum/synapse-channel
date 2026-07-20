@@ -9,9 +9,20 @@
 
 from __future__ import annotations
 
+import base64
+
+import pytest
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from synapse_channel.core.aef_domain import (
+    AEF_LEGACY_EVENT_DOMAIN,
+    AEF_STH_DOMAIN,
+    aef_signature_preimage,
+)
 from synapse_channel.core.message_auth import (
+    EVENT_SIGNATURE_VERSION,
+    LEGACY_EVENT_SIGNATURE_VERSION,
     EventSignatureKey,
     EventSignatureTrustBundle,
     MessageAuthKey,
@@ -317,6 +328,8 @@ def test_sign_and_verify_ed25519_event_signature_with_replay_surface() -> None:
     )
 
     assert signed["signature"]["algorithm"] == "ed25519"
+    assert signed["signature"]["version"] == EVENT_SIGNATURE_VERSION
+    assert signed["signature"]["domain"] == str(AEF_LEGACY_EVENT_DOMAIN)
     assert (
         verify_event_signature(
             signed,
@@ -337,6 +350,123 @@ def test_sign_and_verify_ed25519_event_signature_with_replay_surface() -> None:
         )
         == SignedEventVerificationResult.REPLAYED
     )
+
+
+def test_event_signature_v2_preimage_is_domain_separated() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    signed = sign_event_frame(
+        build_envelope("ALPHA", "claim", target="System", task_id="T1", now=12.0),
+        key_id="K1",
+        private_key=private_key,
+        nonce="n1",
+        sequence=1,
+        signed_at=100.0,
+    )
+    signature = base64.b64decode(signed["signature"]["value"], validate=True)
+    canonical = canonical_event_frame(signed)
+
+    private_key.public_key().verify(
+        signature,
+        aef_signature_preimage(AEF_LEGACY_EVENT_DOMAIN, canonical),
+    )
+    with pytest.raises(InvalidSignature):
+        private_key.public_key().verify(signature, canonical)
+
+
+def test_event_signature_verifier_preserves_exact_legacy_v1_profile() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    key = EventSignatureKey.from_private_key(
+        key_id="K1",
+        private_key=private_key,
+        senders=frozenset({"ALPHA"}),
+        projects=frozenset({"P"}),
+    )
+    legacy = build_envelope("ALPHA", "claim", target="System", task_id="T1", project="P", now=12.0)
+    legacy["signature"] = {
+        "version": LEGACY_EVENT_SIGNATURE_VERSION,
+        "key_id": key.key_id,
+        "algorithm": "ed25519",
+        "nonce": "legacy-n1",
+        "sequence": 1,
+        "signed_at": 100.0,
+    }
+    signature = private_key.sign(canonical_event_frame(legacy))
+    legacy["signature"]["value"] = base64.b64encode(signature).decode("ascii")
+    trust = EventSignatureTrustBundle(
+        keys={key.key_id: key},
+        replay_cache=MessageReplayCache(window_seconds=30.0, max_entries=16),
+    )
+
+    assert (
+        verify_event_signature(
+            legacy,
+            trust_bundle=trust,
+            now=100.0,
+            required_sender="ALPHA",
+            required_project="P",
+        )
+        == SignedEventVerificationResult.VALID
+    )
+
+
+def test_event_signature_verifier_rejects_domain_and_version_downgrades() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    key = EventSignatureKey.from_private_key(
+        key_id="K1",
+        private_key=private_key,
+        senders=frozenset({"ALPHA"}),
+        projects=frozenset({"P"}),
+    )
+    signed = sign_event_frame(
+        build_envelope("ALPHA", "claim", target="System", task_id="T1", project="P", now=12.0),
+        key_id=key.key_id,
+        private_key=private_key,
+        nonce="n1",
+        sequence=1,
+        signed_at=100.0,
+    )
+
+    def fresh_trust() -> EventSignatureTrustBundle:
+        return EventSignatureTrustBundle(
+            keys={key.key_id: key},
+            replay_cache=MessageReplayCache(window_seconds=30.0, max_entries=16),
+        )
+
+    wrong_domain = signed | {"signature": signed["signature"] | {"domain": str(AEF_STH_DOMAIN)}}
+    wrong_signature = private_key.sign(
+        aef_signature_preimage(AEF_STH_DOMAIN, canonical_event_frame(wrong_domain))
+    )
+    wrong_domain["signature"]["value"] = base64.b64encode(wrong_signature).decode("ascii")
+
+    invalid_domains = (
+        wrong_domain,
+        signed | {"signature": {k: v for k, v in signed["signature"].items() if k != "domain"}},
+        signed | {"signature": signed["signature"] | {"version": LEGACY_EVENT_SIGNATURE_VERSION}},
+    )
+    for invalid in invalid_domains:
+        assert (
+            verify_event_signature(
+                invalid,
+                trust_bundle=fresh_trust(),
+                now=100.0,
+                required_sender="ALPHA",
+                required_project="P",
+            )
+            == SignedEventVerificationResult.INVALID_DOMAIN
+        )
+
+    for bad_version in (True, "2", 3):
+        invalid = signed | {"signature": signed["signature"] | {"version": bad_version}}
+        assert (
+            verify_event_signature(
+                invalid,
+                trust_bundle=fresh_trust(),
+                now=100.0,
+                required_sender="ALPHA",
+                required_project="P",
+            )
+            == SignedEventVerificationResult.BAD_SIGNATURE
+        )
 
 
 def test_event_signature_reports_bad_signature_scope_and_revocation_failures() -> None:

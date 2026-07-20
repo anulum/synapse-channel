@@ -139,3 +139,6 @@ AEF_STH_DOMAIN = AefDomain("sth", AEF_VERSION_MAJOR, AEF_VERSION_MINOR)
 
 AEF_WITNESS_COSIGN_DOMAIN = AefDomain("witness-cosig", AEF_VERSION_MAJOR, AEF_VERSION_MINOR)
 """Domain assigned to AEF v0.1 witness cosignatures."""
+
+AEF_LEGACY_EVENT_DOMAIN = AefDomain("legacy-event", AEF_VERSION_MAJOR, AEF_VERSION_MINOR)
+"""Transitional domain for events that still use the legacy frame serializer."""
