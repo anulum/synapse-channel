@@ -207,31 +207,26 @@ def owned_agent_selector_popups(
             rectangle.geometry,
             geometry_phase,
         )
-        try:
-            if (
-                geometry_matches
-                and window not in matches
-                and _agent_selector_owner_matches(window, project_id, deadline=deadline)
-            ):
-                matches.append(window)
-            elif (
-                geometry_matches
-                and window not in matches
-                and x11._required_window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
-            ):
-                raise RuntimeError(
-                    "refusing a JetBrains ACP agent selector outside the pinned project frame"
-                )
-            elif (
-                geometry_phase is _SelectorGeometryPhase.FILTERED_VISIBLE
-                and x11._required_window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
-                and _agent_selector_project_matches(window, project_id, deadline=deadline)
-            ):
-                raise RuntimeError(
-                    "JetBrains ACP agent selector geometry changed after confirmation"
-                )
-        except x11.X11WindowDisappeared:
-            continue
+        if (
+            geometry_matches
+            and window not in matches
+            and _agent_selector_owner_matches(window, project_id, deadline=deadline)
+        ):
+            matches.append(window)
+        elif (
+            geometry_matches
+            and window not in matches
+            and x11._required_window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
+        ):
+            raise RuntimeError(
+                "refusing a JetBrains ACP agent selector outside the pinned project frame"
+            )
+        elif (
+            geometry_phase is _SelectorGeometryPhase.FILTERED_VISIBLE
+            and x11._required_window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
+            and _agent_selector_project_matches(window, project_id, deadline=deadline)
+        ):
+            raise RuntimeError("JetBrains ACP agent selector geometry changed after confirmation")
     return tuple(matches)
 
 

@@ -328,6 +328,38 @@ def test_agent_selector_popup_search_retries_only_while_guard_is_clean(
     assert guarded == [True, True]
 
 
+def test_agent_selector_popup_search_does_not_toggle_during_unstable_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A vanished selector candidate must be re-snapshotted, not toggled closed."""
+    snapshots: list[str] = []
+
+    def visible(*_args: object, **_kwargs: object) -> tuple[str, ...]:
+        snapshots.append("snapshot")
+        if len(snapshots) == 1:
+            raise jetbrains_x11_driver.X11WindowDisappeared("selector")
+        return ("456",)
+
+    retries: list[bool] = []
+    sleeps: list[float] = []
+    monkeypatch.setattr(jetbrains_selector, "visible_agent_selector_popups", visible)
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_bounded_poll_sleep",
+        lambda deadline: sleeps.append(deadline),
+    )
+
+    selector = jetbrains_selector.find_agent_selector_popup(
+        float("inf"),
+        "123",
+        retry=lambda: retries.append(True),
+    )
+
+    assert selector == "456"
+    assert retries == []
+    assert sleeps == [float("inf")]
+
+
 def test_agent_selector_popup_search_rejects_nonpositive_retry_interval() -> None:
     with pytest.raises(ValueError, match="selector retry interval must be positive"):
         jetbrains_selector.find_agent_selector_popup(

@@ -76,7 +76,11 @@ def find_agent_selector_popup(
     while time.monotonic() < deadline:
         if guard is not None:
             guard()
-        matches = visible_agent_selector_popups(project, deadline=deadline)
+        try:
+            matches = visible_agent_selector_popups(project, deadline=deadline)
+        except x11.X11WindowDisappeared:
+            x11._bounded_poll_sleep(deadline)
+            continue
         if len(matches) > 1:
             raise RuntimeError(
                 "IntelliJ IDEA exposed multiple pinned ACP agent selector popups: "
@@ -103,11 +107,15 @@ def _wait_for_owned_agent_selector(
     while time.monotonic() < deadline:
         if guard is not None:
             guard()
-        matches = visible_agent_selector_popups(
-            project,
-            deadline=deadline,
-            geometry_phase=_SelectorGeometryPhase.FILTERED_READY,
-        )
+        try:
+            matches = visible_agent_selector_popups(
+                project,
+                deadline=deadline,
+                geometry_phase=_SelectorGeometryPhase.FILTERED_READY,
+            )
+        except x11.X11WindowDisappeared:
+            x11._bounded_poll_sleep(deadline)
+            continue
         if len(matches) > 1:
             raise RuntimeError(
                 f"refusing ambiguous JetBrains ACP agent selection {phase}: matches={matches!r}"
@@ -245,12 +253,17 @@ def select_pinned_agent(
         if guard is not None:
             guard()
         rectangles = visible_jetbrains_window_rectangles(deadline=deadline)
-        matches = owned_agent_selector_popups(
-            rectangles,
-            int(project),
-            deadline=deadline,
-            geometry_phase=_SelectorGeometryPhase.FILTERED_VISIBLE,
-        )
+        try:
+            matches = owned_agent_selector_popups(
+                rectangles,
+                int(project),
+                deadline=deadline,
+                geometry_phase=_SelectorGeometryPhase.FILTERED_VISIBLE,
+            )
+        except x11.X11WindowDisappeared:
+            closed_snapshots = 0
+            x11._bounded_poll_sleep(deadline)
+            continue
         if len(matches) > 1:
             raise RuntimeError(
                 "JetBrains ACP agent selector cardinality changed after confirmation: "

@@ -199,10 +199,10 @@ def test_selector_window_snapshot_retries_query_tree_badwindow_race(
     assert jetbrains_selector_windows.visible_jetbrains_window_rectangles(deadline=7.0) == ()
 
 
-def test_selector_window_skips_candidate_that_disappears_during_title_query(
+def test_selector_window_marks_snapshot_unstable_when_candidate_disappears_during_title_query(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Carry a canonical GetProperty race through classification as a non-match."""
+    """Keep a disappearing selector distinct from a stable empty snapshot."""
     monkeypatch.setattr(
         jetbrains_x11_driver,
         "_xdotool",
@@ -218,11 +218,9 @@ def test_selector_window_skips_candidate_that_disappears_during_title_query(
         ),
     )
 
-    assert (
+    with pytest.raises(jetbrains_x11_driver.X11WindowDisappeared):
         jetbrains_selector_windows.owned_agent_selector_popups(
             (X11WindowRectangle("4195085", 0, 1, 2, 310, 407),),
             123,
             deadline=7.0,
         )
-        == ()
-    )
