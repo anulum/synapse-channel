@@ -35,53 +35,23 @@ a non-zero exit with no answer, or a timeout becomes an error result, never a ra
 
 from __future__ import annotations
 
-import asyncio
-import shutil
-
 # The Ollama CLI is this module's controlled subprocess boundary; argv is built from typed
 # fields and never from a shell string.
 import subprocess  # nosec B404
-from collections.abc import Sequence
-from typing import Protocol
 
-from synapse_channel.participants.envelope import (
-    TurnRequest,
-    TurnResult,
-    build_turn_result,
-    error_turn_result,
-    stamp_model,
+from synapse_channel.participants.envelope import TurnRequest, TurnResult
+from synapse_channel.participants.headless_kernel import (
+    CommandRunner,
+    HeadlessExecutionKernel,
 )
 from synapse_channel.participants.ollama_output import parse_ollama_output
-from synapse_channel.participants.participant import (
-    ParticipantChannel,
-    ParticipantHealth,
-)
-from synapse_channel.participants.process_error import (
-    format_process_failure,
-    format_process_start_failure,
-)
+from synapse_channel.participants.participant import ParticipantChannel, ParticipantHealth
 
 DEFAULT_BINARY = "ollama"
 """Default Ollama executable name resolved on ``PATH``."""
 
 DEFAULT_TIMEOUT = 600.0
 """Default wall-clock ceiling, in seconds, for one local turn."""
-
-
-class CommandRunner(Protocol):
-    """Callable compatible with :func:`subprocess.run` for injectable tests."""
-
-    def __call__(
-        self,
-        args: Sequence[str],
-        *,
-        capture_output: bool = False,
-        text: bool = False,
-        check: bool = False,
-        timeout: float | None = None,
-        input: str | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        """Run ``args`` and return the completed process."""
 
 
 def compose_ollama_prompt(context: str, prompt: str) -> str:
@@ -171,22 +141,27 @@ class OllamaParticipant:
         timeout: float = DEFAULT_TIMEOUT,
         hide_thinking: bool = True,
     ) -> None:
-        self._identity = identity
-        self._model = model
-        self._binary = binary
-        self._runner = runner
-        self._timeout = timeout
+        self._kernel = HeadlessExecutionKernel(
+            identity=identity,
+            provider="ollama",
+            model=model,
+            binary=binary,
+            runner=runner,
+            timeout=timeout,
+            timeout_subject="local",
+            health_available_suffix=f" (model {model})",
+        )
         self._hide_thinking = hide_thinking
 
     @property
     def identity(self) -> str:
         """Return the participant's bus identity."""
-        return self._identity
+        return self._kernel.identity
 
     @property
     def channel(self) -> ParticipantChannel:
         """Return :attr:`ParticipantChannel.HEADLESS`."""
-        return ParticipantChannel.HEADLESS
+        return self._kernel.channel
 
     def health(self) -> ParticipantHealth:
         """Report whether the Ollama binary resolves on ``PATH``.
@@ -197,15 +172,7 @@ class OllamaParticipant:
             ``available`` is true when the configured binary is found. This does not probe
             whether the model is pulled; a missing model surfaces as an error turn instead.
         """
-        resolved = shutil.which(self._binary)
-        return ParticipantHealth(
-            identity=self._identity,
-            channel=ParticipantChannel.HEADLESS,
-            available=resolved is not None,
-            detail=f"ollama binary at {resolved} (model {self._model})"
-            if resolved is not None
-            else f"ollama binary {self._binary!r} not found on PATH",
-        )
+        return self._kernel.health()
 
     def run_turn(self, request: TurnRequest) -> TurnResult:
         """Run one turn synchronously and return its typed result.
@@ -223,51 +190,15 @@ class OllamaParticipant:
         """
         argv = build_ollama_argv(
             prompt=compose_ollama_prompt(request.context, request.prompt),
-            model=self._model,
-            binary=self._binary,
+            model=self._kernel.model,
+            binary=self._kernel.binary,
             hide_thinking=self._hide_thinking,
         )
-        try:
-            completed = self._runner(
-                argv,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=self._timeout,
-                input="",
-            )
-        except subprocess.TimeoutExpired:
-            return error_turn_result(
-                participant=self._identity,
-                channel=ParticipantChannel.HEADLESS,
-                request=request,
-                reason=f"local turn exceeded {self._timeout:g}s timeout",
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            return error_turn_result(
-                participant=self._identity,
-                channel=ParticipantChannel.HEADLESS,
-                request=request,
-                reason=format_process_start_failure(binary=self._binary, error=exc),
-            )
-        outcome = parse_ollama_output(completed.stdout or "")
-        if completed.returncode != 0 and outcome.answer == "":
-            return error_turn_result(
-                participant=self._identity,
-                channel=ParticipantChannel.HEADLESS,
-                request=request,
-                reason=format_process_failure(
-                    provider="ollama",
-                    binary=self._binary,
-                    returncode=completed.returncode,
-                    stderr=completed.stderr or "",
-                ),
-            )
-        return build_turn_result(
-            participant=self._identity,
-            channel=ParticipantChannel.HEADLESS,
+        return self._kernel.run_turn(
             request=request,
-            outcome=outcome,
+            argv=argv,
+            parser=lambda completed: parse_ollama_output(completed.stdout or ""),
+            empty_stdin=True,
         )
 
     async def take_turn(self, request: TurnRequest) -> TurnResult:
@@ -284,5 +215,4 @@ class OllamaParticipant:
             The same result :meth:`run_turn` produces, computed in a worker thread so the
             blocking subprocess never stalls the bus event loop.
         """
-        result = await asyncio.to_thread(self.run_turn, request)
-        return stamp_model(result, self._model)
+        return await self._kernel.take_turn(self.run_turn, request)

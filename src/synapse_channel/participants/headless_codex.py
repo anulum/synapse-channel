@@ -33,31 +33,17 @@ a non-zero exit, or a timeout becomes an error result, never a raised exception.
 
 from __future__ import annotations
 
-import asyncio
-import shutil
-
 # The Codex CLI is this module's controlled subprocess boundary; argv is built from typed
 # fields and never from a shell string.
 import subprocess  # nosec B404
-from collections.abc import Sequence
-from typing import Protocol
 
 from synapse_channel.participants.codex_stream import parse_codex_stream
-from synapse_channel.participants.envelope import (
-    TurnRequest,
-    TurnResult,
-    build_turn_result,
-    error_turn_result,
-    stamp_model,
+from synapse_channel.participants.envelope import TurnRequest, TurnResult
+from synapse_channel.participants.headless_kernel import (
+    CommandRunner,
+    HeadlessExecutionKernel,
 )
-from synapse_channel.participants.participant import (
-    ParticipantChannel,
-    ParticipantHealth,
-)
-from synapse_channel.participants.process_error import (
-    format_process_failure,
-    format_process_start_failure,
-)
+from synapse_channel.participants.participant import ParticipantChannel, ParticipantHealth
 
 DEFAULT_BINARY = "codex"
 """Default Codex executable name resolved on ``PATH``."""
@@ -67,22 +53,6 @@ DEFAULT_TIMEOUT = 600.0
 
 DEFAULT_SANDBOX = "read-only"
 """Default Codex sandbox policy; a reasoning participant never needs to write the workspace."""
-
-
-class CommandRunner(Protocol):
-    """Callable compatible with :func:`subprocess.run` for injectable tests."""
-
-    def __call__(
-        self,
-        args: Sequence[str],
-        *,
-        capture_output: bool = False,
-        text: bool = False,
-        check: bool = False,
-        timeout: float | None = None,
-        input: str | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        """Run ``args`` and return the completed process."""
 
 
 def compose_codex_prompt(context: str, prompt: str) -> str:
@@ -193,23 +163,26 @@ class CodexParticipant:
         sandbox: str = DEFAULT_SANDBOX,
         persist_session: bool = False,
     ) -> None:
-        self._identity = identity
-        self._model = model
-        self._binary = binary
-        self._runner = runner
-        self._timeout = timeout
+        self._kernel = HeadlessExecutionKernel(
+            identity=identity,
+            provider="codex",
+            model=model,
+            binary=binary,
+            runner=runner,
+            timeout=timeout,
+        )
         self._sandbox = sandbox
         self._persist_session = persist_session
 
     @property
     def identity(self) -> str:
         """Return the participant's bus identity."""
-        return self._identity
+        return self._kernel.identity
 
     @property
     def channel(self) -> ParticipantChannel:
         """Return :attr:`ParticipantChannel.HEADLESS`."""
-        return ParticipantChannel.HEADLESS
+        return self._kernel.channel
 
     def health(self) -> ParticipantHealth:
         """Report whether the Codex binary resolves on ``PATH``.
@@ -219,15 +192,7 @@ class CodexParticipant:
         ParticipantHealth
             ``available`` is true when the configured binary is found.
         """
-        resolved = shutil.which(self._binary)
-        return ParticipantHealth(
-            identity=self._identity,
-            channel=ParticipantChannel.HEADLESS,
-            available=resolved is not None,
-            detail=f"codex binary at {resolved}"
-            if resolved is not None
-            else f"codex binary {self._binary!r} not found on PATH",
-        )
+        return self._kernel.health()
 
     def run_turn(self, request: TurnRequest) -> TurnResult:
         """Run one turn synchronously and return its typed result.
@@ -245,53 +210,17 @@ class CodexParticipant:
         """
         argv = build_codex_argv(
             prompt=compose_codex_prompt(request.context, request.prompt),
-            binary=self._binary,
-            model=self._model,
+            binary=self._kernel.binary,
+            model=self._kernel.model,
             resume_session=request.resume_session,
             sandbox=self._sandbox,
             persist_session=self._persist_session,
         )
-        try:
-            completed = self._runner(
-                argv,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=self._timeout,
-                input="",
-            )
-        except subprocess.TimeoutExpired:
-            return error_turn_result(
-                participant=self._identity,
-                channel=ParticipantChannel.HEADLESS,
-                request=request,
-                reason=f"headless turn exceeded {self._timeout:g}s timeout",
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            return error_turn_result(
-                participant=self._identity,
-                channel=ParticipantChannel.HEADLESS,
-                request=request,
-                reason=format_process_start_failure(binary=self._binary, error=exc),
-            )
-        outcome = parse_codex_stream((completed.stdout or "").splitlines())
-        if completed.returncode != 0 and outcome.answer == "":
-            return error_turn_result(
-                participant=self._identity,
-                channel=ParticipantChannel.HEADLESS,
-                request=request,
-                reason=format_process_failure(
-                    provider="codex",
-                    binary=self._binary,
-                    returncode=completed.returncode,
-                    stderr=completed.stderr or "",
-                ),
-            )
-        return build_turn_result(
-            participant=self._identity,
-            channel=ParticipantChannel.HEADLESS,
+        return self._kernel.run_turn(
             request=request,
-            outcome=outcome,
+            argv=argv,
+            parser=lambda completed: parse_codex_stream((completed.stdout or "").splitlines()),
+            empty_stdin=True,
         )
 
     async def take_turn(self, request: TurnRequest) -> TurnResult:
@@ -308,5 +237,4 @@ class CodexParticipant:
             The same result :meth:`run_turn` produces, computed in a worker thread so the
             blocking subprocess never stalls the bus event loop.
         """
-        result = await asyncio.to_thread(self.run_turn, request)
-        return stamp_model(result, self._model)
+        return await self._kernel.take_turn(self.run_turn, request)
