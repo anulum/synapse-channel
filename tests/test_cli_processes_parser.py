@@ -28,6 +28,8 @@ def test_parser_hub_defaults() -> None:
     assert args.host == "localhost"
     assert args.db is None
     assert args.db_key_file is None
+    assert args.aef_signing_key is None
+    assert args.aef_drain_interval == 1.0
     assert args.func is cli_processes._cmd_hub
     assert args.role_grants == ""
     assert args.require_role_claim is False
@@ -40,6 +42,24 @@ def test_parser_hub_db_key_file_flag() -> None:
     )
     assert args.db == "/tmp/hub.db"
     assert args.db_key_file == "/tmp/hub.key"
+
+
+def test_parser_hub_aef_runtime_flags() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "hub",
+            "--db",
+            "/tmp/hub.db",
+            "--hub-id",
+            "hub.example",
+            "--aef-signing-key",
+            "/tmp/aef-key",
+            "--aef-drain-interval",
+            "0.25",
+        ]
+    )
+    assert args.aef_signing_key == "/tmp/aef-key"
+    assert args.aef_drain_interval == 0.25
 
 
 def test_parser_hub_role_claim_flags() -> None:

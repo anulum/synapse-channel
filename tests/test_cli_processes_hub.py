@@ -222,6 +222,184 @@ def test_cmd_hub_with_db_opens_and_closes_event_store(tmp_path: Path) -> None:
     assert db.exists()
 
 
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"db": None, "hub_id": "hub.example"}, "requires --db"),
+        ({"db": "/tmp/aef.db", "hub_id": None}, "requires --hub-id"),
+    ],
+)
+def test_cmd_hub_aef_route_requires_durable_identity_context(
+    overrides: dict[str, object], message: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ns = _hub_ns(aef_signing_key="/tmp/unused-aef-key", **overrides)
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert message in capsys.readouterr().err
+
+
+def test_cmd_hub_aef_route_refuses_an_unreadable_signing_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = tmp_path / "events.db"
+    ns = _hub_ns(
+        db=str(db),
+        hub_id="hub.example",
+        aef_signing_key=str(tmp_path / "missing-key"),
+    )
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert "cannot read receipt-signing key" in capsys.readouterr().err
+    assert not db.exists()
+
+
+def test_cmd_hub_aef_startup_reconciles_existing_outbox_before_serve(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from synapse_channel.core.aef_emission import AefReceiptLog
+    from synapse_channel.core.aef_legacy_mapping import AEF_MAPPED_EVENT_KINDS
+    from synapse_channel.core.journal import EventKind
+    from synapse_channel.core.persistence import EventStore
+    from synapse_channel.core.receipt_signing import (
+        generate_receipt_signing_key,
+        load_receipt_signing_key,
+    )
+
+    db = tmp_path / "events.db"
+    key_path = tmp_path / "receipt-key"
+    generate_receipt_signing_key(key_path)
+    with EventStore(db, aef_outbox_kinds=AEF_MAPPED_EVENT_KINDS) as store:
+        legacy_seq = store.append(
+            EventKind.CLAIM,
+            {
+                "task_id": "startup-task",
+                "owner": "agent-1",
+                "claimed_at": 1_783_940_400.0,
+                "lease_expires_at": 1_783_944_000.0,
+                "epoch": 1,
+                "paths": [],
+            },
+            ts=1_783_940_400.0,
+            durable=True,
+        )
+
+    ns = _hub_ns(
+        db=str(db),
+        hub_id="hub.example",
+        aef_signing_key=str(key_path),
+    )
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 0
+    assert "startup_settled=1" in capsys.readouterr().err
+
+    with EventStore(db, aef_outbox_kinds=AEF_MAPPED_EVENT_KINDS) as store:
+        assert store.aef_delivery(legacy_seq) is not None
+    with AefReceiptLog(
+        db,
+        hub_id="hub.example",
+        signing_key=load_receipt_signing_key(key_path),
+    ) as log:
+        assert log.count() == 1
+
+
+def test_cmd_hub_aef_startup_failure_closes_the_authoritative_store(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import sqlite3
+
+    from synapse_channel import cli_processes_hub
+    from synapse_channel.core.persistence import EventStore
+    from synapse_channel.core.receipt_signing import generate_receipt_signing_key
+
+    db = tmp_path / "events.db"
+    key_path = tmp_path / "receipt-key"
+    generate_receipt_signing_key(key_path)
+    opened: list[EventStore] = []
+
+    def store_factory(path: str, **kwargs: object) -> EventStore:
+        store = EventStore(path, **kwargs)  # type: ignore[arg-type]
+        opened.append(store)
+        return store
+
+    def fail_startup(_config: object) -> int:
+        raise RuntimeError("corrupt pending evidence")
+
+    monkeypatch.setattr(cli_processes_hub, "drain_aef_startup_backlog", fail_startup)
+    ns = _hub_ns(
+        db=str(db),
+        hub_id="hub.example",
+        aef_signing_key=str(key_path),
+    )
+    assert cli_processes._cmd_hub(ns, runner=_close_runner, store_factory=store_factory) == 2
+    assert "AEF startup reconciliation failed" in capsys.readouterr().err
+    assert opened
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        opened[0].count()
+
+
+def test_cmd_hub_aef_worker_reconciles_events_accepted_while_serving(tmp_path: Path) -> None:
+    from synapse_channel.core.aef_emission import AefReceiptLog
+    from synapse_channel.core.aef_legacy_mapping import AEF_MAPPED_EVENT_KINDS
+    from synapse_channel.core.journal import EventKind
+    from synapse_channel.core.persistence import EventStore
+    from synapse_channel.core.receipt_signing import (
+        generate_receipt_signing_key,
+        load_receipt_signing_key,
+    )
+
+    db = tmp_path / "events.db"
+    key_path = tmp_path / "receipt-key"
+    generate_receipt_signing_key(key_path)
+    accepted: dict[str, int] = {}
+
+    class ProbeHub:
+        config_epoch = ""
+
+        def __init__(self, journal: EventStore) -> None:
+            self.journal = journal
+
+        async def serve(self, **_kwargs: object) -> None:
+            sequence = self.journal.append(
+                EventKind.CLAIM,
+                {
+                    "task_id": "live-task",
+                    "owner": "agent-1",
+                    "lease_expires_at": 1_783_944_000.0,
+                    "epoch": 1,
+                    "paths": [],
+                },
+                ts=1_783_940_400.0,
+                durable=True,
+            )
+            accepted["sequence"] = sequence
+            deadline = asyncio.get_running_loop().time() + 5.0
+            while self.journal.aef_delivery(sequence) is None:
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise TimeoutError("AEF worker did not settle the live event")
+                await asyncio.sleep(0.01)
+
+    def build_hub(**kwargs: Any) -> Any:
+        journal = kwargs["journal"]
+        assert isinstance(journal, EventStore)
+        return ProbeHub(journal)
+
+    ns = _hub_ns(
+        db=str(db),
+        hub_id="hub.example",
+        aef_signing_key=str(key_path),
+        aef_drain_interval=0.01,
+    )
+    assert cli_processes._cmd_hub(ns, runner=asyncio.run, hub_factory=build_hub) == 0
+
+    with EventStore(db, aef_outbox_kinds=AEF_MAPPED_EVENT_KINDS) as store:
+        assert store.aef_delivery(accepted["sequence"]) is not None
+    with AefReceiptLog(
+        db,
+        hub_id="hub.example",
+        signing_key=load_receipt_signing_key(key_path),
+    ) as log:
+        assert log.count() == 1
+
+
 def test_cmd_hub_db_key_file_requires_db(capsys: pytest.CaptureFixture[str]) -> None:
     """Production CLI refuses --db-key-file without --db."""
     assert (

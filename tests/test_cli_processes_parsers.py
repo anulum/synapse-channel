@@ -71,6 +71,18 @@ class TestNonNegativeInt:
             cli_processes_parsers._non_negative_int("-1")
 
 
+class TestPositiveFinite:
+    """Cover the strict cadence parser used by the AEF worker."""
+
+    def test_positive_value_is_accepted(self) -> None:
+        assert cli_processes_parsers._positive_finite("0.25") == pytest.approx(0.25)
+
+    @pytest.mark.parametrize("value", ["0", "-1", "nan", "inf"])
+    def test_zero_negative_and_non_finite_values_are_rejected(self, value: str) -> None:
+        with pytest.raises(argparse.ArgumentTypeError):
+            cli_processes_parsers._positive_finite(value)
+
+
 class TestLoggingArguments:
     """The shared logging options are attached to daemon subcommands."""
 
@@ -107,6 +119,8 @@ class TestHubParser:
         assert args.multihub_watch == []
         assert args.federation_observe_only is False
         assert args.insecure_off_loopback is False
+        assert args.aef_signing_key is None
+        assert args.aef_drain_interval == pytest.approx(1.0)
 
     def test_finite_limit_type_rejects_nan_rate(self) -> None:
         with pytest.raises(SystemExit):
@@ -137,6 +151,17 @@ class TestHubParser:
     def test_durable_ingress_window_rejects_a_negative_value(self) -> None:
         with pytest.raises(SystemExit):
             _parser().parse_args(["hub", "--durable-ingress-window", "-1"])
+
+    def test_aef_runtime_flags_parse_together(self) -> None:
+        args = _parser().parse_args(
+            ["hub", "--aef-signing-key", "/tmp/aef-key", "--aef-drain-interval", "0.5"]
+        )
+        assert args.aef_signing_key == "/tmp/aef-key"
+        assert args.aef_drain_interval == pytest.approx(0.5)
+
+    def test_aef_runtime_interval_rejects_zero(self) -> None:
+        with pytest.raises(SystemExit):
+            _parser().parse_args(["hub", "--aef-drain-interval", "0"])
 
     def test_boolean_optional_action_toggles_both_ways(self) -> None:
         armed = _parser().parse_args(["hub", "--warn-stale-recipients"])

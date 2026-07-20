@@ -682,6 +682,28 @@ commits at `synchronous=FULL` (durable across an OS crash); the high-volume
 chat/history path commits at `synchronous=NORMAL` (durable across an application
 crash, may lose the last commit on power loss).
 
+Native Agent Evidence Format (AEF) v0.1 emission is an explicit opt-in on top
+of that durable log. Generate an owner-only Ed25519 receipt key, give the hub a
+stable identity, and enable the route:
+
+```bash
+synapse merkle keygen ~/synapse/aef-receipt-key
+synapse hub \
+  --db ~/synapse/hub.db \
+  --hub-id hub.example \
+  --aef-signing-key ~/synapse/aef-receipt-key
+```
+
+Supported evidence rows and their AEF outbox cursor commit in one SQLite
+transaction. Before serving, the hub reconciles every pending cursor; while
+serving, a dedicated worker drains new rows in order (default cadence one
+second, configurable with `--aef-drain-interval`). A crash after receipt
+emission but before acknowledgement reuses the verified receipt rather than
+emitting a duplicate. A failed drain leaves the durable cursor pending and
+retries; legacy rows and their historical Merkle serialization are never
+rewritten or merged with the native AEF chain. Without `--aef-signing-key`, the
+hub retains its legacy-only posture.
+
 Use `synapse compact` to bound the durable memory spine after every read-side
 consumer has advanced past a floor sequence. Add `--archive-report` when the
 maintenance run should leave an operator-readable HTML record of the
@@ -1424,11 +1446,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.11 |
 | Public API exports | 70 |
-| Package modules | 501 |
-| Classes | 705 |
+| Package modules | 503 |
+| Classes | 709 |
 | Wire message types | 79 |
 | CLI subcommands | 181 |
-| Test functions | 8529 |
+| Test functions | 8566 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 57 |
 | GitHub Actions workflows | 22 |

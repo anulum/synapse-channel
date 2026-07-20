@@ -80,9 +80,8 @@ verdict. `AefReceiptIndex` remains the explicit ephemeral batch boundary;
 with a FULL-synchronous atomic transaction, so replays and conflicting sequence
 claims remain detectable across restarts and concurrent verifier processes. Its
 table may coexist in the hub database but never reads or writes legacy event
-rows. Native AEF log emission and the dual-format migration remain separate from
-the historical event log and its Merkle tree; neither serializer is
-reinterpreted as the other.
+rows. Native AEF log emission remains separate from the historical event log and
+its Merkle tree; neither serializer is reinterpreted as the other.
 
 `AefReceiptLog` is the native-emission boundary for the next migration step. It
 assigns an independent AEF sequence and `prev_receipt` chain, signs canonical
@@ -90,10 +89,7 @@ receipt bytes with the existing hub Ed25519 key type, validates every receipt
 before a FULL-synchronous append, and can bind the frozen legacy root only in
 the AEF genesis receipt. A supplied `legacy_seq` is stored as reconciliation
 evidence, never as an AEF sequence or Merkle leaf. The native tables may coexist
-in the hub database without touching legacy event rows. Runtime wiring that
-emits both records for each supported evidence event remains explicit follow-up;
-the existence of the log primitive alone is not a claim that dual-write mode is
-enabled.
+in the hub database without touching legacy event rows.
 
 `legacy_event_to_aef` is the explicit compatibility mapper for the first
 runtime evidence families: lease grants and minimized claim denials,
@@ -103,8 +99,8 @@ the AEF integer-time boundary and carries the legacy sequence only into signed
 reconciliation evidence. Minimized identifiers remain visibly digest-labelled;
 the mapper does not reconstruct deleted plaintext. Unsupported kinds remain
 legacy-only and malformed supported rows fail closed. This mapper still does
-not make two separate commits atomic: crash-recoverable outbox routing remains
-the next migration boundary before runtime dual-write can be enabled.
+not make two separate commits atomic; the durable outbox below is the recovery
+boundary between them.
 
 The durable outbox boundary queues selected legacy event sequences in the same
 SQLite transaction as their unchanged event rows. `drain_aef_outbox` consumes
@@ -113,8 +109,15 @@ before acknowledgement, restart lookup by the signed/indexed `legacy_seq`
 verifies that the existing receipt is the same deterministic projection and
 settles the cursor without emitting a duplicate. A mismatch, unsupported queued
 kind, malformed row, or receipt without identity stops the drain fail-closed.
-The outbox is opt-in; hub construction and CLI configuration do not enable it
-yet, so runtime dual-write still requires the final explicit wiring step.
+The outbox remains opt-in. A hub enables the live route only when the operator
+supplies `--db`, a stable `--hub-id`, and an owner-only Ed25519
+`--aef-signing-key`. Startup reconciles the complete pending backlog before the
+hub accepts traffic. Live reconciliation runs on a dedicated worker thread with
+fresh SQLite connections, so it never shares the hub connection across threads;
+failure leaves the durable cursor pending, logs the condition, and retries at
+the bounded `--aef-drain-interval`. Shutdown signals and joins that worker before
+the journal closes. Omitting the signing-key flag preserves the legacy-only
+runtime exactly.
 
 Before closeout, `python tools/test_ownership_map.py --check` can map changed
 source files to likely owning tests. The map uses AST imports and a conservative

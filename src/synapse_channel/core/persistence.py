@@ -117,6 +117,12 @@ class EventStore:
                 "receipt_id TEXT UNIQUE, "
                 "FOREIGN KEY(legacy_seq) REFERENCES events(seq))"
             )
+        self._has_aef_outbox = (
+            self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'aef_outbox'"
+            ).fetchone()
+            is not None
+        )
         self._conn.commit()
         # WAL mode creates ``-wal`` and ``-shm`` sidecars on the first write (the
         # ``CREATE TABLE`` commit above). They mirror the same content as the main
@@ -260,7 +266,7 @@ class EventStore:
         """Return queued legacy rows awaiting native AEF reconciliation."""
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > 10_000:
             raise ValueError("AEF outbox limit must be an integer from 1 through 10000")
-        if not self._aef_outbox_kinds:
+        if not self._has_aef_outbox:
             return ()
         rows = self._conn.execute(
             "SELECT e.seq, e.ts, e.kind, e.payload "
@@ -299,7 +305,7 @@ class EventStore:
 
     def aef_delivery(self, legacy_seq: int) -> str | None:
         """Return the delivered receipt id, or ``None`` for pending/absent rows."""
-        if not self._aef_outbox_kinds:
+        if not self._has_aef_outbox:
             return None
         row = self._conn.execute(
             "SELECT receipt_id FROM aef_outbox WHERE legacy_seq = ?", (legacy_seq,)
@@ -551,10 +557,20 @@ class EventStore:
         seq_list = [int(s) for s in seqs]
         if not seq_list:
             return 0
-        cursor = self._conn.executemany(
-            "DELETE FROM events WHERE seq = ?",
-            ((seq,) for seq in seq_list),
-        )
+        sql = "DELETE FROM events WHERE seq = ?"
+        if self._has_aef_outbox:
+            # The outbox is the recovery boundary between the authoritative
+            # legacy commit and its native receipt. Compaction may remove a
+            # settled legacy row, but it must never erase a still-pending source
+            # event and make the durable cursor silently disappear from the
+            # join used by pending_aef_events(). This guard is explicit rather
+            # than dependent on SQLite foreign-key enforcement, whose global
+            # activation would change historical compaction behaviour.
+            sql += (
+                " AND NOT EXISTS (SELECT 1 FROM aef_outbox "
+                "WHERE legacy_seq = events.seq AND receipt_id IS NULL)"
+            )
+        cursor = self._conn.executemany(sql, ((seq,) for seq in seq_list))
         self._conn.commit()
         return int(cursor.rowcount)
 

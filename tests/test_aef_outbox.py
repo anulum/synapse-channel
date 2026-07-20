@@ -191,6 +191,40 @@ def test_delivery_binding_is_idempotent_but_not_rebindable(tmp_path: Path) -> No
     store.close()
 
 
+def test_compaction_cannot_delete_pending_source_but_may_delete_after_delivery(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "hub.db"
+    store = _store(path)
+    legacy_seq = _append_claim(store, "task-1")
+
+    assert store.delete([legacy_seq]) == 0
+    assert [event.seq for event in store.pending_aef_events()] == [legacy_seq]
+
+    with AefReceiptLog(path, hub_id="hub.example", signing_key=_key()) as log:
+        assert drain_aef_outbox(store, log) == 1
+        receipt = log.receipt_for_legacy_seq(legacy_seq)
+    assert receipt is not None
+    assert store.delete([legacy_seq]) == 1
+    assert store.aef_delivery(legacy_seq) == receipt["receipt_id"]
+    store.close()
+
+
+def test_maintenance_reopen_without_route_flag_still_protects_pending_source(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "hub.db"
+    with _store(path) as writer:
+        legacy_seq = _append_claim(writer, "task-1")
+
+    with EventStore(path) as maintenance:
+        assert [event.seq for event in maintenance.pending_aef_events()] == [legacy_seq]
+        assert maintenance.delete([legacy_seq]) == 0
+
+    with _store(path) as restarted:
+        assert [event.seq for event in restarted.pending_aef_events()] == [legacy_seq]
+
+
 @pytest.mark.parametrize("limit", [0, True, 10_001])
 def test_pending_limit_is_bounded(tmp_path: Path, limit: object) -> None:
     store = _store(tmp_path / "hub.db")

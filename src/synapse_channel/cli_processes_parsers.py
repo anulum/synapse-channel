@@ -92,6 +92,14 @@ def _non_negative_int(value: str) -> int:
     return parsed
 
 
+def _positive_finite(value: str) -> float:
+    """Parse a strictly positive finite cadence."""
+    parsed = _finite_limit(value)
+    if parsed == 0:
+        raise argparse.ArgumentTypeError(f"{value!r} must be greater than zero")
+    return parsed
+
+
 def _add_logging_args(parser: argparse.ArgumentParser) -> None:
     """Add the shared ``--log-format`` / ``--log-level`` options to a daemon parser."""
     parser.add_argument(
@@ -126,6 +134,21 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "Owner-only 32-byte key file for SQLCipher page encryption of --db "
             "(requires synapse-channel[sqlcipher]; generate with synapse encrypt-key generate)."
         ),
+    )
+    hub.add_argument(
+        "--aef-signing-key",
+        default=None,
+        help=(
+            "Owner-only Ed25519 private key from 'synapse merkle keygen'. Enables the "
+            "native AEF v0.1 outbox route and requires both --db and --hub-id."
+        ),
+    )
+    hub.add_argument(
+        "--aef-drain-interval",
+        type=_positive_finite,
+        default=1.0,
+        metavar="SECONDS",
+        help="Positive polling cadence for the dedicated AEF outbox worker (default: 1).",
     )
     hub.add_argument(
         "--rate",

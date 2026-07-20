@@ -36,6 +36,8 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "port": 8876,
         "db": None,
         "db_key_file": None,
+        "aef_signing_key": None,
+        "aef_drain_interval": 1.0,
         "rate": 0.0,
         "burst": 20.0,
         "host_rate": 0.0,

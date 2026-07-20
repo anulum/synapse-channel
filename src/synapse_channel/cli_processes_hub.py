@@ -16,6 +16,7 @@ import json
 import logging
 import ssl
 import sys
+import threading
 import time
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -23,6 +24,12 @@ from typing import Any
 
 from synapse_channel.cli_processes_runtime import _run
 from synapse_channel.core.acl import AclError, load_acl_policy
+from synapse_channel.core.aef_legacy_mapping import AEF_MAPPED_EVENT_KINDS
+from synapse_channel.core.aef_runtime import (
+    AefRuntimeConfig,
+    drain_aef_startup_backlog,
+    run_aef_outbox_worker,
+)
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability_card_history import PersistentCapabilityCardHistory
 from synapse_channel.core.capability_card_trust import (
@@ -57,6 +64,10 @@ from synapse_channel.core.rate_policy import (
     is_loopback_bind,
 )
 from synapse_channel.core.ratelimit import RateLimiter
+from synapse_channel.core.receipt_signing import (
+    ReceiptSigningError,
+    load_receipt_signing_key,
+)
 from synapse_channel.core.role_grants import RoleGrantError, load_role_grants
 from synapse_channel.core.secret_files import (
     SecretFileError,
@@ -71,6 +82,8 @@ _PRECHECK_LOGGER = logging.getLogger(__name__ + ".exposure_precheck")
 _PRECHECK_LOGGER.addHandler(logging.NullHandler())
 _PRECHECK_LOGGER.propagate = False
 """Silent sink for the pre-store exposure check: serve() owns the warning pass."""
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _resolve_max_connections_per_host(raw: int | None) -> int | None:
@@ -119,6 +132,25 @@ async def _serve_with_watch(
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+
+
+async def _serve_with_aef(
+    serve: Callable[[], Coroutine[Any, Any, None]], config: AefRuntimeConfig
+) -> None:
+    """Run ``serve`` beside a bounded-shutdown, dedicated AEF drain worker."""
+    stop = threading.Event()
+
+    def report_error(exc: Exception) -> None:
+        _LOGGER.error("AEF outbox drain failed; durable rows remain pending: %s", exc)
+
+    worker = asyncio.create_task(
+        asyncio.to_thread(run_aef_outbox_worker, config, stop, on_error=report_error)
+    )
+    try:
+        await serve()
+    finally:
+        stop.set()
+        await worker
 
 
 def _parse_message_auth_keys(values: list[str]) -> list[MessageAuthKey]:
@@ -299,6 +331,26 @@ def _cmd_hub(
     if db_key_file and not args.db:
         print("synapse hub: --db-key-file requires --db", file=sys.stderr)
         return 2
+    aef_signing_key_path = getattr(args, "aef_signing_key", None)
+    if aef_signing_key_path and not args.db:
+        print("synapse hub: --aef-signing-key requires --db", file=sys.stderr)
+        return 2
+    if aef_signing_key_path and not args.hub_id:
+        print("synapse hub: --aef-signing-key requires --hub-id", file=sys.stderr)
+        return 2
+    aef_config: AefRuntimeConfig | None = None
+    if aef_signing_key_path:
+        try:
+            aef_config = AefRuntimeConfig(
+                db_path=str(args.db),
+                hub_id=str(args.hub_id),
+                signing_key=load_receipt_signing_key(aef_signing_key_path),
+                db_key_file=db_key_file,
+                interval_seconds=float(getattr(args, "aef_drain_interval", 1.0)),
+            )
+        except (ReceiptSigningError, ValueError) as exc:
+            print(f"synapse hub: {exc}", file=sys.stderr)
+            return 2
     authenticator = TokenAuthenticator([args.token]) if args.token else None
     # Fail-closed exposure precheck: an insecure non-loopback bind is refused here,
     # BEFORE the durable event store is constructed, so a refused start never leaves
@@ -320,12 +372,28 @@ def _cmd_hub(
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
     try:
-        journal = store_factory(args.db, key_file=db_key_file) if args.db else None
+        store_kwargs: dict[str, Any] = {"key_file": db_key_file}
+        if aef_config is not None:
+            store_kwargs["aef_outbox_kinds"] = AEF_MAPPED_EVENT_KINDS
+        journal = store_factory(args.db, **store_kwargs) if args.db else None
     except (ValueError, RuntimeError) as exc:
         # ValueError: bad key file. RuntimeError: SqlCipherUnavailableError /
         # SqlCipherKeyError subclasses for missing driver or rejected key.
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
+    if aef_config is not None:
+        try:
+            settled = drain_aef_startup_backlog(aef_config)
+        except Exception as exc:  # noqa: BLE001 — startup evidence gate fails closed
+            if journal is not None:
+                journal.close()
+            print(f"synapse hub: AEF startup reconciliation failed: {exc}", file=sys.stderr)
+            return 2
+        print(
+            "synapse hub: native AEF outbox enabled "
+            f"(startup_settled={settled}, interval={aef_config.interval_seconds:g}s)",
+            file=sys.stderr,
+        )
     limiter = RateLimiter(rate_per_second=args.rate, burst=args.burst) if args.rate > 0 else None
     host_limiter = (
         RateLimiter(rate_per_second=args.host_rate, burst=args.host_burst)
@@ -597,8 +665,18 @@ def _cmd_hub(
     def serve() -> Coroutine[Any, Any, None]:
         return hub.serve(host=args.host, port=args.port, ssl_context=ssl_context)
 
+    server_factory = serve
+    if watch is not None:
+        active_watch = watch
+
+        def watched_server() -> Coroutine[Any, Any, None]:
+            return _serve_with_watch(serve, active_watch)
+
+        server_factory = watched_server
     try:
-        runner(serve() if watch is None else _serve_with_watch(serve, watch))
+        runner(
+            server_factory() if aef_config is None else _serve_with_aef(server_factory, aef_config)
+        )
     except InsecureBindError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
