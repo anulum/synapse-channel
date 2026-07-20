@@ -72,7 +72,7 @@ jobs:
       - name: Bring the hub up and wait for it to become healthy
         run: docker compose up --detach --build --wait --wait-timeout 180
       - name: Confirm the hub answers a health probe
-        run: docker compose exec -T hub synapse health
+        run: docker compose exec -T hub synapse health --uri ws://127.0.0.1:8876
       - name: Show hub logs on failure
         if: failure()
         run: docker compose logs hub

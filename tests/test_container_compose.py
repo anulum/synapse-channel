@@ -116,4 +116,4 @@ def test_docker_workflow_smoke_tests_the_compose_file() -> None:
     steps = workflow["jobs"]["compose-smoke"]["steps"]
     run_scripts = " ".join(str(step.get("run", "")) for step in steps)
     assert "docker compose up" in run_scripts
-    assert "synapse health" in run_scripts  # the smoke asserts the hub actually answers
+    assert "synapse health --uri ws://127.0.0.1:8876" in run_scripts
