@@ -388,6 +388,101 @@ def test_required_selector_queries_reject_unclassifiable_x11_state(
     assert jetbrains_x11_driver._required_window_transient_for("123") == 0x123
 
 
+def test_required_window_name_distinguishes_disappeared_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Expose canonical GetProperty BadWindow separately from transport failure."""
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_xdotool",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [],
+            1,
+            "",
+            "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+            "  Major opcode of failed request:  20 (X_GetProperty)\n"
+            "  Resource id in failed request:  0x40030d\n"
+            "  Serial number of failed request:  22\n"
+            "  Current serial number in output stream:  22\n",
+        ),
+    )
+
+    with pytest.raises(jetbrains_x11_driver.X11WindowDisappeared):
+        jetbrains_x11_driver._required_window_name("4195085")
+
+
+@pytest.mark.parametrize(
+    "opcode",
+    [
+        "  Major opcode of failed request:  3 (X_GetWindowAttributes)",
+        "  Major opcode of failed request:  15 (X_QueryTree)",
+        "  Major opcode of failed request:  20 (X_GetProperty)",
+    ],
+)
+def test_disappearing_window_result_accepts_unique_canonical_metadata(opcode: str) -> None:
+    """Recognize each observed window-query opcode with unique X11 metadata."""
+    diagnostic = (
+        "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+        f"{opcode}\n"
+        "  Minor opcode of failed request:  0\n"
+        "  Resource id in failed request:  0x40039d\n"
+        "  Serial number of failed request:  42\n"
+        "  Current serial number in output stream:  43\n"
+    )
+    assert jetbrains_x11_driver._is_disappearing_window_result(
+        subprocess.CompletedProcess([], 1, "", diagnostic)
+    )
+    assert not jetbrains_x11_driver._is_disappearing_window_result(
+        subprocess.CompletedProcess(
+            [],
+            1,
+            "",
+            diagnostic + "  Serial number of failed request:  44\n",
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "diagnostic"),
+    [
+        (
+            1,
+            "4195085\n",
+            "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+            "  Major opcode of failed request:  15 (X_QueryTree)\n",
+        ),
+        (
+            2,
+            "",
+            "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+            "  Major opcode of failed request:  20 (X_GetProperty)\n",
+        ),
+        (
+            1,
+            "",
+            "prefix X Error of failed request:  BadWindow (invalid Window parameter)\n"
+            "  Major opcode of failed request:  15 (X_QueryTree)\n",
+        ),
+        (
+            1,
+            "",
+            "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+            "  Major opcode of failed request:  20 (X_GetProperty)\n"
+            "transport failed\n",
+        ),
+    ],
+)
+def test_disappearing_window_result_rejects_noncanonical_query_failures(
+    returncode: int,
+    stdout: str,
+    diagnostic: str,
+) -> None:
+    """Keep stdout pollution, wrong status, and diagnostic drift fail-closed."""
+    assert not jetbrains_x11_driver._is_disappearing_window_result(
+        subprocess.CompletedProcess([], returncode, stdout, diagnostic)
+    )
+
+
 @pytest.mark.parametrize(
     "token",
     ["+0x456", "0x4_56", "1110", "0o2126", "0X456", "0x", "-0x1", "0x0"],

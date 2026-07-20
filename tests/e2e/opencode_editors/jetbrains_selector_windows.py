@@ -9,9 +9,7 @@
 
 from __future__ import annotations
 
-import re
 from enum import Enum, auto
-from typing import Protocol
 
 from e2e.opencode_editors import jetbrains_x11_driver as x11
 from e2e.opencode_editors.jetbrains_x11_geometry import (
@@ -20,14 +18,6 @@ from e2e.opencode_editors.jetbrains_x11_geometry import (
 )
 
 _X11_SNAPSHOT_ATTEMPTS = 3
-_X11_BAD_WINDOW_LINE = "X Error of failed request:  BadWindow (invalid Window parameter)"
-_X11_GET_WINDOW_ATTRIBUTES_LINE = "  Major opcode of failed request:  3 (X_GetWindowAttributes)"
-_X11_BAD_WINDOW_METADATA = (
-    re.compile(r"  Minor opcode of failed request:  [0-9]+"),
-    re.compile(r"  Resource id in failed request:  0x[0-9a-f]+"),
-    re.compile(r"  Serial number of failed request:  [0-9]+"),
-    re.compile(r"  Current serial number in output stream:  [0-9]+"),
-)
 _AGENT_SELECTOR_TITLE = "win0"
 _AGENT_SELECTOR_WIDTH = 310
 _AGENT_SELECTOR_UNFILTERED_HEIGHT = 407
@@ -40,14 +30,6 @@ class _SelectorGeometryPhase(Enum):
     UNFILTERED = auto()
     FILTERED_READY = auto()
     FILTERED_VISIBLE = auto()
-
-
-class X11QueryResult(Protocol):
-    """Expose the completed-process fields consumed by snapshot parsing."""
-
-    returncode: int
-    stdout: str
-    stderr: str
 
 
 def _selector_geometry_matches(
@@ -129,26 +111,6 @@ def _agent_selector_project_matches(
     )
 
 
-def _is_disappearing_window_snapshot(result: X11QueryResult) -> bool:
-    """Return whether a batched X11 query lost a window during classification."""
-    if result.returncode != 1 or result.stdout.strip():
-        return False
-    lines = result.stderr.splitlines()
-    if lines[:2] != [_X11_BAD_WINDOW_LINE, _X11_GET_WINDOW_ATTRIBUTES_LINE]:
-        return False
-    matched_metadata: set[int] = set()
-    for line in lines[2:]:
-        matches = {
-            index
-            for index, pattern in enumerate(_X11_BAD_WINDOW_METADATA)
-            if pattern.fullmatch(line)
-        }
-        if len(matches) != 1 or not matched_metadata.isdisjoint(matches):
-            return False
-        matched_metadata.update(matches)
-    return True
-
-
 def visible_jetbrains_window_rectangles(
     *,
     deadline: float,
@@ -183,7 +145,7 @@ def visible_jetbrains_window_rectangles(
             "%@",
             deadline=deadline,
         )
-        if not _is_disappearing_window_snapshot(result):
+        if not x11._is_disappearing_window_result(result):
             break
         attempts_remaining -= 1
         if attempts_remaining == 0:
@@ -245,26 +207,31 @@ def owned_agent_selector_popups(
             rectangle.geometry,
             geometry_phase,
         )
-        if (
-            geometry_matches
-            and window not in matches
-            and _agent_selector_owner_matches(window, project_id, deadline=deadline)
-        ):
-            matches.append(window)
-        elif (
-            geometry_matches
-            and window not in matches
-            and x11._required_window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
-        ):
-            raise RuntimeError(
-                "refusing a JetBrains ACP agent selector outside the pinned project frame"
-            )
-        elif (
-            geometry_phase is _SelectorGeometryPhase.FILTERED_VISIBLE
-            and x11._required_window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
-            and _agent_selector_project_matches(window, project_id, deadline=deadline)
-        ):
-            raise RuntimeError("JetBrains ACP agent selector geometry changed after confirmation")
+        try:
+            if (
+                geometry_matches
+                and window not in matches
+                and _agent_selector_owner_matches(window, project_id, deadline=deadline)
+            ):
+                matches.append(window)
+            elif (
+                geometry_matches
+                and window not in matches
+                and x11._required_window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
+            ):
+                raise RuntimeError(
+                    "refusing a JetBrains ACP agent selector outside the pinned project frame"
+                )
+            elif (
+                geometry_phase is _SelectorGeometryPhase.FILTERED_VISIBLE
+                and x11._required_window_name(window, deadline=deadline) == _AGENT_SELECTOR_TITLE
+                and _agent_selector_project_matches(window, project_id, deadline=deadline)
+            ):
+                raise RuntimeError(
+                    "JetBrains ACP agent selector geometry changed after confirmation"
+                )
+        except x11.X11WindowDisappeared:
+            continue
     return tuple(matches)
 
 

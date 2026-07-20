@@ -29,6 +29,46 @@ _CHAT_SEND_RIGHT_INSET = 64
 _CHAT_SEND_BOTTOM_INSET = 76
 _CHAT_INPUT_SETTLE_SECONDS = 0.25
 _CANONICAL_XID = re.compile(r"0x[0-9A-Fa-f]+\Z")
+_X11_BAD_WINDOW_LINE = "X Error of failed request:  BadWindow (invalid Window parameter)"
+_X11_DISAPPEARING_WINDOW_OPCODES = frozenset(
+    {
+        "  Major opcode of failed request:  3 (X_GetWindowAttributes)",
+        "  Major opcode of failed request:  15 (X_QueryTree)",
+        "  Major opcode of failed request:  20 (X_GetProperty)",
+    }
+)
+_X11_BAD_WINDOW_METADATA = (
+    re.compile(r"  Minor opcode of failed request:  [0-9]+"),
+    re.compile(r"  Resource id in failed request:  0x[0-9a-f]+"),
+    re.compile(r"  Serial number of failed request:  [0-9]+"),
+    re.compile(r"  Current serial number in output stream:  [0-9]+"),
+)
+
+
+class X11WindowDisappeared(RuntimeError):
+    """Signal that a previously enumerated X11 window no longer exists."""
+
+
+def _is_disappearing_window_result(result: subprocess.CompletedProcess[str]) -> bool:
+    """Recognize only canonical ``BadWindow`` output from window queries."""
+    if result.returncode != 1 or result.stdout.strip():
+        return False
+    lines = result.stderr.splitlines()
+    if len(lines) < 2 or lines[0] != _X11_BAD_WINDOW_LINE:
+        return False
+    if lines[1] not in _X11_DISAPPEARING_WINDOW_OPCODES:
+        return False
+    matched_metadata: set[int] = set()
+    for line in lines[2:]:
+        matches = {
+            index
+            for index, pattern in enumerate(_X11_BAD_WINDOW_METADATA)
+            if pattern.fullmatch(line)
+        }
+        if len(matches) != 1 or not matched_metadata.isdisjoint(matches):
+            return False
+        matched_metadata.update(matches)
+    return True
 
 
 def _required_xid(token: str, *, diagnostic: str) -> int:
@@ -141,6 +181,8 @@ def _window_name(window: str, *, deadline: float | None = None) -> str | None:
 def _required_window_name(window: str, *, deadline: float | None = None) -> str:
     """Return one title, rejecting an X11 query that cannot classify the window."""
     completed = _xdotool("getwindowname", window, deadline=deadline)
+    if _is_disappearing_window_result(completed):
+        raise X11WindowDisappeared(window)
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
         raise RuntimeError(f"xdotool could not classify X11 window {window}: {detail}")

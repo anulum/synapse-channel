@@ -164,3 +164,65 @@ def test_selector_window_snapshot_retries_only_canonical_badwindow_race(
 
     assert jetbrains_selector_windows.visible_jetbrains_window_rectangles(deadline=7.0) == ()
     assert sleeps == [7.0]
+
+
+def test_selector_window_snapshot_retries_query_tree_badwindow_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry when a descendant disappears during the batched X11 tree query."""
+    results = iter(
+        [
+            subprocess.CompletedProcess(
+                [],
+                1,
+                "",
+                "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+                "  Major opcode of failed request:  15 (X_QueryTree)\n"
+                "  Resource id in failed request:  0x200322\n"
+                "  Serial number of failed request:  83\n"
+                "  Current serial number in output stream:  83\n",
+            ),
+            subprocess.CompletedProcess([], 1, "", ""),
+        ]
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_xdotool",
+        lambda *_args, **_kwargs: next(results),
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_bounded_poll_sleep",
+        lambda _deadline: None,
+    )
+
+    assert jetbrains_selector_windows.visible_jetbrains_window_rectangles(deadline=7.0) == ()
+
+
+def test_selector_window_skips_candidate_that_disappears_during_title_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Carry a canonical GetProperty race through classification as a non-match."""
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_xdotool",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [],
+            1,
+            "",
+            "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+            "  Major opcode of failed request:  20 (X_GetProperty)\n"
+            "  Resource id in failed request:  0x40030d\n"
+            "  Serial number of failed request:  22\n"
+            "  Current serial number in output stream:  22\n",
+        ),
+    )
+
+    assert (
+        jetbrains_selector_windows.owned_agent_selector_popups(
+            (X11WindowRectangle("4195085", 0, 1, 2, 310, 407),),
+            123,
+            deadline=7.0,
+        )
+        == ()
+    )
