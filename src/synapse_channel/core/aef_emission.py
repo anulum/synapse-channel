@@ -27,8 +27,6 @@ from collections.abc import Mapping
 from pathlib import Path
 from types import TracebackType
 
-from cryptography.hazmat.primitives import serialization
-
 from synapse_channel.core.aef_canonical import AefCanonicalizationError, canonical_json
 from synapse_channel.core.aef_domain import AEF_RECEIPT_DOMAIN
 from synapse_channel.core.aef_time import current_epoch_ms, validate_epoch_ms
@@ -404,6 +402,8 @@ class AefReceiptLog:
 
 
 def _public_key_bytes(signing_key: ReceiptSigningKey) -> bytes:
+    from cryptography.hazmat.primitives import serialization
+
     return signing_key.private_key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw,

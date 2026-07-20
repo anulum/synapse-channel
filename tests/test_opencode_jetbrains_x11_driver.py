@@ -635,12 +635,24 @@ def test_chat_composer_focus_rejects_a_nested_window(
         jetbrains_x11_driver._focus_chat_composer("project")
 
 
+@pytest.mark.parametrize("deadline", [None, 125.0])
 def test_chat_prompt_submission_targets_the_focused_swing_widget(
     monkeypatch: pytest.MonkeyPatch,
+    deadline: float | None,
 ) -> None:
     focused: list[str] = []
     actions: list[tuple[str, tuple[str, ...]]] = []
     clicks: list[tuple[str, int, int, str]] = []
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        f"{jetbrains_x11_driver.__name__}.time.monotonic",
+        lambda: 100.0,
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_bounded_poll_sleep",
+        lambda settle_deadline: sleeps.append(settle_deadline),
+    )
     monkeypatch.setattr(
         jetbrains_x11_driver,
         "_focus_chat_composer",
@@ -667,9 +679,15 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
         lambda window, x, y, action, **_kwargs: clicks.append((window, x, y, action)),
     )
 
-    jetbrains_x11_driver._submit_chat_prompt("project", "governed prompt")
+    jetbrains_x11_driver._submit_chat_prompt(
+        "project",
+        "governed prompt",
+        deadline=deadline,
+    )
 
     assert focused == ["project"]
+    expected_deadline = 100.25 if deadline is None else deadline
+    assert sleeps == [expected_deadline, expected_deadline]
     assert actions == [
         ("clear the ACP prompt composer", ("key", "ctrl+a")),
         (

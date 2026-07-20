@@ -21,7 +21,9 @@ optional library (the deps load lazily), which is exactly the packaging drift a
 
 from __future__ import annotations
 
+import builtins
 import importlib
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +60,7 @@ _FEATURE_MODULES = (
     "synapse_channel.otel_export",
     "synapse_channel.mcp.registration",
     "synapse_channel.core.mcp_config_signing",
+    "synapse_channel.core.aef_emission",
     "synapse_channel.git.semantic_tree_sitter",
 )
 
@@ -123,9 +126,26 @@ def test_mcp_extra_installs_manifest_signature_verification() -> None:
 @pytest.mark.parametrize("module_name", _FEATURE_MODULES)
 def test_feature_module_imports_without_its_optional_dependency_at_import_time(
     module_name: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Importing a feature module must never require its optional library — the
     # dependency loads lazily on first use. A top-level import of cryptography /
     # wasmtime / opentelemetry / mcp would break a base install; this catches it.
+    if module_name == "synapse_channel.core.aef_emission":
+        original_import = builtins.__import__
+
+        def import_without_cryptography(
+            name: str,
+            globals_: dict[str, object] | None = None,
+            locals_: dict[str, object] | None = None,
+            fromlist: tuple[str, ...] = (),
+            level: int = 0,
+        ) -> Any:
+            if name == "cryptography" or name.startswith("cryptography."):
+                raise ModuleNotFoundError("blocked optional cryptography dependency")
+            return original_import(name, globals_, locals_, fromlist, level)
+
+        monkeypatch.setattr(builtins, "__import__", import_without_cryptography)
+        sys.modules.pop(module_name, None)
     module = importlib.import_module(module_name)
     assert module is not None

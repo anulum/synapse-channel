@@ -27,6 +27,7 @@ _CHAT_COMPOSER_RIGHT_INSET = 240
 _CHAT_COMPOSER_BOTTOM_INSET = 130
 _CHAT_SEND_RIGHT_INSET = 64
 _CHAT_SEND_BOTTOM_INSET = 76
+_CHAT_INPUT_SETTLE_SECONDS = 0.25
 _CANONICAL_XID = re.compile(r"0x[0-9A-Fa-f]+\Z")
 
 
@@ -380,12 +381,20 @@ def _submit_chat_prompt(
 ) -> None:
     """Enter and submit a prompt through the focused Swing composer widget."""
     _focus_chat_composer(window, deadline=deadline)
+    focus_deadline = deadline
+    if focus_deadline is None:
+        focus_deadline = time.monotonic() + _CHAT_INPUT_SETTLE_SECONDS
+    _bounded_poll_sleep(focus_deadline)
     _checked_xdotool(
         "clear the ACP prompt composer",
         "key",
         "ctrl+a",
         deadline=deadline,
     )
+    clear_deadline = deadline
+    if clear_deadline is None:
+        clear_deadline = time.monotonic() + _CHAT_INPUT_SETTLE_SECONDS
+    _bounded_poll_sleep(clear_deadline)
     _checked_xdotool(
         "type the ACP prompt",
         "type",
