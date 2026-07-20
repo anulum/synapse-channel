@@ -20,13 +20,16 @@ from collections.abc import Callable
 from decimal import ROUND_FLOOR, Decimal, localcontext
 
 from synapse_channel.core.aef_canonical import IJSON_MAX_INTEGER, IJSON_MIN_INTEGER
+from synapse_channel.core.errors import SynapseError
 
 _MILLISECONDS_PER_SECOND = 1000
 _DECIMAL_PRECISION = len(str(IJSON_MAX_INTEGER)) + len(str(_MILLISECONDS_PER_SECOND))
 
 
-class AefTimestampError(ValueError):
+class AefTimestampError(SynapseError, ValueError):
     """Raised when a value cannot be projected into an AEF v0.1 timestamp."""
+
+    code = "aef_timestamp"
 
 
 def validate_epoch_ms(timestamp_ms: object) -> int:

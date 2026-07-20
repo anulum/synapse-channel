@@ -37,6 +37,7 @@ from synapse_channel.core.aef_verification import (
     receipt_id_for,
     verify_aef_receipt,
 )
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.persistence import BUSY_TIMEOUT_MS
 from synapse_channel.core.persistence_sqlcipher import connect_event_store
 from synapse_channel.core.receipt_signing import ReceiptSigningKey, receipt_key_id
@@ -47,8 +48,10 @@ _GENESIS_RECEIPT = "aef1:" + "0" * 64
 _HEX_64 = re.compile(r"[0-9a-f]{64}")
 
 
-class AefEmissionError(ValueError):
+class AefEmissionError(SynapseError, ValueError):
     """A native receipt could not be built or appended safely."""
+
+    code = "aef_emission"
 
 
 def derive_aef_log_id(hub_id: str, public_key: bytes) -> str:

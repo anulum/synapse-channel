@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 from typing import Any, NoReturn
 
+from synapse_channel.core.errors import SynapseError
+
 IJSON_MAX_INTEGER = (1 << 53) - 1
 """Largest exactly representable I-JSON integer accepted by AEF v0.1."""
 
@@ -33,8 +35,10 @@ _SHORT_ESCAPES = {
 }
 
 
-class AefCanonicalizationError(ValueError):
+class AefCanonicalizationError(SynapseError, ValueError):
     """Raised when a value cannot be represented by the AEF v0.1 JSON profile."""
+
+    code = "aef_canonicalization"
 
 
 def canonical_json(value: object) -> bytes:

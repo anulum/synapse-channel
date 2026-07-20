@@ -18,6 +18,7 @@ import re
 from dataclasses import dataclass
 
 from synapse_channel.core.aef_canonical import IJSON_MAX_INTEGER
+from synapse_channel.core.errors import SynapseError
 
 AEF_VERSION_MAJOR = 0
 """Major format version assigned by the AEF v0.1 profile."""
@@ -37,8 +38,10 @@ _PREIMAGE_SEPARATOR = b"\x00"
 _MAX_VERSION_TEXT = str(IJSON_MAX_INTEGER)
 
 
-class AefDomainError(ValueError):
+class AefDomainError(SynapseError, ValueError):
     """Raised when an AEF signature domain or preimage is malformed."""
+
+    code = "aef_domain"
 
 
 @dataclass(frozen=True, slots=True)

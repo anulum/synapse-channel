@@ -24,6 +24,7 @@ from typing import Any
 
 from synapse_channel.core.aef_emission import AefReceiptLog
 from synapse_channel.core.aef_time import legacy_seconds_to_epoch_ms
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import StoredEvent
 
@@ -43,8 +44,10 @@ AEF_MAPPED_EVENT_KINDS = frozenset(
 """Legacy kinds with an explicit native AEF v0.1 projection."""
 
 
-class AefLegacyMappingError(ValueError):
+class AefLegacyMappingError(SynapseError, ValueError):
     """A supported legacy event cannot be represented truthfully as AEF."""
+
+    code = "aef_legacy_mapping"
 
 
 @dataclass(frozen=True, slots=True)

@@ -13,11 +13,14 @@ from collections.abc import Callable
 
 from synapse_channel.core.aef_emission import AefReceiptLog
 from synapse_channel.core.aef_legacy_mapping import legacy_event_to_aef
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.persistence import EventStore, StoredEvent
 
 
-class AefOutboxError(RuntimeError):
+class AefOutboxError(SynapseError, RuntimeError):
     """A queued legacy row cannot be reconciled safely."""
+
+    code = "aef_outbox"
 
 
 AfterEmitHook = Callable[[StoredEvent, dict[str, object]], None]

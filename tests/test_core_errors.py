@@ -65,6 +65,36 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "a2a_validation",
         ValueError,
     ),
+    "AefCanonicalizationError": (
+        "synapse_channel.core.aef_canonical",
+        "aef_canonicalization",
+        ValueError,
+    ),
+    "AefDomainError": (
+        "synapse_channel.core.aef_domain",
+        "aef_domain",
+        ValueError,
+    ),
+    "AefEmissionError": (
+        "synapse_channel.core.aef_emission",
+        "aef_emission",
+        ValueError,
+    ),
+    "AefLegacyMappingError": (
+        "synapse_channel.core.aef_legacy_mapping",
+        "aef_legacy_mapping",
+        ValueError,
+    ),
+    "AefOutboxError": (
+        "synapse_channel.core.aef_outbox",
+        "aef_outbox",
+        RuntimeError,
+    ),
+    "AefTimestampError": (
+        "synapse_channel.core.aef_time",
+        "aef_timestamp",
+        ValueError,
+    ),
     "AclError": ("synapse_channel.core.acl", "acl", ValueError),
     "AntiRollbackError": ("synapse_channel.core.merkle_checkpoint", "anti_rollback", Exception),
     "ApplyPatchPathError": ("synapse_channel.apply_patch_paths", "apply_patch_path", ValueError),
@@ -172,6 +202,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "grok_claim_guard",
         RuntimeError,
     ),
+    "GuardEvidenceError": (
+        "synapse_channel.core.guard_evidence",
+        "guard_evidence",
+        ValueError,
+    ),
     "HubTLSConfigError": ("synapse_channel.core.tls", "hub_tls_config", ValueError),
     "IdentityBindingError": (
         "synapse_channel.core.identity_binding",
@@ -231,6 +266,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     "OpenCodeClaimGuardError": (
         "synapse_channel.opencode_claim_guard",
         "opencode_claim_guard",
+        RuntimeError,
+    ),
+    "OrdinaryClaimScopeError": (
+        "synapse_channel.git.ordinary_claim",
+        "ordinary_claim_scope",
         RuntimeError,
     ),
     "ParanoidModeError": ("synapse_channel.core.paranoid", "paranoid_mode", ValueError),
