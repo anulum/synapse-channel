@@ -188,6 +188,7 @@ def test_hub_signed_receipt_round_trips_through_policy_check(tmp_path: Path) -> 
     )
     assert checked.ok(), checked.output
     assert "merkle_signature: hub key" in checked.stdout
+    assert "evidence_verdict: VALID_LEGACY" in checked.stdout
 
     foreign = tmp_path / "foreign.key"
     assert run_cli("merkle", "keygen", str(foreign)).ok()
@@ -203,3 +204,4 @@ def test_hub_signed_receipt_round_trips_through_policy_check(tmp_path: Path) -> 
     )
     assert refused.ok(), refused.output  # advisory mode reports without blocking
     assert "untrusted key" in refused.stdout
+    assert "evidence_verdict: UNKNOWN_KEY" in refused.stdout

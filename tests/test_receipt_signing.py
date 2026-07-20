@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 
+from synapse_channel.core.aef_verdict import AefVerdictCode
 from synapse_channel.core.receipt_signing import (
     KEY_ID_HEX_CHARS,
     RECEIPT_COMMITMENT_DOMAIN,
@@ -246,12 +247,14 @@ def test_check_passes_for_a_trusted_intact_signature(key_path: Path) -> None:
     )
     assert check.status == "pass"
     assert check.key_id in check.reason
+    assert check.verdict is AefVerdictCode.VALID_LEGACY
 
 
 def test_check_is_not_applicable_without_a_signature() -> None:
     receipt = {"task_id": "T1", "verification": {"merkle": dict(COMMITMENT)}}
     check = check_receipt_merkle_signature(receipt, trusted_keys={})
     assert check.status == "not_applicable"
+    assert check.verdict is AefVerdictCode.MALFORMED
 
 
 def test_check_is_not_applicable_without_a_verification_block() -> None:
@@ -283,6 +286,17 @@ def test_check_fails_a_foreign_algorithm(key_path: Path) -> None:
     assert "unsupported algorithm" in check.reason
 
 
+def test_check_fails_an_unsupported_envelope_version(key_path: Path) -> None:
+    receipt = _signed_receipt(key_path)
+    receipt["verification"]["merkle_signature"]["version"] = 2
+    check = check_receipt_merkle_signature(
+        receipt, trusted_keys=_trusted(key_path.with_name(key_path.name + ".pub"))
+    )
+    assert check.status == "fail"
+    assert check.verdict is AefVerdictCode.UNSUPPORTED_VERSION
+    assert "unsupported envelope version" in check.reason
+
+
 def test_check_fails_a_signature_with_no_commitment_to_cover(key_path: Path) -> None:
     receipt = _signed_receipt(key_path, merkle=None)
     check = check_receipt_merkle_signature(
@@ -298,6 +312,7 @@ def test_check_fails_an_untrusted_key(key_path: Path) -> None:
     assert check.status == "fail"
     assert "untrusted key" in check.reason
     assert check.key_id
+    assert check.verdict is AefVerdictCode.UNKNOWN_KEY
 
 
 def test_check_names_a_missing_key_id(key_path: Path) -> None:
@@ -316,6 +331,16 @@ def test_check_fails_a_non_base64_value(key_path: Path) -> None:
     )
     assert check.status == "fail"
     assert "not base64" in check.reason
+    assert check.verdict is AefVerdictCode.MALFORMED
+
+
+def test_check_contains_a_malformed_trusted_key(key_path: Path) -> None:
+    receipt = _signed_receipt(key_path)
+    key_id = str(receipt["verification"]["merkle_signature"]["key_id"])
+    check = check_receipt_merkle_signature(receipt, trusted_keys={key_id: b"short"})
+    assert check.status == "fail"
+    assert check.verdict is AefVerdictCode.MALFORMED
+    assert "verification key is malformed" in check.reason
 
 
 def test_check_fails_a_tampered_commitment(key_path: Path) -> None:
@@ -326,6 +351,7 @@ def test_check_fails_a_tampered_commitment(key_path: Path) -> None:
     )
     assert check.status == "fail"
     assert "does not verify" in check.reason
+    assert check.verdict is AefVerdictCode.INVALID_SIGNATURE
 
 
 def test_check_fails_a_signature_transplanted_to_another_key(

@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+from synapse_channel.core.aef_verdict import AefVerdictCode
 from synapse_channel.core.errors import SynapseError
 
 if TYPE_CHECKING:
@@ -111,11 +112,15 @@ class MerkleSignatureCheck(NamedTuple):
         One line explaining the outcome.
     key_id : str
         The envelope's key id when one was present; empty otherwise.
+    verdict : AefVerdictCode
+        Closed verification outcome. A passing historical signature is
+        ``VALID_LEGACY``; it is never promoted to AEF ``VALID``.
     """
 
     status: str
     reason: str
     key_id: str = ""
+    verdict: AefVerdictCode = AefVerdictCode.MALFORMED
 
 
 def receipt_key_id(public_key: bytes) -> str:
@@ -365,10 +370,18 @@ def check_receipt_merkle_signature(
         return MerkleSignatureCheck(
             status="not_applicable",
             reason="receipt carries no commitment signature",
+            verdict=AefVerdictCode.MALFORMED,
         )
     if not isinstance(envelope, Mapping):
         return MerkleSignatureCheck(status="fail", reason="commitment signature is not an object")
     key_id = str(envelope.get("key_id") or "")
+    if envelope.get("version") != RECEIPT_SIGNATURE_VERSION:
+        return MerkleSignatureCheck(
+            status="fail",
+            reason="commitment signature names an unsupported envelope version",
+            key_id=key_id,
+            verdict=AefVerdictCode.UNSUPPORTED_VERSION,
+        )
     if envelope.get("algorithm") != RECEIPT_SIGNATURE_ALGORITHM:
         return MerkleSignatureCheck(
             status="fail",
@@ -388,6 +401,7 @@ def check_receipt_merkle_signature(
             status="fail",
             reason=f"commitment signed by an untrusted key: {key_id or '(missing key_id)'}",
             key_id=key_id,
+            verdict=AefVerdictCode.UNKNOWN_KEY,
         )
     try:
         signature = base64.b64decode(str(envelope.get("value") or ""), validate=True)
@@ -396,19 +410,29 @@ def check_receipt_merkle_signature(
             status="fail",
             reason="commitment signature value is not base64",
             key_id=key_id,
+            verdict=AefVerdictCode.MALFORMED,
         )
     try:
-        Ed25519PublicKey.from_public_bytes(public_key).verify(
-            signature, canonical_commitment_bytes(merkle)
+        verification_key = Ed25519PublicKey.from_public_bytes(public_key)
+    except ValueError:
+        return MerkleSignatureCheck(
+            status="fail",
+            reason="trusted commitment verification key is malformed",
+            key_id=key_id,
+            verdict=AefVerdictCode.MALFORMED,
         )
+    try:
+        verification_key.verify(signature, canonical_commitment_bytes(merkle))
     except InvalidSignature:
         return MerkleSignatureCheck(
             status="fail",
             reason="commitment signature does not verify over the recorded commitment",
             key_id=key_id,
+            verdict=AefVerdictCode.INVALID_SIGNATURE,
         )
     return MerkleSignatureCheck(
         status="pass",
         reason=f"hub key {key_id} attested this coordination-log commitment",
         key_id=key_id,
+        verdict=AefVerdictCode.VALID_LEGACY,
     )

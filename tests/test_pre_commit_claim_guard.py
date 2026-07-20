@@ -23,7 +23,7 @@ def _hook_block(hook_id: str) -> str:
 
 def test_staged_claim_hook_is_always_run_and_reads_git_itself() -> None:
     block = _hook_block("staged-claim-coverage")
-    assert "entry: python -m synapse_channel.cli git-claim-check --staged" in block
+    assert "entry: .venv/bin/python -m synapse_channel.cli git-claim-check --staged" in block
     assert "language: system" in block
     assert "stages: [pre-commit]" in block
     assert "always_run: true" in block

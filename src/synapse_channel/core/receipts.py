@@ -23,14 +23,15 @@ DEFAULT_RELEASE_EVIDENCE_FRESHNESS_SECONDS = 3600.0
 EpistemicStatus = str
 """Advisory evidence-status label stored on a release receipt.
 
-One of ``"unverified"`` (evidence present and fresh but not cryptographically
-verified — the default for any hub-broadcast release receipt), ``"supported"``
-(commitment signature present and verified — applied only by the signing path),
-``"disputed"`` (a commitment signature was present but failed verification),
+One of ``"unverified"`` (evidence present and fresh but not independently
+observed — the default for any hub-broadcast release receipt), ``"supported"``
+(the declared checks were executed and their evidence was produced by
+``build_verified_release_receipt``), ``"disputed"`` (a commitment signature was
+present but failed verification),
 ``"stale"`` (evidence older than the freshness window), ``"needs_freshness"``
 (no freshness supplied), ``"degraded"`` (declared known failures), or
-``"unsupported"`` (no positive evidence at all). Presence of evidence alone never
-yields ``"supported"``; only a verified signature does.
+``"unsupported"`` (no positive evidence at all). Presence of caller-supplied
+evidence alone never yields ``"supported"``.
 """
 
 
@@ -174,14 +175,13 @@ def _assess_release_evidence(
     degraded by declared failures, or absent) — it makes **no** trust judgement.
     Presence of evidence is not verification: the values are caller-supplied
     strings the hub cannot check, so the strongest status this returns is
-    ``"unverified"``. ``"supported"`` is reserved for a receipt whose commitment
-    carries a cryptographic signature that actually verifies, and is applied only
-    by the signing path in
+    ``"unverified"``. ``"supported"`` is applied only by
     :func:`~synapse_channel.core.release_verification.build_verified_release_receipt`
-    (checked with
-    :func:`~synapse_channel.core.receipt_signing.check_receipt_merkle_signature`).
+    after it executes the declared checks and constructs their evidence. It is
+    still advisory evidence quality, not a cryptographic verification verdict.
     Grading presence as ``"supported"`` would let a forged release frame launder
-    fabricated evidence into a trusted verdict — see the release-receipt handler.
+    fabricated evidence into an observed-evidence status — see the
+    release-receipt handler.
     """
     reasons: list[str] = []
     has_positive_evidence = (

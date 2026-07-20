@@ -60,10 +60,15 @@ carry a receipt with evidence, artifacts, changed files, generated artifacts,
 approvals, known failures, confidence, and evidence freshness. The hub echoes the
 receipt and records it as a board assessment note when evidence is present. The
 receipt's `epistemic_status` is advisory metadata derived from those fields, not
-proof that the release is safe to merge: `supported` requires positive evidence
-and fresh evidence age, `needs_freshness` means freshness was not supplied,
-`stale` means the evidence is older than one hour, `degraded` means known
-failures were declared, and `unsupported` means no positive evidence was attached.
+proof that the release is safe to merge: fresh positive caller evidence is
+`unverified`, `needs_freshness` means freshness was not supplied, `stale` means
+the evidence is older than one hour, `degraded` means known failures were
+declared, and `unsupported` means no positive evidence was attached. The
+observed `verify-release` path may apply `supported` after executing the declared
+checks itself. The offline signature verifier reports a successful historical
+commitment check separately as `VALID_LEGACY`; it never promotes advisory
+`epistemic_status` to a verification verdict or silently treats the historical
+receipt as an AEF receipt.
 
 Before closeout, `python tools/test_ownership_map.py --check` can map changed
 source files to likely owning tests. The map uses AST imports and a conservative

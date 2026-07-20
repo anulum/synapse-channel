@@ -352,6 +352,41 @@ def test_trusted_signing_key_adds_a_passing_signature_decision(
     assert code == 0
     assert "✓ merkle_commitment" in out
     assert "✓ merkle_signature: hub key" in out
+    assert "evidence_verdict: VALID_LEGACY" in out
+
+
+def test_json_report_distinguishes_a_verified_legacy_receipt(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy = _policy(tmp_path, {"required_tests": {"commands": ["pytest"]}})
+    db = tmp_path / "hub.db"
+    _seeded_store(db)
+    key_path, pub_path = _keypair(tmp_path)
+    receipt = _signed_receipt_file(tmp_path, db, key_path)
+    code = _run(
+        [
+            "policy-check",
+            "T1",
+            "--policy",
+            str(policy),
+            "--receipt-json",
+            str(receipt),
+            "--trusted-signing-key",
+            str(pub_path),
+            "--json",
+        ]
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert report["evidence_verdict"] == {
+        "verdict": "VALID_LEGACY",
+        "receipt_id": "",
+        "key_id": load_receipt_signing_key(key_path).key_id,
+        "reasons": [
+            f"hub key {load_receipt_signing_key(key_path).key_id} "
+            "attested this coordination-log commitment"
+        ],
+    }
 
 
 def test_signature_decision_fails_on_a_tampered_commitment(
@@ -385,6 +420,7 @@ def test_signature_decision_fails_on_a_tampered_commitment(
     assert code == 0  # advisory mode reports, never blocks
     assert "✗ merkle_signature: commitment signature does not verify" in out
     assert "do not trust this receipt's provenance" in out
+    assert "evidence_verdict: INVALID_SIGNATURE" in out
 
 
 def test_signature_decision_marks_an_unsigned_receipt(
@@ -394,7 +430,12 @@ def test_signature_decision_marks_an_unsigned_receipt(
     db = tmp_path / "hub.db"
     _seeded_store(db)
     _, pub_path = _keypair(tmp_path)
-    receipt = _committed_receipt(tmp_path, db)
+    receipt = _receipt(
+        tmp_path,
+        evidence=["pytest -q passed"],
+        epistemic_status="supported",
+        verification={"merkle": root_to_json(run_root(db))},
+    )
     code = _run(
         [
             "policy-check",
@@ -410,6 +451,7 @@ def test_signature_decision_marks_an_unsigned_receipt(
     out = capsys.readouterr().out
     assert code == 0
     assert "merkle_signature: receipt carries no commitment signature" in out
+    assert "evidence_verdict: MALFORMED" in out
 
 
 def test_an_unreadable_trusted_key_is_a_configuration_error(
@@ -461,4 +503,5 @@ def test_signature_enforce_blocks_on_an_untrusted_signer(
     out = capsys.readouterr().out
     assert code == 1
     assert "✗ merkle_signature: commitment signed by an untrusted key" in out
+    assert "evidence_verdict: UNKNOWN_KEY" in out
     assert "BLOCKED" in out

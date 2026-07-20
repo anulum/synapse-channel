@@ -84,7 +84,7 @@ everything, since they need the whole command table.
 | `synapse conflicts` | Predict cross-branch merge conflicts between overlapping claims; exit non-zero on a hit. |
 | `synapse cross-repo` | Scan a directory of repositories into a dependency graph (manifests/CODEOWNERS as edges), flag provably conflicting version pins, and join live claims onto it; with `--repo`, exit `1` when a connected repository holds a live claim; `--suggest-resolution` names each conflict's odd-one-out declaration; `--watch --notify-cmd` runs a sink command on coordination-fact transitions. |
 | `synapse verify-release` | Run declared verification commands and write an observed release receipt JSON; `--merkle-db` commits the coordination log's Merkle root into it, `--signing-key` attests it with the hub key. |
-| `synapse policy-check` | Evaluate a release receipt against a policy file; advisory by default, `--enforce` to gate, `--trusted-signing-key` verifies the commitment's hub signature. |
+| `synapse policy-check` | Evaluate a release receipt against a policy file; advisory by default, `--enforce` to gate, `--trusted-signing-key` verifies the commitment's hub signature and emits a closed evidence verdict. |
 | `synapse identity` | Inventory and audit declared agent identities for enforcement-rollout blockers. |
 | `synapse acl` | Shadow-mode (non-blocking) deny-by-default ACL evaluation of candidate accesses. |
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
@@ -549,9 +549,11 @@ The receipt records the releasing owner's submitted evidence; it does not certif
 that the evidence is complete or sufficient. It also includes advisory
 `epistemic_status` and `epistemic_reasons` fields derived from the submitted
 evidence, known failures, and `--freshness-seconds`: fresh positive evidence is
-`supported`, positive evidence without freshness is `needs_freshness`, old
+`unverified`, positive evidence without freshness is `needs_freshness`, old
 positive evidence is `stale`, declared known failures are `degraded`, and no
-positive evidence is `unsupported`.
+positive evidence is `unsupported`. The observed `verify-release` path may set
+`supported` after it executes the declared checks and produces their evidence;
+the label remains advisory and is not a signature-verification result.
 
 Use `synapse verify-release` when the closeout record must include observed
 command execution instead of hand-written evidence. The command runs each
@@ -585,8 +587,9 @@ synapse policy-check BUILD --policy ./policy.json \
   --merkle-db ~/synapse/hub.db          # re-verify the committed log prefix
 ```
 
-The bare commitment proves the log did not change; it cannot prove who attested
-it — whoever holds the receipt file could have written any root into it.
+The bare commitment lets a verifier holding the receipt and current log check
+that committed prefix; it cannot prove who attested it, persist an independent
+tree head, or detect a rollback when the retained receipt is absent.
 `--signing-key` closes that gap: `synapse merkle keygen` creates the hub
 deployment's Ed25519 receipt-signing keypair (private key `0600`, public half in
 a distributable `PATH.pub`), `verify-release --signing-key` signs the commitment
@@ -612,9 +615,14 @@ synapse policy-check BUILD --policy ./policy.json \
 ```
 
 The generated receipt is still advisory coordination evidence. A `supported`
-status means the submitted checks produced fresh positive evidence; it does not
-mean Synapse independently verified correctness, reviewed the commands, or
-proved the artifacts sufficient.
+`epistemic_status` means `verify-release` executed the declared checks and they
+did not report a failure; it does not mean Synapse independently established
+correctness, reviewed the commands, or proved the artifacts sufficient. When
+`--trusted-signing-key` is supplied,
+`policy-check` also emits a closed `evidence_verdict` object. A passing historical
+receipt is `VALID_LEGACY`, never AEF `VALID`; malformed, unknown-key, and invalid-
+signature outcomes remain distinct. The verifier never derives this verdict
+from caller-supplied `epistemic_status`.
 
 `synapse git-claim` accepts the task id either positionally (`synapse git-claim
 TASK-1 --paths src`) or as a named field (`synapse git-claim --task-id TASK-1

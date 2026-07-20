@@ -30,6 +30,7 @@ from synapse_channel.core.policy_engine import (
 )
 from synapse_channel.core.policy_rules import evaluate_policy
 from synapse_channel.core.receipt_signing import (
+    MerkleSignatureCheck,
     ReceiptSigningError,
     check_receipt_merkle_signature,
     load_receipt_verification_key,
@@ -62,6 +63,9 @@ def _print_text_report(report: dict[str, Any]) -> None:
         print(f"  {glyph} {decision['rule']}: {decision['reason']}")
         if decision["next_action"] and decision["status"] in ("warn", "fail"):
             print(f"      next: {decision['next_action']}")
+    evidence_verdict = report.get("evidence_verdict")
+    if isinstance(evidence_verdict, dict):
+        print(f"  evidence_verdict: {evidence_verdict['verdict']}")
     if report["blocked"]:
         print("BLOCKED: enforcement policy has at least one failing rule.")
 
@@ -97,7 +101,7 @@ def _merkle_decision(receipt: dict[str, Any], db_path: str, subject: str) -> Pol
 
 def _signature_decision(
     receipt: dict[str, Any], key_paths: list[str], subject: str
-) -> PolicyDecision:
+) -> tuple[PolicyDecision, MerkleSignatureCheck]:
     """Verify the receipt's commitment signature as a policy decision.
 
     Raises
@@ -123,13 +127,16 @@ def _signature_decision(
             "sign receipts with `synapse verify-release --merkle-db --signing-key` "
             "so verifiers can check which hub attested the commitment"
         )
-    return PolicyDecision(
-        rule="merkle_signature",
-        status=check.status,
-        subject=subject,
-        reason=check.reason,
-        evidence=(f"key_id: {check.key_id}",) if check.key_id else (),
-        next_action=next_action,
+    return (
+        PolicyDecision(
+            rule="merkle_signature",
+            status=check.status,
+            subject=subject,
+            reason=check.reason,
+            evidence=(f"key_id: {check.key_id}",) if check.key_id else (),
+            next_action=next_action,
+        ),
+        check,
     )
 
 
@@ -142,6 +149,7 @@ def _cmd_policy_check(args: argparse.Namespace) -> int:
         print(f"policy-check error: {exc}")
         return 2
     decisions = evaluate_policy(receipt, config, subject=args.task)  # type: ignore[arg-type]
+    signature_check: MerkleSignatureCheck | None = None
     if args.merkle_db:
         try:
             decisions.append(_merkle_decision(receipt, args.merkle_db, args.task))
@@ -150,7 +158,10 @@ def _cmd_policy_check(args: argparse.Namespace) -> int:
             return 2
     if args.trusted_signing_keys:
         try:
-            decisions.append(_signature_decision(receipt, args.trusted_signing_keys, args.task))
+            decision, signature_check = _signature_decision(
+                receipt, args.trusted_signing_keys, args.task
+            )
+            decisions.append(decision)
         except ReceiptSigningError as exc:
             print(f"policy-check error: {exc}")
             return 2
@@ -162,6 +173,13 @@ def _cmd_policy_check(args: argparse.Namespace) -> int:
         "blocked": blocked,
         "decisions": [decision.as_dict() for decision in decisions],
     }
+    if signature_check is not None:
+        report["evidence_verdict"] = {
+            "verdict": signature_check.verdict.value,
+            "receipt_id": str(receipt.get("receipt_id") or ""),
+            "key_id": signature_check.key_id,
+            "reasons": [signature_check.reason],
+        }
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:
