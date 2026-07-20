@@ -89,6 +89,7 @@ class EventStore:
         *,
         key_file: str | Path | None = None,
         key: bytes | None = None,
+        aef_outbox_kinds: Iterable[str] = (),
     ) -> None:
         self.path = str(path)
         from synapse_channel.core.persistence_sqlcipher import connect_event_store
@@ -108,6 +109,14 @@ class EventStore:
             "kind TEXT NOT NULL, "
             "payload TEXT NOT NULL)"
         )
+        self._aef_outbox_kinds = frozenset(str(kind) for kind in aef_outbox_kinds)
+        if self._aef_outbox_kinds:
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS aef_outbox ("
+                "legacy_seq INTEGER PRIMARY KEY, "
+                "receipt_id TEXT UNIQUE, "
+                "FOREIGN KEY(legacy_seq) REFERENCES events(seq))"
+            )
         self._conn.commit()
         # WAL mode creates ``-wal`` and ``-shm`` sidecars on the first write (the
         # ``CREATE TABLE`` commit above). They mirror the same content as the main
@@ -222,7 +231,13 @@ class EventStore:
                 cursor = self._conn.execute(
                     "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", row
                 )
-                sequences.append(int(cursor.lastrowid or 0))
+                sequence = int(cursor.lastrowid or 0)
+                sequences.append(sequence)
+                if row[1] in self._aef_outbox_kinds:
+                    self._conn.execute(
+                        "INSERT INTO aef_outbox (legacy_seq, receipt_id) VALUES (?, NULL)",
+                        (sequence,),
+                    )
             self._conn.commit()
         except BaseException:
             self._conn.rollback()
@@ -240,6 +255,56 @@ class EventStore:
                     # failure observable without inverting journal truth.
                     logger.exception("Could not restore SQLite synchronous=NORMAL")
         return tuple(sequences)
+
+    def pending_aef_events(self, *, limit: int = 100) -> tuple[StoredEvent, ...]:
+        """Return queued legacy rows awaiting native AEF reconciliation."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > 10_000:
+            raise ValueError("AEF outbox limit must be an integer from 1 through 10000")
+        if not self._aef_outbox_kinds:
+            return ()
+        rows = self._conn.execute(
+            "SELECT e.seq, e.ts, e.kind, e.payload "
+            "FROM aef_outbox AS o JOIN events AS e ON e.seq = o.legacy_seq "
+            "WHERE o.receipt_id IS NULL ORDER BY e.seq LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return tuple(self._stored_event(row) for row in rows)
+
+    def mark_aef_delivered(self, legacy_seq: int, receipt_id: str) -> None:
+        """Durably bind one queued legacy row to its emitted AEF receipt."""
+        if isinstance(legacy_seq, bool) or not isinstance(legacy_seq, int) or legacy_seq < 1:
+            raise ValueError("AEF outbox sequence must be a positive integer")
+        if not isinstance(receipt_id, str) or not receipt_id:
+            raise ValueError("AEF outbox receipt id must be non-empty text")
+        self._conn.execute("PRAGMA synchronous=FULL")
+        try:
+            row = self._conn.execute(
+                "SELECT receipt_id FROM aef_outbox WHERE legacy_seq = ?", (legacy_seq,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"legacy sequence {legacy_seq} is not queued for AEF")
+            current = row[0]
+            if current is not None and str(current) != receipt_id:
+                raise ValueError("AEF outbox sequence is already bound to another receipt")
+            self._conn.execute(
+                "UPDATE aef_outbox SET receipt_id = ? WHERE legacy_seq = ?",
+                (receipt_id, legacy_seq),
+            )
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            raise
+        finally:
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+
+    def aef_delivery(self, legacy_seq: int) -> str | None:
+        """Return the delivered receipt id, or ``None`` for pending/absent rows."""
+        if not self._aef_outbox_kinds:
+            return None
+        row = self._conn.execute(
+            "SELECT receipt_id FROM aef_outbox WHERE legacy_seq = ?", (legacy_seq,)
+        ).fetchone()
+        return None if row is None or row[0] is None else str(row[0])
 
     def read_all(self) -> list[StoredEvent]:
         """Return every event in insertion order.

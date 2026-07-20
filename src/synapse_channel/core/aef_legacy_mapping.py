@@ -30,6 +30,18 @@ from synapse_channel.core.persistence import StoredEvent
 _HEX_64 = re.compile(r"[0-9a-f]{64}")
 _MAX_TEXT_BYTES = 4096
 
+AEF_MAPPED_EVENT_KINDS = frozenset(
+    {
+        EventKind.CLAIM,
+        EventKind.CLAIM_DENIAL,
+        EventKind.GUARD_DENIAL,
+        EventKind.SANDBOX_RUN,
+        EventKind.MULTIHUB_PARTITION,
+        EventKind.MULTIHUB_HEAL,
+    }
+)
+"""Legacy kinds with an explicit native AEF v0.1 projection."""
+
 
 class AefLegacyMappingError(ValueError):
     """A supported legacy event cannot be represented truthfully as AEF."""
@@ -64,6 +76,26 @@ class AefEmissionRequest:
             evidence=self.evidence,
             legacy_seq=self.legacy_seq,
         )
+
+    def matches(self, receipt: dict[str, object]) -> bool:
+        """Return whether ``receipt`` is the exact native projection of this request."""
+        evidence = dict(self.evidence or {})
+        evidence["legacy_seq"] = self.legacy_seq
+        expected: dict[str, object] = {
+            "receipt_type": self.receipt_type,
+            "action": self.action,
+            "actor": {"agent_id": self.actor_id},
+            "subject": self.subject,
+            "issued_at": self.issued_at,
+            "evidence": evidence,
+        }
+        if self.expires_at is not None:
+            expected["expires_at"] = self.expires_at
+        if self.decision is not None:
+            expected["decision"] = self.decision
+        if self.reason_code is not None:
+            expected["reason_code"] = self.reason_code
+        return all(receipt.get(key) == value for key, value in expected.items())
 
 
 def legacy_event_to_aef(event: StoredEvent) -> AefEmissionRequest | None:

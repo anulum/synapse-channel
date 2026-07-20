@@ -193,46 +193,71 @@ class AefReceiptLog:
                 "SELECT seq, receipt_id, legacy_seq, canonical_receipt "
                 "FROM aef_receipts ORDER BY seq"
             ).fetchall()
+        return self._decode_rows(rows)
+
+    def _decode_rows(self, rows: object) -> tuple[dict[str, object], ...]:
+        if not isinstance(rows, list | tuple):
+            raise AefEmissionError("stored AEF receipt rows are malformed")
         receipts: list[dict[str, object]] = []
         expected_prev = _GENESIS_RECEIPT
         for row in rows:
-            seq, receipt_id, legacy_seq, raw_value = row
-            raw = bytes(raw_value)
-            try:
-                value = json.loads(raw)
-                if not isinstance(value, dict) or canonical_json(value) != raw:
-                    raise AefEmissionError("stored AEF receipt is not canonical")
-            except (AefCanonicalizationError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-                raise AefEmissionError("stored AEF receipt is not canonical") from exc
-            evidence = value.get("evidence")
-            signed_legacy_seq = evidence.get("legacy_seq") if isinstance(evidence, dict) else None
-            if (
-                value.get("seq") != int(seq)
-                or value.get("receipt_id") != str(receipt_id)
-                or value.get("log_id") != self.log_id
-                or value.get("prev_receipt") != expected_prev
-                or signed_legacy_seq != legacy_seq
-            ):
-                raise AefEmissionError("stored AEF receipt chain does not match its index")
-            issued_at = value.get("issued_at")
-            verdict = verify_aef_receipt(
-                value,
-                trust_store=self._trust_store,
-                now_ms=issued_at if isinstance(issued_at, int) else 0,
-            )
-            if verdict.verdict is not AefVerdictCode.VALID:
-                raise AefEmissionError(
-                    f"stored AEF receipt failed verification: {verdict.verdict.value}"
-                )
+            value = self._decode_row(row, expected_prev=expected_prev)
             receipts.append(value)
-            expected_prev = str(receipt_id)
+            expected_prev = str(value["receipt_id"])
         return tuple(receipts)
+
+    def _decode_row(self, row: object, *, expected_prev: str | None) -> dict[str, object]:
+        if not isinstance(row, tuple) or len(row) != 4:
+            raise AefEmissionError("stored AEF receipt row is malformed")
+        seq, receipt_id, legacy_seq, raw_value = row
+        raw = bytes(raw_value)
+        try:
+            value = json.loads(raw)
+            if not isinstance(value, dict) or canonical_json(value) != raw:
+                raise AefEmissionError("stored AEF receipt is not canonical")
+        except (AefCanonicalizationError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise AefEmissionError("stored AEF receipt is not canonical") from exc
+        evidence = value.get("evidence")
+        signed_legacy_seq = evidence.get("legacy_seq") if isinstance(evidence, dict) else None
+        if (
+            value.get("seq") != int(seq)
+            or value.get("receipt_id") != str(receipt_id)
+            or value.get("log_id") != self.log_id
+            or (expected_prev is not None and value.get("prev_receipt") != expected_prev)
+            or signed_legacy_seq != legacy_seq
+        ):
+            raise AefEmissionError("stored AEF receipt chain does not match its index")
+        issued_at = value.get("issued_at")
+        verdict = verify_aef_receipt(
+            value,
+            trust_store=self._trust_store,
+            now_ms=issued_at if isinstance(issued_at, int) else 0,
+        )
+        if verdict.verdict is not AefVerdictCode.VALID:
+            raise AefEmissionError(
+                f"stored AEF receipt failed verification: {verdict.verdict.value}"
+            )
+        return value
 
     def count(self) -> int:
         """Return the number of native receipts in this log."""
         with self._lock:
             row = self._conn.execute("SELECT COUNT(*) FROM aef_receipts").fetchone()
         return int(row[0])
+
+    def receipt_for_legacy_seq(self, legacy_seq: int) -> dict[str, object] | None:
+        """Return and verify the receipt already bound to ``legacy_seq``."""
+        if isinstance(legacy_seq, bool) or not isinstance(legacy_seq, int) or legacy_seq < 1:
+            raise AefEmissionError("legacy sequence must be a positive integer")
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT seq, receipt_id, legacy_seq, canonical_receipt "
+                "FROM aef_receipts WHERE legacy_seq = ?",
+                (legacy_seq,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._decode_row(row, expected_prev=None)
 
     def close(self) -> None:
         """Close the native log connection."""

@@ -106,6 +106,16 @@ legacy-only and malformed supported rows fail closed. This mapper still does
 not make two separate commits atomic: crash-recoverable outbox routing remains
 the next migration boundary before runtime dual-write can be enabled.
 
+The durable outbox boundary queues selected legacy event sequences in the same
+SQLite transaction as their unchanged event rows. `drain_aef_outbox` consumes
+those rows in legacy order. If the process stops after native AEF emission but
+before acknowledgement, restart lookup by the signed/indexed `legacy_seq`
+verifies that the existing receipt is the same deterministic projection and
+settles the cursor without emitting a duplicate. A mismatch, unsupported queued
+kind, malformed row, or receipt without identity stops the drain fail-closed.
+The outbox is opt-in; hub construction and CLI configuration do not enable it
+yet, so runtime dual-write still requires the final explicit wiring step.
+
 Before closeout, `python tools/test_ownership_map.py --check` can map changed
 source files to likely owning tests. The map uses AST imports and a conservative
 test-filename fallback, so it is useful evidence for picking focused tests and
