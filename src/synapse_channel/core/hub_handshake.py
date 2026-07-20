@@ -30,10 +30,12 @@ Policy summary
 
 from __future__ import annotations
 
+import ipaddress
+
 from websockets.datastructures import Headers
 from websockets.http11 import Request, Response
 
-from synapse_channel.a2a_http_protocol import (
+from synapse_channel.core.http_authority import (
     normalise_authority,
     normalise_origin,
 )
@@ -85,7 +87,7 @@ def trusted_host_authorities(
             authorities.update(_authorities_for_host(name, port))
     else:
         candidate = bind_host.strip()
-        if candidate and candidate not in {"0.0.0.0", "::", "[::]"}:
+        if candidate and not _is_unspecified_bind(candidate):
             authorities.update(_authorities_for_host(candidate, port))
     if advertised_host:
         authorities.update(_authorities_from_advertised(advertised_host, port))
@@ -184,6 +186,17 @@ def _authorities_for_host(host: str, port: int) -> frozenset[str]:
             except ValueError:
                 continue
     return frozenset(values)
+
+
+def _is_unspecified_bind(host: str) -> bool:
+    """Return whether ``host`` is an IPv4 or IPv6 bind-all sentinel."""
+    candidate = host.strip()
+    if candidate.startswith("[") and candidate.endswith("]"):
+        candidate = candidate[1:-1]
+    try:
+        return ipaddress.ip_address(candidate).is_unspecified
+    except ValueError:
+        return False
 
 
 def _authorities_from_advertised(advertised: str, bind_port: int) -> frozenset[str]:

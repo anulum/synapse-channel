@@ -71,3 +71,12 @@ def test_legacy_relay_path_reexports_the_canonical_kernel_objects() -> None:
     assert legacy.__all__ == canonical.__all__
     for name in canonical.__all__:
         assert getattr(legacy, name) is getattr(canonical, name)
+
+
+def test_a2a_http_path_reexports_canonical_http_authority_objects() -> None:
+    """The feature facade must retain its public imports without forking policy."""
+    canonical = importlib.import_module("synapse_channel.core.http_authority")
+    legacy = importlib.import_module("synapse_channel.a2a_http_protocol")
+
+    for name in canonical.__all__:
+        assert getattr(legacy, name) is getattr(canonical, name)
