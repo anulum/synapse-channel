@@ -13,6 +13,7 @@ import base64
 import copy
 import hmac
 import json
+import sqlite3
 import time
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -22,6 +23,11 @@ from hashlib import sha256
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.aef_domain import AEF_LEGACY_EVENT_DOMAIN, aef_signature_preimage
+from synapse_channel.core.message_auth_durable import (
+    DurableAdmitResult,
+    DurableMessageAuthReplayStore,
+    SequenceFloorMode,
+)
 from synapse_channel.core.protocol import RESOURCE_TYPE_ALIASES, MessageType
 
 if TYPE_CHECKING:
@@ -231,7 +237,7 @@ class EventSignatureTrustBundle:
 
 
 class MessageReplayCache:
-    """Bounded in-memory replay cache for authenticated frame nonces.
+    """Bounded replay cache for authenticated frame nonces.
 
     Parameters
     ----------
@@ -239,13 +245,25 @@ class MessageReplayCache:
         Timestamp age retained for replay detection.
     max_entries : int
         Maximum nonce/sequence records retained after timestamp eviction.
+    future_skew_seconds : float, optional
+        Future clock-skew allowance applied by verification (not by eviction).
+    durable : DurableMessageAuthReplayStore or None, optional
+        Optional SQLite-backed nonce ledger. When set, admissions are decided
+        durably first so a process restart does not reopen a captured nonce
+        inside the timestamp window.
+    sequence_floor_mode : SequenceFloorMode, optional
+        How sequence floors are enforced. Default ``off`` preserves present
+        semantics where signed ``sequence`` is authenticated metadata only and
+        is not a monotonic replay identity. ``compat`` and ``strict`` require
+        either a durable store or the process-local floor map.
 
     Notes
     -----
-    This cache is deliberately in-memory. A hub restart clears it; the timestamp
-    window still rejects stale signed frames after restart, while the durable
-    idempotency journal remains responsible for replaying already-applied
-    mutating command responses.
+    Without a durable store the cache is process-local: a hub restart clears
+    accepted nonces. The timestamp window still rejects stale signed frames
+    after restart, while the durable idempotency journal remains responsible
+    for replaying already-applied mutating command responses. Attach
+    :class:`DurableMessageAuthReplayStore` to close the restart residual.
     """
 
     def __init__(
@@ -254,13 +272,18 @@ class MessageReplayCache:
         window_seconds: float,
         max_entries: int,
         future_skew_seconds: float = DEFAULT_MESSAGE_AUTH_FUTURE_SKEW_SECONDS,
+        durable: DurableMessageAuthReplayStore | None = None,
+        sequence_floor_mode: SequenceFloorMode | str = SequenceFloorMode.OFF,
     ) -> None:
         self.window_seconds = max(float(window_seconds), 0.001)
         self.future_skew_seconds = max(float(future_skew_seconds), 0.0)
         self.max_entries = max(int(max_entries), 1)
+        self.durable = durable
+        self.sequence_floor_mode = SequenceFloorMode(sequence_floor_mode)
         self._entries: OrderedDict[tuple[str, str, str], tuple[str, str, str, float]] = (
             OrderedDict()
         )
+        self._floors: dict[tuple[str, str], int] = {}
 
     def remember(
         self,
@@ -283,8 +306,8 @@ class MessageReplayCache:
         nonce : str
             Client-generated nonce.
         sequence : int
-            Client sequence number for the frame. The value is signed metadata,
-            not replay-cache identity.
+            Client sequence number for the frame. By default this is signed
+            metadata, not replay-cache identity; see ``sequence_floor_mode``.
         timestamp : float
             Authentication timestamp carried in the frame.
         now : float
@@ -294,17 +317,123 @@ class MessageReplayCache:
         -------
         bool
             ``True`` when the nonce was admitted, ``False`` when the nonce
-            already exists or the live replay window is at capacity.
+            already exists, the live replay window is at capacity, or a
+            configured sequence floor refuses the frame.
         """
-        self._evict(now)
+        return (
+            self.admit(
+                key_id,
+                sender,
+                nonce,
+                sequence,
+                timestamp=timestamp,
+                now=now,
+            )
+            is None
+        )
+
+    def admit(
+        self,
+        key_id: str,
+        sender: str,
+        nonce: str,
+        sequence: int,
+        *,
+        timestamp: float,
+        now: float,
+    ) -> VerificationResult | None:
+        """Admit one identity or return the stable refusal result.
+
+        Returns
+        -------
+        VerificationResult or None
+            ``None`` when admitted; otherwise ``replayed`` or
+            ``sequence_mismatch``.
+        """
+        now_float = float(now)
+        auth_ts = float(timestamp)
+        sequence_int = int(sequence)
+        if self.durable is not None:
+            try:
+                durable_result = self.durable.admit(
+                    key_id=key_id,
+                    sender=sender,
+                    nonce=nonce,
+                    sequence=sequence_int,
+                    timestamp=auth_ts,
+                    now=now_float,
+                    mode=self.sequence_floor_mode,
+                )
+            except (OSError, sqlite3.Error, ValueError):
+                # Fail closed: a durable-path fault must not admit a frame.
+                return VerificationResult.REPLAYED
+            if durable_result is DurableAdmitResult.REPLAYED:
+                return VerificationResult.REPLAYED
+            if durable_result is DurableAdmitResult.SEQUENCE_MISMATCH:
+                return VerificationResult.SEQUENCE_MISMATCH
+            if durable_result is DurableAdmitResult.CAPACITY:
+                return VerificationResult.REPLAYED
+            self._record_memory(
+                key_id,
+                sender,
+                nonce,
+                sequence_int,
+                auth_ts,
+                now_float,
+                require_capacity=False,
+            )
+            return None
+
+        self._evict(now_float)
+        floor_key = (key_id, sender)
+        if self.sequence_floor_mode is SequenceFloorMode.STRICT:
+            floor = self._floors.get(floor_key)
+            if floor is not None and sequence_int <= floor:
+                return VerificationResult.SEQUENCE_MISMATCH
         cache_key = (key_id, sender, nonce)
         if cache_key in self._entries:
-            return False
+            return VerificationResult.REPLAYED
         if len(self._entries) >= self.max_entries:
-            return False
-        self._entries[cache_key] = (key_id, sender, nonce, float(timestamp))
+            return VerificationResult.REPLAYED
+        self._record_memory(
+            key_id,
+            sender,
+            nonce,
+            sequence_int,
+            auth_ts,
+            now_float,
+            require_capacity=True,
+        )
+        return None
+
+    def _record_memory(
+        self,
+        key_id: str,
+        sender: str,
+        nonce: str,
+        sequence: int,
+        timestamp: float,
+        now: float,
+        *,
+        require_capacity: bool,
+    ) -> None:
+        """Update process-local nonce and floor maps after a successful admit."""
+        self._evict(now)
+        cache_key = (key_id, sender, nonce)
+        if cache_key not in self._entries:
+            if require_capacity and len(self._entries) >= self.max_entries:
+                return
+            if not require_capacity and len(self._entries) >= self.max_entries:
+                # Best-effort process-local mirror after a durable accept: drop
+                # the oldest entry rather than retaining an unbounded map.
+                self._entries.popitem(last=False)
+            self._entries[cache_key] = (key_id, sender, nonce, float(timestamp))
         self._entries.move_to_end(cache_key)
-        return True
+        if self.sequence_floor_mode is not SequenceFloorMode.OFF:
+            floor_key = (key_id, sender)
+            current = self._floors.get(floor_key)
+            if current is None or sequence > current:
+                self._floors[floor_key] = sequence
 
     def _evict(self, now: float) -> None:
         """Drop entries outside the timestamp window."""
@@ -610,14 +739,17 @@ def verify_event_signature(
         key.verifier().verify(decoded_signature, signed_payload)
     except (InvalidSignature, ValueError):
         return SignedEventVerificationResult.BAD_SIGNATURE
-    if not trust_bundle.replay_cache.remember(
+    admission = trust_bundle.replay_cache.admit(
         key_id,
         required_sender,
         nonce,
         sequence_raw,
         timestamp=signed_at,
         now=now_float,
-    ):
+    )
+    if admission is VerificationResult.SEQUENCE_MISMATCH:
+        return SignedEventVerificationResult.SEQUENCE_MISMATCH
+    if admission is not None:
         return SignedEventVerificationResult.REPLAYED
     return SignedEventVerificationResult.VALID
 
@@ -685,13 +817,14 @@ def verify_frame(
     expected = hmac.new(key.secret, canonical_frame(frame), sha256).hexdigest()
     if not hmac.compare_digest(expected, supplied):
         return VerificationResult.BAD_AUTHENTICATION
-    if not replay_cache.remember(
+    admission = replay_cache.admit(
         key_id,
         required_sender,
         nonce,
         sequence_raw,
         timestamp=timestamp,
         now=now_float,
-    ):
-        return VerificationResult.REPLAYED
+    )
+    if admission is not None:
+        return admission
     return VerificationResult.OK

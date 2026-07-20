@@ -106,13 +106,18 @@ closed.
 Per-message authentication includes replay protection:
 
 - A **nonce** makes each authenticated frame unique for a key id and sender.
-- The **signed sequence metadata** remains authenticated for diagnostics, but
-  nonce uniqueness is the replay identity. This avoids false replay failures
-  after a client reconnect resets an in-memory sequence counter.
+  The replay identity is the triple `(key_id, sender, nonce)`.
+- The **signed sequence metadata** is authenticated so it cannot be rewritten
+  in transit. By default it is **not** a monotonic replay floor: nonce
+  uniqueness remains the identity. That avoids false replay failures after a
+  client reconnect resets an in-memory sequence counter.
 - A **timestamp window** rejects signed frames outside
   `--message-auth-window-seconds` seconds in the past plus a small future clock
-  skew allowance. The default past window is `10.0`.
-- A bounded in-memory **replay cache** records recent nonces. The default
+  skew allowance. The default past window is `10.0` seconds and the default
+  future skew is `1.0` second (approximately a `-10 s / +1 s` signed-frame
+  budget relative to server time). Federation availability assumes clocks stay
+  inside that budget.
+- A bounded **replay cache** records recent nonces. The default
   `--message-auth-replay-capacity` is `4096` entries. After expired entries are
   evicted, a full live cache rejects new signed frames rather than evicting
   in-window nonces and reopening replay.
@@ -121,14 +126,30 @@ Per-message authentication includes replay protection:
   fresh idempotency key on signed mutating frames that did not already provide
   one.
 
-The replay cache is intentionally in-memory only. A hub restart clears accepted
-nonce history, so a captured signed frame inside the timestamp window can still
-reach verification after restart. The tighter default window and signed-client
-idempotency keys bound the residual retry window, but operators should treat a
-restart as clearing per-message-auth replay memory. Durable idempotency replay
-remains separate: when a journal-backed hub restarts, an accepted mutating
-command with the same idempotency key can replay its original response, but
-per-message-auth replay state itself is not journal-backed.
+### Present default: process-local cache
+
+The hub's default replay cache is **in-memory only** (process-local). A hub
+restart clears accepted nonce history, so a captured signed frame that is still
+inside the timestamp window can verify again after restart. The tighter default
+window and signed-client idempotency keys bound that residual window. Durable
+command idempotency is separate: a journal-backed hub may replay an
+already-applied mutating response by idempotency key without restoring
+per-message-auth nonce memory.
+
+### Optional durable nonces and sequence floors (REV-SEC-07)
+
+Embedders may attach a `DurableMessageAuthReplayStore` to `MessageReplayCache`
+so accepted nonces survive process restart. Sequence floors remain **opt-in**:
+
+| Mode | Behaviour |
+|------|-----------|
+| `off` (default) | Sequence is metadata only; durable store (if attached) still persists nonces. |
+| `compat` | Floor advances on accept; a lower sequence with a **new** nonce is still admitted (reconnect-safe). Same nonce remains `replayed`. |
+| `strict` | `sequence <= floor` for that `(key_id, sender)` is refused as `sequence_mismatch`. Clients must keep counters monotonic across restarts. |
+
+Durable I/O faults fail closed (verification refuses the frame). Capacity-full
+behaviour matches the in-memory cache. Design notes:
+`docs/internal/DESIGN_REV_SEC_07_sequence_floor_2026-07-20.md`.
 
 Verification produces stable **verification result** strings: `ok`, `missing`,
 `expired`, `unknown_key`, `revoked_key`, `bad_authentication`,
