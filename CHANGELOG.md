@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.12] - 2026-07-20
+
 ### Security
 
 - Always install a WebSocket handshake Origin/Host guard on the core hub
@@ -56,6 +58,22 @@ All notable changes to this project are documented here.
   takeover, or ownership-lease state changes. Project-scoped identities such as
   `PROJECT/system` remain valid; clients using a reserved global name must
   migrate to a non-reserved or project-scoped identity.
+- Persist authenticated-frame nonce decisions so a journal-backed hub restart
+  no longer re-opens the in-memory replay window. Optional compatibility or
+  strict sequence-floor modes use the same durable boundary; configured stale
+  sequences, nonce replays, sender mismatches, expired keys, and invalid domains
+  fail closed.
+- Bind relay-approval and live-claim quota accounting to server-derived
+  principals rather than client-selected display names, closing identity-churn
+  bypasses without weakening project-scoped identities.
+- Bound accepted durable chat ingress before history or journal growth, using
+  server-derived principal windows over event count and full normalized frame
+  bytes; active buckets cannot be reset by reconnect churn.
+- Journal claim and guard denials as authenticated evidence. A guard that
+  cannot persist its denial remains fail-closed and does not silently turn an
+  unrecorded refusal into an allow.
+- Bound A2A HTTP admission and request-body reads so slow or oversized clients
+  cannot occupy the bridge indefinitely.
 
 ### Added
 
@@ -80,6 +98,15 @@ All notable changes to this project are documented here.
   intents on restart. A `dispatch:<project>` singleton lease serialises
   concurrent dispatchers; the dispatcher never claims real tasks, approves,
   lands, or broadcasts.
+- Native Agent Evidence Format (AEF) runtime: restricted JCS canonicalization,
+  integer time, versioned signature domains, Ed25519 receipt verification,
+  durable replay/conflict decisions, legacy-event projection, native chained
+  receipt emission, a crash-safe outbox, and hub/CLI runtime integration. The
+  verifier distinguishes legacy evidence from native AEF rather than upgrading
+  old guarantees by presentation.
+- Durable federation partition/heal lifecycle evidence, including replay after
+  restart, so a past degraded interval is queryable instead of existing only
+  as transient operator state.
 
 ### Changed
 
@@ -97,6 +124,12 @@ All notable changes to this project are documented here.
   copy-paste `identity-pin-reclaim` ACL grant, the fresh-TOFU recovery-operator
   recipe that sidesteps the bootstrap paradox, and the exact `synapse identity
   reclaim` invocation with its compare-and-swap and audit-trail guarantees.
+- Cockpit and Studio bootstrap configuration is now inert JSON consumed by
+  same-origin scripts; production `script-src` stays at `'self'` without an
+  executable inline-script exception.
+- Ordinary CLI and MCP path claims inside Git now resolve the same canonical
+  worktree identity as `git-claim`, while deliberate keyless mutexes and
+  genuine non-Git scopes retain their previous semantics.
 
 ### Fixed
 
@@ -105,6 +138,25 @@ All notable changes to this project are documented here.
   configured/current identity and an exact-target inbox item, ignores routine
   status and broadcast-only wakes, resumes the active user-directed task when
   there is no actionable directed work, and waits only when otherwise idle.
+- Apply durable claim-family mutations atomically: provisional state remains
+  private until the SQLite transaction commits, failed persistence restores
+  the prior state exactly, and post-commit cleanup cannot invert durable/live
+  truth. The serialized mutation actor moves guarded storage work off the event
+  loop and drains in-flight work before cancellation propagates.
+- Carry a bounded `client_msg_id` through live chat, retained history, durable
+  replay, mailbox delivery, and receipt frames so at-least-once receivers can
+  deduplicate reconnect retries without the hub silently dropping attempts.
+- Reject oversized JSON integer literals as malformed frames instead of letting
+  Python's integer-conversion limit escape the protocol boundary and close the
+  client with an internal-error status.
+- Use the supported asyncio WebSocket server API across the declared
+  `websockets>=13` range, restoring real registration plus `/health` and
+  `/metrics` on both the dependency floor and current releases.
+- Exit `synapse listen` non-zero when the hub closes the connection instead of
+  leaving a dead listener process apparently alive.
+- Keep container health probes aligned with the concrete Host authority on a
+  wildcard bind; both Docker's health check and the compose CI smoke use
+  `ws://127.0.0.1:8876`.
 
 ## [0.99.11] - 2026-07-18
 

@@ -34,7 +34,8 @@ def test_discover_returns_every_surface() -> None:
         "README.md citation",
         "CITATION.cff",
         ".zenodo.json",
-        "server.json",
+        "server.json top-level",
+        "server.json package synapse-channel",
     }
     # The repository surfaces are all in sync, so each equals the canonical version.
     assert set(surfaces.values()) == {cvs._pyproject_version()}
@@ -69,7 +70,10 @@ def test_main_fails_on_real_surface_drift(
         dedent(
             """\
             {
-              "version": "1.2.3"
+              "version": "1.2.3",
+              "packages": [
+                {"identifier": "synapse-channel", "version": "1.2.3"}
+              ]
             }
             """
         ),
@@ -90,3 +94,35 @@ def test_main_fails_on_real_surface_drift(
 
     assert cvs.main(tmp_path) == 1
     assert "desync" in capsys.readouterr().out
+
+
+def test_main_fails_when_nested_server_package_version_drifts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A matching top-level MCP version must not hide a stale package pin."""
+    (tmp_path / "src" / "synapse_channel").mkdir(parents=True)
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "1.2.3"\n', encoding="utf-8")
+    (tmp_path / "src" / "synapse_channel" / "__init__.py").write_text(
+        '__version__ = "1.2.3"\n', encoding="utf-8"
+    )
+    (tmp_path / "README.md").write_text(
+        "@software{synapse_channel,\n  version = {1.2.3}\n}\n", encoding="utf-8"
+    )
+    (tmp_path / "CITATION.cff").write_text("version: 1.2.3\n", encoding="utf-8")
+    (tmp_path / ".zenodo.json").write_text('{"version":"1.2.3"}\n', encoding="utf-8")
+    (tmp_path / "server.json").write_text(
+        dedent(
+            """\
+            {
+              "version": "1.2.3",
+              "packages": [
+                {"identifier": "synapse-channel", "version": "1.2.2"}
+              ]
+            }
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    assert cvs.main(tmp_path) == 1
+    assert "server.json package synapse-channel='1.2.2'" in capsys.readouterr().out

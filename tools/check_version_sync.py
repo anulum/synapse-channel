@@ -9,14 +9,14 @@
 """Fail when the project version drifts between its declared surfaces.
 
 ``pyproject.toml`` is the source of truth; the package ``__version__``, the README
-citation, ``CITATION.cff``, and the ``.zenodo.json`` archive metadata must all match
-it. Run by pre-commit and CI so a release bump that misses one surface (the README
-citation and the Zenodo metadata are easy to forget — a stale ``.zenodo.json``
-mislabels the archived DOI) is caught before it ships a stale number.
+citation, ``CITATION.cff``, archive metadata, and both MCP registry version fields
+must all match it. Run by pre-commit and CI so a release bump that misses one
+surface is caught before it ships a stale number.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -41,8 +41,24 @@ def _search(root: Path, path: str, pattern: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def _server_versions(root: Path) -> tuple[str, str]:
+    """Return the MCP server and PyPI-package versions from ``server.json``."""
+    data = json.loads((root / "server.json").read_text(encoding="utf-8"))
+    top_level = str(data.get("version", ""))
+    package = next(
+        (
+            str(item.get("version", ""))
+            for item in data.get("packages", ())
+            if item.get("identifier") == "synapse-channel"
+        ),
+        "",
+    )
+    return top_level, package
+
+
 def discover(root: Path = ROOT) -> dict[str, str]:
     """Return the version each surface declares, keyed by a human label."""
+    server_version, server_package_version = _server_versions(root)
     return {
         "src/synapse_channel/__init__.py": _search(
             root, "src/synapse_channel/__init__.py", r'^__version__ = "([^"]+)"'
@@ -50,7 +66,8 @@ def discover(root: Path = ROOT) -> dict[str, str]:
         "README.md citation": _search(root, "README.md", r"version\s*=\s*\{([^}]+)\}"),
         "CITATION.cff": _search(root, "CITATION.cff", r'^version:\s*"?([^"\n]+?)"?\s*$'),
         ".zenodo.json": _search(root, ".zenodo.json", r'"version":\s*"([^"]+)"'),
-        "server.json": _search(root, "server.json", r'"version":\s*"([^"]+)"'),
+        "server.json top-level": server_version,
+        "server.json package synapse-channel": server_package_version,
     }
 
 
