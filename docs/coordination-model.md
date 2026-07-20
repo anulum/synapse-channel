@@ -95,6 +95,17 @@ emits both records for each supported evidence event remains explicit follow-up;
 the existence of the log primitive alone is not a claim that dual-write mode is
 enabled.
 
+`legacy_event_to_aef` is the explicit compatibility mapper for the first
+runtime evidence families: lease grants and minimized claim denials,
+digest-only guard denials, sandbox executions, and durable multi-hub
+partition/heal transitions. It converts the historical float timestamp through
+the AEF integer-time boundary and carries the legacy sequence only into signed
+reconciliation evidence. Minimized identifiers remain visibly digest-labelled;
+the mapper does not reconstruct deleted plaintext. Unsupported kinds remain
+legacy-only and malformed supported rows fail closed. This mapper still does
+not make two separate commits atomic: crash-recoverable outbox routing remains
+the next migration boundary before runtime dual-write can be enabled.
+
 Before closeout, `python tools/test_ownership_map.py --check` can map changed
 source files to likely owning tests. The map uses AST imports and a conservative
 test-filename fallback, so it is useful evidence for picking focused tests and
