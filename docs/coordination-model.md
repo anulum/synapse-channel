@@ -84,6 +84,17 @@ rows. Native AEF log emission and the dual-format migration remain separate from
 the historical event log and its Merkle tree; neither serializer is
 reinterpreted as the other.
 
+`AefReceiptLog` is the native-emission boundary for the next migration step. It
+assigns an independent AEF sequence and `prev_receipt` chain, signs canonical
+receipt bytes with the existing hub Ed25519 key type, validates every receipt
+before a FULL-synchronous append, and can bind the frozen legacy root only in
+the AEF genesis receipt. A supplied `legacy_seq` is stored as reconciliation
+evidence, never as an AEF sequence or Merkle leaf. The native tables may coexist
+in the hub database without touching legacy event rows. Runtime wiring that
+emits both records for each supported evidence event remains explicit follow-up;
+the existence of the log primitive alone is not a claim that dual-write mode is
+enabled.
+
 Before closeout, `python tools/test_ownership_map.py --check` can map changed
 source files to likely owning tests. The map uses AST imports and a conservative
 test-filename fallback, so it is useful evidence for picking focused tests and
