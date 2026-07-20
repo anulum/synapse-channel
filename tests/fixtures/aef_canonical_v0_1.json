@@ -1,0 +1,25 @@
+{
+  "format": "aef-canonical-v0.1",
+  "vectors": [
+    {
+      "name": "utf16-key-order",
+      "input_json": "{\"\\ue000\":2,\"\\ud800\\udc00\":1}",
+      "canonical_hex": "7b22f0908080223a312c22ee8080223a327d"
+    },
+    {
+      "name": "minimal-escaping",
+      "input_json": "\"quote\\\" slash\\\\ controls\\b\\t\\n\\f\\r\\u0000\\u001f café \\u2028\"",
+      "canonical_hex": "2271756f74655c2220736c6173685c5c20636f6e74726f6c735c625c745c6e5c665c725c75303030305c753030316620636166c3a920e280a822"
+    },
+    {
+      "name": "integer-boundaries",
+      "input_json": "[null,true,false,-9007199254740991,0,9007199254740991]",
+      "canonical_hex": "5b6e756c6c2c747275652c66616c73652c2d393030373139393235343734303939312c302c393030373139393235343734303939315d"
+    },
+    {
+      "name": "nested-order",
+      "input_json": " { \"z\" : [ true, null ], \"a\" : 2 } ",
+      "canonical_hex": "7b2261223a322c227a223a5b747275652c6e756c6c5d7d"
+    }
+  ]
+}
