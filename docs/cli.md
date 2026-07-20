@@ -1674,8 +1674,11 @@ prints a scorecard. The probes exercise real production surfaces — durable
 event-store appends and a full journal replay against a temporary SQLite
 file, the lite relay encoding over realistic envelopes, and `who`
 request/response plus claim-to-grant round-trips over a real WebSocket
-connection to an in-process hub on a loopback port. Each probe reports
-throughput and p50/p95 per-operation latency, and the scorecard carries the
+connection to an in-process hub on a loopback port. The
+`durable-claim-grant` probe gives that hub a real temporary SQLite journal,
+forces claim and release through `synchronous=FULL`, and reports p50/p95/max
+event-loop delay beyond a concurrent 1 ms scheduler interval. Each probe
+reports throughput and p50/p95 per-operation latency, and the scorecard carries the
 context that makes a number honest: package version, interpreter, CPU model
 and governor, and the load averages before and after the run, plus an
 explicit isolation label — a run of this command is shared-workstation

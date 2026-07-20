@@ -262,21 +262,41 @@ async def _connect_ready_agent(
 async def _measure_over_live_hub(
     iterations: int,
     exercise: Callable[[SynapseAgent, _MessageWaiter, int], Awaitable[None]],
-) -> tuple[list[float], float]:
+    *,
+    journal: EventStore | None = None,
+    scheduler_interval: float | None = None,
+) -> tuple[list[float], float, list[float]]:
     """Run ``exercise`` per iteration against a real hub over a real socket.
 
     Starts an in-process :class:`SynapseHub` on a loopback port, connects one
     :class:`SynapseAgent` through the production WebSocket client, and times
     each iteration of ``exercise``.
     """
-    hub = SynapseHub(hub_id="syn-bench")
+    hub = SynapseHub(hub_id="syn-bench", journal=journal, anti_rollback_checkpoint=False)
     port = _free_port()
     server = asyncio.create_task(hub.serve("localhost", port))
     samples: list[float] = []
+    scheduler_lags: list[float] = []
+    stop_scheduler = asyncio.Event()
+    scheduler_task: asyncio.Task[None] | None = None
     try:
         waiter = _MessageWaiter()
         agent, connection = await _connect_ready_agent(waiter, port)
         try:
+            if scheduler_interval is not None:
+
+                async def sample_scheduler_lag() -> None:
+                    """Measure delay beyond one requested scheduler interval."""
+                    while not stop_scheduler.is_set():
+                        before = time.perf_counter()
+                        await asyncio.sleep(scheduler_interval)
+                        elapsed = time.perf_counter() - before
+                        scheduler_lags.append(max(0.0, elapsed - scheduler_interval))
+
+                scheduler_task = asyncio.create_task(sample_scheduler_lag())
+                # Let the ticker establish its first deadline before the
+                # measured mutation workload starts.
+                await asyncio.sleep(0)
             started = time.perf_counter()
             for index in range(iterations):
                 before = time.perf_counter()
@@ -284,6 +304,9 @@ async def _measure_over_live_hub(
                 samples.append(time.perf_counter() - before)
             duration = time.perf_counter() - started
         finally:
+            stop_scheduler.set()
+            if scheduler_task is not None:
+                await scheduler_task
             agent.running = False
             connection.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -292,7 +315,7 @@ async def _measure_over_live_hub(
         server.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await server
-    return samples, duration
+    return samples, duration, scheduler_lags
 
 
 def probe_hub_roundtrip(iterations: int) -> ProbeResult:
@@ -309,7 +332,7 @@ def probe_hub_roundtrip(iterations: int) -> ProbeResult:
         await agent.request_who()
         await request
 
-    samples, duration = asyncio.run(_measure_over_live_hub(iterations, exercise))
+    samples, duration, _scheduler_lags = asyncio.run(_measure_over_live_hub(iterations, exercise))
     return ProbeResult(
         name="hub-roundtrip",
         iterations=iterations,
@@ -340,13 +363,78 @@ def probe_claim_grant(iterations: int) -> ProbeResult:
         await granted
         await agent.release(task_id)
 
-    samples, duration = asyncio.run(_measure_over_live_hub(iterations, exercise))
+    samples, duration, _scheduler_lags = asyncio.run(_measure_over_live_hub(iterations, exercise))
     return ProbeResult(
         name="claim-grant",
         iterations=iterations,
         duration_seconds=duration,
         metrics={"claims_per_second": iterations / duration, **_percentiles_ms(samples)},
         notes=("claim to claim_granted round-trip plus release, fresh task per iteration",),
+    )
+
+
+def probe_durable_claim_grant(iterations: int) -> ProbeResult:
+    """Measure durable claim round-trips and event-loop scheduler lag.
+
+    Runs the production claim and release path against a real hub carrying a
+    temporary SQLite journal.  Both authoritative mutations therefore cross
+    the ``synchronous=FULL`` boundary.  A concurrent 1 ms ticker measures how
+    long the event loop is delayed beyond its requested wake-up interval; this
+    distinguishes storage-induced scheduler stalls from plain request latency.
+    """
+
+    async def exercise(agent: SynapseAgent, waiter: _MessageWaiter, index: int) -> None:
+        task_id = f"DURABLE-BENCH-{index}"
+        granted = asyncio.ensure_future(
+            waiter.wait_for(
+                lambda message: (
+                    message.get("type") == MessageType.CLAIM_GRANTED
+                    and message.get("task_id") == task_id
+                )
+            )
+        )
+        await agent.claim(task_id, note="durable benchmark", paths=(f"src/durable_{index}.py",))
+        await granted
+        released = asyncio.ensure_future(
+            waiter.wait_for(
+                lambda message: (
+                    message.get("type") == MessageType.RELEASE_GRANTED
+                    and message.get("task_id") == task_id
+                )
+            )
+        )
+        await agent.release(task_id)
+        await released
+
+    with TemporaryDirectory(prefix="synapse-bench-durable-hub-") as scratch:
+        store = EventStore(Path(scratch) / "hub.db")
+        try:
+            samples, duration, scheduler_lags = asyncio.run(
+                _measure_over_live_hub(
+                    iterations,
+                    exercise,
+                    journal=store,
+                    scheduler_interval=0.001,
+                )
+            )
+        finally:
+            store.close()
+    lag_percentiles = _percentiles_ms(scheduler_lags)
+    return ProbeResult(
+        name="durable-claim-grant",
+        iterations=iterations,
+        duration_seconds=duration,
+        metrics={
+            "claims_per_second": iterations / duration,
+            **_percentiles_ms(samples),
+            "event_loop_lag_p50_ms": lag_percentiles["p50_ms"],
+            "event_loop_lag_p95_ms": lag_percentiles["p95_ms"],
+            "event_loop_lag_max_ms": max(scheduler_lags) * 1000.0,
+        },
+        notes=(
+            "claim-to-grant plus release with a real FULL-durability SQLite journal",
+            "event-loop lag is delay beyond a concurrent 1 ms scheduler interval",
+        ),
     )
 
 
@@ -357,6 +445,7 @@ PROBES: dict[str, tuple[int, Callable[[int], ProbeResult]]] = {
     "encode-lite": (2000, probe_encode_lite),
     "hub-roundtrip": (100, probe_hub_roundtrip),
     "claim-grant": (100, probe_claim_grant),
+    "durable-claim-grant": (100, probe_durable_claim_grant),
 }
 
 

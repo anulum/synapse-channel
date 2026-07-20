@@ -19,6 +19,7 @@ from synapse_channel.benchmark.probes import (
     _MessageWaiter,
     _percentiles_ms,
     probe_claim_grant,
+    probe_durable_claim_grant,
     probe_encode_lite,
     probe_event_store_append,
     probe_event_store_replay,
@@ -62,6 +63,16 @@ def test_claim_grant_round_trips_the_coordination_core() -> None:
     assert result.iterations == 3
     assert result.metrics["claims_per_second"] > 0
     assert result.metrics["p95_ms"] >= result.metrics["p50_ms"] > 0
+
+
+def test_durable_claim_grant_measures_scheduler_lag() -> None:
+    result = probe_durable_claim_grant(3)
+    assert result.name == "durable-claim-grant"
+    assert result.iterations == 3
+    assert result.metrics["claims_per_second"] > 0
+    assert result.metrics["p95_ms"] >= result.metrics["p50_ms"] > 0
+    assert result.metrics["event_loop_lag_p95_ms"] >= 0
+    assert result.metrics["event_loop_lag_max_ms"] >= result.metrics["event_loop_lag_p95_ms"]
 
 
 def test_run_probes_preserves_order_and_applies_overrides() -> None:
