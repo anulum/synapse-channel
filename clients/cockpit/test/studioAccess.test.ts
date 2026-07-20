@@ -54,8 +54,12 @@ function descriptor(
 }
 
 function loadAccess(): StudioAccess {
-  document.body.innerHTML = '<div role="status" aria-live="polite"><b id="cc-access">loading</b></div>';
-  Object.assign(window, { __SYN_STUDIO__: { accessUrl: "/access", pollMs: 1000 } });
+  document.body.innerHTML = `
+    <script id="syn-studio-config" type="application/json">
+      {"accessUrl":"/access","pollMs":1000}
+    </script>
+    <div role="status" aria-live="polite"><b id="cc-access">loading</b></div>
+  `;
   vi.spyOn(globalThis, "setTimeout").mockImplementation(() => 1 as never);
   window.eval(accessSource);
   return (window as typeof window & { SynapseStudioAccess: StudioAccess }).SynapseStudioAccess;

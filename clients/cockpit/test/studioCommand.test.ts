@@ -44,14 +44,16 @@ function mount(): void {
 }
 
 function loadCommand(feedStart: ReturnType<typeof vi.fn>): StudioCommand {
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    '<script id="syn-studio-config" type="application/json">' +
+      '{"snapshotUrl":"/studio.json","pollMs":5000}</script>',
+  );
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: vi.fn(() => ({ matches: true })),
   });
-  Object.assign(window, {
-    __SYN_STUDIO__: { snapshotUrl: "/studio.json", pollMs: 5000 },
-    SynapseStudioFeeds: { start: feedStart },
-  });
+  Object.assign(window, { SynapseStudioFeeds: { start: feedStart } });
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
   window.eval(boardSource);
   window.eval(commandSource);
