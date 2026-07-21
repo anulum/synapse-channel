@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from _platform_caps import requires_proc
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
 from synapse_channel.core.hub import SynapseHub
@@ -201,6 +202,7 @@ def test_cmd_wait_pane_bridge_does_not_yield_to_own_provider_pidfile(
     assert "Yielding plain passive" not in capsys.readouterr().out
 
 
+@requires_proc
 def test_cmd_wait_passive_still_yields_when_provider_is_live(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,

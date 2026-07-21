@@ -252,7 +252,13 @@ async def test_diagnostic_escapes_newlines_and_is_bounded(tmp_path: Path) -> Non
 
 @pytest.mark.asyncio
 async def test_diagnostic_character_budget_can_omit_the_first_path(tmp_path: Path) -> None:
-    long_path = "src/" + ("x" * 3000)
+    # One path long enough to exhaust the diagnostic's character budget, built
+    # from many valid-length components rather than a single 3000-char name.
+    # macOS reports ENAMETOOLONG when lstat meets a component over NAME_MAX (255)
+    # before it reports the missing parent, so an overlong single component would
+    # fail path resolution on macOS instead of exercising the budget; nested
+    # segments stay resolvable identically on every OS.
+    long_path = "src/" + "/".join("x" * 40 for _ in range(75))
     result = await run_staged_claim_check(
         runner=_runner(tmp_path, f"M\0{long_path}\0"),
         environment={},

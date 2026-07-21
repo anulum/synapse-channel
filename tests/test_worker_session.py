@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from _platform_caps import requires_proc
 from synapse_channel import cli, cli_services
 from synapse_channel.worker_session import run_worker_session
 
@@ -450,6 +451,7 @@ def test_worker_session_tmux_passes_auth_and_custom_uri(
     assert synapse_calls[0][-4:] == ["--token", "secret", "--uri", "ws://localhost:9999"]
 
 
+@requires_proc
 def test_worker_session_tmux_reuses_live_waiter_pid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
