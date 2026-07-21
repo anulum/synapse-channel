@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 import synapse_channel.cli_doctor_mcp_config as doctor_mcp
+from _platform_caps import requires_sealed_launch
 from _portable_exec import install_posix_tool
 from synapse_channel.cli_doctor_mcp_config import (
     add_mcp_config_doctor_arguments,
@@ -143,6 +144,7 @@ def test_mcp_doctor_passes_fully_pinned_signed_config(
     assert "signed by 'ops'" in result.detail
 
 
+@requires_sealed_launch
 def test_mcp_doctor_never_reflects_unbound_argument_values(tmp_path: Path) -> None:
     executable = tmp_path / "mcp-server"
     install_posix_tool(executable)

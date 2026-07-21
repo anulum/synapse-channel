@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from _platform_caps import requires_sealed_launch
 from _portable_exec import install_posix_tool
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_doctor
@@ -205,6 +206,7 @@ async def test_diagnose_warns_on_hyphen_send_identity() -> None:
     assert any("hyphen child" in line for line in lines)
 
 
+@requires_sealed_launch
 async def test_diagnose_reports_outbound_mcp_config_trust(tmp_path: Path) -> None:
     async def no_roster(**_: Any) -> list[str]:
         return []

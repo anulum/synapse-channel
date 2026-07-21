@@ -17,6 +17,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from _platform_caps import requires_sealed_launch
 from _portable_exec import install_posix_tool
 from synapse_channel.core.mcp_config import McpConfigError
 from synapse_channel.core.mcp_config_signing import sign_mcp_config_document
@@ -24,6 +25,10 @@ from synapse_channel.core.mcp_config_trust import (
     discover_repository_root,
     load_trusted_mcp_config,
 )
+
+# Trust resolution ends in the Linux-only sealed-executable launch (memfd +
+# procfd); runs in full on Linux CI and skips where that capability is absent.
+pytestmark = requires_sealed_launch
 
 
 def _executable(path: Path) -> tuple[Path, str]:

@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 
+from _platform_caps import requires_sealed_launch
 from _portable_exec import install_posix_tool
 from synapse_channel import cli, cli_mcp_call
 from synapse_channel.core.mcp_outbound import (
@@ -120,6 +121,7 @@ def test_parse_arguments_rejects_non_object_json() -> None:
         cli_mcp_call._parse_arguments([], "[1, 2]")
 
 
+@requires_sealed_launch
 def test_build_client_reads_the_config(tmp_path: Path) -> None:
     client = cli_mcp_call._build_client(str(_config(tmp_path)))
     assert client.server_names() == ["echo"]
@@ -194,6 +196,7 @@ def test_mcp_call_invokes_a_tool(
     assert '"text": "hi"' in out
 
 
+@requires_sealed_launch
 def test_mcp_call_crosses_trusted_config_and_real_stdio_server(
     tmp_path: Path,
     capfd: pytest.CaptureFixture[str],
@@ -296,6 +299,7 @@ def test_mcp_call_denies_a_non_allowlisted_tool(
     assert "not allowed by the config" in capsys.readouterr().out
 
 
+@requires_sealed_launch
 def test_mcp_tools_denies_an_unknown_server_with_access_exit_code(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -386,6 +390,7 @@ def test_mcp_tools_sanitizes_an_integer_beyond_the_json_decoder_limit(
     assert "Traceback" not in output
 
 
+@requires_sealed_launch
 @pytest.mark.parametrize("verb", ["mcp-tools", "mcp-call"])
 def test_real_stdio_startup_failure_has_a_stable_operational_boundary(
     verb: str,

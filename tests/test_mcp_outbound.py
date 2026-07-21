@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 
 import synapse_channel.core.mcp_outbound as outbound_module
+from _platform_caps import requires_sealed_launch
 from _portable_exec import install_posix_tool
 from synapse_channel.core.mcp_config_launch import MCP_SDK_POSIX_DEFAULT_ENV
 from synapse_channel.core.mcp_outbound import (
@@ -226,6 +227,7 @@ def test_mcp_sdk_environment_contract_is_exact_and_fails_closed_on_drift() -> No
         _verify_mcp_sdk_contract(cleanup_drift, installed_version=MCP_SDK_VERSION)
 
 
+@requires_sealed_launch
 async def test_default_opener_passes_the_current_stderr_stream(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -281,6 +283,7 @@ if __name__ == "__main__":
 """
 
 
+@requires_sealed_launch
 async def test_call_tool_against_a_real_stdio_mcp_server(tmp_path: Path) -> None:
     pytest.importorskip("mcp.server.fastmcp")
     mcp_spec = importlib.util.find_spec("mcp")

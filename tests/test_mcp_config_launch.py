@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 import synapse_channel.core.mcp_config_launch as launch_module
+from _platform_caps import requires_sealed_launch
 from _portable_exec import install_posix_tool
 from synapse_channel.core.mcp_config import McpConfigError, McpServerSpec
 from synapse_channel.core.mcp_config_launch import (
@@ -23,6 +24,10 @@ from synapse_channel.core.mcp_config_launch import (
     validate_mcp_server_launch,
 )
 from synapse_channel.core.secret_files import open_nofollow_descriptor
+
+# The whole module exercises the Linux-only sealed-executable launch (memfd +
+# procfd); it runs in full on Linux CI and skips where that capability is absent.
+pytestmark = requires_sealed_launch
 
 
 def _executable(path: Path) -> tuple[Path, str]:
