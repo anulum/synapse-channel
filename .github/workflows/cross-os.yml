@@ -43,9 +43,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      # Advisory lane: install the dev extra with per-platform wheels rather than the
+      # Advisory lane: install the dev extras with per-platform wheels rather than the
       # Linux-pinned hash-locked closure the required jobs use (its hashes are for
       # manylinux wheels). The required `ci` keeps the hash-locked supply chain.
-      - run: python -m pip install -e ".[dev]"
+      # `benchmark` (tiktoken, cross-platform wheels) is included so the declared
+      # dev-tooling closure the drift check validates is actually present on this OS.
+      - run: python -m pip install -e ".[dev,benchmark]"
       - name: Run the suite on this OS (SQLCipher/TPM suites skip without their backends)
         run: python -m pytest -q -p no:cacheprovider

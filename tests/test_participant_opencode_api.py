@@ -6,6 +6,7 @@
 # Contact: www.anulum.li | protoscience@anulum.li
 
 import asyncio
+import hashlib
 import json
 import os
 import threading
@@ -61,21 +62,39 @@ class FakeRequester:
         raise AssertionError(url)
 
 
-def _password(tmp_path: Path) -> Path:
+def _password(tmp_path: Path) -> tuple[Path, str]:
+    """Write a workspace password and return its file path and secret value.
+
+    The secret is a collision-resistant SHA-256 digest of the workspace path, so
+    an accidental match with any part of that path is cryptographically
+    negligible. A fixed word such as "private" would false-positive the no-leak
+    assertion whenever it appears in the workspace path — macOS resolves temp
+    directories under "/private/var/...", and no fixed word is truly path-free
+    since a crafted TMPDIR could embed any literal. The caller asserts the secret
+    is absent from the path, so the no-leak check's soundness is verified for
+    each concrete run rather than assumed.
+    """
+    secret = "leak-probe-" + hashlib.sha256(str(tmp_path).encode("utf-8")).hexdigest()
     path = tmp_path / "password"
-    path.write_text("private\n")
+    path.write_text(f"{secret}\n")
     os.chmod(path, 0o600)
-    return path
+    return path, secret
 
 
 def test_api_turn_negotiates_authenticates_routes_workspace_and_parses(tmp_path: Path) -> None:
     requester = FakeRequester()
+    password_file, secret = _password(tmp_path)
+    # Precondition: verify the secret is absent from the workspace path for this
+    # run, so its absence from every request URL below is a genuine no-leak
+    # signal rather than a path-substring collision (URL-encoding a path cannot
+    # manufacture the secret's lowercase-hex run once it is absent from the path).
+    assert secret not in str(tmp_path)
     participant = OpenCodeApiParticipant(
         "seat/api",
         directory=tmp_path,
         model="provider/model",
         endpoint="https://example.test",
-        password_file=str(_password(tmp_path)),
+        password_file=str(password_file),
         requester=requester,
     )
     result = participant.run_turn(TurnRequest("topic", "prompt", context="rules"))
@@ -83,7 +102,7 @@ def test_api_turn_negotiates_authenticates_routes_workspace_and_parses(tmp_path:
     assert result["session"] == "ses-api"
     assert result["input_tokens"] == 5
     assert [call[0] for call in requester.calls] == ["GET", "POST", "POST"]
-    assert all("private" not in call[1] for call in requester.calls)
+    assert all(secret not in call[1] for call in requester.calls)
     assert all(call[3].get("Authorization", "").startswith("Basic ") for call in requester.calls)
     assert "%2F" in requester.calls[1][1]
     prompt = json.loads(requester.calls[2][2] or b"{}")
