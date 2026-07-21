@@ -28,6 +28,7 @@ import socket
 import statistics
 import time
 from collections.abc import Awaitable, Callable
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -39,6 +40,12 @@ from synapse_channel.core.journal import EventKind, replay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType, build_envelope
 from synapse_channel.core.relay_codec import decode_lite, encode_lite
+from synapse_channel.core.state import SynapseState
+
+#: Live claims and agents the state-deepcopy probe seeds — a deliberately busy
+#: fleet so the O(state size) copy-on-write cost is visible rather than noise.
+_STATE_DEEPCOPY_AGENTS = 50
+_STATE_DEEPCOPY_CLAIMS = 250
 
 
 @dataclass(frozen=True)
@@ -438,6 +445,55 @@ def probe_durable_claim_grant(iterations: int) -> ProbeResult:
     )
 
 
+def probe_state_deepcopy(iterations: int) -> ProbeResult:
+    """Measure the copy-on-write deep copy of the authoritative ``SynapseState``.
+
+    :func:`~synapse_channel.core.state_transaction.durable_state_transaction`
+    applies each journaled hub mutation to a private ``deepcopy(state)`` and
+    publishes it only after the durable append succeeds — the commit-before-
+    publish invariant. That copy is O(state size), so it runs once per durable
+    mutation on the single-threaded hub. This probe seeds a busy fleet through
+    the real :meth:`SynapseState.claim` path, then times the same ``deepcopy``;
+    p50/p95 quantify how long each durable mutation blocks the event loop, which
+    is the signal for the BUG-5 copy-on-write scaling-threshold decision.
+    """
+    state = SynapseState()
+    now = time.time()
+    for agent_index in range(_STATE_DEEPCOPY_AGENTS):
+        state.heartbeat(f"bench-agent-{agent_index}", now=now)
+    for index in range(_STATE_DEEPCOPY_CLAIMS):
+        agent = f"bench-agent-{index % _STATE_DEEPCOPY_AGENTS}"
+        state.claim(
+            agent,
+            f"STATE-BENCH-{index}",
+            note="benchmark",
+            now=now,
+            paths=(f"src/state_bench_{index}.py",),
+        )
+    live_claims = len(state.claims)
+    samples: list[float] = []
+    started = time.perf_counter()
+    for _ in range(iterations):
+        before = time.perf_counter()
+        deepcopy(state)
+        samples.append(time.perf_counter() - before)
+    duration = time.perf_counter() - started
+    return ProbeResult(
+        name="state-deepcopy",
+        iterations=iterations,
+        duration_seconds=duration,
+        metrics={
+            "copies_per_second": iterations / duration,
+            **_percentiles_ms(samples),
+            "live_claims": float(live_claims),
+        },
+        notes=(
+            f"deepcopy of SynapseState carrying {live_claims} live claims across "
+            f"{_STATE_DEEPCOPY_AGENTS} agents — the per-durable-mutation transaction copy",
+        ),
+    )
+
+
 #: Probe registry: name → (default iterations, implementation).
 PROBES: dict[str, tuple[int, Callable[[int], ProbeResult]]] = {
     "event-store-append": (500, probe_event_store_append),
@@ -446,6 +502,7 @@ PROBES: dict[str, tuple[int, Callable[[int], ProbeResult]]] = {
     "hub-roundtrip": (100, probe_hub_roundtrip),
     "claim-grant": (100, probe_claim_grant),
     "durable-claim-grant": (100, probe_durable_claim_grant),
+    "state-deepcopy": (200, probe_state_deepcopy),
 }
 
 
