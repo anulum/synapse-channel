@@ -41,6 +41,11 @@ services:
       - --db=/data/hub.db
       - --relay-log=/data/feed.ndjson
       - --insecure-off-loopback
+      # The store above is plaintext. On an off-loopback bind the hub refuses a
+      # plaintext store unless this flag accepts it; it is safe here for the same
+      # bounded-audience reason as --insecure-off-loopback — the volume lives on
+      # this single trusted host. To harden, ship an encrypted store instead.
+      - --insecure-plaintext-at-rest
       # Exposing the port beyond loopback, or sharing hub-isolated with other
       # containers? Replace --insecure-off-loopback with:
       # - --token=${SYNAPSE_TOKEN}
