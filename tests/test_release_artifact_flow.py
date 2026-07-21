@@ -62,7 +62,7 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     assert "name: release-dist" in attest
     assert "sha256sum --check --strict SHA256SUMS" in attest
     assert "find . -maxdepth 1 -type f ! -name SHA256SUMS" in attest
-    assert "actions/attest@a1948c3f048ba23858d222213b7c278aabede763" in attest
+    assert "actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6" in attest
     assert "subject-checksums: release-artifact/SHA256SUMS" in attest
     assert "steps.provenance.outputs.bundle-path" in attest
     assert "synapse-channel-${GITHUB_REF_NAME}-provenance.sigstore.json" in attest
