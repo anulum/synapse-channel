@@ -31,6 +31,18 @@ HISTORY_EXEMPTIONS = {
     "872ac28c56280f959c13f804e1b8d8a08dda9406": (
         "published with literal escaped newlines joining otherwise present trailers"
     ),
+    # Dependabot pull requests are landed with GitHub's squash-merge, whose commit
+    # is authored by dependabot[bot] and cannot carry the seat/authorship trailer.
+    # These three are already published on main and are not amendable post-merge.
+    "140653aace9e626edc09476f9612c227979414c7": (
+        "dependabot squash-merge (#43 cockpit-minor-patch), authored by dependabot[bot]"
+    ),
+    "95645ad968e44650d4874a27cdd2e8399ca2b8f2": (
+        "dependabot squash-merge (#45 actions/setup-node), authored by dependabot[bot]"
+    ),
+    "e86aa7bd728db5986df68d50bb359928c134fed1": (
+        "dependabot squash-merge (#46 github-app-minor-patch), authored by dependabot[bot]"
+    ),
 }
 SEAT_PREFIX_RE = re.compile(r"^\s*Seat:")
 SEAT_TRAILER_RE = re.compile(r"^Seat:\s+([A-Za-z0-9][A-Za-z0-9_-]{0,63})\s*$")
