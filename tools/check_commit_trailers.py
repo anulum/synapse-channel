@@ -43,6 +43,9 @@ HISTORY_EXEMPTIONS = {
     "e86aa7bd728db5986df68d50bb359928c134fed1": (
         "dependabot squash-merge (#46 github-app-minor-patch), authored by dependabot[bot]"
     ),
+    "ef7c1938799debc2815cd7bd1c324b8f6f3c0250": (
+        "dependabot squash-merge (#47 actions/setup-python), authored by dependabot[bot]"
+    ),
 }
 SEAT_PREFIX_RE = re.compile(r"^\s*Seat:")
 SEAT_TRAILER_RE = re.compile(r"^Seat:\s+([A-Za-z0-9][A-Za-z0-9_-]{0,63})\s*$")
