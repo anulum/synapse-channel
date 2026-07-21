@@ -89,7 +89,7 @@ shipped. Local-first and read-only by default.
 
 ## Next steps
 
-- [Installation](installation.md) · [Quick start](quickstart.md)
+- [Installation](installation.md) · [Quick start](quickstart.md) · [Tutorial](tutorial.md)
 - [Coordination model](coordination-model.md) · [Policy engine](policy-engine.md) · [Agent trust graph](agent-trust-graph.md) · [Identity and ACL](identity-and-acl.md)
 - [Wire protocol](protocol.md) · [API and wire stability](api-stability.md) · [0.x to 1.0 migration](migration-1.0.md) · [CLI reference](cli.md) · [Recipes](recipes.md) · [Examples](examples.md)
 - [Deployment](deployment.md)
