@@ -45,6 +45,7 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "CHANNEL_CREATE": "channel_create",
     "CHANNEL_HISTORY": "channel_history",
     "CHANNEL_HISTORY_REQUEST": "channel_history_request",
+    "CHANNEL_INVITE": "channel_invite",
     "CHANNEL_JOIN": "channel_join",
     "CHANNEL_LEAVE": "channel_leave",
     "CHANNEL_LIST": "channel_list",
