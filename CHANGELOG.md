@@ -15,6 +15,13 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Scheduled advisory `soak` CI lane (`.github/workflows/soak.yml`, weekly +
+  `workflow_dispatch`) that runs a bounded soak of the hub's waiter/liveness
+  bookkeeping under sustained connect churn (`tests/test_waiter_liveness_soak.py`),
+  asserting the per-identity live-socket and last-reaction maps return to baseline
+  rather than growing with the reconnect count. The cycle count scales via
+  `SYNAPSE_SOAK_ITERATIONS`; the ordinary suite runs a cheap default and the lane
+  amplifies it. It is deliberately not a required check.
 - `synapse hub --claim-peer HUB_ID=URI` (repeatable, requires `--namespace-owner`,
   with `--claim-peer-token`): the operator CLI route that configures cross-hub
   claim forwarding. A remote-owned claim with a matching route is forwarded to
