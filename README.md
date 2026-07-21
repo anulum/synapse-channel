@@ -114,21 +114,18 @@ Synapse's daily promise is three explicit loops:
   logs, A2A state, cursors, and archives). See
   [SQLCipher live event store](#sqlcipher-live-event-store-at-rest) below.
 
-## Feature wall
+## What it does, surface by surface
 
-The visual cells below are labelled capture placeholders, not missing images.
-Short product recordings will replace them after the demo capture pass; the
-linked commands and documentation describe the shipped behaviour today.
+Seven shipped coordination surfaces, each named by the command or doc that
+delivers it today:
 
-| Shipped coordination surface | Labelled visual slot |
-|---|---|
-| **Claim before edit.** [`synapse git-init`](#git-native-claims) installs claim-aware Git hooks; `synapse git-claim` records an exact worktree, branch, and path scope so an overlapping claim can be refused before files diverge. | **Visual placeholder — claim gutter:** one owner is visible while a competing edit is refused. |
-| **Block unclaimed native file edits.** [Provider file-edit claim hooks](docs/claim-guard-hooks.md) adapt Claude Code `Edit|Write`, Codex `apply_patch`, Gemini CLI `replace|write_file`, and Kimi `Edit|Write` to one live-claim decision engine. | **Visual placeholder — edit denial:** an unclaimed provider edit stops before the native file tool runs. |
-| **Share the plan.** `synapse task` and [`synapse board`](docs/coordination-model.md) keep task state, dependencies, and ready work on the hub instead of in separate agent notes. | **Visual placeholder — board:** a blocked task becomes ready when its dependency completes. |
-| **Hand work over without an ownership gap.** [Atomic handoff](docs/coordination-model.md#4-hand-off-and-recover) moves the held task, scope, status, and checkpoint to an online recipient without a release-and-reclaim window. | **Visual placeholder — handoff:** ownership and checkpoint move together between two seats. |
-| **Expose a dark seat.** After 30 continuous seconds without the owner's exact waiter, the hub emits one [`dark_seat_alert`](docs/protocol.md) for affected claims or assigned work, including the permanent-arm remedy; it does not release or reassign work automatically. | **Visual placeholder — dark-seat alert:** the missing waiter and exact re-arm command appear beside the affected work. |
-| **Read the fleet from one cockpit.** [`synapse dashboard`](docs/studio.md) serves the local command centre, exact-status task columns, claims, conflicts, security posture, and an optional durable event feed; the read-only Studio projection adds no new hub authority. | **Visual placeholder — cockpit:** live claims, task state, risk, and recent events share one operator view. |
-| **Connect existing agent protocols at the edge.** [`synapse mcp`](docs/mcp.md) exposes coordination tools and read-only resources over stdio; the [A2A bridge](docs/a2a-conformance.md) exposes a local Agent Card and HTTP+JSON surface while keeping its partial validation boundary explicit. | **Visual placeholder — MCP and A2A:** an existing agent reaches the same hub through either adapter. |
+- **Claim before edit.** [`synapse git-init`](#git-native-claims) installs claim-aware Git hooks; `synapse git-claim` records an exact worktree, branch, and path scope so an overlapping claim can be refused before files diverge.
+- **Block unclaimed native file edits.** [Provider file-edit claim hooks](docs/claim-guard-hooks.md) adapt Claude Code `Edit|Write`, Codex `apply_patch`, Gemini CLI `replace|write_file`, and Kimi `Edit|Write` to one live-claim decision engine.
+- **Share the plan.** `synapse task` and [`synapse board`](docs/coordination-model.md) keep task state, dependencies, and ready work on the hub instead of in separate agent notes.
+- **Hand work over without an ownership gap.** [Atomic handoff](docs/coordination-model.md#4-hand-off-and-recover) moves the held task, scope, status, and checkpoint to an online recipient without a release-and-reclaim window.
+- **Expose a dark seat.** After 30 continuous seconds without the owner's exact waiter, the hub emits one [`dark_seat_alert`](docs/protocol.md) for affected claims or assigned work, including the permanent-arm remedy; it does not release or reassign work automatically.
+- **Read the fleet from one cockpit.** [`synapse dashboard`](docs/studio.md) serves the local command centre, exact-status task columns, claims, conflicts, security posture, and an optional durable event feed; the read-only Studio projection adds no new hub authority.
+- **Connect existing agent protocols at the edge.** [`synapse mcp`](docs/mcp.md) exposes coordination tools and read-only resources over stdio; the [A2A bridge](docs/a2a-conformance.md) exposes a local Agent Card and HTTP+JSON surface while keeping its partial validation boundary explicit.
 
 ## At a glance
 
