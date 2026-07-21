@@ -65,6 +65,17 @@ All notable changes to this project are documented here.
   reconnecting workers doing catch-up. Hubs without `--require-acl` (open or
   loopback) are unaffected: the recall reads stay open, matching the
   proportionate-to-exposure posture.
+- **Breaking (secure default flip toward 1.0):** private-channel membership is now
+  **invite-only**. Previously any authenticated agent could self-join any private
+  channel by id; now the channel owner (its creator) is the sole party who may
+  invite, and an agent may join only a channel it was invited to. An invite grants
+  exactly one join and is consumed on join, so a member who leaves needs a fresh
+  invite to return. New `synapse channel invite <id> --invitee <name>` verb,
+  `CHANNEL_INVITE` wire message, and `channel_invite` client method; the verb is
+  ACL-gated like the other channel verbs (`message` permission on the channel
+  target). Migration: the owner must `channel invite` each member before they can
+  `channel join`; self-join call sites now need an invite round-trip. Channel
+  creation, leave, list, and history are unchanged.
 
 ### Fixed
 

@@ -57,6 +57,7 @@ def test_non_finite_max_channels_falls_back_to_the_default() -> None:
 def test_join_and_leave_change_membership() -> None:
     registry = ChannelRegistry()
     registry.create("c", owner="alice")
+    registry.invite("c", "alice", "bob")
 
     assert registry.join("c", "bob")[0] is True
     assert registry.members("c") == frozenset({"alice", "bob"})
@@ -97,10 +98,65 @@ def test_join_and_leave_refuse_unknown_channels() -> None:
     assert registry.owner("nope") is None
 
 
+def test_join_is_refused_without_an_invite() -> None:
+    # F3 secure default: an agent can no longer self-join a private channel by id.
+    registry = ChannelRegistry()
+    registry.create("c", owner="alice")
+
+    ok, message = registry.join("c", "bob")
+
+    assert ok is False
+    assert "not invited" in message
+    assert registry.is_member("c", "bob") is False
+
+
+def test_only_the_owner_may_invite() -> None:
+    registry = ChannelRegistry()
+    registry.create("c", owner="alice")
+    registry.invite("c", "alice", "bob")
+    registry.join("c", "bob")
+
+    # A non-owner member cannot invite; only the creator controls the audience.
+    ok, message = registry.invite("c", "bob", "carol")
+
+    assert ok is False
+    assert "only the owner may invite" in message
+    assert registry.join("c", "carol")[0] is False
+
+
+def test_invite_is_consumed_on_join_and_does_not_permit_rejoin() -> None:
+    registry = ChannelRegistry()
+    registry.create("c", owner="alice")
+    registry.invite("c", "alice", "bob")
+
+    assert registry.join("c", "bob")[0] is True
+    registry.leave("c", "bob")
+    # The invite was consumed by the first join; rejoining needs a fresh invite.
+    ok, message = registry.join("c", "bob")
+
+    assert ok is False
+    assert "not invited" in message
+
+
+def test_invite_refuses_existing_members_and_duplicate_invites() -> None:
+    registry = ChannelRegistry()
+    registry.create("c", owner="alice")
+
+    assert registry.invite("c", "alice", "")[0] is False  # blank invitee
+    assert registry.invite("c", "alice", "alice")[1].endswith("already a member of 'c'")
+    assert registry.invite("nope", "alice", "bob")[0] is False  # unknown channel
+
+    assert registry.invite("c", "alice", "bob")[0] is True
+    ok, message = registry.invite("c", "alice", "bob")
+    assert ok is False
+    assert "already invited" in message
+
+
 def test_channels_for_lists_membership_sorted() -> None:
     registry = ChannelRegistry()
     registry.create("b", owner="alice")
     registry.create("a", owner="alice")
+    registry.invite("a", "alice", "bob")
     registry.join("a", "bob")
 
     assert registry.channels_for("alice") == ["a", "b"]
@@ -112,6 +168,7 @@ def test_snapshot_is_sorted_and_json_friendly() -> None:
     registry = ChannelRegistry()
     registry.create("b", owner="alice", label="Bee")
     registry.create("a", owner="bob")
+    registry.invite("a", "bob", "carol")
     registry.join("a", "carol")
 
     snapshot = registry.snapshot()
@@ -125,6 +182,7 @@ def test_snapshot_is_sorted_and_json_friendly() -> None:
 def test_channel_history_is_member_visible_and_bounded() -> None:
     registry = ChannelRegistry()
     registry.create("ops", owner="alice")
+    registry.invite("ops", "alice", "bob")
     registry.join("ops", "bob")
 
     for msg_id in range(1, 4):

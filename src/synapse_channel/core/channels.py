@@ -13,10 +13,11 @@ every connected socket. This is audience scoping inside a trusted local hub, not
 cryptographic secrecy by itself — the hub still sees channel ids, members, and
 metadata, and any member can copy plaintext. Client-side encrypted payload
 envelopes in :mod:`synapse_channel.core.payload_crypto` can hide selected bodies
-from the hub while preserving this routing metadata. Who-may-join authorization
-is the future identity/ACL concern. This first tranche keeps join open (any
-agent may join a channel by id) so teams can route operational chatter cleanly;
-membership is explicit, so a non-member never receives a channel message.
+from the hub while preserving this routing metadata. Membership is invite-only:
+the channel owner (its creator) is the sole party who may invite a name, and an
+agent may only join a channel it has been invited to. The invite is consumed on
+join, so a member who leaves needs a fresh invite to return. Membership is
+explicit, so a non-member never receives a channel message.
 
 See :doc:`../../docs/private-channels` for the full design and the deferred
 projection work (per-channel history policy, retention boundaries, event-query
@@ -51,6 +52,9 @@ class Channel:
         Human-readable display label.
     members : set[str]
         Agent names currently joined to the channel.
+    invites : set[str]
+        Agent names the owner has invited but who have not yet joined. An invite
+        is consumed when the invitee joins, so it grants exactly one join.
     history : list[dict[str, Any]]
         Bounded live chat history visible only to current members.
     """
@@ -59,6 +63,7 @@ class Channel:
     owner: str
     label: str
     members: set[str] = field(default_factory=set)
+    invites: set[str] = field(default_factory=set)
     history: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -118,8 +123,52 @@ class ChannelRegistry:
         )
         return True, f"created channel '{cid}'"
 
+    def invite(self, channel_id: str, inviter: str, invitee: str) -> tuple[bool, str]:
+        """Record an owner-issued invite that lets ``invitee`` join once.
+
+        Only the channel owner may invite (least privilege: the creator controls
+        the audience). The invite is consumed on :meth:`join`. Inviting an existing
+        member or an already-invited name is refused so the caller gets a truthful
+        result rather than a silent no-op.
+
+        Parameters
+        ----------
+        channel_id : str
+            Channel to invite into; trimmed and length-bounded.
+        inviter : str
+            Agent issuing the invite; must be the channel owner.
+        invitee : str
+            Agent name being granted a one-time join.
+
+        Returns
+        -------
+        tuple[bool, str]
+            ``(True, message)`` when the invite is recorded, ``(False, reason)``
+            otherwise.
+        """
+        cid = self._normalise_id(channel_id)
+        channel = self._channels.get(cid)
+        if channel is None:
+            return False, f"channel '{cid}' does not exist"
+        if str(inviter or "").strip() != channel.owner:
+            return False, f"only the owner may invite to '{cid}'"
+        invitee_name = str(invitee or "").strip()
+        if not invitee_name:
+            return False, "invalid invitee"
+        if invitee_name in channel.members:
+            return False, f"'{invitee_name}' is already a member of '{cid}'"
+        if invitee_name in channel.invites:
+            return False, f"'{invitee_name}' is already invited to '{cid}'"
+        channel.invites.add(invitee_name)
+        return True, f"invited '{invitee_name}' to '{cid}'"
+
     def join(self, channel_id: str, member: str) -> tuple[bool, str]:
-        """Add ``member`` to a channel, returning whether it changed membership."""
+        """Add an invited ``member`` to a channel, consuming its one-time invite.
+
+        The owner is always allowed (it is already a member from creation); every
+        other agent must hold an owner-issued invite. A join without an invite is
+        refused, so an agent can no longer self-join a private channel by id.
+        """
         cid = self._normalise_id(channel_id)
         channel = self._channels.get(cid)
         if channel is None:
@@ -129,7 +178,10 @@ class ChannelRegistry:
             return False, "invalid member"
         if member_name in channel.members:
             return False, f"already a member of '{cid}'"
+        if member_name != channel.owner and member_name not in channel.invites:
+            return False, f"not invited to '{cid}'"
         channel.members.add(member_name)
+        channel.invites.discard(member_name)
         return True, f"joined '{cid}'"
 
     def leave(self, channel_id: str, member: str) -> tuple[bool, str]:

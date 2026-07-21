@@ -159,8 +159,12 @@ class AgentSendMixin:
         """Create a private channel owned by this agent (its first member)."""
         await self.send_message(MessageType.CHANNEL_CREATE, channel=channel, label=label)
 
+    async def channel_invite(self: _OutboundAgent, channel: str, invitee: str) -> None:
+        """Invite ``invitee`` to a channel this agent owns (one-time join grant)."""
+        await self.send_message(MessageType.CHANNEL_INVITE, channel=channel, invitee=invitee)
+
     async def channel_join(self: _OutboundAgent, channel: str) -> None:
-        """Join this agent to a private channel."""
+        """Join this agent to a private channel it was invited to."""
         await self.send_message(MessageType.CHANNEL_JOIN, channel=channel)
 
     async def channel_leave(self: _OutboundAgent, channel: str) -> None:

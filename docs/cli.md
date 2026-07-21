@@ -880,7 +880,8 @@ Private channels scope delivery without encrypting payloads:
 
 ```bash
 synapse channel create ops --name alice
-synapse channel join ops --name bob
+synapse channel invite ops --invitee bob --name alice   # owner-only; grants bob one join
+synapse channel join ops --name bob                     # refused without an invite
 synapse send --name alice --channel ops "operator note"
 synapse channel history ops --name bob --limit 20
 synapse relay ./feed.ndjson --channel ops

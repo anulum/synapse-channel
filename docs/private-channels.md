@@ -14,11 +14,13 @@ The private-channel runtime is implemented for local coordination. The hub keeps
 :class:`~synapse_channel.core.channels.ChannelRegistry`, and:
 
 - `synapse channel create <id>` makes a channel whose creator is its first
-  member; `synapse channel join <id>` / `leave <id>` change membership;
-  `synapse channel list` shows the channels an agent belongs to; and
-  `synapse channel history <id>` returns the retained live history only to a
-  current member. The client exposes `channel_create` / `channel_join` /
-  `channel_leave` / `request_channels` / `request_channel_history`.
+  member and sole inviter; `synapse channel invite <id> --invitee <name>` (owner
+  only) grants one agent a one-time join; `synapse channel join <id>` (only after
+  an invite) / `leave <id>` change membership; `synapse channel list` shows the
+  channels an agent belongs to; and `synapse channel history <id>` returns the
+  retained live history only to a current member. The client exposes
+  `channel_create` / `channel_invite` / `channel_join` / `channel_leave` /
+  `request_channels` / `request_channel_history`.
 - `synapse send --channel <id>` (and `SynapseAgent.chat(..., channel=<id>)`)
   delivers a chat **only to that channel's online members**. A non-member sender
   is refused; a non-member never receives the body. Channel chat is not
@@ -34,9 +36,14 @@ The private-channel runtime is implemented for local coordination. The hub keeps
   metadata-only: sequence, timestamp, kind, sender, target, channel id, message
   id, and payload byte length, not the private payload body.
 
-Join is open in this runtime (any agent may join a channel by id) so teams can
-route operational chatter cleanly; who-may-join authorization is the future
-identity/ACL layer. Membership is in-memory and lives for the hub process.
+Membership is invite-only in this runtime: the channel owner (its creator) is the
+sole party who may invite a name, and an agent may join only a channel it was
+invited to — an invite grants exactly one join and is consumed on join, so a
+member who leaves needs a fresh invite to return. This is least-privilege
+who-may-join authorization; the broader identity/ACL layer (`--require-acl` gates
+the `channel_invite`/`channel_join` verbs through the `message` permission on the
+channel target) refines it further. Membership is in-memory and lives for the hub
+process.
 The live history retention boundary is the hub's `max_history` window per
 channel. Durable event-store channel records are available for forensic
 filtering, but channel membership itself is not durable across hub restarts.

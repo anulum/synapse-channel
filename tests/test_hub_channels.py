@@ -35,6 +35,12 @@ async def test_channel_chat_reaches_only_members() -> None:
             assert created["ok"] is True
             assert created["channel"] == "c"
 
+            await send_json(
+                alpha, sender="ALPHA", type="channel_invite", channel="c", invitee="BETA"
+            )
+            invited = await read_until_type(alpha, "channel_result")
+            assert invited["ok"] is True
+
             await send_json(beta, sender="BETA", type="channel_join", channel="c")
             joined = await read_until_type(beta, "channel_result")
             assert joined["ok"] is True
@@ -83,6 +89,10 @@ async def test_channel_chat_body_is_not_written_to_the_hub_log(
             await _bind(beta, "BETA")
             await send_json(alpha, sender="ALPHA", type="channel_create", channel="c")
             await read_until_type(alpha, "channel_result")
+            await send_json(
+                alpha, sender="ALPHA", type="channel_invite", channel="c", invitee="BETA"
+            )
+            await read_until_type(alpha, "channel_result")
             await send_json(beta, sender="BETA", type="channel_join", channel="c")
             await read_until_type(beta, "channel_result")
 
@@ -94,6 +104,45 @@ async def test_channel_chat_body_is_not_written_to_the_hub_log(
 
             assert "topsecretbody" not in caplog.text
             assert "body redacted" in caplog.text
+
+
+async def test_channel_invite_is_owner_only_and_gates_join() -> None:
+    # F3: only the owner may invite; a non-owner invite is refused and never leaks
+    # the roster, and an uninvited agent cannot join.
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        async with connect(uri) as alpha, connect(uri) as beta, connect(uri) as gamma:
+            await _bind(alpha, "ALPHA")
+            await _bind(beta, "BETA")
+            await _bind(gamma, "GAMMA")
+            await send_json(alpha, sender="ALPHA", type="channel_create", channel="c")
+            await read_until_type(alpha, "channel_result")
+
+            # An uninvited agent cannot self-join.
+            await send_json(gamma, sender="GAMMA", type="channel_join", channel="c")
+            refused_join = await read_until_type(gamma, "channel_result")
+            assert refused_join["ok"] is False
+            assert "not invited" in refused_join["payload"]
+            assert refused_join["members"] == []
+
+            # A non-owner cannot invite, and the refusal leaks no roster.
+            await send_json(
+                gamma, sender="GAMMA", type="channel_invite", channel="c", invitee="BETA"
+            )
+            refused_invite = await read_until_type(gamma, "channel_result")
+            assert refused_invite["ok"] is False
+            assert "only the owner may invite" in refused_invite["payload"]
+            assert refused_invite["members"] == []
+
+            # The owner invites BETA, who may then join.
+            await send_json(
+                alpha, sender="ALPHA", type="channel_invite", channel="c", invitee="BETA"
+            )
+            invited = await read_until_type(alpha, "channel_result")
+            assert invited["ok"] is True
+            await send_json(beta, sender="BETA", type="channel_join", channel="c")
+            joined = await read_until_type(beta, "channel_result")
+            assert joined["ok"] is True
+            assert sorted(joined["members"]) == ["ALPHA", "BETA"]
 
 
 async def test_failed_channel_ops_do_not_leak_the_member_roster() -> None:
@@ -123,6 +172,10 @@ async def test_leaving_a_channel_does_not_echo_the_remaining_roster() -> None:
             await _bind(alpha, "ALPHA")
             await _bind(beta, "BETA")
             await send_json(alpha, sender="ALPHA", type="channel_create", channel="c")
+            await read_until_type(alpha, "channel_result")
+            await send_json(
+                alpha, sender="ALPHA", type="channel_invite", channel="c", invitee="BETA"
+            )
             await read_until_type(alpha, "channel_result")
             await send_json(beta, sender="BETA", type="channel_join", channel="c")
             await read_until_type(beta, "channel_result")
@@ -164,6 +217,10 @@ async def test_channel_chat_returns_a_delivery_receipt_when_requested() -> None:
             await _bind(alpha, "ALPHA")
             await _bind(beta, "BETA")
             await send_json(alpha, sender="ALPHA", type="channel_create", channel="c", label="C")
+            await read_until_type(alpha, "channel_result")
+            await send_json(
+                alpha, sender="ALPHA", type="channel_invite", channel="c", invitee="BETA"
+            )
             await read_until_type(alpha, "channel_result")
             await send_json(beta, sender="BETA", type="channel_join", channel="c")
             await read_until_type(beta, "channel_result")

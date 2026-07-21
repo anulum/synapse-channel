@@ -143,9 +143,24 @@ async def test_send_channel_op_dispatches_history_request() -> None:
 
     agent = _Agent()
 
-    await cli_channels._send_channel_op(cast(Any, agent), "history", "ops", "")
+    await cli_channels._send_channel_op(cast(Any, agent), "history", "ops", "", "")
 
     assert agent.requested == ("ops", 20)
+
+
+async def test_send_channel_op_dispatches_invite() -> None:
+    class _Agent:
+        def __init__(self) -> None:
+            self.invited: tuple[str, str] | None = None
+
+        async def channel_invite(self, channel: str, invitee: str) -> None:
+            self.invited = (channel, invitee)
+
+    agent = _Agent()
+
+    await cli_channels._send_channel_op(cast(Any, agent), "invite", "ops", "", "P/bob")
+
+    assert agent.invited == ("ops", "P/bob")
 
 
 def test_print_reply_ok_without_members(capsys: pytest.CaptureFixture[str]) -> None:
@@ -172,6 +187,19 @@ async def test_channel_cli_join_and_leave_against_real_hub(
             ready_timeout=2.0,
             response_timeout=2.0,
         )
+        capsys.readouterr()
+        invited = await cli_channels._run_channel_command(
+            uri=uri,
+            name="alice",
+            token=None,
+            command="invite",
+            channel="ops",
+            label="",
+            invitee="bob",
+            ready_timeout=2.0,
+            response_timeout=2.0,
+        )
+        assert invited == 0
         capsys.readouterr()
         joined = await cli_channels._run_channel_command(
             uri=uri,

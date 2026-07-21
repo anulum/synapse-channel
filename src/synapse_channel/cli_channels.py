@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — private-channel membership CLI
-"""Command-line surface for private channels: create, join, leave, list.
+"""Command-line surface for private channels: create, invite, join, leave, list.
 
 A private channel is an audience-scoped recipient set. Once members have joined,
 ``synapse send --channel <id>`` delivers a message only to that channel's online
@@ -40,10 +40,14 @@ _RESULT_TYPES = {
 }
 
 
-async def _send_channel_op(agent: SynapseAgent, command: str, channel: str, label: str) -> None:
+async def _send_channel_op(
+    agent: SynapseAgent, command: str, channel: str, label: str, invitee: str
+) -> None:
     """Send the channel operation named by ``command`` on a connected agent."""
     if command == "create":
         await agent.channel_create(channel, label=label)
+    elif command == "invite":
+        await agent.channel_invite(channel, invitee)
     elif command == "join":
         await agent.channel_join(channel)
     elif command == "leave":
@@ -64,6 +68,7 @@ async def _run_channel_command(
     label: str,
     ready_timeout: float,
     response_timeout: float,
+    invitee: str = "",
     limit: int = 20,
     agent_factory: AgentFactory = SynapseAgent,
 ) -> int:
@@ -76,9 +81,11 @@ async def _run_channel_command(
     token : str or None
         Shared-secret token for a secured hub.
     command : str
-        One of ``create``, ``join``, ``leave``, or ``list``.
+        One of ``create``, ``invite``, ``join``, ``leave``, or ``list``.
     channel, label : str
         Channel id and display label (label is used only by ``create``).
+    invitee : str
+        Agent identity to invite (used only by ``invite``).
     ready_timeout, response_timeout : float
         Seconds to await hub readiness and the reply.
     agent_factory : AgentFactory, optional
@@ -111,7 +118,7 @@ async def _run_channel_command(
         if command == "history":
             await agent.request_channel_history(channel, limit=limit)
         else:
-            await _send_channel_op(agent, command, channel, label)
+            await _send_channel_op(agent, command, channel, label, invitee)
         deadline = asyncio.get_running_loop().time() + max(0.0, response_timeout)
         while not reply and asyncio.get_running_loop().time() < deadline:
             await asyncio.sleep(0.025)
@@ -166,6 +173,7 @@ def _cmd_channel(args: argparse.Namespace) -> int:
             label=getattr(args, "label", ""),
             ready_timeout=args.ready_timeout,
             response_timeout=args.response_timeout,
+            invitee=getattr(args, "invitee", ""),
             limit=getattr(args, "limit", 20),
         )
     )
@@ -202,7 +210,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     _add_common(create)
     create.set_defaults(func=_cmd_channel)
 
-    join = nested.add_parser("join", help="Join a private channel.")
+    invite = nested.add_parser("invite", help="Invite an agent to a channel you own.")
+    invite.add_argument("channel", help="Channel id.")
+    invite.add_argument("--invitee", required=True, help="Agent identity to invite.")
+    _add_common(invite)
+    invite.set_defaults(func=_cmd_channel)
+
+    join = nested.add_parser("join", help="Join a private channel you were invited to.")
     join.add_argument("channel", help="Channel id.")
     _add_common(join)
     join.set_defaults(func=_cmd_channel)

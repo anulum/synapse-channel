@@ -39,6 +39,14 @@ async def test_encrypted_channel_send_delivers_ciphertext_only_to_member(
             await alice.recorder.wait_for(
                 lambda item: item.get("type") == "channel_result" and item.get("ok") is True
             )
+            await alice.agent.channel_invite("ops", "bob")
+            await alice.recorder.wait_for(
+                lambda item: (
+                    item.get("type") == "channel_result"
+                    and item.get("ok") is True
+                    and "invited" in str(item.get("payload", ""))
+                )
+            )
             await bob.agent.channel_join("ops")
             await bob.recorder.wait_for(
                 lambda item: item.get("type") == "channel_result" and item.get("ok") is True

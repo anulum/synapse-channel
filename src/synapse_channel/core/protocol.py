@@ -311,6 +311,7 @@ class MessageType:
     RECALL_LOG = "recall_log"
     FINDING = "finding"
     CHANNEL_CREATE = "channel_create"
+    CHANNEL_INVITE = "channel_invite"
     CHANNEL_JOIN = "channel_join"
     CHANNEL_LEAVE = "channel_leave"
     CHANNEL_LIST_REQUEST = "channel_list_request"

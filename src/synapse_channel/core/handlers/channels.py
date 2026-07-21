@@ -69,10 +69,25 @@ async def handle_channel_create(
     await _reply(hub, websocket, sender=sender, channel=channel, ok=ok, message=message)
 
 
+async def handle_channel_invite(
+    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+) -> None:
+    """Record an owner-issued invite granting one join to another agent.
+
+    Only the channel owner may invite; a non-owner request is refused. The private
+    reply follows the same roster-disclosure rule as the other verbs — a non-owner
+    (who is not a member) never learns the channel's membership.
+    """
+    channel = str(data.get("channel") or "").strip()
+    invitee = str(data.get("invitee") or "").strip()
+    ok, message = hub.channels.invite(channel, inviter=sender, invitee=invitee)
+    await _reply(hub, websocket, sender=sender, channel=channel, ok=ok, message=message)
+
+
 async def handle_channel_join(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
-    """Join the requester to a private channel."""
+    """Join the requester to a private channel it was invited to."""
     channel = str(data.get("channel") or "").strip()
     ok, message = hub.channels.join(channel, sender)
     await _reply(hub, websocket, sender=sender, channel=channel, ok=ok, message=message)

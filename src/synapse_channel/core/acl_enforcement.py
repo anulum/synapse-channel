@@ -57,7 +57,12 @@ _BOARD_TYPES = frozenset(
     }
 )
 _CHANNEL_TYPES = frozenset(
-    {MessageType.CHANNEL_CREATE, MessageType.CHANNEL_JOIN, MessageType.CHANNEL_LEAVE}
+    {
+        MessageType.CHANNEL_CREATE,
+        MessageType.CHANNEL_INVITE,
+        MessageType.CHANNEL_JOIN,
+        MessageType.CHANNEL_LEAVE,
+    }
 )
 _RECALL_TYPES = frozenset({MessageType.HISTORY_REQUEST, MessageType.RESUME_REQUEST})
 """Read verbs that pull the hub's global chat history / resume backlog.
