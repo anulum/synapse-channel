@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "link-check.yml"
 
-_CHECKOUT_SHA = "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
+_CHECKOUT_SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1"
 _LYCHEE_SHA = "e7477775783ea5526144ba13e8db5eec57747ce8"
 _UPLOAD_SHA = "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
 _ACCEPT = "200,204,206,301,302,303,307,308,403,429"
