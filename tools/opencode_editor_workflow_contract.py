@@ -46,8 +46,9 @@ def assert_editor_workflow_contract(
     ------
     EditorWorkflowError
         If YAML is malformed, mappings contain duplicate keys, the gating job
-        contains ``continue-on-error``, or the matrix widens beyond one exact
-        ``include`` list containing the expected lanes.
+        contains ``continue-on-error``, does not set ``fail-fast: false``, or the
+        matrix widens beyond one exact ``include`` list containing the expected
+        lanes.
     """
     workflow = load_workflow_yaml(text, path, error_cls=EditorWorkflowError, label=_LABEL)
     jobs = require_object(
@@ -65,6 +66,10 @@ def assert_editor_workflow_contract(
         "editor workflow editor-client strategy",
         error_cls=EditorWorkflowError,
     )
+    if strategy.get("fail-fast") is not False:
+        raise EditorWorkflowError(
+            "editor workflow must set fail-fast: false so no pinned real-client lane is masked"
+        )
     matrix = require_object(
         strategy.get("matrix"),
         "editor workflow editor-client matrix",
