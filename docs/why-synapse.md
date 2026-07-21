@@ -124,7 +124,8 @@ Confidence about what it is comes with honesty about what it is not:
   gates a mutation** unless you opt into stricter enforcement.
 
 These are engineering boundaries, documented so an evaluator can decide with eyes
-open. See [architecture](../ARCHITECTURE.md) and [FAQ](faq.md) for the full list.
+open. See [architecture](https://github.com/anulum/synapse-channel/blob/main/ARCHITECTURE.md)
+and [FAQ](faq.md) for the full list.
 
 ## Where it is going
 
