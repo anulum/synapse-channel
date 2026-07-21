@@ -9,69 +9,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Collection
 from pathlib import Path
-from typing import Any, cast
+
+from tools.opencode_workflow_yaml import (
+    contains_mapping_key,
+    load_workflow_yaml,
+    require_object,
+)
+
+_LABEL = "editor workflow"
 
 
 class EditorWorkflowError(ValueError):
     """The editor workflow does not preserve the required release gate."""
-
-
-def _object(value: object, where: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise EditorWorkflowError(f"{where} must be an object")
-    return value
-
-
-def _load_editor_workflow(text: str, path: Path) -> Mapping[str, Any]:
-    import yaml
-
-    unique_key_loader = cast(Any, type("_UniqueKeyLoader", (yaml.SafeLoader,), {}))
-
-    def construct_unique_mapping(
-        loader: Any,
-        node: Any,
-        deep: bool = False,
-    ) -> dict[object, object]:
-        loader.flatten_mapping(node)
-        mapping: dict[object, object] = {}
-        for key_node, value_node in node.value:
-            key = loader.construct_object(key_node, deep=deep)
-            try:
-                duplicate = key in mapping
-            except TypeError as exc:
-                raise EditorWorkflowError(
-                    "editor workflow YAML mapping keys must be hashable"
-                ) from exc
-            if duplicate:
-                raise EditorWorkflowError(f"editor workflow YAML duplicates mapping key {key!r}")
-            mapping[key] = loader.construct_object(value_node, deep=deep)
-        return mapping
-
-    unique_key_loader.add_constructor(
-        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
-        construct_unique_mapping,
-    )
-    loader = unique_key_loader(text)
-    try:
-        document = cast(object, loader.get_single_data())
-    except yaml.YAMLError as exc:
-        raise EditorWorkflowError(f"cannot parse editor workflow YAML: {path}") from exc
-    finally:
-        cast(Any, loader).dispose()
-    return _object(document, "editor workflow")
-
-
-def _contains_mapping_key(value: object, expected: str) -> bool:
-    if isinstance(value, Mapping):
-        return any(
-            key == expected or _contains_mapping_key(child, expected)
-            for key, child in value.items()
-        )
-    if isinstance(value, list):
-        return any(_contains_mapping_key(child, expected) for child in value)
-    return False
 
 
 def assert_editor_workflow_contract(
@@ -98,13 +49,27 @@ def assert_editor_workflow_contract(
         contains ``continue-on-error``, or the matrix widens beyond one exact
         ``include`` list containing the expected lanes.
     """
-    workflow = _load_editor_workflow(text, path)
-    jobs = _object(workflow.get("jobs"), "editor workflow.jobs")
-    editor_job = _object(jobs.get("editor-client"), "editor workflow.jobs.editor-client")
-    if _contains_mapping_key(editor_job, "continue-on-error"):
+    workflow = load_workflow_yaml(text, path, error_cls=EditorWorkflowError, label=_LABEL)
+    jobs = require_object(
+        workflow.get("jobs"), "editor workflow.jobs", error_cls=EditorWorkflowError
+    )
+    editor_job = require_object(
+        jobs.get("editor-client"),
+        "editor workflow.jobs.editor-client",
+        error_cls=EditorWorkflowError,
+    )
+    if contains_mapping_key(editor_job, "continue-on-error"):
         raise EditorWorkflowError("editor workflow must gate every pinned real-client lane")
-    strategy = _object(editor_job.get("strategy"), "editor workflow editor-client strategy")
-    matrix = _object(strategy.get("matrix"), "editor workflow editor-client matrix")
+    strategy = require_object(
+        editor_job.get("strategy"),
+        "editor workflow editor-client strategy",
+        error_cls=EditorWorkflowError,
+    )
+    matrix = require_object(
+        strategy.get("matrix"),
+        "editor workflow editor-client matrix",
+        error_cls=EditorWorkflowError,
+    )
     matrix_fields = {str(key) for key in matrix}
     if matrix_fields != {"include"}:
         raise EditorWorkflowError(
@@ -116,7 +81,11 @@ def assert_editor_workflow_contract(
         raise EditorWorkflowError("editor workflow editor-client matrix.include must be an array")
     lanes: list[str] = []
     for index, value in enumerate(include):
-        row = _object(value, f"editor workflow editor-client matrix.include[{index}]")
+        row = require_object(
+            value,
+            f"editor workflow editor-client matrix.include[{index}]",
+            error_cls=EditorWorkflowError,
+        )
         lane = row.get("client")
         if not isinstance(lane, str):
             raise EditorWorkflowError(
