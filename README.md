@@ -14,8 +14,12 @@ SYNAPSE CHANNEL — repository overview
 </p>
 
 <p align="center">
-  <strong>Stop parallel AI coding agents from clobbering each other's files.</strong><br>
-  Local-first coordination bus — file-scope claims, a shared plan, and durable leases — for one repository or a whole ecosystem of them.
+  <strong>The local-first coordination bus for fleets of AI agents.</strong><br>
+  One WebSocket hub is the shared source of truth for presence, file-scope claims, a shared plan, task status, and capabilities — for agents working in one repository or across a whole ecosystem of them.
+</p>
+
+<p align="center">
+  <em>Flagship example:</em> stop parallel AI coding agents from clobbering each other's files — a file-scope claim refuses the overlap <em>before</em> two agents edit the same file.
 </p>
 
 <p align="center">
@@ -55,6 +59,11 @@ WebSocket hub is the shared source of truth for **presence**, **work claims**,
 **chat**, **task status**, and **resource offers**: agents address each other
 across projects and share one plan, while file-scope claims keep the agents in any
 one repository off each other's files.
+
+> **New here?** Read [**Why SYNAPSE CHANNEL**](docs/why-synapse.md) — a
+> five-minute read on what it is, what you build on it, how it differs from the
+> tools next to it, and why coordination becomes the bottleneck once you run more
+> than one agent.
 
 > **Project lineage:** SYNAPSE CHANNEL dates back to **September 2025**.
 
@@ -1456,7 +1465,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | CLI subcommands | 182 |
 | Test functions | 8692 |
 | Benchmark harnesses | 6 |
-| Documentation pages | 58 |
+| Documentation pages | 59 |
 | GitHub Actions workflows | 25 |
 | Optional-dependency groups | 13 |
 

@@ -1,6 +1,9 @@
 # SYNAPSE CHANNEL
 
-**Stop parallel AI coding agents from clobbering each other's files.**
+**The local-first coordination bus for fleets of AI agents.**
+
+*Flagship example: stop parallel AI coding agents from clobbering each other's
+files — a file-scope claim refuses the overlap before two agents edit the same file.*
 
 A local-first coordination bus for a fleet of AI agents working in parallel —
 within one codebase or across a whole ecosystem of them. A single WebSocket hub is
@@ -12,6 +15,10 @@ The bus is transport-light (one runtime dependency, `websockets`), hub-centric b
 design, and runs entirely on the local machine. Model workers reply on-channel
 through any OpenAI-compatible endpoint, including a local Ollama server, with a
 deterministic rule-based fallback for offline use.
+
+> **New here?** Read [**Why SYNAPSE CHANNEL**](why-synapse.md) — a five-minute
+> read on what it is, what you build on it, how it differs from the tools next to
+> it, and why coordination is the bottleneck once you run more than one agent.
 
 Current `0.x` releases are pre-1.0 development releases. `1.0.0` is planned as
 the first stable commercial release of SYNAPSE CHANNEL, with stable operational
