@@ -456,8 +456,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     hub.add_argument(
         "--insecure-off-loopback",
         action="store_true",
-        help="Bind a non-loopback host even without a token (and metrics token); by "
-        "default such an exposed bind is refused rather than only warned about.",
+        help="Bind a non-loopback host even without a token (and metrics token), or "
+        "with a token but over plaintext ws:// without native TLS; by default such "
+        "an exposed bind is refused rather than only warned about.",
     )
     hub.add_argument(
         "--allow-origin",

@@ -358,19 +358,16 @@ def test_guard_exposure_warns_on_unauthenticated_metrics_when_overridden(
     assert any("metrics" in r.message for r in caplog.records)
 
 
-def test_guard_exposure_passes_when_metrics_token_set(
+def test_guard_exposure_refuses_metrics_token_set_over_plaintext(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    # Both tokens satisfy the refusal guard; the plaintext ws:// bind still
-    # carries the transport advisory, and TLS silences it.
+    # Both tokens satisfy the connect and metrics guards, but the plaintext ws://
+    # bind is refused off loopback from the 1.0 posture; native TLS clears it.
     hub = SynapseHub(
         authenticator=TokenAuthenticator(["t"]), enable_metrics=True, metrics_token="m"
     )
-    with caplog.at_level("WARNING", logger="synapse.hub"):
+    with pytest.raises(InsecureBindError, match="plaintext ws://"):
         hub._guard_exposure("0.0.0.0")
-    assert len(caplog.records) == 1
-    assert "plaintext ws://" in caplog.text
-    caplog.clear()
     with caplog.at_level("WARNING", logger="synapse.hub"):
         hub._guard_exposure("0.0.0.0", tls_active=True)
     assert caplog.records == []

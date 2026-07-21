@@ -813,7 +813,11 @@ token (and `--metrics-token` when metrics are on), or explicitly pass
 cryptographic identity system.
 For native `wss://`, pass both `--tls-certfile` and `--tls-keyfile`. TLS protects
 the transport but does not replace `--token`; an off-loopback hub still needs the
-shared secret unless you explicitly opt into `--insecure-off-loopback`.
+shared secret unless you explicitly opt into `--insecure-off-loopback`. Off
+loopback TLS is also required, not just recommended: a token presented over
+plaintext `ws://` off loopback is **refused** (the token and every frame would be
+readable on the wire), so add native TLS or a `wss://` proxy — or pass
+`--insecure-off-loopback` to accept the risk on a trusted LAN.
 
 ### MCP server face
 
@@ -1450,7 +1454,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 713 |
 | Wire message types | 79 |
 | CLI subcommands | 181 |
-| Test functions | 8663 |
+| Test functions | 8664 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 58 |
 | GitHub Actions workflows | 24 |

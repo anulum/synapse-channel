@@ -168,6 +168,16 @@ you enable `--metrics`, require `--metrics-token` so the endpoint does not leak 
 metadata. To bind an unauthenticated off-loopback hub anyway (a trusted private network),
 pass `--insecure-off-loopback` to downgrade the refusal to a warning.
 
+## The hub refuses to start with a token over plaintext `ws://` off loopback
+
+Binding off loopback *with* `--token` but without native TLS is also **refused**:
+the shared token and every coordination frame would travel plaintext `ws://` and
+be readable on the network path. Add native TLS (`--tls-certfile` and
+`--tls-keyfile`) or front the hub with a `wss://`-terminating reverse proxy on a
+private interface. To bind token-over-plaintext anyway on a trusted private
+network, pass `--insecure-off-loopback` to downgrade the refusal to a warning;
+`--paranoid` makes native WSS mandatory with no override.
+
 ## The hub reports degraded health and refuses mutations
 
 Startup found one or more malformed rows in the durable SQLite event log. The hub

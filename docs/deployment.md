@@ -284,12 +284,13 @@ operator on one machine. Before exposing it beyond `localhost`:
   be PEM files readable by the hub process), or terminate TLS at a reverse
   proxy and keep the hub bound to a private interface behind it. Native TLS
   protects the transport; it does not replace `--token` or per-host limits.
-- A token alone still binds: `synapse hub --host 0.0.0.0 --token
-  "$SYNAPSE_TOKEN"`. The hub **refuses to start** off-loopback without a token
-  (pass `--insecure-off-loopback` to accept the risk and bind anyway), and a
-  token presented over plaintext `ws://` logs a startup advisory — the shared
-  token and every coordination frame are readable on the network path. Treat
-  token-without-TLS as the fallback for a trusted LAN, not the team default.
+- A token alone is not enough off loopback: `synapse hub --host 0.0.0.0 --token
+  "$SYNAPSE_TOKEN"` is **refused**, because the shared token and every
+  coordination frame would ride plaintext `ws://` readable on the network path.
+  The hub also **refuses to start** off-loopback without any token. Either add
+  native TLS (above) or a `wss://` proxy, or pass `--insecure-off-loopback` to
+  accept the risk and bind anyway on a trusted LAN. Treat token-without-TLS as an
+  explicit opt-in fallback, not the team default.
 - Per-host connection churn is capped by default (`--max-connections-per-host`,
   default **32**; pass `0` to disable). This counts simultaneous sockets,
   including sockets still in their first-frame window, and complements

@@ -940,9 +940,12 @@ synapse hub --bridge-exposed                       # declare A2A/MCP bridge for 
 ```
 
 Binding a non-loopback host without a token (and, with `--metrics`, a metrics
-token) is **refused** by default — the hub will not start exposed by accident;
-`--insecure-off-loopback` downgrades that to a warning for a trusted private
-network. `--max-connections-per-host` is a connection-count cap keyed by the
+token) is **refused** by default — the hub will not start exposed by accident.
+A token presented over plaintext `ws://` off loopback is **also refused**: the
+token and every coordination frame would be readable on the wire, so an
+off-loopback bind requires native TLS (`--tls-certfile`/`--tls-keyfile`) or a
+`wss://` proxy. `--insecure-off-loopback` downgrades either refusal to a warning
+for a trusted private network. `--max-connections-per-host` is a connection-count cap keyed by the
 remote host (default **32**; pass `0` to disable); it is separate from
 `--host-rate`, which meters inbound frames from that host. The hub always
 installs a handshake guard: browser `Origin` values are refused unless listed

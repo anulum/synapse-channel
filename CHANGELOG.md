@@ -40,6 +40,21 @@ All notable changes to this project are documented here.
   invariants (`tests/test_coordination_spec_model.py`) and a drift guard binding
   the document to the implementation (`tests/test_coordination_spec.py`).
 
+### Changed
+
+- **Breaking (secure default flip toward 1.0):** a hub that binds off loopback
+  with a connect token but over plaintext `ws://` (no native TLS) is now
+  **refused at startup** instead of merely logging an advisory. The shared token
+  and every coordination frame would be readable on the network path, so the
+  off-loopback bind now requires native TLS (`--tls-certfile`/`--tls-keyfile`) or
+  a `wss://`-terminating proxy. This joins the existing token-less and
+  metrics-token refusals under the same gate. Migration: front the hub with TLS
+  (or a `wss://` proxy) when exposing it off loopback; on a trusted private
+  network where you accept plaintext, pass `--insecure-off-loopback` to downgrade
+  the refusal to a warning (the same override that already covers the token-less
+  case). Loopback binds and TLS-terminated binds are unaffected; `--paranoid` and
+  `--secure` already required native WSS.
+
 ### Fixed
 
 - `handoff` now enforces the same file-scope mutual exclusion as a direct claim:

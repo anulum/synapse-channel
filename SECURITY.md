@@ -38,17 +38,19 @@ Security here is proportionate to exposure, not one-size-fits-all. Pick the
 profile that matches where the hub is reachable from, and apply its controls; a
 control is *required* where the table says so, and the hub refuses to start when
 a required exposure guard is missing (override only with `--insecure-off-loopback`).
-Where the table says *recommended*, the hub still starts but warns: a token
-presented off loopback over plaintext `ws://` logs a startup advisory (the
-token and every frame are readable on the network path) — native WSS
-(`--tls-certfile`/`--tls-keyfile`) or a `wss://` proxy silences it, and
-`--paranoid` makes native WSS mandatory.
+Transport encryption is one of those guards off loopback: a token presented off
+loopback over plaintext `ws://` is **refused**, not merely warned about (the token
+and every frame would be readable on the network path). Terminate TLS natively
+(`--tls-certfile`/`--tls-keyfile`) or front the hub with a `wss://` proxy to
+satisfy it; `--insecure-off-loopback` downgrades the refusal to a warning for a
+trusted private network, and `--paranoid` makes native WSS mandatory with no
+override.
 
 | Control | local-dev | single-user workstation | team LAN | internet-exposed (behind reverse proxy) |
 |---|---|---|---|---|
 | Bind | loopback | loopback | private interface | loopback behind the proxy |
 | Connect token (`--token-file`) | optional | recommended | **required** | **required** |
-| Transport encryption (TLS / WSS) | — | — | recommended | **required** (proxy or `--tls-certfile`) |
+| Transport encryption (TLS / WSS) | — | — | **required** off-loopback (proxy or `--tls-certfile`; override `--insecure-off-loopback`) | **required** (proxy or `--tls-certfile`) |
 | ACL policy (`--require-acl`) | — | optional | recommended | **required** |
 | Per-message auth (`--require-message-auth`) | — | optional | recommended | **required** |
 | Metrics token (`--metrics-token`) | — | required if `--metrics` | **required** if `--metrics` | **required** if `--metrics` |

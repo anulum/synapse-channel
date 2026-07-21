@@ -1092,8 +1092,9 @@ class SynapseHub:
         Thin wrapper over
         :meth:`~synapse_channel.core.hub_ingress.HubIngress.guard_exposure`, kept
         because :meth:`serve` and tests call ``hub._guard_exposure`` directly.
-        ``tls_active`` states whether the bind terminates TLS; without it a
-        token off loopback logs the plaintext-transport advisory.
+        ``tls_active`` states whether the bind terminates TLS; without it a token
+        off loopback is refused as a plaintext-transport exposure (downgradable
+        with ``--insecure-off-loopback``).
         """
         self._ingress.guard_exposure(host, tls_active=tls_active)
 

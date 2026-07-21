@@ -217,13 +217,11 @@ def test_guard_exposure_silent_on_loopback(caplog: pytest.LogCaptureFixture) -> 
     assert caplog.records == []
 
 
-def test_guard_exposure_passes_when_token_set(caplog: pytest.LogCaptureFixture) -> None:
-    # A token still binds off loopback, but over plaintext ws:// it now carries
-    # the transport advisory instead of silence (never a refusal).
-    with caplog.at_level("WARNING", logger="synapse.hub"):
+def test_guard_exposure_refuses_token_over_plaintext_off_loopback() -> None:
+    # From the 1.0 posture a token over plaintext ws:// off loopback is a refusal,
+    # not an advisory: the token and every frame would be readable on the wire.
+    with pytest.raises(InsecureBindError, match="plaintext ws://"):
         _secured_hub()._guard_exposure("0.0.0.0")
-    assert len(caplog.records) == 1
-    assert "plaintext ws://" in caplog.text
 
 
 def test_guard_exposure_silent_when_token_rides_tls(

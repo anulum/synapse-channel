@@ -182,11 +182,14 @@ class HubIngress:
         )
 
     def exposure_problems(self, host: str) -> list[str]:
-        """Return the exposure problems for binding on ``host`` (empty when safe).
+        """Return the transport-independent exposure problems for ``host``.
 
         A loopback bind is always safe. Off loopback, a hub with no token — or
         with metrics served but no metrics token, or with the metrics query-string
         token accepted (it would leak into URL logs) — is a human-readable problem.
+        The transport-dependent plaintext-token refusal is applied at bind time by
+        :meth:`guard_exposure`, so a token-set hub can report nothing here yet still
+        be refused when it would bind off loopback without TLS.
         """
         return exposure_problems(
             host,
@@ -203,10 +206,10 @@ class HubIngress:
         unauthenticated. By default this raises
         :class:`~synapse_channel.core.hub_exposure.InsecureBindError` so the bus is
         never accidentally exposed; with ``insecure_off_loopback`` set the problems
-        are logged as warnings and the bind proceeds. A token presented over
-        plaintext ``ws://`` off loopback additionally logs an advisory warning
-        (never a refusal — the documented team-LAN posture keeps starting);
-        pass ``tls_active=True`` when the bind terminates TLS.
+        are logged as warnings and the bind proceeds. From the 1.0 posture a token
+        presented over plaintext ``ws://`` off loopback is one of those refusals
+        (the token and every frame would be readable on the wire); pass
+        ``tls_active=True`` when the bind terminates TLS to clear it.
         """
         guard_exposure(
             host,
