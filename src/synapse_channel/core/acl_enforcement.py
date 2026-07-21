@@ -38,6 +38,7 @@ from synapse_channel.core.acl import (
     EVIDENCE,
     MESSAGE,
     PIN_RECLAIM,
+    RECALL,
     RELEASE,
     AclDecision,
     AclPolicy,
@@ -58,6 +59,13 @@ _BOARD_TYPES = frozenset(
 _CHANNEL_TYPES = frozenset(
     {MessageType.CHANNEL_CREATE, MessageType.CHANNEL_JOIN, MessageType.CHANNEL_LEAVE}
 )
+_RECALL_TYPES = frozenset({MessageType.HISTORY_REQUEST, MessageType.RESUME_REQUEST})
+"""Read verbs that pull the hub's global chat history / resume backlog.
+
+Unlike :data:`GATED_MUTATIONS` these do not mutate state, but they are ACL-gated
+reads: under ``--require-acl`` a deny-by-default policy governs them through the
+``RECALL`` permission, so a secured hub no longer serves its full history to any
+authenticated agent. With enforcement off they stay ungated like every other read."""
 _TASK_PAYLOAD_FALLBACK = frozenset(
     {MessageType.CLAIM, MessageType.TASK_UPDATE, MessageType.HANDOFF}
 )
@@ -82,8 +90,10 @@ GATED_MUTATIONS = (
 )
 """Every agent->hub frame type that mutates or broadcasts state and is ACL-gated.
 
-A frame outside this set is a read/query/keepalive and passes; a future mutating
-type MUST be added here and mapped in :func:`required_accesses`, which the
+A frame outside this set is a read/query/keepalive and passes, with the sole
+exception of the :data:`_RECALL_TYPES` history/resume reads, which are ACL-gated
+too (they expose the full chat backlog). A future mutating type MUST be added here
+and mapped in :func:`required_accesses`, which the
 ``test_every_gated_mutation_is_mapped`` test enforces so a new mutation cannot be
 silently ungated."""
 
@@ -162,6 +172,8 @@ def required_accesses(msg_type: str, data: dict[str, Any]) -> list[tuple[str, Ta
         return [(EVIDENCE, Target("evidence", "guard-denial"))]
     if msg_type in _CHANNEL_TYPES:
         return [(MESSAGE, Target("channel", str(data.get("channel") or "")))]
+    if msg_type in _RECALL_TYPES:
+        return [(RECALL, Target("history", "global"))]
     return []
 
 

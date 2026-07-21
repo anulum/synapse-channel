@@ -222,6 +222,7 @@ permission vocabulary should stay small and auditable:
 | `role-claim` | Bind a role on the heartbeat when `--require-role-claim` is on. Target kind `role` (`<project>/<role>`). Complements the role-grant store. |
 | `identity-pin-reclaim` | Remove one exact stale TOFU pin after the liveness, expected-key, requester-binding, and durable-audit gates pass. Target kind `agent`. Always enforced for this verb. |
 | `evidence` | Append authenticated, content-minimized enforcement evidence. The shipped `guard_denial` target is `evidence:guard-denial`; the handler additionally requires connect-token provenance and a durable journal. |
+| `recall` | Pull the hub's global chat history and cursor-based resume backlog (`history_request` / `resume_request`). Target kind `history`; the shipped target is `history:global`. Consulted only under `--require-acl` — without enforcement the recall reads stay open, matching the proportionate-to-exposure posture. |
 
 Each rule should include an allowed verb, a target pattern, an optional channel
 or project namespace constraint, and a decision reason suitable for receipts and
@@ -241,7 +242,9 @@ state or reveal scoped state:
 5. Reject unauthorized frames before state mutation or scoped data disclosure.
 
 Read paths need the same treatment as write paths. Metrics permission, dashboard
-permission, private-channel history, A2A permission, and event-query access all
+permission, private-channel history, global-history recall (the `recall`
+permission, covering `history_request` and `resume_request`), A2A permission, and
+event-query access all
 need explicit rules because they can expose sensitive coordination metadata even
 when no payload is changed.
 

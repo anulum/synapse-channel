@@ -16,6 +16,7 @@ from synapse_channel.core.acl import (
     EVIDENCE,
     MESSAGE,
     PIN_RECLAIM,
+    RECALL,
     RELEASE,
     AclPolicy,
     AclRule,
@@ -116,6 +117,37 @@ def test_guard_denial_maps_to_evidence_permission() -> None:
 def test_ungated_verbs_require_no_access() -> None:
     assert required_accesses(MessageType.HEARTBEAT, {}) == []
     assert required_accesses(MessageType.STATE_REQUEST, {}) == []
+
+
+def test_history_and_resume_map_to_global_recall() -> None:
+    # F1: the two global-history reads become ACL-gated so a deny-by-default hub
+    # no longer leaks its full backlog. Both map to one RECALL access on the shared
+    # history:global target, so a single grant governs history and resume together.
+    expected = [(RECALL, Target("history", "global"))]
+    assert required_accesses(MessageType.HISTORY_REQUEST, {"limit": 5}) == expected
+    assert required_accesses(MessageType.RESUME_REQUEST, {"since": 9}) == expected
+
+
+def test_recall_reads_are_not_counted_as_mutations() -> None:
+    # They are gated reads, not mutations: they must stay out of GATED_MUTATIONS so
+    # the mutation-completeness invariant is not diluted, yet still map to an access.
+    assert MessageType.HISTORY_REQUEST not in GATED_MUTATIONS
+    assert MessageType.RESUME_REQUEST not in GATED_MUTATIONS
+
+
+def test_history_recall_denied_by_default_and_grantable() -> None:
+    empty = AclPolicy([])
+    assert (
+        authorise_frame(sender="P/a", msg_type=MessageType.HISTORY_REQUEST, data={}, policy=empty)
+        is not None
+    )
+    granted = AclPolicy([AclRule(RECALL, "history", "global", "", "recall ok")])
+    assert (
+        authorise_frame(
+            sender="P/a", msg_type=MessageType.RESUME_REQUEST, data={"since": 0}, policy=granted
+        )
+        is None
+    )
 
 
 def test_authorise_allows_when_every_access_is_granted() -> None:

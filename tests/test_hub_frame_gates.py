@@ -13,7 +13,7 @@ from typing import Any, cast
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from synapse_channel.core.acl import CLAIM, AclPolicy, AclRule
+from synapse_channel.core.acl import CLAIM, RECALL, AclPolicy, AclRule
 from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.hub_frame_gates import HubFrameGates
 from synapse_channel.core.message_auth import (
@@ -264,6 +264,47 @@ async def test_acl_refuses_a_denied_frame() -> None:
     assert frame["type"] == MessageType.ERROR
     assert frame["acl_decision"] == "would_deny"
     assert "access denied" in frame["payload"]
+
+
+def _recall_policy() -> AclPolicy:
+    """An ACL policy that grants global-history recall to project ``P`` only."""
+    return AclPolicy([AclRule(RECALL, "history", "global", "P", "P may recall history")])
+
+
+async def test_acl_refuses_history_recall_without_a_recall_grant() -> None:
+    # The F1 secure default: a deny-by-default hub no longer serves its full chat
+    # history to an authenticated agent that holds no recall grant.
+    gates, rec = _gates(require_acl=True, acl_policy=_acl_policy())
+
+    assert await gates.authorise_acl("P/a", "history_request", {}, _WS) is False
+    _, frame = rec.sent[0]
+    assert frame["type"] == MessageType.ERROR
+    assert frame["acl_decision"] == "would_deny"
+
+
+async def test_acl_refuses_resume_recall_without_a_recall_grant() -> None:
+    # Resume is the cursor-based catch-up sibling and must be gated too, or it is
+    # the un-gated bypass around the history refusal.
+    gates, rec = _gates(require_acl=True, acl_policy=_acl_policy())
+
+    assert await gates.authorise_acl("P/a", "resume_request", {"since": 0}, _WS) is False
+
+
+async def test_acl_admits_history_and_resume_recall_with_a_grant() -> None:
+    gates, rec = _gates(require_acl=True, acl_policy=_recall_policy())
+
+    assert await gates.authorise_acl("P/a", "history_request", {}, _WS) is True
+    assert await gates.authorise_acl("P/a", "resume_request", {"since": 3}, _WS) is True
+    assert rec.sent == []
+
+
+async def test_acl_off_leaves_history_recall_open() -> None:
+    # Proportionate to exposure: without --require-acl an open/loopback hub serves
+    # history exactly as before the flip.
+    gates, rec = _gates(require_acl=False, acl_policy=_recall_policy())
+
+    assert await gates.authorise_acl("Q/a", "history_request", {}, _WS) is True
+    assert await gates.authorise_acl("Q/a", "resume_request", {"since": 0}, _WS) is True
 
 
 # -- authorise_claim_ownership -----------------------------------------------

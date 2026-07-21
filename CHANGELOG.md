@@ -54,6 +54,17 @@ All notable changes to this project are documented here.
   the refusal to a warning (the same override that already covers the token-less
   case). Loopback binds and TLS-terminated binds are unaffected; `--paranoid` and
   `--secure` already required native WSS.
+- **Breaking under `--require-acl` (secure default flip toward 1.0):** global chat
+  history and cursor-based resume (`history_request` / `resume_request`) are now
+  ACL-gated. A deny-by-default hub previously enforced the ACL on mutations but
+  still served its **entire** chat backlog to any authenticated agent — the read
+  counterpart to the channel-history membership gate was missing. They now require
+  the new `recall` permission on the `history:global` target. Migration: on a
+  `--require-acl` hub, add a `recall` rule (target kind `history`, pattern
+  `global`) for every identity that legitimately pulls history — dashboards,
+  reconnecting workers doing catch-up. Hubs without `--require-acl` (open or
+  loopback) are unaffected: the recall reads stay open, matching the
+  proportionate-to-exposure posture.
 
 ### Fixed
 

@@ -43,6 +43,7 @@ MAILBOX = "mailbox"
 ROLE_CLAIM = "role-claim"
 PIN_RECLAIM = "identity-pin-reclaim"
 EVIDENCE = "evidence"
+RECALL = "recall"
 
 PERMISSIONS = frozenset(
     {
@@ -60,6 +61,7 @@ PERMISSIONS = frozenset(
         ROLE_CLAIM,
         PIN_RECLAIM,
         EVIDENCE,
+        RECALL,
     }
 )
 """The auditable permission vocabulary an ACL rule may grant.
@@ -94,6 +96,14 @@ may silently make identity recovery public.
 enforcement record. The shipped guard-denial target is
 ``evidence:guard-denial``; its handler separately requires connect-token
 provenance and a durable journal.
+
+``RECALL`` grants an identity the right to pull the hub's global chat history
+and cursor-based resume backlog (``history_request`` / ``resume_request``). Target
+kind is ``history``; the shipped target is ``history:global``. Consulted only when
+``--require-acl`` is on: without enforcement the recall verbs stay open (a loopback
+or open hub is unchanged), matching the proportionate-to-exposure posture. It is
+the read counterpart to the channel-history membership gate, so a secured
+deny-by-default hub no longer leaks its full history to every authenticated agent.
 """
 
 WOULD_ALLOW = "would_allow"

@@ -74,6 +74,7 @@ def test_identity_acl_design_defines_acl_model() -> None:
         "dashboard permission",
         "release permission",
         "namespace permission",
+        "recall` permission",
         "deny by default",
     )
     for permission in required_permissions:
