@@ -21,6 +21,10 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tools.opencode_compatibility_workflow_contract import (  # noqa: E402
+    CompatibilityWorkflowError,
+    assert_compatibility_workflow_contract,
+)
 from tools.opencode_editor_workflow_contract import (  # noqa: E402
     EditorWorkflowError,
     assert_editor_workflow_contract,
@@ -353,12 +357,16 @@ def assert_repository_contract(contract: Compatibility, root: Path = ROOT) -> No
             or f"`{client.x11_app_id}`" not in text["docs"]
         ):
             raise CompatibilityError("Zed X11 identity drifted from the pinned runtime contract")
-    for artifact in contract.artifacts:
-        if artifact.smoke and (
-            artifact.key not in text["compatibility"]
-            or artifact.runner not in text["compatibility"]
-        ):
-            raise CompatibilityError(f"compatibility workflow omitted {artifact.key} runner")
+    try:
+        assert_compatibility_workflow_contract(
+            text["compatibility"],
+            surfaces["compatibility"],
+            expected_platforms={
+                artifact.key: artifact.runner for artifact in contract.artifacts if artifact.smoke
+            },
+        )
+    except CompatibilityWorkflowError as exc:
+        raise CompatibilityError(str(exc)) from exc
 
 
 def _version(value: str) -> tuple[int, ...]:
