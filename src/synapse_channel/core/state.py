@@ -670,8 +670,9 @@ class SynapseState:
         tuple[bool, str]
             ``(True, message)`` on success, ``(False, reason)`` when the task is
             missing an id, unclaimed, owned by another agent, handed to its own
-            owner, given no target, carries a stale epoch, or the recipient
-            already holds the live-claim cap (the same invariant as direct
+            owner, given no target, carries a stale epoch, the recipient already
+            holds the live-claim cap, or the moved file scope conflicts with
+            another agent's live claim (the same two invariants as direct
             :meth:`claim`).
         """
         task = task_id.strip()
@@ -699,6 +700,23 @@ class SynapseState:
             return (
                 False,
                 f"Agent {target} holds the maximum {self.max_claims_per_agent} claims.",
+            )
+        # Same file-scope mutual exclusion as direct acquisition: the moved scope
+        # must not collide with another agent's live claim, or the handoff would
+        # hand the recipient files a third party still holds — exactly the
+        # cross-agent collision claim() refuses. The giver may hold its own
+        # overlapping claim (self-conflict is allowed), so only a claim owned by
+        # someone other than the recipient blocks the move. Skipping the recipient
+        # (agent=target) also lets an owner hand a task to an agent that already
+        # holds an overlapping scope of its own.
+        conflict = self._scope_conflict(
+            task, target, claim.worktree, claim.paths, claim.path_identity
+        )
+        if conflict is not None:
+            other_id, other_owner = conflict
+            return (
+                False,
+                f"Task '{task}' file scope conflicts with '{other_id}' held by {other_owner}.",
             )
 
         moved = TaskClaim(

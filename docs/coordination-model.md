@@ -232,7 +232,10 @@ manual TTL choices remain authoritative.
 
 - **Atomic handoff** transfers a held task to another *online* agent in one step,
   with no release/re-claim window for a third agent to grab it. Scope, status,
-  and checkpoint move with it.
+  and checkpoint move with it. The move honours the same file-scope mutual
+  exclusion as a direct claim: it is refused if the moved scope would collide
+  with a live claim held by an agent other than the recipient, so a handoff can
+  never leave two agents holding the same files.
 - An **LLM-free supervisor** watches the plan and re-offers tasks that stall (no
   progress while in progress, or blocked with every dependency finished). Its
   in-progress rule keeps the fixed idle threshold as the operator ceiling and

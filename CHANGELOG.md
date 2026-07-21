@@ -13,6 +13,26 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Normative coordination specification (`docs/coordination-spec.md`): the
+  numbered invariants of the single-hub coordination core — mutual exclusion,
+  epoch fencing, lease liveness, journal-before-apply, restart replay,
+  crash/reconnect/partition semantics, per-verb delivery guarantees, the
+  hub/federation clock model (including the signed-frame skew budget), and an
+  explicit statement that two default hubs provide no cross-host mutual
+  exclusion — each mapped to the executable test that pins it, plus a
+  machine-checkable `RuleBasedStateMachine` model of the claim/lease/fencing
+  invariants (`tests/test_coordination_spec_model.py`) and a drift guard binding
+  the document to the implementation (`tests/test_coordination_spec.py`).
+
+### Fixed
+
+- `handoff` now enforces the same file-scope mutual exclusion as a direct claim:
+  a transfer whose scope collides with a live claim held by an agent other than
+  the recipient is refused, instead of silently leaving two different agents
+  holding the same files. Surfaced by the new coordination-spec state model.
+
 ## [0.99.12] - 2026-07-20
 
 ### Security
