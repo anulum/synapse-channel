@@ -32,7 +32,12 @@ else:
 _LANES = frozenset({"neovim", "emacs", "zed", "jetbrains"})
 
 
-def _workflow(matrix: str | None = None, *, job_extra: str = "") -> str:
+def _workflow(
+    matrix: str | None = None,
+    *,
+    job_extra: str = "",
+    fail_fast: str = "      fail-fast: false\n",
+) -> str:
     matrix_body = (
         matrix
         or """include:
@@ -49,7 +54,7 @@ def _workflow(matrix: str | None = None, *, job_extra: str = "") -> str:
 jobs:
   editor-client:
 {job_extra}    strategy:
-      matrix:
+{fail_fast}      matrix:
         {matrix_body}
     steps:
       - uses: actions/checkout@pinned
@@ -86,6 +91,12 @@ def test_continue_on_error_is_rejected_at_any_nested_depth() -> None:
     )
     with pytest.raises(EditorWorkflowError, match="must gate every pinned real-client lane"):
         _assert(text)
+
+
+@pytest.mark.parametrize("fail_fast", ["      fail-fast: true\n", ""])
+def test_fail_fast_must_be_false(fail_fast: str) -> None:
+    with pytest.raises(EditorWorkflowError, match="fail-fast: false"):
+        _assert(_workflow(fail_fast=fail_fast))
 
 
 @pytest.mark.parametrize(

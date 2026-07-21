@@ -24,6 +24,7 @@ from synapse_channel.benchmark.probes import (
     probe_event_store_append,
     probe_event_store_replay,
     probe_hub_roundtrip,
+    probe_state_deepcopy,
     run_probes,
 )
 
@@ -73,6 +74,16 @@ def test_durable_claim_grant_measures_scheduler_lag() -> None:
     assert result.metrics["p95_ms"] >= result.metrics["p50_ms"] > 0
     assert result.metrics["event_loop_lag_p95_ms"] >= 0
     assert result.metrics["event_loop_lag_max_ms"] >= result.metrics["event_loop_lag_p95_ms"]
+
+
+def test_state_deepcopy_measures_copy_on_write_cost() -> None:
+    result = probe_state_deepcopy(5)
+    assert result.name == "state-deepcopy"
+    assert result.iterations == 5
+    assert result.metrics["copies_per_second"] > 0
+    assert result.metrics["p95_ms"] >= result.metrics["p50_ms"] > 0
+    # the seeded busy fleet must actually populate the state that is copied
+    assert result.metrics["live_claims"] == 250.0
 
 
 def test_run_probes_preserves_order_and_applies_overrides() -> None:
