@@ -238,7 +238,14 @@ synapse completions bash > ~/.local/share/bash-completion/completions/synapse
 synapse install-shell-hook          # auto-arm Bash, Zsh, and Fish terminals
 ```
 
-## First 60 seconds
+## Getting started
+
+> **The one path to follow.** Run `synapse demo` and `synapse quickstart-coding`
+> below for a 60-second taste, then follow the **[multi-seat golden path](docs/quickstart.md#multi-seat-golden-path-5-minutes)**
+> — the single canonical "zero to two coordinated agents" walkthrough. The
+> sections here are that path's first stages, not competing quickstarts.
+
+### First 60 seconds
 
 On a clean Python environment, verify the installed CLI before wiring agents into
 a real repository:
@@ -280,7 +287,7 @@ this machine can seat (claude, codex, kimi, ollama, …), runs the demo smoke,
 and prints the next-steps plan — waiter arming, per-provider seat commands,
 `git-init`, dashboard — with the workspace's project name filled in.
 
-## Fastest safe trial path
+### Then: against a real repository
 
 After the self-contained demos pass, try Synapse against a real checkout in this
 order:
@@ -331,7 +338,7 @@ or write to `protoscience@anulum.li`.
 If you need a fixed target, pin a version (`synapse-channel==X.Y.Z`); to get the
 latest fixes, track the newest release. Both are supported.
 
-## Quick start
+## Run a hub with model workers
 
 Launch a hub plus one or two local model workers in one command:
 

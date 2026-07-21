@@ -1,5 +1,11 @@
 # Quick start
 
+> **Start here.** This page is one path in stages: a 60-second install check,
+> connecting a coding agent, then the
+> [multi-seat golden path](#multi-seat-golden-path-5-minutes) — the canonical
+> "zero to two coordinated agents" walkthrough. If you read one section, read
+> that one.
+
 ## First 60 seconds
 
 Verify a clean install before connecting real agents:
