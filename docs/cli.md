@@ -32,8 +32,10 @@ everything, since they need the whole command table.
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-conformance` | Print the local Agent2Agent conformance matrix. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
+| `synapse a2a-interop-trace` | Run an independent stdlib HTTP client against a live `a2a-serve` bridge and emit a discovery + task-lifecycle interop receipt. |
 | `synapse channel` | Manage private-channel membership and member-visible history; pair with `synapse send --channel`. |
 | `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |
+| `synapse sqlcipher` | SQLCipher page-encryption ops for the hub event store: `rekey` via PRAGMA rekey, `migrate` plaintext → encrypted. |
 | `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. |
 | `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |
 | `synapse dashboard` | Serve a loopback-only read-only live cockpit (fleet graph, board, claims, risk guidance, stream, receipts) over hub snapshots, plus `/snapshot.json`; `--feeds-db` adds durable store feeds including `/postmortem.json?task=ID` and `/receipts.json`, and `--observed-peer HUB=URI` adds advisory peer-hub rows. |
@@ -49,6 +51,7 @@ everything, since they need the whole command table.
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
 | `synapse multihub` | Observe or follow a peer hub's event log and print its board and claims (see [Multi-hub sync](multi-hub-sync.md)). |
 | `synapse participant` | Probe or drive Participant Fabric providers: `list` reports each driver's readiness, `ask` runs one turn, `exchange` and `convene` run multi-party deliberations, `costs` reports per-session spend and telemetry from a hub event store. |
+| `synapse deliberate` | Conclude a council into a sealed, verifiable export package (`conclude`/`verify`). |
 | `synapse federation` | Exchange, import, list, and revoke operator-confirmed peer-domain bundles (`offer`/`fetch`/`import`/`list`/`revoke`); fetch displays fingerprints and never imports. |
 | `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |
 | `synapse postmortem` | Build a replayable task postmortem from a hub SQLite event store. |
@@ -87,6 +90,7 @@ everything, since they need the whole command table.
 | `synapse policy-check` | Evaluate a release receipt against a policy file; advisory by default, `--enforce` to gate, `--trusted-signing-key` verifies the commitment's hub signature and emits a closed evidence verdict. |
 | `synapse identity` | Inventory and audit declared agent identities for enforcement-rollout blockers. |
 | `synapse acl` | Shadow-mode (non-blocking) deny-by-default ACL evaluation of candidate accesses. |
+| `synapse role` | Grant, revoke, and list role-claim authorisations (`grant`/`revoke`/`list`). |
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
 | `synapse release` | Manually drop a claim you own (e.g. an `--auto-release-on manual` claim). |
 | `synapse task` | Declare and update the shared task plan. |
@@ -432,7 +436,7 @@ same dashboard bearer token as every other path:
 - `/state-at.json?seq=N` — coordination state (claims + board) reconstructed as of event `seq` by bounded replay, in the live snapshot shape plus `as_of_seq` and `log_end_seq`; deterministic (judged at the bounded event's own timestamp), `seq` clamped into range, presence/roster omitted (not journalled).
 - `/merkle-proof.json?seq=N` — an RFC 6962 Merkle inclusion proof for event `seq`, in the same shape `synapse debug merkle` emits, so a cockpit row's verify button can check the row against the attested tree root; a `seq` the committed log does not hold returns `{"present": false}` with a note, never a fabricated proof.
 - `/health-anomalies.json` — the honest hub-side alert surface: the orphaned, dangling, and stale coordination anomalies the causality graph makes visible, in the same shape `synapse causality --health` emits, with an `anomaly_count` for a cockpit alerts badge. Fired alerts stay collector-side off `/metrics`; this is only what the durable log can prove.
-- `/sessions.json` — the opt-in `session_metric` telemetry the fleet left in the log, in the same shape `synapse participants costs` renders: per-session token counts, cost, latency, and error/abstention rates, with `totals` aggregated across sessions. Every record carries the `seq` of the snapshot it was read from, so a cockpit joins a session's cost straight to its causal cone via `/causality.json`; each record's coordination `task_id` (from the note body) is the same join key `synapse participant costs` reports. A log with no session notes reports empty `sessions` and zeroed `totals`, never a fabricated cost.
+- `/sessions.json` — the opt-in `session_metric` telemetry the fleet left in the log, in the same shape `synapse participant costs` renders: per-session token counts, cost, latency, and error/abstention rates, with `totals` aggregated across sessions. Every record carries the `seq` of the snapshot it was read from, so a cockpit joins a session's cost straight to its causal cone via `/causality.json`; each record's coordination `task_id` (from the note body) is the same join key `synapse participant costs` reports. A log with no session notes reports empty `sessions` and zeroed `totals`, never a fabricated cost.
 - `/waits.json` — the pending coordination gates reconstructed from the plan: each non-terminal task blocked on a dependency that has not reached a terminal status, with `who` is waiting (the task's suggested owner, or whoever declared it), `on_what` dependency ids it is blocked on, and `since` when it was declared, plus a `wait_count`. This is the "what is the fleet stuck behind" panel. Transient socket waiters (a client's `-rx` connection) are not journalled and are omitted; this is only the coordination gates the durable plan can prove.
 - `/operator-actions.json?since=SEQ&limit=N` — the governed operator-action history reconstructed from `operator_relay` audit events: direction, action, namespace, task, operator, origin/owner hubs, peer or local requester, status, reason, break-glass tag, detail, and real `seq`/`ts` join anchors. Ordinary releases without relay provenance are omitted.
 - `/receipts.json?since=SEQ&limit=N` — the universal receipt feed projected from receipt-bearing durable events: release/claim evidence, delivery receipts, sandbox run attestations, approval/policy/verification notes, governed operator relays, cross-hub pointers, A2A validation notes, and postmortem notes in one shape (`seq`, `ts`, `receipt_id`, `kind`, `subject`, `actor`, `status`, `summary`, `source_event_kind`, `payload`). Ordinary events without receipt semantics are omitted.
