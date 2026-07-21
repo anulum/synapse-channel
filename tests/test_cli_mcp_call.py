@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import shutil
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -20,6 +19,7 @@ from typing import Any
 
 import pytest
 
+from _portable_exec import install_posix_tool
 from synapse_channel import cli, cli_mcp_call
 from synapse_channel.core.mcp_outbound import (
     McpDependencyError,
@@ -60,8 +60,7 @@ def _run(argv: list[str]) -> int:
 
 def _config(tmp_path: Path) -> Path:
     executable = tmp_path / "mcp-server"
-    shutil.copy2("/bin/true", executable)
-    executable.chmod(0o700)
+    install_posix_tool(executable)
     config = tmp_path / "mcp.json"
     config.write_text(
         json.dumps(

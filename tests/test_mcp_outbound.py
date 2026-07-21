@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
-import shutil
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -21,6 +20,7 @@ from typing import Any
 import pytest
 
 import synapse_channel.core.mcp_outbound as outbound_module
+from _portable_exec import install_posix_tool
 from synapse_channel.core.mcp_config_launch import MCP_SDK_POSIX_DEFAULT_ENV
 from synapse_channel.core.mcp_outbound import (
     MCP_EXTRA_HINT,
@@ -230,8 +230,7 @@ async def test_default_opener_passes_the_current_stderr_stream(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     executable = tmp_path / "mcp-server"
-    shutil.copy2("/bin/true", executable)
-    executable.chmod(0o700)
+    install_posix_tool(executable)
     observed: dict[str, Any] = {}
 
     @asynccontextmanager

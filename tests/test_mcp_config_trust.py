@@ -9,9 +9,7 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +17,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from _portable_exec import install_posix_tool
 from synapse_channel.core.mcp_config import McpConfigError
 from synapse_channel.core.mcp_config_signing import sign_mcp_config_document
 from synapse_channel.core.mcp_config_trust import (
@@ -28,9 +27,7 @@ from synapse_channel.core.mcp_config_trust import (
 
 
 def _executable(path: Path) -> tuple[Path, str]:
-    shutil.copy2("/bin/true", path)
-    path.chmod(0o700)
-    return path, hashlib.sha256(path.read_bytes()).hexdigest()
+    return install_posix_tool(path)
 
 
 def _write_owner_json(path: Path, document: Any) -> Path:

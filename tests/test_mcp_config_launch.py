@@ -8,15 +8,14 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
 import synapse_channel.core.mcp_config_launch as launch_module
+from _portable_exec import install_posix_tool
 from synapse_channel.core.mcp_config import McpConfigError, McpServerSpec
 from synapse_channel.core.mcp_config_launch import (
     bind_mcp_server_launch,
@@ -27,9 +26,7 @@ from synapse_channel.core.secret_files import open_nofollow_descriptor
 
 
 def _executable(path: Path) -> tuple[Path, str]:
-    shutil.copy2("/bin/true", path)
-    path.chmod(0o700)
-    return path, hashlib.sha256(path.read_bytes()).hexdigest()
+    return install_posix_tool(path)
 
 
 @pytest.mark.parametrize(
@@ -218,9 +215,7 @@ def test_launch_validation_rechecks_cwd_descriptor_type(
 
 def test_bound_launch_executes_snapshot_and_retains_exact_cwd(tmp_path: Path) -> None:
     executable = tmp_path / "mcp-server"
-    shutil.copy2("/bin/echo", executable)
-    executable.chmod(0o700)
-    digest = hashlib.sha256(executable.read_bytes()).hexdigest()
+    _, digest = install_posix_tool(executable, "echo")
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     cwd.chmod(0o700)
@@ -234,8 +229,7 @@ def test_bound_launch_executes_snapshot_and_retains_exact_cwd(tmp_path: Path) ->
 
     with bind_mcp_server_launch(spec) as launch:
         replacement = tmp_path / "replacement"
-        shutil.copy2("/bin/false", replacement)
-        replacement.chmod(0o700)
+        install_posix_tool(replacement, "false")
         os.replace(replacement, executable)
         renamed_cwd = tmp_path / "renamed-cwd"
         cwd.rename(renamed_cwd)

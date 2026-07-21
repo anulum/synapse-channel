@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from _portable_exec import install_posix_tool
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_doctor
 from synapse_channel.client.diagnostics import Diagnosis
@@ -212,8 +212,7 @@ async def test_diagnose_reports_outbound_mcp_config_trust(tmp_path: Path) -> Non
     executable = tmp_path / "mcp-server"
     # The tightened launch policy rejects shebang scripts outright, so the
     # trust fixture must be a native executable (the stack's own pattern).
-    shutil.copy2("/bin/true", executable)
-    executable.chmod(0o700)
+    install_posix_tool(executable)
     config = tmp_path / "mcp.json"
     config.write_text(
         json.dumps(

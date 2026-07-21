@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 import synapse_channel.cli_doctor_mcp_config as doctor_mcp
+from _portable_exec import install_posix_tool
 from synapse_channel.cli_doctor_mcp_config import (
     add_mcp_config_doctor_arguments,
     diagnose_mcp_config,
@@ -145,8 +145,7 @@ def test_mcp_doctor_passes_fully_pinned_signed_config(
 
 def test_mcp_doctor_never_reflects_unbound_argument_values(tmp_path: Path) -> None:
     executable = tmp_path / "mcp-server"
-    shutil.copy2("/bin/true", executable)
-    executable.chmod(0o700)
+    install_posix_tool(executable)
     config = tmp_path / "mcp.json"
     config.write_text(
         json.dumps(
