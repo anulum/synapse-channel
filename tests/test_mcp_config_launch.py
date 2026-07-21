@@ -257,8 +257,11 @@ def test_procfd_binding_fails_closed_on_missing_or_mismatched_object(
     descriptor = os.open(path, os.O_RDONLY)
     real_stat = os.stat
 
-    def mismatched_stat(target: str | Path) -> os.stat_result:
-        info = real_stat(target)
+    def mismatched_stat(target: str | Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        # Signature-compatible with os.stat: on some platforms the procfd path stats
+        # with follow_symlinks set, so the monkeypatched replacement must accept and
+        # forward it rather than crash with an unexpected-keyword TypeError.
+        info = real_stat(target, follow_symlinks=follow_symlinks)
         values = list(info)
         values[1] += 1
         return os.stat_result(values)

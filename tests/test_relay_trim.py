@@ -9,12 +9,19 @@
 from __future__ import annotations
 
 import errno
-import resource
 import signal
 import sys
 from pathlib import Path
 
 import pytest
+
+if sys.platform == "win32":
+    # This module drives the relay writer against a real `RLIMIT_FSIZE` write cap to
+    # prove trim behaviour under a disk-full-like failure; `resource`/`RLIMIT_FSIZE`
+    # is a POSIX-only mechanism with no Windows equivalent, so skip the whole module.
+    pytest.skip("resource.RLIMIT_FSIZE is a Unix-only mechanism", allow_module_level=True)
+
+import resource  # noqa: E402 -- Unix-only import, guarded by the Windows skip above
 
 from synapse_channel.relay import (
     append_jsonl,
