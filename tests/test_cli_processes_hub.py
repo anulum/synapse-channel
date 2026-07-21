@@ -1212,6 +1212,72 @@ def test_cmd_hub_wires_ownership_watch_feed_and_transition_journal(tmp_path: Pat
     assert closed == ["closed"]
 
 
+def test_cmd_hub_rejects_claim_peer_without_namespace_owner(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns = _hub_ns(hub_id="syn-a", claim_peer=["syn-b=ws://b:8876"])
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert "--claim-peer requires --namespace-owner" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_a_malformed_claim_peer(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns = _hub_ns(hub_id="syn-a", namespace_owner=["OWNED=syn-a"], claim_peer=["no-separator"])
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert "HUB_ID=URI" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_a_repeated_claim_peer(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns = _hub_ns(
+        hub_id="syn-a",
+        namespace_owner=["OWNED=syn-a"],
+        claim_peer=["syn-b=ws://b:8876", "syn-b=ws://c:8876"],
+    )
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert "names hub 'syn-b' twice" in capsys.readouterr().err
+
+
+def test_cmd_hub_wires_claim_peers_forwarding_route(tmp_path: Path) -> None:
+    from synapse_channel.core.multihub_claim_transport import ClaimForwardPeer
+
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    def close_runner(coro: Coroutine[Any, Any, None]) -> None:
+        coro.close()
+
+    ns = _hub_ns(
+        db=str(tmp_path / "hub.db"),
+        hub_id="syn-a",
+        namespace_owner=["THEIRS=syn-b"],
+        claim_peer=["syn-b=ws://b:8876"],
+        claim_peer_token="tok-b",
+    )
+    assert cli_processes._cmd_hub(ns, runner=close_runner, hub_factory=build_hub) == 0
+    assert captured["claim_peers"] == {"syn-b": ClaimForwardPeer(uri="ws://b:8876", token="tok-b")}
+
+
+def test_cmd_hub_leaves_claim_peers_off_by_default(tmp_path: Path) -> None:
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    def close_runner(coro: Coroutine[Any, Any, None]) -> None:
+        coro.close()
+
+    ns = _hub_ns(db=str(tmp_path / "hub.db"))
+    assert cli_processes._cmd_hub(ns, runner=close_runner, hub_factory=build_hub) == 0
+    assert captured["claim_peers"] is None
+
+
 def test_cmd_hub_leaves_ownership_and_watch_off_by_default() -> None:
     captured: dict[str, Any] = {}
 

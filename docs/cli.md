@@ -1915,6 +1915,24 @@ outage never lets a contested namespace silently resume granting. Validated
 live: a claim held on the watched peer flips the namespace to repeated
 `partitioned` refusals, and the peer's release clears it on the next poll.
 
+`--claim-peer HUB_ID=URI` (repeatable, requires `--namespace-owner`) declares the
+route this hub uses to **forward** a claim it does not own to the owning hub. The
+key is the owning hub id from `--namespace-owner`; a remote-owned claim with a
+matching route is relayed to the owner and its verdict returned, carrying the
+owner's authentic lease, while a remote-owned claim whose owner has no route stays
+refused with the owner named — the routing is opt-in and fail-closed, so adding a
+route never opens a claim the hub could not already resolve. `--claim-peer-token
+TOKEN` sends an authentication token on every forwarded claim to owners that gate
+the first frame (mutual-TLS-only owners need none). An unreachable owner is refused
+in place with `forward_error=timeout`, not hidden behind the generic ownership
+refusal, so a forwarding outage never silently resumes local granting:
+
+```bash
+synapse hub --port 8876 --hub-id syn-a \
+  --namespace-owner OTHER-PROJECT=syn-b \
+  --claim-peer syn-b=ws://peer:8876
+```
+
 ## Agent2Agent bridge
 
 `synapse a2a-card` projects the live SYNAPSE capability manifest into an A2A

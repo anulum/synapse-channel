@@ -91,6 +91,50 @@ class ClaimForwardPeer:
     token: str | None = None
 
 
+def parse_claim_peers(
+    values: list[str], *, token: str | None = None
+) -> dict[str, ClaimForwardPeer]:
+    """Parse repeatable ``HUB_ID=URI`` CLI values into a claim-forwarding route map.
+
+    Mirrors the ``PEER=URI`` shape the watch and ownership flags already use, so an
+    operator configures claim forwarding the same way. The key is the **owning
+    hub id** (the value space of ``--namespace-owner``): a remote-owned claim whose
+    owner has a route here is forwarded to that owner and its verdict relayed, and
+    an owner with no route stays refused with the owner named — the map is opt-in
+    and never opens a claim it does not have a route for.
+
+    Parameters
+    ----------
+    values : list[str]
+        Raw flag values, each ``HUB_ID=URI`` — the owning hub id and its
+        ``ws://`` / ``wss://`` URI.
+    token : str or None, optional
+        Authentication token applied to every route's forwarded requests, for
+        owners that gate the first frame. ``None`` leaves each route unauthenticated
+        (an open or mutual-TLS-only owner).
+
+    Returns
+    -------
+    dict[str, ClaimForwardPeer]
+        Owning hub id to its forwarding route.
+
+    Raises
+    ------
+    ValueError
+        If a value has no ``=``, an empty hub id or URI, or a repeated hub id.
+    """
+    peers: dict[str, ClaimForwardPeer] = {}
+    for value in values:
+        hub_id, sep, uri = value.partition("=")
+        hub_id, uri = hub_id.strip(), uri.strip()
+        if not sep or not hub_id or not uri:
+            raise ValueError(f"--claim-peer must use HUB_ID=URI, got {value!r}")
+        if hub_id in peers:
+            raise ValueError(f"--claim-peer names hub {hub_id!r} twice")
+        peers[hub_id] = ClaimForwardPeer(uri=uri, token=token)
+    return peers
+
+
 class ClaimForwarder(Protocol):
     """Forwards a claim to an owning hub and returns its verdict.
 

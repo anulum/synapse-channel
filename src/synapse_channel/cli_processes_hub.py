@@ -57,6 +57,7 @@ from synapse_channel.core.message_auth_durable import (
     DurableMessageAuthReplayStore,
     SequenceFloorMode,
 )
+from synapse_channel.core.multihub_claim_transport import ClaimForwardPeer, parse_claim_peers
 from synapse_channel.core.multihub_watch import MultiHubWatch, parse_watch_peers, parse_watch_pins
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_profile
@@ -621,8 +622,17 @@ def _cmd_hub(
             file=sys.stderr,
         )
         return 2
+    if args.claim_peer and not args.namespace_owner:
+        print(
+            "synapse hub: --claim-peer requires --namespace-owner; a forwarding route "
+            "is keyed by the owning hub id, and without an ownership map no claim is "
+            "remote-owned to forward.",
+            file=sys.stderr,
+        )
+        return 2
     namespace_ownership: NamespaceOwnership | None = None
     watch: MultiHubWatch | None = None
+    claim_peers: dict[str, ClaimForwardPeer] | None = None
     try:
         if args.namespace_owner:
             namespace_ownership = NamespaceOwnership(
@@ -640,6 +650,8 @@ def _cmd_hub(
                 namespace_ownership=namespace_ownership,
                 journal=journal,
             )
+        if args.claim_peer:
+            claim_peers = parse_claim_peers(args.claim_peer, token=args.claim_peer_token)
     except ValueError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
@@ -718,6 +730,7 @@ def _cmd_hub(
         "hub_id": args.hub_id,
         "namespace_ownership": namespace_ownership,
         "observed_asserting_hubs": (watch.observed_asserting_hubs if watch is not None else None),
+        "claim_peers": claim_peers,
         "insecure_off_loopback": args.insecure_off_loopback,
     }
     hub = hub_factory(**hub_kwargs)

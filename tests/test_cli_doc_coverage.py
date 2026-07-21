@@ -68,12 +68,18 @@ def test_cli_reference_states_default_identity_derivation() -> None:
     assert "an omitted `--name` resolves from an agreeing environment or `<git-project>/mcp`" in doc
 
 
-def test_cli_reference_frames_multihub_as_read_only_observe_follow() -> None:
-    # Wave-2: multi-hub must read as read-only observe/follow of a peer's log, not
-    # as an operator-configurable claim-forwarding surface (the flagged contradiction).
+def test_cli_reference_documents_multihub_observe_follow_and_claim_forwarding() -> None:
+    # Wave-2: `synapse multihub` reads as read-only observe/follow of a peer's log,
+    # and the claim-forwarding route is now a documented, opt-in operator CLI flag —
+    # resolving the earlier contradiction (docs described forwarding as shipped while
+    # no CLI route existed) by exposing the route.
     doc = _CLI_DOC.read_text(encoding="utf-8")
     assert "Observe or follow a peer hub's event log" in doc
     assert "synapse multihub observe" in doc
     assert "synapse multihub follow" in doc
-    # cli.md must not present operator claim-forwarding configuration as a shipped CLI route.
+    # The operator claim-forwarding route ships as `--claim-peer HUB_ID=URI`
+    # (opt-in, requires --namespace-owner, fail-closed on an unrouted owner).
+    assert "--claim-peer" in doc
+    assert "requires `--namespace-owner`" in doc
+    # The internal config symbol name stays out of the operator-facing doc.
     assert "claim_peers" not in doc

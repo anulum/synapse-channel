@@ -15,6 +15,13 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- `synapse hub --claim-peer HUB_ID=URI` (repeatable, requires `--namespace-owner`,
+  with `--claim-peer-token`): the operator CLI route that configures cross-hub
+  claim forwarding. A remote-owned claim with a matching route is forwarded to
+  its owning hub and the verdict relayed; an owner with no route stays refused
+  with the owner named (opt-in, fail-closed). The forwarding library/serving
+  path already shipped — this closes the parity gap where the docs described
+  forwarding as configurable but no CLI flag populated `claim_peers`.
 - Normative coordination specification (`docs/coordination-spec.md`): the
   numbered invariants of the single-hub coordination core — mutual exclusion,
   epoch fencing, lease liveness, journal-before-apply, restart replay,

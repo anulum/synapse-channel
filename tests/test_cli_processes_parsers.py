@@ -185,6 +185,26 @@ class TestHubParser:
         assert args.federation_observe_only is True
         assert args.insecure_off_loopback is True
 
+    def test_claim_peer_flags_append_and_default(self) -> None:
+        args = _parser().parse_args(
+            [
+                "hub",
+                "--claim-peer",
+                "syn-a=ws://a:8876",
+                "--claim-peer",
+                "syn-b=wss://b:8876",
+                "--claim-peer-token",
+                "tok",
+            ]
+        )
+        assert args.claim_peer == ["syn-a=ws://a:8876", "syn-b=wss://b:8876"]
+        assert args.claim_peer_token == "tok"
+
+    def test_claim_peer_flags_default_empty(self) -> None:
+        args = _parser().parse_args(["hub"])
+        assert args.claim_peer == []
+        assert args.claim_peer_token is None
+
 
 class TestWorkerParser:
     """Cover the ``worker`` argument surface."""

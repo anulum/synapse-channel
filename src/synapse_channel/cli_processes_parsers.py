@@ -436,6 +436,24 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "also be named by --multihub-watch.",
     )
     hub.add_argument(
+        "--claim-peer",
+        action="append",
+        default=[],
+        metavar="HUB_ID=URI",
+        help="Route a claim this hub does not own to its owning hub over this connection "
+        "(repeatable). The key is the owning hub id from --namespace-owner; a "
+        "remote-owned claim with a matching route is forwarded to the owner and the "
+        "verdict relayed, while an owner with no route stays refused with the owner "
+        "named (fail-closed, opt-in). Requires --namespace-owner.",
+    )
+    hub.add_argument(
+        "--claim-peer-token",
+        default=None,
+        metavar="TOKEN",
+        help="Authentication token sent on forwarded claims to secured owning hubs "
+        "(applies to every --claim-peer route).",
+    )
+    hub.add_argument(
         "--insecure-off-loopback",
         action="store_true",
         help="Bind a non-loopback host even without a token (and metrics token); by "
