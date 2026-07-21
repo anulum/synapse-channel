@@ -238,6 +238,19 @@ synapse completions bash > ~/.local/share/bash-completion/completions/synapse
 synapse install-shell-hook          # auto-arm Bash, Zsh, and Fish terminals
 ```
 
+## Who it's for
+
+- A developer running **two or three coding agents** on one repository, tired of
+  merge collisions and duplicated work.
+- A team operating a **fleet of agents across several services** that needs one
+  plan, one roster, and cross-repository task dependencies.
+- A builder of **long-running autonomous agents** who wants event-driven
+  wakeups, durable coordination, and a resume-after-restart story instead of a
+  polling loop and lost state.
+
+See [use cases](docs/use-cases.md) for when it fits, when it is overkill, and
+who reaches for it.
+
 ## Getting started
 
 > **The one path to follow.** Run `synapse demo` and `synapse quickstart-coding`
