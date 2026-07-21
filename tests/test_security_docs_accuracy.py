@@ -184,7 +184,7 @@ def test_container_bind_posture_documents_the_fail_closed_refusal() -> None:
     assert "127.0.0.1:8876:8876" in prose
     assert "0.98.27, 0.99.2, 0.99.3, and 0.99.4" in prose
     # A refused start must leave no artefact: the guard runs before the durable
-    # store is constructed (pinned behaviourally in test_cli_processes_hub.py).
+    # store is constructed (pinned behaviourally in test_cli_processes_hub_config.py).
     assert "leaves no database file behind" in prose
 
     dockerfile = _single_spaced(_read_repo_text("Dockerfile"))
