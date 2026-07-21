@@ -16,6 +16,7 @@ from typing import Any, cast
 
 import pytest
 
+from _platform_caps import requires_proc
 from synapse_channel.ergonomics import Identity
 from synapse_channel.reap import (
     ReapResult,
@@ -143,6 +144,7 @@ def test_discover_waiters_ignores_unreadable_pidfile_path(tmp_path: Path) -> Non
     assert discover_waiters(identity, runtime=tmp_path) == []
 
 
+@requires_proc
 def test_read_proc_cmdline_reads_current_process() -> None:
     assert isinstance(read_proc_cmdline(os.getpid()), tuple)
 

@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from _platform_caps import requires_linux
 from synapse_channel import cli, cli_arm
 from synapse_channel.cli_arm_install import maybe_install_arm
 from synapse_channel.service_setup import ArmServiceInstallResult
@@ -161,6 +162,7 @@ def test_bare_arm_still_accepts_raw_token() -> None:
     assert maybe_install_arm(args, platform_name="linux") is None
 
 
+@requires_linux
 def test_cli_main_installs_waiter_into_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -184,6 +186,7 @@ def test_cli_main_installs_waiter_into_home(
     assert "--for=%I --directed-only --mailbox" in unit.read_text(encoding="utf-8")
 
 
+@requires_linux
 def test_cli_main_persists_token_file_path_not_raw_token(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -213,6 +216,7 @@ def test_cli_main_persists_token_file_path_not_raw_token(
     assert "fixture-value" not in text
 
 
+@requires_linux
 def test_cli_main_refuses_ambient_token_for_persistent_unit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

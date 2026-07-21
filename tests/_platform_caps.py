@@ -21,6 +21,7 @@ CI, where the security surface actually lives. This mirrors the source guard in
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -39,3 +40,18 @@ requires_sealed_launch = pytest.mark.skipif(
     reason="MCP sealed launch needs Linux memfd + /proc/self/fd (absent on macOS/Windows)",
 )
 """Skip marker for tests that need the sealed-launch mechanism to actually run."""
+
+PROC_AVAILABLE = Path("/proc/self/cmdline").exists()
+"""Whether the Linux ``/proc`` process filesystem is present."""
+
+requires_proc = pytest.mark.skipif(
+    not PROC_AVAILABLE,
+    reason="needs the Linux /proc filesystem (absent on macOS/Windows)",
+)
+"""Skip marker for tests that read ``/proc`` (e.g. ``/proc/<pid>/cmdline``)."""
+
+requires_linux = pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="exercises a Linux-only platform feature (systemd user services)",
+)
+"""Skip marker for tests of Linux-only platform features such as systemd units."""
