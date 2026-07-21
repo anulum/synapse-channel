@@ -150,3 +150,26 @@ jobs:
           (cd "$scratch" && "$synapse_bin" git-init --name ci --synapse-bin "$synapse_bin")
           (cd "$scratch" && "$synapse_bin" git-hook test)
           rm -rf "$scratch"
+
+  # Single required status check for branch protection. It always runs (even when an
+  # upstream job fails), so the `ci` context posts on every pull request and push,
+  # and it fails unless every gated job succeeded — matrix-drift-proof, unlike pinning
+  # each individual job as a required context.
+  ci:
+    name: ci
+    needs: [lint, typecheck, test, reuse, audit, git-hooks]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every gated job to succeed
+        run: |
+          set -euo pipefail
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "gated job results: ${results}"
+          for result in ${results}; do
+            if [ "${result}" != "success" ]; then
+              echo "::error::a required ci job did not succeed (${result})"
+              exit 1
+            fi
+          done
+          echo "all required ci jobs succeeded"
