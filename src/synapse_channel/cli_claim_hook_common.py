@@ -55,9 +55,35 @@ def _run_awaitable(awaitable: Awaitable[GuardVerdict]) -> GuardVerdict:
 
 
 def resolve_synapse_binary(explicit: str | None) -> str:
-    """Return an absolute Synapse executable for a provider hook recipe."""
+    """Return an absolute Synapse executable for a provider hook recipe.
+
+    Prefer the console script on ``PATH``. When a bare ``synapse`` name is not on
+    ``PATH`` — a contributor venv whose ``bin`` directory is not exported — fall
+    back to the ``synapse`` script beside the running interpreter, so the recipe
+    still resolves hermetically to an absolute path instead of failing closed.
+
+    Parameters
+    ----------
+    explicit : str or None
+        An operator-supplied executable path or name; ``None`` means the default
+        ``synapse`` console script.
+
+    Returns
+    -------
+    str
+        The resolved absolute executable path.
+
+    Raises
+    ------
+    ValueError
+        If neither ``PATH`` nor the interpreter's directory yields the executable.
+    """
     candidate = explicit or "synapse"
     found = shutil.which(candidate)
+    if found is None and Path(candidate).name == candidate:
+        beside = Path(sys.executable).parent / candidate
+        if beside.is_file():
+            found = str(beside)
     if found is None:
         raise ValueError(f"cannot resolve Synapse executable {candidate!r}")
     return str(Path(found).expanduser().resolve())
