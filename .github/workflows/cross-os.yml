@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — advisory cross-OS filesystem-semantics lane
+name: cross-os
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A main push gets a commit-specific group and cannot cancel an earlier head;
+  # PR and manual runs replace stale work on their shared ref (mirrors ci.yml).
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+jobs:
+  # A separate job name (not "ci") keeps this an ADVISORY status, never a
+  # branch-protection required check. Its purpose is to exercise real macOS (POSIX)
+  # and Windows (NT) filesystem and socket semantics — path separators, permission
+  # and O_NOFOLLOW behaviour, file locking, temp-dir layout, and asyncio transport
+  # differences — that the Linux-only `ci` matrix cannot surface. The Linux-only
+  # backends are intentionally absent here: sqlcipher3-binary ships manylinux wheels
+  # only and tpm2-pytss/PKCS#11 need Linux system libraries, so those suites skip on
+  # this lane, which is about OS filesystem/socket behaviour, not the crypto backends.
+  cross-os-filesystem:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # Advisory lane: install the dev extra with per-platform wheels rather than the
+      # Linux-pinned hash-locked closure the required jobs use (its hashes are for
+      # manylinux wheels). The required `ci` keeps the hash-locked supply chain.
+      - run: python -m pip install -e ".[dev]"
+      - name: Run the suite on this OS (SQLCipher/TPM suites skip without their backends)
+        run: python -m pytest -q -p no:cacheprovider

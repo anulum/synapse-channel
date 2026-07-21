@@ -15,6 +15,13 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Advisory `cross-os` CI lane (`.github/workflows/cross-os.yml`) that runs the test
+  suite on macOS (POSIX) and Windows (NT) with Python 3.12, surfacing real
+  filesystem and socket semantics — path separators, permission/`O_NOFOLLOW`
+  behaviour, file locking, temp-dir layout, asyncio transport differences — that
+  the Linux-only `ci` matrix cannot. The Linux-only backends (SQLCipher manylinux
+  wheels, TPM/PKCS#11 system libraries) are absent there, so those suites skip; the
+  lane is about OS filesystem/socket behaviour. Deliberately not a required check.
 - Scheduled advisory `soak` CI lane (`.github/workflows/soak.yml`, weekly +
   `workflow_dispatch`) that runs a bounded soak of the hub's waiter/liveness
   bookkeeping under sustained connect churn (`tests/test_waiter_liveness_soak.py`),
