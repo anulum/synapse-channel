@@ -35,6 +35,12 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           fetch-tags: true
+          # Defence-in-depth: the checked-out tree is used only for git metadata,
+          # data reads, and provenance verification (no tree-code runs), and the
+          # ref is a maintainer-pushed tag commit. Dropping the pushed token from
+          # the workspace removes it as a target regardless. gh steps below use
+          # secrets.GITHUB_TOKEN via env, not the persisted git credential.
+          persist-credentials: false
       - name: Resolve and validate the release tag
         id: tag
         env:
