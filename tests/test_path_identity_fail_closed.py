@@ -445,6 +445,11 @@ def test_git_index_validation_has_no_claim_scope_count_cap(tmp_path: Path) -> No
 def test_current_repository_narrow_identity_handles_large_index() -> None:
     """The production checkout can resolve one path despite its large tracked index."""
     root = Path(__file__).resolve().parents[1]
+    if not git_identity.detect_case_sensitivity(root):
+        pytest.skip(
+            "asserts the exact-case index spelling 'README.md'; a case-insensitive "
+            "filesystem folds it, which is the product's own case policy (macOS/Windows)"
+        )
     _, displays, identity = git_identity.resolve_claim_scope_identity(root, ("README.md",))
     assert displays == ("README.md",)
     assert identity.paths[0].git_path == "README.md"

@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from _platform_caps import requires_proc
 from synapse_channel import cli, cli_shell
 from synapse_channel.shell_integration import (
     END_MARKER,
@@ -630,6 +631,7 @@ def _hook_script(tmp_path: Path, hook_path: Path, *exports: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+@requires_proc
 def test_bash_hook_remints_a_foreign_auto_identity(tmp_path: Path) -> None:
     hook_path = tmp_path / "hook.sh"
     hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
@@ -647,6 +649,7 @@ def test_bash_hook_remints_a_foreign_auto_identity(tmp_path: Path) -> None:
     assert "re-minting" in proc.stderr
 
 
+@requires_proc
 def test_bash_hook_remints_when_the_foreign_terminal_id_is_also_inherited(
     tmp_path: Path,
 ) -> None:

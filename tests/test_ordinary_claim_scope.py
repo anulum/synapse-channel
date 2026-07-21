@@ -20,6 +20,7 @@ from synapse_channel.git.ordinary_claim import (
     _has_git_marker,
     resolve_ordinary_claim_scope,
 )
+from synapse_channel.git.path_identity import detect_case_sensitivity
 
 
 def test_ordinary_scope_binds_paths_inside_git(
@@ -28,6 +29,11 @@ def test_ordinary_scope_binds_paths_inside_git(
 ) -> None:
     """A file claim inside Git carries the canonical worktree and identity."""
     repo = git_repo(tmp_path / "repo")
+    if not detect_case_sensitivity(repo):
+        pytest.skip(
+            "asserts the exact-case worktree spelling; a case-insensitive filesystem "
+            "folds it, which is the product's own case policy (macOS/Windows default)"
+        )
     monkeypatch.chdir(repo)
 
     scope = resolve_ordinary_claim_scope(["src/new.py"])
