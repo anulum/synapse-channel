@@ -130,7 +130,8 @@ async def test_channel_invite_is_owner_only_and_gates_join() -> None:
             )
             refused_invite = await read_until_type(gamma, "channel_result")
             assert refused_invite["ok"] is False
-            assert "only the owner may invite" in refused_invite["payload"]
+            # Uniform refusal (enumeration-oracle hardening) + no roster leak.
+            assert "not its owner" in refused_invite["payload"]
             assert refused_invite["members"] == []
 
             # The owner invites BETA, who may then join.

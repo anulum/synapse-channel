@@ -120,8 +120,39 @@ def test_only_the_owner_may_invite() -> None:
     ok, message = registry.invite("c", "bob", "carol")
 
     assert ok is False
-    assert "only the owner may invite" in message
+    # Uniform refusal (enumeration-oracle hardening): a non-owner cannot tell an
+    # existing channel it does not own from a non-existent one.
+    assert "not its owner" in message
     assert registry.join("c", "carol")[0] is False
+
+
+def test_join_and_invite_refusals_do_not_confirm_channel_existence() -> None:
+    # Enumeration-oracle hardening (CEO F3 second-eye finding): an unauthorized
+    # caller must get the same, ambiguous refusal for a non-existent channel and for
+    # one it may not join/own, so the error string never confirms which ids exist.
+    registry = ChannelRegistry()
+    registry.create("real", owner="alice")
+
+    # join: a non-existent id and an existing-but-uninvited id share one template.
+    assert (
+        registry.join("ghost", "bob")[1]
+        == "cannot join 'ghost': no such channel or you were not invited"
+    )
+    assert (
+        registry.join("real", "bob")[1]
+        == "cannot join 'real': no such channel or you were not invited"
+    )
+    # invite: a non-existent id and an existing-but-not-owned id share one template.
+    assert (
+        registry.invite("ghost", "mallory", "x")[1]
+        == "cannot invite to 'ghost': no such channel or you are not its owner"
+    )
+    assert (
+        registry.invite("real", "mallory", "x")[1]
+        == "cannot invite to 'real': no such channel or you are not its owner"
+    )
+    # The refusals never use the old existence-confirming wording.
+    assert "does not exist" not in registry.join("ghost", "bob")[1]
 
 
 def test_invite_is_consumed_on_join_and_does_not_permit_rejoin() -> None:

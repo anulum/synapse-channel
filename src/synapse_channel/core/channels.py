@@ -148,10 +148,12 @@ class ChannelRegistry:
         """
         cid = self._normalise_id(channel_id)
         channel = self._channels.get(cid)
-        if channel is None:
-            return False, f"channel '{cid}' does not exist"
-        if str(inviter or "").strip() != channel.owner:
-            return False, f"only the owner may invite to '{cid}'"
+        # Uniform refusal: a non-owner (or a caller naming a channel that does not
+        # exist) gets one indistinguishable message, so an unauthorized caller cannot
+        # probe channel existence by the error string (an enumeration oracle). The
+        # roster and membership stay protected as before.
+        if channel is None or str(inviter or "").strip() != channel.owner:
+            return False, f"cannot invite to '{cid}': no such channel or you are not its owner"
         invitee_name = str(invitee or "").strip()
         if not invitee_name:
             return False, "invalid invitee"
@@ -170,16 +172,19 @@ class ChannelRegistry:
         refused, so an agent can no longer self-join a private channel by id.
         """
         cid = self._normalise_id(channel_id)
-        channel = self._channels.get(cid)
-        if channel is None:
-            return False, f"channel '{cid}' does not exist"
         member_name = str(member or "").strip()
+        # Input validation first (leaks nothing about existence).
         if not member_name:
             return False, "invalid member"
-        if member_name in channel.members:
+        channel = self._channels.get(cid)
+        # An existing member is authorized to know it is already joined.
+        if channel is not None and member_name in channel.members:
             return False, f"already a member of '{cid}'"
-        if member_name != channel.owner and member_name not in channel.invites:
-            return False, f"not invited to '{cid}'"
+        # Uniform refusal: an uninvited caller (or one naming a channel that does not
+        # exist) gets one indistinguishable message, so it cannot probe channel
+        # existence by the error string (an enumeration oracle).
+        if channel is None or (member_name != channel.owner and member_name not in channel.invites):
+            return False, f"cannot join '{cid}': no such channel or you were not invited"
         channel.members.add(member_name)
         channel.invites.discard(member_name)
         return True, f"joined '{cid}'"
