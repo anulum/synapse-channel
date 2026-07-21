@@ -53,6 +53,7 @@ from synapse_channel.core.agent_liveness import (
     DEFAULT_WARN_STALE_RECIPIENTS,
     RecipientLiveness,
 )
+from synapse_channel.core.at_rest_guard import guard_at_rest
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
@@ -125,6 +126,7 @@ from synapse_channel.core.operator_relay_transport import (
 )
 from synapse_channel.core.pending_receipts import PendingReceipts
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
 from synapse_channel.core.protocol import (
     MessageType,
     loads_bounded,
@@ -360,6 +362,13 @@ class SynapseHub:
         :class:`InsecureBindError` rather than only warning — so a bus is never
         accidentally exposed to the network without a token (and, with metrics on,
         a metrics token); set this to downgrade the refusal to a warning.
+    insecure_plaintext_at_rest : bool, optional
+        Bind a non-loopback host with a plaintext ``--db`` event store. Off by
+        default the hub *refuses* such a bind — raising :class:`AtRestBindError` —
+        so the durable coordination log never sits unencrypted on an exposed
+        host's disk; encrypt the store (``--db-key-file``) or set this to downgrade
+        the refusal to a warning. Loopback binds and encrypted stores are
+        unaffected.
     per_message_auth_keys : Mapping[str, MessageAuthKey] or list[MessageAuthKey] or None, optional
         HMAC keys accepted for opt-in per-message authentication. ``None`` leaves
         the verifier with no configured keys.
@@ -497,6 +506,7 @@ class SynapseHub:
         allowed_origins: tuple[str, ...] | list[str] = (),
         advertised_host: str | None = None,
         insecure_off_loopback: bool = False,
+        insecure_plaintext_at_rest: bool = False,
         clock: Callable[[], float] | None = None,
         per_message_auth_keys: Mapping[str, MessageAuthKey] | list[MessageAuthKey] | None = None,
         require_per_message_auth: bool = False,
@@ -563,6 +573,7 @@ class SynapseHub:
         self._bind_host = DEFAULT_HOST
         self._bind_port = DEFAULT_PORT
         self.insecure_off_loopback = bool(insecure_off_loopback)
+        self.insecure_plaintext_at_rest = bool(insecure_plaintext_at_rest)
         self.rate_limiter = rate_limiter
         self.host_rate_limiter = host_rate_limiter
         self.durable_ingress_quota = durable_ingress_quota
@@ -1098,6 +1109,24 @@ class SynapseHub:
         """
         self._ingress.guard_exposure(host, tls_active=tls_active)
 
+    def _guard_at_rest(self, host: str) -> None:
+        """Refuse — or, when overridden, warn — before binding with a plaintext store.
+
+        Proportionate to exposure: off loopback a plaintext ``--db`` event store is
+        refused (the durable log would sit unencrypted on a networked host's disk)
+        unless it is encrypted or ``--insecure-plaintext-at-rest`` is set. A loopback
+        bind or a hub with no durable journal is unaffected.
+        """
+        journal = self.journal
+        guard_at_rest(
+            host,
+            db=journal.path if journal is not None else None,
+            encrypted=journal is None or journal.encrypted,
+            insecure_plaintext_at_rest=self.insecure_plaintext_at_rest,
+            sqlcipher_available=sqlcipher_available(),
+            logger=logger,
+        )
+
     async def _resolve_sender(
         self,
         sender: str,
@@ -1512,6 +1541,7 @@ class SynapseHub:
             ``wss://`` instead of plain ``ws://``.
         """
         self._guard_exposure(host, tls_active=ssl_context is not None)
+        self._guard_at_rest(host)
         self._bind_host = host
         self._bind_port = int(port)
         stop = asyncio.Event()

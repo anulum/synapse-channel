@@ -76,6 +76,18 @@ All notable changes to this project are documented here.
   target). Migration: the owner must `channel invite` each member before they can
   `channel join`; self-join call sites now need an invite round-trip. Channel
   creation, leave, list, and history are unchanged.
+- **Breaking (secure default flip toward 1.0):** a hub that binds **off loopback**
+  with a plaintext `--db` event store is now **refused at startup**. The durable
+  coordination log would otherwise sit unencrypted on a networked host's disk, so
+  a disk or backup compromise leaks the whole history. Proportionate to exposure,
+  mirroring the transport bind flip: a loopback / single-owner hub keeps a
+  plaintext store exactly as before, and an already-encrypted store (`--db-key-file`,
+  which selects the SQLCipher store) is unaffected. When the SQLCipher extra is
+  absent the refusal names the install step. Migration: on an exposed hub, encrypt
+  the store (`synapse encrypt-key migrate-sqlcipher` + `--db-key-file`, after
+  `pip install 'synapse-channel[sqlcipher]'`), or pass the new
+  `--insecure-plaintext-at-rest` to accept the risk and bind anyway. The at-rest
+  override is independent of `--insecure-off-loopback`.
 
 ### Fixed
 

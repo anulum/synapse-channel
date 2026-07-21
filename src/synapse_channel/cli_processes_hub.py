@@ -30,6 +30,7 @@ from synapse_channel.core.aef_runtime import (
     drain_aef_startup_backlog,
     run_aef_outbox_worker,
 )
+from synapse_channel.core.at_rest_guard import AtRestBindError, guard_at_rest
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability_card_history import PersistentCapabilityCardHistory
 from synapse_channel.core.capability_card_trust import (
@@ -62,6 +63,7 @@ from synapse_channel.core.multihub_watch import MultiHubWatch, parse_watch_peers
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_profile
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
 from synapse_channel.core.rate_policy import (
     HubExposurePosture,
     RateLimits,
@@ -416,6 +418,21 @@ def _cmd_hub(
     except InsecureBindError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
+    # Fail-closed at-rest precheck (also before the durable store is built, so a
+    # refused start leaves no plaintext database on disk): off loopback a plaintext
+    # --db is refused unless it is encrypted (--db-key-file) or explicitly accepted.
+    try:
+        guard_at_rest(
+            args.host,
+            db=args.db,
+            encrypted=bool(db_key_file),
+            insecure_plaintext_at_rest=getattr(args, "insecure_plaintext_at_rest", False),
+            sqlcipher_available=sqlcipher_available(),
+            logger=_PRECHECK_LOGGER,
+        )
+    except AtRestBindError as exc:
+        print(f"synapse hub: {exc}", file=sys.stderr)
+        return 2
     try:
         store_kwargs: dict[str, Any] = {"key_file": db_key_file}
         if aef_config is not None:
@@ -732,6 +749,7 @@ def _cmd_hub(
         "observed_asserting_hubs": (watch.observed_asserting_hubs if watch is not None else None),
         "claim_peers": claim_peers,
         "insecure_off_loopback": args.insecure_off_loopback,
+        "insecure_plaintext_at_rest": getattr(args, "insecure_plaintext_at_rest", False),
     }
     hub = hub_factory(**hub_kwargs)
     # Direct SynapseHub(...) construction does not run from_config, so config_epoch

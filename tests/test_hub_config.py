@@ -92,6 +92,7 @@ def test_default_config_builds_the_same_hub_as_bare_construction() -> None:
         "metrics_token",
         "metrics_query_token_ok",
         "insecure_off_loopback",
+        "insecure_plaintext_at_rest",
         "require_per_message_auth",
         "per_message_auth_replay_store",
         "per_message_auth_sequence_floor_mode",

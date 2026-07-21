@@ -117,6 +117,34 @@ def test_cmd_hub_insecure_bind_refusal_creates_no_store(
     assert not db_path.exists()
 
 
+def test_cmd_hub_refuses_plaintext_db_off_loopback_and_creates_no_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """F2: an exposed hub refuses a plaintext --db, before the store is built.
+
+    ``--insecure-off-loopback`` downgrades the R4 transport refusal, so the at-rest
+    guard is reached in isolation: a plaintext event store off loopback is refused
+    (the two insecure knobs are independent), and no database file is written.
+    """
+    db_path = tmp_path / "plaintext-hub.db"
+    ns = _hub_ns(host="0.0.0.0", db=str(db_path), insecure_off_loopback=True)
+    assert cli_processes._cmd_hub(ns) == 2
+    err = capsys.readouterr().err
+    assert "plaintext event store" in err
+    assert "--insecure-plaintext-at-rest" in err
+    assert not db_path.exists()
+
+
+def test_cmd_hub_allows_plaintext_db_on_loopback(tmp_path: Path) -> None:
+    """A loopback hub keeps a plaintext store — F2 is proportionate to exposure."""
+    db_path = tmp_path / "loopback-hub.db"
+    assert (
+        cli_processes._cmd_hub(_hub_ns(host="127.0.0.1", db=str(db_path)), runner=_close_runner)
+        == 0
+    )
+    assert db_path.exists()
+
+
 def test_cmd_hub_insecure_bind_precheck_stays_silent_on_the_opt_out(
     tmp_path: Path,
 ) -> None:
@@ -127,7 +155,15 @@ def test_cmd_hub_insecure_bind_precheck_stays_silent_on_the_opt_out(
     durable store opens exactly as before.
     """
     db_path = tmp_path / "opted-in-hub.db"
-    ns = _hub_ns(host="0.0.0.0", db=str(db_path), insecure_off_loopback=True)
+    # Off loopback with a plaintext --db also needs the at-rest opt-out (the two
+    # insecure knobs are independent); together the precheck stays silent and the
+    # store opens exactly as before.
+    ns = _hub_ns(
+        host="0.0.0.0",
+        db=str(db_path),
+        insecure_off_loopback=True,
+        insecure_plaintext_at_rest=True,
+    )
     assert cli_processes._cmd_hub(ns, runner=_close_runner) == 0
     assert db_path.exists()
 

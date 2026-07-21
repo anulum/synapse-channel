@@ -946,7 +946,12 @@ A token presented over plaintext `ws://` off loopback is **also refused**: the
 token and every coordination frame would be readable on the wire, so an
 off-loopback bind requires native TLS (`--tls-certfile`/`--tls-keyfile`) or a
 `wss://` proxy. `--insecure-off-loopback` downgrades either refusal to a warning
-for a trusted private network. `--max-connections-per-host` is a connection-count cap keyed by the
+for a trusted private network. Independently, an off-loopback bind with a
+plaintext `--db` event store is **refused** — the durable coordination log would
+sit unencrypted on the host's disk; encrypt it with `--db-key-file` (after
+`synapse encrypt-key migrate-sqlcipher`) or pass `--insecure-plaintext-at-rest` to
+accept the risk. Loopback binds and encrypted stores are unaffected.
+`--max-connections-per-host` is a connection-count cap keyed by the
 remote host (default **32**; pass `0` to disable); it is separate from
 `--host-rate`, which meters inbound frames from that host. The hub always
 installs a handshake guard: browser `Origin` values are refused unless listed

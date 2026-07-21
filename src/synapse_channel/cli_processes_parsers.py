@@ -461,6 +461,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "an exposed bind is refused rather than only warned about.",
     )
     hub.add_argument(
+        "--insecure-plaintext-at-rest",
+        action="store_true",
+        help="Bind a non-loopback host with a plaintext --db event store; by default "
+        "an exposed hub refuses a plaintext durable store (encrypt it with "
+        "--db-key-file). Loopback binds and encrypted stores are unaffected.",
+    )
+    hub.add_argument(
         "--allow-origin",
         action="append",
         default=[],

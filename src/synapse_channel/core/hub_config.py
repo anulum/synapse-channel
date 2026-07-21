@@ -176,6 +176,7 @@ class HubAuthConfig:
     authenticator: TokenAuthenticator | None = None
     auth_timeout: float = DEFAULT_AUTH_TIMEOUT
     insecure_off_loopback: bool = False
+    insecure_plaintext_at_rest: bool = False
     per_message_auth_keys: Mapping[str, MessageAuthKey] | list[MessageAuthKey] | None = None
     require_per_message_auth: bool = False
     per_message_auth_window_seconds: float = DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS

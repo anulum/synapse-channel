@@ -102,6 +102,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "claim_peer": [],
         "claim_peer_token": None,
         "insecure_off_loopback": False,
+        "insecure_plaintext_at_rest": False,
         "tls_certfile": None,
         "tls_keyfile": None,
         "paranoid": False,
