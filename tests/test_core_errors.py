@@ -98,6 +98,7 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     "AclError": ("synapse_channel.core.acl", "acl", ValueError),
     "AntiRollbackError": ("synapse_channel.core.merkle_checkpoint", "anti_rollback", Exception),
     "ApplyPatchPathError": ("synapse_channel.apply_patch_paths", "apply_patch_path", ValueError),
+    "AtRestBindError": ("synapse_channel.core.at_rest_guard", "at_rest_bind", RuntimeError),
     "AutoActionStoreError": (
         "synapse_channel.participants.auto_action_store",
         "auto_action_store",
