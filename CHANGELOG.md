@@ -75,6 +75,12 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- The cockpit root now delegates replay reconstruction, persisted preferences,
+  transient overlays and command entry, live transition toasts, and live/replay
+  panel projections to dedicated hooks. `App.tsx` is limited to authenticated
+  feed/workspace composition and shell rendering. The split preserves the
+  existing access, URL, replay, focus, keyboard, toast, and panel contracts and
+  gives every extracted lifecycle its own full branch-tested surface.
 - **Breaking (secure default flip toward 1.0):** a hub that binds off loopback
   with a connect token but over plaintext `ws://` (no native TLS) is now
   **refused at startup** instead of merely logging an advisory. The shared token

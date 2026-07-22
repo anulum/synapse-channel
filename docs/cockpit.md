@@ -85,6 +85,31 @@ snapshot and durable cursor bootstrap replace the fallback without discarding
 the last known presentation. Unchanged snapshots travel as small freshness
 heartbeats instead of retransmitting the complete fleet document.
 
+## Cockpit client architecture
+
+The browser shell has explicit responsibility boundaries. `App.tsx` performs
+only the top-level access, workspace, feed, and panel composition. Stateful
+behaviour that used to share that root component has its own lifecycle owner:
+
+- `useCockpitReplay` owns delayed state-at requests, stale-response rejection,
+  replay slots, and live/history switching;
+- `useCockpitPreferences` owns the focus lens, density, theme, and the
+  shareable signal-log hash, including their existing storage boundaries;
+- `useCockpitOverlays` owns command and guide entry, setup and detail overlays,
+  trace requests, focus restoration, and fail-closed capability downgrades;
+- `useCockpitToasts` compares only consecutive live fleet facts, deduplicates
+  transition notices, and clears timers when the shell locks or unmounts;
+- `useCockpitViewModel` derives the immutable panel projections. Replay can
+  replace claims and tasks, but the roster and other non-journalled evidence
+  remain live.
+
+Each owner has a dedicated behavioural hook test. The wired `App` test still
+exercises authentication, real endpoint adapters, URL restoration, replay,
+incident evidence, command entry, and capability removal through the public
+shell. This separation is architectural: it must not change exact wire values,
+browser-principal enforcement, or the evidence boundary between retained live
+state and reconstruction.
+
 ## Unlock a protected dashboard
 
 A loopback read-only dashboard can run without a browser bearer. A supplied
