@@ -124,4 +124,15 @@ test("the built live deck has zero axe violations in both themes and viewports",
       ).toEqual([]);
     }
   }
+
+  await page.setViewportSize(viewports[0]);
+  await page.keyboard.press("?");
+  await expect(page.getByRole("dialog", { name: "Cockpit guide" })).toBeVisible();
+  const guideResult = await page.evaluate(async () =>
+    (window as unknown as AxeWindow).axe.run(document),
+  );
+  expect(
+    guideResult.violations,
+    `guide desktop: ${JSON.stringify(guideResult.violations)}`,
+  ).toEqual([]);
 });

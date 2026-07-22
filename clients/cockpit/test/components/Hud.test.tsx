@@ -123,4 +123,12 @@ describe("Hud", () => {
     expect(onOpen).toHaveBeenCalledOnce();
     expect(trigger.current).toBeInstanceOf(HTMLButtonElement);
   });
+
+  it("exposes the contextual guide and language chooser in the HUD", async () => {
+    const onOpenGuide = vi.fn();
+    render(<Hud kpis={[]} live stamp="—" onOpenGuide={onOpenGuide} />);
+    await userEvent.click(screen.getByRole("button", { name: "Open cockpit guide" }));
+    expect(onOpenGuide).toHaveBeenCalledOnce();
+    expect((screen.getByLabelText("Interface language") as HTMLSelectElement).value).toBe("en");
+  });
 });

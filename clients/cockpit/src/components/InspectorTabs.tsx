@@ -8,6 +8,7 @@
 
 import type { JSX, KeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useCockpitI18n } from "../context/CockpitI18n";
 import type { OperatorActionsState, ReceiptsState } from "../lib/auditFeeds";
 import type { AttentionItem } from "../lib/attention";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
@@ -161,6 +162,7 @@ export function InspectorTabs({
   configEpoch = "",
   onOpenIncidentEvidence,
 }: InspectorTabsProps): JSX.Element {
+  const { t } = useCockpitI18n();
   const [prefill, setPrefill] = useState<CausalityPrefill | null>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const shownCoverage = coverage ?? eventCoverageOf(events, provenance);
@@ -201,8 +203,8 @@ export function InspectorTabs({
   }, [traceRequest, onSelectTask]);
 
   return (
-    <div className="inspector" role="region" aria-label="Inspector">
-      <div className="inspector__tabs" role="tablist" aria-label="Inspector">
+    <div className="inspector" role="region" aria-label={t("tabs.label")}>
+      <div className="inspector__tabs" role="tablist" aria-label={t("tabs.label")}>
         {INSPECTOR_TABS.map((candidate, index) => (
           <button
             key={candidate}
@@ -219,7 +221,7 @@ export function InspectorTabs({
             onClick={() => onTabChange(candidate)}
             onKeyDown={(event) => onTabKeyDown(event, index)}
           >
-            {candidate === "log" ? "signal log" : candidate}
+            {t(`tab.${candidate}`)}
             {candidate === "log" && <span className="inspector__tab-count">{events.length}</span>}
           </button>
         ))}
@@ -230,9 +232,9 @@ export function InspectorTabs({
               type="button"
               className="panel__clear"
               onClick={() => onClearWindow?.()}
-              aria-label="Clear the brushed window"
+              aria-label={t("tabs.clearWindow")}
             >
-              clear
+              {t("hud.clear")}
             </button>
           </span>
         )}

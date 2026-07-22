@@ -14,6 +14,7 @@ import { ClaimsBoard } from "./components/ClaimsBoard";
 import { FederationRow } from "./components/FederationRow";
 import { FindingsStream } from "./components/FindingsStream";
 import { FleetRoster } from "./components/FleetRoster";
+import { GuideDrawer } from "./components/GuideDrawer";
 import { Hud } from "./components/Hud";
 import { InspectorTabs } from "./components/InspectorTabs";
 import { InstallChip } from "./components/InstallChip";
@@ -28,6 +29,7 @@ import { SelectionBar } from "./components/SelectionBar";
 import { TaskBoard } from "./components/TaskBoard";
 import { ToastStack } from "./components/ToastStack";
 import { DetailDrawer } from "./components/DetailDrawer";
+import { useCockpitI18n } from "./context/CockpitI18n";
 import { deriveAnomalies } from "./lib/anomalies";
 import { deriveAttentionQueue } from "./lib/attention";
 import { parsePendingApprovals } from "./lib/approvals";
@@ -69,6 +71,7 @@ async function loadReplaySlot(seq: number): Promise<ReplaySlot> {
 }
 
 export function App(): JSX.Element {
+  const { t } = useCockpitI18n();
   const {
     workspace,
     setPanel,
@@ -148,20 +151,32 @@ export function App(): JSX.Element {
 
   // The command palette: Ctrl/Cmd+K anywhere.
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [paletteCompose, setPaletteCompose] = useState<{
     readonly to: string;
     readonly nonce: number;
   } | null>(null);
   const commandTrigger = useRef<HTMLButtonElement | null>(null);
+  const guideTrigger = useRef<HTMLButtonElement | null>(null);
   const [accessNotice, setAccessNotice] = useState("");
   const capabilities = capabilitiesOf(access);
   const previousCapabilities = useRef(capabilities);
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
+      const target = event.target;
+      const typing =
+        target instanceof HTMLElement &&
+        (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
       if (!shellBlocked && event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
+        setGuideOpen(false);
         setPaletteCompose(null);
         setPaletteOpen((current) => !current);
+      } else if (!shellBlocked && !typing && event.key === "?") {
+        event.preventDefault();
+        setPaletteOpen(false);
+        setPaletteCompose(null);
+        setGuideOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -173,9 +188,9 @@ export function App(): JSX.Element {
     if (authBlocked || !lostWriteCapability(previous, capabilities)) return;
     setPaletteOpen(false);
     setPaletteCompose(null);
-    setAccessNotice("Dashboard access changed; write controls were removed.");
+    setAccessNotice(t("app.accessChanged"));
     commandTrigger.current?.focus();
-  }, [authBlocked, capabilities]);
+  }, [authBlocked, capabilities, t]);
 
   // The detail drawer's subject: one agent or one task, or nothing.
   const [inspected, setInspected] = useState<
@@ -202,6 +217,15 @@ export function App(): JSX.Element {
   const onClosePalette = useCallback(() => {
     setPaletteOpen(false);
     setPaletteCompose(null);
+  }, []);
+  const onOpenGuide = useCallback(() => {
+    setPaletteOpen(false);
+    setPaletteCompose(null);
+    setGuideOpen(true);
+  }, []);
+  const onCloseGuide = useCallback(() => {
+    setGuideOpen(false);
+    guideTrigger.current?.focus();
   }, []);
 
   // The focus lens and density are small persisted preferences, same
@@ -391,6 +415,7 @@ export function App(): JSX.Element {
     setReplaySlotB(null);
     setPaletteOpen(false);
     setPaletteCompose(null);
+    setGuideOpen(false);
     setInspected(null);
     setTraceRequest(undefined);
     setToasts([]);
@@ -400,7 +425,7 @@ export function App(): JSX.Element {
     return <AuthVeil reason={auth.reason} onUnlock={unlockCockpit} />;
   }
   if (access.phase === "loading")
-    return <main className="access-probe" role="status">checking dashboard access…</main>;
+    return <main className="access-probe" role="status">{t("app.accessChecking")}</main>;
 
   return (
     <div className="shell">
@@ -429,6 +454,8 @@ export function App(): JSX.Element {
           setPaletteCompose(null);
           setPaletteOpen(true);
         }}
+        guideTriggerRef={guideTrigger}
+        onOpenGuide={onOpenGuide}
       />
       <SelectionBar
         selection={workspace.selection}
@@ -593,6 +620,11 @@ export function App(): JSX.Element {
         compose={paletteCompose}
         onClose={onClosePalette}
         onRun={runPaletteCommand}
+      />
+      <GuideDrawer
+        open={guideOpen}
+        activePanel={workspace.panel}
+        onClose={onCloseGuide}
       />
       <ToastStack toasts={toasts} onDismiss={onDismissToast} />
       <DetailDrawer

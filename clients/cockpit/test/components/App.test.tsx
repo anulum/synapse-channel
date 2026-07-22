@@ -128,6 +128,16 @@ describe("App", () => {
     unmount();
   });
 
+  it("opens the contextual guide with ? and returns focus to its HUD trigger", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("worker")).toBeTruthy());
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "?" }));
+    expect(await screen.findByRole("dialog", { name: "Cockpit guide" })).toBeTruthy();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Cockpit guide" })).toBeNull());
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open cockpit guide" }));
+  });
+
   it("arms fleet history from the URL workspace and states an unserved reconstruction surface", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText("worker")).toBeTruthy());

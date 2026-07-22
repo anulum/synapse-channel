@@ -8,6 +8,7 @@
 
 import type { JSX } from "react";
 import { useState, type FormEvent } from "react";
+import { useCockpitI18n } from "../context/CockpitI18n";
 
 interface AuthVeilProps {
   readonly reason: string | null;
@@ -16,17 +17,18 @@ interface AuthVeilProps {
 
 /** Full-screen credential boundary shown only after a protected request returns 401. */
 export function AuthVeil({ reason, onUnlock }: AuthVeilProps): JSX.Element {
+  const { t } = useCockpitI18n();
   const [bearer, setBearer] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     if (bearer.trim() === "") {
-      setError("Paste the dashboard bearer token.");
+      setError(t("auth.empty"));
       return;
     }
     if (!onUnlock(bearer)) {
-      setError("Session storage is unavailable; the cockpit cannot retain this bearer safely.");
+      setError(t("auth.storageError"));
       return;
     }
     setBearer("");
@@ -37,12 +39,9 @@ export function AuthVeil({ reason, onUnlock }: AuthVeilProps): JSX.Element {
     <main className="auth-veil" aria-labelledby="auth-title">
       <form className="auth-card" onSubmit={submit}>
         <span className="auth-card__eyebrow">SYNAPSE·CHANNEL</span>
-        <h1 id="auth-title">Unlock cockpit</h1>
-        <p>
-          This dashboard protects its live feeds. Paste the bearer provided for your dashboard
-          principal; it stays in this tab&apos;s session storage only.
-        </p>
-        <label htmlFor="dashboard-bearer">Dashboard bearer token</label>
+        <h1 id="auth-title">{t("auth.title")}</h1>
+        <p>{t("auth.description")}</p>
+        <label htmlFor="dashboard-bearer">{t("auth.tokenLabel")}</label>
         <input
           id="dashboard-bearer"
           type="password"
@@ -57,8 +56,8 @@ export function AuthVeil({ reason, onUnlock }: AuthVeilProps): JSX.Element {
             {error ?? reason}
           </p>
         )}
-        <button type="submit">unlock cockpit</button>
-        <small>The bearer is never placed in the URL, logs, local storage, or shell cache.</small>
+        <button type="submit">{t("auth.submit")}</button>
+        <small>{t("auth.safety")}</small>
       </form>
     </main>
   );

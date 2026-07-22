@@ -107,7 +107,7 @@ The top strip answers whether the page is current before it shows detail:
 - the current browser role and capability posture;
 - an identity focus lens that narrows claims and tasks;
 - compact/cozy density and dark/light theme controls;
-- the command palette button.
+- the command palette, contextual guide, and interface-language controls.
 
 Click a headline counter to filter the signal log to its underlying event
 kinds. Clear the focus lens before concluding that a board or claim list is
@@ -116,6 +116,37 @@ complete.
 Press `Ctrl+K` or `Command+K` to open the command palette. Viewer principals
 receive navigation and inspection commands only. Operator and admin principals
 receive the governed write commands currently enabled by the server.
+
+## Change language and use the in-product guide
+
+The cockpit ships English and Slovak catalogues in the application bundle. It
+does not download translations at runtime. The initial language comes from the
+first valid source in this order:
+
+1. the explicit `lang` URL parameter;
+2. the operator's saved `cockpit-locale` preference;
+3. the first supported browser language;
+4. English.
+
+Choose **EN** or **SK** in the HUD. The choice updates `lang` without removing
+the active panel, selection, replay, or communication filters, so a shared URL
+reopens the same workspace in the chosen language. The HTML `lang` attribute
+changes with it for assistive technology. A missing future catalogue entry
+falls back to English, and catalogue-parity tests stop incomplete releases.
+
+Press `?` or choose **guide** in the HUD to open the local guide. Its first
+topic explains the currently active inspector panel; the remaining topics
+cover evidence limits, governed actions, shortcuts, accessibility, and common
+access or freshness failures. Search runs only over text already loaded in the
+browser. It sends no query or usage telemetry. `Escape`, the close control, or
+the shaded veil closes the guide, and focus returns to its HUD trigger.
+
+Translation applies only to explanatory interface copy. SYNAPSE identities,
+project and task IDs, event kinds, wire fields, capability names, hashes,
+sequence numbers, CLI flags, paths, URLs, and protocol outcome tokens remain
+literal evidence. For example, `accepted`, `delivered`, `undelivered`,
+`rejected`, `rate-limited`, `unreachable`, `stream`, `poll fallback`, and `gap
+detected` retain their exact spelling in Slovak mode.
 
 ## Use the activity spine
 

@@ -7,6 +7,7 @@
 // SYNAPSE_CHANNEL — the phone-width segmented switch between deck sections
 
 import type { JSX } from "react";
+import { useCockpitI18n } from "../context/CockpitI18n";
 
 /** The deck sections a phone shows one at a time. */
 export type MobileSegment = "signals" | "claims" | "board" | "roster" | "reliability";
@@ -32,8 +33,9 @@ interface MobileNavProps {
  * finger-sized, per the platform minimum.
  */
 export function MobileNav({ active, onSelect }: MobileNavProps): JSX.Element {
+  const { t } = useCockpitI18n();
   return (
-    <nav className="mobile-nav" aria-label="Deck section">
+    <nav className="mobile-nav" aria-label={t("mobile.label")}>
       {MOBILE_SEGMENTS.map((segment) => (
         <button
           key={segment}
@@ -42,7 +44,7 @@ export function MobileNav({ active, onSelect }: MobileNavProps): JSX.Element {
           aria-pressed={segment === active}
           onClick={() => onSelect(segment)}
         >
-          {segment}
+          {t(`mobile.${segment}`)}
         </button>
       ))}
     </nav>

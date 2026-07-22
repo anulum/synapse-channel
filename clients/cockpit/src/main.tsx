@@ -9,6 +9,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { CockpitI18nProvider } from "./context/CockpitI18n";
 // Self-hosted typefaces (bundled woff2, no CDN): the cockpit renders
 // identically offline and sends no request to any external origin.
 import "@fontsource/space-grotesk/400.css";
@@ -37,6 +38,8 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
 
 createRoot(mount).render(
   <StrictMode>
-    <App />
+    <CockpitI18nProvider>
+      <App />
+    </CockpitI18nProvider>
   </StrictMode>,
 );

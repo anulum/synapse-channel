@@ -7,6 +7,8 @@
 // SYNAPSE_CHANNEL — the HUD strip: mark, KPI triad, liveness beacon
 
 import type { JSX, ReactNode, Ref } from "react";
+import { useCockpitI18n } from "../context/CockpitI18n";
+import type { CockpitLocale, MessageKey } from "../lib/i18n";
 import type { LiveConnectionStatus } from "../lib/liveTransport";
 
 /** One headline metric with a redundant delta (arrow + colour + sign). */
@@ -44,7 +46,16 @@ interface HudProps {
   readonly accessControl?: ReactNode;
   readonly commandTriggerRef?: Ref<HTMLButtonElement>;
   readonly onOpenPalette?: (() => void) | undefined;
+  readonly guideTriggerRef?: Ref<HTMLButtonElement>;
+  readonly onOpenGuide?: (() => void) | undefined;
 }
+
+const KPI_KEYS: Readonly<Record<string, MessageKey>> = {
+  "agents online": "kpi.agents",
+  "claims held": "kpi.claims",
+  "obs / min": "kpi.observations",
+  "risk signals": "kpi.risk",
+};
 
 function deltaClass(delta: number): string {
   if (delta > 0) return "kpi__delta kpi__delta--up";
@@ -59,19 +70,25 @@ function deltaText(delta: number): string {
   return "• 0";
 }
 
-function transportLabel(status: LiveConnectionStatus): string {
-  if (status === "live") return "stream";
-  if (status === "unsupported" || status === "fallback") return "poll fallback";
-  if (status === "gap") return "gap detected";
-  return status;
+function transportKey(status: LiveConnectionStatus): MessageKey {
+  if (status === "live") return "hud.transport.live";
+  if (status === "unsupported" || status === "fallback") return "hud.transport.fallback";
+  if (status === "gap") return "hud.transport.gap";
+  return `hud.transport.${status}`;
 }
 
-export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, theme = "dark", onToggleTheme, focus = "", onFocusChange, rosterNames = [], density = "cozy", onToggleDensity, accessControl, commandTriggerRef, onOpenPalette }: HudProps): JSX.Element {
+export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, theme = "dark", onToggleTheme, focus = "", onFocusChange, rosterNames = [], density = "cozy", onToggleDensity, accessControl, commandTriggerRef, onOpenPalette, guideTriggerRef, onOpenGuide }: HudProps): JSX.Element {
+  const { locale, setLocale, t } = useCockpitI18n();
+  const translatedKpi = (label: string): string => {
+    const key = KPI_KEYS[label];
+    return key === undefined ? label : t(key);
+  };
+  const shownTransport = t(transportKey(transport));
   return (
     <header className="hud">
       <div className="hud__mark">
         <h1>SYNAPSE</h1>
-        <span>channel · cockpit</span>
+        <span>{t("hud.product")}</span>
       </div>
 
       <div className="hud__spacer" />
@@ -83,10 +100,10 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
               type="button"
               className="kpi kpi--link"
               key={kpi.label}
-              title={`Filter the signal log to ${kpi.label}`}
+              title={t("hud.filterKpi", { label: translatedKpi(kpi.label) })}
               onClick={() => onSelect(kpi.label)}
             >
-              <span className="kpi__label">{kpi.label}</span>
+              <span className="kpi__label">{translatedKpi(kpi.label)}</span>
               <span className="kpi__row">
                 <span className="kpi__value">{kpi.value}</span>
                 <span className={deltaClass(kpi.delta)}>{deltaText(kpi.delta)}</span>
@@ -94,7 +111,7 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
             </button>
           ) : (
             <div className="kpi" key={kpi.label}>
-              <span className="kpi__label">{kpi.label}</span>
+              <span className="kpi__label">{translatedKpi(kpi.label)}</span>
               <span className="kpi__row">
                 <span className="kpi__value">{kpi.value}</span>
                 <span className={deltaClass(kpi.delta)}>{deltaText(kpi.delta)}</span>
@@ -110,12 +127,34 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
           ref={commandTriggerRef}
           type="button"
           className="hud__commands"
-          aria-label="Open command palette"
+          aria-label={t("hud.openCommands")}
           onClick={onOpenPalette}
         >
-          commands <kbd>Ctrl K</kbd>
+          {t("hud.commands")} <kbd>Ctrl K</kbd>
         </button>
       )}
+      {onOpenGuide !== undefined && (
+        <button
+          ref={guideTriggerRef}
+          type="button"
+          className="hud__commands hud__guide"
+          aria-label={t("hud.openGuide")}
+          onClick={onOpenGuide}
+        >
+          {t("hud.guide")} <kbd>?</kbd>
+        </button>
+      )}
+      <label className="hud__locale">
+        <span className="visually-hidden">{t("hud.locale")}</span>
+        <select
+          value={locale}
+          onChange={(event) => setLocale(event.target.value as CockpitLocale)}
+          aria-label={t("hud.locale")}
+        >
+          <option value="en">EN</option>
+          <option value="sk">SK</option>
+        </select>
+      </label>
       {onFocusChange !== undefined && (
         <span className={`hud__focus${focus !== "" ? " hud__focus--on" : ""}`}>
           <input
@@ -123,9 +162,9 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
             list="hud-focus-roster"
             value={focus}
             onChange={(change) => onFocusChange(change.target.value)}
-            placeholder="focus identity…"
-            aria-label="Focus the claims and board on one identity"
-            title="Narrow the claims board and task board to one identity's work"
+            placeholder={t("hud.focusPlaceholder")}
+            aria-label={t("hud.focusLabel")}
+            title={t("hud.focusTitle")}
           />
           <datalist id="hud-focus-roster">
             {rosterNames.map((name) => (
@@ -137,9 +176,9 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
               type="button"
               className="panel__clear"
               onClick={() => onFocusChange("")}
-              aria-label="Clear the focus lens"
+              aria-label={t("hud.clearFocus")}
             >
-              clear
+              {t("hud.clear")}
             </button>
           )}
         </span>
@@ -149,10 +188,10 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
           type="button"
           className="hud__theme"
           onClick={onToggleDensity}
-          title={density === "cozy" ? "Tighten the rows for a big fleet" : "Relax the rows"}
-          aria-label="Toggle display density"
+          title={density === "cozy" ? t("hud.densityCompactTitle") : t("hud.densityCozyTitle")}
+          aria-label={t("hud.toggleDensity")}
         >
-          {density === "cozy" ? "compact" : "cozy"}
+          {density === "cozy" ? t("hud.compact") : t("hud.cozy")}
         </button>
       )}
       {onToggleTheme !== undefined && (
@@ -160,20 +199,20 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
           type="button"
           className="hud__theme"
           onClick={onToggleTheme}
-          title={theme === "dark" ? "Switch to the light instrument" : "Switch to the graphite instrument"}
-          aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          title={theme === "dark" ? t("hud.switchLight") : t("hud.switchDark")}
+          aria-label={theme === "dark" ? t("hud.switchLight") : t("hud.switchDark")}
         >
-          {theme === "dark" ? "light" : "dark"}
+          {theme === "dark" ? t("hud.light") : t("hud.dark")}
         </button>
       )}
       <div className={`beacon ${live ? "beacon--live" : "beacon--stale"}`}>
         <span className="beacon__dot" />
-        <span>{live ? "live" : "stale"}</span>
+        <span>{live ? t("hud.live") : t("hud.stale")}</span>
         <span
           className={`beacon__transport beacon__transport--${transport}`}
-          aria-label={`Live transport: ${transportLabel(transport)}`}
+          aria-label={t("hud.transport", { status: shownTransport })}
         >
-          {transportLabel(transport)}
+          {shownTransport}
         </span>
         <span className="beacon__stamp">{stamp}</span>
       </div>
