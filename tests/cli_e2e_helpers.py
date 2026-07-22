@@ -30,7 +30,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-_CLI = [sys.executable, "-m", "synapse_channel.cli"]
+# ``-u`` forces the child interpreter's stdout/stderr unbuffered. The server
+# helpers capture a subprocess's merged output and, on a readiness timeout, kill
+# it with SIGTERM before reading that pipe. A block-buffered startup banner would
+# be lost on the kill, so a hung server reports an empty capture that cannot
+# distinguish "printed a banner we never flushed" from "blocked before any print".
+# Unbuffered output makes the captured diagnostic trustworthy (see the macOS e2e
+# server-hang investigation); it changes buffering only, never behaviour.
+_CLI = [sys.executable, "-u", "-m", "synapse_channel.cli"]
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _CANDIDATE_PYTHONPATH = (
     (_PROJECT_ROOT / "src").as_posix(),
