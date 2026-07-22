@@ -243,8 +243,14 @@ export function InspectorTabs({
             onMessagePeer={onMessagePeer}
             view={fleetView}
             onViewChange={onFleetViewChange}
-            selection={fleetSelectionOf(selection) ?? fleetSelection}
-            onSelectionChange={onFleetSelectionChange}
+            selection={selection ?? fleetSelection}
+            onSelectionChange={(next) => {
+              if (onSelectionChange !== undefined) {
+                onSelectionChange(next);
+                return;
+              }
+              onFleetSelectionChange(fleetSelectionOf(next));
+            }}
           />
         ) : tab === "metrics" ? (
           <MetricsPanel

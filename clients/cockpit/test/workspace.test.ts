@@ -18,7 +18,7 @@ import {
 describe("workspaceFromSearch", () => {
   it("uses stable defaults for absent or unknown navigation values", () => {
     expect(workspaceFromSearch("")).toEqual(DEFAULT_WORKSPACE);
-    expect(workspaceFromSearch("?panel=unknown&fleet=timeline")).toEqual(DEFAULT_WORKSPACE);
+    expect(workspaceFromSearch("?panel=unknown&fleet=unknown")).toEqual(DEFAULT_WORKSPACE);
   });
 
   it("keeps selection independent from the active panel", () => {
@@ -52,6 +52,16 @@ describe("workspaceFromSearch", () => {
     expect(workspaceFromSearch("?panel=log&event=429").selection).toEqual({
       kind: "event",
       seq: 429,
+    });
+    expect(workspaceFromSearch("?panel=fleet&fleet=timeline&event=430")).toEqual({
+      panel: "fleet",
+      fleetView: "timeline",
+      selection: { kind: "event", seq: 430 },
+    });
+    expect(workspaceFromSearch("?panel=fleet&fleet=flow&project=alpha")).toEqual({
+      panel: "fleet",
+      fleetView: "flow",
+      selection: { kind: "project", id: "alpha" },
     });
   });
 

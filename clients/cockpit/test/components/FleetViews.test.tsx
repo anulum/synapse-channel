@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FleetViews } from "../../src/components/FleetViews";
 import type { CockpitEvent } from "../../src/types";
-import type { FleetSelection, FleetView } from "../../src/lib/workspace";
+import type { CockpitSelection, FleetView } from "../../src/lib/workspace";
 
 afterEach(cleanup);
 
@@ -37,12 +37,46 @@ const EVENTS: readonly CockpitEvent[] = [
   },
 ];
 
+const F4_EVENTS: readonly CockpitEvent[] = [
+  ...EVENTS,
+  {
+    seq: 3,
+    ts: Date.now() / 1000 + 1,
+    kind: "claim",
+    lane: "claims",
+    severity: 0.3,
+    actor: "alpha/one",
+    label: "claimed SCH-3",
+    taskId: "SCH-3",
+  },
+  {
+    seq: 4,
+    ts: Date.now() / 1000 + 2,
+    kind: "presence",
+    lane: "presence",
+    severity: 0.1,
+    actor: "beta/two-rx",
+    label: "receiver waiting",
+    taskId: "",
+  },
+  {
+    seq: 5,
+    ts: Date.now() / 1000 + 3,
+    kind: "task",
+    lane: "task",
+    severity: 0.4,
+    actor: "beta/two",
+    label: "task advanced",
+    taskId: "SCH-5",
+  },
+];
+
 type FleetHarnessProps = Omit<
   Parameters<typeof FleetViews>[0],
   "view" | "onViewChange" | "selection" | "onSelectionChange"
 > & {
   readonly initialView?: FleetView;
-  readonly initialSelection?: FleetSelection | null;
+  readonly initialSelection?: CockpitSelection | null;
 };
 
 function FleetHarness({
@@ -51,7 +85,7 @@ function FleetHarness({
   ...props
 }: FleetHarnessProps): JSX.Element {
   const [view, setView] = useState<FleetView>(initialView);
-  const [selection, setSelection] = useState<FleetSelection | null>(initialSelection);
+  const [selection, setSelection] = useState<CockpitSelection | null>(initialSelection);
   return (
     <FleetViews
       {...props}
@@ -64,13 +98,17 @@ function FleetHarness({
 }
 
 describe("FleetViews", () => {
-  it("switches among web, matrix, and project instruments", async () => {
-    render(<FleetHarness events={EVENTS} claims={[]} agents={[]} window={null} connected canMessage={false} />);
+  it("switches among all five fleet instruments", async () => {
+    render(<FleetHarness events={F4_EVENTS} claims={[]} agents={[]} window={null} connected canMessage={false} />);
     expect(screen.getByTestId("fleet-web")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "matrix" }));
     expect(screen.getByTestId("fleet-matrix")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "projects" }));
     expect(screen.getByTestId("fleet-projects")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "timeline" }));
+    expect(screen.getByTestId("fleet-timeline")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "flow" }));
+    expect(screen.getByTestId("fleet-flow")).toBeTruthy();
   });
 
   it("keeps message controls absent for viewers and prefills an exact operator peer", async () => {
@@ -199,9 +237,34 @@ describe("FleetViews", () => {
     await user.keyboard("{Home}");
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "web" }));
     await user.keyboard("{ArrowLeft}");
-    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "projects" }));
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "flow" }));
     await user.keyboard("{End}");
-    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "projects" }));
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "flow" }));
+  });
+
+  it("binds timeline and project-flow marks to exact retained event evidence", async () => {
+    render(
+      <FleetHarness
+        events={F4_EVENTS}
+        claims={[]}
+        agents={[]}
+        window={null}
+        connected
+        canMessage={false}
+        initialView="timeline"
+      />,
+    );
+    expect(screen.getAllByText("message").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("claim").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("wait").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("task").length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: "#5" }));
+    expect(screen.getByRole("button", { name: "#5" }).getAttribute("aria-pressed")).toBe("true");
+
+    await userEvent.click(screen.getByRole("tab", { name: "flow" }));
+    expect(screen.getByText("exact route evidence")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "#2" }));
+    expect(screen.getByRole("button", { name: "#2" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("marks controlled agent and project selections in their visual peers", () => {

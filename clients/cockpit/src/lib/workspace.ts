@@ -17,7 +17,7 @@ export const INSPECTOR_TABS = [
 ] as const;
 export type InspectorTab = (typeof INSPECTOR_TABS)[number];
 
-export const FLEET_VIEWS = ["web", "matrix", "projects"] as const;
+export const FLEET_VIEWS = ["web", "matrix", "projects", "timeline", "flow"] as const;
 export type FleetView = (typeof FLEET_VIEWS)[number];
 
 export type CockpitSelection =

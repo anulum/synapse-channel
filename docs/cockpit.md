@@ -134,16 +134,28 @@ selection does not silently discard either filter.
 
 ## Inspect fleet communication
 
-Open the **fleet** inspector tab and choose one of three views:
+Open the **fleet** inspector tab and choose one of five views:
 
 - **web** groups identities by project and shows directed traffic;
 - **matrix** uses sender rows and recipient columns for exact route volume;
 - **projects** summarises inbound traffic, outbound traffic, identities, and
-  claims by project.
+  claims by project;
+- **timeline** separates retained message/receipt, claim, waiter, and task
+  events into time-aligned lanes;
+- **flow** aggregates retained message traffic from source projects to target
+  projects and reports current claim ownership or contention beside it.
 
 The web emphasises a small set of priority routes for quick selection. The
 matrix remains the precise long-tail view. Select a node, project, link, or
 matrix cell to open its evidence detail.
+
+Every timeline mark is a durable event sequence. Its table peer exposes the
+same lane, sequence, time, actor/project, and label, and selecting either form
+updates the shared event selection. The project-flow lines are retained message
+aggregates, not inferred delivery paths. Each row links to the newest exact
+message sequence supporting that aggregate; delivery still comes only from the
+separate receipt evidence. Both modes obey the brushed time window and state
+when the visual is bounded or contains no eligible retained evidence.
 
 The active inspector panel, fleet mode, and shared selection live in bounded
 URL query fields. Copy the address to reopen that workspace; browser Back and

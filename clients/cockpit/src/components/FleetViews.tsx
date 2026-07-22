@@ -22,6 +22,7 @@ import {
   type ConversationMessage,
   type ProjectTraffic,
 } from "../lib/communications";
+import { deriveFleetTimeline, deriveProjectFlow } from "../lib/fleetVisuals";
 import {
   sendOperatorResponse,
   type MessageResponseInput,
@@ -31,15 +32,16 @@ import {
 import type { CockpitEvent } from "../types";
 import {
   FLEET_VIEWS,
-  type FleetSelection,
+  type CockpitSelection,
   type FleetView,
 } from "../lib/workspace";
+import { ProjectFlowView, TimelineView } from "./FleetVisualModes";
 
 interface FleetViewsProps {
   readonly view: FleetView;
   readonly onViewChange: (view: FleetView) => void;
-  readonly selection: FleetSelection | null;
-  readonly onSelectionChange: (selection: FleetSelection | null) => void;
+  readonly selection: CockpitSelection | null;
+  readonly onSelectionChange: (selection: CockpitSelection | null) => void;
   readonly events: readonly CockpitEvent[];
   readonly claims: readonly ClaimView[];
   readonly agents: readonly string[];
@@ -84,7 +86,7 @@ function WebView({
   model: CommunicationModel;
   onSelectNode: (id: string) => void;
   onSelectEdge: (source: string, target: string) => void;
-  selection: FleetSelection | null;
+  selection: CockpitSelection | null;
 }): JSX.Element {
   const layout = layoutCommunicationWeb(model);
   const labelled = new Set(model.nodes.slice(0, 14).map((node) => node.id));
@@ -233,7 +235,7 @@ function MatrixView({
 }: {
   model: CommunicationModel;
   onSelect: (source: string, target: string) => void;
-  selection: FleetSelection | null;
+  selection: CockpitSelection | null;
 }): JSX.Element {
   const identities = matrixIdentities(model);
   const edges = new Map(model.edges.map((edge) => [edge.id, edge]));
@@ -301,7 +303,7 @@ function ProjectsView({
 }: {
   projects: readonly ProjectTraffic[];
   onSelect: (id: string) => void;
-  selection: FleetSelection | null;
+  selection: CockpitSelection | null;
 }): JSX.Element {
   const maxTraffic = Math.max(1, ...projects.map((project) => project.inbound + project.outbound));
   return (
@@ -521,6 +523,8 @@ function FleetViewsComponent({
     () => deriveCommunicationModel(events, claims, agents, window),
     [events, claims, agents, window],
   );
+  const timeline = useMemo(() => deriveFleetTimeline(events, window), [events, window]);
+  const flow = useMemo(() => deriveProjectFlow(events, claims, window), [events, claims, window]);
   const selectedNode = selection?.kind === "agent" ? model.nodes.find((node) => node.id === selection.id) : undefined;
   const selectedProject =
     selection?.kind === "project" ? model.projects.find((project) => project.id === selection.id) : undefined;
@@ -584,10 +588,6 @@ function FleetViewsComponent({
       </div>
       {!connected ? (
         <p className="panel__placeholder panel__placeholder--padded">Waiting for the hub.</p>
-      ) : model.messages === 0 ? (
-        <p className="panel__placeholder panel__placeholder--padded">
-          No routed messages in this window. The communication views require the durable event feed.
-        </p>
       ) : (
         <div className="fleet-views__stage">
           <div
@@ -596,7 +596,7 @@ function FleetViewsComponent({
             role="tabpanel"
             aria-labelledby={`fleet-view-tab-${view}`}
           >
-            {view === "web" ? (
+            {view === "web" && model.messages > 0 ? (
               <WebView
                 model={model}
                 selection={selection}
@@ -609,7 +609,7 @@ function FleetViewsComponent({
                   })
                 }
               />
-            ) : view === "matrix" ? (
+            ) : view === "matrix" && model.messages > 0 ? (
               <MatrixView
                 model={model}
                 selection={selection}
@@ -621,12 +621,30 @@ function FleetViewsComponent({
                   })
                 }
               />
-            ) : (
+            ) : view === "projects" && model.projects.length > 0 ? (
               <ProjectsView
                 projects={model.projects}
                 selection={selection}
                 onSelect={(id) => onSelectionChange({ kind: "project", id })}
               />
+            ) : view === "timeline" && timeline.points.length > 0 ? (
+              <TimelineView
+                timeline={timeline}
+                events={events}
+                selection={selection}
+                onSelect={(seq) => onSelectionChange({ kind: "event", seq })}
+              />
+            ) : view === "flow" && flow.links.length > 0 ? (
+              <ProjectFlowView
+                model={flow}
+                selection={selection}
+                onSelectProject={(id) => onSelectionChange({ kind: "project", id })}
+                onSelectEvent={(seq) => onSelectionChange({ kind: "event", seq })}
+              />
+            ) : (
+              <p className="panel__placeholder panel__placeholder--padded">
+                No evidence for this view in the current window. These instruments require the durable event feed.
+              </p>
             )}
           </div>
           {selectedEdge !== undefined ? (

@@ -133,6 +133,15 @@ describe("InspectorTabs", () => {
     );
   });
 
+  it("promotes an exact fleet-timeline event into shared cockpit selection", async () => {
+    const onSelectionChange = vi.fn();
+    render(<InspectorHarness events={EVENTS} connected onSelectionChange={onSelectionChange} />);
+    await userEvent.click(screen.getByRole("tab", { name: "fleet" }));
+    await userEvent.click(screen.getByRole("tab", { name: "timeline" }));
+    await userEvent.click(screen.getByRole("button", { name: "#7" }));
+    expect(onSelectionChange).toHaveBeenCalledWith({ kind: "event", seq: 7 });
+  });
+
   it("uses roving focus and automatic activation for arrow, Home, and End keys", async () => {
     const user = userEvent.setup();
     render(<InspectorHarness events={EVENTS} connected />);
