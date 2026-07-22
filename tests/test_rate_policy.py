@@ -12,6 +12,7 @@ import math
 
 import pytest
 
+from synapse_channel.core.hub_config import HubAuthConfig
 from synapse_channel.core.rate_policy import (
     HubExposurePosture,
     RateLimits,
@@ -210,6 +211,29 @@ class TestDecideAutoRatePolicy:
         assert decision.limits.agent_rate == SECURE_AGENT_RATE
         assert decision.limits.max_connections_per_host == SECURE_MAX_CONNECTIONS_PER_HOST
         assert decision.filled == ("per-agent rate", "per-host connection cap")
+
+
+class TestReplayCapacityEnvelope:
+    def test_five_secure_principals_can_fill_the_default_live_window(self) -> None:
+        decision = decide_auto_rate_policy(HubExposurePosture(multi_seat=True), DISABLED)
+        limits = decision.limits
+        auth = HubAuthConfig()
+
+        def accepted_frame_envelope(principals: int) -> int:
+            per_agent = principals * (
+                limits.agent_burst + limits.agent_rate * auth.per_message_auth_window_seconds
+            )
+            per_host = limits.host_burst + limits.host_rate * auth.per_message_auth_window_seconds
+            return int(min(per_agent, per_host))
+
+        assert accepted_frame_envelope(4) == 4080
+        assert accepted_frame_envelope(4) < auth.per_message_auth_replay_capacity
+        assert accepted_frame_envelope(5) == 5100
+        assert accepted_frame_envelope(5) > auth.per_message_auth_replay_capacity
+        assert limits.max_connections_per_host >= 5
+        assert (
+            auth.per_message_auth_replay_capacity - limits.host_burst
+        ) / limits.host_rate == pytest.approx(7.992)
 
 
 class TestFrozenContracts:

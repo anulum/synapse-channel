@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import json
 import time
+from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from websockets.asyncio.client import connect
+from websockets.asyncio.connection import Connection
 
-from hub_e2e_helpers import read_until_type, running_hub, send_json
+from hub_e2e_helpers import read_json, read_until_type, running_hub, send_json
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.message_auth import (
     EventSignatureKey,
@@ -26,6 +28,13 @@ from synapse_channel.core.message_auth import (
     sign_frame,
 )
 from synapse_channel.core.protocol import build_envelope
+from synapse_channel.core.ratelimit import RateLimiter
+from synapse_channel.core.secure import (
+    SECURE_AGENT_BURST,
+    SECURE_AGENT_RATE,
+    SECURE_HOST_BURST,
+    SECURE_HOST_RATE,
+)
 
 
 def _auth_hub() -> SynapseHub:
@@ -50,6 +59,15 @@ def _auth_hub_with_capacity(capacity: int) -> SynapseHub:
         per_message_auth_window_seconds=30.0,
         per_message_auth_replay_capacity=capacity,
     )
+
+
+async def _read_claim_result(websocket: Connection) -> dict[str, Any]:
+    """Read the next grant, denial, or error while ignoring presence broadcasts."""
+    for _ in range(10):
+        message = await read_json(websocket)
+        if message.get("type") in {"claim_granted", "claim_denied", "error"}:
+            return message
+    raise TimeoutError("claim result did not arrive")
 
 
 async def test_hub_rejects_unsigned_mutation_but_allows_chat() -> None:
@@ -137,6 +155,78 @@ async def test_hub_rejects_capacity_pressure_without_reopening_replay() -> None:
             replay_denied = await read_until_type(websocket, "error")
 
     assert granted["task_id"] == "T1"
+    assert capacity_denied["verification_result"] == "replayed"
+    assert replay_denied["verification_result"] == "replayed"
+
+
+async def test_secure_rate_compliant_principals_share_one_replay_capacity() -> None:
+    """Prove that authenticated principals consume one global fail-closed cache."""
+    admitted_senders = ("ALPHA", "BETA", "GAMMA", "DELTA", "EPSILON")
+    all_senders = (*admitted_senders, "ZETA")
+    key = MessageAuthKey(
+        key_id="main",
+        secret=b"shared-secret",
+        senders=frozenset(all_senders),
+    )
+    hub = SynapseHub(
+        hub_id="syn-test",
+        require_per_message_auth=True,
+        per_message_auth_keys=[key],
+        per_message_auth_window_seconds=30.0,
+        per_message_auth_replay_capacity=len(admitted_senders),
+        rate_limiter=RateLimiter(
+            rate_per_second=SECURE_AGENT_RATE,
+            burst=SECURE_AGENT_BURST,
+        ),
+        host_rate_limiter=RateLimiter(
+            rate_per_second=SECURE_HOST_RATE,
+            burst=SECURE_HOST_BURST,
+        ),
+    )
+    timestamp = time.time()
+    frames = {
+        sender: sign_frame(
+            build_envelope(
+                sender,
+                "claim",
+                target="System",
+                task_id=f"TASK-{sequence}",
+                paths=[f"src/{sender.lower()}.py"],
+                now=1.0,
+            ),
+            key=key,
+            nonce=f"nonce-{sequence}",
+            sequence=sequence,
+            timestamp=timestamp,
+        )
+        for sequence, sender in enumerate(all_senders, start=1)
+    }
+
+    async with running_hub(hub) as (_, uri):
+        for sender in admitted_senders:
+            async with connect(uri) as websocket:
+                await read_until_type(websocket, "welcome")
+                await websocket.send(json.dumps(frames[sender]))
+                try:
+                    granted = await _read_claim_result(websocket)
+                except TimeoutError as exc:
+                    raise AssertionError(
+                        f"claim result for {sender} did not arrive; counters={hub.counters!r}"
+                    ) from exc
+                assert granted["type"] == "claim_granted", (sender, granted)
+                assert granted["task_id"] == frames[sender]["task_id"]
+
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            await websocket.send(json.dumps(frames["ZETA"]))
+            capacity_denied = await read_until_type(websocket, "error")
+
+        async with connect(uri) as websocket:
+            await read_until_type(websocket, "welcome")
+            await websocket.send(json.dumps(frames["ALPHA"]))
+            replay_denied = await read_until_type(websocket, "error")
+
+    assert hub.counters.rate_limited == 0
     assert capacity_denied["verification_result"] == "replayed"
     assert replay_denied["verification_result"] == "replayed"
 

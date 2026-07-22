@@ -127,6 +127,42 @@ Per-message authentication includes replay protection:
   fresh idempotency key on signed mutating frames that did not already provide
   one.
 
+### Capacity planning and principal fairness
+
+The replay capacity is global to one hub, not partitioned by key or sender. This
+keeps memory bounded and never discards a live nonce, but authenticated senders
+share the same admission budget. Once the live window contains 4,096 accepted
+nonces, every new authenticated mutation is refused until at least one entry
+expires. The refusal deliberately uses the existing `replayed` result so a
+caller cannot use error detail to distinguish a known nonce from capacity
+pressure.
+
+The secure flood limits bound how quickly that condition can occur; they do not
+reserve replay capacity per principal. Under the default 10-second replay
+window, one host can admit at most `100 + 500 × 10 = 5,100` frames from its
+initial burst and sustained allowance. Four fully active principals remain just
+below cache capacity (`4 × (20 + 100 × 10) = 4,080`), while five can reach the
+host ceiling and fill the cache after an idealised `(4,096 − 100) / 500 = 7.992`
+seconds. This is an admission envelope derived from configured token buckets,
+not a throughput benchmark; protocol processing and scheduling can only delay
+the point at which it is reached.
+
+The alternatives have different replay guarantees:
+
+| Policy | Memory bound | In-window replay resistance | Fairness consequence |
+| --- | --- | --- | --- |
+| Current global fail-closed cache | Fixed global cap | Preserved | One sender set can consume the shared budget. |
+| Per-principal quotas alone | Quota × active principals | Preserved within each quota | Fair per principal, but total memory is not globally bounded. A second global admission rule is still required. |
+| Bounded LRU eviction | Fixed global cap | **Broken** | Evicting a live nonce lets the evicted signed frame verify again; this policy is rejected. |
+| Larger global cap | Higher fixed global cap | Preserved | Moves the saturation point linearly but does not isolate principals. |
+
+For that reason the runtime retains the current fail-closed policy. Operators
+who expect more than four principals to sustain authenticated mutations near
+the secure ceilings should size `--message-auth-replay-capacity` from the
+configured replay window and aggregate admitted rate, while keeping a finite
+global bound. A future fairness policy must combine per-principal reservations
+with a global cap and prove that it never evicts an in-window nonce.
+
 ### Runtime default: durable with a journal, process-local without one
 
 When `--require-message-auth` is paired with `--db`, the CLI automatically
