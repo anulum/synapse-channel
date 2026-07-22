@@ -93,6 +93,9 @@ const INITIAL_OPERATOR_ACTIONS: OperatorActionsState = {
   error: null,
 };
 
+/** Maximum wait before secondary reports start when the primary event tail hangs. */
+export const AUXILIARY_FEED_START_FALLBACK_MS = 20_000;
+
 interface HeadlineMetrics {
   readonly agents: number;
   readonly claims: number;
@@ -219,6 +222,51 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     const unsubscribeDerived = derived.subscribe((event) => {
       if (active === "derived") push(event);
     });
+    let effectActive = true;
+    let stopAuxiliaryFeeds: (() => void) | undefined;
+    let auxiliaryFallback: ReturnType<typeof setTimeout> | undefined;
+    const startAuxiliaryFeeds = (): void => {
+      if (!effectActive || stopAuxiliaryFeeds !== undefined) return;
+      if (auxiliaryFallback !== undefined) {
+        clearTimeout(auxiliaryFallback);
+        auxiliaryFallback = undefined;
+      }
+      const reliabilityStore = createReliabilityStore();
+      const unsubscribeReliability = reliabilityStore.subscribe(setReliability);
+      const federationStore = createFederationStore();
+      const unsubscribeFederation = federationStore.subscribe(setFederation);
+      const metricsStore = createMetricsStore();
+      const unsubscribeMetrics = metricsStore.subscribe(setMetrics);
+      const sessionsStore = createSessionsStore();
+      const unsubscribeSessions = sessionsStore.subscribe(setSessions);
+      const waitsStore = createWaitsStore();
+      const unsubscribeWaits = waitsStore.subscribe(setWaits);
+      const anomaliesStore = createHealthAnomaliesStore();
+      const unsubscribeAnomalies = anomaliesStore.subscribe(setAnomalyReport);
+      const receiptsStore = createReceiptsStore();
+      const unsubscribeReceipts = receiptsStore.subscribe(setReceipts);
+      const operatorActionsStore = createOperatorActionsStore();
+      const unsubscribeOperatorActions = operatorActionsStore.subscribe(setOperatorActions);
+      stopAuxiliaryFeeds = () => {
+        unsubscribeReliability();
+        unsubscribeFederation();
+        unsubscribeMetrics();
+        unsubscribeSessions();
+        unsubscribeWaits();
+        unsubscribeAnomalies();
+        unsubscribeReceipts();
+        unsubscribeOperatorActions();
+        reliabilityStore.stop();
+        federationStore.stop();
+        metricsStore.stop();
+        sessionsStore.stop();
+        waitsStore.stop();
+        anomaliesStore.stop();
+        receiptsStore.stop();
+        operatorActionsStore.stop();
+      };
+    };
+    auxiliaryFallback = setTimeout(startAuxiliaryFeeds, AUXILIARY_FEED_START_FALLBACK_MS);
     const unsubscribeMode = tail.subscribeMode((mode) => {
       setProvenance(mode);
       const next = mode === "hub" ? "tail" : mode === "connecting" ? active : "derived";
@@ -226,24 +274,9 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
         active = next;
         setLog([]);
       }
+      if (mode !== "connecting") startAuxiliaryFeeds();
     });
     const unsubscribeSnapshots = store.subscribe(setSnap);
-    const reliabilityStore = createReliabilityStore();
-    const unsubscribeReliability = reliabilityStore.subscribe(setReliability);
-    const federationStore = createFederationStore();
-    const unsubscribeFederation = federationStore.subscribe(setFederation);
-    const metricsStore = createMetricsStore();
-    const unsubscribeMetrics = metricsStore.subscribe(setMetrics);
-    const sessionsStore = createSessionsStore();
-    const unsubscribeSessions = sessionsStore.subscribe(setSessions);
-    const waitsStore = createWaitsStore();
-    const unsubscribeWaits = waitsStore.subscribe(setWaits);
-    const anomaliesStore = createHealthAnomaliesStore();
-    const unsubscribeAnomalies = anomaliesStore.subscribe(setAnomalyReport);
-    const receiptsStore = createReceiptsStore();
-    const unsubscribeReceipts = receiptsStore.subscribe(setReceipts);
-    const operatorActionsStore = createOperatorActionsStore();
-    const unsubscribeOperatorActions = operatorActionsStore.subscribe(setOperatorActions);
     const clock = setInterval(() => {
       const tick = Date.now();
       setNowMs(tick);
@@ -251,30 +284,17 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     }, 1000);
 
     return () => {
+      effectActive = false;
+      if (auxiliaryFallback !== undefined) clearTimeout(auxiliaryFallback);
       unsubscribeTail();
       unsubscribeDerived();
       unsubscribeMode();
       unsubscribeSnapshots();
-      unsubscribeReliability();
-      unsubscribeFederation();
-      unsubscribeMetrics();
-      unsubscribeSessions();
-      unsubscribeWaits();
-      unsubscribeAnomalies();
-      unsubscribeReceipts();
-      unsubscribeOperatorActions();
+      stopAuxiliaryFeeds?.();
       clearInterval(clock);
       tail.stop();
       derived.stop();
       store.stop();
-      reliabilityStore.stop();
-      federationStore.stop();
-      metricsStore.stop();
-      sessionsStore.stop();
-      waitsStore.stop();
-      anomaliesStore.stop();
-      receiptsStore.stop();
-      operatorActionsStore.stop();
     };
   }, [blocked, credentialRevision]);
 

@@ -52,13 +52,19 @@ export function parseStoredEvent(raw: unknown): StoredEvent {
 }
 
 /** Parse a tail response; `null` when the payload is not an object at all. */
-export function parseTail(raw: unknown): { events: StoredEvent[]; nextCursor: number } | null {
+export function parseTail(
+  raw: unknown,
+): { events: StoredEvent[]; nextCursor: number; historyIncluded: boolean } | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
   const payload = asRecord(raw);
   const events = Array.isArray(payload["events"])
     ? payload["events"].map(parseStoredEvent).filter((event) => event.seq > 0)
     : [];
-  return { events, nextCursor: Math.trunc(asNumber(payload["next_cursor"])) };
+  return {
+    events,
+    nextCursor: Math.trunc(asNumber(payload["next_cursor"])),
+    historyIncluded: payload["history_included"] === true,
+  };
 }
 
 /** How much of a chat payload the label keeps before an ellipsis. */
@@ -179,12 +185,13 @@ const DEFAULT_PAGE_LIMIT = 1_000;
 const DEFAULT_HISTORY_LIMIT = 250;
 
 /**
- * Poll the hub-attested event tail. First contact costs two requests on a log
- * of any size: `since=latest` answers the current cursor, one backfill page
- * carries the last `historyLimit` events as attested history, and incremental
- * polling proceeds from the cursor. A `404` reports `absent` and re-checks
- * slowly, so the feed comes alive the moment the operator passes `--feeds-db`;
- * any other failure reports `error` and keeps trying on the normal cadence.
+ * Poll the hub-attested event tail. A current server answers the first
+ * `since=latest&history=1` request with the cursor and recent evidence in one
+ * response. An older server ignores that opt-in marker, so the client falls
+ * back to the original second backfill request. Incremental polling then
+ * proceeds from the cursor. A `404` reports `absent` and re-checks slowly, so
+ * the feed comes alive the moment the operator passes `--feeds-db`; any other
+ * failure reports `error` and keeps trying on the normal cadence.
  */
 export function createEventsTailSource(options: EventsTailOptions = {}): EventsTailSource {
   const url = options.url ?? DEFAULT_EVENTS_URL;
@@ -219,9 +226,13 @@ export function createEventsTailSource(options: EventsTailOptions = {}): EventsT
   const fetchPage = async (
     since: number | "latest",
     pageLimit: number,
-  ): Promise<{ events: StoredEvent[]; nextCursor: number } | "absent"> => {
+    includeHistory = false,
+  ): Promise<
+    { events: StoredEvent[]; nextCursor: number; historyIncluded: boolean } | "absent"
+  > => {
     controller = new AbortController();
-    const response = await fetcher(`${url}?since=${since}&limit=${pageLimit}`, {
+    const historyQuery = includeHistory ? "&history=1" : "";
+    const response = await fetcher(`${url}?since=${since}&limit=${pageLimit}${historyQuery}`, {
       signal: controller.signal,
     });
     if (response.status === 404) return "absent";
@@ -235,16 +246,23 @@ export function createEventsTailSource(options: EventsTailOptions = {}): EventsT
     let delay = pollMs;
     try {
       if (!caughtUp) {
-        // Two requests find the tail on a log of any size: `since=latest`
-        // answers the current cursor, then one backfill page carries the
-        // recent history worth plotting. No walk, no flood.
-        const tip = await fetchPage("latest", 1);
+        // A current server returns the cursor and bounded recent evidence in
+        // one response. An older server ignores `history=1`, advertises no
+        // marker, and receives the original second-request fallback below.
+        const tip = await fetchPage("latest", historyLimit, true);
         if (tip === "absent") {
           setMode("absent");
           delay = absentPollMs;
           return;
         }
         if (stopped) return;
+        if (tip.historyIncluded) {
+          cursor = tip.nextCursor;
+          caughtUp = true;
+          setMode("hub");
+          if (!stopped) emit(tip.events);
+          return;
+        }
         const backfillFrom = Math.max(0, tip.nextCursor - historyLimit);
         const history = await fetchPage(backfillFrom, historyLimit);
         if (history === "absent") {

@@ -35,6 +35,7 @@ from synapse_channel.dashboard_postmortem_feed import (
 )
 from synapse_channel.dashboard_store_feeds import (
     DEFAULT_EVENTS_LIMIT,
+    MAX_EVENTS_LIMIT,
     build_causality_feed,
     build_events_tail,
     build_federation_feed,
@@ -273,8 +274,9 @@ def serve_events(db: Path | None, query: str) -> FeedResponse:
     """Serve the raw event-log tail past a cursor, or its honest absence.
 
     Parameters are ``since`` (exclusive sequence cursor, or ``latest`` for
-    the tail shortcut) and ``limit``. Malformed numbers are a 400 naming the
-    parameter, not a silent default.
+    the tail shortcut), ``limit``, and the optional ``history=1`` latest-tail
+    bootstrap. Malformed numbers are a 400 naming the parameter, not a silent
+    default.
     """
     if db is None:
         return _absent("events", "--feeds-db")
@@ -282,17 +284,36 @@ def serve_events(db: Path | None, query: str) -> FeedResponse:
     since_raw = params.get("since", ["0"])[0]
     try:
         limit = bounded_query_int(params.get("limit", [str(DEFAULT_EVENTS_LIMIT)])[0])
+        history = bounded_query_int(params.get("history", ["0"])[0])
         since = None if since_raw == "latest" else bounded_query_int(since_raw)
     except ValueError:
         return plain_response(
             HTTPStatus.BAD_REQUEST,
-            "since must be an integer or 'latest'; limit must be an integer",
+            "since must be an integer or 'latest'; limit and history must be integers",
+        )
+    if history not in (0, 1) or (history == 1 and since is not None):
+        return plain_response(
+            HTTPStatus.BAD_REQUEST,
+            "history must be 0 or 1 and is supported only with since=latest",
         )
 
     def build() -> dict[str, Any]:
         # the tail shortcut: start at the log's end instead of walking a
         # large history just to catch up to now
         cursor = latest_cursor(db) if since is None else since
+        if history == 1:
+            bounded = max(1, min(limit, MAX_EVENTS_LIMIT))
+            document = build_events_tail(
+                db,
+                since=max(0, cursor - bounded),
+                limit=bounded,
+            )
+            backfill_cursor = document.get("next_cursor")
+            if not isinstance(backfill_cursor, int):
+                raise ValueError("events tail cursor is not an integer")
+            document["next_cursor"] = max(cursor, backfill_cursor)
+            document["history_included"] = True
+            return document
         return build_events_tail(db, since=cursor, limit=limit)
 
     return _store_feed(build)

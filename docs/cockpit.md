@@ -157,6 +157,12 @@ message sequence supporting that aggregate; delivery still comes only from the
 separate receipt evidence. Both modes obey the brushed time window and state
 when the visual is bounded or contains no eligible retained evidence.
 
+On first contact, current dashboards return the bounded recent event window and
+its exact cursor in one authenticated response, so essential timeline evidence
+does not wait behind the heavier audit feeds. The cockpit retains its legacy
+two-request fallback for older dashboard servers and continues polling forward
+from the same durable sequence contract.
+
 The active inspector panel, fleet mode, and shared selection live in bounded
 URL query fields. Copy the address to reopen that workspace; browser Back and
 Forward restore earlier panel and selection changes. Signal-log filters remain

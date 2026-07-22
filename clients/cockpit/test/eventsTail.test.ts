@@ -37,7 +37,9 @@ describe("parseStoredEvent / parseTail", () => {
     const tail = parseTail({ events: [{ seq: 3, ts: 1, kind: "chat", payload: {} }, "junk"], next_cursor: 3 });
     expect(tail?.events).toHaveLength(1);
     expect(tail?.nextCursor).toBe(3);
-    expect(parseTail({ events: "junk" })).toEqual({ events: [], nextCursor: 0 });
+    expect(tail?.historyIncluded).toBe(false);
+    expect(parseTail({ events: [], next_cursor: 3, history_included: true })?.historyIncluded).toBe(true);
+    expect(parseTail({ events: "junk" })).toEqual({ events: [], nextCursor: 0, historyIncluded: false });
     expect(parseTail(null)).toBeNull();
     expect(parseTail([1])).toBeNull();
   });
@@ -143,12 +145,19 @@ function wire(seq: number): Page["events"][number] {
 }
 
 describe("createEventsTailSource", () => {
-  it("finds the tail in two requests (latest + backfill), then polls forward", async () => {
+  it("bootstraps recent evidence in one request on a current server, then polls forward", async () => {
     vi.useFakeTimers();
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(pageResponse({ events: [], next_cursor: 5 }))
-      .mockResolvedValueOnce(pageResponse({ events: [wire(3), wire(4), wire(5)], next_cursor: 5 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            events: [wire(3), wire(4), wire(5)],
+            next_cursor: 5,
+            history_included: true,
+          }),
+        ),
+      )
       .mockResolvedValueOnce(pageResponse({ events: [wire(6)], next_cursor: 6 }));
     const events: CockpitEvent[] = [];
     const modes: SpineProvenance[] = [];
@@ -160,16 +169,60 @@ describe("createEventsTailSource", () => {
       expect(modes.at(-1)).toBe("hub");
     });
     expect(events.map((event) => event.seq)).toEqual([3, 4, 5]);
-    expect(fetcher.mock.calls[0]?.[0]).toBe("/events.json?since=latest&limit=1");
-    expect(fetcher.mock.calls[1]?.[0]).toBe("/events.json?since=2&limit=3");
+    expect(fetcher.mock.calls[0]?.[0]).toBe("/events.json?since=latest&limit=3&history=1");
 
     await vi.advanceTimersByTimeAsync(1000);
     await vi.waitFor(() => {
       expect(events.map((event) => event.seq)).toEqual([3, 4, 5, 6]);
     });
-    expect(fetcher.mock.calls[2]?.[0]).toBe("/events.json?since=5&limit=2");
+    expect(fetcher.mock.calls[1]?.[0]).toBe("/events.json?since=5&limit=2");
     expect(modes[0]).toBe("connecting");
     source.stop();
+  });
+
+  it("falls back to latest plus backfill when a server omits the history marker", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(pageResponse({ events: [], next_cursor: 5 }))
+      .mockResolvedValueOnce(pageResponse({ events: [wire(3), wire(4), wire(5)], next_cursor: 5 }));
+    const events: CockpitEvent[] = [];
+    const modes: SpineProvenance[] = [];
+    const source = createEventsTailSource({ fetcher, pollMs: 1000, historyLimit: 3 });
+    source.subscribe((event) => events.push(event));
+    source.subscribeMode((mode) => modes.push(mode));
+
+    await vi.waitFor(() => expect(modes.at(-1)).toBe("hub"));
+    expect(events.map((event) => event.seq)).toEqual([3, 4, 5]);
+    expect(fetcher.mock.calls.map((call) => call[0])).toEqual([
+      "/events.json?since=latest&limit=3&history=1",
+      "/events.json?since=2&limit=3",
+    ]);
+    source.stop();
+  });
+
+  it("suppresses one-response history when a mode listener stops the source", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          events: [wire(1)],
+          next_cursor: 1,
+          history_included: true,
+        }),
+      ),
+    );
+    const events: CockpitEvent[] = [];
+    let source: ReturnType<typeof createEventsTailSource>;
+    source = createEventsTailSource({ fetcher, pollMs: 1000 });
+    source.subscribe((event) => events.push(event));
+    source.subscribeMode((mode) => {
+      if (mode === "hub") source.stop();
+    });
+
+    await vi.advanceTimersByTimeAsync(10);
+    expect(events).toEqual([]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it("drops a forward page that resolves after stop", async () => {

@@ -228,11 +228,14 @@ def test_events_feed_refuses_malformed_numbers(tmp_path: Path) -> None:
     server = _feeds_server(reliability_db=db)
     try:
         status, _, body = _authorized_get(server, "/events.json?since=abc")
+        bad_history, _, history_body = _authorized_get(server, "/events.json?since=0&history=1")
     finally:
         server.close()
 
     assert status == 400
     assert "must be an integer or 'latest'" in body
+    assert bad_history == 400
+    assert "only with since=latest" in history_body
 
 
 def test_events_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
@@ -559,6 +562,24 @@ def test_events_feed_supports_the_latest_tail_shortcut(tmp_path: Path) -> None:
     payload = json.loads(body)
     assert payload["events"] == []  # caught up instantly, no history walk
     assert payload["next_cursor"] == 2  # the log's end, ready for the next poll
+
+
+def test_events_feed_bootstraps_bounded_latest_history_in_one_request(tmp_path: Path) -> None:
+    db = tmp_path / "hub.db"
+    _seed_feed_store(db)
+
+    server = _feeds_server(reliability_db=db)
+    try:
+        status, _, body = _authorized_get(server, "/events.json?since=latest&limit=1&history=1")
+    finally:
+        server.close()
+
+    assert status == 200
+    payload = json.loads(body)
+    assert [event["seq"] for event in payload["events"]] == [2]
+    assert payload["next_cursor"] == 2
+    assert payload["log_end_seq"] == 2
+    assert payload["history_included"] is True
 
 
 def test_metrics_feed_reports_absence_without_a_store() -> None:
