@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, cast
 
+import pytest
 from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.core.auth import TokenAuthenticator
@@ -73,6 +74,15 @@ class _Router:
         self.seen.append(raw)
         if self._clients is not None and self._bind is not None:
             self._clients.socket_agent.setdefault(websocket, self._bind)
+
+
+class _FailingRouter(_Router):
+    """Bind the registration frame, then raise on the next routed frame."""
+
+    async def handle_message(self, raw: str | bytes, websocket: Any) -> None:
+        await super().handle_message(raw, websocket)
+        if len(self.seen) == 2:
+            raise RuntimeError("handler failed")
 
 
 class _Recorder:
@@ -466,6 +476,19 @@ async def test_handler_suppresses_connection_closed_mid_stream() -> None:
 
     assert router.seen == ["one"]
     assert socket not in clients.connected_clients  # still unregistered
+
+
+async def test_handler_propagates_unexpected_router_failure_and_unregisters() -> None:
+    clients = _registry()
+    router = _FailingRouter(clients, bind="agent")
+    conn = _connection(clients, router=router)
+    socket = _Socket(("register", "boom"))
+
+    with pytest.raises(RuntimeError, match="handler failed"):
+        await conn.handler(socket)
+
+    assert router.seen == ["register", "boom"]
+    assert socket not in clients.connected_clients
 
 
 # -- install_signal_handlers -------------------------------------------------

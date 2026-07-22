@@ -269,6 +269,25 @@ The envelope builders and the message-type constants live in
 `synapse_channel.core.protocol`; the working agreement is in the repository's
 `TEAM_PROTOCOL.md`.
 
+## Handler exception boundary
+
+Malformed JSON, non-object JSON, invalid routing fields, and handler-specific
+validation failures receive a typed `error` or refusal frame whenever the
+connection can still be addressed. The connection remains usable. A normal
+transport disconnect is also expected and is handled without escalating it as a
+hub failure. Expected persistence and wire failures are caught at their owning
+handler boundary, where the operation can be refused or rolled back without
+leaving a false success state.
+
+Unexpected handler exceptions are different: the hub cannot know whether a
+custom or newly extended handler partially mutated state before it failed. It
+therefore does not broadly catch and continue after such an exception. The
+exception propagates to the WebSocket server, which closes the affected
+connection (normally with code `1011`), while lifecycle cleanup always
+unregisters the socket in a `finally` block. A newly identified recoverable
+exception class must be handled locally by its owning handler and accompanied by
+evidence that the refusal or rollback leaves no partial state.
+
 ## Governed identity-pin reclaim
 
 The request carries `pin_name`, `expected_key_id`, a non-empty `reason`, and an
