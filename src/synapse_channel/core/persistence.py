@@ -555,6 +555,22 @@ class EventStore:
             row = self._conn.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()
         return int(row[0])
 
+    def latest_at_or_before(self, through_seq: int) -> StoredEvent | None:
+        """Return the newest retained event at or below ``through_seq``.
+
+        A direct descending primary-key lookup keeps state-at projections from
+        decoding the whole journal merely to obtain their deterministic clock.
+        Sequence gaps left by retention are handled by selecting the preceding
+        retained event; an empty prefix returns ``None``.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT seq, ts, kind, payload FROM events "
+                "WHERE seq <= ? ORDER BY seq DESC LIMIT 1",
+                (int(through_seq),),
+            ).fetchone()
+        return None if row is None else self._stored_event(row)
+
     def delete(self, seqs: Iterable[int]) -> int:
         """Delete the events with these sequence numbers; return how many were removed.
 

@@ -13,6 +13,9 @@ import type {
   ReceiptRow,
   ReceiptsState,
 } from "../lib/auditFeeds";
+import { auditEvidenceAt } from "../lib/auditEvidence";
+import type { CockpitSelection } from "../lib/workspace";
+import { AuditEvidenceDrawer } from "./AuditEvidenceDrawer";
 
 const ROWS_SHOWN = 40;
 
@@ -64,49 +67,53 @@ function actionClass(row: OperatorActionRow): string {
     : "evidence-row evidence-row--warn";
 }
 
-function Receipt({ row }: { readonly row: ReceiptRow }): JSX.Element {
+function Receipt({ row, onSelect }: { readonly row: ReceiptRow; readonly onSelect?: (seq: number | null) => void }): JSX.Element {
   return (
     <li className={receiptClass(row)} title={row.sourceEventKind}>
-      <span className="evidence-row__glyph" aria-hidden="true">
-        ◇
-      </span>
-      <span className="evidence-row__body">
-        <span className="evidence-row__meta">
-          <span className="evidence-row__seq">seq {row.seq}</span>
-          <span className="evidence-row__time">{timeOf(row.ts)}</span>
-          <span className="evidence-row__kind">{row.kind}</span>
-          <span className="evidence-row__kind">{row.status}</span>
+      <button type="button" className="evidence-row__button" onClick={() => onSelect?.(row.seq)}>
+        <span className="evidence-row__glyph" aria-hidden="true">
+          ◇
         </span>
-        <span className="evidence-row__detail">{row.summary || "receipt recorded"}</span>
-        <span className="evidence-row__who">
-          {row.subject || "no subject"} · {row.actor || "no actor"}
+        <span className="evidence-row__body">
+          <span className="evidence-row__meta">
+            <span className="evidence-row__seq">seq {row.seq}</span>
+            <span className="evidence-row__time">{timeOf(row.ts)}</span>
+            <span className="evidence-row__kind">{row.kind}</span>
+            <span className="evidence-row__kind">{row.status}</span>
+          </span>
+          <span className="evidence-row__detail">{row.summary || "receipt recorded"}</span>
+          <span className="evidence-row__who">
+            {row.subject || "no subject"} · {row.actor || "no actor"}
+          </span>
         </span>
-      </span>
+      </button>
     </li>
   );
 }
 
-function OperatorAction({ row }: { readonly row: OperatorActionRow }): JSX.Element {
+function OperatorAction({ row, onSelect }: { readonly row: OperatorActionRow; readonly onSelect?: (seq: number | null) => void }): JSX.Element {
   const subject = row.taskId || row.namespace || "no subject";
   const actor = row.operator || row.requester || row.agent || row.approver || "no actor";
   const detail = row.detail || row.reason || row.direction || "operator relay recorded";
   return (
     <li className={actionClass(row)}>
-      <span className="evidence-row__glyph" aria-hidden="true">
-        ◆
-      </span>
-      <span className="evidence-row__body">
-        <span className="evidence-row__meta">
-          <span className="evidence-row__seq">seq {row.seq}</span>
-          <span className="evidence-row__time">{timeOf(row.ts)}</span>
-          <span className="evidence-row__kind">{row.action || "action"}</span>
-          <span className="evidence-row__kind">{row.status}</span>
+      <button type="button" className="evidence-row__button" onClick={() => onSelect?.(row.seq)}>
+        <span className="evidence-row__glyph" aria-hidden="true">
+          ◆
         </span>
-        <span className="evidence-row__detail">{detail}</span>
-        <span className="evidence-row__who">
-          {subject} · {actor}
+        <span className="evidence-row__body">
+          <span className="evidence-row__meta">
+            <span className="evidence-row__seq">seq {row.seq}</span>
+            <span className="evidence-row__time">{timeOf(row.ts)}</span>
+            <span className="evidence-row__kind">{row.action || "action"}</span>
+            <span className="evidence-row__kind">{row.status}</span>
+          </span>
+          <span className="evidence-row__detail">{detail}</span>
+          <span className="evidence-row__who">
+            {subject} · {actor}
+          </span>
         </span>
-      </span>
+      </button>
     </li>
   );
 }
@@ -114,10 +121,19 @@ function OperatorAction({ row }: { readonly row: OperatorActionRow }): JSX.Eleme
 interface AuditViewProps {
   readonly receipts: ReceiptsState;
   readonly operatorActions: OperatorActionsState;
+  readonly selection?: CockpitSelection | null;
+  readonly onSelectEvent?: (seq: number | null) => void;
+  readonly onOpenEvent?: (seq: number) => void;
 }
 
 /** Render store-attested receipt and governed operator-relay history. */
-export function AuditView({ receipts, operatorActions }: AuditViewProps): JSX.Element {
+export function AuditView({
+  receipts,
+  operatorActions,
+  selection = null,
+  onSelectEvent,
+  onOpenEvent,
+}: AuditViewProps): JSX.Element {
   const receiptRows = receipts.data ?? [];
   const actionRows = operatorActions.data ?? [];
   const shownReceipts = receiptRows.slice(0, ROWS_SHOWN);
@@ -126,6 +142,9 @@ export function AuditView({ receipts, operatorActions }: AuditViewProps): JSX.El
   const actionUnavailable = unavailable("Operator actions", operatorActions);
   const receiptStale = staleLine("Receipts", receipts);
   const actionStale = staleLine("Operator actions", operatorActions);
+  const selectedEvidence = selection?.kind === "event"
+    ? auditEvidenceAt(receiptRows, actionRows, selection.seq)
+    : null;
 
   return (
     <section className="panel" aria-label="Receipt and operator audit">
@@ -149,7 +168,7 @@ export function AuditView({ receipts, operatorActions }: AuditViewProps): JSX.El
               ) : (
                 <ul className="evidence">
                   {shownReceipts.map((row) => (
-                    <Receipt key={row.seq} row={row} />
+                    <Receipt key={row.seq} row={row} {...(onSelectEvent !== undefined ? { onSelect: onSelectEvent } : {})} />
                   ))}
                   {receiptRows.length > shownReceipts.length && (
                     <li className="evidence-row evidence-row--more">
@@ -173,7 +192,7 @@ export function AuditView({ receipts, operatorActions }: AuditViewProps): JSX.El
               ) : (
                 <ul className="evidence">
                   {shownActions.map((row) => (
-                    <OperatorAction key={row.seq} row={row} />
+                    <OperatorAction key={row.seq} row={row} {...(onSelectEvent !== undefined ? { onSelect: onSelectEvent } : {})} />
                   ))}
                   {actionRows.length > shownActions.length && (
                     <li className="evidence-row evidence-row--more">
@@ -186,6 +205,13 @@ export function AuditView({ receipts, operatorActions }: AuditViewProps): JSX.El
           )}
         </section>
       </div>
+      {selectedEvidence !== null && onSelectEvent !== undefined && onOpenEvent !== undefined && (
+        <AuditEvidenceDrawer
+          evidence={selectedEvidence}
+          onClose={() => onSelectEvent(null)}
+          onOpenEvent={onOpenEvent}
+        />
+      )}
     </section>
   );
 }

@@ -27,7 +27,7 @@ test("the production cockpit unlocks, governs writes, and locks on 401", async (
 
   await page.getByLabel("Dashboard bearer token").fill(bearer);
   await page.getByRole("button", { name: "unlock cockpit" }).click();
-  await expect(page.getByText("live", { exact: true })).toBeVisible();
+  await expect(page.getByRole("banner").getByText("live", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => sessionStorage.getItem("synapse-cockpit-bearer"))).toBe(bearer);
   expect(await page.evaluate(() => localStorage.getItem("synapse-cockpit-bearer"))).toBeNull();
 

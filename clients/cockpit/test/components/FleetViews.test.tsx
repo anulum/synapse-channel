@@ -14,6 +14,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FleetViews } from "../../src/components/FleetViews";
 import type { CockpitEvent } from "../../src/types";
+import {
+  DEFAULT_COMMUNICATION_FILTER,
+  type CommunicationFilter,
+} from "../../src/lib/communicationFilters";
 import type { CockpitSelection, FleetView } from "../../src/lib/workspace";
 
 afterEach(cleanup);
@@ -71,21 +75,58 @@ const F4_EVENTS: readonly CockpitEvent[] = [
   },
 ];
 
+const EVIDENCE_EVENTS: readonly CockpitEvent[] = [
+  ...EVENTS,
+  {
+    seq: 6,
+    ts: Date.now() / 1000 + 1,
+    kind: "chat",
+    lane: "task",
+    severity: 0.2,
+    actor: "beta/two",
+    label: "acknowledged",
+    taskId: "",
+    payload: {
+      sender: "beta/two",
+      target: "alpha/one",
+      type: "chat",
+      payload: "I have it.",
+      response_to_seq: 2,
+      response_status: "acknowledged",
+      response_evidence_scope: "recipient",
+    },
+  },
+  {
+    seq: 7,
+    ts: Date.now() / 1000 + 2,
+    kind: "presence",
+    lane: "presence",
+    severity: 0.1,
+    actor: "hub",
+    label: "delivery_receipt_immediate",
+    taskId: "",
+    payload: { message_seq: 2, delivered: true },
+  },
+];
+
 type FleetHarnessProps = Omit<
   Parameters<typeof FleetViews>[0],
-  "view" | "onViewChange" | "selection" | "onSelectionChange"
+  "view" | "onViewChange" | "selection" | "onSelectionChange" | "filter" | "onFilterChange"
 > & {
   readonly initialView?: FleetView;
   readonly initialSelection?: CockpitSelection | null;
+  readonly initialFilter?: CommunicationFilter;
 };
 
 function FleetHarness({
   initialView = "web",
   initialSelection = null,
+  initialFilter = DEFAULT_COMMUNICATION_FILTER,
   ...props
 }: FleetHarnessProps): JSX.Element {
   const [view, setView] = useState<FleetView>(initialView);
   const [selection, setSelection] = useState<CockpitSelection | null>(initialSelection);
+  const [filter, setFilter] = useState<CommunicationFilter>(initialFilter);
   return (
     <FleetViews
       {...props}
@@ -93,6 +134,8 @@ function FleetHarness({
       onViewChange={setView}
       selection={selection}
       onSelectionChange={setSelection}
+      filter={filter}
+      onFilterChange={setFilter}
     />
   );
 }
@@ -201,8 +244,60 @@ describe("FleetViews", () => {
       }),
     );
     expect(screen.getByLabelText("Communication detail")).toBeTruthy();
-    expect(screen.getByText("alpha/one → beta/two")).toBeTruthy();
+    expect(screen.getAllByText("alpha/one → beta/two")).toHaveLength(2);
     expect(screen.getByText("1 · unknown")).toBeTruthy();
+  });
+
+  it("filters communication views and keeps a selected route explicitly pinned", async () => {
+    const user = userEvent.setup();
+    render(
+      <FleetHarness
+        events={EVENTS}
+        claims={[]}
+        agents={["quiet/observer"]}
+        window={null}
+        connected
+        canMessage={false}
+        initialSelection={{ kind: "route", source: "alpha/one", target: "beta/two" }}
+        initialFilter={{ query: "quiet", health: "all" }}
+      />,
+    );
+    expect(screen.getByText(/selected route is pinned outside/iu)).toBeTruthy();
+    expect(screen.getByText("0 of 1 routes · 0 messages")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "show route in visual" }));
+    expect(screen.queryByText(/selected route is pinned outside/iu)).toBeNull();
+    expect(screen.getByText("1 of 1 routes · 1 messages")).toBeTruthy();
+
+    await user.selectOptions(screen.getByLabelText("delivery health"), "failed");
+    expect(screen.getByText("0 of 1 routes · 0 messages")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "clear filters" }));
+    expect((screen.getByLabelText("delivery health") as HTMLSelectElement).value).toBe("all");
+  });
+
+  it("shows an exact chat, receipt, and semantic-response evidence chain", async () => {
+    const onOpenEvent = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <FleetHarness
+        events={EVIDENCE_EVENTS}
+        claims={[]}
+        agents={[]}
+        window={null}
+        connected
+        canMessage={false}
+        initialSelection={{ kind: "route", source: "alpha/one", target: "beta/two" }}
+        onOpenEvent={onOpenEvent}
+      />,
+    );
+    await user.click(screen.getByText("hello"));
+    expect(screen.getByLabelText("Evidence chain for message 2")).toBeTruthy();
+    expect(screen.getByText("2 · transport receipt")).toBeTruthy();
+    expect(screen.getByText("correlated by exact message sequence")).toBeTruthy();
+    expect(screen.getByText("acknowledged · recipient")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "open exact event" }));
+    expect(onOpenEvent).toHaveBeenCalledWith(2);
+    await user.click(screen.getByRole("button", { name: "open response" }));
+    expect(onOpenEvent).toHaveBeenCalledWith(6);
   });
 
   it("states empty durable-feed data honestly", () => {

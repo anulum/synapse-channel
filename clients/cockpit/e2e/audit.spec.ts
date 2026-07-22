@@ -7,6 +7,7 @@
 // SYNAPSE_CHANNEL — built-cockpit durable receipt and operator-audit acceptance
 
 import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 
 const bearer = process.env["SYNAPSE_COCKPIT_E2E_TOKEN"];
 if (bearer === undefined || bearer === "") {
@@ -24,7 +25,7 @@ test("the built cockpit renders store-backed receipts and operator audit", async
   );
   await page.getByLabel("Dashboard bearer token").fill(bearer);
   await page.getByRole("button", { name: "unlock cockpit" }).click();
-  await expect(page.getByText("live", { exact: true })).toBeVisible();
+  await expect(page.getByRole("banner").getByText("live", { exact: true })).toBeVisible();
   const [receiptsLoaded, actionsLoaded] = await Promise.all([receiptResponse, actionResponse]);
   expect(receiptsLoaded.request().headers()["authorization"]).toBe(`Bearer ${bearer}`);
   expect(actionsLoaded.request().headers()["authorization"]).toBe(`Bearer ${bearer}`);
@@ -50,4 +51,63 @@ test("the built cockpit renders store-backed receipts and operator audit", async
   await expect(actionPanel).toContainText("applied");
   await expect(actionPanel).toContainText("operator:cockpit-e2e-seed");
   await expect(page.getByLabel("Receipt and operator audit")).toContainText("durable store");
+});
+
+test("an exact audit event becomes a persistent, bounded incident export", async ({ page }) => {
+  await page.goto("/cockpit/");
+  await page.getByLabel("Dashboard bearer token").fill(bearer);
+  await page.getByRole("button", { name: "unlock cockpit" }).click();
+  await expect(page.getByRole("banner").getByText("live", { exact: true })).toBeVisible();
+
+  await page.getByRole("tab", { name: "audit" }).click();
+  const action = page
+    .getByLabel("Governed operator actions")
+    .getByRole("button")
+    .filter({ hasText: "cockpit-e2e-audit-seed" });
+  await expect(action).toBeVisible();
+  await action.click();
+  const drawer = page.getByRole("dialog", { name: /event #/u });
+  const heading = await drawer.getByRole("heading", { name: /event #/u }).textContent();
+  const sequence = Number(heading?.replace("event #", ""));
+  expect(Number.isSafeInteger(sequence)).toBe(true);
+  await drawer.getByRole("button", { name: /open exact event/u }).click();
+  await expect(page.getByRole("tab", { name: /signal log/u })).toHaveAttribute("aria-selected", "true");
+
+  await page.getByRole("tab", { name: "incident" }).click();
+  await page.getByLabel("Incident title").fill("Seeded operator action review");
+  await page.getByLabel("Working hypothesis").fill("Provisional: verify the recorded release boundary.");
+  await page.getByRole("button", { name: /continue to evidence/u }).click();
+  await page.getByRole("button", { name: "add current selection" }).click();
+  await expect(page.getByText("1 explicit reference")).toBeVisible();
+  await expect(
+    page.locator(".incident-cart").getByText(`sequence ${sequence}`, { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /continue to notes and export/u }).click();
+  await page.getByLabel("Operator notes").fill("The cart contains only the selected durable sequence.");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "export incident JSON" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^synapse-incident-.+\.json$/u);
+  const downloadPath = await download.path();
+  expect(downloadPath).not.toBeNull();
+  const document_ = JSON.parse(await readFile(downloadPath as string, "utf8")) as {
+    readonly provenance: string;
+    readonly authority: string;
+    readonly evidence_boundary: { readonly association: string };
+    readonly incident: {
+      readonly title: string;
+      readonly evidence: readonly { readonly selection: { readonly seq?: number } }[];
+    };
+  };
+  expect(document_.provenance).toBe("local-operator-draft");
+  expect(document_.authority).toBe("not-a-hub-receipt-or-signed-audit-bundle");
+  expect(document_.evidence_boundary.association).toBe("explicit-operator-selection-only");
+  expect(document_.incident.title).toBe("Seeded operator action review");
+  expect(document_.incident.evidence).toHaveLength(1);
+  expect(document_.incident.evidence[0]?.selection.seq).toBe(sequence);
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Seeded operator action review" })).toBeVisible();
+  await expect(page.getByText("1 explicit reference", { exact: true })).toBeVisible();
 });

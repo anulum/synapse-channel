@@ -38,7 +38,7 @@ async function unlock(page: Page): Promise<void> {
     await input.fill(bearer);
     await page.getByRole("button", { name: "unlock cockpit" }).click();
   }
-  await expect(page.getByText("live", { exact: true })).toBeVisible();
+  await expect(page.getByRole("banner").getByText("live", { exact: true })).toBeVisible();
 }
 
 async function waitForThemeTransition(page: Page): Promise<void> {
@@ -78,6 +78,50 @@ test("the built live deck has zero axe violations in both themes and viewports",
         (window as unknown as AxeWindow).axe.run(document),
       );
       expect(result.violations, `${viewport.name}/${theme}: ${JSON.stringify(result.violations)}`).toEqual([]);
+    }
+  }
+
+  await page.setViewportSize(viewports[0]);
+  await page.getByRole("tab", { name: "incident" }).click();
+  await page.getByLabel("Incident title").fill("Accessibility incident review");
+  await page.getByRole("button", { name: /continue to evidence/u }).click();
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    for (const theme of ["dark", "light"] as const) {
+      const current = await page.locator("html").getAttribute("data-theme");
+      if ((current === "light" ? "light" : "dark") !== theme) {
+        await page.getByRole("button", { name: /Switch to (?:dark|light) theme/u }).click();
+      }
+      await waitForThemeTransition(page);
+      const result = await page.evaluate(async () =>
+        (window as unknown as AxeWindow).axe.run(document),
+      );
+      expect(
+        result.violations,
+        `incident ${viewport.name}/${theme}: ${JSON.stringify(result.violations)}`,
+      ).toEqual([]);
+    }
+  }
+
+  await page.setViewportSize(viewports[0]);
+  await page.getByRole("tab", { name: "fleet" }).click();
+  await page.getByLabel("identity or project").fill("cockpit-e2e");
+  await page.getByLabel("delivery health").selectOption("deferred");
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    for (const theme of ["dark", "light"] as const) {
+      const current = await page.locator("html").getAttribute("data-theme");
+      if ((current === "light" ? "light" : "dark") !== theme) {
+        await page.getByRole("button", { name: /Switch to (?:dark|light) theme/u }).click();
+      }
+      await waitForThemeTransition(page);
+      const result = await page.evaluate(async () =>
+        (window as unknown as AxeWindow).axe.run(document),
+      );
+      expect(
+        result.violations,
+        `communications ${viewport.name}/${theme}: ${JSON.stringify(result.violations)}`,
+      ).toEqual([]);
     }
   }
 });

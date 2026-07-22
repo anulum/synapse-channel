@@ -96,6 +96,9 @@ const INITIAL_OPERATOR_ACTIONS: OperatorActionsState = {
 /** Maximum wait before secondary reports start when the primary event tail hangs. */
 export const AUXILIARY_FEED_START_FALLBACK_MS = 20_000;
 
+/** Maximum stagger before the second whole-log report starts on a slow store. */
+export const HEAVY_FEED_STAGGER_FALLBACK_MS = 45_000;
+
 interface HeadlineMetrics {
   readonly agents: number;
   readonly claims: number;
@@ -232,7 +235,6 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
         auxiliaryFallback = undefined;
       }
       const reliabilityStore = createReliabilityStore();
-      const unsubscribeReliability = reliabilityStore.subscribe(setReliability);
       const federationStore = createFederationStore();
       const unsubscribeFederation = federationStore.subscribe(setFederation);
       const metricsStore = createMetricsStore();
@@ -241,8 +243,20 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
       const unsubscribeSessions = sessionsStore.subscribe(setSessions);
       const waitsStore = createWaitsStore();
       const unsubscribeWaits = waitsStore.subscribe(setWaits);
-      const anomaliesStore = createHealthAnomaliesStore();
-      const unsubscribeAnomalies = anomaliesStore.subscribe(setAnomalyReport);
+      let anomaliesStore: ReturnType<typeof createHealthAnomaliesStore> | undefined;
+      let unsubscribeAnomalies: (() => void) | undefined;
+      let anomalyFallback: ReturnType<typeof setTimeout> | undefined;
+      const startAnomalies = (): void => {
+        if (!effectActive || anomaliesStore !== undefined) return;
+        if (anomalyFallback !== undefined) clearTimeout(anomalyFallback);
+        anomaliesStore = createHealthAnomaliesStore();
+        unsubscribeAnomalies = anomaliesStore.subscribe(setAnomalyReport);
+      };
+      const unsubscribeReliability = reliabilityStore.subscribe((state) => {
+        setReliability(state);
+        if (state.status !== "connecting") startAnomalies();
+      });
+      anomalyFallback = setTimeout(startAnomalies, HEAVY_FEED_STAGGER_FALLBACK_MS);
       const receiptsStore = createReceiptsStore();
       const unsubscribeReceipts = receiptsStore.subscribe(setReceipts);
       const operatorActionsStore = createOperatorActionsStore();
@@ -253,7 +267,8 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
         unsubscribeMetrics();
         unsubscribeSessions();
         unsubscribeWaits();
-        unsubscribeAnomalies();
+        if (anomalyFallback !== undefined) clearTimeout(anomalyFallback);
+        unsubscribeAnomalies?.();
         unsubscribeReceipts();
         unsubscribeOperatorActions();
         reliabilityStore.stop();
@@ -261,7 +276,7 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
         metricsStore.stop();
         sessionsStore.stop();
         waitsStore.stop();
-        anomaliesStore.stop();
+        anomaliesStore?.stop();
         receiptsStore.stop();
         operatorActionsStore.stop();
       };

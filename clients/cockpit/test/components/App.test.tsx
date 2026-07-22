@@ -7,7 +7,7 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — app shell smoke tests: the wired deck against a stubbed hub
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -57,6 +57,7 @@ function accessDescriptor(role: "viewer" | "operator" | "admin"): object {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/cockpit/");
   window.sessionStorage.clear();
   resetCockpitAuth();
   vi.stubGlobal(
@@ -92,9 +93,8 @@ describe("App", () => {
   it("wires the whole deck: HUD goes live, panels fill, optional feeds state absence", async () => {
     render(<App />);
     // The snapshot lands: the beacon flips live and the roster names the agent.
-    await waitFor(() => expect(screen.getByText("live")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("worker")).toBeTruthy());
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("SYNAPSE");
-    expect(screen.getByText("worker")).toBeTruthy();
     // Hub-recorded facts flow to the rail: dead letters + the pending quorum.
     expect(screen.getByText("dead letters · nobody listening")).toBeTruthy();
     expect(screen.getByText("pending approvals · awaiting a second operator")).toBeTruthy();
@@ -113,7 +113,7 @@ describe("App", () => {
 
   it("opens the palette on Ctrl+K and toggles the theme end to end", async () => {
     const { unmount } = render(<App />);
-    await waitFor(() => expect(screen.getByText("live")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("worker")).toBeTruthy());
     // Ctrl+K opens; Escape closes.
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
     await waitFor(() => expect(screen.getByLabelText("Search commands")).toBeTruthy());
@@ -128,15 +128,60 @@ describe("App", () => {
     unmount();
   });
 
-  it("arms fleet time-travel and states the unserved reconstruction surface", async () => {
+  it("arms fleet history from the URL workspace and states an unserved reconstruction surface", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByText("live")).toBeTruthy());
-    screen.getByText("time travel").click();
+    await waitFor(() => expect(screen.getByText("worker")).toBeTruthy());
+    const modeGroup = screen.getByRole("group", { name: "Fleet evidence time mode" });
+    within(modeGroup).getByRole("button", { name: "history" }).click();
     await waitFor(() =>
       expect(screen.getByText("state-at surface not served (--feeds-db)")).toBeTruthy(),
     );
-    screen.getByText("back to now").click();
-    await waitFor(() => expect(screen.getByText("time travel")).toBeTruthy());
+    expect(location.search).toContain("replay=history");
+    within(modeGroup).getByRole("button", { name: "live" }).click();
+    await waitFor(() => expect(location.search).not.toContain("replay"));
+  });
+
+  it("restores and updates shareable communication filters through the app shell", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/cockpit/?panel=fleet&comm=quantum&delivery=failed",
+    );
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("worker")).toBeTruthy());
+    expect(screen.getByRole("tab", { name: "fleet" }).getAttribute("aria-selected")).toBe("true");
+    const query = screen.getByLabelText("identity or project") as HTMLInputElement;
+    const health = screen.getByLabelText("delivery health") as HTMLSelectElement;
+    expect(query.value).toBe("quantum");
+    expect(health.value).toBe("failed");
+
+    await userEvent.clear(query);
+    await userEvent.type(query, "worker");
+    await userEvent.selectOptions(health, "unknown");
+    expect(location.search).toContain("comm=worker");
+    expect(location.search).toContain("delivery=unknown");
+    await userEvent.click(screen.getByRole("button", { name: "clear filters" }));
+    expect(location.search).not.toContain("comm=");
+    expect(location.search).not.toContain("delivery=");
+  });
+
+  it("keeps an exact selected event in a principal-scoped guided incident draft", async () => {
+    window.history.replaceState(null, "", "/cockpit/?event=42");
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("worker")).toBeTruthy());
+    await userEvent.click(screen.getByRole("tab", { name: "incident" }));
+    await userEvent.type(screen.getByLabelText("Incident title"), "Exact event review");
+    await userEvent.click(screen.getByRole("button", { name: /continue to evidence/u }));
+    expect(location.search).toContain("panel=incident");
+    expect(location.search).toContain("incident=evidence");
+    expect(location.search).toContain("event=42");
+    await userEvent.click(screen.getByRole("button", { name: "add current selection" }));
+    expect(screen.getByText("1 explicit reference")).toBeTruthy();
+    expect(localStorage.getItem("synapse-cockpit-incident-v1:viewer")).toContain("event:42");
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    expect(screen.getByRole("tab", { name: /signal log/u }).getAttribute("aria-selected")).toBe("true");
+    expect(location.search).not.toContain("incident=");
+    expect(location.search).toContain("event=42");
   });
 
   it("unlocks with the session bearer and clears the live deck when that bearer is revoked", async () => {
@@ -169,8 +214,7 @@ describe("App", () => {
 
     await userEvent.type(screen.getByLabelText("Dashboard bearer token"), "current-token");
     await userEvent.click(screen.getByText("unlock cockpit"));
-    await waitFor(() => expect(screen.getByText("live")).toBeTruthy());
-    expect(screen.getByText("worker")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("worker")).toBeTruthy());
     expect(sessionStorage.getItem(COCKPIT_BEARER_KEY)).toBe("current-token");
     expect(localStorage.getItem(COCKPIT_BEARER_KEY)).toBeNull();
 

@@ -27,7 +27,7 @@ import hashlib
 import json
 import time
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -614,6 +614,7 @@ def replay(
     max_paths_per_claim: int = MAX_DECLARED_PATHS,
     now: float | None = None,
     up_to_seq: int | None = None,
+    event_kinds: Iterable[str] | None = None,
 ) -> ReplayResult:
     """Rebuild coordination state by replaying the whole event log.
 
@@ -643,6 +644,10 @@ def replay(
     up_to_seq : int or None, optional
         Replay only events with ``seq <= up_to_seq``; ``None`` replays the whole
         log. Bounds the reconstruction to a point in time for a state-at-seq view.
+    event_kinds : iterable of str or None, optional
+        Ask the event store to decode only these kinds. ``None`` preserves full
+        restart replay. Read-side projections may use a proven subset when they
+        do not expose chat, idempotency, or memory counters.
 
     Returns
     -------
@@ -669,9 +674,7 @@ def replay(
     message_seq = 0
     epoch_seq = 0
 
-    for event in store.read_all():
-        if up_to_seq is not None and event.seq > up_to_seq:
-            break
+    for event in store.iter_events(through_seq=up_to_seq, kinds=event_kinds):
         payload = event.payload
         if event.kind == EventKind.CORRUPT:
             corrupt_rows.append(CorruptEventRow.from_payload(event.seq, payload))

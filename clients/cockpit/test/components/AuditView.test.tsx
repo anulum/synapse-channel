@@ -8,7 +8,8 @@
 // SYNAPSE_CHANNEL — receipt and operator audit rendering tests
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AuditView } from "../../src/components/AuditView";
 import type {
@@ -175,5 +176,25 @@ describe("AuditView", () => {
     );
     expect(screen.getByText("+2 more retained receipts")).toBeTruthy();
     expect(screen.getByText("+3 more retained actions")).toBeTruthy();
+  });
+
+  it("selects an exact sequence, renders its paired projections, and hops to the log", async () => {
+    const onSelectEvent = vi.fn();
+    const onOpenEvent = vi.fn();
+    const pairedReceipt = { ...receipt(7), kind: "operator-relay" };
+    render(
+      <AuditView
+        receipts={receipts([pairedReceipt], "live")}
+        operatorActions={actions([action(7)], "live")}
+        selection={{ kind: "event", seq: 7 }}
+        onSelectEvent={onSelectEvent}
+        onOpenEvent={onOpenEvent}
+      />,
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "open exact event #7" }));
+    expect(onOpenEvent).toHaveBeenCalledWith(7);
+    await userEvent.click(screen.getByRole("button", { name: "Close audit evidence" }));
+    expect(onSelectEvent).toHaveBeenCalledWith(null);
   });
 });

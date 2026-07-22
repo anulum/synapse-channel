@@ -21,11 +21,11 @@ import { MobileNav, type MobileSegment } from "./components/MobileNav";
 import { Palette } from "./components/Palette";
 import { PanelBoundary } from "./components/PanelBoundary";
 import { ReliabilityPanel } from "./components/ReliabilityPanel";
+import { ReplayWorkbench, type ReplaySlot } from "./components/ReplayWorkbench";
 import { RiskRail } from "./components/RiskRail";
 import { RoleBadge } from "./components/RoleBadge";
 import { SelectionBar } from "./components/SelectionBar";
 import { TaskBoard } from "./components/TaskBoard";
-import { TimeTravelBar } from "./components/TimeTravelBar";
 import { ToastStack } from "./components/ToastStack";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { deriveAnomalies } from "./lib/anomalies";
@@ -46,7 +46,7 @@ import {
   type Theme,
 } from "./lib/theme";
 import { deriveRoster } from "./lib/roster";
-import { fetchStateAt, type FleetStateAt } from "./lib/stateAt";
+import { fetchStateAt } from "./lib/stateAt";
 import { focusClaims, focusTasks } from "./lib/focus";
 import { fleetSelectionOf } from "./lib/selection";
 import { buildCommands, type Command } from "./lib/palette";
@@ -58,6 +58,16 @@ import { useCockpitFeeds } from "./hooks/useCockpitFeeds";
 import { useDashboardAccess } from "./hooks/useDashboardAccess";
 import { useCockpitWorkspace } from "./hooks/useCockpitWorkspace";
 
+async function loadReplaySlot(seq: number): Promise<ReplaySlot> {
+  const result = await fetchStateAt(seq);
+  if (result.kind === "loaded") return { seq, state: result.state, note: null };
+  return {
+    seq,
+    state: null,
+    note: result.kind === "absent" ? "state-at surface not served (--feeds-db)" : result.message,
+  };
+}
+
 export function App(): JSX.Element {
   const {
     workspace,
@@ -66,6 +76,10 @@ export function App(): JSX.Element {
     setSelection,
     setPanelSelection,
     setFleetSelection,
+    setReplay,
+    replaceReplay,
+    setIncidentStep,
+    setCommunicationFilter,
   } = useCockpitWorkspace();
   const auth = useSyncExternalStore(
     subscribeCockpitAuth,
@@ -97,51 +111,39 @@ export function App(): JSX.Element {
   // Phone-width segment: one deck section at a time; CSS ignores this above
   // 640px, where the whole deck renders as always.
   const [mobileSegment, setMobileSegment] = useState<MobileSegment>("signals");
-  // Fleet time-travel: when armed, the claims board, task board, and
-  // topology render the moment reconstructed from the durable log; the
-  // spine, log, and roster stay live. The bar is the loud boundary.
-  const [travelOn, setTravelOn] = useState(false);
-  const [travelSeq, setTravelSeq] = useState(0);
-  const [travelState, setTravelState] = useState<FleetStateAt | null>(null);
-  const [travelNote, setTravelNote] = useState<string | null>(null);
-  const travelTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  const travelFetch = useCallback((seq: number) => {
-    void fetchStateAt(seq).then((result) => {
-      if (result.kind === "loaded") {
-        setTravelState(result.state);
-        setTravelNote(null);
-      } else {
-        setTravelState(null);
-        setTravelNote(result.kind === "absent" ? "state-at surface not served (--feeds-db)" : result.message);
-      }
-    });
-  }, []);
+  const [replaySlotA, setReplaySlotA] = useState<ReplaySlot | null>(null);
+  const [replaySlotB, setReplaySlotB] = useState<ReplaySlot | null>(null);
+  const replayGeneration = useRef(0);
+  useEffect(() => {
+    const generation = replayGeneration.current + 1;
+    replayGeneration.current = generation;
+    if (shellBlocked || workspace.replay.mode === "live") {
+      setReplaySlotA(null);
+      setReplaySlotB(null);
+      return;
+    }
+    const a = workspace.replay.mode === "compare" ? workspace.replay.a : null;
+    const b = workspace.replay.mode === "compare" ? workspace.replay.b : workspace.replay.at;
+    setReplaySlotA(a === null ? null : { seq: a, state: null, note: null });
+    setReplaySlotB({ seq: b, state: null, note: null });
+    const timer = setTimeout(() => {
+      const aRequest = a === null ? Promise.resolve(null) : loadReplaySlot(a);
+      void Promise.all([aRequest, loadReplaySlot(b)]).then(([loadedA, loadedB]) => {
+        if (replayGeneration.current !== generation) return;
+        setReplaySlotA(loadedA);
+        setReplaySlotB(loadedB);
+      });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [shellBlocked, workspace.replay]);
 
   const onToggleTravel = useCallback(() => {
-    setTravelOn((current) => {
-      const next = !current;
-      if (next) {
-        // Arm at the log's end; the first fetch names the real bound.
-        const seed = Number.MAX_SAFE_INTEGER;
-        setTravelSeq(seed);
-        travelFetch(seed);
-      } else {
-        setTravelState(null);
-        setTravelNote(null);
-      }
-      return next;
-    });
-  }, [travelFetch]);
-
-  const onScrubTravel = useCallback(
-    (seq: number) => {
-      setTravelSeq(seq);
-      if (travelTimer.current !== undefined) clearTimeout(travelTimer.current);
-      travelTimer.current = setTimeout(() => travelFetch(seq), 250);
-    },
-    [travelFetch],
-  );
+    setReplay(
+      workspace.replay.mode === "live"
+        ? { mode: "history", at: coverage.maxSeq ?? 0 }
+        : { mode: "live" },
+    );
+  }, [coverage.maxSeq, setReplay, workspace.replay.mode]);
 
   // The command palette: Ctrl/Cmd+K anywhere.
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -280,11 +282,15 @@ export function App(): JSX.Element {
     [snap.snapshot],
   );
   const liveBoard = useMemo(() => deriveBoard(snap.snapshot), [snap.snapshot]);
-  const travelling = travelOn && travelState !== null;
-  const claims = travelling && travelState !== null ? travelState.claims : liveClaims;
+  const travelling = workspace.replay.mode !== "live" && replaySlotB?.state !== null && replaySlotB?.state !== undefined;
+  const claims = travelling && replaySlotB?.state !== null && replaySlotB?.state !== undefined
+    ? replaySlotB.state.claims
+    : liveClaims;
   // Advisory conflicts are a live computation, not journalled — none in the past.
   const conflicts = travelling ? [] : liveConflicts;
-  const board = travelling && travelState !== null ? travelState.tasks : liveBoard;
+  const board = travelling && replaySlotB?.state !== null && replaySlotB?.state !== undefined
+    ? replaySlotB.state.tasks
+    : liveBoard;
   // The focus lens narrows whatever is shown — live or reconstructed alike.
   const lensedClaims = useMemo(() => focusClaims(claims, focus), [claims, focus]);
   const lensedBoard = useMemo(() => focusTasks(board, claims, focus), [board, claims, focus]);
@@ -376,15 +382,12 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     if (!shellBlocked) return;
-    if (travelTimer.current !== undefined) clearTimeout(travelTimer.current);
     for (const timer of toastTimers.current) clearTimeout(timer);
     toastTimers.current.clear();
     previousFacts.current = null;
     setBrush(null);
-    setTravelOn(false);
-    setTravelSeq(0);
-    setTravelState(null);
-    setTravelNote(null);
+    setReplaySlotA(null);
+    setReplaySlotB(null);
     setPaletteOpen(false);
     setPaletteCompose(null);
     setInspected(null);
@@ -449,13 +452,15 @@ export function App(): JSX.Element {
           configEpoch={snap.snapshot?.config_epoch ?? ""}
         />
       </PanelBoundary>
-      <TimeTravelBar
-        on={travelOn}
-        seq={travelSeq}
-        state={travelState}
-        note={travelNote}
-        onToggle={onToggleTravel}
-        onScrub={onScrubTravel}
+      <ReplayWorkbench
+        replay={workspace.replay}
+        slotA={replaySlotA}
+        slotB={replaySlotB}
+        events={log}
+        onReplayChange={setReplay}
+        onReplayReplace={replaceReplay}
+        onSelectEvent={(seq) => setPanelSelection("log", { kind: "event", seq })}
+        onSelectTask={(taskId) => setPanelSelection("causality", { kind: "task", id: taskId })}
       />
       <MobileNav active={mobileSegment} onSelect={setMobileSegment} />
       <div className={`deck deck--seg-${mobileSegment}`} role="main">
@@ -497,6 +502,11 @@ export function App(): JSX.Element {
                 onFleetViewChange={setFleetView}
                 fleetSelection={fleetSelectionOf(workspace.selection)}
                 onFleetSelectionChange={setFleetSelection}
+                communicationFilter={{
+                  query: workspace.communicationQuery,
+                  health: workspace.communicationHealth,
+                }}
+                onCommunicationFilterChange={setCommunicationFilter}
                 selection={workspace.selection}
                 onSelectionChange={(selection) => {
                   if (selection?.kind === "task") setPanelSelection("causality", selection);
@@ -524,7 +534,19 @@ export function App(): JSX.Element {
                 sessions={sessions}
                 receipts={receipts}
                 operatorActions={operatorActions}
+                onOpenEvent={(seq) => setPanelSelection("log", { kind: "event", seq })}
                 traceRequest={traceRequest}
+                incidentStep={workspace.incidentStep}
+                onIncidentStepChange={setIncidentStep}
+                incidentStorageKey={`synapse-cockpit-incident-v1:${access.descriptor?.principal ?? "unavailable"}`}
+                replay={workspace.replay}
+                hubVersion={snap.snapshot?.hub_version ?? ""}
+                configEpoch={snap.snapshot?.config_epoch ?? ""}
+                onOpenIncidentEvidence={(selection) => {
+                  if (selection.kind === "task") setPanelSelection("causality", selection);
+                  else if (selection.kind === "event") setPanelSelection("log", selection);
+                  else setPanelSelection("fleet", selection);
+                }}
               />
             </PanelBoundary>
           </div>

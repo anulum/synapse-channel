@@ -30,6 +30,10 @@ describe("useCockpitWorkspace", () => {
       panel: "fleet",
       fleetView: "matrix",
       selection: { kind: "route", source: "a", target: "b" },
+      replay: { mode: "live" },
+      incidentStep: "scope",
+      communicationQuery: "",
+      communicationHealth: "all",
     });
 
     act(() => result.current.setFleetView("projects"));
@@ -50,6 +54,25 @@ describe("useCockpitWorkspace", () => {
     act(() => result.current.setPanelSelection("causality", { kind: "task", id: "SCH-18" }));
     expect(location.search).toBe("?panel=causality&task=SCH-18");
 
+    act(() => result.current.setReplay({ mode: "history", at: 42 }));
+    expect(location.search).toBe("?panel=causality&task=SCH-18&replay=history&at=42");
+    const length = history.length;
+    act(() => result.current.replaceReplay({ mode: "compare", a: 12, b: 42 }));
+    expect(location.search).toBe("?panel=causality&task=SCH-18&replay=compare&a=12&b=42");
+    expect(history.length).toBe(length);
+
+    act(() => result.current.setIncidentStep("evidence"));
+    expect(location.search).toBe(
+      "?panel=incident&incident=evidence&task=SCH-18&replay=compare&a=12&b=42",
+    );
+    expect(result.current.workspace.incidentStep).toBe("evidence");
+
+    act(() => result.current.setCommunicationFilter({ query: "alpha/one", health: "failed" }));
+    expect(location.search).toBe(
+      "?panel=fleet&fleet=projects&comm=alpha%2Fone&delivery=failed&task=SCH-18&replay=compare&a=12&b=42",
+    );
+    expect(history.length).toBe(length + 1);
+
     unmount();
     expect(remove).toHaveBeenCalledWith("popstate", expect.any(Function));
   });
@@ -64,6 +87,10 @@ describe("useCockpitWorkspace", () => {
       panel: "metrics",
       fleetView: "web",
       selection: { kind: "event", seq: 17 },
+      replay: { mode: "live" },
+      incidentStep: "scope",
+      communicationQuery: "",
+      communicationHealth: "all",
     });
   });
 
@@ -81,6 +108,10 @@ describe("useCockpitWorkspace", () => {
       panel: "log",
       fleetView: "web",
       selection: null,
+      replay: { mode: "live" },
+      incidentStep: "scope",
+      communicationQuery: "",
+      communicationHealth: "all",
     });
   });
 });

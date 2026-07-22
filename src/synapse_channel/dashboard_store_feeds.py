@@ -157,6 +157,21 @@ def build_events_tail(
 METRIC_WINDOWS_SECONDS = {"last_hour": 3600.0, "last_day": 86400.0}
 """Log-relative aggregation windows the metrics feed reports."""
 
+STATE_AT_EVENT_KINDS = frozenset(
+    {
+        EventKind.CLAIM,
+        EventKind.TASK_UPDATE,
+        EventKind.CHECKPOINT,
+        EventKind.HANDOFF,
+        EventKind.RELEASE,
+        EventKind.RESOURCE,
+        EventKind.LEDGER_TASK,
+        EventKind.LEDGER_PROGRESS,
+        EventKind.CORRUPT,
+    }
+)
+"""Kinds that can alter the claims, resources, or board exposed by state-at."""
+
 
 def build_state_at_feed(db_path: str | Path, *, seq: int) -> dict[str, object]:
     """Reconstruct coordination state as of event ``seq`` by bounded replay.
@@ -189,11 +204,14 @@ def build_state_at_feed(db_path: str | Path, *, seq: int) -> dict[str, object]:
         # Reconstruct as of the bounded event's own timestamp, never the wall
         # clock — so lease expiry is judged at that point in time and the
         # document is deterministic (a lease live at seq N reads live).
-        as_of_ts = next(
-            (event.ts for event in reversed(store.read_since(0)) if event.seq <= bounded),
-            None,
+        latest = store.latest_at_or_before(bounded)
+        as_of_ts = None if latest is None else latest.ts
+        result = replay(
+            store,
+            up_to_seq=bounded,
+            now=as_of_ts,
+            event_kinds=STATE_AT_EVENT_KINDS,
         )
-        result = replay(_open_event_store(path), up_to_seq=bounded, now=as_of_ts)
     finally:
         store.close()
     snapshot_now = as_of_ts if as_of_ts is not None else 0.0
@@ -238,8 +256,14 @@ def build_waits_feed(db_path: str | Path) -> dict[str, object]:
     store = _open_event_store(path)
     try:
         log_end_seq = store.max_seq()
-        as_of_ts = next((event.ts for event in reversed(store.read_since(0))), None)
-        result = replay(_open_event_store(path), up_to_seq=log_end_seq, now=as_of_ts)
+        latest = store.latest_at_or_before(log_end_seq)
+        as_of_ts = None if latest is None else latest.ts
+        result = replay(
+            store,
+            up_to_seq=log_end_seq,
+            now=as_of_ts,
+            event_kinds=STATE_AT_EVENT_KINDS,
+        )
     finally:
         store.close()
     board = result.blackboard

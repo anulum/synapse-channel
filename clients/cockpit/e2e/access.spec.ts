@@ -124,9 +124,9 @@ test("a live capability downgrade closes writes, restores focus, and announces",
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.getByLabel("Search commands")).toHaveCount(0);
   await expect(trigger).toBeFocused();
-  await expect(page.getByRole("status")).toContainText(
-    "Dashboard access changed; write controls were removed.",
-  );
+  await expect(
+    page.getByText("Dashboard access changed; write controls were removed.", { exact: true }),
+  ).toBeVisible();
   await trigger.click();
   await expect(page.locator(".palette__item--write")).toHaveCount(0);
 });

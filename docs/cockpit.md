@@ -54,6 +54,15 @@ The dashboard remains useful without `--feeds-db`. Optional panels say that
 their feed is not configured; they do not turn missing evidence into a zero.
 Use `--feeds-db-key-file` when the selected hub store is encrypted.
 
+Whole-log reliability and causal-health reports are intentionally progressive:
+the exact event tail and lightweight operational feeds start first, then the
+two expensive reports run one at a time and refresh on a two-minute cadence.
+The dashboard server also shares concurrent identical report builds across
+browser tabs and isolates whole-log projection CPU from interactive requests.
+State-at responses use a short, bounded cache by exact query, so repeated tabs
+do not reconstruct the same moment independently. These controls change only
+when evidence is computed, never the evidence or its durable sequence.
+
 ## Unlock a protected dashboard
 
 A loopback read-only dashboard can run without a browser bearer. A supplied
@@ -149,6 +158,21 @@ The web emphasises a small set of priority routes for quick selection. The
 matrix remains the precise long-tail view. Select a node, project, link, or
 matrix cell to open its evidence detail.
 
+Use **identity or project** and **delivery health** above the visual to narrow
+web, matrix, and project projections without changing the retained evidence
+window. Text matching is case-insensitive and the result counter states both
+visible and total route counts. The health choices distinguish delivered,
+deferred, failed, and unknown receipt posture; unknown does not mean failed.
+Filters pause in timeline and flow because those modes include claim, waiter,
+task, and exact-event evidence that is not a communication edge. A selected
+route remains pinned in its detail pane when a new filter hides it, and the
+pane states that condition instead of silently changing the selection.
+
+The communication query is bounded and encoded as `comm`; non-default health
+is encoded as `delivery`. Both fields exist only while the fleet inspector is
+active, survive reload and browser history, and are safe to share with the
+rest of the workspace URL. They never contain message bodies or credentials.
+
 Every timeline mark is a durable event sequence. Its table peer exposes the
 same lane, sequence, time, actor/project, and label, and selecting either form
 updates the shared event selection. The project-flow lines are retained message
@@ -169,6 +193,13 @@ Forward restore earlier panel and selection changes. Signal-log filters remain
 in the URL hash, so workspace navigation and log queries can be shared together.
 
 A selected link shows retained pairwise messages with delivery outcomes.
+Selecting one message opens an exact three-stage evidence chain: the durable
+chat sequence, its sequence-correlated transport receipt (or an explicit
+unknown state), and semantic responses whose `response_to_seq` names that
+exact message. Exact-event buttons jump back to the retained event rather than
+matching by actor, body, or timestamp. “No response retained” is deliberately
+not presented as proof that the recipient did not act.
+
 When the dashboard is armed and the principal has message capability, the
 detail can send attributed operator commentary about a selected message.
 Commentary is not recipient acknowledgement or task-ownership evidence, and it
@@ -211,28 +242,81 @@ task grouping, pause, raw event detail, and export of the visible evidence.
 Its filter query lives in the URL hash, so you can copy a filtered-log address.
 The exported JSON states its query, provenance, time window, and count.
 
-When the durable event feed is available, history mode can open retained
-sequence windows and compare two pinned windows. An imported cockpit export is
-labelled as a post-mortem so it cannot pose as live data.
+When the durable state-at feed is available, history mode can reconstruct one
+selected sequence and comparison mode can pin two sequences, A and B. An
+imported cockpit export is labelled as a post-mortem so it cannot pose as live
+data.
 
 ## Use time travel safely
 
-The time-travel bar reconstructs claims and the task board at a selected durable
-sequence. While it is armed:
+The replay workbench reconstructs claims and the task board at a selected
+durable sequence. Choose **history** for one B position or **compare** for an
+A-to-B evidence delta. The current replay state is encoded in the URL as
+`replay=history&at=…` or `replay=compare&a=…&b=…`, so reload, Back, Forward,
+and a copied workspace address preserve the investigation.
 
-- claims, tasks, and topology are historical;
-- the activity spine, signal log, and roster remain live;
+While replay is armed:
+
+- claims and task-board cards show reconstructed B state;
+- the activity spine, signal log, topology, and roster remain live;
 - presence remains live because presence is not reconstructed from the journal;
-- a prominent label states the selected sequence and time.
+- a prominent **HISTORY** or **COMPARE** label states the exact position and
+  makes the live/historical boundary explicit;
+- dragging a sequence control replaces the current browser-history entry,
+  while entering or leaving replay creates a navigable history step;
+- the comparison list counts added, removed, and changed claim/task evidence;
+- an **exact event** hop appears only when a matching durable transition event
+  is inside the retained A-to-B window. Otherwise the row says that the
+  transition event is outside the retained window.
 
-Use **back to now** before acting on current fleet state.
+Use **live** before acting on current fleet state. If the state-at endpoint is
+not configured, the workbench states that reconstruction is unavailable; it
+does not silently substitute the current snapshot.
+
+## Build a guided incident record
+
+Open **incident** to turn the current investigation into a bounded local draft.
+The three-step workspace separates the observable scope, explicitly selected
+evidence, and operator notes:
+
+1. **scope** names the observed problem and keeps the working hypothesis
+   visibly provisional;
+2. **evidence** adds only the current typed selection: an exact event sequence,
+   task id, directed route, agent, or project;
+3. **notes** records local commentary and exports a self-describing JSON
+   document after the scope and evidence gates are satisfied.
+
+The cockpit never fills the evidence cart from similar text, actors, times, or
+task names. Each item records the replay mode and sequence position active when
+the operator added it. Opening an item returns to its owning cockpit surface:
+events to the signal log, tasks to causality, and routes, agents, or projects to
+the fleet inspector.
+
+The draft is autosaved in browser local storage under the authenticated
+dashboard principal. It is not shared with another browser principal and it is
+not sent to the hub. The selected incident step is URL-addressable as
+`panel=incident&incident=scope|evidence|notes`; Back and Forward restore it
+without putting draft text in the URL.
+
+The JSON export states `local-operator-draft` provenance and explicitly says
+that it is not a hub receipt or signed audit bundle. It contains exact typed
+references and replay context, not embedded Merkle proofs or inferred event
+relationships. Use the audit drawer and proof surfaces separately when a
+signed or cryptographically committed record is required. Starting a new
+incident requires an explicit confirmation and replaces only that principal's
+local draft.
 
 ## Read metrics, audit, and causality
 
 - **metrics** reports event-log counts and bounded trailing windows. It is not
   the hub process-metrics endpoint.
 - **audit** keeps universal receipts and operator actions as separate feeds so
-  a requested action cannot masquerade as a completed receipt.
+  a requested action cannot masquerade as a completed receipt. Select a row to
+  open its evidence drawer. The drawer marks action/receipt evidence as paired
+  only when both records share the same exact durable event sequence and the
+  receipt is the dashboard's operator-relay receipt; actor, task, or timestamp
+  similarity is never used as an inferred join. Partial evidence remains
+  visibly partial and any event hop opens that exact retained sequence.
 - **causality** traces recorded causes or effects from an event sequence or task.
   A task hop from the log opens this panel with the task already selected.
 - **topology** joins identities and held tasks and adds imported federation
@@ -320,6 +404,8 @@ and network path. Do not infer current fleet safety from last-good rows.
 - Non-loopback exposure requires `--allow-non-loopback`, deliberate host
   admission, authentication, and trusted network controls.
 - The cockpit performs no direct database write.
+- Incident drafts stay in principal-scoped browser storage until the operator
+  exports or explicitly replaces them; they are not hub records.
 - Browser mutations go through the dashboard relay and then the hub's normal
   validation, ACL, and audit path.
 - Observed peer state is advisory and cannot grant local claim authority.

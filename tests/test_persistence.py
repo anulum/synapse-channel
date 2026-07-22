@@ -341,6 +341,17 @@ def test_max_seq_tracks_the_highest_sequence(tmp_path: Path) -> None:
     store.close()
 
 
+def test_latest_at_or_before_handles_empty_prefixes_and_retention_gaps(tmp_path: Path) -> None:
+    store = _seeded(tmp_path)
+    events = store.read_all()
+    assert store.latest_at_or_before(0) is None
+    assert store.latest_at_or_before(events[2].seq) == events[2]
+    store.delete([events[2].seq])
+    assert store.latest_at_or_before(events[2].seq) == events[1]
+    assert store.latest_at_or_before(10_000) == events[-1]
+    store.close()
+
+
 def test_delete_removes_named_sequences_and_returns_the_count(tmp_path: Path) -> None:
     store = _seeded(tmp_path)
     events = store.read_all()

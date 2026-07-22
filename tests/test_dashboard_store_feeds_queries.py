@@ -333,6 +333,20 @@ class TestStateAtFeed:
         self._seed(db)
         assert build_state_at_feed(db, seq=2) == build_state_at_feed(db, seq=2)
 
+    def test_ignores_unrelated_chat_but_uses_its_timestamp_for_expiry(self, tmp_path: Path) -> None:
+        db = tmp_path / "hub.db"
+        store = EventStore(db)
+        record_claim(
+            store,
+            _replayable_claim(task_id="T1", owner="alice", lease_expires_at=2_000.0),
+        )
+        store.append("chat", {"payload": "later"}, ts=10_000.0)
+        store.close()
+
+        doc = build_state_at_feed(db, seq=2)
+
+        assert _task_ids(doc) == []
+
     def test_missing_store_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="missing event store"):
             build_state_at_feed(tmp_path / "absent.db", seq=1)

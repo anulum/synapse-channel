@@ -12,6 +12,15 @@ import { memo, useCallback, useMemo, useRef, useState } from "react";
 import type { TimeWindow } from "../lib/brush";
 import type { ClaimView } from "../lib/claims";
 import {
+  COMMUNICATION_HEALTH_FILTERS,
+  COMMUNICATION_QUERY_LIMIT,
+  DEFAULT_COMMUNICATION_FILTER,
+  communicationFilterIsActive,
+  communicationHealthFilter,
+  filterCommunicationModel,
+  type CommunicationFilter,
+} from "../lib/communicationFilters";
+import {
   deriveCommunicationModel,
   deriveConversationDetail,
   layoutCommunicationWeb,
@@ -22,6 +31,7 @@ import {
   type ConversationMessage,
   type ProjectTraffic,
 } from "../lib/communications";
+import { conversationEvidenceFor } from "../lib/conversationEvidence";
 import { deriveFleetTimeline, deriveProjectFlow } from "../lib/fleetVisuals";
 import {
   sendOperatorResponse,
@@ -50,6 +60,9 @@ interface FleetViewsProps {
   readonly canMessage: boolean;
   readonly onMessagePeer?: ((identity: string) => void) | undefined;
   readonly respondToMessage?: ((input: MessageResponseInput) => Promise<OperatorActionResult>) | undefined;
+  readonly filter?: CommunicationFilter;
+  readonly onFilterChange?: ((filter: CommunicationFilter) => void) | undefined;
+  readonly onOpenEvent?: ((seq: number) => void) | undefined;
 }
 
 function shortIdentity(identity: string): string {
@@ -402,11 +415,17 @@ function EdgeDetail({
   messages,
   canRespond,
   respond,
+  outsideFilter,
+  onClearFilter,
+  onOpenEvent,
 }: {
   edge: CommunicationEdge;
   messages: readonly ConversationMessage[];
   canRespond: boolean;
   respond: (input: MessageResponseInput) => Promise<OperatorActionResult>;
+  outsideFilter: boolean;
+  onClearFilter: () => void;
+  onOpenEvent?: ((seq: number) => void) | undefined;
 }): JSX.Element {
   const [messageSeq, setMessageSeq] = useState(messages[0]?.seq ?? 0);
   const [status, setStatus] = useState<SemanticResponseStatus>("acknowledged");
@@ -414,6 +433,10 @@ function EdgeDetail({
   const [outcome, setOutcome] = useState("");
   const [working, setWorking] = useState(false);
   const selected = messages.find((message) => message.seq === messageSeq) ?? messages[0];
+  const evidence = useMemo(
+    () => conversationEvidenceFor(messages, selected?.seq ?? 0),
+    [messages, selected?.seq],
+  );
 
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -441,6 +464,12 @@ function EdgeDetail({
           {edge.messages} sent · {edge.delivered} delivered · {edge.deferred} deferred · {edge.failed} failed
         </span>
       </header>
+      {outsideFilter && (
+        <div className="fleet-conversation__filter-note" role="status">
+          <span>The selected route is pinned outside the active communication filters.</span>
+          <button type="button" onClick={onClearFilter}>show route in visual</button>
+        </div>
+      )}
       <div className="fleet-conversation__timeline" aria-label="Pairwise message timeline">
         {messages.map((message) => (
           <button
@@ -471,6 +500,63 @@ function EdgeDetail({
           </button>
         ))}
       </div>
+      {evidence !== null && (
+        <section
+          className="fleet-evidence"
+          aria-label={`Evidence chain for message ${evidence.message.seq}`}
+        >
+          <header>
+            <div>
+              <span className="fleet-selection__eyebrow">exact evidence chain</span>
+              <strong>{`message #${evidence.message.seq}`}</strong>
+            </div>
+            {onOpenEvent !== undefined && (
+              <button type="button" onClick={() => onOpenEvent(evidence.message.seq)}>
+                open exact event
+              </button>
+            )}
+          </header>
+          <ol>
+            <li>
+              <span>1 · durable chat</span>
+              <strong>{`${evidence.message.source} → ${evidence.message.target}`}</strong>
+              <small>{`sequence ${evidence.message.seq}`}</small>
+            </li>
+            <li>
+              <span>2 · transport receipt</span>
+              <strong>{evidence.message.delivery}</strong>
+              <small>
+                {evidence.message.delivery === "unknown"
+                  ? "no transport receipt retained in this window"
+                  : "correlated by exact message sequence"}
+              </small>
+            </li>
+            <li>
+              <span>3 · semantic response</span>
+              {evidence.responses.length === 0 ? (
+                <>
+                  <strong>none retained</strong>
+                  <small>absence is not proof that the recipient did not act</small>
+                </>
+              ) : (
+                <ul>
+                  {evidence.responses.map((response) => (
+                    <li key={response.seq}>
+                      <strong>{`${response.responseStatus ?? "unclassified"} · ${response.responseEvidenceScope ?? "legacy scope"}`}</strong>
+                      <small>{`response #${response.seq} to #${evidence.message.seq}`}</small>
+                      {onOpenEvent !== undefined && (
+                        <button type="button" onClick={() => onOpenEvent(response.seq)}>
+                          open response
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          </ol>
+        </section>
+      )}
       {canRespond && selected !== undefined ? (
         <form className="fleet-response" onSubmit={(event) => void submit(event)}>
           <label>
@@ -490,7 +576,7 @@ function EdgeDetail({
           <button type="submit" disabled={working}>
             {working ? "sending…" : "send response"}
           </button>
-          {outcome !== "" && <output>{outcome}</output>}
+          {outcome !== "" && <output aria-live="polite">{outcome}</output>}
           <small>
             Attributed operator commentary; not recipient or task-ownership evidence. Transport ACK remains unchanged.
           </small>
@@ -517,12 +603,23 @@ function FleetViewsComponent({
   canMessage,
   onMessagePeer,
   respondToMessage = sendOperatorResponse,
+  filter = DEFAULT_COMMUNICATION_FILTER,
+  onFilterChange,
+  onOpenEvent,
 }: FleetViewsProps): JSX.Element {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const model = useMemo(
     () => deriveCommunicationModel(events, claims, agents, window),
     [events, claims, agents, window],
   );
+  const filteredModel = useMemo(
+    () => filterCommunicationModel(model, filter),
+    [filter, model],
+  );
+  const filterActive = communicationFilterIsActive(filter);
+  const filtersMutable = onFilterChange !== undefined;
+  const communicationView = view === "web" || view === "matrix" || view === "projects";
+  const visualModel = communicationView ? filteredModel : model;
   const timeline = useMemo(() => deriveFleetTimeline(events, window), [events, window]);
   const flow = useMemo(() => deriveProjectFlow(events, claims, window), [events, claims, window]);
   const selectedNode = selection?.kind === "agent" ? model.nodes.find((node) => node.id === selection.id) : undefined;
@@ -532,12 +629,18 @@ function FleetViewsComponent({
     selection?.kind === "route"
       ? model.edges.find((edge) => edge.source === selection.source && edge.target === selection.target)
       : undefined;
+  const selectedEdgeVisible =
+    selectedEdge !== undefined && filteredModel.edges.some((edge) => edge.id === selectedEdge.id);
   const selectedConversation = useMemo(
     () =>
       selection?.kind === "route" ? deriveConversationDetail(events, selection.source, selection.target, window) : [],
     [events, selection, window],
   );
-  const failed = model.edges.filter((edge: CommunicationEdge) => edge.health === "failed").length;
+  const failed = visualModel.edges.filter((edge: CommunicationEdge) => edge.health === "failed").length;
+  const updateFilter = (change: Partial<CommunicationFilter>): void => {
+    onFilterChange?.({ ...filter, ...change });
+  };
+  const clearFilter = (): void => onFilterChange?.(DEFAULT_COMMUNICATION_FILTER);
 
   const onViewKeyDown = useCallback(
     (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -581,10 +684,43 @@ function FleetViewsComponent({
           ))}
         </div>
         <div className="fleet-views__summary">
-          <span>{model.nodes.length} identities</span>
-          <span>{model.messages} messages</span>
+          <span>{visualModel.nodes.length} identities</span>
+          <span>{visualModel.messages} messages</span>
           <span className={failed > 0 ? "fleet-views__alert" : ""}>{failed} troubled links</span>
         </div>
+      </div>
+      <div className="fleet-filters" aria-label="Communication filters">
+        <label>
+          <span>identity or project</span>
+          <input
+            type="search"
+            value={filter.query}
+            maxLength={COMMUNICATION_QUERY_LIMIT}
+            placeholder="filter exact routes"
+            disabled={!filtersMutable}
+            onChange={(event) => updateFilter({ query: event.target.value })}
+          />
+        </label>
+        <label>
+          <span>delivery health</span>
+          <select
+            value={filter.health}
+            disabled={!filtersMutable}
+            onChange={(event) => updateFilter({
+              health: communicationHealthFilter(event.target.value),
+            })}
+          >
+            {COMMUNICATION_HEALTH_FILTERS.map((health) => (
+              <option key={health} value={health}>{health === "healthy" ? "delivered" : health}</option>
+            ))}
+          </select>
+        </label>
+        <button type="button" onClick={clearFilter} disabled={!filtersMutable || !filterActive}>clear filters</button>
+        <output aria-live="polite">
+          {communicationView
+            ? `${filteredModel.edges.length} of ${model.edges.length} routes · ${filteredModel.messages} messages`
+            : "route filters pause in timeline and flow views"}
+        </output>
       </div>
       {!connected ? (
         <p className="panel__placeholder panel__placeholder--padded">Waiting for the hub.</p>
@@ -596,9 +732,9 @@ function FleetViewsComponent({
             role="tabpanel"
             aria-labelledby={`fleet-view-tab-${view}`}
           >
-            {view === "web" && model.messages > 0 ? (
+            {view === "web" && visualModel.messages > 0 ? (
               <WebView
-                model={model}
+                model={visualModel}
                 selection={selection}
                 onSelectNode={(id) => onSelectionChange({ kind: "agent", id })}
                 onSelectEdge={(source, target) =>
@@ -609,9 +745,9 @@ function FleetViewsComponent({
                   })
                 }
               />
-            ) : view === "matrix" && model.messages > 0 ? (
+            ) : view === "matrix" && visualModel.messages > 0 ? (
               <MatrixView
-                model={model}
+                model={visualModel}
                 selection={selection}
                 onSelect={(source, target) =>
                   onSelectionChange({
@@ -621,9 +757,9 @@ function FleetViewsComponent({
                   })
                 }
               />
-            ) : view === "projects" && model.projects.length > 0 ? (
+            ) : view === "projects" && visualModel.projects.length > 0 ? (
               <ProjectsView
-                projects={model.projects}
+                projects={visualModel.projects}
                 selection={selection}
                 onSelect={(id) => onSelectionChange({ kind: "project", id })}
               />
@@ -654,6 +790,9 @@ function FleetViewsComponent({
               messages={selectedConversation}
               canRespond={canMessage}
               respond={respondToMessage}
+              outsideFilter={communicationView && filterActive && !selectedEdgeVisible}
+              onClearFilter={clearFilter}
+              onOpenEvent={onOpenEvent}
             />
           ) : selectedNode !== undefined ? (
             <NodeDetail node={selectedNode} canMessage={canMessage} onMessagePeer={onMessagePeer} />

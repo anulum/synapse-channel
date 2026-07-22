@@ -12,6 +12,7 @@ import type { OperatorActionsState, ReceiptsState } from "../lib/auditFeeds";
 import type { AttentionItem } from "../lib/attention";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import type { BranchConflictView, ClaimView } from "../lib/claims";
+import type { CommunicationFilter } from "../lib/communicationFilters";
 import type { FederationState } from "../lib/federation";
 import { eventCoverageOf, type EventCoverage } from "../lib/eventCoverage";
 import type { MetricsState } from "../lib/metrics";
@@ -24,7 +25,9 @@ import {
   type CockpitSelection,
   type FleetSelection,
   type FleetView,
+  type IncidentStep,
   type InspectorTab,
+  type ReplayState,
 } from "../lib/workspace";
 import { AttentionQueue } from "./AttentionQueue";
 import { AuditView } from "./AuditView";
@@ -33,6 +36,7 @@ import { DataCoverage } from "./DataCoverage";
 import { FleetViews } from "./FleetViews";
 import { SignalLog } from "./SignalLog";
 import { MetricsPanel } from "./MetricsPanel";
+import { IncidentWorkspace } from "./IncidentWorkspace";
 import { TopologyView } from "./TopologyView";
 
 interface InspectorTabsProps {
@@ -42,6 +46,10 @@ interface InspectorTabsProps {
   readonly onFleetViewChange: (view: FleetView) => void;
   readonly fleetSelection: FleetSelection | null;
   readonly onFleetSelectionChange: (selection: FleetSelection | null) => void;
+  /** URL-addressable identity/project and delivery-health communication lens. */
+  readonly communicationFilter?: CommunicationFilter;
+  /** Replaces the current communication lens without adding keystrokes to history. */
+  readonly onCommunicationFilterChange?: ((filter: CommunicationFilter) => void) | undefined;
   /** Shared cockpit entity selected in the URL. */
   readonly selection?: CockpitSelection | null;
   /** Updates the shared selection without forcing a fleet-panel navigation. */
@@ -90,8 +98,24 @@ interface InspectorTabsProps {
   readonly receipts?: ReceiptsState | undefined;
   /** Governed operator-relay history for the audit tab. */
   readonly operatorActions?: OperatorActionsState | undefined;
+  /** Open one durable event in the signal log. */
+  readonly onOpenEvent?: ((seq: number) => void) | undefined;
   /** External trace request (e.g. a drawer's hop); nonce forces re-fire. */
   readonly traceRequest?: { readonly subject: string; readonly nonce: number } | undefined;
+  /** URL-addressable step inside the guided incident workspace. */
+  readonly incidentStep?: IncidentStep;
+  /** Updates the incident step and keeps the incident panel active. */
+  readonly onIncidentStepChange?: ((step: IncidentStep) => void) | undefined;
+  /** Browser-principal scoped storage key for the local incident draft. */
+  readonly incidentStorageKey?: string;
+  /** Replay context captured alongside explicitly selected evidence. */
+  readonly replay?: ReplayState;
+  /** Hub version recorded in a local incident export. */
+  readonly hubVersion?: string;
+  /** Configuration epoch recorded in a local incident export. */
+  readonly configEpoch?: string;
+  /** Navigate from one evidence-cart reference to its owning cockpit surface. */
+  readonly onOpenIncidentEvidence?: ((selection: CockpitSelection) => void) | undefined;
 }
 
 export function InspectorTabs({
@@ -101,6 +125,8 @@ export function InspectorTabs({
   onFleetViewChange,
   fleetSelection,
   onFleetSelectionChange,
+  communicationFilter,
+  onCommunicationFilterChange,
   selection = null,
   onSelectionChange,
   attention = [],
@@ -125,7 +151,15 @@ export function InspectorTabs({
   sessions,
   receipts,
   operatorActions,
+  onOpenEvent,
   traceRequest,
+  incidentStep = "scope",
+  onIncidentStepChange,
+  incidentStorageKey = "synapse-cockpit-incident-v1:unavailable",
+  replay = { mode: "live" },
+  hubVersion = "",
+  configEpoch = "",
+  onOpenIncidentEvidence,
 }: InspectorTabsProps): JSX.Element {
   const [prefill, setPrefill] = useState<CausalityPrefill | null>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -241,6 +275,9 @@ export function InspectorTabs({
             connected={connected}
             canMessage={canMessagePeer}
             onMessagePeer={onMessagePeer}
+            {...(communicationFilter !== undefined ? { filter: communicationFilter } : {})}
+            onFilterChange={onCommunicationFilterChange}
+            onOpenEvent={onOpenEvent}
             view={fleetView}
             onViewChange={onFleetViewChange}
             selection={selection ?? fleetSelection}
@@ -271,6 +308,28 @@ export function InspectorTabs({
             operatorActions={
               operatorActions ?? { data: null, status: "connecting", fetchedAt: null, error: null }
             }
+            selection={selection}
+            onSelectEvent={(seq) => onSelectionChange?.(seq === null ? null : { kind: "event", seq })}
+            onOpenEvent={onOpenEvent ?? ((seq) => onSelectionChange?.({ kind: "event", seq }))}
+          />
+        ) : tab === "incident" ? (
+          <IncidentWorkspace
+            key={incidentStorageKey}
+            step={incidentStep}
+            onStepChange={(next) => onIncidentStepChange?.(next)}
+            selection={selection}
+            replay={replay}
+            storageKey={incidentStorageKey}
+            hubVersion={hubVersion}
+            configEpoch={configEpoch}
+            onOpenEvidence={(next) => {
+              if (onOpenIncidentEvidence !== undefined) {
+                onOpenIncidentEvidence(next);
+                return;
+              }
+              onSelectionChange?.(next);
+              onTabChange(next.kind === "task" ? "causality" : next.kind === "event" ? "log" : "fleet");
+            }}
           />
         ) : (
           <CausalityView prefill={prefill} />

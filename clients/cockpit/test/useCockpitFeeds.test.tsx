@@ -109,4 +109,31 @@ describe("useCockpitFeeds startup", () => {
     });
     expect(hasAuxiliaryRequest(fetcher)).toBe(true);
   });
+
+  it("does not run both whole-log reports concurrently", async () => {
+    let resolveReliability!: (response: Response) => void;
+    const reliabilityResponse = new Promise<Response>((resolve) => {
+      resolveReliability = resolve;
+    });
+    const fetcher = vi.fn<typeof fetch>((input) => {
+      const url = urlOf(input);
+      if (url.startsWith("/reliability.json")) return reliabilityResponse;
+      if (url.startsWith("/events.json")) {
+        return Promise.resolve(new Response(JSON.stringify({ events: [], next_cursor: 0, history_included: true })));
+      }
+      return Promise.resolve(new Response("absent", { status: 404 }));
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    render(<FeedProbe />);
+    await waitFor(() =>
+      expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/reliability.json"))).toBe(true),
+    );
+    expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/health-anomalies.json"))).toBe(false);
+
+    resolveReliability(new Response("absent", { status: 404 }));
+    await waitFor(() =>
+      expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/health-anomalies.json"))).toBe(true),
+    );
+  });
 });

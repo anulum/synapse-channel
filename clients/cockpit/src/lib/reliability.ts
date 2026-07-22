@@ -135,7 +135,7 @@ export interface ReliabilityStoreOptions {
 }
 
 const DEFAULT_RELIABILITY_URL = "/reliability.json";
-const DEFAULT_RELIABILITY_POLL_MS = 15_000;
+const DEFAULT_RELIABILITY_POLL_MS = 120_000;
 
 /**
  * Poll the hub's reliability endpoint with the shared feed lifecycle: `404`

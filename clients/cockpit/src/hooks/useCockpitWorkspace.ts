@@ -15,8 +15,11 @@ import {
   type CockpitSelection,
   type FleetSelection,
   type FleetView,
+  type IncidentStep,
   type InspectorTab,
+  type ReplayState,
 } from "../lib/workspace";
+import type { CommunicationFilter } from "../lib/communicationFilters";
 
 interface CockpitWorkspaceController {
   readonly workspace: CockpitWorkspace;
@@ -25,6 +28,10 @@ interface CockpitWorkspaceController {
   readonly setSelection: (selection: CockpitSelection | null) => void;
   readonly setPanelSelection: (panel: InspectorTab, selection: CockpitSelection | null) => void;
   readonly setFleetSelection: (selection: FleetSelection | null) => void;
+  readonly setReplay: (replay: ReplayState) => void;
+  readonly replaceReplay: (replay: ReplayState) => void;
+  readonly setIncidentStep: (step: IncidentStep) => void;
+  readonly setCommunicationFilter: (filter: CommunicationFilter) => void;
 }
 
 function currentWorkspace(): CockpitWorkspace {
@@ -45,12 +52,16 @@ export function useCockpitWorkspace(): CockpitWorkspaceController {
     return () => window.removeEventListener("popstate", restore);
   }, []);
 
-  const navigate = useCallback((change: (current: CockpitWorkspace) => CockpitWorkspace) => {
+  const navigate = useCallback((
+    change: (current: CockpitWorkspace) => CockpitWorkspace,
+    replace = false,
+  ) => {
     const next = change(workspaceRef.current);
     const search = workspaceToSearch(next, location.search);
     if (search === location.search) return;
     const url = `${location.pathname}${search}${location.hash}`;
-    history.pushState(history.state, "", url);
+    if (replace) history.replaceState(history.state, "", url);
+    else history.pushState(history.state, "", url);
     workspaceRef.current = next;
     setWorkspace(next);
   }, []);
@@ -82,6 +93,35 @@ export function useCockpitWorkspace(): CockpitWorkspaceController {
     [navigate],
   );
 
+  const setReplay = useCallback(
+    (replay: ReplayState) => navigate((current) => ({ ...current, replay })),
+    [navigate],
+  );
+
+  const replaceReplay = useCallback(
+    (replay: ReplayState) => navigate((current) => ({ ...current, replay }), true),
+    [navigate],
+  );
+
+  const setIncidentStep = useCallback(
+    (incidentStep: IncidentStep) => navigate((current) => ({
+      ...current,
+      panel: "incident",
+      incidentStep,
+    })),
+    [navigate],
+  );
+
+  const setCommunicationFilter = useCallback(
+    (filter: CommunicationFilter) => navigate((current) => ({
+      ...current,
+      panel: "fleet",
+      communicationQuery: filter.query,
+      communicationHealth: filter.health,
+    }), true),
+    [navigate],
+  );
+
   return {
     workspace,
     setPanel,
@@ -89,5 +129,9 @@ export function useCockpitWorkspace(): CockpitWorkspaceController {
     setSelection,
     setPanelSelection,
     setFleetSelection,
+    setReplay,
+    replaceReplay,
+    setIncidentStep,
+    setCommunicationFilter,
   };
 }

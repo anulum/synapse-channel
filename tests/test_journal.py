@@ -499,6 +499,19 @@ def test_replay_up_to_seq_none_is_the_whole_log(tmp_path: Path) -> None:
     )
 
 
+def test_replay_event_kind_filter_decodes_only_the_requested_projection(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_claim(store, _claim(task_id="T1"))
+    record_chat(store, {"type": "chat", "payload": "hello", "msg_id": 7})
+
+    projected = replay(store, now=1000.0, event_kinds={EventKind.CLAIM})
+
+    assert set(projected.state.claims) == {"T1"}
+    assert projected.chat_history == []
+    assert projected.message_seq == 0
+    store.close()
+
+
 def test_record_chat_returns_the_journalled_seq(tmp_path: Path) -> None:
     # The hub stamps this seq on the outgoing chat frame as the backlog cursor, so
     # record_chat must surface the durable sequence the chat was persisted under.

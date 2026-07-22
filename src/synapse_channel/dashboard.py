@@ -16,6 +16,7 @@ import threading
 import time
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
+from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -49,6 +50,7 @@ from synapse_channel.dashboard_cockpit import (
     COCKPIT_ASSETS,
     load_cockpit_asset_bytes,
 )
+from synapse_channel.dashboard_feed_cache import DashboardFeedCache
 from synapse_channel.dashboard_feed_serving import (
     FeedResponse,
     serve_causality,
@@ -207,6 +209,8 @@ class DashboardServer:
     thread: threading.Thread
     dashboard_token: str | None = None
     dashboard_token_generated: bool = False
+    heavy_feed_cache: DashboardFeedCache | None = None
+    state_feed_cache: DashboardFeedCache | None = None
 
     @property
     def host(self) -> str:
@@ -230,6 +234,10 @@ class DashboardServer:
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=2.0)
+        if self.heavy_feed_cache is not None:
+            self.heavy_feed_cache.close()
+        if self.state_feed_cache is not None:
+            self.state_feed_cache.close()
 
 
 def _agent_roles_from_who(who: Mapping[str, Any]) -> dict[str, list[str]]:
@@ -455,6 +463,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     observed_timeout: ClassVar[float]
     observed_pins: ClassVar[dict[str, str] | None]
     allowed_extra_hosts: ClassVar[tuple[str, ...]]
+    heavy_feed_cache: ClassVar[DashboardFeedCache]
+    state_feed_cache: ClassVar[DashboardFeedCache]
 
     def _reject_foreign_host(self) -> bool:
         """Refuse a request whose ``Host`` is not an admitted authority.
@@ -664,17 +674,26 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             # Served from the durable event store, not the live hub: the
             # reliability report is an offline audit surface, so it stays
             # available when the hub is down and needs no hub round-trip.
-            return serve_reliability(db, self.reliability_db_key_file)
+            return self.heavy_feed_cache.get_or_build(
+                RELIABILITY_PATH,
+                partial(serve_reliability, db, self.reliability_db_key_file),
+            )
         if path == EVENTS_PATH:
             return serve_events(db, query)
         if path == METRICS_FEED_PATH:
             return serve_metrics_feed(db)
         if path == STATE_AT_PATH:
-            return serve_state_at(db, query)
+            return self.state_feed_cache.get_or_build(
+                f"{STATE_AT_PATH}?{query}",
+                partial(serve_state_at, db, query),
+            )
         if path == MERKLE_PROOF_PATH:
             return serve_merkle_proof(db, query)
         if path == HEALTH_ANOMALIES_PATH:
-            return serve_health_anomalies(db)
+            return self.heavy_feed_cache.get_or_build(
+                HEALTH_ANOMALIES_PATH,
+                partial(serve_health_anomalies, db),
+            )
         if path == CAUSALITY_PATH:
             return serve_causality(db, query)
         if path == FEDERATION_PATH:
@@ -776,6 +795,12 @@ def _handler_class(
     bound_observed_pins = observed_pins
     bound_observed_timeout = observed_timeout
     bound_allow_hosts = allow_hosts
+    bound_heavy_feed_cache = DashboardFeedCache(process_isolation=True)
+    bound_state_feed_cache = DashboardFeedCache(
+        ttl_seconds=15.0,
+        max_entries=64,
+        process_isolation=True,
+    )
 
     class BoundDashboardHandler(_DashboardHandler):
         """Dashboard handler bound to one hub URI and dashboard identity."""
@@ -798,6 +823,8 @@ def _handler_class(
         observed_timeout = bound_observed_timeout
         observed_pins = bound_observed_pins
         allowed_extra_hosts = bound_allow_hosts
+        heavy_feed_cache = bound_heavy_feed_cache
+        state_feed_cache = bound_state_feed_cache
 
     return BoundDashboardHandler
 
@@ -939,4 +966,6 @@ def start_dashboard_server(
         thread=thread,
         dashboard_token=effective_dashboard_token,
         dashboard_token_generated=dashboard_token_generated,
+        heavy_feed_cache=handler.heavy_feed_cache,
+        state_feed_cache=handler.state_feed_cache,
     )

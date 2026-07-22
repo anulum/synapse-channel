@@ -97,7 +97,7 @@ export function parseHealthAnomalies(raw: unknown): HealthAnomalies | null {
 /** The anomalies feed's state; `absent` = the dashboard serves no endpoint. */
 export type HealthAnomaliesState = FeedState<HealthAnomalies>;
 
-/** Poll the anomalies feed with the shared endpoint lifecycle (30 s). */
+/** Poll the expensive whole-log anomalies feed with the shared lifecycle (2 min). */
 export function createHealthAnomaliesStore(options: {
   readonly url?: string;
   readonly pollMs?: number;
@@ -106,7 +106,7 @@ export function createHealthAnomaliesStore(options: {
 } = {}): EndpointFeed<HealthAnomalies> {
   return createEndpointFeed({
     url: options.url ?? "/health-anomalies.json",
-    pollMs: options.pollMs ?? 30_000,
+    pollMs: options.pollMs ?? 120_000,
     parse: parseHealthAnomalies,
     ...(options.fetcher !== undefined ? { fetcher: options.fetcher } : {}),
     ...(options.now !== undefined ? { now: options.now } : {}),
