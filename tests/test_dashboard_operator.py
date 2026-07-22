@@ -252,6 +252,43 @@ def test_relay_message_reports_denied_on_acl_error() -> None:
     assert "team-b" in outcome.detail
 
 
+def test_relay_message_response_carries_exact_sequence_status_and_note() -> None:
+    factory = _factory(on_send=_deliver)
+    outcome = asyncio.run(
+        _relay(factory).relay_message_response(
+            314,
+            "ALPHA",
+            "needs_input",
+            note="Which revision?",
+        )
+    )
+
+    assert outcome.status == DELIVERED
+    assert "semantic response" in outcome.detail
+    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    assert agent.sent == [
+        (
+            MessageType.CHAT,
+            "ALPHA",
+            "Which revision?",
+            {
+                "receipt_requested": True,
+                "response_to_seq": 314,
+                "response_status": "needs_input",
+            },
+        )
+    ]
+
+
+def test_relay_message_response_generates_a_visible_default_body() -> None:
+    factory = _factory(on_send=_dead_letter)
+    outcome = asyncio.run(_relay(factory).relay_message_response(9, "ALPHA", "acknowledged"))
+
+    assert outcome.status == UNDELIVERED
+    agent = factory.holder["agent"]  # type: ignore[attr-defined]
+    assert agent.sent[0][2] == "acknowledged message #9."
+
+
 def test_relay_message_unreachable_when_not_ready() -> None:
     outcome = asyncio.run(_relay(_factory(ready=False)).relay_message("x", "hi"))
 

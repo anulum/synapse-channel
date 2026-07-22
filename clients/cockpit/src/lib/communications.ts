@@ -11,6 +11,7 @@ import type { ClaimView } from "./claims";
 import type { CockpitEvent } from "../types";
 
 export type DeliveryHealth = "healthy" | "deferred" | "failed" | "unknown";
+export type SemanticResponseStatus = "acknowledged" | "in_progress" | "needs_input" | "declined" | "completed";
 
 export interface CommunicationNode {
   readonly id: string;
@@ -53,6 +54,17 @@ export interface CommunicationModel {
   readonly messages: number;
 }
 
+export interface ConversationMessage {
+  readonly seq: number;
+  readonly ts: number;
+  readonly source: string;
+  readonly target: string;
+  readonly body: string;
+  readonly delivery: ReceiptOutcome | "unknown";
+  readonly responseToSeq: number | null;
+  readonly responseStatus: SemanticResponseStatus | null;
+}
+
 interface MutableNode {
   id: string;
   project: string;
@@ -79,12 +91,32 @@ interface MutableEdge {
 
 type ReceiptOutcome = "delivered" | "deferred" | "failed";
 
+const SEMANTIC_RESPONSE_STATUSES = new Set<SemanticResponseStatus>([
+  "acknowledged",
+  "in_progress",
+  "needs_input",
+  "declined",
+  "completed",
+]);
+const CONVERSATION_BODY_LIMIT = 500;
+
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function responseStatus(value: unknown): SemanticResponseStatus | null {
+  return typeof value === "string" && SEMANTIC_RESPONSE_STATUSES.has(value as SemanticResponseStatus)
+    ? (value as SemanticResponseStatus)
+    : null;
+}
+
+function messageBody(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.length > CONVERSATION_BODY_LIMIT ? `${value.slice(0, CONVERSATION_BODY_LIMIT)}…` : value;
 }
 
 export function projectOf(identity: string): string {
@@ -224,7 +256,15 @@ export function deriveCommunicationModel(
     const project = projectOf(claim.claim.owner);
     claimCount.set(project, (claimCount.get(project) ?? 0) + 1);
   }
-  const projects = new Map<string, { members: Set<string>; inbound: number; outbound: number; lastTs: number }>();
+  const projects = new Map<
+    string,
+    {
+      members: Set<string>;
+      inbound: number;
+      outbound: number;
+      lastTs: number;
+    }
+  >();
   for (const node of nodes.values()) {
     const project = projects.get(node.project) ?? {
       members: new Set<string>(),
@@ -257,13 +297,57 @@ export function deriveCommunicationModel(
         lastTs: project.lastTs,
       }))
       .sort(
-        (a, b) =>
-          b.inbound + b.outbound - (a.inbound + a.outbound) ||
-          b.lastTs - a.lastTs ||
-          a.id.localeCompare(b.id),
+        (a, b) => b.inbound + b.outbound - (a.inbound + a.outbound) || b.lastTs - a.lastTs || a.id.localeCompare(b.id),
       ),
     messages: resultEdges.reduce((total, edge) => total + edge.messages, 0),
   };
+}
+
+/**
+ * Build a bounded pairwise timeline only after an edge is selected. Unlike the
+ * graph projection, this detail intentionally carries authenticated body text.
+ */
+export function deriveConversationDetail(
+  events: readonly CockpitEvent[],
+  source: string,
+  target: string,
+  window: TimeWindow | null = null,
+  limit = 40,
+): ConversationMessage[] {
+  const scoped = eventsInWindow(events, window);
+  const outcomes = new Map<number, ReceiptOutcome>();
+  for (const event of scoped) {
+    const outcome = receiptOutcome(event);
+    const messageSeq = finiteNumber(event.payload?.["message_seq"]);
+    if (outcome === null || messageSeq === null) continue;
+    const prior = outcomes.get(messageSeq);
+    if (prior === undefined || outcomeRank(outcome) >= outcomeRank(prior)) {
+      outcomes.set(messageSeq, outcome);
+    }
+  }
+
+  return scoped
+    .filter((event) => {
+      if (!isChat(event)) return false;
+      const sender = text(event.payload?.["sender"]);
+      const recipient = text(event.payload?.["target"]);
+      return (sender === source && recipient === target) || (sender === target && recipient === source);
+    })
+    .map((event): ConversationMessage => {
+      const responseTo = finiteNumber(event.payload?.["response_to_seq"]);
+      return {
+        seq: event.seq,
+        ts: event.ts,
+        source: text(event.payload?.["sender"]),
+        target: text(event.payload?.["target"]),
+        body: messageBody(event.payload?.["payload"]),
+        delivery: outcomes.get(event.seq) ?? "unknown",
+        responseToSeq: responseTo !== null && responseTo > 0 ? responseTo : null,
+        responseStatus: responseStatus(event.payload?.["response_status"]),
+      };
+    })
+    .sort((a, b) => b.ts - a.ts || b.seq - a.seq)
+    .slice(0, Math.max(1, limit));
 }
 
 export interface WebNode extends CommunicationNode {
@@ -279,23 +363,14 @@ export interface WebLayout {
 }
 
 /** Stable circular sectors keep projects together and never jitter on refresh. */
-export function layoutCommunicationWeb(
-  model: CommunicationModel,
-  width = 760,
-  height = 360,
-  limit = 28,
-): WebLayout {
+export function layoutCommunicationWeb(model: CommunicationModel, width = 760, height = 360, limit = 28): WebLayout {
   // Quiet roster members belong in Projects, not as overlapping graph labels.
   // Bound the active web: the matrix is already bounded for the same reason.
   const visible = model.nodes.filter((node) => node.messages > 0).slice(0, Math.max(1, limit));
-  const projectOrder = [...new Set(visible.map((node) => node.project))].sort((a, b) =>
-    a.localeCompare(b),
-  );
+  const projectOrder = [...new Set(visible.map((node) => node.project))].sort((a, b) => a.localeCompare(b));
   const projectIndex = new Map(projectOrder.map((project, index) => [project, index]));
   const ordered = [...visible].sort(
-    (a, b) =>
-      (projectIndex.get(a.project) ?? 0) - (projectIndex.get(b.project) ?? 0) ||
-      a.id.localeCompare(b.id),
+    (a, b) => (projectIndex.get(a.project) ?? 0) - (projectIndex.get(b.project) ?? 0) || a.id.localeCompare(b.id),
   );
   const radius = Math.max(60, Math.min(width, height) * 0.38);
   const cx = width / 2;

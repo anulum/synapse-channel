@@ -50,6 +50,7 @@ from synapse_channel.core.journal import (
     record_dead_letter_forwarding,
     record_delivery_receipt_deferred,
 )
+from synapse_channel.core.message_response import validate_semantic_response
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
 from synapse_channel.core.protocol import MessageType, is_recipient
@@ -153,6 +154,14 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
     refused before history or journal growth when the sliding window is full.
     """
     from synapse_channel.core.durable_ingress import chat_frame_bytes
+
+    response_error = validate_semantic_response(hub.journal, data)
+    if response_error is not None:
+        await hub._send_json(
+            websocket,
+            hub._system(response_error, msg_type=MessageType.ERROR, target=sender),
+        )
+        return
 
     _stamp_chat_times(data)
     client_msg_id = _normalize_client_msg_id(data)

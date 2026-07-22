@@ -28,6 +28,7 @@ from synapse_channel.dashboard_access import (
 )
 from synapse_channel.dashboard_access_http import (
     MESSAGE_PATH,
+    MESSAGE_RESPONSE_PATH,
     TASK_PATH,
     TASK_UPDATE_PATH,
     TRUST_BOUNDARY,
@@ -179,7 +180,9 @@ def test_open_read_policy_returns_its_viewer() -> None:
     assert decision.principal.role == "viewer"
 
 
-@pytest.mark.parametrize("route", [MESSAGE_PATH, TASK_PATH, TASK_UPDATE_PATH])
+@pytest.mark.parametrize(
+    "route", [MESSAGE_PATH, MESSAGE_RESPONSE_PATH, TASK_PATH, TASK_UPDATE_PATH]
+)
 @pytest.mark.parametrize("token", ["o", "a"])
 def test_operator_and_admin_are_allowed_only_on_shipped_routes(route: str, token: str) -> None:
     decision = write_decision(_policy(), f"Bearer {token * 32}", route)
@@ -191,7 +194,9 @@ def test_operator_and_admin_are_allowed_only_on_shipped_routes(route: str, token
     }
 
 
-@pytest.mark.parametrize("route", [MESSAGE_PATH, TASK_PATH, TASK_UPDATE_PATH])
+@pytest.mark.parametrize(
+    "route", [MESSAGE_PATH, MESSAGE_RESPONSE_PATH, TASK_PATH, TASK_UPDATE_PATH]
+)
 def test_viewer_is_forbidden_on_every_write_route(route: str) -> None:
     decision = write_decision(_policy(), f"Bearer {'v' * 32}", route)
     assert decision.status is HTTPStatus.FORBIDDEN

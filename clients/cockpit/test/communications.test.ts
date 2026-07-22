@@ -10,18 +10,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   deriveCommunicationModel,
+  deriveConversationDetail,
   layoutCommunicationWeb,
   matrixIdentities,
   projectOf,
 } from "../src/lib/communications";
 import type { CockpitEvent } from "../src/types";
 
-function event(
-  seq: number,
-  label: string,
-  payload: Record<string, unknown>,
-  ts = seq,
-): CockpitEvent {
+function event(seq: number, label: string, payload: Record<string, unknown>, ts = seq): CockpitEvent {
   return {
     seq,
     ts,
@@ -68,9 +64,26 @@ describe("deriveCommunicationModel", () => {
   it("uses the strongest final receipt outcome once and honours the brushed window", () => {
     const model = deriveCommunicationModel(
       [
-        event(23, "delivery_receipt_expired", { message_seq: 20, expired: true }),
-        event(22, "delivery_receipt_deferred", { message_seq: 20, deferred: true, delivered: true }),
-        event(20, "chat", { sender: "alpha/one", target: "beta/two", type: "chat", payload: "x" }, 20),
+        event(23, "delivery_receipt_expired", {
+          message_seq: 20,
+          expired: true,
+        }),
+        event(22, "delivery_receipt_deferred", {
+          message_seq: 20,
+          deferred: true,
+          delivered: true,
+        }),
+        event(
+          20,
+          "chat",
+          {
+            sender: "alpha/one",
+            target: "beta/two",
+            type: "chat",
+            payload: "x",
+          },
+          20,
+        ),
         CHAT,
       ],
       [],
@@ -78,7 +91,11 @@ describe("deriveCommunicationModel", () => {
       { fromTs: 15, toTs: 30 },
     );
     expect(model.messages).toBe(1);
-    expect(model.edges[0]).toMatchObject({ failed: 1, deferred: 0, health: "failed" });
+    expect(model.edges[0]).toMatchObject({
+      failed: 1,
+      deferred: 0,
+      health: "failed",
+    });
     expect(model.nodes.some((node) => node.id === "quiet/agent" && node.messages === 0)).toBe(true);
   });
 
@@ -99,5 +116,35 @@ describe("deriveCommunicationModel", () => {
     expect(projectOf("bare")).toBe("unscoped");
     expect(projectOf("SYNAPSE-CHANNEL")).toBe("SYNAPSE-CHANNEL");
     expect(projectOf("CEO")).toBe("fleet-wide");
+  });
+
+  it("reveals bodies only in a selected pair timeline and correlates semantic responses", () => {
+    const response = event(15, "ack", {
+      sender: "beta/two",
+      target: "alpha/one",
+      type: "chat",
+      payload: "Acknowledged.",
+      response_to_seq: 10,
+      response_status: "acknowledged",
+    });
+    const receipt = event(16, "delivery_receipt_immediate", {
+      message_seq: 15,
+      delivered: true,
+    });
+    const detail = deriveConversationDetail([receipt, response, CHAT], "alpha/one", "beta/two");
+    expect(detail).toHaveLength(2);
+    expect(detail[0]).toMatchObject({
+      seq: 15,
+      body: "Acknowledged.",
+      delivery: "delivered",
+      responseToSeq: 10,
+      responseStatus: "acknowledged",
+    });
+    expect(detail[1]).toMatchObject({
+      seq: 10,
+      body: "secret body",
+      delivery: "unknown",
+    });
+    expect(deriveConversationDetail([CHAT], "alpha/one", "other/three")).toEqual([]);
   });
 });

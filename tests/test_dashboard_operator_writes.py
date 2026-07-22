@@ -36,10 +36,12 @@ from synapse_channel.dashboard_operator import (
 )
 from synapse_channel.dashboard_operator_writes import (
     MAX_OPERATOR_BODY_BYTES,
+    MAX_RESPONSE_NOTE_BYTES,
     RelayPlan,
     execute_relay,
     is_json_media_type,
     plan_message,
+    plan_message_response,
     plan_task,
     plan_task_update,
     read_operator_body,
@@ -113,6 +115,41 @@ def test_plan_message_strips_the_target_but_not_the_text() -> None:
 @pytest.mark.parametrize(
     ("body", "reason"),
     [
+        ({}, "'message_seq' must be a positive integer"),
+        ({"message_seq": True}, "'message_seq' must be a positive integer"),
+        ({"message_seq": 7, "to": "", "status": "acknowledged"}, "'to' must be"),
+        ({"message_seq": 7, "to": "A", "status": "seen"}, "'status' is not"),
+        (
+            {"message_seq": 7, "to": "A", "status": "completed", "note": 4},
+            "'note' must be",
+        ),
+        (
+            {
+                "message_seq": 7,
+                "to": "A",
+                "status": "completed",
+                "note": "é" * (MAX_RESPONSE_NOTE_BYTES // 2 + 1),
+            },
+            "'note' exceeds",
+        ),
+    ],
+)
+def test_plan_message_response_names_invalid_fields(body: dict[str, Any], reason: str) -> None:
+    assert reason in str(plan_message_response(body))
+
+
+def test_plan_message_response_normalises_target_and_echoes_exact_sequence() -> None:
+    plan = plan_message_response(
+        {"message_seq": 42, "to": " ALPHA ", "status": "acknowledged", "note": " noted "}
+    )
+    assert isinstance(plan, RelayPlan)
+    assert plan.action == "message_response"
+    assert plan.extra == {"message_seq": 42, "to": "ALPHA"}
+
+
+@pytest.mark.parametrize(
+    ("body", "reason"),
+    [
         ({}, "'id' must be a non-empty string"),
         ({"id": "T"}, "'title' must be a non-empty string"),
         ({"id": "T", "title": "t", "depends_on": "X"}, "'depends_on' must be a list of strings"),
@@ -162,6 +199,12 @@ class _StubRelay:
 
     async def relay_message(self, to: str, text: str) -> RelayOutcome:
         self.calls.append(("message", (to, text)))
+        return self.outcome
+
+    async def relay_message_response(
+        self, message_seq: int, to: str, status: str, *, note: str = ""
+    ) -> RelayOutcome:
+        self.calls.append(("message_response", (message_seq, to, status, note)))
         return self.outcome
 
 

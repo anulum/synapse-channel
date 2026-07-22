@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any, Final
 
+from synapse_channel.core.message_response import SEMANTIC_RESPONSE_STATUSES
 from synapse_channel.dashboard_feed_serving import (
     FeedResponse,
     json_response,
@@ -41,6 +42,9 @@ from synapse_channel.dashboard_operator import (
 
 MAX_OPERATOR_BODY_BYTES: Final = 64 * 1024
 """Upper bound for one operator write body; larger requests answer 400."""
+
+MAX_RESPONSE_NOTE_BYTES: Final = 4096
+"""Maximum UTF-8 size of one optional semantic-response note."""
 
 _OUTCOME_STATUS: Final[dict[str, HTTPStatus]] = {
     DENIED: HTTPStatus.FORBIDDEN,
@@ -59,14 +63,14 @@ class RelayPlan:
     action : str
         Verb echoed into the response document (``message``, ``task``,
         ``task_update``).
-    extra : dict[str, str]
+    extra : dict[str, object]
         Action-specific fields echoed into the response document.
     run : Callable
         Coroutine factory the executor awaits with a connected relay.
     """
 
     action: str
-    extra: dict[str, str]
+    extra: dict[str, object]
     run: Callable[[OperatorRelay], Coroutine[Any, Any, RelayOutcome]]
 
 
@@ -127,6 +131,36 @@ def plan_message(body: dict[str, Any]) -> RelayPlan | str:
     message_text = text
     return RelayPlan(
         "message", {"to": target}, lambda relay: relay.relay_message(target, message_text)
+    )
+
+
+def plan_message_response(body: dict[str, Any]) -> RelayPlan | str:
+    """Validate one semantic response; return its relay plan, or the 400 reason."""
+    raw_seq = body.get("message_seq")
+    to = body.get("to")
+    status = body.get("status")
+    note = body.get("note", "")
+    if isinstance(raw_seq, bool) or not isinstance(raw_seq, int) or raw_seq < 1:
+        return "'message_seq' must be a positive integer"
+    if not isinstance(to, str) or not to.strip():
+        return "'to' must be a non-empty string"
+    if not isinstance(status, str) or status not in SEMANTIC_RESPONSE_STATUSES:
+        return "'status' is not a recognised semantic response"
+    if not isinstance(note, str):
+        return "'note' must be a string when present"
+    response_note = note.strip()
+    if len(response_note.encode("utf-8")) > MAX_RESPONSE_NOTE_BYTES:
+        return f"'note' exceeds {MAX_RESPONSE_NOTE_BYTES} UTF-8 bytes"
+    target = to.strip()
+    return RelayPlan(
+        "message_response",
+        {"message_seq": raw_seq, "to": target},
+        lambda relay: relay.relay_message_response(
+            raw_seq,
+            target,
+            status,
+            note=response_note,
+        ),
     )
 
 

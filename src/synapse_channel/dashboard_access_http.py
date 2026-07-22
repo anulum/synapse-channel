@@ -22,11 +22,13 @@ from synapse_channel.dashboard_access import (
 
 DASHBOARD_ACCESS_PATH: Final = "/dashboard-access.json"
 MESSAGE_PATH: Final = "/message"
+MESSAGE_RESPONSE_PATH: Final = "/message/respond"
 TASK_PATH: Final = "/task"
 TASK_UPDATE_PATH: Final = "/task/update"
 TRUST_BOUNDARY: Final = "presentation hints only; HTTP and hub policy enforce writes"
 _ROUTE_CAPABILITY: Final[dict[str, DashboardCapability]] = {
     MESSAGE_PATH: "message_send",
+    MESSAGE_RESPONSE_PATH: "message_send",
     TASK_PATH: "task_declare",
     TASK_UPDATE_PATH: "task_update",
 }

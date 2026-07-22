@@ -83,6 +83,11 @@ def _stub_relay_class(outcome: RelayOutcome) -> type:
         async def relay_message(self, to: str, text: str) -> RelayOutcome:
             return outcome
 
+        async def relay_message_response(
+            self, message_seq: int, to: str, status: str, *, note: str = ""
+        ) -> RelayOutcome:
+            return outcome
+
         async def relay_task(
             self, task_id: str, title: str, *, depends_on: object = ()
         ) -> RelayOutcome:
@@ -168,6 +173,47 @@ def test_operator_write_rejects_bad_bodies() -> None:
     assert empty_text == 400
     assert not_object == 400
     assert unknown_route == 404
+
+
+def test_operator_semantic_response_validates_and_maps_the_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        operator_writes_module,
+        "OperatorRelay",
+        _stub_relay_class(RelayOutcome(DELIVERED, "semantic response delivered")),
+    )
+    server = _operator_server()
+    try:
+        invalid, _, _ = _operator_post(
+            server.url("/message/respond"),
+            json.dumps({"message_seq": 0, "to": "ALPHA", "status": "acknowledged"}),
+        )
+        status, content_type, body = _operator_post(
+            server.url("/message/respond"),
+            json.dumps(
+                {
+                    "message_seq": 44,
+                    "to": "ALPHA",
+                    "status": "acknowledged",
+                    "note": "Seen.",
+                }
+            ),
+        )
+    finally:
+        server.close()
+
+    assert invalid == 400
+    assert status == 200
+    assert content_type == "application/json"
+    assert json.loads(body) == {
+        "action": "message_response",
+        "detail": "semantic response delivered",
+        "message_seq": 44,
+        "ok": True,
+        "status": "delivered",
+        "to": "ALPHA",
+    }
 
 
 def test_operator_write_rejects_a_non_json_content_type() -> None:

@@ -32,7 +32,9 @@ from synapse_channel.dashboard_access import (
 from synapse_channel.dashboard_access_http import (
     DASHBOARD_ACCESS_PATH,
     MESSAGE_PATH,
+    MESSAGE_RESPONSE_PATH,
     TASK_PATH,
+    TASK_UPDATE_PATH,
     AccessHttpDecision,
     access_descriptor_decision,
     read_decision,
@@ -76,6 +78,7 @@ from synapse_channel.dashboard_operator_writes import (
     execute_relay,
     is_json_media_type,
     plan_message,
+    plan_message_response,
     plan_task,
     plan_task_update,
     read_operator_body,
@@ -626,8 +629,13 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 content_type="text/plain",
             )
             return
-        planners = {MESSAGE_PATH: plan_message, TASK_PATH: plan_task}
-        plan = planners.get(route, plan_task_update)(body)
+        planners = {
+            MESSAGE_PATH: plan_message,
+            MESSAGE_RESPONSE_PATH: plan_message_response,
+            TASK_PATH: plan_task,
+            TASK_UPDATE_PATH: plan_task_update,
+        }
+        plan = planners[route](body)
         if isinstance(plan, str):
             self._write(HTTPStatus.BAD_REQUEST, f"{plan}\n".encode(), content_type="text/plain")
             return

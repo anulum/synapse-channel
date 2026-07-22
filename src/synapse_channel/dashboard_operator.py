@@ -255,6 +255,63 @@ class OperatorRelay:
             collect, send, resolve, timeout_detail="hub returned no delivery outcome in time"
         )
 
+    async def relay_message_response(
+        self,
+        message_seq: int,
+        to: str,
+        status: str,
+        *,
+        note: str = "",
+    ) -> RelayOutcome:
+        """Relay one semantic response tied to an exact durable chat sequence."""
+        errors: list[dict[str, Any]] = []
+        receipts: list[dict[str, Any]] = []
+
+        async def collect(data: dict[str, Any]) -> None:
+            message_type = data.get("type")
+            if message_type == MessageType.ERROR and data.get("target") == self.operator_name:
+                errors.append(data)
+            elif message_type == MessageType.DELIVERY_RECEIPT and (
+                data.get("target") == self.operator_name
+            ):
+                receipts.append(data)
+
+        async def send(agent: SynapseAgent) -> None:
+            payload = note or f"{status.replace('_', ' ')} message #{message_seq}."
+            await agent.send_message(
+                MessageType.CHAT,
+                target=to,
+                payload=payload,
+                receipt_requested=True,
+                response_to_seq=message_seq,
+                response_status=status,
+            )
+
+        def resolve() -> RelayOutcome | None:
+            if errors:
+                return self._denial(errors[0])
+            if receipts:
+                receipt = receipts[0]
+                if bool(receipt.get("delivered")):
+                    return RelayOutcome(
+                        DELIVERED,
+                        "semantic response recorded and delivered to a live recipient",
+                        receipt,
+                    )
+                return RelayOutcome(
+                    UNDELIVERED,
+                    "semantic response recorded; no live recipient (dead-lettered)",
+                    receipt,
+                )
+            return None
+
+        return await self._run(
+            collect,
+            send,
+            resolve,
+            timeout_detail="hub returned no semantic-response delivery outcome in time",
+        )
+
     async def relay_task(
         self, task_id: str, title: str, *, depends_on: tuple[str, ...] | list[str] = ()
     ) -> RelayOutcome:

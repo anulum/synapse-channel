@@ -18,7 +18,11 @@ export interface OperatorOutcomeDocument {
 
 /** One honest result from the dashboard boundary. HTTP 200 alone is never acceptance. */
 export type OperatorActionResult =
-  | { readonly kind: "accepted"; readonly status: string; readonly detail: string }
+  | {
+      readonly kind: "accepted";
+      readonly status: string;
+      readonly detail: string;
+    }
   | { readonly kind: "denied"; readonly detail: string }
   | { readonly kind: "rejected"; readonly detail: string }
   | { readonly kind: "unreachable"; readonly detail: string }
@@ -28,9 +32,7 @@ export type OperatorActionResult =
   | { readonly kind: "error"; readonly message: string };
 
 /** A task action can fail local validation before any request leaves the tab. */
-export type OperatorTaskResult =
-  | OperatorActionResult
-  | { readonly kind: "invalid"; readonly message: string };
+export type OperatorTaskResult = OperatorActionResult | { readonly kind: "invalid"; readonly message: string };
 
 /** Input accepted by the task-declaration action. */
 export interface TaskDeclarationInput {
@@ -43,6 +45,15 @@ export interface TaskDeclarationInput {
 export interface TaskUpdateInput {
   readonly id: string;
   readonly status?: string;
+  readonly note?: string;
+}
+
+export type SemanticResponseStatus = "acknowledged" | "in_progress" | "needs_input" | "declined" | "completed";
+
+export interface MessageResponseInput {
+  readonly messageSeq: number;
+  readonly to: string;
+  readonly status: SemanticResponseStatus;
   readonly note?: string;
 }
 
@@ -67,10 +78,7 @@ interface TaskUpdatePayload {
 }
 
 /** Narrow an untrusted response body to the expected action's strict document. */
-export function parseOperatorOutcome(
-  raw: unknown,
-  expectedAction: string,
-): OperatorOutcomeDocument | null {
+export function parseOperatorOutcome(raw: unknown, expectedAction: string): OperatorOutcomeDocument | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
   const record = raw as Record<string, unknown>;
   if (
@@ -147,19 +155,28 @@ async function postOperatorAction(
       body: JSON.stringify(body),
     });
   } catch (cause) {
-    return { kind: "error", message: cause instanceof Error ? cause.message : String(cause) };
+    return {
+      kind: "error",
+      message: cause instanceof Error ? cause.message : String(cause),
+    };
   }
   if (response.status === 401) return { kind: "unauthorised" };
   if (response.status === 404 || response.status === 501) return { kind: "not-armed" };
 
   const raw = (await response.text()).trim();
   if (response.status === 429) {
-    return { kind: "rate-limited", detail: plainLine(raw, "operator rate limit exceeded") };
+    return {
+      kind: "rate-limited",
+      detail: plainLine(raw, "operator rate limit exceeded"),
+    };
   }
   const document = parseOperatorOutcome(parseJson(raw), action);
   if (document === null) {
     if (response.status === 503) {
-      return { kind: "unreachable", detail: plainLine(raw, "dashboard could not reach the hub") };
+      return {
+        kind: "unreachable",
+        detail: plainLine(raw, "dashboard could not reach the hub"),
+      };
     }
     return {
       kind: "error",
@@ -171,10 +188,16 @@ async function postOperatorAction(
     return { kind: "denied", detail: plainLine(document.detail, fallback) };
   }
   if (document.status === "rejected") {
-    return { kind: "rejected", detail: plainLine(document.detail, fallback) };
+    return {
+      kind: "rejected",
+      detail: plainLine(document.detail, fallback),
+    };
   }
   if (document.status === "unreachable") {
-    return { kind: "unreachable", detail: plainLine(document.detail, fallback) };
+    return {
+      kind: "unreachable",
+      detail: plainLine(document.detail, fallback),
+    };
   }
   if (!response.ok) {
     return {
@@ -183,7 +206,10 @@ async function postOperatorAction(
     };
   }
   if (!document.ok) {
-    return { kind: "error", message: `dashboard reported unknown outcome '${document.status}'` };
+    return {
+      kind: "error",
+      message: `dashboard reported unknown outcome '${document.status}'`,
+    };
   }
   return {
     kind: "accepted",
@@ -223,6 +249,35 @@ export async function updateOperatorTask(
   if (status !== "") payload.status = status;
   if (note !== "") payload.note = note;
   return postOperatorAction(url, "task_update", payload, fetcher);
+}
+
+/** Send one semantic response tied to an exact durable message sequence. */
+export async function sendOperatorResponse(
+  input: MessageResponseInput,
+  fetcher: typeof fetch = authenticatedFetch,
+  url: string = "/message/respond",
+): Promise<OperatorActionResult> {
+  if (!Number.isInteger(input.messageSeq) || input.messageSeq < 1) {
+    return {
+      kind: "error",
+      message: "Select a durable message before responding.",
+    };
+  }
+  const to = input.to.trim();
+  if (to === "")
+    return {
+      kind: "error",
+      message: "The referenced sender is unavailable.",
+    };
+  const payload: {
+    message_seq: number;
+    to: string;
+    status: SemanticResponseStatus;
+    note?: string;
+  } = { message_seq: input.messageSeq, to, status: input.status };
+  const note = input.note?.trim() ?? "";
+  if (note !== "") payload.note = note;
+  return postOperatorAction(url, "message_response", payload, fetcher);
 }
 
 /** Relay one chat message through the governed dashboard route. */

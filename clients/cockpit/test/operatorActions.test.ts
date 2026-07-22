@@ -12,20 +12,17 @@ import {
   declareOperatorTask,
   parseDependencyIds,
   parseOperatorOutcome,
+  sendOperatorResponse,
   sendOperatorMessage,
   updateOperatorTask,
   validateTaskDeclaration,
   validateTaskUpdate,
 } from "../src/lib/operatorActions";
 
-function outcome(
-  action: string,
-  status: string,
-  detail: string,
-  ok: boolean,
-  httpStatus: number,
-): Response {
-  return new Response(JSON.stringify({ action, status, detail, ok }), { status: httpStatus });
+function outcome(action: string, status: string, detail: string, ok: boolean, httpStatus: number): Response {
+  return new Response(JSON.stringify({ action, status, detail, ok }), {
+    status: httpStatus,
+  });
 }
 
 function resolved(response: Response): ReturnType<typeof vi.fn<typeof fetch>> {
@@ -36,10 +33,21 @@ describe("operator outcome contract", () => {
   it("accepts only the expected strict document while tolerating action-specific fields", () => {
     expect(
       parseOperatorOutcome(
-        { action: "task", status: "accepted", detail: "recorded", ok: true, id: "T-1" },
+        {
+          action: "task",
+          status: "accepted",
+          detail: "recorded",
+          ok: true,
+          id: "T-1",
+        },
         "task",
       ),
-    ).toEqual({ action: "task", status: "accepted", detail: "recorded", ok: true });
+    ).toEqual({
+      action: "task",
+      status: "accepted",
+      detail: "recorded",
+      ok: true,
+    });
     expect(parseOperatorOutcome({ action: "message", status: "accepted", detail: "", ok: true }, "task")).toBeNull();
     expect(parseOperatorOutcome({ action: "task", status: "", detail: "", ok: true }, "task")).toBeNull();
     expect(parseOperatorOutcome({ action: "task", status: 7, detail: "", ok: true }, "task")).toBeNull();
@@ -53,8 +61,20 @@ describe("operator outcome contract", () => {
     expect(parseDependencyIds(" T-0, T-1\nT-0, , T-2 ")).toEqual(["T-0", "T-1", "T-2"]);
     expect(validateTaskDeclaration({ id: "", title: "Ship", dependsOn: [] })).toBe("Task id is required.");
     expect(validateTaskDeclaration({ id: "T-1", title: "  ", dependsOn: [] })).toBe("Task title is required.");
-    expect(validateTaskDeclaration({ id: " T-1 ", title: "Ship", dependsOn: ["T-1"] })).toBe("A task cannot depend on itself.");
-    expect(validateTaskDeclaration({ id: "T-1", title: "Ship", dependsOn: ["T-0"] })).toBeNull();
+    expect(
+      validateTaskDeclaration({
+        id: " T-1 ",
+        title: "Ship",
+        dependsOn: ["T-1"],
+      }),
+    ).toBe("A task cannot depend on itself.");
+    expect(
+      validateTaskDeclaration({
+        id: "T-1",
+        title: "Ship",
+        dependsOn: ["T-0"],
+      }),
+    ).toBeNull();
     expect(validateTaskUpdate({ id: "", status: "done" })).toBe("Task id is required.");
     expect(validateTaskUpdate({ id: "T-1", status: " ", note: "" })).toContain("status or note");
     expect(validateTaskUpdate({ id: "T-1", note: "recorded" })).toBeNull();
@@ -66,10 +86,18 @@ describe("task actions", () => {
     const fetcher = resolved(outcome("task", "accepted", "task recorded", true, 200));
     expect(
       await declareOperatorTask(
-        { id: " T-1 ", title: " Ship it ", dependsOn: [" T-0 ", "T-0", ""] },
+        {
+          id: " T-1 ",
+          title: " Ship it ",
+          dependsOn: [" T-0 ", "T-0", ""],
+        },
         fetcher,
       ),
-    ).toEqual({ kind: "accepted", status: "accepted", detail: "task recorded" });
+    ).toEqual({
+      kind: "accepted",
+      status: "accepted",
+      detail: "task recorded",
+    });
     const [url, init] = fetcher.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/task");
     expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
@@ -117,10 +145,25 @@ describe("task actions", () => {
 
   it("distinguishes auth, arming, rate, reachability, malformed, and transport failures", async () => {
     const input = { id: "T-1", title: "Ship", dependsOn: [] };
-    expect(await declareOperatorTask(input, resolved(new Response("auth", { status: 401 })))).toEqual({ kind: "unauthorised" });
-    expect(await declareOperatorTask(input, resolved(new Response("nf", { status: 404 })))).toEqual({ kind: "not-armed" });
-    expect(await declareOperatorTask(input, resolved(new Response("old", { status: 501 })))).toEqual({ kind: "not-armed" });
-    expect(await declareOperatorTask(input, resolved(new Response("operator rate limit exceeded\n", { status: 429 })))).toEqual({
+    expect(await declareOperatorTask(input, resolved(new Response("auth", { status: 401 })))).toEqual({
+      kind: "unauthorised",
+    });
+    expect(await declareOperatorTask(input, resolved(new Response("nf", { status: 404 })))).toEqual({
+      kind: "not-armed",
+    });
+    expect(await declareOperatorTask(input, resolved(new Response("old", { status: 501 })))).toEqual({
+      kind: "not-armed",
+    });
+    expect(
+      await declareOperatorTask(
+        input,
+        resolved(
+          new Response("operator rate limit exceeded\n", {
+            status: 429,
+          }),
+        ),
+      ),
+    ).toEqual({
       kind: "rate-limited",
       detail: "operator rate limit exceeded",
     });
@@ -132,12 +175,14 @@ describe("task actions", () => {
       kind: "error",
       message: "dashboard returned 500 without a valid task outcome",
     });
-    expect(
-      await declareOperatorTask(input, vi.fn<typeof fetch>().mockRejectedValue(new Error("offline"))),
-    ).toEqual({ kind: "error", message: "offline" });
-    expect(
-      await declareOperatorTask(input, vi.fn<typeof fetch>().mockRejectedValue("plain failure")),
-    ).toEqual({ kind: "error", message: "plain failure" });
+    expect(await declareOperatorTask(input, vi.fn<typeof fetch>().mockRejectedValue(new Error("offline")))).toEqual({
+      kind: "error",
+      message: "offline",
+    });
+    expect(await declareOperatorTask(input, vi.fn<typeof fetch>().mockRejectedValue("plain failure"))).toEqual({
+      kind: "error",
+      message: "plain failure",
+    });
   });
 
   it("returns validation failures before invoking fetch", async () => {
@@ -159,7 +204,10 @@ describe("task actions", () => {
         { id: "T-1", status: "done" },
         resolved(outcome("task_update", "mystery", "not accepted", false, 200)),
       ),
-    ).toEqual({ kind: "error", message: "dashboard reported unknown outcome 'mystery'" });
+    ).toEqual({
+      kind: "error",
+      message: "dashboard reported unknown outcome 'mystery'",
+    });
     expect(
       await updateOperatorTask(
         { id: "T-1", status: "done" },
@@ -203,16 +251,56 @@ describe("message compatibility", () => {
       reason: "dashboard bearer was refused",
     });
     expect(
-      await sendOperatorMessage(
-        "a",
-        "b",
-        resolved(outcome("message", "denied", "hub denied", false, 403)),
-      ),
+      await sendOperatorMessage("a", "b", resolved(outcome("message", "denied", "hub denied", false, 403))),
     ).toEqual({ kind: "refused", reason: "hub denied" });
-    expect(await sendOperatorMessage("a", "b", resolved(new Response("nf", { status: 404 })))).toEqual({ kind: "not-armed" });
+    expect(await sendOperatorMessage("a", "b", resolved(new Response("nf", { status: 404 })))).toEqual({
+      kind: "not-armed",
+    });
     expect(await sendOperatorMessage("a", "b", resolved(new Response("slow", { status: 429 })))).toEqual({
       kind: "refused",
       reason: "rate limited: slow",
     });
+  });
+});
+
+describe("semantic message responses", () => {
+  it("posts an exact message sequence, normalised target, closed status, and optional note", async () => {
+    const fetcher = resolved(outcome("message_response", "delivered", "semantic response delivered", true, 200));
+    expect(
+      await sendOperatorResponse(
+        {
+          messageSeq: 42,
+          to: " ALPHA ",
+          status: "needs_input",
+          note: " Which revision? ",
+        },
+        fetcher,
+      ),
+    ).toEqual({
+      kind: "accepted",
+      status: "delivered",
+      detail: "semantic response delivered",
+    });
+    const [url, init] = fetcher.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/message/respond");
+    expect(JSON.parse(init.body as string)).toEqual({
+      message_seq: 42,
+      to: "ALPHA",
+      status: "needs_input",
+      note: "Which revision?",
+    });
+  });
+
+  it("fails locally without an exact durable sequence or sender", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    expect(await sendOperatorResponse({ messageSeq: 0, to: "ALPHA", status: "acknowledged" }, fetcher)).toEqual({
+      kind: "error",
+      message: "Select a durable message before responding.",
+    });
+    expect(await sendOperatorResponse({ messageSeq: 3, to: " ", status: "completed" }, fetcher)).toEqual({
+      kind: "error",
+      message: "The referenced sender is unavailable.",
+    });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });
