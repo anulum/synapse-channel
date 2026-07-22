@@ -15,6 +15,7 @@ import json
 import socket
 import threading
 import time
+from collections.abc import Callable
 from http import HTTPStatus
 from typing import Any
 
@@ -150,6 +151,33 @@ def _parse_http_response(raw: bytes) -> tuple[int, dict[str, Any]]:
     return status, json.loads(body.decode("utf-8"))
 
 
+def _await_capacity_free(
+    port: int,
+    *,
+    timeout: float = 5.0,
+    probe: Callable[[int], tuple[int, dict[str, Any]]] | None = None,
+) -> tuple[int, dict[str, Any]]:
+    """Poll the agent card until the admission slot is released, or ``timeout``.
+
+    The server releases a slot in ``process_request_thread``'s ``finally`` — AFTER
+    the handler has written the client's response — so the slot can still read as
+    occupied for a brief window after the holding request's client has already seen
+    its ``200``. On a loaded CI runner (notably macOS) that release lag can exceed
+    the gap before the next probe, so a single immediate probe races and reads a
+    transient ``503``. Polling distinguishes a merely lagging release (returns
+    ``200`` and passes) from a genuinely leaked slot (never frees, times out red).
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        if probe is None:
+            status, body = _get_agent_card(port, timeout=2.0)
+        else:
+            status, body = probe(port)
+        if status == int(HTTPStatus.OK) or time.monotonic() >= deadline:
+            return status, body
+        time.sleep(0.02)
+
+
 class _HoldOpenAgent(RecordingAgent):
     """Recording agent that blocks chat until an event is signalled."""
 
@@ -248,10 +276,44 @@ def test_concurrent_capacity_refuses_with_503_and_releases() -> None:
         assert not holder_error
         assert holder_status.get("status") == int(HTTPStatus.OK)
 
-        # Capacity must be free after the holder finishes.
-        free_status, free_body = _get_agent_card(port, timeout=2.0)
+        # Capacity must be free after the holder finishes. The slot release runs
+        # in the server thread's ``finally``, after the holder's client already saw
+        # its 200, so allow a bounded release lag instead of racing a single probe
+        # (the race surfaced as a transient 503 on loaded macOS CI runners).
+        free_status, free_body = _await_capacity_free(port, timeout=5.0)
         assert free_status == int(HTTPStatus.OK)
         assert free_body.get("name") == "SYNAPSE CHANNEL"
+
+
+def test_await_capacity_free_tolerates_a_lagging_slot_release() -> None:
+    """A slot that reads occupied then frees is polled through to the 200."""
+    responses = iter(
+        [
+            (int(HTTPStatus.SERVICE_UNAVAILABLE), {"title": "Service Unavailable"}),
+            (int(HTTPStatus.SERVICE_UNAVAILABLE), {"title": "Service Unavailable"}),
+            (int(HTTPStatus.OK), {"name": "SYNAPSE CHANNEL"}),
+        ]
+    )
+
+    def probe(_port: int) -> tuple[int, dict[str, Any]]:
+        return next(responses)
+
+    status, body = _await_capacity_free(0, timeout=5.0, probe=probe)
+
+    assert status == int(HTTPStatus.OK)
+    assert body.get("name") == "SYNAPSE CHANNEL"
+
+
+def test_await_capacity_free_gives_up_on_a_leaked_slot() -> None:
+    """A slot that never frees times out red rather than hanging or masking."""
+
+    def probe(_port: int) -> tuple[int, dict[str, Any]]:
+        return int(HTTPStatus.SERVICE_UNAVAILABLE), {"title": "Service Unavailable"}
+
+    status, body = _await_capacity_free(0, timeout=0.05, probe=probe)
+
+    assert status == int(HTTPStatus.SERVICE_UNAVAILABLE)
+    assert body.get("title") == "Service Unavailable"
 
 
 def test_incomplete_slow_body_times_out_without_long_sleep() -> None:
