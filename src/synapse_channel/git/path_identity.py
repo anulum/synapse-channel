@@ -227,9 +227,16 @@ def _object_id(path: Path) -> str:
     """Return a stable local object key for an existing file or directory."""
     try:
         metadata = path.stat()
-    except FileNotFoundError:
-        return ""
     except OSError as exc:
+        # A missing path and an over-length path are both a genuinely absent
+        # object, not an unreadable one: an over-PATH_MAX name cannot name a real
+        # tracked file (macOS 1024 vs Linux 4096), so it has no object identity.
+        # This mirrors _resolved_with_missing_tail and stays fail-closed — an
+        # empty object id yields no covering claim, so allowed=False either way.
+        # FileNotFoundError is matched by type (its errno may be unset);
+        # ENAMETOOLONG by errno. Other errors (EACCES, EIO) remain unreadable.
+        if isinstance(exc, FileNotFoundError) or exc.errno == errno.ENAMETOOLONG:
+            return ""
         raise PathIdentityError("claim path object identity could not be read") from exc
     if metadata.st_ino <= 0:
         return ""
@@ -248,10 +255,15 @@ def _semantic_object_identity(resolved: Path, symbol: str) -> tuple[str, str]:
     """Return the source-object key and canonical semantic sub-scope."""
     try:
         metadata = resolved.stat()
-    except FileNotFoundError:
-        object_id = ""
     except OSError as exc:
-        raise PathIdentityError("semantic claim source identity could not be read") from exc
+        # As in _object_id: a missing path and an over-length path are both a
+        # genuinely absent source object, so an over-PATH_MAX semantic source has
+        # no object identity (fail-closed: no identity -> no covering claim).
+        # FileNotFoundError by type, ENAMETOOLONG by errno; others stay unreadable.
+        if isinstance(exc, FileNotFoundError) or exc.errno == errno.ENAMETOOLONG:
+            object_id = ""
+        else:
+            raise PathIdentityError("semantic claim source identity could not be read") from exc
     else:
         object_id = f"{metadata.st_dev:x}:{metadata.st_ino:x}" if metadata.st_ino > 0 else ""
     encoded = semantic_scope_path("_", symbol)

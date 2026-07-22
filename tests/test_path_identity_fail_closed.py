@@ -499,6 +499,20 @@ def test_missing_tail_and_object_id_behaviour(
     with pytest.raises(PathIdentityError, match="object identity"):
         git_identity._object_id(missing)
 
+    # An over-length path (ENAMETOOLONG, e.g. over macOS PATH_MAX 1024) cannot
+    # name a real tracked file, so it has no object identity — absent like a
+    # missing path, not an unreadable one. Mirrors the resolver's ENAMETOOLONG
+    # handling and keeps a claim over such a path fail-closed (empty id -> no
+    # covering claim). Exercises the branch on Linux CI where it never occurs
+    # naturally (Linux PATH_MAX is 4096).
+    def _stat_too_long(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        if path == missing:
+            raise OSError(errno.ENAMETOOLONG, "File name too long")
+        return original_stat(path, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "stat", _stat_too_long)
+    assert git_identity._object_id(missing) == ""
+
 
 def test_zero_inode_never_becomes_an_alias_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

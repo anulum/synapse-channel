@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import ctypes
+import errno
 import os
 import unicodedata
 from pathlib import Path
@@ -473,6 +474,41 @@ def test_unreadable_semantic_source_identity_fails_closed(
             repo,
             [semantic_scope_path("worker.py", "run")],
         )
+
+
+def test_over_length_semantic_source_is_absent_not_unreadable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An over-length physical source has no object identity, like a missing one.
+
+    An over-PATH_MAX source (macOS 1024 vs Linux 4096) cannot name a real tracked
+    file, so its object identity is genuinely absent — the claim keeps its display
+    scope with an empty object key rather than raising 'could not be read'. This
+    exercises the ENAMETOOLONG branch on Linux CI, where it never occurs naturally.
+    """
+    repo = git_repo(tmp_path / "repo")
+    source = repo / "worker.py"
+    source.write_text("def run():\n    return 1\n", encoding="utf-8")
+    _commit(repo, "worker.py")
+    resolved_source = source.resolve()
+    original_stat = Path.stat
+
+    def too_long_stat(path: Path, *args: Any, **kwargs: Any) -> os.stat_result:
+        if path == resolved_source and kwargs.get("follow_symlinks", True):
+            raise OSError(errno.ENAMETOOLONG, "File name too long")
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", too_long_stat)
+
+    _root, displays, scope = resolve_claim_scope_identity(
+        repo,
+        [semantic_scope_path("worker.py", "run")],
+    )
+
+    assert displays == (semantic_scope_path("worker.py", "run"),)
+    assert scope.paths[0].object_id == ""
+    assert scope.paths[0].object_scope == "run"
 
 
 def test_semantic_alias_into_reserved_scope_fails_closed(tmp_path: Path) -> None:
