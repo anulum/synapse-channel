@@ -309,12 +309,7 @@ def isolated_a2a_serve(
         text=True,
     )
     try:
-        deadline = time.monotonic() + ready_timeout
-        while time.monotonic() < deadline:
-            status, _ = http_get(f"{base}{A2A_AGENT_CARD_PATH}", timeout=1.0)
-            if status == 200:
-                break
-            time.sleep(0.1)
+        _await_http_ready(proc, f"{base}{A2A_AGENT_CARD_PATH}", ready_timeout=ready_timeout)
         yield base
     finally:
         _stop(proc)
@@ -431,6 +426,40 @@ def isolated_team(*, no_workers: bool = True, ready_timeout: float = 10.0) -> It
             _stop_group(proc)
 
 
+def _await_http_ready(
+    proc: subprocess.Popen[str],
+    url: str,
+    *,
+    ready_timeout: float,
+    headers: dict[str, str] | None = None,
+) -> None:
+    """Block until ``url`` answers 200, or raise with the subprocess output.
+
+    The launched server (dashboard, A2A bridge) runs with a merged stdout/stderr
+    pipe. When it never becomes ready the caller would otherwise assert on a bare
+    ``status=0`` that hides the cause — the failure mode seen on macOS runners. So
+    on timeout (or an early exit) stop the process, drain that pipe, and surface it
+    in the error, making a bind failure, hub-connect failure, or traceback visible.
+    On the ready path this returns before the deadline and behaviour is unchanged.
+    """
+    deadline = time.monotonic() + ready_timeout
+    while time.monotonic() < deadline:
+        status, _ = http_get(url, timeout=1.0, headers=headers)
+        if status == 200:
+            return
+        if proc.poll() is not None:
+            break
+        time.sleep(0.1)
+    _stop(proc)
+    # ``_stop`` has waited for exit, so the merged pipe now reads buffered output
+    # to EOF without blocking.
+    output = proc.stdout.read() if proc.stdout is not None else ""
+    raise RuntimeError(
+        f"server did not answer {url} within {ready_timeout}s "
+        f"(exit={proc.returncode}); captured output:\n{output.strip() or '<empty>'}"
+    )
+
+
 @contextmanager
 def isolated_dashboard(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[tuple[str, str]]:
     """Serve ``synapse dashboard`` against ``hub_uri``; yield ``(base_url, bearer)``.
@@ -462,12 +491,7 @@ def isolated_dashboard(hub_uri: str, *, ready_timeout: float = 8.0) -> Iterator[
     base = f"http://127.0.0.1:{port}"
     auth = {"Authorization": f"Bearer {token}"}
     try:
-        deadline = time.monotonic() + ready_timeout
-        while time.monotonic() < deadline:
-            status, _ = http_get(f"{base}/snapshot.json", timeout=1.0, headers=auth)
-            if status == 200:
-                break
-            time.sleep(0.1)
+        _await_http_ready(proc, f"{base}/snapshot.json", ready_timeout=ready_timeout, headers=auth)
         yield base, token
     finally:
         _stop(proc)
