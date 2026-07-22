@@ -167,6 +167,7 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
           <option value="en">EN</option>
           <option value="sk">SK</option>
           <option value="de">DE</option>
+          <option value="es">ES</option>
         </select>
       </label>
       {onFocusChange !== undefined && (

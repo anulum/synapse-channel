@@ -58,6 +58,9 @@ describe("GuideDrawer", () => {
     await userEvent.selectOptions(screen.getByLabelText("Jazyk rozhrania"), "de");
     expect(screen.getByRole("dialog", { name: "Cockpit-Handbuch" })).toBeTruthy();
     expect(location.search).toContain("lang=de");
+    await userEvent.selectOptions(screen.getByLabelText("Sprache der Benutzeroberfläche"), "es");
+    expect(screen.getByRole("dialog", { name: "Guía del cockpit" })).toBeTruthy();
+    expect(location.search).toContain("lang=es");
   });
 
   it("routes operators into the read-only setup assistant", async () => {

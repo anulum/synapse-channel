@@ -15,6 +15,12 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- A complete offline Spanish cockpit catalogue with typed key parity, URL,
+  saved-preference, and browser-language resolution. The HUD and in-product
+  guide expose `ES`; built-browser coverage verifies the Spanish guide and setup
+  assistant in narrow portrait and landscape layouts without accessibility
+  violations. Identities, wire outcomes, flags, paths, and setup placeholders
+  remain literal protocol evidence.
 - A content-minimized local fleet-health summary in the cockpit risk rail. It
   counts retained-log contention pairs, log-relative expired claims,
   receipt-proven dead letters and recoveries, and escalation events from the

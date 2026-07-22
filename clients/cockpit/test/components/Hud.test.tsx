@@ -134,5 +134,6 @@ describe("Hud", () => {
     expect(onOpenSetup).toHaveBeenCalledOnce();
     expect((screen.getByLabelText("Interface language") as HTMLSelectElement).value).toBe("en");
     expect(screen.getByRole("option", { name: "DE" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "ES" })).toBeTruthy();
   });
 });
