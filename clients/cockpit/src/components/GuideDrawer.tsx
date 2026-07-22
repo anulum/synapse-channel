@@ -18,9 +18,10 @@ interface GuideDrawerProps {
   readonly open: boolean;
   readonly activePanel: InspectorTab;
   readonly onClose: () => void;
+  readonly onOpenSetup?: (() => void) | undefined;
 }
 
-export function GuideDrawer({ open, activePanel, onClose }: GuideDrawerProps): JSX.Element | null {
+export function GuideDrawer({ open, activePanel, onClose, onOpenSetup }: GuideDrawerProps): JSX.Element | null {
   const { locale, setLocale, t } = useCockpitI18n();
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -115,6 +116,11 @@ export function GuideDrawer({ open, activePanel, onClose }: GuideDrawerProps): J
 
         <p id="guide-privacy" className="guide-drawer__privacy">{t("guide.localOnly")}</p>
         <p className="guide-drawer__shortcut">{t("guide.shortcut")}</p>
+        {onOpenSetup !== undefined && (
+          <button type="button" className="guide-drawer__setup" onClick={onOpenSetup}>
+            {t("guide.openSetup")}
+          </button>
+        )}
 
         <div className="guide-drawer__topics" aria-live="polite">
           {shownTopics.length === 0 ? (

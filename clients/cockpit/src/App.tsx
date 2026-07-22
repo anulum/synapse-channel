@@ -26,6 +26,7 @@ import { ReplayWorkbench, type ReplaySlot } from "./components/ReplayWorkbench";
 import { RiskRail } from "./components/RiskRail";
 import { RoleBadge } from "./components/RoleBadge";
 import { SelectionBar } from "./components/SelectionBar";
+import { SetupAssistant } from "./components/SetupAssistant";
 import { TaskBoard } from "./components/TaskBoard";
 import { ToastStack } from "./components/ToastStack";
 import { DetailDrawer } from "./components/DetailDrawer";
@@ -59,6 +60,7 @@ import { cockpitAuthSnapshot, lockCockpit, subscribeCockpitAuth, unlockCockpit }
 import { useCockpitFeeds } from "./hooks/useCockpitFeeds";
 import { useDashboardAccess } from "./hooks/useDashboardAccess";
 import { useCockpitWorkspace } from "./hooks/useCockpitWorkspace";
+import { isLoopbackHostname } from "./lib/setupAssistant";
 
 async function loadReplaySlot(seq: number): Promise<ReplaySlot> {
   const result = await fetchStateAt(seq);
@@ -152,12 +154,14 @@ export function App(): JSX.Element {
   // The command palette: Ctrl/Cmd+K anywhere.
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
   const [paletteCompose, setPaletteCompose] = useState<{
     readonly to: string;
     readonly nonce: number;
   } | null>(null);
   const commandTrigger = useRef<HTMLButtonElement | null>(null);
   const guideTrigger = useRef<HTMLButtonElement | null>(null);
+  const setupTrigger = useRef<HTMLButtonElement | null>(null);
   const [accessNotice, setAccessNotice] = useState("");
   const capabilities = capabilitiesOf(access);
   const previousCapabilities = useRef(capabilities);
@@ -170,12 +174,14 @@ export function App(): JSX.Element {
       if (!shellBlocked && event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         setGuideOpen(false);
+        setSetupOpen(false);
         setPaletteCompose(null);
         setPaletteOpen((current) => !current);
       } else if (!shellBlocked && !typing && event.key === "?") {
         event.preventDefault();
         setPaletteOpen(false);
         setPaletteCompose(null);
+        setSetupOpen(false);
         setGuideOpen(true);
       }
     };
@@ -221,11 +227,22 @@ export function App(): JSX.Element {
   const onOpenGuide = useCallback(() => {
     setPaletteOpen(false);
     setPaletteCompose(null);
+    setSetupOpen(false);
     setGuideOpen(true);
   }, []);
   const onCloseGuide = useCallback(() => {
     setGuideOpen(false);
     guideTrigger.current?.focus();
+  }, []);
+  const onOpenSetup = useCallback(() => {
+    setPaletteOpen(false);
+    setPaletteCompose(null);
+    setGuideOpen(false);
+    setSetupOpen(true);
+  }, []);
+  const onCloseSetup = useCallback(() => {
+    setSetupOpen(false);
+    setupTrigger.current?.focus();
   }, []);
 
   // The focus lens and density are small persisted preferences, same
@@ -416,6 +433,7 @@ export function App(): JSX.Element {
     setPaletteOpen(false);
     setPaletteCompose(null);
     setGuideOpen(false);
+    setSetupOpen(false);
     setInspected(null);
     setTraceRequest(undefined);
     setToasts([]);
@@ -456,6 +474,8 @@ export function App(): JSX.Element {
         }}
         guideTriggerRef={guideTrigger}
         onOpenGuide={onOpenGuide}
+        setupTriggerRef={setupTrigger}
+        onOpenSetup={onOpenSetup}
       />
       <SelectionBar
         selection={workspace.selection}
@@ -625,6 +645,27 @@ export function App(): JSX.Element {
         open={guideOpen}
         activePanel={workspace.panel}
         onClose={onCloseGuide}
+        onOpenSetup={onOpenSetup}
+      />
+      <SetupAssistant
+        open={setupOpen}
+        onClose={onCloseSetup}
+        evidence={{
+          access: access.phase,
+          snapshot: snap.status,
+          transport: transport.status,
+          optionalFeeds: [
+            reliability.status,
+            federation.status,
+            metrics.status,
+            sessions.status,
+            waits.status,
+            anomalyReport.status,
+            receipts.status,
+            operatorActions.status,
+          ],
+          loopbackOrigin: isLoopbackHostname(location.hostname),
+        }}
       />
       <ToastStack toasts={toasts} onDismiss={onDismissToast} />
       <DetailDrawer

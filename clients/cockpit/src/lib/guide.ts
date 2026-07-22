@@ -27,6 +27,7 @@ const GENERAL_TOPIC_KEYS = [
   "actions",
   "shortcuts",
   "troubleshooting",
+  "setup",
 ] as const;
 
 function generalTopic(t: Translator, id: (typeof GENERAL_TOPIC_KEYS)[number]): GuideTopic {

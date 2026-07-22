@@ -48,6 +48,8 @@ interface HudProps {
   readonly onOpenPalette?: (() => void) | undefined;
   readonly guideTriggerRef?: Ref<HTMLButtonElement>;
   readonly onOpenGuide?: (() => void) | undefined;
+  readonly setupTriggerRef?: Ref<HTMLButtonElement>;
+  readonly onOpenSetup?: (() => void) | undefined;
 }
 
 const KPI_KEYS: Readonly<Record<string, MessageKey>> = {
@@ -77,7 +79,7 @@ function transportKey(status: LiveConnectionStatus): MessageKey {
   return `hud.transport.${status}`;
 }
 
-export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, theme = "dark", onToggleTheme, focus = "", onFocusChange, rosterNames = [], density = "cozy", onToggleDensity, accessControl, commandTriggerRef, onOpenPalette, guideTriggerRef, onOpenGuide }: HudProps): JSX.Element {
+export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, theme = "dark", onToggleTheme, focus = "", onFocusChange, rosterNames = [], density = "cozy", onToggleDensity, accessControl, commandTriggerRef, onOpenPalette, guideTriggerRef, onOpenGuide, setupTriggerRef, onOpenSetup }: HudProps): JSX.Element {
   const { locale, setLocale, t } = useCockpitI18n();
   const translatedKpi = (label: string): string => {
     const key = KPI_KEYS[label];
@@ -142,6 +144,17 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
           onClick={onOpenGuide}
         >
           {t("hud.guide")} <kbd>?</kbd>
+        </button>
+      )}
+      {onOpenSetup !== undefined && (
+        <button
+          ref={setupTriggerRef}
+          type="button"
+          className="hud__commands hud__setup"
+          aria-label={t("hud.openSetup")}
+          onClick={onOpenSetup}
+        >
+          {t("hud.setup")}
         </button>
       )}
       <label className="hud__locale">

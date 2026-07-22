@@ -15,7 +15,7 @@ describe("cockpit guide model", () => {
   const english = guideTopics((key, values) => formatMessage("en", key, values), "fleet");
 
   it("puts the active panel first and follows with the stable reference topics", () => {
-    expect(english).toHaveLength(6);
+    expect(english).toHaveLength(7);
     expect(english[0]?.id).toBe("panel-fleet");
     expect(english[0]?.title).toBe("Fleet views");
     expect(english.map((topic) => topic.id).slice(1)).toEqual([
@@ -24,6 +24,7 @@ describe("cockpit guide model", () => {
       "actions",
       "shortcuts",
       "troubleshooting",
+      "setup",
     ]);
   });
 

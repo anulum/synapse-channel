@@ -57,6 +57,18 @@ describe("GuideDrawer", () => {
     expect(screen.getByText(/Transport acknowledgement/u)).toBeTruthy();
   });
 
+  it("routes operators into the read-only setup assistant", async () => {
+    const onOpenSetup = vi.fn();
+    render(
+      <CockpitI18nProvider>
+        <GuideDrawer open activePanel="audit" onClose={() => {}} onOpenSetup={onOpenSetup} />
+      </CockpitI18nProvider>,
+    );
+    expect(screen.getByText("Prepare a local setup")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Open the read-only setup assistant" }));
+    expect(onOpenSetup).toHaveBeenCalledOnce();
+  });
+
   it("closes from Escape, the close control, and only the veil itself", async () => {
     const onClose = renderDrawer();
     fireEvent.keyDown(window, { key: "Escape" });

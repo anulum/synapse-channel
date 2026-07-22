@@ -107,7 +107,8 @@ The top strip answers whether the page is current before it shows detail:
 - the current browser role and capability posture;
 - an identity focus lens that narrows claims and tasks;
 - compact/cozy density and dark/light theme controls;
-- the command palette, contextual guide, and interface-language controls.
+- the command palette, contextual guide, local setup assistant, and
+  interface-language controls.
 
 Click a headline counter to filter the signal log to its underlying event
 kinds. Clear the focus lens before concluding that a board or claim list is
@@ -147,6 +148,42 @@ sequence numbers, CLI flags, paths, URLs, and protocol outcome tokens remain
 literal evidence. For example, `accepted`, `delivered`, `undelivered`,
 `rejected`, `rate-limited`, `unreachable`, `stream`, `poll fallback`, and `gap
 detected` retain their exact spelling in Slovak mode.
+
+## Prepare a local setup without browser-side mutation
+
+Choose **setup** in the HUD, or open it from the in-product guide. The first F8
+assistant is deliberately read-only. It does not execute a shell, start or
+change a service, create a token, inspect the host filesystem, or enable a
+network bind.
+
+The assistant has four steps:
+
+1. **Preflight** classifies only evidence the loaded browser can prove as
+   installed, configured, absent, or unverifiable. It does not infer package or
+   service-manager state from a working page.
+2. **Profile** fixes the hub and dashboard host to `127.0.0.1`, validates two
+   different non-privileged ports, and optionally adds inert durable-evidence
+   or protected-access placeholders.
+3. **Commands** previews one hub command and one dashboard command. Copying
+   requires an explicit click and remains disabled for a command that fails the
+   local safety gate.
+4. **Verify** separates current hub snapshot evidence, dashboard access,
+   loopback origin, live transport, and optional feed availability.
+
+The assistant accepts no bearer, key, credential, or real secret-path input.
+Its default previews contain neither inline secret flags nor secret-bearing
+paths. When you opt into durable evidence or protected dashboard access, the
+preview uses the literal placeholders `<HUB_DB_PATH>` and
+`<OWNER_ONLY_ACCESS_POLICY_PATH>`; replace them only in your terminal. Setup
+state stays in React memory and does not enter the URL, logs, telemetry, local
+storage, or session-storage preferences.
+
+!!! note
+
+    A copied preview is still only a plan. Review each placeholder and file
+    permission in the terminal before running it. Capability-bound apply
+    actions require a separate backend contract and are not part of this
+    assistant.
 
 ## Use the activity spine
 

@@ -126,9 +126,12 @@ describe("Hud", () => {
 
   it("exposes the contextual guide and language chooser in the HUD", async () => {
     const onOpenGuide = vi.fn();
-    render(<Hud kpis={[]} live stamp="—" onOpenGuide={onOpenGuide} />);
+    const onOpenSetup = vi.fn();
+    render(<Hud kpis={[]} live stamp="—" onOpenGuide={onOpenGuide} onOpenSetup={onOpenSetup} />);
     await userEvent.click(screen.getByRole("button", { name: "Open cockpit guide" }));
     expect(onOpenGuide).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole("button", { name: "Open local setup assistant" }));
+    expect(onOpenSetup).toHaveBeenCalledOnce();
     expect((screen.getByLabelText("Interface language") as HTMLSelectElement).value).toBe("en");
   });
 });
