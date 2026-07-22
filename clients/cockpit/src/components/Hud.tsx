@@ -7,6 +7,7 @@
 // SYNAPSE_CHANNEL — the HUD strip: mark, KPI triad, liveness beacon
 
 import type { JSX, ReactNode, Ref } from "react";
+import type { LiveConnectionStatus } from "../lib/liveTransport";
 
 /** One headline metric with a redundant delta (arrow + colour + sign). */
 export interface Kpi {
@@ -21,6 +22,8 @@ interface HudProps {
   readonly live: boolean;
   /** Freshness stamp, e.g. the last event's wall-clock time. */
   readonly stamp: string;
+  /** Primary transport posture; polling fallback remains explicit. */
+  readonly transport?: LiveConnectionStatus;
   /** Drill-down: clicking a KPI filters the signal log to its event kinds. */
   readonly onSelect?: ((label: string) => void) | undefined;
   /** The active palette, for the toggle's label. */
@@ -56,7 +59,14 @@ function deltaText(delta: number): string {
   return "• 0";
 }
 
-export function Hud({ kpis, live, stamp, onSelect, theme = "dark", onToggleTheme, focus = "", onFocusChange, rosterNames = [], density = "cozy", onToggleDensity, accessControl, commandTriggerRef, onOpenPalette }: HudProps): JSX.Element {
+function transportLabel(status: LiveConnectionStatus): string {
+  if (status === "live") return "stream";
+  if (status === "unsupported" || status === "fallback") return "poll fallback";
+  if (status === "gap") return "gap detected";
+  return status;
+}
+
+export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, theme = "dark", onToggleTheme, focus = "", onFocusChange, rosterNames = [], density = "cozy", onToggleDensity, accessControl, commandTriggerRef, onOpenPalette }: HudProps): JSX.Element {
   return (
     <header className="hud">
       <div className="hud__mark">
@@ -159,6 +169,12 @@ export function Hud({ kpis, live, stamp, onSelect, theme = "dark", onToggleTheme
       <div className={`beacon ${live ? "beacon--live" : "beacon--stale"}`}>
         <span className="beacon__dot" />
         <span>{live ? "live" : "stale"}</span>
+        <span
+          className={`beacon__transport beacon__transport--${transport}`}
+          aria-label={`Live transport: ${transportLabel(transport)}`}
+        >
+          {transportLabel(transport)}
+        </span>
         <span className="beacon__stamp">{stamp}</span>
       </div>
     </header>

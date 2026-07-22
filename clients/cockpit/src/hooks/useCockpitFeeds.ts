@@ -12,10 +12,19 @@ import type { Kpi } from "../components/Hud";
 import {
   createOperatorActionsStore,
   createReceiptsStore,
+  parseOperatorActionsPage,
+  parseReceiptsPage,
+  type OperatorActionRow,
   type OperatorActionsState,
+  type ReceiptRow,
   type ReceiptsState,
 } from "../lib/auditFeeds";
-import { createEventsTailSource, type SpineProvenance } from "../lib/eventsTail";
+import {
+  createEventsTailSource,
+  mapStoredEvent,
+  parseTail,
+  type SpineProvenance,
+} from "../lib/eventsTail";
 import {
   EVENT_RETENTION_LIMIT,
   eventCoverageOf,
@@ -27,11 +36,18 @@ import {
   type HealthAnomaliesState,
 } from "../lib/healthAnomalies";
 import { createMetricsStore, type MetricsState } from "../lib/metrics";
+import {
+  createLiveTransport,
+  type LiveChannelFrame,
+  type LiveConnectionState,
+} from "../lib/liveTransport";
 import { createReliabilityStore, type ReliabilityState } from "../lib/reliability";
 import { createSessionsStore, type SessionsState } from "../lib/sessions";
 import {
   createSnapshotStore,
+  parseSnapshot,
   withFreshness,
+  type SnapshotStore,
   type SnapshotState,
 } from "../lib/snapshot";
 import { createSnapshotEventSource } from "../lib/spineEvents";
@@ -99,6 +115,9 @@ export const AUXILIARY_FEED_START_FALLBACK_MS = 20_000;
 /** Maximum stagger before the second whole-log report starts on a slow store. */
 export const HEAVY_FEED_STAGGER_FALLBACK_MS = 45_000;
 
+/** Start the legacy high-frequency feeds only after a sustained stream outage. */
+export const LIVE_TRANSPORT_FALLBACK_MS = 6_000;
+
 interface HeadlineMetrics {
   readonly agents: number;
   readonly claims: number;
@@ -139,6 +158,19 @@ function stampFor(ms: number | null): string {
   });
 }
 
+function mergeAuditRows<T extends { readonly seq: number }>(
+  current: readonly T[] | null,
+  incoming: readonly T[],
+  retainedLimit = 100,
+): readonly T[] {
+  const bySequence = new Map<number, T>();
+  for (const row of current ?? []) bySequence.set(row.seq, row);
+  for (const row of incoming) bySequence.set(row.seq, row);
+  return [...bySequence.values()]
+    .sort((left, right) => right.seq - left.seq)
+    .slice(0, retainedLimit);
+}
+
 /** Auth-bound live state consumed by the app shell. */
 export interface CockpitFeeds {
   readonly snap: SnapshotState;
@@ -157,10 +189,11 @@ export interface CockpitFeeds {
   readonly anomalyReport: HealthAnomaliesState;
   readonly receipts: ReceiptsState;
   readonly operatorActions: OperatorActionsState;
+  readonly transport: LiveConnectionState;
 }
 
 /**
- * Own every polling surface for one credential revision.
+ * Own the multiplexed stream and its bounded polling fallback for one credential revision.
  *
  * Locking stops all requests and clears every last-good value. Unlocking creates
  * a fresh generation, preventing a late response from the rejected credential
@@ -182,6 +215,11 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
   const [receipts, setReceipts] = useState<ReceiptsState>(INITIAL_RECEIPTS);
   const [operatorActions, setOperatorActions] =
     useState<OperatorActionsState>(INITIAL_OPERATOR_ACTIONS);
+  const [transportState, setTransportState] = useState<LiveConnectionState>({
+    status: "connecting",
+    attempt: 0,
+    detail: null,
+  });
   const previous = useRef<HeadlineMetrics>(ZERO_METRICS);
 
   useEffect(() => {
@@ -198,12 +236,10 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     setAnomalyReport(INITIAL_ANOMALIES);
     setReceipts(INITIAL_RECEIPTS);
     setOperatorActions(INITIAL_OPERATOR_ACTIONS);
+    setTransportState({ status: "connecting", attempt: 0, detail: null });
     previous.current = ZERO_METRICS;
     if (blocked) return;
 
-    const store = createSnapshotStore();
-    const derived = createSnapshotEventSource(store);
-    const tail = createEventsTailSource();
     const routed = new Set<(event: CockpitEvent) => void>();
     setSpineSource({
       subscribe(listener) {
@@ -216,15 +252,44 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     });
     let active: "tail" | "derived" | null = null;
     const push = (event: CockpitEvent): void => {
-      setLog((current) => [event, ...current].slice(0, EVENT_RETENTION_LIMIT));
+      setLog((current) =>
+        current.some((candidate) => candidate.seq === event.seq)
+          ? current
+          : [event, ...current].slice(0, EVENT_RETENTION_LIMIT),
+      );
       for (const listener of routed) listener(event);
     };
-    const unsubscribeTail = tail.subscribe((event) => {
-      if (active === "tail") push(event);
-    });
+
+    const activate = (next: "tail" | "derived", nextProvenance: SpineProvenance): void => {
+      if (active !== next) {
+        active = next;
+        setLog([]);
+      }
+      setProvenance(nextProvenance);
+    };
+
+    let streamSnapshotState = INITIAL_SNAPSHOT;
+    const streamSnapshotListeners = new Set<(state: SnapshotState) => void>();
+    const streamSnapshotStore: SnapshotStore = {
+      subscribe(listener) {
+        streamSnapshotListeners.add(listener);
+        listener(streamSnapshotState);
+        return () => streamSnapshotListeners.delete(listener);
+      },
+      stop() {
+        streamSnapshotListeners.clear();
+      },
+    };
+    const publishStreamSnapshot = (next: SnapshotState): void => {
+      streamSnapshotState = next;
+      setSnap(next);
+      for (const listener of streamSnapshotListeners) listener(next);
+    };
+    const derived = createSnapshotEventSource(streamSnapshotStore);
     const unsubscribeDerived = derived.subscribe((event) => {
       if (active === "derived") push(event);
     });
+
     let effectActive = true;
     let stopAuxiliaryFeeds: (() => void) | undefined;
     let auxiliaryFallback: ReturnType<typeof setTimeout> | undefined;
@@ -257,10 +322,6 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
         if (state.status !== "connecting") startAnomalies();
       });
       anomalyFallback = setTimeout(startAnomalies, HEAVY_FEED_STAGGER_FALLBACK_MS);
-      const receiptsStore = createReceiptsStore();
-      const unsubscribeReceipts = receiptsStore.subscribe(setReceipts);
-      const operatorActionsStore = createOperatorActionsStore();
-      const unsubscribeOperatorActions = operatorActionsStore.subscribe(setOperatorActions);
       stopAuxiliaryFeeds = () => {
         unsubscribeReliability();
         unsubscribeFederation();
@@ -269,29 +330,206 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
         unsubscribeWaits();
         if (anomalyFallback !== undefined) clearTimeout(anomalyFallback);
         unsubscribeAnomalies?.();
-        unsubscribeReceipts();
-        unsubscribeOperatorActions();
         reliabilityStore.stop();
         federationStore.stop();
         metricsStore.stop();
         sessionsStore.stop();
         waitsStore.stop();
         anomaliesStore?.stop();
-        receiptsStore.stop();
-        operatorActionsStore.stop();
       };
     };
     auxiliaryFallback = setTimeout(startAuxiliaryFeeds, AUXILIARY_FEED_START_FALLBACK_MS);
-    const unsubscribeMode = tail.subscribeMode((mode) => {
-      setProvenance(mode);
-      const next = mode === "hub" ? "tail" : mode === "connecting" ? active : "derived";
-      if (next !== active) {
-        active = next;
-        setLog([]);
+
+    let stopPollingFallback: (() => void) | undefined;
+    const startPollingFallback = (): void => {
+      if (!effectActive || stopPollingFallback !== undefined) return;
+      const snapshotStore = createSnapshotStore();
+      const fallbackDerived = createSnapshotEventSource(snapshotStore);
+      const tail = createEventsTailSource();
+      const unsubscribeSnapshots = snapshotStore.subscribe(setSnap);
+      const unsubscribeFallbackDerived = fallbackDerived.subscribe((event) => {
+        if (active === "derived") push(event);
+      });
+      const unsubscribeTail = tail.subscribe((event) => {
+        if (active === "tail") push(event);
+      });
+      let receiptsStore: ReturnType<typeof createReceiptsStore> | undefined;
+      let operatorActionsStore: ReturnType<typeof createOperatorActionsStore> | undefined;
+      let unsubscribeReceipts: (() => void) | undefined;
+      let unsubscribeOperatorActions: (() => void) | undefined;
+      let fallbackAuditTimer: ReturnType<typeof setTimeout> | undefined;
+      const startFallbackAudits = (): void => {
+        if (receiptsStore !== undefined) return;
+        if (fallbackAuditTimer !== undefined) clearTimeout(fallbackAuditTimer);
+        receiptsStore = createReceiptsStore();
+        operatorActionsStore = createOperatorActionsStore();
+        unsubscribeReceipts = receiptsStore.subscribe(setReceipts);
+        unsubscribeOperatorActions = operatorActionsStore.subscribe(setOperatorActions);
+      };
+      const unsubscribeMode = tail.subscribeMode((mode) => {
+        const next = mode === "hub" ? "tail" : mode === "connecting" ? active : "derived";
+        if (next !== null) activate(next, mode);
+        if (mode !== "connecting") {
+          startFallbackAudits();
+          startAuxiliaryFeeds();
+        }
+      });
+      fallbackAuditTimer = setTimeout(startFallbackAudits, AUXILIARY_FEED_START_FALLBACK_MS);
+      stopPollingFallback = () => {
+        unsubscribeSnapshots();
+        unsubscribeFallbackDerived();
+        unsubscribeTail();
+        unsubscribeMode();
+        if (fallbackAuditTimer !== undefined) clearTimeout(fallbackAuditTimer);
+        unsubscribeReceipts?.();
+        unsubscribeOperatorActions?.();
+        snapshotStore.stop();
+        fallbackDerived.stop();
+        tail.stop();
+        receiptsStore?.stop();
+        operatorActionsStore?.stop();
+        stopPollingFallback = undefined;
+      };
+    };
+
+    let liveFallback: ReturnType<typeof setTimeout> | undefined;
+    const schedulePollingFallback = (): void => {
+      if (liveFallback !== undefined || stopPollingFallback !== undefined) return;
+      liveFallback = setTimeout(() => {
+        liveFallback = undefined;
+        startPollingFallback();
+        setTransportState((current) => ({
+          status: "fallback",
+          attempt: current.attempt,
+          detail: current.detail,
+        }));
+      }, LIVE_TRANSPORT_FALLBACK_MS);
+    };
+    const confirmLiveTransport = (): void => {
+      if (liveFallback !== undefined) {
+        clearTimeout(liveFallback);
+        liveFallback = undefined;
       }
-      if (mode !== "connecting") startAuxiliaryFeeds();
+      stopPollingFallback?.();
+      setTransportState({ status: "live", attempt: 0, detail: null });
+      startAuxiliaryFeeds();
+    };
+
+    const applySnapshotFrame = (frame: LiveChannelFrame): void => {
+      if (frame.status === "unchanged") {
+        setSnap((current) =>
+          current.snapshot === null
+            ? { ...current, status: "error", error: "snapshot heartbeat arrived before bootstrap" }
+            : { ...current, status: "live", fetchedAt: frame.sentAt, error: null },
+        );
+        return;
+      }
+      if (frame.status !== "live") {
+        const detail = frame.detail ?? `snapshot stream is ${frame.status}`;
+        setSnap((current) => ({ ...current, error: detail }));
+        return;
+      }
+      const snapshot = parseSnapshot(frame.data);
+      if (snapshot === null) {
+        setSnap((current) => ({ ...current, error: "stream snapshot was not an object" }));
+        return;
+      }
+      publishStreamSnapshot({ snapshot, status: "live", fetchedAt: frame.sentAt, error: null });
+    };
+
+    const applyEventsFrame = (frame: LiveChannelFrame): void => {
+      if (frame.status === "absent") {
+        activate("derived", "absent");
+        return;
+      }
+      if (frame.status === "error") {
+        setProvenance("error");
+        return;
+      }
+      const page = parseTail(frame.data);
+      if (page === null) {
+        setProvenance("error");
+        return;
+      }
+      activate("tail", "hub");
+      for (const event of page.events) push(mapStoredEvent(event));
+    };
+
+    const applyReceiptsFrame = (frame: LiveChannelFrame): void => {
+      if (frame.status === "absent") {
+        setReceipts((current) => ({ ...current, status: "absent", error: null }));
+        return;
+      }
+      if (frame.status === "error") {
+        setReceipts((current) => ({ ...current, status: "error", error: frame.detail ?? "stream error" }));
+        return;
+      }
+      const page = parseReceiptsPage(frame.data);
+      if (page === null) {
+        setReceipts((current) => ({ ...current, status: "error", error: "stream payload was not parseable" }));
+        return;
+      }
+      setReceipts((current) => ({
+        data: mergeAuditRows<ReceiptRow>(current.data, page.rows),
+        status: "live",
+        fetchedAt: frame.sentAt,
+        error: null,
+      }));
+    };
+
+    const applyOperatorActionsFrame = (frame: LiveChannelFrame): void => {
+      if (frame.status === "absent") {
+        setOperatorActions((current) => ({ ...current, status: "absent", error: null }));
+        return;
+      }
+      if (frame.status === "error") {
+        setOperatorActions((current) => ({ ...current, status: "error", error: frame.detail ?? "stream error" }));
+        return;
+      }
+      const page = parseOperatorActionsPage(frame.data);
+      if (page === null) {
+        setOperatorActions((current) => ({
+          ...current,
+          status: "error",
+          error: "stream payload was not parseable",
+        }));
+        return;
+      }
+      setOperatorActions((current) => ({
+        data: mergeAuditRows<OperatorActionRow>(current.data, page.rows),
+        status: "live",
+        fetchedAt: frame.sentAt,
+        error: null,
+      }));
+    };
+
+    const transport = createLiveTransport();
+    const unsubscribeFrames = transport.subscribeFrames((frame) => {
+      confirmLiveTransport();
+      if (frame.channel === "snapshot") applySnapshotFrame(frame);
+      else if (frame.channel === "events") applyEventsFrame(frame);
+      else if (frame.channel === "receipts") applyReceiptsFrame(frame);
+      else applyOperatorActionsFrame(frame);
     });
-    const unsubscribeSnapshots = store.subscribe(setSnap);
+    const unsubscribeTransportState = transport.subscribeState((state: LiveConnectionState) => {
+      // Once polling is active, reconnect attempts are an implementation detail: keep
+      // the HUD honest about the data path currently serving the operator. A valid
+      // channel frame, rather than a merely-open HTTP response, confirms recovery.
+      if (stopPollingFallback === undefined) setTransportState(state);
+      if (state.status === "unsupported") {
+        if (liveFallback !== undefined) clearTimeout(liveFallback);
+        liveFallback = undefined;
+        startPollingFallback();
+        setTransportState({
+          status: "fallback",
+          attempt: state.attempt,
+          detail: state.detail,
+        });
+      } else if (state.status === "reconnecting" || state.status === "gap") {
+        schedulePollingFallback();
+      }
+    });
+
     const clock = setInterval(() => {
       const tick = Date.now();
       setNowMs(tick);
@@ -301,15 +539,16 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     return () => {
       effectActive = false;
       if (auxiliaryFallback !== undefined) clearTimeout(auxiliaryFallback);
-      unsubscribeTail();
+      if (liveFallback !== undefined) clearTimeout(liveFallback);
+      unsubscribeFrames();
+      unsubscribeTransportState();
       unsubscribeDerived();
-      unsubscribeMode();
-      unsubscribeSnapshots();
+      transport.stop();
+      stopPollingFallback?.();
       stopAuxiliaryFeeds?.();
       clearInterval(clock);
-      tail.stop();
       derived.stop();
-      store.stop();
+      streamSnapshotStore.stop();
     };
   }, [blocked, credentialRevision]);
 
@@ -349,5 +588,6 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     anomalyReport,
     receipts,
     operatorActions,
+    transport: transportState,
   };
 }

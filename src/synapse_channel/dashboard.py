@@ -14,6 +14,7 @@ import contextlib
 import json
 import threading
 import time
+import uuid
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from functools import partial
@@ -74,6 +75,16 @@ from synapse_channel.dashboard_host_guard import (
     allowed_host_authorities,
     host_allowed,
     is_unspecified_host,
+)
+from synapse_channel.dashboard_live_transport import (
+    LIVE_TRANSPORT_CHANNELS,
+    LIVE_TRANSPORT_CONTENT_TYPE,
+    LIVE_TRANSPORT_PATH,
+    LiveFrameSequence,
+    LiveTransportCursor,
+    decode_feed_response,
+    parse_diagnostic_cycles,
+    snapshot_fingerprint,
 )
 from synapse_channel.dashboard_operator import WriteRateLimiter
 from synapse_channel.dashboard_operator_writes import (
@@ -522,6 +533,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     def _do_get_routed(self) -> None:
         """Route a GET after auth and SQLCipher key binding."""
         path = urlsplit(self.path).path
+        if path == LIVE_TRANSPORT_PATH:
+            self._serve_live_transport(urlsplit(self.path).query)
+            return
         asset_name = path.lstrip("/")
         if asset_name in COCKPIT_ASSETS:
             self._write(
@@ -711,6 +725,113 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if path.startswith(COCKPIT_DIST_PREFIX) or path == COCKPIT_DIST_PREFIX.rstrip("/"):
             return serve_cockpit_dist(self.cockpit_dist, COCKPIT_DIST_PREFIX, path)
         return None
+
+    def _serve_live_transport(self, query: str) -> None:
+        """Serve snapshots and durable deltas over one versioned NDJSON stream."""
+        try:
+            cycle_limit = parse_diagnostic_cycles(query)
+        except ValueError as exc:
+            self._write(HTTPStatus.BAD_REQUEST, f"{exc}\n".encode(), content_type="text/plain")
+            return
+
+        self.send_response(HTTPStatus.OK.value)
+        self.send_header("Content-Type", f"{LIVE_TRANSPORT_CONTENT_TYPE}; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")
+        for header, value in _SECURITY_HEADERS:
+            self.send_header(header, value)
+        self.end_headers()
+        self.close_connection = True
+
+        frames = LiveFrameSequence(uuid.uuid4().hex)
+        cursors = LiveTransportCursor()
+        last_snapshot_fingerprint: str | None = None
+
+        def send(
+            kind: str,
+            *,
+            channel: str | None = None,
+            status: str | None = None,
+            data: object | None = None,
+            detail: str | None = None,
+        ) -> None:
+            self.wfile.write(
+                frames.encode(
+                    kind,
+                    sent_at=int(time.time() * 1000),
+                    channel=channel,
+                    status=status,
+                    data=data,
+                    detail=detail,
+                )
+            )
+            self.wfile.flush()
+
+        try:
+            send(
+                "hello",
+                status="live",
+                data={"channels": list(LIVE_TRANSPORT_CHANNELS), "cadence_ms": 2000},
+            )
+            cycles = 0
+            while cycle_limit is None or cycles < cycle_limit:
+                cycles += 1
+                try:
+                    snapshot = asyncio.run(
+                        fetch_dashboard_snapshot(
+                            uri=self.uri,
+                            name=self.dashboard_name,
+                            token=self.token,
+                            ready_timeout=self.ready_timeout,
+                            response_timeout=self.response_timeout,
+                            observed_peers=self.observed_peers,
+                            observed_token=self.observed_token,
+                            observed_timeout=self.observed_timeout,
+                            observed_pins=self.observed_pins,
+                        )
+                    )
+                except DashboardUnavailable as exc:
+                    send("channel", channel="snapshot", status="error", detail=str(exc))
+                else:
+                    snapshot_document = snapshot.to_dict(a2a_state_file=self.a2a_state_file)
+                    fingerprint = snapshot_fingerprint(snapshot_document)
+                    if fingerprint == last_snapshot_fingerprint:
+                        send("channel", channel="snapshot", status="unchanged")
+                    else:
+                        send(
+                            "channel",
+                            channel="snapshot",
+                            status="live",
+                            data=snapshot_document,
+                        )
+                        last_snapshot_fingerprint = fingerprint
+
+                feed_specs = (
+                    ("events", EVENTS_PATH),
+                    ("receipts", RECEIPTS_PATH),
+                    ("operator_actions", OPERATOR_ACTIONS_PATH),
+                )
+                for channel, path in feed_specs:
+                    response = self._feed_response(path, cursors.query(channel))
+                    if response is None:
+                        send("channel", channel=channel, status="absent", detail="feed unavailable")
+                        continue
+                    status, data, detail = decode_feed_response(response)
+                    send(
+                        "channel",
+                        channel=channel,
+                        status=status,
+                        data=data,
+                        detail=detail,
+                    )
+                    if status == "live" and isinstance(data, dict):
+                        cursors.advance(channel, data)
+                if cycle_limit is None or cycles < cycle_limit:
+                    time.sleep(2.0)
+            send("close", status="complete", detail="bounded diagnostic stream complete")
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
+            return
 
     def _write_response(self, response: FeedResponse) -> None:
         """Write one computed feed/operator response through ``_write``."""

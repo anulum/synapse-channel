@@ -106,6 +106,7 @@ export function App(): JSX.Element {
     anomalyReport,
     receipts,
     operatorActions,
+    transport,
   } = useCockpitFeeds(shellBlocked, auth.revision);
   const [brush, setBrush] = useState<TimeWindow | null>(null);
   // Phone-width segment: one deck section at a time; CSS ignores this above
@@ -408,6 +409,7 @@ export function App(): JSX.Element {
         kpis={kpis}
         live={snap.status === "live"}
         stamp={stamp}
+        transport={transport.status}
         onSelect={onSelectKpi}
         theme={theme}
         onToggleTheme={onToggleTheme}

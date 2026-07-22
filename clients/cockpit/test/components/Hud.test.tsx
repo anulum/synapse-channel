@@ -37,6 +37,17 @@ describe("Hud", () => {
     expect(screen.getByText("stale")).toBeTruthy();
   });
 
+  it.each([
+    ["live", "stream"],
+    ["fallback", "poll fallback"],
+    ["unsupported", "poll fallback"],
+    ["gap", "gap detected"],
+    ["reconnecting", "reconnecting"],
+  ] as const)("shows the %s transport posture as evidence", (transport, label) => {
+    render(<Hud kpis={[]} live={transport === "live"} stamp="—" transport={transport} />);
+    expect(screen.getByLabelText(`Live transport: ${label}`).textContent).toBe(label);
+  });
+
   it("drills a KPI down into the log filter only when a handler exists", async () => {
     const onSelect = vi.fn();
     render(<Hud kpis={KPIS} live stamp="12:00:00" onSelect={onSelect} />);

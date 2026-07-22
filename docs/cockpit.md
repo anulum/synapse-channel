@@ -63,6 +63,17 @@ State-at responses use a short, bounded cache by exact query, so repeated tabs
 do not reconstruct the same moment independently. These controls change only
 when evidence is computed, never the evidence or its durable sequence.
 
+Current dashboards carry the four high-frequency cockpit channels over one
+authenticated, versioned NDJSON connection at `/live.ndjson`: the fleet
+snapshot, durable events, universal receipts, and governed operator actions.
+Lower-frequency reports retain their deliberately slower independent cadence.
+An older dashboard that answers 404 activates the legacy polling path. A
+transient disconnect first receives bounded reconnect backoff; only an outage
+longer than six seconds starts polling fallback. When the stream returns, its
+snapshot and durable cursor bootstrap replace the fallback without discarding
+the last known presentation. Unchanged snapshots travel as small freshness
+heartbeats instead of retransmitting the complete fleet document.
+
 ## Unlock a protected dashboard
 
 A loopback read-only dashboard can run without a browser bearer. A supplied
@@ -90,6 +101,8 @@ policy schema and file-mode requirements.
 The top strip answers whether the page is current before it shows detail:
 
 - **live / stale** and the timestamp state when data last arrived;
+- the current transport posture: **stream**, **reconnecting**, **gap
+  detected**, or **poll fallback**;
 - headline fleet counters with deltas;
 - the current browser role and capability posture;
 - an identity focus lens that narrows claims and tasks;
@@ -182,15 +195,23 @@ separate receipt evidence. Both modes obey the brushed time window and state
 when the visual is bounded or contains no eligible retained evidence.
 
 On first contact, current dashboards return the bounded recent event window and
-its exact cursor in one authenticated response, so essential timeline evidence
-does not wait behind the heavier audit feeds. The cockpit retains its legacy
-two-request fallback for older dashboard servers and continues polling forward
-from the same durable sequence contract.
+its exact cursor inside the authenticated live stream, so essential timeline
+evidence does not wait behind the heavier audit feeds. The cockpit retains its
+legacy two-request polling bootstrap for older dashboard servers and follows
+the same durable sequence contract in both transport modes.
 
 The active inspector panel, fleet mode, and shared selection live in bounded
 URL query fields. Copy the address to reopen that workspace; browser Back and
 Forward restore earlier panel and selection changes. Signal-log filters remain
 in the URL hash, so workspace navigation and log queries can be shared together.
+
+The live transport envelope has its own connection id and strictly increasing
+frame sequence. A missing or out-of-order frame is shown as **gap detected**;
+the client reconnects and requests a fresh bounded history instead of treating
+the held view as complete. **Poll fallback** is not a failure label: it means
+the same authenticated HTTP feeds are preserving compatibility with an older
+server or a sustained stream outage. The freshness beacon remains the source
+for whether the currently displayed snapshot is live or stale.
 
 A selected link shows retained pairwise messages with delivery outcomes.
 Selecting one message opens an exact three-stage evidence chain: the durable

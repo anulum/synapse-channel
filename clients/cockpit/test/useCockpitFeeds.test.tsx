@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AUXILIARY_FEED_START_FALLBACK_MS,
+  LIVE_TRANSPORT_FALLBACK_MS,
   useCockpitFeeds,
 } from "../src/hooks/useCockpitFeeds";
 
@@ -43,13 +44,139 @@ function hasAuxiliaryRequest(fetcher: ReturnType<typeof vi.fn>): boolean {
 function FeedProbe(): React.JSX.Element {
   const feeds = useCockpitFeeds(false, 0);
   return (
-    <output aria-label="feed probe">
-      {feeds.provenance}:{feeds.log.length}
-    </output>
+    <>
+      <output aria-label="feed probe">
+        {feeds.provenance}:{feeds.log.length}
+      </output>
+      <output aria-label="transport probe">{feeds.transport.status}</output>
+    </>
+  );
+}
+
+function liveLine(
+  sequence: number,
+  kind: "hello" | "channel",
+  extra: Record<string, unknown> = {},
+): string {
+  return `${JSON.stringify({
+    version: 1,
+    connection_id: "hook-stream",
+    sequence,
+    kind,
+    sent_at: 1000,
+    ...extra,
+  })}\n`;
+}
+
+function liveResponse(lines: string, close = true): Response {
+  const encoded = new TextEncoder().encode(lines);
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded);
+        if (close) controller.close();
+      },
+    }),
+    { status: 200 },
   );
 }
 
 describe("useCockpitFeeds startup", () => {
+  it("uses multiplexed history without starting legacy high-frequency polling", async () => {
+    const never = new Promise<Response>(() => undefined);
+    const fetcher = vi.fn<typeof fetch>((input) => {
+      const url = urlOf(input);
+      if (url === "/live.ndjson" && fetcher.mock.calls.filter(([entry]) => urlOf(entry) === url).length === 1) {
+        return Promise.resolve(
+          liveResponse(
+            liveLine(1, "hello") +
+              liveLine(2, "channel", {
+                channel: "snapshot",
+                status: "live",
+                data: {},
+              }) +
+              liveLine(3, "channel", {
+                channel: "snapshot",
+                status: "unchanged",
+              }) +
+              liveLine(4, "channel", {
+                channel: "events",
+                status: "live",
+                data: {
+                  events: [
+                    {
+                      seq: 9,
+                      ts: 9,
+                      kind: "chat",
+                      payload: { sender: "alpha/one", target: "beta/two", payload: "streamed" },
+                    },
+                  ],
+                  next_cursor: 9,
+                  history_included: true,
+                },
+              }) +
+              liveLine(5, "channel", {
+                channel: "receipts",
+                status: "live",
+                data: { present: true, receipts: [], next_cursor: 9 },
+              }) +
+              liveLine(6, "channel", {
+                channel: "operator_actions",
+                status: "live",
+                data: { present: true, actions: [], next_cursor: 9 },
+              }),
+            false,
+          ),
+        );
+      }
+      if (url === "/live.ndjson") return never;
+      return Promise.resolve(new Response("absent", { status: 404 }));
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    render(<FeedProbe />);
+    await waitFor(() => expect(screen.getByLabelText("feed probe").textContent).toBe("hub:1"));
+    expect(screen.getByLabelText("transport probe").textContent).toBe("live");
+
+    expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/snapshot.json"))).toBe(false);
+    expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/events.json"))).toBe(false);
+    expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/receipts.json"))).toBe(false);
+    expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/operator-actions.json"))).toBe(false);
+  });
+
+  it("starts polling after the live stream remains disconnected past the grace window", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn<typeof fetch>((input) => {
+      const url = urlOf(input);
+      if (url === "/live.ndjson" && fetcher.mock.calls.filter(([entry]) => urlOf(entry) === url).length === 1) {
+        return Promise.resolve(liveResponse(liveLine(1, "hello")));
+      }
+      if (url === "/live.ndjson") return Promise.reject(new Error("offline"));
+      return Promise.resolve(new Response("absent", { status: 404 }));
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    render(<FeedProbe />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/snapshot.json"))).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LIVE_TRANSPORT_FALLBACK_MS);
+    });
+
+    expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/snapshot.json"))).toBe(true);
+    expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/events.json"))).toBe(true);
+    expect(screen.getByLabelText("transport probe").textContent).toBe("fallback");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(screen.getByLabelText("transport probe").textContent).toBe("fallback");
+  });
+
   it("lets the exact event history settle before starting auxiliary reports", async () => {
     let resolveEvents!: (response: Response) => void;
     const eventResponse = new Promise<Response>((resolve) => {

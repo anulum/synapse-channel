@@ -398,6 +398,27 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.beacon__transport {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.beacon__transport--live {
+  border-color: var(--healthy-trail);
+  color: var(--healthy);
+}
+
+.beacon__transport--reconnecting,
+.beacon__transport--gap,
+.beacon__transport--fallback,
+.beacon__transport--unsupported {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
 @keyframes beacon-pulse {
   0% {
     box-shadow: 0 0 0 0 var(--healthy-trail);
