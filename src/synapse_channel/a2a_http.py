@@ -15,7 +15,7 @@ import threading
 import time
 from collections.abc import Iterable
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlparse
 
@@ -28,6 +28,7 @@ from synapse_channel.a2a_validation import (
 )
 from synapse_channel.core.error_boundaries import http_error_boundary
 from synapse_channel.core.protocol import loads_bounded
+from synapse_channel.prompt_bind_http import PromptBindThreadingHTTPServer
 
 if TYPE_CHECKING:
     from synapse_channel.a2a_server import A2ABridge
@@ -48,7 +49,7 @@ parse_push_config_path = _protocol.parse_push_config_path
 problem_response = _protocol.problem_response
 
 
-class A2AHTTPServer(ThreadingHTTPServer):
+class A2AHTTPServer(PromptBindThreadingHTTPServer):
     """Threading A2A HTTP server with bounded concurrent admission.
 
     Each accepted connection must acquire one admission slot before a worker

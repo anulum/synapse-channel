@@ -103,6 +103,7 @@ from synapse_channel.observed_peers import (
     network_observed_fetcher_factory,
     observed_peers_to_dict,
 )
+from synapse_channel.prompt_bind_http import PromptBindThreadingHTTPServer
 from synapse_channel.studio_snapshot import STUDIO_SNAPSHOT_PATH, build_studio_snapshot
 
 SnapshotMapping = dict[str, Any]
@@ -930,7 +931,7 @@ def start_dashboard_server(
         observed_pins=observed_pins,
         allow_hosts=tuple(allow_hosts),
     )
-    server = ThreadingHTTPServer((host, int(port)), handler)
+    server = PromptBindThreadingHTTPServer((host, int(port)), handler)
     thread = threading.Thread(target=server.serve_forever, name="synapse-dashboard", daemon=True)
     thread.start()
     return DashboardServer(
