@@ -103,8 +103,17 @@ describe("InspectorTabs", () => {
 
   it("hops from a log row straight into a traced causality subject", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nf", { status: 404 })));
-    render(<InspectorHarness events={EVENTS} connected provenance="derived" />);
+    const onSelectionChange = vi.fn();
+    render(
+      <InspectorHarness
+        events={EVENTS}
+        connected
+        provenance="derived"
+        onSelectionChange={onSelectionChange}
+      />,
+    );
     await userEvent.click(screen.getByText("claimed t-7"));
+    expect(onSelectionChange).toHaveBeenCalledWith({ kind: "task", id: "t-7" });
     expect(screen.getByRole("tab", { name: "causality" }).getAttribute("aria-selected")).toBe("true");
     await waitFor(() =>
       expect(

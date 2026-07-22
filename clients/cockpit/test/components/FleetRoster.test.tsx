@@ -91,6 +91,20 @@ describe("FleetRoster", () => {
     render(<FleetRoster roster={[entry("quantum/claude")]} waiters={0} />);
     expect(document.querySelector(".roster-row--link")).toBeNull();
   });
+
+  it("marks the shared agent selection without hiding other roster rows", () => {
+    render(
+      <FleetRoster
+        roster={[entry("quantum/claude"), entry("fleet/codex")]}
+        waiters={0}
+        selection={{ kind: "agent", id: "quantum/claude" }}
+      />,
+    );
+    const selected = screen.getByText("claude").closest("li");
+    expect(selected?.className).toContain("context-match");
+    expect(selected?.getAttribute("aria-current")).toBe("true");
+    expect(screen.getByText("codex")).toBeTruthy();
+  });
 });
 
 describe("FleetRoster roles", () => {

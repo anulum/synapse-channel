@@ -18,20 +18,18 @@ import {
 describe("workspaceFromSearch", () => {
   it("uses stable defaults for absent or unknown navigation values", () => {
     expect(workspaceFromSearch("")).toEqual(DEFAULT_WORKSPACE);
-    expect(workspaceFromSearch("?panel=unknown&fleet=timeline&agent=ignored")).toEqual(
-      DEFAULT_WORKSPACE,
-    );
+    expect(workspaceFromSearch("?panel=unknown&fleet=timeline")).toEqual(DEFAULT_WORKSPACE);
   });
 
-  it("accepts the addressable attention panel without fleet selection", () => {
-    expect(workspaceFromSearch("?panel=attention&agent=ignored")).toEqual({
+  it("keeps selection independent from the active panel", () => {
+    expect(workspaceFromSearch("?panel=attention&agent=alpha%2Fone")).toEqual({
       panel: "attention",
       fleetView: "web",
-      selection: null,
+      selection: { kind: "agent", id: "alpha/one" },
     });
   });
 
-  it("parses every fleet selection without decoding an arbitrary object", () => {
+  it("parses every supported selection without decoding an arbitrary object", () => {
     expect(workspaceFromSearch("panel=fleet&agent=alpha%2Fone")).toEqual({
       panel: "fleet",
       fleetView: "web",
@@ -47,9 +45,17 @@ describe("workspaceFromSearch", () => {
       fleetView: "matrix",
       selection: { kind: "route", source: "alpha/one", target: "beta/two" },
     });
+    expect(workspaceFromSearch("?panel=log&task=SCH-17").selection).toEqual({
+      kind: "task",
+      id: "SCH-17",
+    });
+    expect(workspaceFromSearch("?panel=log&event=429").selection).toEqual({
+      kind: "event",
+      seq: 429,
+    });
   });
 
-  it("ignores partial, empty, oversized, controlled, and off-panel selections", () => {
+  it("ignores partial, empty, oversized, controlled, and invalid event selections", () => {
     const oversized = "x".repeat(513);
     expect(workspaceFromSearch("?panel=fleet&from=alpha&to=&agent=beta").selection).toEqual({
       kind: "agent",
@@ -57,7 +63,9 @@ describe("workspaceFromSearch", () => {
     });
     expect(workspaceFromSearch(`?panel=fleet&agent=${oversized}`).selection).toBeNull();
     expect(workspaceFromSearch("?panel=fleet&project=%0Aunsafe").selection).toBeNull();
-    expect(workspaceFromSearch("?panel=audit&agent=alpha").selection).toBeNull();
+    expect(workspaceFromSearch("?panel=audit&event=-1").selection).toBeNull();
+    expect(workspaceFromSearch("?panel=audit&event=1.5").selection).toBeNull();
+    expect(workspaceFromSearch(`?panel=audit&event=${Number.MAX_SAFE_INTEGER}0`).selection).toBeNull();
     expect(workspaceFromSearch("?panel=fleet").selection).toBeNull();
   });
 });
@@ -79,11 +87,11 @@ describe("workspaceToSearch", () => {
 
     expect(
       workspaceToSearch({
-        panel: "fleet",
+        panel: "audit",
         fleetView: "web",
         selection: { kind: "agent", id: "alpha/one" },
       }),
-    ).toBe("?panel=fleet&agent=alpha%2Fone");
+    ).toBe("?panel=audit&agent=alpha%2Fone");
     expect(
       workspaceToSearch({
         panel: "fleet",
@@ -101,6 +109,20 @@ describe("workspaceToSearch", () => {
     expect(
       workspaceToSearch({ panel: "fleet", fleetView: "web", selection: null }, "lang=en"),
     ).toBe("?lang=en&panel=fleet");
+    expect(
+      workspaceToSearch({
+        panel: "log",
+        fleetView: "web",
+        selection: { kind: "task", id: "SCH-17" },
+      }),
+    ).toBe("?task=SCH-17");
+    expect(
+      workspaceToSearch({
+        panel: "log",
+        fleetView: "web",
+        selection: { kind: "event", seq: 429 },
+      }),
+    ).toBe("?event=429");
   });
 
   it("round-trips a shareable fleet route", () => {

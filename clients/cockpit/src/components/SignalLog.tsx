@@ -22,6 +22,8 @@ import { applyQuery, isConstrained, OPEN_QUERY, type LogQuery } from "../lib/log
 import { fetchAndVerify, type VerifyResult } from "../lib/merkleVerify";
 import { readLogExportFile, type PostMortem } from "../lib/postmortem";
 import { diffWindows, type WindowDiff } from "../lib/windowDiff";
+import { eventMatchesSelection } from "../lib/selection";
+import type { CockpitSelection } from "../lib/workspace";
 import type { CockpitEvent } from "../types";
 
 /**
@@ -132,6 +134,10 @@ interface SignalLogProps {
   readonly query?: LogQuery;
   /** Query updates (typing, order toggle, clear). */
   readonly onQueryChange?: ((query: LogQuery) => void) | undefined;
+  /** Shared cockpit entity selected in the URL. */
+  readonly selection?: CockpitSelection | null;
+  /** Selects an exact hub event sequence without tracing it. */
+  readonly onSelectEvent?: ((seq: number) => void) | undefined;
 }
 
 function SignalLogView({
@@ -142,6 +148,8 @@ function SignalLogView({
   provenance = "derived",
   query = OPEN_QUERY,
   onQueryChange,
+  selection = null,
+  onSelectEvent,
 }: SignalLogProps): JSX.Element {
   // Pause freezes the VIEW while the feed keeps recording — the frozen list
   // is a real snapshot of what was on screen, and the header counts what has
@@ -475,6 +483,7 @@ function SignalLogView({
             onSelectTask={onSelectTask}
             provenance={provenance}
             truncated={Math.max(0, shown.length - RENDERED_ROWS_CAP)}
+            selection={selection}
           />
         ) : (
           <table className="log">
@@ -493,7 +502,12 @@ function SignalLogView({
             <tbody>
               {shown.slice(0, RENDERED_ROWS_CAP).map((event) => (
                 <Fragment key={event.seq}>
-                  <tr className={`log__row log__row--${event.kind}`}>
+                  <tr
+                    className={`log__row log__row--${event.kind}${
+                      eventMatchesSelection(event, selection) ? " context-match" : ""
+                    }`}
+                    aria-current={eventMatchesSelection(event, selection) ? "true" : undefined}
+                  >
                     <td className="log__raw">
                       {event.payload !== undefined && (
                         <button
@@ -506,6 +520,17 @@ function SignalLogView({
                           }
                         >
                           {"{}"}
+                        </button>
+                      )}
+                      {provenance === "hub" && onSelectEvent !== undefined && (
+                        <button
+                          type="button"
+                          className="log__select"
+                          aria-pressed={selection?.kind === "event" && selection.seq === event.seq}
+                          aria-label={`Select event sequence ${event.seq}`}
+                          onClick={() => onSelectEvent(event.seq)}
+                        >
+                          #{event.seq}
                         </button>
                       )}
                     </td>
@@ -592,15 +617,29 @@ interface CompactLogListProps {
   readonly events: readonly CockpitEvent[];
   readonly onSelectTask?: ((subject: string) => void) | undefined;
   readonly provenance: "hub" | "derived";
+  readonly selection?: CockpitSelection | null;
 }
 
 /** One row per task with its observed lifecycle inline; chatter stays flat. */
-function CompactLogList({ events, onSelectTask, provenance, truncated = 0 }: CompactLogListProps): JSX.Element {
+function CompactLogList({
+  events,
+  onSelectTask,
+  provenance,
+  truncated = 0,
+  selection = null,
+}: CompactLogListProps): JSX.Element {
   const compact = groupByTask(events);
   return (
     <div className="log-compact">
       {compact.groups.map((group) => (
-        <div key={group.taskId} className="log-group">
+        <div
+          key={group.taskId}
+          className={`log-group${
+            group.events.some((event) => eventMatchesSelection(event, selection))
+              ? " context-match"
+              : ""
+          }`}
+        >
           <div className="log-group__head">
             {onSelectTask !== undefined ? (
               <button
@@ -625,7 +664,9 @@ function CompactLogList({ events, onSelectTask, provenance, truncated = 0 }: Com
             {group.events.map((event) => (
               <span
                 key={event.seq}
-                className={`log-chip log__row--${event.kind}`}
+                className={`log-chip log__row--${event.kind}${
+                  eventMatchesSelection(event, selection) ? " context-match" : ""
+                }`}
                 title={`${timeOf(event)} · ${event.label}${
                   provenance === "hub" ? ` · seq ${event.seq}` : ""
                 }`}
@@ -646,7 +687,9 @@ function CompactLogList({ events, onSelectTask, provenance, truncated = 0 }: Com
             {compact.ungrouped.slice(0, 40).map((event) => (
               <span
                 key={event.seq}
-                className={`log-chip log__row--${event.kind}`}
+                className={`log-chip log__row--${event.kind}${
+                  eventMatchesSelection(event, selection) ? " context-match" : ""
+                }`}
                 title={`${timeOf(event)} · ${event.actor === "" ? "" : `${event.actor} · `}${event.label}`}
               >
                 <span className="log__dot" aria-hidden="true" />

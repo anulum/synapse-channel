@@ -112,6 +112,26 @@ count, 250-event client cap, and available sequence/time range. “Retained
 window at cap” means only that the client window reached its bound; it does not
 claim that the server log is complete or that a specific event was dropped.
 
+## Follow shared selection and filters
+
+The context bar directly below the HUD shows the active investigation state.
+It can contain a shared selection, the identity focus lens, and a brushed time
+window. Remove one chip to widen only that dimension, or use **clear all** to
+return to the unfiltered retained view in one step.
+
+The shared selection supports agents, projects, tasks, directed routes, and
+durable hub-event sequences. It follows the same entity across the activity
+spine, fleet views, signal log, roster, claims, task board, and risk rail where
+that surface has direct retained evidence. A panel that cannot prove a match
+does not manufacture one. Event-sequence selection is therefore available only
+for hub-attested events, not client-derived display rows.
+
+Safe selection state is encoded in bounded query fields: `agent`, `project`,
+`task`, a route pair in `from` and `to`, or `event`. Copying the address,
+reloading it, or using browser Back and Forward restores that selection. The
+focus lens and time-window chips remain distinct filters, so clearing a shared
+selection does not silently discard either filter.
+
 ## Inspect fleet communication
 
 Open the **fleet** inspector tab and choose one of three views:
@@ -125,11 +145,10 @@ The web emphasises a small set of priority routes for quick selection. The
 matrix remains the precise long-tail view. Select a node, project, link, or
 matrix cell to open its evidence detail.
 
-The active inspector panel, fleet mode, and selected agent, project, or route
-live in bounded URL query fields. Copy the address to reopen that workspace;
-browser Back and Forward restore earlier panel and selection changes. Signal-log
-filters remain in the URL hash, so workspace navigation and log queries can be
-shared together.
+The active inspector panel, fleet mode, and shared selection live in bounded
+URL query fields. Copy the address to reopen that workspace; browser Back and
+Forward restore earlier panel and selection changes. Signal-log filters remain
+in the URL hash, so workspace navigation and log queries can be shared together.
 
 A selected link shows retained pairwise messages with delivery outcomes.
 When the dashboard is armed and the principal has message capability, the

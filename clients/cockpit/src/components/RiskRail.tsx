@@ -15,6 +15,8 @@ import type { DeadLetterView } from "../lib/deadLetters";
 import type { HealthAnomaliesState } from "../lib/healthAnomalies";
 import type { WaitsState } from "../lib/waits";
 import { orderSignals } from "../lib/risk";
+import { identityMatchesSelection, subjectMatchesSelection } from "../lib/selection";
+import type { CockpitSelection } from "../lib/workspace";
 import type { RiskView } from "../types";
 
 function deadLetterTime(ts: number | null): string {
@@ -50,6 +52,8 @@ interface RiskRailProps {
   readonly anomalyReport?: HealthAnomaliesState | undefined;
   /** Relays awaiting a second operator (state.pending_relay_approvals). */
   readonly approvals?: readonly PendingApprovalView[];
+  /** Shared cockpit entity selected in the URL. */
+  readonly selection?: CockpitSelection | null;
 }
 
 /** How many safe-next-work rows show before the tail collapses into a count. */
@@ -62,6 +66,7 @@ function RiskRailView({
   waits,
   anomalyReport,
   approvals = [],
+  selection = null,
 }: RiskRailProps): JSX.Element {
   const signals = risk === null ? [] : orderSignals(risk.signals);
   const safeWork = risk?.safe_next_work ?? [];
@@ -88,7 +93,7 @@ function RiskRailView({
             {signals.map((signal, index) => (
               <li
                 key={`${signal.category}:${signal.subject}:${index}`}
-                className={`risk-row risk-row--${signal.level}`}
+                className={`risk-row risk-row--${signal.level}${subjectMatchesSelection(signal.subject, selection) ? " context-match" : ""}`}
               >
                 <span className="risk-row__glyph" aria-hidden="true">
                   {LEVEL_GLYPH[signal.level]}
@@ -114,7 +119,15 @@ function RiskRailView({
             </span>
             <ul className="risk-list">
               {deadLetters.map((letter) => (
-                <li key={letter.target} className="risk-row risk-row--red">
+                <li
+                  key={letter.target}
+                  className={`risk-row risk-row--red${
+                    identityMatchesSelection(letter.target, selection) ||
+                    identityMatchesSelection(letter.lastSender, selection)
+                      ? " context-match"
+                      : ""
+                  }`}
+                >
                   <span className="risk-row__glyph" aria-hidden="true">
                     ✉
                   </span>
@@ -143,7 +156,10 @@ function RiskRailView({
                 ...anomalyReport.data.dangling.map((item) => ({ ...item, category: "dangling" })),
                 ...anomalyReport.data.stale.map((item) => ({ ...item, category: "stale" })),
               ].map((item) => (
-                <li key={`${item.category}:${item.taskId}`} className="risk-row risk-row--amber">
+                <li
+                  key={`${item.category}:${item.taskId}`}
+                  className={`risk-row risk-row--amber${subjectMatchesSelection(item.taskId, selection) ? " context-match" : ""}`}
+                >
                   <span className="risk-row__glyph" aria-hidden="true">
                     !
                   </span>
@@ -169,7 +185,15 @@ function RiskRailView({
             </span>
             <ul className="risk-list">
               {waits.data.waits.slice(0, 8).map((wait) => (
-                <li key={wait.taskId} className="risk-row risk-row--amber">
+                <li
+                  key={wait.taskId}
+                  className={`risk-row risk-row--amber${
+                    subjectMatchesSelection(wait.taskId, selection) ||
+                    identityMatchesSelection(wait.who, selection)
+                      ? " context-match"
+                      : ""
+                  }`}
+                >
                   <span className="risk-row__glyph" aria-hidden="true">
                     ⏳
                   </span>
@@ -204,7 +228,12 @@ function RiskRailView({
               {approvals.map((approval, index) => (
                 <li
                   key={`${approval.action}:${approval.namespace}:${approval.taskId}:${index}`}
-                  className="risk-row risk-row--amber"
+                  className={`risk-row risk-row--amber${
+                    subjectMatchesSelection(approval.taskId, selection) ||
+                    identityMatchesSelection(approval.requester, selection)
+                      ? " context-match"
+                      : ""
+                  }`}
                 >
                   <span className="risk-row__glyph" aria-hidden="true">
                     ✍
@@ -233,7 +262,10 @@ function RiskRailView({
             </span>
             <ul className="risk-list">
               {anomalies.map((flag) => (
-                <li key={`${flag.kind}:${flag.taskId}`} className="risk-row risk-row--amber">
+                <li
+                  key={`${flag.kind}:${flag.taskId}`}
+                  className={`risk-row risk-row--amber${subjectMatchesSelection(flag.taskId, selection) ? " context-match" : ""}`}
+                >
                   <span className="risk-row__glyph" aria-hidden="true">
                     ↻
                   </span>

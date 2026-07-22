@@ -108,6 +108,26 @@ describe("SignalLog", () => {
     expect(screen.getByText("event 9").tagName).not.toBe("BUTTON");
   });
 
+  it("selects an exact hub event and highlights every matching event", async () => {
+    const onSelectEvent = vi.fn();
+    render(
+      <SignalLog
+        events={[
+          eventOf(8, "claim", { actor: "alpha", taskId: "t-8" }),
+          eventOf(7, "release", { actor: "beta", taskId: "t-7" }),
+        ]}
+        provenance="hub"
+        query={QUERY}
+        selection={{ kind: "agent", id: "alpha" }}
+        onSelectEvent={onSelectEvent}
+      />,
+    );
+    expect(screen.getByText("event 8").closest("tr")?.className).toContain("context-match");
+    expect(screen.getByText("event 7").closest("tr")?.className).not.toContain("context-match");
+    await userEvent.click(screen.getByRole("button", { name: "Select event sequence 8" }));
+    expect(onSelectEvent).toHaveBeenCalledWith(8);
+  });
+
   it("drives the query through search, order, view, and reset", async () => {
     const onQueryChange = vi.fn();
     render(

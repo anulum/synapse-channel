@@ -17,6 +17,8 @@ import {
   type TimeWindow,
 } from "../lib/brush";
 import { COLOUR_OF, LANES } from "../lib/events";
+import { eventMatchesSelection } from "../lib/selection";
+import type { CockpitSelection } from "../lib/workspace";
 import type { CockpitEvent, EventSource, Lane } from "../types";
 
 /** Seconds of history held on the spine before an impulse scrolls off the left. */
@@ -54,6 +56,8 @@ interface SpineProps {
   readonly onBrush?: (window: TimeWindow | null) => void;
   /** The current brushed window (controlled by the caller), or null. */
   readonly brush?: TimeWindow | null;
+  /** Shared workspace selection to ring where this spine has direct evidence. */
+  readonly workspaceSelection?: CockpitSelection | null;
 }
 
 interface HoverState {
@@ -85,10 +89,18 @@ function timeOf(ts: number): string {
   });
 }
 
-export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps): JSX.Element {
+export function ActivitySpine({
+  source,
+  onInspect,
+  onBrush,
+  brush,
+  workspaceSelection = null,
+}: SpineProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const events = useRef<CockpitEvent[]>([]);
   const selection = useRef<TimeWindow | null>(null);
+  const selectedContext = useRef<CockpitSelection | null>(null);
+  const redraw = useRef<(() => void) | null>(null);
   const dragOrigin = useRef<number | null>(null);
   const dragCurrent = useRef<number | null>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
@@ -97,7 +109,13 @@ export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps)
   // ref so clearing it from the signal log also clears the canvas highlight.
   useEffect(() => {
     selection.current = brush ?? null;
+    redraw.current?.();
   }, [brush]);
+
+  useEffect(() => {
+    selectedContext.current = workspaceSelection;
+    redraw.current?.();
+  }, [workspaceSelection]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -220,6 +238,14 @@ export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps)
           ctx.arc(x, base - impulse, event.kind === "conflict" ? 2.6 : 1.8, 0, Math.PI * 2);
           ctx.fill();
         }
+        if (eventMatchesSelection(event, selectedContext.current)) {
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = tokens["--ink"];
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(x, base - impulse, 5.5, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
       ctx.globalAlpha = 1;
 
@@ -232,6 +258,7 @@ export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps)
       ctx.stroke();
       ctx.globalAlpha = 1;
     };
+    redraw.current = () => draw(Date.now());
 
     let frame = 0;
     const loop = (): void => {
@@ -346,6 +373,7 @@ export function ActivitySpine({ source, onInspect, onBrush, brush }: SpineProps)
       canvas.removeEventListener("keydown", onKeyDown);
       observer.disconnect();
       themeWatcher.disconnect();
+      redraw.current = null;
       if (frame !== 0) window.cancelAnimationFrame(frame);
     };
   }, [source, onInspect, onBrush]);

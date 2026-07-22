@@ -12,6 +12,7 @@ import {
   workspaceFromSearch,
   workspaceToSearch,
   type CockpitWorkspace,
+  type CockpitSelection,
   type FleetSelection,
   type FleetView,
   type InspectorTab,
@@ -21,6 +22,8 @@ interface CockpitWorkspaceController {
   readonly workspace: CockpitWorkspace;
   readonly setPanel: (panel: InspectorTab) => void;
   readonly setFleetView: (view: FleetView) => void;
+  readonly setSelection: (selection: CockpitSelection | null) => void;
+  readonly setPanelSelection: (panel: InspectorTab, selection: CockpitSelection | null) => void;
   readonly setFleetSelection: (selection: FleetSelection | null) => void;
 }
 
@@ -53,12 +56,7 @@ export function useCockpitWorkspace(): CockpitWorkspaceController {
   }, []);
 
   const setPanel = useCallback(
-    (panel: InspectorTab) =>
-      navigate((current) => ({
-        ...current,
-        panel,
-        selection: panel === "fleet" ? current.selection : null,
-      })),
+    (panel: InspectorTab) => navigate((current) => ({ ...current, panel })),
     [navigate],
   );
 
@@ -73,5 +71,23 @@ export function useCockpitWorkspace(): CockpitWorkspaceController {
     [navigate],
   );
 
-  return { workspace, setPanel, setFleetView, setFleetSelection };
+  const setSelection = useCallback(
+    (selection: CockpitSelection | null) => navigate((current) => ({ ...current, selection })),
+    [navigate],
+  );
+
+  const setPanelSelection = useCallback(
+    (panel: InspectorTab, selection: CockpitSelection | null) =>
+      navigate((current) => ({ ...current, panel, selection })),
+    [navigate],
+  );
+
+  return {
+    workspace,
+    setPanel,
+    setFleetView,
+    setSelection,
+    setPanelSelection,
+    setFleetSelection,
+  };
 }

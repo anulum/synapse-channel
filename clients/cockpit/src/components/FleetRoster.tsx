@@ -10,6 +10,8 @@ import type { JSX } from "react";
 import { memo } from "react";
 
 import type { RosterEntry, RowStatus } from "../lib/roster";
+import { identityMatchesSelection } from "../lib/selection";
+import type { CockpitSelection } from "../lib/workspace";
 
 /** Glyph per status — redundant with colour and row order, never colour alone. */
 const STATUS_GLYPH: Record<RowStatus, string> = {
@@ -44,9 +46,10 @@ interface RosterRowProps {
   readonly entry: RosterEntry;
   /** Opens the agent detail drawer. */
   readonly onInspect?: ((name: string) => void) | undefined;
+  readonly selected: boolean;
 }
 
-function RosterRow({ entry, onInspect }: RosterRowProps): JSX.Element {
+function RosterRow({ entry, onInspect, selected }: RosterRowProps): JSX.Element {
   const held = entry.paths.length;
   const shown = entry.paths.slice(0, PATHS_SHOWN);
   const overflow = held - shown.length;
@@ -54,8 +57,9 @@ function RosterRow({ entry, onInspect }: RosterRowProps): JSX.Element {
 
   return (
     <li
-      className={`roster-row roster-row--${entry.status}${entry.online ? "" : " roster-row--offline"}${onInspect !== undefined ? " roster-row--link" : ""}`}
+      className={`roster-row roster-row--${entry.status}${entry.online ? "" : " roster-row--offline"}${onInspect !== undefined ? " roster-row--link" : ""}${selected ? " context-match" : ""}`}
       onClick={onInspect === undefined ? undefined : () => onInspect(entry.agent)}
+      aria-current={selected ? "true" : undefined}
       title={`${entry.agent} — ${STATUS_WORD[entry.status]}${entry.online ? "" : " (offline)"}`}
     >
       <span className="roster-row__glyph" aria-hidden="true">
@@ -107,9 +111,11 @@ interface FleetRosterProps {
   readonly waiters: number;
   /** Opens the agent detail drawer. */
   readonly onInspect?: ((name: string) => void) | undefined;
+  /** Shared cockpit entity selected in the URL. */
+  readonly selection?: CockpitSelection | null;
 }
 
-function FleetRosterView({ roster, waiters, onInspect }: FleetRosterProps): JSX.Element {
+function FleetRosterView({ roster, waiters, onInspect, selection = null }: FleetRosterProps): JSX.Element {
   const live = roster.filter((entry) => entry.online).length;
 
   return (
@@ -125,7 +131,12 @@ function FleetRosterView({ roster, waiters, onInspect }: FleetRosterProps): JSX.
         ) : (
           <ul className="roster">
             {roster.map((entry) => (
-              <RosterRow key={entry.agent} entry={entry} onInspect={onInspect} />
+              <RosterRow
+                key={entry.agent}
+                entry={entry}
+                onInspect={onInspect}
+                selected={identityMatchesSelection(entry.agent, selection)}
+              />
             ))}
           </ul>
         )}

@@ -18,8 +18,10 @@ import type { MetricsState } from "../lib/metrics";
 import type { SessionsState } from "../lib/sessions";
 import type { LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
+import { fleetSelectionOf } from "../lib/selection";
 import {
   INSPECTOR_TABS,
+  type CockpitSelection,
   type FleetSelection,
   type FleetView,
   type InspectorTab,
@@ -40,6 +42,10 @@ interface InspectorTabsProps {
   readonly onFleetViewChange: (view: FleetView) => void;
   readonly fleetSelection: FleetSelection | null;
   readonly onFleetSelectionChange: (selection: FleetSelection | null) => void;
+  /** Shared cockpit entity selected in the URL. */
+  readonly selection?: CockpitSelection | null;
+  /** Updates the shared selection without forcing a fleet-panel navigation. */
+  readonly onSelectionChange?: ((selection: CockpitSelection | null) => void) | undefined;
   /** Current live evidence requiring operator attention. */
   readonly attention?: readonly AttentionItem[];
   /** Opens an agent detail drawer from an attention row. */
@@ -95,6 +101,8 @@ export function InspectorTabs({
   onFleetViewChange,
   fleetSelection,
   onFleetSelectionChange,
+  selection = null,
+  onSelectionChange,
   attention = [],
   onInspectAgent,
   onInspectTask,
@@ -125,10 +133,14 @@ export function InspectorTabs({
 
   // Master-detail hop: a task named by a log row jumps straight into the
   // causality inspector, subject adopted and traced.
-  const onSelectTask = useCallback((taskId: string) => {
-    setPrefill((current) => ({ subject: taskId, nonce: (current?.nonce ?? 0) + 1 }));
-    onTabChange("causality");
-  }, [onTabChange]);
+  const onSelectTask = useCallback(
+    (taskId: string) => {
+      onSelectionChange?.({ kind: "task", id: taskId });
+      setPrefill((current) => ({ subject: taskId, nonce: (current?.nonce ?? 0) + 1 }));
+      onTabChange("causality");
+    },
+    [onSelectionChange, onTabChange],
+  );
 
   const onTabKeyDown = useCallback(
     (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -214,6 +226,8 @@ export function InspectorTabs({
             window={window}
             onClearWindow={onClearWindow}
             onSelectTask={onSelectTask}
+            selection={selection}
+            onSelectEvent={(seq) => onSelectionChange?.({ kind: "event", seq })}
             provenance={provenance}
             {...(query !== undefined ? { query } : {})}
             onQueryChange={onQueryChange}
@@ -229,7 +243,7 @@ export function InspectorTabs({
             onMessagePeer={onMessagePeer}
             view={fleetView}
             onViewChange={onFleetViewChange}
-            selection={fleetSelection}
+            selection={fleetSelectionOf(selection) ?? fleetSelection}
             onSelectionChange={onFleetSelectionChange}
           />
         ) : tab === "metrics" ? (

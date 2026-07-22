@@ -20,14 +20,22 @@ export type InspectorTab = (typeof INSPECTOR_TABS)[number];
 export const FLEET_VIEWS = ["web", "matrix", "projects"] as const;
 export type FleetView = (typeof FLEET_VIEWS)[number];
 
-export type FleetSelection =
-  | { readonly kind: "agent" | "project"; readonly id: string }
-  | { readonly kind: "route"; readonly source: string; readonly target: string };
+export type CockpitSelection =
+  | { readonly kind: "agent"; readonly id: string }
+  | { readonly kind: "project"; readonly id: string }
+  | { readonly kind: "task"; readonly id: string }
+  | { readonly kind: "route"; readonly source: string; readonly target: string }
+  | { readonly kind: "event"; readonly seq: number };
+
+export type FleetSelection = Extract<
+  CockpitSelection,
+  { readonly kind: "agent" | "project" | "route" }
+>;
 
 export interface CockpitWorkspace {
   readonly panel: InspectorTab;
   readonly fleetView: FleetView;
-  readonly selection: FleetSelection | null;
+  readonly selection: CockpitSelection | null;
 }
 
 export const DEFAULT_WORKSPACE: CockpitWorkspace = {
@@ -36,7 +44,16 @@ export const DEFAULT_WORKSPACE: CockpitWorkspace = {
   selection: null,
 };
 
-const WORKSPACE_PARAMS = ["panel", "fleet", "agent", "project", "from", "to"] as const;
+const WORKSPACE_PARAMS = [
+  "panel",
+  "fleet",
+  "agent",
+  "project",
+  "task",
+  "event",
+  "from",
+  "to",
+] as const;
 const ENTITY_MAX_LENGTH = 512;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/u;
 
@@ -54,13 +71,23 @@ function entity(params: URLSearchParams, key: string): string | null {
   return value;
 }
 
-function selectionFromParams(params: URLSearchParams, panel: InspectorTab): FleetSelection | null {
-  if (panel !== "fleet") return null;
+function eventSequence(params: URLSearchParams): number | null {
+  const raw = params.get("event");
+  if (raw === null || !/^(0|[1-9]\d*)$/u.test(raw)) return null;
+  const seq = Number(raw);
+  return Number.isSafeInteger(seq) ? seq : null;
+}
+
+function selectionFromParams(params: URLSearchParams): CockpitSelection | null {
   const source = entity(params, "from");
   const target = entity(params, "to");
   if (source !== null && target !== null) return { kind: "route", source, target };
+  const event = eventSequence(params);
+  if (event !== null) return { kind: "event", seq: event };
   const agent = entity(params, "agent");
   if (agent !== null) return { kind: "agent", id: agent };
+  const task = entity(params, "task");
+  if (task !== null) return { kind: "task", id: task };
   const project = entity(params, "project");
   return project === null ? null : { kind: "project", id: project };
 }
@@ -71,7 +98,7 @@ export function workspaceFromSearch(search: string): CockpitWorkspace {
   const fleetCandidate = params.get("fleet");
   const panel = memberOf(INSPECTOR_TABS, panelCandidate) ? panelCandidate : DEFAULT_WORKSPACE.panel;
   const fleetView = memberOf(FLEET_VIEWS, fleetCandidate) ? fleetCandidate : DEFAULT_WORKSPACE.fleetView;
-  return { panel, fleetView, selection: selectionFromParams(params, panel) };
+  return { panel, fleetView, selection: selectionFromParams(params) };
 }
 
 export function workspaceToSearch(workspace: CockpitWorkspace, currentSearch = ""): string {
@@ -82,10 +109,12 @@ export function workspaceToSearch(workspace: CockpitWorkspace, currentSearch = "
   if (workspace.panel === "fleet" && workspace.fleetView !== DEFAULT_WORKSPACE.fleetView) {
     params.set("fleet", workspace.fleetView);
   }
-  if (workspace.panel === "fleet" && workspace.selection !== null) {
+  if (workspace.selection !== null) {
     if (workspace.selection.kind === "route") {
       params.set("from", workspace.selection.source);
       params.set("to", workspace.selection.target);
+    } else if (workspace.selection.kind === "event") {
+      params.set("event", String(workspace.selection.seq));
     } else {
       params.set(workspace.selection.kind, workspace.selection.id);
     }

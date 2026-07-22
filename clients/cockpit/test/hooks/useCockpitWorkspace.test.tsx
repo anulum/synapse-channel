@@ -18,12 +18,14 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   history.replaceState(null, "", "/");
 });
 
 describe("useCockpitWorkspace", () => {
   it("initialises from the URL and pushes navigable changes without losing the hash", () => {
-    const { result } = renderHook(() => useCockpitWorkspace());
+    const remove = vi.spyOn(window, "removeEventListener");
+    const { result, unmount } = renderHook(() => useCockpitWorkspace());
     expect(result.current.workspace).toEqual({
       panel: "fleet",
       fleetView: "matrix",
@@ -39,20 +41,29 @@ describe("useCockpitWorkspace", () => {
     expect(location.search).toBe("?panel=fleet&fleet=projects&agent=alpha%2Fone");
 
     act(() => result.current.setPanel("audit"));
-    expect(location.search).toBe("?panel=audit");
-    expect(result.current.workspace.selection).toBeNull();
+    expect(location.search).toBe("?panel=audit&agent=alpha%2Fone");
+    expect(result.current.workspace.selection).toEqual({ kind: "agent", id: "alpha/one" });
+
+    act(() => result.current.setSelection({ kind: "task", id: "SCH-17" }));
+    expect(location.search).toBe("?panel=audit&task=SCH-17");
+
+    act(() => result.current.setPanelSelection("causality", { kind: "task", id: "SCH-18" }));
+    expect(location.search).toBe("?panel=causality&task=SCH-18");
+
+    unmount();
+    expect(remove).toHaveBeenCalledWith("popstate", expect.any(Function));
   });
 
   it("restores an external history location on popstate", () => {
     const { result } = renderHook(() => useCockpitWorkspace());
     act(() => {
-      history.pushState(history.state, "", "/cockpit/?panel=metrics#q=claim");
+      history.pushState(history.state, "", "/cockpit/?panel=metrics&event=17#q=claim");
       window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
     });
     expect(result.current.workspace).toEqual({
       panel: "metrics",
       fleetView: "web",
-      selection: null,
+      selection: { kind: "event", seq: 17 },
     });
   });
 
@@ -61,5 +72,15 @@ describe("useCockpitWorkspace", () => {
     const { result } = renderHook(() => useCockpitWorkspace());
     act(() => result.current.setPanel("fleet"));
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it("initialises safely when a server render has no location", () => {
+    vi.stubGlobal("location", undefined);
+    const { result } = renderHook(() => useCockpitWorkspace());
+    expect(result.current.workspace).toEqual({
+      panel: "log",
+      fleetView: "web",
+      selection: null,
+    });
   });
 });

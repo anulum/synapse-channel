@@ -95,4 +95,26 @@ describe("ClaimsBoard", () => {
     expect(screen.getByText("stale")).toBeTruthy();
     expect(screen.getByText("src/a.py")).toBeTruthy();
   });
+
+  it("highlights claims matched by either selected task or owner", () => {
+    const { rerender } = render(
+      <ClaimsBoard
+        connected
+        conflicts={[]}
+        claims={[view("t-selected"), view("t-other")]}
+        selection={{ kind: "task", id: "t-selected" }}
+      />,
+    );
+    expect(screen.getByText("t-selected").closest("li")?.className).toContain("context-match");
+    expect(screen.getByText("t-other").closest("li")?.className).not.toContain("context-match");
+    rerender(
+      <ClaimsBoard
+        connected
+        conflicts={[]}
+        claims={[view("t-selected"), view("t-other")]}
+        selection={{ kind: "agent", id: "quantum/claude" }}
+      />,
+    );
+    expect(document.querySelectorAll(".claim-row.context-match")).toHaveLength(2);
+  });
 });

@@ -108,6 +108,40 @@ describe("ActivitySpine", () => {
     expect(unsubscribe).toHaveBeenCalled();
   });
 
+  it("rings the event selected by the shared workspace", () => {
+    const ctx = contextStub();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx);
+    const pushRef: { fn: ((event: CockpitEvent) => void) | null } = { fn: null };
+    const source: EventSource = {
+      subscribe(listener) {
+        pushRef.fn = listener;
+        return () => {};
+      },
+      stop() {},
+    };
+    render(<ActivitySpine source={source} workspaceSelection={{ kind: "event", seq: 17 }} />);
+    pushRef.fn?.(eventOf(17));
+    expect(ctx.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 5.5, 0, Math.PI * 2);
+  });
+
+  it("redraws an existing impulse when reduced-motion selection changes", () => {
+    const ctx = contextStub();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx);
+    const pushRef: { fn: ((event: CockpitEvent) => void) | null } = { fn: null };
+    const source: EventSource = {
+      subscribe(listener) {
+        pushRef.fn = listener;
+        return () => {};
+      },
+      stop() {},
+    };
+    const { rerender } = render(<ActivitySpine source={source} />);
+    pushRef.fn?.(eventOf(17));
+    expect(ctx.arc).not.toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 5.5, 0, Math.PI * 2);
+    rerender(<ActivitySpine source={source} workspaceSelection={{ kind: "event", seq: 17 }} />);
+    expect(ctx.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 5.5, 0, Math.PI * 2);
+  });
+
   it("brushes from the keyboard: arrows seed and shift, Escape clears", () => {
     const ctx = contextStub();
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx);

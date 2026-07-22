@@ -143,4 +143,28 @@ describe("RiskRail", () => {
     expect(screen.getByText("+1 more gates")).toBeTruthy();
     expect(screen.getByText(/last from — at —/)).toBeTruthy();
   });
+
+  it("highlights matching task evidence across risk sections", () => {
+    const waits: WaitsReport = {
+      present: true,
+      waits: [{ taskId: "t-selected", title: "", who: "agent/a", onWhat: ["t-x"], since: 1, status: "declared" }],
+      waitCount: 1,
+      logEndSeq: 10,
+      note: "",
+    };
+    render(
+      <RiskRail
+        risk={{
+          level: "amber",
+          signals: [{ level: "amber", category: "stale", subject: "t-selected", detail: "late" }],
+          safe_next_work: [],
+        }}
+        waits={feedOf(waits)}
+        anomalies={[{ taskId: "t-other", kind: "lease_repeat", count: 2, lastTs: 1, detail: "twice" }]}
+        selection={{ kind: "task", id: "t-selected" }}
+      />,
+    );
+    expect(document.querySelectorAll(".risk-row.context-match")).toHaveLength(2);
+    expect(screen.getByText("t-other").closest("li")?.className).not.toContain("context-match");
+  });
 });

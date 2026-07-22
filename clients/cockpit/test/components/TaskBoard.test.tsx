@@ -126,6 +126,19 @@ describe("TaskBoard", () => {
     expect(revoke).toHaveBeenCalledWith("blob:report");
     click.mockRestore();
   });
+
+  it("highlights only the task carried by the shared selection", () => {
+    render(
+      <TaskBoard
+        connected
+        tasks={[task("t-selected", "ready"), task("t-other", "open")]}
+        selection={{ kind: "task", id: "t-selected" }}
+      />,
+    );
+    expect(screen.getByText("t-selected").closest("li")?.className).toContain("context-match");
+    expect(screen.getByText("t-selected").closest("li")?.getAttribute("aria-current")).toBe("true");
+    expect(screen.getByText("t-other").closest("li")?.className).not.toContain("context-match");
+  });
 });
 
 describe("TaskBoard cap headroom", () => {

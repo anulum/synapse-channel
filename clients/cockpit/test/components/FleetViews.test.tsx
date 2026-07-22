@@ -188,6 +188,9 @@ describe("FleetViews", () => {
     );
     expect(screen.getByTestId("fleet-matrix")).toBeTruthy();
     expect(screen.getByLabelText("Communication detail")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "alpha/one to beta/two: 1 messages" }).getAttribute("aria-pressed"),
+    ).toBe("true");
     const matrix = screen.getByRole("tab", { name: "matrix" });
     matrix.focus();
     await user.keyboard("{ArrowRight}");
@@ -199,5 +202,36 @@ describe("FleetViews", () => {
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "projects" }));
     await user.keyboard("{End}");
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "projects" }));
+  });
+
+  it("marks controlled agent and project selections in their visual peers", () => {
+    const { rerender } = render(
+      <FleetHarness
+        events={EVENTS}
+        claims={[]}
+        agents={[]}
+        window={null}
+        connected
+        canMessage={false}
+        initialSelection={{ kind: "agent", id: "alpha/one" }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /alpha\/one, 1 message/u }).getAttribute("aria-pressed")).toBe("true");
+    rerender(
+      <FleetHarness
+        key="project-selection"
+        events={EVENTS}
+        claims={[]}
+        agents={[]}
+        window={null}
+        connected
+        canMessage={false}
+        initialView="projects"
+        initialSelection={{ kind: "project", id: "alpha" }}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /alpha.*1 agent.*1 contact/u }).getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 });

@@ -23,6 +23,7 @@ import { PanelBoundary } from "./components/PanelBoundary";
 import { ReliabilityPanel } from "./components/ReliabilityPanel";
 import { RiskRail } from "./components/RiskRail";
 import { RoleBadge } from "./components/RoleBadge";
+import { SelectionBar } from "./components/SelectionBar";
 import { TaskBoard } from "./components/TaskBoard";
 import { TimeTravelBar } from "./components/TimeTravelBar";
 import { ToastStack } from "./components/ToastStack";
@@ -47,6 +48,7 @@ import {
 import { deriveRoster } from "./lib/roster";
 import { fetchStateAt, type FleetStateAt } from "./lib/stateAt";
 import { focusClaims, focusTasks } from "./lib/focus";
+import { fleetSelectionOf } from "./lib/selection";
 import { buildCommands, type Command } from "./lib/palette";
 import { readPref, writePref } from "./lib/prefs";
 import { factsOf, toastsBetween, type FleetFacts, type Toast } from "./lib/toasts";
@@ -57,7 +59,14 @@ import { useDashboardAccess } from "./hooks/useDashboardAccess";
 import { useCockpitWorkspace } from "./hooks/useCockpitWorkspace";
 
 export function App(): JSX.Element {
-  const { workspace, setPanel, setFleetView, setFleetSelection } = useCockpitWorkspace();
+  const {
+    workspace,
+    setPanel,
+    setFleetView,
+    setSelection,
+    setPanelSelection,
+    setFleetSelection,
+  } = useCockpitWorkspace();
   const auth = useSyncExternalStore(
     subscribeCockpitAuth,
     cockpitAuthSnapshot,
@@ -174,8 +183,14 @@ export function App(): JSX.Element {
     { readonly subject: string; readonly nonce: number } | undefined
   >(undefined);
 
-  const onInspectAgent = useCallback((name: string) => setInspected({ kind: "agent", id: name }), []);
-  const onInspectTask = useCallback((taskId: string) => setInspected({ kind: "task", id: taskId }), []);
+  const onInspectAgent = useCallback((name: string) => {
+    setSelection({ kind: "agent", id: name });
+    setInspected({ kind: "agent", id: name });
+  }, [setSelection]);
+  const onInspectTask = useCallback((taskId: string) => {
+    setSelection({ kind: "task", id: taskId });
+    setInspected({ kind: "task", id: taskId });
+  }, [setSelection]);
   const onCloseDrawer = useCallback(() => setInspected(null), []);
   const onMessagePeer = useCallback((identity: string) => {
     setPaletteCompose((current) => ({ to: identity, nonce: (current?.nonce ?? 0) + 1 }));
@@ -347,8 +362,8 @@ export function App(): JSX.Element {
   const runPaletteCommand = useCallback(
     (command: Command) => {
       if (command.kind === "focus-agent") onFocusChange(command.subject);
-      else if (command.kind === "inspect-agent") setInspected({ kind: "agent", id: command.subject });
-      else if (command.kind === "inspect-task") setInspected({ kind: "task", id: command.subject });
+      else if (command.kind === "inspect-agent") onInspectAgent(command.subject);
+      else if (command.kind === "inspect-task") onInspectTask(command.subject);
       else if (command.kind === "trace-task")
         setTraceRequest((current) => ({ subject: command.subject, nonce: (current?.nonce ?? 0) + 1 }));
       else if (command.kind === "toggle-theme") onToggleTheme();
@@ -356,7 +371,7 @@ export function App(): JSX.Element {
       else if (command.kind === "toggle-travel") onToggleTravel();
       else if (command.kind === "clear-focus") onFocusChange("");
     },
-    [onFocusChange, onToggleTheme, onToggleDensity, onToggleTravel],
+    [onFocusChange, onInspectAgent, onInspectTask, onToggleTheme, onToggleDensity, onToggleTravel],
   );
 
   useEffect(() => {
@@ -410,12 +425,21 @@ export function App(): JSX.Element {
           setPaletteOpen(true);
         }}
       />
+      <SelectionBar
+        selection={workspace.selection}
+        focus={focus}
+        window={brush}
+        onClearSelection={() => setSelection(null)}
+        onClearFocus={() => onFocusChange("")}
+        onClearWindow={onClearWindow}
+      />
       <PanelBoundary name="Activity spine">
         <ActivitySpine
           key={provenance === "hub" ? "hub" : "derived"}
           source={spineSource}
           onBrush={onBrush}
           brush={brush}
+          workspaceSelection={workspace.selection}
         />
       </PanelBoundary>
       <PanelBoundary name="Federation">
@@ -438,7 +462,12 @@ export function App(): JSX.Element {
         <div className="deck__stack deck__stack--roster">
           <div className="seg seg--roster">
             <PanelBoundary name="Fleet roster">
-              <FleetRoster roster={roster} waiters={waiters} onInspect={onInspectAgent} />
+              <FleetRoster
+                roster={roster}
+                waiters={waiters}
+                selection={workspace.selection}
+                onInspect={onInspectAgent}
+              />
             </PanelBoundary>
           </div>
           <div className="seg seg--reliability">
@@ -450,7 +479,13 @@ export function App(): JSX.Element {
         <div className="deck__stack">
           <div className="seg seg--claims">
             <PanelBoundary name="Claims">
-              <ClaimsBoard claims={lensedClaims} conflicts={conflicts} connected={connected} lens={focus} />
+              <ClaimsBoard
+                claims={lensedClaims}
+                conflicts={conflicts}
+                connected={connected}
+                lens={focus}
+                selection={workspace.selection}
+              />
             </PanelBoundary>
           </div>
           <div className="seg seg--signals">
@@ -460,8 +495,13 @@ export function App(): JSX.Element {
                 onTabChange={setPanel}
                 fleetView={workspace.fleetView}
                 onFleetViewChange={setFleetView}
-                fleetSelection={workspace.selection}
+                fleetSelection={fleetSelectionOf(workspace.selection)}
                 onFleetSelectionChange={setFleetSelection}
+                selection={workspace.selection}
+                onSelectionChange={(selection) => {
+                  if (selection?.kind === "task") setPanelSelection("causality", selection);
+                  else setSelection(selection);
+                }}
                 attention={attention}
                 onInspectAgent={onInspectAgent}
                 onInspectTask={onInspectTask}
@@ -497,6 +537,7 @@ export function App(): JSX.Element {
               truncation={travelling ? undefined : boardTruncation(snap.snapshot)}
               onInspect={onInspectTask}
               lens={focus}
+              selection={workspace.selection}
             />
           </PanelBoundary>
         </div>
@@ -510,6 +551,7 @@ export function App(): JSX.Element {
                 waits={waits}
                 anomalyReport={anomalyReport}
                 approvals={approvals}
+                selection={workspace.selection}
               />
             </PanelBoundary>
           </div>
@@ -531,12 +573,18 @@ export function App(): JSX.Element {
       <ToastStack toasts={toasts} onDismiss={onDismissToast} />
       <DetailDrawer
         agent={
-          inspected?.kind === "agent"
+          inspected?.kind === "agent" &&
+          workspace.selection?.kind === "agent" &&
+          workspace.selection.id === inspected.id
             ? agentDetail(inspected.id, roster, claims, deadLetters, log)
             : undefined
         }
         task={
-          inspected?.kind === "task" ? taskDetail(inspected.id, board, claims, log) : undefined
+          inspected?.kind === "task" &&
+          workspace.selection?.kind === "task" &&
+          workspace.selection.id === inspected.id
+            ? taskDetail(inspected.id, board, claims, log)
+            : undefined
         }
         onClose={onCloseDrawer}
         onFilterLog={(text) => {

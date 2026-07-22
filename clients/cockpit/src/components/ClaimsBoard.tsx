@@ -8,6 +8,8 @@
 
 import type { JSX } from "react";
 import { formatCountdown, type BranchConflictView, type ClaimView } from "../lib/claims";
+import { claimMatchesSelection } from "../lib/selection";
+import type { CockpitSelection } from "../lib/workspace";
 
 /** Glyph per urgency — redundant with colour and order, never colour alone. */
 const URGENCY_GLYPH: Record<ClaimView["urgency"], string> = {
@@ -49,15 +51,19 @@ function ConflictBanner({ conflicts }: ConflictBannerProps): JSX.Element {
 
 interface ClaimRowProps {
   readonly view: ClaimView;
+  readonly selected: boolean;
 }
 
-function ClaimRow({ view }: ClaimRowProps): JSX.Element {
+function ClaimRow({ view, selected }: ClaimRowProps): JSX.Element {
   const { claim } = view;
   const countdown = formatCountdown(view.secondsToExpiry);
   const overdue = view.secondsToExpiry !== null && view.secondsToExpiry < 0;
 
   return (
-    <li className={`claim-row claim-row--${view.urgency}`}>
+    <li
+      className={`claim-row claim-row--${view.urgency}${selected ? " context-match" : ""}`}
+      aria-current={selected ? "true" : undefined}
+    >
       <span className="claim-row__glyph" aria-hidden="true">
         {URGENCY_GLYPH[view.urgency]}
       </span>
@@ -98,9 +104,17 @@ interface ClaimsBoardProps {
   readonly connected: boolean;
   /** The active focus lens ("" = off), stated in the head. */
   readonly lens?: string;
+  /** Shared cockpit entity selected in the URL. */
+  readonly selection?: CockpitSelection | null;
 }
 
-export function ClaimsBoard({ claims, conflicts, connected, lens = "" }: ClaimsBoardProps): JSX.Element {
+export function ClaimsBoard({
+  claims,
+  conflicts,
+  connected,
+  lens = "",
+  selection = null,
+}: ClaimsBoardProps): JSX.Element {
   const staleCount = claims.filter((view) => view.claim.stale).length;
 
   return (
@@ -120,7 +134,11 @@ export function ClaimsBoard({ claims, conflicts, connected, lens = "" }: ClaimsB
         ) : (
           <ul className="claims">
             {claims.map((view) => (
-              <ClaimRow key={`${view.claim.owner}:${view.claim.task_id}`} view={view} />
+              <ClaimRow
+                key={`${view.claim.owner}:${view.claim.task_id}`}
+                view={view}
+                selected={claimMatchesSelection(view, selection)}
+              />
             ))}
           </ul>
         )}

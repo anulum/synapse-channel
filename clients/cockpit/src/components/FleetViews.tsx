@@ -79,10 +79,12 @@ function WebView({
   model,
   onSelectNode,
   onSelectEdge,
+  selection,
 }: {
   model: CommunicationModel;
   onSelectNode: (id: string) => void;
   onSelectEdge: (source: string, target: string) => void;
+  selection: FleetSelection | null;
 }): JSX.Element {
   const layout = layoutCommunicationWeb(model);
   const labelled = new Set(model.nodes.slice(0, 14).map((node) => node.id));
@@ -102,13 +104,18 @@ function WebView({
           const to = layout.byId.get(edge.target);
           if (from === undefined || to === undefined || from.id === to.id) return null;
           const select = (): void => onSelectEdge(edge.source, edge.target);
+          const selected =
+            selection?.kind === "route" &&
+            selection.source === edge.source &&
+            selection.target === edge.target;
           return (
             <g
               key={edge.id}
               role="button"
               tabIndex={0}
               aria-label={`${edge.source} to ${edge.target}: ${edge.messages} messages, open communication detail`}
-              className="fleet-web__edge-hit"
+              className={`fleet-web__edge-hit${selected ? " fleet-web__edge-hit--selected" : ""}`}
+              aria-pressed={selected}
               onClick={select}
               onKeyDown={(event) => activate(event, select)}
             >
@@ -127,13 +134,15 @@ function WebView({
             </g>
           );
         })}
-        {layout.nodes.map((node) => (
-          <g
+        {layout.nodes.map((node) => {
+          const selected = selection?.kind === "agent" && selection.id === node.id;
+          return <g
             key={node.id}
             role="button"
             tabIndex={0}
             aria-label={`${node.id}, ${node.messages} message contacts`}
-            className="fleet-web__node-hit"
+            className={`fleet-web__node-hit${selected ? " fleet-web__node-hit--selected" : ""}`}
+            aria-pressed={selected}
             onClick={() => onSelectNode(node.id)}
             onKeyDown={(event) => activate(event, () => onSelectNode(node.id))}
           >
@@ -149,8 +158,8 @@ function WebView({
               cy={node.y}
               r={node.radius}
             />
-          </g>
-        ))}
+          </g>;
+        })}
         {layout.nodes.map((node) =>
           labelled.has(node.id) ? (
             <text
@@ -177,7 +186,18 @@ function WebView({
               <button
                 key={edge.id}
                 type="button"
-                className={`fleet-web__route fleet-web__route--${edge.health}`}
+                className={`fleet-web__route fleet-web__route--${edge.health}${
+                  selection?.kind === "route" &&
+                  selection.source === edge.source &&
+                  selection.target === edge.target
+                    ? " fleet-web__route--selected"
+                    : ""
+                }`}
+                aria-pressed={
+                  selection?.kind === "route" &&
+                  selection.source === edge.source &&
+                  selection.target === edge.target
+                }
                 aria-label={`Select priority route ${edge.source} to ${edge.target}: ${countLabel(edge.messages, "message")}`}
                 onClick={() => onSelectEdge(edge.source, edge.target)}
               >
@@ -209,9 +229,11 @@ function WebView({
 function MatrixView({
   model,
   onSelect,
+  selection,
 }: {
   model: CommunicationModel;
   onSelect: (source: string, target: string) => void;
+  selection: FleetSelection | null;
 }): JSX.Element {
   const identities = matrixIdentities(model);
   const edges = new Map(model.edges.map((edge) => [edge.id, edge]));
@@ -242,11 +264,18 @@ function MatrixView({
                 const style = {
                   "--cell-strength": strength,
                 } as CSSProperties;
+                const selected =
+                  selection?.kind === "route" &&
+                  selection.source === source.id &&
+                  selection.target === target.id;
                 return (
                   <td key={target.id}>
                     <button
                       type="button"
-                      className={`fleet-matrix__cell fleet-matrix__cell--${edge?.health ?? "empty"}`}
+                      className={`fleet-matrix__cell fleet-matrix__cell--${edge?.health ?? "empty"}${
+                        selected ? " fleet-matrix__cell--selected" : ""
+                      }`}
+                      aria-pressed={selected}
                       style={style}
                       aria-label={`${source.id} to ${target.id}: ${edge?.messages ?? 0} messages`}
                       disabled={edge === undefined}
@@ -268,9 +297,11 @@ function MatrixView({
 function ProjectsView({
   projects,
   onSelect,
+  selection,
 }: {
   projects: readonly ProjectTraffic[];
   onSelect: (id: string) => void;
+  selection: FleetSelection | null;
 }): JSX.Element {
   const maxTraffic = Math.max(1, ...projects.map((project) => project.inbound + project.outbound));
   return (
@@ -284,7 +315,12 @@ function ProjectsView({
           <button
             key={project.id}
             type="button"
-            className={`fleet-project fleet-project--${index % 6}`}
+            className={`fleet-project fleet-project--${index % 6}${
+              selection?.kind === "project" && selection.id === project.id
+                ? " fleet-project--selected"
+                : ""
+            }`}
+            aria-pressed={selection?.kind === "project" && selection.id === project.id}
             style={style}
             onClick={() => onSelect(project.id)}
           >
@@ -563,6 +599,7 @@ function FleetViewsComponent({
             {view === "web" ? (
               <WebView
                 model={model}
+                selection={selection}
                 onSelectNode={(id) => onSelectionChange({ kind: "agent", id })}
                 onSelectEdge={(source, target) =>
                   onSelectionChange({
@@ -575,6 +612,7 @@ function FleetViewsComponent({
             ) : view === "matrix" ? (
               <MatrixView
                 model={model}
+                selection={selection}
                 onSelect={(source, target) =>
                   onSelectionChange({
                     kind: "route",
@@ -586,6 +624,7 @@ function FleetViewsComponent({
             ) : (
               <ProjectsView
                 projects={model.projects}
+                selection={selection}
                 onSelect={(id) => onSelectionChange({ kind: "project", id })}
               />
             )}

@@ -11,6 +11,8 @@ import { memo, useState } from "react";
 
 import type { BoardBucket, BoardTask, BoardTruncation, DependencyChip } from "../lib/board";
 import { renderBoardReport } from "../lib/boardReport";
+import { taskMatchesSelection } from "../lib/selection";
+import type { CockpitSelection } from "../lib/workspace";
 import {
   boardQueryConstrained,
   bucketCounts,
@@ -49,13 +51,15 @@ interface TaskRowProps {
   readonly task: BoardTask;
   /** Opens the task detail drawer. */
   readonly onInspect?: ((taskId: string) => void) | undefined;
+  readonly selected: boolean;
 }
 
-function TaskRow({ task, onInspect }: TaskRowProps): JSX.Element {
+function TaskRow({ task, onInspect, selected }: TaskRowProps): JSX.Element {
   return (
     <li
-      className={`board-row board-row--${task.bucket}${onInspect !== undefined ? " board-row--link" : ""}`}
+      className={`board-row board-row--${task.bucket}${onInspect !== undefined ? " board-row--link" : ""}${selected ? " context-match" : ""}`}
       onClick={onInspect === undefined ? undefined : () => onInspect(task.taskId)}
+      aria-current={selected ? "true" : undefined}
     >
       <span className="board-row__glyph" aria-hidden="true">
         {BUCKET_GLYPH[task.bucket]}
@@ -105,9 +109,18 @@ interface TaskBoardProps {
   readonly onInspect?: ((taskId: string) => void) | undefined;
   /** The active focus lens ("" = off), stated in the head. */
   readonly lens?: string;
+  /** Shared cockpit entity selected in the URL. */
+  readonly selection?: CockpitSelection | null;
 }
 
-function TaskBoardView({ tasks, connected, truncation, onInspect, lens = "" }: TaskBoardProps): JSX.Element {
+function TaskBoardView({
+  tasks,
+  connected,
+  truncation,
+  onInspect,
+  lens = "",
+  selection = null,
+}: TaskBoardProps): JSX.Element {
   // The board query is panel-local: a fifty-task board needs finding, not
   // sharing, so it does not ride the URL the way the log's query does.
   const [query, setQuery] = useState<BoardQuery>(OPEN_BOARD_QUERY);
@@ -226,10 +239,20 @@ function TaskBoardView({ tasks, connected, truncation, onInspect, lens = "" }: T
         ) : (
           <ul className="board">
             {active.map((task) => (
-              <TaskRow key={task.taskId} task={task} onInspect={onInspect} />
+              <TaskRow
+                key={task.taskId}
+                task={task}
+                onInspect={onInspect}
+                selected={taskMatchesSelection(task.taskId, selection)}
+              />
             ))}
             {doneShown.map((task) => (
-              <TaskRow key={task.taskId} task={task} onInspect={onInspect} />
+              <TaskRow
+                key={task.taskId}
+                task={task}
+                onInspect={onInspect}
+                selected={taskMatchesSelection(task.taskId, selection)}
+              />
             ))}
             {doneOverflow > 0 && (
               <li className="board-row board-row--more">{`+${doneOverflow} more done`}</li>
