@@ -155,7 +155,12 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
     """
     from synapse_channel.core.durable_ingress import chat_frame_bytes
 
-    response_error = validate_semantic_response(hub.journal, data)
+    response_error = validate_semantic_response(
+        hub.journal,
+        data,
+        sender,
+        hub.roles_of(sender),
+    )
     if response_error is not None:
         await hub._send_json(
             websocket,

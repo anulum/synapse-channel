@@ -126,6 +126,7 @@ describe("deriveCommunicationModel", () => {
       payload: "Acknowledged.",
       response_to_seq: 10,
       response_status: "acknowledged",
+      response_evidence_scope: "recipient",
     });
     const receipt = event(16, "delivery_receipt_immediate", {
       message_seq: 15,
@@ -139,6 +140,7 @@ describe("deriveCommunicationModel", () => {
       delivery: "delivered",
       responseToSeq: 10,
       responseStatus: "acknowledged",
+      responseEvidenceScope: "recipient",
     });
     expect(detail[1]).toMatchObject({
       seq: 10,

@@ -275,6 +275,7 @@ def test_relay_message_response_carries_exact_sequence_status_and_note() -> None
                 "receipt_requested": True,
                 "response_to_seq": 314,
                 "response_status": "needs_input",
+                "response_evidence_scope": "operator_commentary",
             },
         )
     ]

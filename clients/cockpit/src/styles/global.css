@@ -1906,6 +1906,97 @@ body {
   stroke-linejoin: round;
 }
 
+.fleet-web__routes {
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  border-top: 1px solid var(--line);
+  background: var(--panel-raised);
+}
+
+.fleet-web__routes-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.fleet-web__routes-heading strong {
+  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fleet-web__route-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--sp-2);
+}
+
+.fleet-web__route {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 44px;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--dim);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  text-align: left;
+  transition:
+    border-color var(--t-feedback) var(--ease),
+    background var(--t-feedback) var(--ease);
+}
+
+.fleet-web__route:hover {
+  border-color: var(--info);
+  background: var(--selection);
+}
+
+.fleet-web__route:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.fleet-web__route--healthy {
+  border-left-color: var(--healthy);
+}
+
+.fleet-web__route--deferred {
+  border-left-color: var(--warn);
+}
+
+.fleet-web__route--failed {
+  border-left-color: var(--critical);
+}
+
+.fleet-web__route-path {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.fleet-web__route-path span:not([aria-hidden="true"]) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-web__route-meta {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
 .fleet-web__legend {
   display: flex;
   flex-wrap: wrap;

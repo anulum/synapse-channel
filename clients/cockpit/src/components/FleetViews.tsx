@@ -87,6 +87,7 @@ function WebView({
   const layout = layoutCommunicationWeb(model);
   const labelled = new Set(model.nodes.slice(0, 14).map((node) => node.id));
   const projects = [...new Map(layout.nodes.map((node) => [node.project, node.colourIndex])).entries()];
+  const priorityRoutes = model.edges.filter((edge) => edge.source !== edge.target).slice(0, 8);
   const strongest = Math.max(1, ...model.edges.map((edge) => edge.messages));
   return (
     <div className="fleet-web" data-testid="fleet-web">
@@ -165,6 +166,34 @@ function WebView({
           ) : null,
         )}
       </svg>
+      {priorityRoutes.length > 0 && (
+        <section className="fleet-web__routes" aria-label="Priority communication routes">
+          <div className="fleet-web__routes-heading">
+            <strong>priority routes</strong>
+            <span>precise selector · full long-tail in matrix</span>
+          </div>
+          <div className="fleet-web__route-grid">
+            {priorityRoutes.map((edge) => (
+              <button
+                key={edge.id}
+                type="button"
+                className={`fleet-web__route fleet-web__route--${edge.health}`}
+                aria-label={`Select priority route ${edge.source} to ${edge.target}: ${countLabel(edge.messages, "message")}`}
+                onClick={() => onSelectEdge(edge.source, edge.target)}
+              >
+                <span className="fleet-web__route-path">
+                  <span title={edge.source}>{shortIdentity(edge.source)}</span>
+                  <span aria-hidden="true">→</span>
+                  <span title={edge.target}>{shortIdentity(edge.target)}</span>
+                </span>
+                <span className="fleet-web__route-meta">
+                  {edge.messages} · {edge.health}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       <div className="fleet-web__legend" aria-label="Project colours">
         {projects.map(([project, colourIndex]) => (
           <span key={project}>
@@ -392,7 +421,12 @@ function EdgeDetail({
               {message.responseStatus !== null && (
                 <>
                   {" "}
-                  · response {message.responseStatus} to #{message.responseToSeq}
+                  · {message.responseEvidenceScope === "operator_commentary"
+                    ? "operator commentary"
+                    : message.responseEvidenceScope === "recipient"
+                      ? "recipient response"
+                      : "legacy response"}{" "}
+                  {message.responseStatus} to #{message.responseToSeq}
                 </>
               )}
             </span>
@@ -419,7 +453,9 @@ function EdgeDetail({
             {working ? "sending…" : "send response"}
           </button>
           {outcome !== "" && <output>{outcome}</output>}
-          <small>Semantic response by the operator; transport ACK remains unchanged.</small>
+          <small>
+            Attributed operator commentary; not recipient or task-ownership evidence. Transport ACK remains unchanged.
+          </small>
         </form>
       ) : (
         <small className="fleet-conversation__viewer-note">

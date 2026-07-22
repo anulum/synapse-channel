@@ -124,7 +124,19 @@ describe("FleetViews", () => {
       note: "Which revision?",
     });
     expect(await screen.findByText("semantic response delivered")).toBeTruthy();
-    expect(screen.getByText(/transport ACK remains unchanged/u)).toBeTruthy();
+    expect(screen.getByText(/transport ACK remains unchanged/iu)).toBeTruthy();
+  });
+
+  it("offers a precise priority-route selector when graph hit targets overlap", async () => {
+    render(<FleetViews events={EVENTS} claims={[]} agents={[]} window={null} connected canMessage={false} />);
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Select priority route alpha/one to beta/two: 1 message",
+      }),
+    );
+    expect(screen.getByLabelText("Communication detail")).toBeTruthy();
+    expect(screen.getByText("alpha/one → beta/two")).toBeTruthy();
+    expect(screen.getByText("1 · unknown")).toBeTruthy();
   });
 
   it("states empty durable-feed data honestly", () => {

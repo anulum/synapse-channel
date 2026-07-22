@@ -12,6 +12,7 @@ import type { CockpitEvent } from "../types";
 
 export type DeliveryHealth = "healthy" | "deferred" | "failed" | "unknown";
 export type SemanticResponseStatus = "acknowledged" | "in_progress" | "needs_input" | "declined" | "completed";
+export type SemanticResponseEvidenceScope = "recipient" | "operator_commentary";
 
 export interface CommunicationNode {
   readonly id: string;
@@ -63,6 +64,7 @@ export interface ConversationMessage {
   readonly delivery: ReceiptOutcome | "unknown";
   readonly responseToSeq: number | null;
   readonly responseStatus: SemanticResponseStatus | null;
+  readonly responseEvidenceScope: SemanticResponseEvidenceScope | null;
 }
 
 interface MutableNode {
@@ -98,6 +100,10 @@ const SEMANTIC_RESPONSE_STATUSES = new Set<SemanticResponseStatus>([
   "declined",
   "completed",
 ]);
+const SEMANTIC_RESPONSE_EVIDENCE_SCOPES = new Set<SemanticResponseEvidenceScope>([
+  "recipient",
+  "operator_commentary",
+]);
 const CONVERSATION_BODY_LIMIT = 500;
 
 function text(value: unknown): string {
@@ -111,6 +117,12 @@ function finiteNumber(value: unknown): number | null {
 function responseStatus(value: unknown): SemanticResponseStatus | null {
   return typeof value === "string" && SEMANTIC_RESPONSE_STATUSES.has(value as SemanticResponseStatus)
     ? (value as SemanticResponseStatus)
+    : null;
+}
+
+function responseEvidenceScope(value: unknown): SemanticResponseEvidenceScope | null {
+  return typeof value === "string" && SEMANTIC_RESPONSE_EVIDENCE_SCOPES.has(value as SemanticResponseEvidenceScope)
+    ? (value as SemanticResponseEvidenceScope)
     : null;
 }
 
@@ -344,6 +356,7 @@ export function deriveConversationDetail(
         delivery: outcomes.get(event.seq) ?? "unknown",
         responseToSeq: responseTo !== null && responseTo > 0 ? responseTo : null,
         responseStatus: responseStatus(event.payload?.["response_status"]),
+        responseEvidenceScope: responseEvidenceScope(event.payload?.["response_evidence_scope"]),
       };
     })
     .sort((a, b) => b.ts - a.ts || b.seq - a.seq)

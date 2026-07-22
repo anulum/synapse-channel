@@ -285,6 +285,7 @@ class OperatorRelay:
                 receipt_requested=True,
                 response_to_seq=message_seq,
                 response_status=status,
+                response_evidence_scope="operator_commentary",
             )
 
         def resolve() -> RelayOutcome | None:
