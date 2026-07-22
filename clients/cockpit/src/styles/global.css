@@ -1260,7 +1260,7 @@ body {
 .evidence-row__seq {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
-  color: var(--dim);
+  color: var(--muted);
   flex: none;
 }
 
@@ -1268,7 +1268,7 @@ body {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   font-variant-numeric: tabular-nums;
-  color: var(--dim);
+  color: var(--muted);
   flex: none;
 }
 

@@ -24,4 +24,7 @@ extend-exclude = [
     # Translated READMEs are non-English by definition; the checker's English
     # dictionary misreads legitimate foreign words (e.g. French "sur") as typos.
     "docs/readme/*.md",
+    # The typed cockpit catalogue contains complete Slovak and German copy;
+    # catalogue-parity and production-browser gates validate this surface.
+    "clients/cockpit/src/lib/i18n.ts",
 ]

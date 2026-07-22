@@ -148,6 +148,7 @@ export function AuditView({
 
   return (
     <section className="panel" aria-label="Receipt and operator audit">
+      <h2 className="visually-hidden">Audit evidence</h2>
       <div className="panel__head">
         <span>Audit</span>
         <span className="panel__count">{receiptRows.length + actionRows.length}</span>

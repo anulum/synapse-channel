@@ -110,6 +110,7 @@ export function GuideDrawer({ open, activePanel, onClose, onOpenSetup }: GuideDr
             >
               <option value="en">English</option>
               <option value="sk">Slovenčina</option>
+              <option value="de">Deutsch</option>
             </select>
           </label>
         </div>

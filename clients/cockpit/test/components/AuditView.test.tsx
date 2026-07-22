@@ -82,6 +82,9 @@ describe("AuditView", () => {
 
   it("renders an empty present feed as a live, store-attested fact", () => {
     render(<AuditView receipts={receipts([], "live")} operatorActions={actions([], "live")} />);
+    expect(screen.getByRole("heading", { level: 2, name: "Audit evidence" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 3, name: "Universal receipts" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 3, name: "Governed operator actions" })).toBeTruthy();
     expect(screen.getByText("No universal receipts recorded.")).toBeTruthy();
     expect(screen.getByText("No governed operator relay actions recorded.")).toBeTruthy();
     expect(screen.getByText(/receipts live · actions live/u)).toBeTruthy();

@@ -133,5 +133,6 @@ describe("Hud", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open local setup assistant" }));
     expect(onOpenSetup).toHaveBeenCalledOnce();
     expect((screen.getByLabelText("Interface language") as HTMLSelectElement).value).toBe("en");
+    expect(screen.getByRole("option", { name: "DE" })).toBeTruthy();
   });
 });

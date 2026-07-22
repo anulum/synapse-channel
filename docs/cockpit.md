@@ -120,20 +120,21 @@ receive the governed write commands currently enabled by the server.
 
 ## Change language and use the in-product guide
 
-The cockpit ships English and Slovak catalogues in the application bundle. It
-does not download translations at runtime. The initial language comes from the
-first valid source in this order:
+The cockpit ships English, Slovak, and German catalogues in the application
+bundle. It does not download translations at runtime. The initial language
+comes from the first valid source in this order:
 
 1. the explicit `lang` URL parameter;
 2. the operator's saved `cockpit-locale` preference;
 3. the first supported browser language;
 4. English.
 
-Choose **EN** or **SK** in the HUD. The choice updates `lang` without removing
-the active panel, selection, replay, or communication filters, so a shared URL
-reopens the same workspace in the chosen language. The HTML `lang` attribute
-changes with it for assistive technology. A missing future catalogue entry
-falls back to English, and catalogue-parity tests stop incomplete releases.
+Choose **EN**, **SK**, or **DE** in the HUD. The choice updates `lang` without
+removing the active panel, selection, replay, or communication filters, so a
+shared URL reopens the same workspace in the chosen language. The HTML `lang`
+attribute changes with it for assistive technology. A missing future catalogue
+entry falls back to English, and catalogue-parity tests stop incomplete
+releases.
 
 Press `?` or choose **guide** in the HUD to open the local guide. Its first
 topic explains the currently active inspector panel; the remaining topics
@@ -147,7 +148,7 @@ project and task IDs, event kinds, wire fields, capability names, hashes,
 sequence numbers, CLI flags, paths, URLs, and protocol outcome tokens remain
 literal evidence. For example, `accepted`, `delivered`, `undelivered`,
 `rejected`, `rate-limited`, `unreachable`, `stream`, `poll fallback`, and `gap
-detected` retain their exact spelling in Slovak mode.
+detected` retain their exact spelling in Slovak and German modes.
 
 ## Prepare a local setup without browser-side mutation
 

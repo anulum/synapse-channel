@@ -40,15 +40,17 @@ function Probe(): React.JSX.Element {
 }
 
 describe("cockpit localisation", () => {
-  it("keeps the EN and SK catalogues in exact key parity", () => {
+  it("keeps every translated catalogue in exact key parity", () => {
     expect(Object.keys(CATALOGUES.sk).sort()).toEqual(Object.keys(CATALOGUES.en).sort());
+    expect(Object.keys(CATALOGUES.de).sort()).toEqual(Object.keys(CATALOGUES.en).sort());
   });
 
   it("resolves URL, stored preference, browser locale, then English in that order", () => {
     expect(resolveLocale("?lang=sk", "en", ["en-US"])).toBe("sk");
-    expect(resolveLocale("?lang=de", "SK-sk", ["en-US"])).toBe("sk");
-    expect(resolveLocale("", "de", ["de-CH", "sk-SK"])).toBe("sk");
-    expect(resolveLocale("", null, ["de-CH"])).toBe("en");
+    expect(resolveLocale("?lang=de", "sk", ["en-US"])).toBe("de");
+    expect(resolveLocale("?lang=fr", "SK-sk", ["en-US"])).toBe("sk");
+    expect(resolveLocale("", "fr", ["de-CH", "sk-SK"])).toBe("de");
+    expect(resolveLocale("", null, ["fr-CH"])).toBe("en");
   });
 
   it("preserves unrelated URL state when setting a locale", () => {
@@ -58,8 +60,24 @@ describe("cockpit localisation", () => {
 
   it("formats values, preserves unknown placeholders, and falls back to English", () => {
     expect(formatMessage("sk", "hud.transport", { status: "stream" })).toBe("Živý transport: stream");
+    expect(formatMessage("de", "hud.transport", { status: "gap detected" })).toBe("Live-Transport: gap detected");
     expect(formatMessage("en", "hud.transport")).toBe("Live transport: {status}");
     expect(formatCatalogueMessage({}, "hud.live")).toBe("live");
+  });
+
+  it("keeps German protocol outcomes and setup placeholders literal", () => {
+    const outcomes = formatMessage("de", "guide.topic.actions.body");
+    for (const token of [
+      "accepted",
+      "delivered",
+      "undelivered",
+      "denied",
+      "rejected",
+      "rate-limited",
+      "unreachable",
+    ]) expect(outcomes).toContain(token);
+    expect(formatMessage("de", "setup.profile.durableHelp")).toContain("<HUB_DB_PATH>");
+    expect(formatMessage("de", "setup.profile.protectedHelp")).toContain("<OWNER_ONLY_ACCESS_POLICY_PATH>");
   });
 
   it("persists a choice, updates the URL and html lang, and follows history navigation", async () => {
