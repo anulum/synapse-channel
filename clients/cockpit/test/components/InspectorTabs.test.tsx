@@ -73,6 +73,8 @@ describe("InspectorTabs", () => {
     );
     expect(screen.getByRole("tab", { name: /signal log/ }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByLabelText("Signal log")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "attention" }));
+    expect(screen.getByLabelText("Fleet attention queue")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "fleet" }));
     expect(screen.getByLabelText("Fleet communication views")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "topology" }));
@@ -133,7 +135,7 @@ describe("InspectorTabs", () => {
     await user.keyboard("{End}");
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "causality" }));
     await user.keyboard("{Home}");
-    expect(document.activeElement).toBe(log);
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "attention" }));
     await user.keyboard("{ArrowLeft}");
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "causality" }));
   });

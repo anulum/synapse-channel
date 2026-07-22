@@ -9,6 +9,7 @@
 import type { JSX, KeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { OperatorActionsState, ReceiptsState } from "../lib/auditFeeds";
+import type { AttentionItem } from "../lib/attention";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import type { BranchConflictView, ClaimView } from "../lib/claims";
 import type { FederationState } from "../lib/federation";
@@ -23,6 +24,7 @@ import {
   type FleetView,
   type InspectorTab,
 } from "../lib/workspace";
+import { AttentionQueue } from "./AttentionQueue";
 import { AuditView } from "./AuditView";
 import { CausalityView, type CausalityPrefill } from "./CausalityView";
 import { DataCoverage } from "./DataCoverage";
@@ -38,6 +40,12 @@ interface InspectorTabsProps {
   readonly onFleetViewChange: (view: FleetView) => void;
   readonly fleetSelection: FleetSelection | null;
   readonly onFleetSelectionChange: (selection: FleetSelection | null) => void;
+  /** Current live evidence requiring operator attention. */
+  readonly attention?: readonly AttentionItem[];
+  /** Opens an agent detail drawer from an attention row. */
+  readonly onInspectAgent?: ((identity: string) => void) | undefined;
+  /** Opens a task detail drawer from an attention row. */
+  readonly onInspectTask?: ((taskId: string) => void) | undefined;
   /** Events for the signal-log tab, newest first. */
   readonly events: readonly CockpitEvent[];
   /** The brushed spine window filtering the log, or null. */
@@ -87,6 +95,9 @@ export function InspectorTabs({
   onFleetViewChange,
   fleetSelection,
   onFleetSelectionChange,
+  attention = [],
+  onInspectAgent,
+  onInspectTask,
   events,
   window = null,
   onClearWindow,
@@ -187,7 +198,17 @@ export function InspectorTabs({
         role="tabpanel"
         aria-labelledby={`inspector-tab-${tab}`}
       >
-        {tab === "log" ? (
+        {tab === "attention" ? (
+          <AttentionQueue
+            items={attention}
+            connected={connected}
+            onInspectAgent={onInspectAgent}
+            onInspectTask={onInspectTask}
+            onInspectRoute={(source, target) =>
+              onFleetSelectionChange({ kind: "route", source, target })
+            }
+          />
+        ) : tab === "log" ? (
           <SignalLog
             events={events}
             window={window}

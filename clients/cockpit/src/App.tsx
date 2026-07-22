@@ -28,12 +28,14 @@ import { TimeTravelBar } from "./components/TimeTravelBar";
 import { ToastStack } from "./components/ToastStack";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { deriveAnomalies } from "./lib/anomalies";
+import { deriveAttentionQueue } from "./lib/attention";
 import { parsePendingApprovals } from "./lib/approvals";
 import { agentDetail, taskDetail } from "./lib/detail";
 import { boardTruncation, deriveBoard, deriveFindings } from "./lib/board";
 import { parseDeadLetters } from "./lib/deadLetters";
 import type { TimeWindow } from "./lib/brush";
 import { deriveClaims, parseConflicts } from "./lib/claims";
+import { deriveCommunicationModel } from "./lib/communications";
 import { queryFromHash, queryToHash, type LogQuery } from "./lib/logQuery";
 import {
   applyTheme,
@@ -275,6 +277,24 @@ export function App(): JSX.Element {
   const anomalies = useMemo(() => deriveAnomalies(log), [log]);
   const deadLetters = useMemo(() => parseDeadLetters(snap.snapshot), [snap.snapshot]);
   const approvals = useMemo(() => parsePendingApprovals(snap.snapshot), [snap.snapshot]);
+  const communication = useMemo(
+    () => deriveCommunicationModel(log, liveClaims, roster.map((entry) => entry.agent), brush),
+    [log, liveClaims, roster, brush],
+  );
+  const attention = useMemo(
+    () =>
+      deriveAttentionQueue({
+        conflicts: liveConflicts,
+        deadLetters,
+        communication,
+        claims: liveClaims,
+        missingWaiters: snap.snapshot?.fleet.agents.missing_waiters ?? [],
+        board: liveBoard,
+        approvals,
+        waits: waits.data?.waits ?? [],
+      }),
+    [liveConflicts, deadLetters, communication, liveClaims, snap.snapshot, liveBoard, approvals, waits.data],
+  );
   const connected = snap.snapshot !== null;
 
   // Toasts mark transitions between polls — computed from LIVE facts only
@@ -442,6 +462,9 @@ export function App(): JSX.Element {
                 onFleetViewChange={setFleetView}
                 fleetSelection={workspace.selection}
                 onFleetSelectionChange={setFleetSelection}
+                attention={attention}
+                onInspectAgent={onInspectAgent}
+                onInspectTask={onInspectTask}
                 events={log}
                 window={brush}
                 onClearWindow={onClearWindow}

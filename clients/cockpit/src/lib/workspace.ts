@@ -6,7 +6,15 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE CHANNEL — URL-addressable cockpit workspace state
 
-export const INSPECTOR_TABS = ["log", "fleet", "topology", "metrics", "audit", "causality"] as const;
+export const INSPECTOR_TABS = [
+  "attention",
+  "log",
+  "fleet",
+  "topology",
+  "metrics",
+  "audit",
+  "causality",
+] as const;
 export type InspectorTab = (typeof INSPECTOR_TABS)[number];
 
 export const FLEET_VIEWS = ["web", "matrix", "projects"] as const;

@@ -23,6 +23,14 @@ describe("workspaceFromSearch", () => {
     );
   });
 
+  it("accepts the addressable attention panel without fleet selection", () => {
+    expect(workspaceFromSearch("?panel=attention&agent=ignored")).toEqual({
+      panel: "attention",
+      fleetView: "web",
+      selection: null,
+    });
+  });
+
   it("parses every fleet selection without decoding an arbitrary object", () => {
     expect(workspaceFromSearch("panel=fleet&agent=alpha%2Fone")).toEqual({
       panel: "fleet",
@@ -65,6 +73,9 @@ describe("workspaceToSearch", () => {
   it("serialises panels, fleet modes, and each bounded selection", () => {
     const audit: CockpitWorkspace = { panel: "audit", fleetView: "projects", selection: null };
     expect(workspaceToSearch(audit)).toBe("?panel=audit");
+    expect(
+      workspaceToSearch({ panel: "attention", fleetView: "web", selection: null }),
+    ).toBe("?panel=attention");
 
     expect(
       workspaceToSearch({

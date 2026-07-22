@@ -137,6 +137,20 @@ detail can send attributed operator commentary about a selected message.
 Commentary is not recipient acknowledgement or task-ownership evidence, and it
 does not alter transport acknowledgement state.
 
+## Triage the attention queue
+
+Open **attention** for one live, read-only queue of branch conflicts, unread
+dead letters, failed or deferred routes, stale claims, missing waiters, blocked
+tasks, pending relay approvals, and coordination waits. Filter the queue by
+critical or warning evidence, then open the exact agent, task, or route named by
+a row.
+
+The order is deterministic, not an opaque score: critical rows precede warning
+rows, evidence kinds have a documented fixed rank, older available timestamps
+come first within a kind, and stable ids break ties. A row navigates to evidence;
+it does not acknowledge a peer, grant authority, approve a relay, or mutate hub
+state.
+
 ## Work with claims and tasks
 
 - Click a roster identity to open its claims, paths, unread dead-letter facts,
