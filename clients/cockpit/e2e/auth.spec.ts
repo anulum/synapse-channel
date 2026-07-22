@@ -126,9 +126,10 @@ test("the production cockpit unlocks, governs writes, and locks on 401", async (
   expect(cachedRequests.every((cached) => cached.authorization === null)).toBe(true);
   expect(JSON.stringify(cachedRequests)).not.toContain(bearer);
 
-  await page.route("**/snapshot.json*", async (route) => {
+  await page.route("**/live.ndjson*", async (route) => {
     await route.fulfill({ status: 401, contentType: "text/plain", body: "revoked\n" });
   });
+  await page.reload();
   await expect(page.getByRole("heading", { name: "Unlock cockpit" })).toBeVisible({
     timeout: 8_000,
   });

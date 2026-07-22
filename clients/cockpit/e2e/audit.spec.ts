@@ -16,19 +16,15 @@ if (bearer === undefined || bearer === "") {
 
 test("the built cockpit renders store-backed receipts and operator audit", async ({ page }) => {
   await page.goto("/cockpit/");
-  const receiptResponse = page.waitForResponse(
-    (response) => new URL(response.url()).pathname === "/receipts.json" && response.status() === 200,
-  );
-  const actionResponse = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === "/operator-actions.json" && response.status() === 200,
+  const liveResponse = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === "/live.ndjson" && response.status() === 200,
   );
   await page.getByLabel("Dashboard bearer token").fill(bearer);
   await page.getByRole("button", { name: "unlock cockpit" }).click();
   await expect(page.getByRole("banner").getByText("live", { exact: true })).toBeVisible();
-  const [receiptsLoaded, actionsLoaded] = await Promise.all([receiptResponse, actionResponse]);
-  expect(receiptsLoaded.request().headers()["authorization"]).toBe(`Bearer ${bearer}`);
-  expect(actionsLoaded.request().headers()["authorization"]).toBe(`Bearer ${bearer}`);
+  const liveLoaded = await liveResponse;
+  expect(liveLoaded.request().headers()["authorization"]).toBe(`Bearer ${bearer}`);
+  await expect(page.getByLabel("Live transport: stream")).toBeVisible();
 
   const target = `cockpit-e2e-audit-${Date.now().toString(36)}`;
   await page.keyboard.press("Control+k");
