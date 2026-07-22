@@ -215,7 +215,12 @@ def isolated_hub(
     )
     try:
         _await_listening(port, timeout=ready_timeout)
-        yield IsolatedHub(uri=f"ws://localhost:{port}", port=port, db_path=db_path)
+        # Hand subprocess clients an explicit loopback address, not "localhost".
+        # macOS resolves "localhost" to ::1 (IPv6) first, and a client that connects
+        # to a hub bound on 127.0.0.1 can hang there; e2e should exercise the
+        # dashboard/A2A behaviour, not host-name resolution. The hub's own
+        # "localhost" default robustness on macOS is tracked separately.
+        yield IsolatedHub(uri=f"ws://127.0.0.1:{port}", port=port, db_path=db_path)
     finally:
         _stop(proc)
 
