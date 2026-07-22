@@ -63,6 +63,17 @@ State-at responses use a short, bounded cache by exact query, so repeated tabs
 do not reconstruct the same moment independently. These controls change only
 when evidence is computed, never the evidence or its durable sequence.
 
+The causal-health response also carries a **local fleet health** summary for the
+risk rail. It reports counts for retained-log claim contention, leases expired
+by the log's final timestamp, receipt-proven dead letters and later recoveries,
+and escalation events. Messages without a requested receipt appear only once
+their target crosses the durable escalation threshold; the report does not
+invent per-message evidence. It is deliberately content-minimized: it contains
+no agent identity, task id, path, message, note, or raw payload. Its sequence
+range and retained-event count state the evidence boundary. It is computed on
+demand from the selected local store, is not persisted as a second report, and
+performs no network or telemetry operation.
+
 Current dashboards carry the four high-frequency cockpit channels over one
 authenticated, versioned NDJSON connection at `/live.ndjson`: the fleet
 snapshot, durable events, universal receipts, and governed operator actions.
@@ -321,9 +332,10 @@ state.
 - Check board truncation text before treating visible task rows as the whole
   plan.
 
-The risk rail separates server-provided risk, dead letters, waits, pending
-approvals, and client-side repetition heuristics. A heuristic is labelled as
-such and is not an authorisation decision.
+The risk rail separates server-provided risk, dead letters, local fleet-health
+counts, waits, pending approvals, and client-side repetition heuristics. The
+fleet-health row is a retained-log summary, not an identity score; a heuristic
+is labelled as such and is not an authorisation decision.
 
 ## Filter, group, and export the signal log
 

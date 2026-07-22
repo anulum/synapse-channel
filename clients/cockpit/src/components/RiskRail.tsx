@@ -175,6 +175,37 @@ function RiskRailView({
             </ul>
           </div>
         )}
+        {anomalyReport?.data?.fleetHealth != null && (
+          <div className="risk-heuristics">
+            <span
+              className="risk-safe__head"
+              title="Counts only from the currently retained local event log; no remote telemetry or work content."
+            >
+              local fleet health · {anomalyReport.data.fleetHealth.level}
+            </span>
+            <ul className="risk-list">
+              <li
+                className={`risk-row risk-row--${anomalyReport.data.fleetHealth.level === "unknown" ? "amber" : anomalyReport.data.fleetHealth.level}`}
+              >
+                <span className="risk-row__glyph" aria-hidden="true">
+                  ◫
+                </span>
+                <span className="risk-row__body">
+                  <span className="risk-row__subject">
+                    <span className="risk-row__category">contention</span>
+                    {anomalyReport.data.fleetHealth.contentionPairs} retained pair(s)
+                  </span>
+                  <span className="risk-row__detail">
+                    {`${anomalyReport.data.fleetHealth.expiredClaims} expired claim(s) · ${anomalyReport.data.fleetHealth.deadLetteredMessages} receipt-dead-lettered · ${anomalyReport.data.fleetHealth.deadLetterEscalations} escalated · ${anomalyReport.data.fleetHealth.recoveredMessages} receipt-recovered`}
+                  </span>
+                  <span className="risk-row__detail">
+                    {`retained seq ${anomalyReport.data.fleetHealth.firstRetainedSeq}–${anomalyReport.data.fleetHealth.generatedFromSeq} · ${anomalyReport.data.fleetHealth.retainedEvents} event(s) · counts only`}
+                  </span>
+                </span>
+              </li>
+            </ul>
+          </div>
+        )}
         {waits?.data != null && waits.data.waits.length > 0 && (
           <div className="risk-heuristics">
             <span

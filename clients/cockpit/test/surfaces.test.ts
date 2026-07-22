@@ -77,6 +77,20 @@ describe("parseHealthAnomalies", () => {
       ],
       stale: [{ task_id: "s1", owner: "b", age_seconds: 120 }, { task_id: "s2" }],
       anomaly_count: 5,
+      fleet_health: {
+        policy_version: 1,
+        level: "amber",
+        generated_at: 100,
+        first_retained_seq: 2,
+        generated_from_seq: 40,
+        retained_events: 39,
+        contention_pairs: 1,
+        expired_claims: 0,
+        dead_lettered_messages: 2,
+        recovered_messages: 1,
+        dead_letter_escalations: 0,
+        retention: "current retained log",
+      },
     });
     expect(report?.orphaned[0]?.detail).toBe("claim is the task's last word · 10 min");
     expect(report?.dangling[0]?.detail).toBe("depends on absent ghost");
@@ -85,12 +99,30 @@ describe("parseHealthAnomalies", () => {
     expect(report?.stale[0]?.detail).toBe("unreleased and silent · 2 min");
     expect(report?.stale[1]?.detail).toBe("unreleased and silent");
     expect(report?.anomalyCount).toBe(5); // server-stated count wins over row arithmetic
+    expect(report?.fleetHealth).toMatchObject({
+      policyVersion: 1,
+      level: "amber",
+      retainedEvents: 39,
+      contentionPairs: 1,
+      deadLetteredMessages: 2,
+    });
     expect(parseHealthAnomalies({ orphaned: [{ task_id: "x" }] })?.anomalyCount).toBe(1);
     expect(parseHealthAnomalies({ orphaned: [{ task_id: "x" }] })?.orphaned[0]?.detail).toBe(
       "claim is the task's last word",
     );
     expect(parseHealthAnomalies(null)).toBeNull();
     expect(parseHealthAnomalies({ present: false })?.present).toBe(false);
+    expect(parseHealthAnomalies({ fleet_health: [] })?.fleetHealth).toBeNull();
+    expect(
+      parseHealthAnomalies({
+        fleet_health: {
+          level: "invalid",
+          generated_at: "bad",
+          policy_version: -1,
+          retained_events: 1.5,
+        },
+      })?.fleetHealth,
+    ).toMatchObject({ level: "unknown", generatedAt: 0, policyVersion: 0, retainedEvents: 0 });
   });
 });
 

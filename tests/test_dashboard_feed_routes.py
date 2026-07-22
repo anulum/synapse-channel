@@ -928,6 +928,24 @@ def test_health_anomalies_feed_flags_anomalies_with_the_hub_down(tmp_path: Path)
     assert payload["present"] is True
     assert payload["anomaly_count"] >= 1
     assert [item["task_id"] for item in payload["orphaned"]] == ["X"]
+    assert payload["fleet_health"] == {
+        "contention_pairs": 0,
+        "dead_letter_escalations": 0,
+        "dead_lettered_messages": 0,
+        "expired_claims": 0,
+        "first_retained_seq": 1,
+        "generated_at": 1.0,
+        "generated_from_seq": 1,
+        "level": "green",
+        "policy_version": 1,
+        "recovered_messages": 0,
+        "redaction": (
+            "counts only; identities, task ids, paths, messages, notes, and payloads omitted"
+        ),
+        "retained_events": 1,
+        "retention": "computed from the current local retained log; report not persisted",
+        "telemetry": "none",
+    }
 
 
 def test_health_anomalies_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:

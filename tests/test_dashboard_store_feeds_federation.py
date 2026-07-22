@@ -175,6 +175,14 @@ class TestHealthAnomaliesFeed:
         assert document["present"] is True
         assert isinstance(document["anomaly_count"], int)
         assert document["anomaly_count"] >= 1
+        fleet_health = document["fleet_health"]
+        assert isinstance(fleet_health, dict)
+        assert fleet_health["policy_version"] == 1
+        assert fleet_health["telemetry"] == "none"
+        assert fleet_health["generated_from_seq"] >= 1
+        assert "owner" not in fleet_health
+        assert "task_id" not in fleet_health
+        assert "paths" not in fleet_health
         orphaned = document["orphaned"]
         assert isinstance(orphaned, list)
         assert [item["task_id"] for item in orphaned] == ["X"]

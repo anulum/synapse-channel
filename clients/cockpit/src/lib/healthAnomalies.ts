@@ -23,6 +23,22 @@ export interface AnomalyItem {
   readonly seq: number | null;
 }
 
+/** Count-only local report; deliberately contains no work or participant content. */
+export interface LocalFleetHealth {
+  readonly policyVersion: number;
+  readonly level: "green" | "amber" | "red" | "unknown";
+  readonly generatedAt: number;
+  readonly firstRetainedSeq: number;
+  readonly generatedFromSeq: number;
+  readonly retainedEvents: number;
+  readonly contentionPairs: number;
+  readonly expiredClaims: number;
+  readonly deadLetteredMessages: number;
+  readonly recoveredMessages: number;
+  readonly deadLetterEscalations: number;
+  readonly retention: string;
+}
+
 /** The whole anomalies document. */
 export interface HealthAnomalies {
   readonly present: boolean;
@@ -30,10 +46,38 @@ export interface HealthAnomalies {
   readonly dangling: readonly AnomalyItem[];
   readonly stale: readonly AnomalyItem[];
   readonly anomalyCount: number;
+  readonly fleetHealth: LocalFleetHealth | null;
 }
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function asCount(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+function parseFleetHealth(value: unknown): LocalFleetHealth | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const rawLevel = record["level"];
+  const level =
+    rawLevel === "green" || rawLevel === "amber" || rawLevel === "red" ? rawLevel : "unknown";
+  const generatedAt = record["generated_at"];
+  return {
+    policyVersion: asCount(record["policy_version"]),
+    level,
+    generatedAt: typeof generatedAt === "number" && Number.isFinite(generatedAt) ? generatedAt : 0,
+    firstRetainedSeq: asCount(record["first_retained_seq"]),
+    generatedFromSeq: asCount(record["generated_from_seq"]),
+    retainedEvents: asCount(record["retained_events"]),
+    contentionPairs: asCount(record["contention_pairs"]),
+    expiredClaims: asCount(record["expired_claims"]),
+    deadLetteredMessages: asCount(record["dead_lettered_messages"]),
+    recoveredMessages: asCount(record["recovered_messages"]),
+    deadLetterEscalations: asCount(record["dead_letter_escalations"]),
+    retention: asString(record["retention"]),
+  };
 }
 
 function asItems(value: unknown, detailOf: (record: Record<string, unknown>) => string): AnomalyItem[] {
@@ -91,6 +135,7 @@ export function parseHealthAnomalies(raw: unknown): HealthAnomalies | null {
       typeof count === "number" && Number.isFinite(count)
         ? count
         : orphaned.length + dangling.length + stale.length,
+    fleetHealth: parseFleetHealth(payload["fleet_health"]),
   };
 }
 

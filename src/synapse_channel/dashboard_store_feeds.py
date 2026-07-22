@@ -58,6 +58,7 @@ from synapse_channel.core.causality_health import (
 from synapse_channel.core.federation_lifecycle import classify_federation_lifecycle
 from synapse_channel.core.federation_store import load_store
 from synapse_channel.core.federation_wire import bundle_fingerprint
+from synapse_channel.core.fleet_health import local_fleet_health_to_json, run_local_fleet_health
 from synapse_channel.core.journal import EventKind, replay
 from synapse_channel.core.ledger import TERMINAL_LEDGER_STATUSES
 from synapse_channel.core.merkle import proof_to_json, run_proof
@@ -601,18 +602,24 @@ def build_health_anomalies_feed(
 
     This is the honest hub-side "alert" surface: fired alerts live collector
     side (the hub's ``/metrics`` feeds Prometheus/Alertmanager), but the
-    coordination anomalies the log can *prove* belong here — store-derived,
-    deterministic (every age measured against the log's own final timestamp,
-    never the wall clock), and available with the hub down like every store
-    feed.
+    coordination anomalies the log can *prove* belong here. The nested local
+    fleet report adds log-relative lease expiry and content-minimized counts for
+    contention and dead-letter evidence. It is computed on demand from the
+    retained local store and available with the hub down like every store feed.
 
     Raises
     ------
     ValueError
         If the event store does not exist or exceeds the graph node ceiling.
     """
-    report = run_causal_health(db_path, stale_after=stale_after)
-    return {"present": True, **health_to_json(report)}
+    key_file = _event_store_key_file.get()
+    report = run_causal_health(db_path, stale_after=stale_after, key_file=key_file)
+    fleet_health = run_local_fleet_health(db_path, key_file=key_file)
+    return {
+        "present": True,
+        **health_to_json(report),
+        "fleet_health": local_fleet_health_to_json(fleet_health),
+    }
 
 
 def latest_cursor(db_path: str | Path) -> int:

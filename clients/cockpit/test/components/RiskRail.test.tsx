@@ -75,6 +75,20 @@ describe("RiskRail", () => {
       dangling: [{ taskId: "t-dangling", owner: "", detail: "depends on t-ghost", seq: null }],
       stale: [{ taskId: "t-stale", owner: "b", detail: "silent 3 days", seq: 9 }],
       anomalyCount: 3,
+      fleetHealth: {
+        policyVersion: 1,
+        level: "amber",
+        generatedAt: 100,
+        firstRetainedSeq: 2,
+        generatedFromSeq: 40,
+        retainedEvents: 39,
+        contentionPairs: 1,
+        expiredClaims: 0,
+        deadLetteredMessages: 2,
+        recoveredMessages: 1,
+        deadLetterEscalations: 0,
+        retention: "current retained log",
+      },
     };
     const waits: WaitsReport = {
       present: true,
@@ -102,6 +116,12 @@ describe("RiskRail", () => {
     expect(screen.getByText("4 unread")).toBeTruthy();
     expect(screen.getByText(/last from CEO/).textContent).toContain("last from CEO at");
     expect(screen.getByText("hub health anomalies · 3")).toBeTruthy();
+    expect(screen.getByText("local fleet health · amber")).toBeTruthy();
+    expect(screen.getByText("1 retained pair(s)")).toBeTruthy();
+    expect(
+      screen.getByText(/0 expired claim\(s\).*2 receipt-dead-lettered.*1 receipt-recovered/),
+    ).toBeTruthy();
+    expect(screen.getByText(/retained seq 2–40.*39 event\(s\).*counts only/)).toBeTruthy();
     expect(screen.getByText("orphaned")).toBeTruthy();
     expect(screen.getByText("dangling")).toBeTruthy();
     expect(screen.getByText("stale")).toBeTruthy();

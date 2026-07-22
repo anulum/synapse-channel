@@ -15,6 +15,12 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- A content-minimized local fleet-health summary in the cockpit risk rail. It
+  counts retained-log contention pairs, log-relative expired claims,
+  receipt-proven dead letters and recoveries, and escalation events from the
+  currently retained local event store. The projection includes retention
+  boundaries but omits identities, task ids, paths, messages, notes, and
+  payloads; it persists nothing and sends no telemetry.
 - Advisory `cross-os` CI lane (`.github/workflows/cross-os.yml`) that runs the test
   suite on macOS (POSIX) and Windows (NT) with Python 3.12, surfacing real
   filesystem and socket semantics — path separators, permission/`O_NOFOLLOW`
