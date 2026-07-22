@@ -15,6 +15,7 @@ import {
   matrixIdentities,
   projectOf,
 } from "../src/lib/communications";
+import type { ClaimView } from "../src/lib/claims";
 import type { CockpitEvent } from "../src/types";
 
 function event(seq: number, label: string, payload: Record<string, unknown>, ts = seq): CockpitEvent {
@@ -37,6 +38,22 @@ const CHAT = event(10, "body is deliberately ignored", {
   type: "chat",
   payload: "secret body",
 });
+
+function claim(owner: string, taskId: string): ClaimView {
+  return {
+    claim: {
+      task_id: taskId,
+      owner,
+      lease_expires_at: null,
+      paths: [],
+      stale: false,
+      git: null,
+    },
+    urgency: "held",
+    inConflict: false,
+    secondsToExpiry: null,
+  };
+}
 
 describe("deriveCommunicationModel", () => {
   it("projects metadata, correlates receipts, and never carries message bodies", () => {
@@ -99,6 +116,63 @@ describe("deriveCommunicationModel", () => {
     expect(model.nodes.some((node) => node.id === "quiet/agent" && node.messages === 0)).toBe(true);
   });
 
+  it("keeps malformed evidence inert and covers every receipt health outcome", () => {
+    const noPayload: CockpitEvent = {
+      seq: 1,
+      ts: 1,
+      kind: "chat",
+      lane: "task",
+      severity: 0.2,
+      actor: "",
+      label: "no payload",
+      taskId: "",
+    };
+    let payloadReads = 0;
+    const changingPayload = {
+      seq: 2,
+      ts: 2,
+      kind: "chat",
+      lane: "task",
+      severity: 0.2,
+      actor: "",
+      label: "changing payload",
+      taskId: "",
+      get payload() {
+        payloadReads += 1;
+        return payloadReads === 1
+          ? { sender: "volatile/a", target: "volatile/b", type: "chat" }
+          : { sender: "", target: "volatile/b", type: "chat" };
+      },
+    } satisfies CockpitEvent;
+    const model = deriveCommunicationModel(
+      [
+        noPayload,
+        changingPayload,
+        event(3, "not a chat", { sender: 7, target: "q/b", type: "chat" }),
+        event(40, "delivery_receipt_immediate", { message_seq: 30, delivered: false }),
+        event(41, "delivery_receipt_other", { message_seq: 31, deferred: true }),
+        event(42, "delivery_receipt_other", { message_seq: 999, expired: true }),
+        event(43, "delivery_receipt_unknown", { message_seq: "bad" }),
+        event(44, "delivery_receipt_other", { message_seq: 34, deferred: true }),
+        event(45, "delivery_receipt_immediate", { message_seq: 34, delivered: true }),
+        event(30, "chat", { sender: "p/a", target: "q/b", type: "chat", payload: "a" }, 10),
+        event(31, "chat", { sender: "p/c", target: "q/d", type: "chat", payload: "b" }, 10),
+        event(32, "chat", { sender: "p/e", target: "q/f", type: "chat", payload: "c" }, 10),
+        event(33, "chat", { sender: "p/e", target: "q/f", type: "chat", payload: "d" }, 10),
+        event(34, "chat", { sender: "p/g", target: "q/h", type: "chat", payload: "e" }, 10),
+      ],
+      [claim("p/owner", "T-1"), claim("p/owner", "T-2"), claim("", "T-3")],
+      ["", " quiet/agent ", "wild/*", "wild/?", "bare"],
+    );
+    expect(model.edges.find((edge) => edge.source === "p/a")?.health).toBe("failed");
+    expect(model.edges.find((edge) => edge.source === "p/c")?.health).toBe("deferred");
+    expect(model.edges.find((edge) => edge.source === "p/e")?.health).toBe("unknown");
+    expect(model.edges.find((edge) => edge.source === "p/g")?.health).toBe("deferred");
+    expect(model.nodes.find((node) => node.id === "wild/*")?.exact).toBe(false);
+    expect(model.nodes.find((node) => node.id === "wild/?")?.exact).toBe(false);
+    expect(model.projects.find((project) => project.id === "p")?.claims).toBe(2);
+  });
+
   it("bounds the matrix and lays out identical data identically", () => {
     const events = Array.from({ length: 15 }, (_, index) =>
       event(index + 1, "chat", {
@@ -148,5 +222,45 @@ describe("deriveCommunicationModel", () => {
       delivery: "unknown",
     });
     expect(deriveConversationDetail([CHAT], "alpha/one", "other/three")).toEqual([]);
+  });
+
+  it("bounds bodies and rejects invalid semantic metadata without losing pair order", () => {
+    const longBody = "x".repeat(501);
+    const invalid = event(21, "chat", {
+      sender: "alpha/one",
+      target: "beta/two",
+      payload: 7,
+      response_to_seq: -1,
+      response_status: "invented",
+      response_evidence_scope: 7,
+    }, 30);
+    const bounded = event(22, "chat", {
+      sender: "beta/two",
+      target: "alpha/one",
+      payload: longBody,
+      response_status: 7,
+      response_evidence_scope: "invented",
+    }, 30);
+    const detail = deriveConversationDetail(
+      [
+        event(23, "delivery_receipt_deferred", { message_seq: 22, deferred: true }),
+        event(24, "delivery_receipt_immediate", { message_seq: 22, delivered: true }),
+        invalid,
+        bounded,
+      ],
+      "alpha/one",
+      "beta/two",
+      null,
+      0,
+    );
+    expect(detail).toHaveLength(1);
+    expect(detail[0]).toMatchObject({
+      seq: 22,
+      body: `${"x".repeat(500)}…`,
+      delivery: "deferred",
+      responseToSeq: null,
+      responseStatus: null,
+      responseEvidenceScope: null,
+    });
   });
 });

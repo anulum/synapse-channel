@@ -254,13 +254,11 @@ export function deriveCommunicationModel(
   for (const [messageSeq, outcome] of outcomes) {
     const edgeId = messageEdges.get(messageSeq);
     if (edgeId === undefined) continue;
-    const edge = edges.get(edgeId);
-    if (edge === undefined) continue;
+    // A message edge and its sequence index are populated atomically above.
+    const edge = edges.get(edgeId)!;
     edge[outcome] += 1;
-    const source = nodes.get(edge.source);
-    const target = nodes.get(edge.target);
-    if (source !== undefined) source[outcome] += 1;
-    if (target !== undefined) target[outcome] += 1;
+    nodes.get(edge.source)![outcome] += 1;
+    nodes.get(edge.target)![outcome] += 1;
   }
 
   const claimCount = new Map<string, number>();
@@ -383,7 +381,7 @@ export function layoutCommunicationWeb(model: CommunicationModel, width = 760, h
   const projectOrder = [...new Set(visible.map((node) => node.project))].sort((a, b) => a.localeCompare(b));
   const projectIndex = new Map(projectOrder.map((project, index) => [project, index]));
   const ordered = [...visible].sort(
-    (a, b) => (projectIndex.get(a.project) ?? 0) - (projectIndex.get(b.project) ?? 0) || a.id.localeCompare(b.id),
+    (a, b) => projectIndex.get(a.project)! - projectIndex.get(b.project)! || a.id.localeCompare(b.id),
   );
   const radius = Math.max(60, Math.min(width, height) * 0.38);
   const cx = width / 2;
@@ -395,7 +393,7 @@ export function layoutCommunicationWeb(model: CommunicationModel, width = 760, h
       x: cx + Math.cos(angle) * radius,
       y: cy + Math.sin(angle) * radius,
       radius: Math.min(10, 4 + Math.sqrt(node.messages) * 0.75),
-      colourIndex: (projectIndex.get(node.project) ?? 0) % 6,
+      colourIndex: projectIndex.get(node.project)! % 6,
     };
   });
   return { nodes: laid, byId: new Map(laid.map((node) => [node.id, node])) };

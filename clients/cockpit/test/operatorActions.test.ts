@@ -289,6 +289,19 @@ describe("semantic message responses", () => {
       status: "needs_input",
       note: "Which revision?",
     });
+
+    const withoutNote = resolved(
+      outcome("message_response", "delivered", "semantic response delivered", true, 200),
+    );
+    await sendOperatorResponse(
+      { messageSeq: 43, to: "ALPHA", status: "acknowledged" },
+      withoutNote,
+    );
+    expect(JSON.parse(String(withoutNote.mock.calls[0]?.[1]?.body))).toEqual({
+      message_seq: 43,
+      to: "ALPHA",
+      status: "acknowledged",
+    });
   });
 
   it("fails locally without an exact durable sequence or sender", async () => {
