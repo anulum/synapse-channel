@@ -10,8 +10,6 @@
 # Domain terms that are not typos.
 ndjson = "ndjson"
 tiktoken = "tiktoken"
-# Spanish UI acceptance copy: "tema" means theme.
-tema = "tema"
 # TPM 2.0 API type names (tpm2-pytss): the TPM spec abbreviates "parameters" as PARMS
 # (TPMU_PUBLIC_PARMS, TPMS_RSA_PARMS), so it is a verbatim external identifier, not a typo.
 parms = "parms"
@@ -26,7 +24,9 @@ extend-exclude = [
     # Translated READMEs are non-English by definition; the checker's English
     # dictionary misreads legitimate foreign words (e.g. French "sur") as typos.
     "docs/readme/*.md",
-    # The typed cockpit catalogue contains complete Slovak, German, and Spanish copy;
-    # catalogue-parity and production-browser gates validate this surface.
-    "clients/cockpit/src/lib/i18n.ts",
+    # The typed cockpit catalogues contain complete Slovak, German, and Spanish copy;
+    # catalogue-parity and production-browser gates validate these surfaces.
+    "clients/cockpit/src/lib/i18n/catalogues/german.ts",
+    "clients/cockpit/src/lib/i18n/catalogues/slovak.ts",
+    "clients/cockpit/src/lib/i18n/catalogues/spanish.ts",
 ]
