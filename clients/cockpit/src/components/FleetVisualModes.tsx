@@ -8,7 +8,9 @@
 
 import type { JSX, KeyboardEvent } from "react";
 
+import { useCockpitI18n } from "../context/CockpitI18n";
 import { layoutProjectFlow, TIMELINE_LANES, type FleetTimeline, type ProjectFlowModel } from "../lib/fleetVisuals";
+import type { CockpitLocale } from "../lib/i18n";
 import { eventMatchesSelection, identityProject } from "../lib/selection";
 import type { CockpitEvent } from "../types";
 import type { CockpitSelection } from "../lib/workspace";
@@ -19,10 +21,6 @@ function shortIdentity(identity: string): string {
   return value.length > 18 ? `${value.slice(0, 16)}…` : value;
 }
 
-function countLabel(count: number, singular: string): string {
-  return `${count} ${singular}${count === 1 ? "" : "s"}`;
-}
-
 function activate(event: KeyboardEvent<SVGGElement>, run: () => void): void {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
@@ -30,13 +28,13 @@ function activate(event: KeyboardEvent<SVGGElement>, run: () => void): void {
   }
 }
 
-function clockTime(ts: number): string {
-  return new Date(ts * 1000).toLocaleTimeString([], {
+function clockTime(ts: number, locale: CockpitLocale): string {
+  return new Intl.DateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-  });
+  }).format(new Date(ts * 1000));
 }
 
 export function TimelineView({
@@ -50,13 +48,14 @@ export function TimelineView({
   selection: CockpitSelection | null;
   onSelect: (seq: number) => void;
 }): JSX.Element {
+  const { locale, t } = useCockpitI18n();
   const eventBySeq = new Map(events.map((event) => [event.seq, event]));
   const laneY = new Map(TIMELINE_LANES.map((lane, index) => [lane, 54 + index * 62]));
   return (
     <div className="fleet-timeline" data-testid="fleet-timeline">
       <div className="fleet-timeline__chart">
-        <svg viewBox="0 0 760 330" role="group" aria-label="Retained fleet events by temporal lane">
-          <title>Retained fleet event timeline</title>
+        <svg viewBox="0 0 760 330" role="group" aria-label={t("fleet.timeline.aria")}>
+          <title>{t("fleet.timeline.title")}</title>
           <line className="fleet-timeline__axis" x1="132" y1="286" x2="716" y2="286" />
           {TIMELINE_LANES.map((lane) => {
             const y = laneY.get(lane)!;
@@ -80,7 +79,7 @@ export function TimelineView({
                 key={point.seq}
                 role="button"
                 tabIndex={0}
-                aria-label={`Inspect event ${point.seq}: ${point.label}`}
+                aria-label={t("fleet.timeline.inspect", { seq: point.seq, label: point.label })}
                 aria-pressed={selected}
                 className={`fleet-timeline__event fleet-timeline__event--${point.lane}${selected ? " fleet-timeline__event--selected" : ""}`}
                 onClick={inspect}
@@ -88,36 +87,36 @@ export function TimelineView({
               >
                 <circle className="fleet-timeline__target" cx={x} cy={y} r="15" />
                 <circle className="fleet-timeline__mark" cx={x} cy={y} r={selected ? 7 : 5}>
-                  <title>{`#${point.seq} · ${point.label} · ${clockTime(point.ts)}`}</title>
+                  <title>{`#${point.seq} · ${point.label} · ${clockTime(point.ts, locale)}`}</title>
                 </circle>
               </g>
             );
           })}
           <text className="fleet-timeline__time-label" x="132" y="312">
-            {timeline.firstTs === null ? "no retained time" : clockTime(timeline.firstTs)}
+            {timeline.firstTs === null ? t("fleet.timeline.noTime") : clockTime(timeline.firstTs, locale)}
           </text>
           <text className="fleet-timeline__time-label fleet-timeline__time-label--end" x="716" y="312">
-            {timeline.lastTs === null ? "" : clockTime(timeline.lastTs)}
+            {timeline.lastTs === null ? "" : clockTime(timeline.lastTs, locale)}
           </text>
         </svg>
       </div>
       <div className="fleet-evidence__heading">
-        <strong>exact event peer</strong>
+        <strong>{t("fleet.timeline.exactPeer")}</strong>
         <span>
-          {timeline.points.length} shown
-          {timeline.limited ? ` of ${timeline.total}` : ""}
+          {t("fleet.timeline.shown", { count: timeline.points.length })}
+          {timeline.limited ? t("fleet.timeline.of", { total: timeline.total }) : ""}
         </span>
       </div>
       <div className="fleet-evidence__table-wrap">
         <table className="fleet-evidence">
-          <caption className="visually-hidden">Exact retained events represented in the temporal lanes</caption>
+          <caption className="visually-hidden">{t("fleet.timeline.caption")}</caption>
           <thead>
             <tr>
-              <th scope="col">lane</th>
-              <th scope="col">sequence</th>
-              <th scope="col">time</th>
-              <th scope="col">actor / project</th>
-              <th scope="col">evidence</th>
+              <th scope="col">{t("fleet.timeline.lane")}</th>
+              <th scope="col">{t("fleet.timeline.sequence")}</th>
+              <th scope="col">{t("fleet.timeline.time")}</th>
+              <th scope="col">{t("fleet.timeline.actorProject")}</th>
+              <th scope="col">{t("fleet.timeline.evidence")}</th>
             </tr>
           </thead>
           <tbody>
@@ -140,7 +139,7 @@ export function TimelineView({
                     </button>
                   </td>
                   <td>
-                    <time dateTime={new Date(point.ts * 1000).toISOString()}>{clockTime(point.ts)}</time>
+                    <time dateTime={new Date(point.ts * 1000).toISOString()}>{clockTime(point.ts, locale)}</time>
                   </td>
                   <td title={point.actor}>{point.actor || point.project}</td>
                   <td>{point.label}</td>
@@ -174,22 +173,23 @@ export function ProjectFlowView({
   onSelectProject: (id: string) => void;
   onSelectEvent: (seq: number) => void;
 }): JSX.Element {
+  const { t } = useCockpitI18n();
   const layout = layoutProjectFlow(model);
   const strongest = Math.max(1, ...model.links.map((link) => link.messages));
   return (
     <div className="fleet-flow" data-testid="fleet-flow">
-      <svg viewBox="0 0 760 340" role="group" aria-label="Directed retained message flow between projects">
-        <title>Retained project message flow</title>
+      <svg viewBox="0 0 760 340" role="group" aria-label={t("fleet.flow.aria")}>
+        <title>{t("fleet.flow.title")}</title>
         <defs>
           <marker id="fleet-flow-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
             <path d="M0,0 L7,3.5 L0,7 z" className="fleet-flow__arrow" />
           </marker>
         </defs>
         <text className="fleet-flow__column" x="24" y="22">
-          OUTBOUND PROJECTS
+          {t("fleet.flow.outbound")}
         </text>
         <text className="fleet-flow__column fleet-flow__column--end" x="736" y="22">
-          INBOUND PROJECTS
+          {t("fleet.flow.inbound")}
         </text>
         {model.links.map((link) => {
           const source = layout.sources.get(link.source);
@@ -208,7 +208,12 @@ export function ProjectFlowView({
               key={link.id}
               role="button"
               tabIndex={0}
-              aria-label={`${link.source} to ${link.target}: ${countLabel(link.messages, "retained message")}; inspect event ${evidenceSeq}`}
+              aria-label={t("fleet.flow.inspect", {
+                source: link.source,
+                target: link.target,
+                count: link.messages,
+                seq: evidenceSeq,
+              })}
               aria-pressed={selected}
               className={`fleet-flow__link-hit${selected ? " fleet-flow__link-hit--selected" : ""}`}
               onClick={inspect}
@@ -221,7 +226,12 @@ export function ProjectFlowView({
                 strokeWidth={1 + (link.messages / strongest) * 5}
                 markerEnd="url(#fleet-flow-arrow)"
               >
-                <title>{`${link.source} → ${link.target}: ${link.messages} retained messages; latest #${evidenceSeq}`}</title>
+                <title>{t("fleet.flow.inspect", {
+                  source: link.source,
+                  target: link.target,
+                  count: link.messages,
+                  seq: evidenceSeq,
+                })}</title>
               </path>
             </g>
           );
@@ -234,7 +244,7 @@ export function ProjectFlowView({
               key={`${index < layout.sources.size ? "source" : "target"}-${position.id}`}
               role="button"
               tabIndex={0}
-              aria-label={`Select project ${position.id}`}
+              aria-label={t("fleet.flow.selectProject", { project: position.id })}
               aria-pressed={selected}
               className={`fleet-flow__project${selected ? " fleet-flow__project--selected" : ""}`}
               onClick={inspect}
@@ -250,23 +260,23 @@ export function ProjectFlowView({
         })}
       </svg>
       <div className="fleet-evidence__heading">
-        <strong>exact route evidence</strong>
+        <strong>{t("fleet.flow.exactEvidence")}</strong>
         <span>
-          {model.links.length} flows
-          {model.limited ? " · bounded view" : ""}
+          {t("fleet.flow.flowCount", { count: model.links.length })}
+          {model.limited ? ` · ${t("fleet.flow.bounded")}` : ""}
         </span>
       </div>
       <div className="fleet-evidence__table-wrap">
         <table className="fleet-evidence">
           <caption className="visually-hidden">
-            Directed project aggregates and their newest exact retained message event
+            {t("fleet.flow.caption")}
           </caption>
           <thead>
             <tr>
-              <th scope="col">from project</th>
-              <th scope="col">to project</th>
-              <th scope="col">retained messages</th>
-              <th scope="col">latest evidence</th>
+              <th scope="col">{t("fleet.flow.fromProject")}</th>
+              <th scope="col">{t("fleet.flow.toProject")}</th>
+              <th scope="col">{t("fleet.flow.retainedMessages")}</th>
+              <th scope="col">{t("fleet.flow.latestEvidence")}</th>
             </tr>
           </thead>
           <tbody>

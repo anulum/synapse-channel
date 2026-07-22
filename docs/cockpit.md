@@ -161,6 +161,15 @@ literal evidence. For example, `accepted`, `delivered`, `undelivered`,
 `rejected`, `rate-limited`, `unreachable`, `stream`, `poll fallback`, and `gap
 detected` retain their exact spelling in Slovak, German, Spanish, and French modes.
 
+The same boundary covers the complete fleet communication workbench. Its five
+view controls, filters, graph and table descriptions, selected-entity details,
+evidence-chain explanations, and operator-response controls follow the chosen
+locale. Identity strings, project names, message bodies, sequence numbers,
+delivery and semantic-response statuses, and server-authored outcome detail are
+not translated. A locale change therefore improves navigation and explanation
+without rewriting the evidence being inspected or the values sent back to the
+hub.
+
 ## Prepare a local setup without browser-side mutation
 
 Choose **setup** in the HUD, or open it from the in-product guide. The first F8

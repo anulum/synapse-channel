@@ -13,6 +13,8 @@ import { useState, type JSX } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FleetViews } from "../../src/components/FleetViews";
+import { CockpitI18nProvider } from "../../src/context/CockpitI18n";
+import { formatMessage, type MessageKey } from "../../src/lib/i18n";
 import type { CockpitEvent } from "../../src/types";
 import {
   DEFAULT_COMMUNICATION_FILTER,
@@ -20,7 +22,12 @@ import {
 } from "../../src/lib/communicationFilters";
 import type { CockpitSelection, FleetView } from "../../src/lib/workspace";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  history.replaceState(null, "", "/cockpit/");
+  document.documentElement.removeAttribute("lang");
+});
 
 const EVENTS: readonly CockpitEvent[] = [
   {
@@ -234,6 +241,65 @@ describe("FleetViews", () => {
     });
     expect(await screen.findByText("semantic response delivered")).toBeTruthy();
     expect(screen.getByText(/transport ACK remains unchanged/iu)).toBeTruthy();
+  });
+
+  it("localises every communication mode while preserving exact response values", async () => {
+    history.replaceState(null, "", "/cockpit/?panel=fleet&lang=fr");
+    const respondToMessage = vi.fn().mockResolvedValue({
+      kind: "accepted",
+      status: "delivered",
+      detail: "semantic response delivered",
+    });
+    const user = userEvent.setup();
+    const fr = (
+      key: MessageKey,
+      values: Readonly<Record<string, string | number>> = {},
+    ): string => formatMessage("fr", key, values);
+    render(
+      <CockpitI18nProvider>
+        <FleetHarness
+          events={EVENTS}
+          claims={[]}
+          agents={[]}
+          window={null}
+          connected
+          canMessage
+          initialSelection={{ kind: "route", source: "alpha/one", target: "beta/two" }}
+          respondToMessage={respondToMessage}
+        />
+      </CockpitI18nProvider>,
+    );
+
+    for (const key of [
+      "fleet.view.web",
+      "fleet.view.matrix",
+      "fleet.view.projects",
+      "fleet.view.timeline",
+      "fleet.view.flow",
+    ] as const) {
+      expect(screen.getByRole("tab", { name: fr(key) })).toBeTruthy();
+    }
+    expect(screen.getByLabelText(fr("fleet.filters.query"))).toBeTruthy();
+    expect(screen.getByLabelText(fr("fleet.filters.health"))).toBeTruthy();
+    expect(screen.getByLabelText(fr("fleet.detail.linkAria"))).toBeTruthy();
+    await user.selectOptions(
+      screen.getByLabelText(fr("fleet.detail.respondTo", { seq: 2 })),
+      "needs_input",
+    );
+    await user.type(screen.getByLabelText(fr("fleet.detail.optionalNote")), "Quelle révision ?");
+    await user.click(screen.getByRole("button", { name: fr("fleet.detail.sendResponse") }));
+
+    expect(respondToMessage).toHaveBeenCalledWith({
+      messageSeq: 2,
+      to: "alpha/one",
+      status: "needs_input",
+      note: "Quelle révision ?",
+    });
+    expect(await screen.findByText("semantic response delivered")).toBeTruthy();
+    await user.click(screen.getByRole("tab", { name: fr("fleet.view.timeline") }));
+    expect(screen.getByText(fr("fleet.timeline.title"))).toBeTruthy();
+    await user.click(screen.getByRole("tab", { name: fr("fleet.view.flow") }));
+    expect(screen.getByText(fr("fleet.flow.title"))).toBeTruthy();
   });
 
   it("offers a precise priority-route selector when graph hit targets overlap", async () => {

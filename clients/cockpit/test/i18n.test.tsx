@@ -19,6 +19,7 @@ import {
   LOCALE_PREFERENCE_KEY,
   resolveLocale,
   searchWithLocale,
+  type MessageKey,
 } from "../src/lib/i18n";
 
 afterEach(() => {
@@ -45,6 +46,17 @@ describe("cockpit localisation", () => {
     expect(Object.keys(CATALOGUES.de).sort()).toEqual(Object.keys(CATALOGUES.en).sort());
     expect(Object.keys(CATALOGUES.es).sort()).toEqual(Object.keys(CATALOGUES.en).sort());
     expect(Object.keys(CATALOGUES.fr).sort()).toEqual(Object.keys(CATALOGUES.en).sort());
+  });
+
+  it("keeps interpolation placeholders identical in every catalogue", () => {
+    const placeholders = (value: string): readonly string[] =>
+      [...value.matchAll(/\{([A-Za-z0-9_]+)\}/gu)].map((match) => match[1] ?? "").sort();
+    const keys = Object.keys(CATALOGUES.en) as MessageKey[];
+    for (const catalogue of Object.values(CATALOGUES)) {
+      for (const key of keys) {
+        expect(placeholders(catalogue[key]), key).toEqual(placeholders(CATALOGUES.en[key]));
+      }
+    }
   });
 
   it("resolves URL, stored preference, browser locale, then English in that order", () => {

@@ -15,6 +15,14 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- The five-mode fleet communication workbench now follows the selected English,
+  Slovak, German, Spanish, or French cockpit locale across view controls,
+  filters, graph and table descriptions, selection details, evidence chains,
+  and operator-response controls. Exact identities, message bodies, sequence
+  numbers, delivery and response statuses, and server-authored outcome details
+  remain literal evidence. The former broad fleet component is split into
+  orchestration, communication projections, conversation detail, and temporal
+  projection modules, with focused component and production-browser coverage.
 - A complete offline French cockpit catalogue with typed key parity, URL,
   saved-preference, and browser-language resolution. The HUD and in-product
   guide expose `FR`; built-browser coverage verifies the French guide and setup
