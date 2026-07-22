@@ -42,7 +42,7 @@ repos:
         # bypasses the _typos.toml files.extend-exclude walker rule; the
         # translated READMEs, cockpit catalogues, and opaque AEF signatures must
         # be excluded here too.
-        exclude: ^(docs/readme/|tests/fixtures/aef_receipt_v0_1\.json$|clients/cockpit/src/lib/i18n/catalogues/(?:slovak|german|spanish)\.ts$)
+        exclude: ^(docs/readme/|tests/fixtures/aef_receipt_v0_1\.json$|clients/cockpit/src/lib/i18n/catalogues/(?:french|german|slovak|spanish)\.ts$)
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:

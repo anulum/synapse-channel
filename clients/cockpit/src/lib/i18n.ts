@@ -11,11 +11,12 @@ import {
   type Catalogue,
   type MessageKey,
 } from "./i18n/catalogues/english";
+import { FRENCH } from "./i18n/catalogues/french";
 import { GERMAN } from "./i18n/catalogues/german";
 import { SLOVAK } from "./i18n/catalogues/slovak";
 import { SPANISH } from "./i18n/catalogues/spanish";
 
-export const SUPPORTED_LOCALES = ["en", "sk", "de", "es"] as const;
+export const SUPPORTED_LOCALES = ["en", "sk", "de", "es", "fr"] as const;
 export type CockpitLocale = (typeof SUPPORTED_LOCALES)[number];
 export type { MessageKey };
 
@@ -26,11 +27,14 @@ export const CATALOGUES: Readonly<Record<CockpitLocale, Catalogue>> = {
   sk: SLOVAK,
   de: GERMAN,
   es: SPANISH,
+  fr: FRENCH,
 };
 
 function normaliseLocale(candidate: string): CockpitLocale | null {
   const base = candidate.trim().toLowerCase().split("-")[0];
-  return base === "en" || base === "sk" || base === "de" || base === "es" ? base : null;
+  return base === "en" || base === "sk" || base === "de" || base === "es" || base === "fr"
+    ? base
+    : null;
 }
 
 export function resolveLocale(

@@ -74,6 +74,14 @@ test("the built cockpit guide is contextual, local, multilingual, persistent, an
   await expect(page.locator("html")).toHaveAttribute("lang", "es");
   expect(new URL(page.url()).searchParams.get("lang")).toBe("es");
   expect(await page.evaluate(() => localStorage.getItem("cockpit-locale"))).toBe("es");
+
+  await spanishGuide.getByLabel("Idioma de la interfaz").selectOption("fr");
+  const frenchGuide = page.getByRole("dialog", { name: "Guide du cockpit" });
+  await expect(frenchGuide).toBeVisible();
+  await expect(frenchGuide).toContainText("aucune requête ni télémétrie d’usage ne quitte ce navigateur");
+  await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+  expect(new URL(page.url()).searchParams.get("lang")).toBe("fr");
+  expect(await page.evaluate(() => localStorage.getItem("cockpit-locale"))).toBe("fr");
   const darkResult = await page.evaluate(async () =>
     (window as unknown as AxeWindow).axe.run(document),
   );
@@ -81,14 +89,14 @@ test("the built cockpit guide is contextual, local, multilingual, persistent, an
 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button", { name: "Cambiar al tema claro" }).click();
+  await page.getByRole("button", { name: "Passer au thème clair" }).click();
   await page.reload();
-  await expect(page.locator("html")).toHaveAttribute("lang", "es");
-  await expect(page.getByLabel("Idioma de la interfaz")).toHaveValue("es");
+  await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+  await expect(page.getByLabel("Langue de l’interface")).toHaveValue("fr");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Abrir la guía del cockpit" }).click();
-  const narrowGuide = page.getByRole("dialog", { name: "Guía del cockpit" });
+  await page.getByRole("button", { name: "Ouvrir le guide du cockpit" }).click();
+  const narrowGuide = page.getByRole("dialog", { name: "Guide du cockpit" });
   await expect(narrowGuide).toBeVisible();
   const box = await narrowGuide.boundingBox();
   expect(box?.x).toBe(0);
@@ -100,15 +108,15 @@ test("the built cockpit guide is contextual, local, multilingual, persistent, an
   );
   expect(lightResult.violations, JSON.stringify(lightResult.violations)).toEqual([]);
 
-  await narrowGuide.getByRole("button", { name: "Abrir el asistente de configuración de solo lectura" }).click();
-  const spanishSetup = page.getByRole("dialog", { name: "Asistente de configuración" });
-  await expect(spanishSetup).toBeVisible();
-  expect(await spanishSetup.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await narrowGuide.getByRole("button", { name: "Ouvrir l’assistant de configuration en lecture seule" }).click();
+  const frenchSetup = page.getByRole("dialog", { name: "Assistant de configuration" });
+  await expect(frenchSetup).toBeVisible();
+  expect(await frenchSetup.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
-  await spanishSetup.getByRole("button", { name: "Cerrar el asistente de configuración" }).click();
+  await frenchSetup.getByRole("button", { name: "Fermer l’assistant de configuration" }).click();
   await page.setViewportSize({ width: 844, height: 390 });
-  await page.getByRole("button", { name: "Abrir la guía del cockpit" }).click();
-  const landscapeGuide = page.getByRole("dialog", { name: "Guía del cockpit" });
+  await page.getByRole("button", { name: "Ouvrir le guide du cockpit" }).click();
+  const landscapeGuide = page.getByRole("dialog", { name: "Guide du cockpit" });
   await expect(landscapeGuide).toBeVisible();
   expect(await landscapeGuide.evaluate((element) =>
     element.scrollWidth <= element.clientWidth && element.getBoundingClientRect().height <= 390,

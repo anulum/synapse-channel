@@ -15,6 +15,12 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- A complete offline French cockpit catalogue with typed key parity, URL,
+  saved-preference, and browser-language resolution. The HUD and in-product
+  guide expose `FR`; built-browser coverage verifies the French guide and setup
+  assistant in narrow portrait and landscape layouts without accessibility
+  violations. Identities, wire outcomes, flags, paths, and setup placeholders
+  remain literal protocol evidence.
 - A complete offline Spanish cockpit catalogue with typed key parity, URL,
   saved-preference, and browser-language resolution. The HUD and in-product
   guide expose `ES`; built-browser coverage verifies the Spanish guide and setup

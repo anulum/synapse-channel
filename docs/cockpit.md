@@ -131,7 +131,7 @@ receive the governed write commands currently enabled by the server.
 
 ## Change language and use the in-product guide
 
-The cockpit ships English, Slovak, German, and Spanish catalogues in the application
+The cockpit ships English, Slovak, German, Spanish, and French catalogues in the application
 bundle. It does not download translations at runtime. The initial language
 comes from the first valid source in this order:
 
@@ -140,7 +140,7 @@ comes from the first valid source in this order:
 3. the first supported browser language;
 4. English.
 
-Choose **EN**, **SK**, **DE**, or **ES** in the HUD. The choice updates `lang` without
+Choose **EN**, **SK**, **DE**, **ES**, or **FR** in the HUD. The choice updates `lang` without
 removing the active panel, selection, replay, or communication filters, so a
 shared URL reopens the same workspace in the chosen language. The HTML `lang`
 attribute changes with it for assistive technology. A missing future catalogue
@@ -159,7 +159,7 @@ project and task IDs, event kinds, wire fields, capability names, hashes,
 sequence numbers, CLI flags, paths, URLs, and protocol outcome tokens remain
 literal evidence. For example, `accepted`, `delivered`, `undelivered`,
 `rejected`, `rate-limited`, `unreachable`, `stream`, `poll fallback`, and `gap
-detected` retain their exact spelling in Slovak, German, and Spanish modes.
+detected` retain their exact spelling in Slovak, German, Spanish, and French modes.
 
 ## Prepare a local setup without browser-side mutation
 
