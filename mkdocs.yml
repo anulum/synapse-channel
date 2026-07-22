@@ -86,6 +86,7 @@ nav:
   - Migration to 1.0: migration-1.0.md
   - Bounded streaming responses: streaming.md
   - Declarative workflows: workflows.md
+  - Cockpit user guide: cockpit.md
   - Studio: studio.md
   - CLI reference: cli.md
   - Participant memory recall: participant-memory.md

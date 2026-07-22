@@ -7,7 +7,7 @@
 // SYNAPSE_CHANNEL — multi-view fleet communication instrument
 
 import type { CSSProperties, FormEvent, JSX, KeyboardEvent } from "react";
-import { memo, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 
 import type { TimeWindow } from "../lib/brush";
 import type { ClaimView } from "../lib/claims";
@@ -29,17 +29,17 @@ import {
   type SemanticResponseStatus,
 } from "../lib/operatorActions";
 import type { CockpitEvent } from "../types";
-
-type FleetView = "web" | "matrix" | "projects";
-type Selection =
-  | { readonly kind: "node" | "project"; readonly id: string }
-  | {
-      readonly kind: "edge";
-      readonly source: string;
-      readonly target: string;
-    };
+import {
+  FLEET_VIEWS,
+  type FleetSelection,
+  type FleetView,
+} from "../lib/workspace";
 
 interface FleetViewsProps {
+  readonly view: FleetView;
+  readonly onViewChange: (view: FleetView) => void;
+  readonly selection: FleetSelection | null;
+  readonly onSelectionChange: (selection: FleetSelection | null) => void;
   readonly events: readonly CockpitEvent[];
   readonly claims: readonly ClaimView[];
   readonly agents: readonly string[];
@@ -467,6 +467,10 @@ function EdgeDetail({
 }
 
 function FleetViewsComponent({
+  view,
+  onViewChange,
+  selection,
+  onSelectionChange,
   events,
   claims,
   agents,
@@ -476,38 +480,61 @@ function FleetViewsComponent({
   onMessagePeer,
   respondToMessage = sendOperatorResponse,
 }: FleetViewsProps): JSX.Element {
-  const [view, setView] = useState<FleetView>("web");
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const model = useMemo(
     () => deriveCommunicationModel(events, claims, agents, window),
     [events, claims, agents, window],
   );
-  const selectedNode = selection?.kind === "node" ? model.nodes.find((node) => node.id === selection.id) : undefined;
+  const selectedNode = selection?.kind === "agent" ? model.nodes.find((node) => node.id === selection.id) : undefined;
   const selectedProject =
     selection?.kind === "project" ? model.projects.find((project) => project.id === selection.id) : undefined;
   const selectedEdge =
-    selection?.kind === "edge"
+    selection?.kind === "route"
       ? model.edges.find((edge) => edge.source === selection.source && edge.target === selection.target)
       : undefined;
   const selectedConversation = useMemo(
     () =>
-      selection?.kind === "edge" ? deriveConversationDetail(events, selection.source, selection.target, window) : [],
+      selection?.kind === "route" ? deriveConversationDetail(events, selection.source, selection.target, window) : [],
     [events, selection, window],
   );
   const failed = model.edges.filter((edge: CommunicationEdge) => edge.health === "failed").length;
+
+  const onViewKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+      let nextIndex: number | null = null;
+      if (event.key === "ArrowRight") nextIndex = (index + 1) % FLEET_VIEWS.length;
+      else if (event.key === "ArrowLeft") nextIndex = (index - 1 + FLEET_VIEWS.length) % FLEET_VIEWS.length;
+      else if (event.key === "Home") nextIndex = 0;
+      else if (event.key === "End") nextIndex = FLEET_VIEWS.length - 1;
+      if (nextIndex === null) return;
+      event.preventDefault();
+      const nextView = FLEET_VIEWS[nextIndex];
+      if (nextView === undefined) return;
+      onViewChange(nextView);
+      tabRefs.current[nextIndex]?.focus();
+    },
+    [onViewChange],
+  );
 
   return (
     <section className="panel fleet-views" aria-label="Fleet communication views">
       <div className="fleet-views__toolbar">
         <div className="fleet-views__switch" role="tablist" aria-label="Fleet view">
-          {(["web", "matrix", "projects"] as const).map((candidate) => (
+          {FLEET_VIEWS.map((candidate, index) => (
             <button
               key={candidate}
+              ref={(element) => {
+                tabRefs.current[index] = element;
+              }}
+              id={`fleet-view-tab-${candidate}`}
               type="button"
               role="tab"
+              tabIndex={view === candidate ? 0 : -1}
               aria-selected={view === candidate}
+              aria-controls="fleet-view-panel"
               className={view === candidate ? "fleet-views__view fleet-views__view--active" : "fleet-views__view"}
-              onClick={() => setView(candidate)}
+              onClick={() => onViewChange(candidate)}
+              onKeyDown={(event) => onViewKeyDown(event, index)}
             >
               {candidate}
             </button>
@@ -527,14 +554,19 @@ function FleetViewsComponent({
         </p>
       ) : (
         <div className="fleet-views__stage">
-          <div className="fleet-views__visual">
+          <div
+            className="fleet-views__visual"
+            id="fleet-view-panel"
+            role="tabpanel"
+            aria-labelledby={`fleet-view-tab-${view}`}
+          >
             {view === "web" ? (
               <WebView
                 model={model}
-                onSelectNode={(id) => setSelection({ kind: "node", id })}
+                onSelectNode={(id) => onSelectionChange({ kind: "agent", id })}
                 onSelectEdge={(source, target) =>
-                  setSelection({
-                    kind: "edge",
+                  onSelectionChange({
+                    kind: "route",
                     source,
                     target,
                   })
@@ -544,15 +576,18 @@ function FleetViewsComponent({
               <MatrixView
                 model={model}
                 onSelect={(source, target) =>
-                  setSelection({
-                    kind: "edge",
+                  onSelectionChange({
+                    kind: "route",
                     source,
                     target,
                   })
                 }
               />
             ) : (
-              <ProjectsView projects={model.projects} onSelect={(id) => setSelection({ kind: "project", id })} />
+              <ProjectsView
+                projects={model.projects}
+                onSelect={(id) => onSelectionChange({ kind: "project", id })}
+              />
             )}
           </div>
           {selectedEdge !== undefined ? (

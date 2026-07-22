@@ -6,8 +6,8 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — tab switch between the signal log and the causality inspector
 
-import type { JSX } from "react";
-import { useCallback, useEffect, useState } from "react";
+import type { JSX, KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { OperatorActionsState, ReceiptsState } from "../lib/auditFeeds";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import type { BranchConflictView, ClaimView } from "../lib/claims";
@@ -16,6 +16,12 @@ import type { MetricsState } from "../lib/metrics";
 import type { SessionsState } from "../lib/sessions";
 import type { LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
+import {
+  INSPECTOR_TABS,
+  type FleetSelection,
+  type FleetView,
+  type InspectorTab,
+} from "../lib/workspace";
 import { AuditView } from "./AuditView";
 import { CausalityView, type CausalityPrefill } from "./CausalityView";
 import { FleetViews } from "./FleetViews";
@@ -23,9 +29,13 @@ import { SignalLog } from "./SignalLog";
 import { MetricsPanel } from "./MetricsPanel";
 import { TopologyView } from "./TopologyView";
 
-type InspectorTab = "log" | "fleet" | "topology" | "metrics" | "audit" | "causality";
-
 interface InspectorTabsProps {
+  readonly tab: InspectorTab;
+  readonly onTabChange: (tab: InspectorTab) => void;
+  readonly fleetView: FleetView;
+  readonly onFleetViewChange: (view: FleetView) => void;
+  readonly fleetSelection: FleetSelection | null;
+  readonly onFleetSelectionChange: (selection: FleetSelection | null) => void;
   /** Events for the signal-log tab, newest first. */
   readonly events: readonly CockpitEvent[];
   /** The brushed spine window filtering the log, or null. */
@@ -67,6 +77,12 @@ interface InspectorTabsProps {
 }
 
 export function InspectorTabs({
+  tab,
+  onTabChange,
+  fleetView,
+  onFleetViewChange,
+  fleetSelection,
+  onFleetSelectionChange,
   events,
   window = null,
   onClearWindow,
@@ -87,15 +103,32 @@ export function InspectorTabs({
   operatorActions,
   traceRequest,
 }: InspectorTabsProps): JSX.Element {
-  const [tab, setTab] = useState<InspectorTab>("log");
   const [prefill, setPrefill] = useState<CausalityPrefill | null>(null);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // Master-detail hop: a task named by a log row jumps straight into the
   // causality inspector, subject adopted and traced.
   const onSelectTask = useCallback((taskId: string) => {
     setPrefill((current) => ({ subject: taskId, nonce: (current?.nonce ?? 0) + 1 }));
-    setTab("causality");
-  }, []);
+    onTabChange("causality");
+  }, [onTabChange]);
+
+  const onTabKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+      let nextIndex: number | null = null;
+      if (event.key === "ArrowRight") nextIndex = (index + 1) % INSPECTOR_TABS.length;
+      else if (event.key === "ArrowLeft") nextIndex = (index - 1 + INSPECTOR_TABS.length) % INSPECTOR_TABS.length;
+      else if (event.key === "Home") nextIndex = 0;
+      else if (event.key === "End") nextIndex = INSPECTOR_TABS.length - 1;
+      if (nextIndex === null) return;
+      event.preventDefault();
+      const nextTab = INSPECTOR_TABS[nextIndex];
+      if (nextTab === undefined) return;
+      onTabChange(nextTab);
+      tabRefs.current[nextIndex]?.focus();
+    },
+    [onTabChange],
+  );
 
   // A drawer (or any outside caller) can steer the inspector the same way a
   // log row does; the nonce lets the same subject fire twice.
@@ -107,60 +140,26 @@ export function InspectorTabs({
   return (
     <div className="inspector" role="region" aria-label="Inspector">
       <div className="inspector__tabs" role="tablist" aria-label="Inspector">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "log"}
-          className={`inspector__tab${tab === "log" ? " inspector__tab--active" : ""}`}
-          onClick={() => setTab("log")}
-        >
-          signal log <span className="inspector__tab-count">{events.length}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "fleet"}
-          className={`inspector__tab${tab === "fleet" ? " inspector__tab--active" : ""}`}
-          onClick={() => setTab("fleet")}
-        >
-          fleet
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "topology"}
-          className={`inspector__tab${tab === "topology" ? " inspector__tab--active" : ""}`}
-          onClick={() => setTab("topology")}
-        >
-          topology
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "metrics"}
-          className={`inspector__tab${tab === "metrics" ? " inspector__tab--active" : ""}`}
-          onClick={() => setTab("metrics")}
-        >
-          metrics
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "audit"}
-          className={`inspector__tab${tab === "audit" ? " inspector__tab--active" : ""}`}
-          onClick={() => setTab("audit")}
-        >
-          audit
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "causality"}
-          className={`inspector__tab${tab === "causality" ? " inspector__tab--active" : ""}`}
-          onClick={() => setTab("causality")}
-        >
-          causality
-        </button>
+        {INSPECTOR_TABS.map((candidate, index) => (
+          <button
+            key={candidate}
+            ref={(element) => {
+              tabRefs.current[index] = element;
+            }}
+            id={`inspector-tab-${candidate}`}
+            type="button"
+            role="tab"
+            tabIndex={tab === candidate ? 0 : -1}
+            aria-selected={tab === candidate}
+            aria-controls="inspector-panel"
+            className={`inspector__tab${tab === candidate ? " inspector__tab--active" : ""}`}
+            onClick={() => onTabChange(candidate)}
+            onKeyDown={(event) => onTabKeyDown(event, index)}
+          >
+            {candidate === "log" ? "signal log" : candidate}
+            {candidate === "log" && <span className="inspector__tab-count">{events.length}</span>}
+          </button>
+        ))}
         {window !== null && (
           <span className="inspector__brush">
             {`${windowEdgeLabel(window.fromTs)}–${windowEdgeLabel(window.toTs)}`}
@@ -175,7 +174,12 @@ export function InspectorTabs({
           </span>
         )}
       </div>
-      <div className="inspector__body">
+      <div
+        className="inspector__body"
+        id="inspector-panel"
+        role="tabpanel"
+        aria-labelledby={`inspector-tab-${tab}`}
+      >
         {tab === "log" ? (
           <SignalLog
             events={events}
@@ -195,6 +199,10 @@ export function InspectorTabs({
             connected={connected}
             canMessage={canMessagePeer}
             onMessagePeer={onMessagePeer}
+            view={fleetView}
+            onViewChange={onFleetViewChange}
+            selection={fleetSelection}
+            onSelectionChange={onFleetSelectionChange}
           />
         ) : tab === "metrics" ? (
           <MetricsPanel

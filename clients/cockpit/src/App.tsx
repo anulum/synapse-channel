@@ -52,8 +52,10 @@ import { capabilitiesOf, lostWriteCapability } from "./lib/access";
 import { cockpitAuthSnapshot, lockCockpit, subscribeCockpitAuth, unlockCockpit } from "./lib/auth";
 import { useCockpitFeeds } from "./hooks/useCockpitFeeds";
 import { useDashboardAccess } from "./hooks/useDashboardAccess";
+import { useCockpitWorkspace } from "./hooks/useCockpitWorkspace";
 
 export function App(): JSX.Element {
+  const { workspace, setPanel, setFleetView, setFleetSelection } = useCockpitWorkspace();
   const auth = useSyncExternalStore(
     subscribeCockpitAuth,
     cockpitAuthSnapshot,
@@ -228,7 +230,8 @@ export function App(): JSX.Element {
   const onQueryChange = useCallback((query: LogQuery) => {
     setLogQuery(query);
     const hash = queryToHash(query);
-    history.replaceState(null, "", hash === "" ? location.pathname + location.search : `#${hash}`);
+    const url = `${location.pathname}${location.search}${hash === "" ? "" : `#${hash}`}`;
+    history.replaceState(history.state, "", url);
   }, []);
 
   // KPI drill-down: a headline number filters the log to the kinds behind it.
@@ -432,6 +435,12 @@ export function App(): JSX.Element {
           <div className="seg seg--signals">
             <PanelBoundary name="Inspector">
               <InspectorTabs
+                tab={workspace.panel}
+                onTabChange={setPanel}
+                fleetView={workspace.fleetView}
+                onFleetViewChange={setFleetView}
+                fleetSelection={workspace.selection}
+                onFleetSelectionChange={setFleetSelection}
                 events={log}
                 window={brush}
                 onClearWindow={onClearWindow}

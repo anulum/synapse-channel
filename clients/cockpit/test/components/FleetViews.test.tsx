@@ -9,10 +9,12 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState, type JSX } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FleetViews } from "../../src/components/FleetViews";
 import type { CockpitEvent } from "../../src/types";
+import type { FleetSelection, FleetView } from "../../src/lib/workspace";
 
 afterEach(cleanup);
 
@@ -35,9 +37,35 @@ const EVENTS: readonly CockpitEvent[] = [
   },
 ];
 
+type FleetHarnessProps = Omit<
+  Parameters<typeof FleetViews>[0],
+  "view" | "onViewChange" | "selection" | "onSelectionChange"
+> & {
+  readonly initialView?: FleetView;
+  readonly initialSelection?: FleetSelection | null;
+};
+
+function FleetHarness({
+  initialView = "web",
+  initialSelection = null,
+  ...props
+}: FleetHarnessProps): JSX.Element {
+  const [view, setView] = useState<FleetView>(initialView);
+  const [selection, setSelection] = useState<FleetSelection | null>(initialSelection);
+  return (
+    <FleetViews
+      {...props}
+      view={view}
+      onViewChange={setView}
+      selection={selection}
+      onSelectionChange={setSelection}
+    />
+  );
+}
+
 describe("FleetViews", () => {
   it("switches among web, matrix, and project instruments", async () => {
-    render(<FleetViews events={EVENTS} claims={[]} agents={[]} window={null} connected canMessage={false} />);
+    render(<FleetHarness events={EVENTS} claims={[]} agents={[]} window={null} connected canMessage={false} />);
     expect(screen.getByTestId("fleet-web")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "matrix" }));
     expect(screen.getByTestId("fleet-matrix")).toBeTruthy();
@@ -48,7 +76,7 @@ describe("FleetViews", () => {
   it("keeps message controls absent for viewers and prefills an exact operator peer", async () => {
     const onMessagePeer = vi.fn();
     const { rerender } = render(
-      <FleetViews
+      <FleetHarness
         events={EVENTS}
         claims={[]}
         agents={[]}
@@ -62,7 +90,7 @@ describe("FleetViews", () => {
     expect(screen.queryByRole("button", { name: "message peer" })).toBeNull();
 
     rerender(
-      <FleetViews
+      <FleetHarness
         events={EVENTS}
         claims={[]}
         agents={[]}
@@ -84,7 +112,7 @@ describe("FleetViews", () => {
       detail: "semantic response delivered",
     });
     const { rerender } = render(
-      <FleetViews
+      <FleetHarness
         events={EVENTS}
         claims={[]}
         agents={[]}
@@ -104,7 +132,7 @@ describe("FleetViews", () => {
     expect(screen.queryByRole("button", { name: "send response" })).toBeNull();
 
     rerender(
-      <FleetViews
+      <FleetHarness
         events={EVENTS}
         claims={[]}
         agents={[]}
@@ -128,7 +156,7 @@ describe("FleetViews", () => {
   });
 
   it("offers a precise priority-route selector when graph hit targets overlap", async () => {
-    render(<FleetViews events={EVENTS} claims={[]} agents={[]} window={null} connected canMessage={false} />);
+    render(<FleetHarness events={EVENTS} claims={[]} agents={[]} window={null} connected canMessage={false} />);
     await userEvent.click(
       screen.getByRole("button", {
         name: "Select priority route alpha/one to beta/two: 1 message",
@@ -140,7 +168,36 @@ describe("FleetViews", () => {
   });
 
   it("states empty durable-feed data honestly", () => {
-    render(<FleetViews events={[]} claims={[]} agents={["quiet/one"]} window={null} connected canMessage={false} />);
+    render(<FleetHarness events={[]} claims={[]} agents={["quiet/one"]} window={null} connected canMessage={false} />);
     expect(screen.getByText(/require the durable event feed/u)).toBeTruthy();
+  });
+
+  it("restores a controlled route selection and uses roving view-tab focus", async () => {
+    const user = userEvent.setup();
+    render(
+      <FleetHarness
+        events={EVENTS}
+        claims={[]}
+        agents={[]}
+        window={null}
+        connected
+        canMessage={false}
+        initialView="matrix"
+        initialSelection={{ kind: "route", source: "alpha/one", target: "beta/two" }}
+      />,
+    );
+    expect(screen.getByTestId("fleet-matrix")).toBeTruthy();
+    expect(screen.getByLabelText("Communication detail")).toBeTruthy();
+    const matrix = screen.getByRole("tab", { name: "matrix" });
+    matrix.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "projects" }));
+    expect(screen.getByTestId("fleet-projects")).toBeTruthy();
+    await user.keyboard("{Home}");
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "web" }));
+    await user.keyboard("{ArrowLeft}");
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "projects" }));
+    await user.keyboard("{End}");
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "projects" }));
   });
 });
