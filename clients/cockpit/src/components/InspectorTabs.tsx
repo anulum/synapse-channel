@@ -18,11 +18,12 @@ import type { LogQuery } from "../lib/logQuery";
 import type { CockpitEvent } from "../types";
 import { AuditView } from "./AuditView";
 import { CausalityView, type CausalityPrefill } from "./CausalityView";
+import { FleetViews } from "./FleetViews";
 import { SignalLog } from "./SignalLog";
 import { MetricsPanel } from "./MetricsPanel";
 import { TopologyView } from "./TopologyView";
 
-type InspectorTab = "log" | "topology" | "metrics" | "audit" | "causality";
+type InspectorTab = "log" | "fleet" | "topology" | "metrics" | "audit" | "causality";
 
 interface InspectorTabsProps {
   /** Events for the signal-log tab, newest first. */
@@ -43,6 +44,12 @@ interface InspectorTabsProps {
   readonly conflicts?: readonly BranchConflictView[];
   /** Live roster size (topology states the idle remainder). */
   readonly liveAgentCount?: number;
+  /** Exact live/claim identities included even when quiet in the event window. */
+  readonly agents?: readonly string[];
+  /** Whether the current principal may open the governed message composer. */
+  readonly canMessagePeer?: boolean;
+  /** Opens the governed message composer for an exact peer. */
+  readonly onMessagePeer?: ((identity: string) => void) | undefined;
   /** Whether a snapshot has arrived at all. */
   readonly connected?: boolean;
   /** The federation posture feed, for the topology tab's peering band. */
@@ -69,6 +76,9 @@ export function InspectorTabs({
   claims = [],
   conflicts = [],
   liveAgentCount = 0,
+  agents = [],
+  canMessagePeer = false,
+  onMessagePeer,
   connected = false,
   federation,
   metrics,
@@ -105,6 +115,15 @@ export function InspectorTabs({
           onClick={() => setTab("log")}
         >
           signal log <span className="inspector__tab-count">{events.length}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "fleet"}
+          className={`inspector__tab${tab === "fleet" ? " inspector__tab--active" : ""}`}
+          onClick={() => setTab("fleet")}
+        >
+          fleet
         </button>
         <button
           type="button"
@@ -166,6 +185,16 @@ export function InspectorTabs({
             provenance={provenance}
             {...(query !== undefined ? { query } : {})}
             onQueryChange={onQueryChange}
+          />
+        ) : tab === "fleet" ? (
+          <FleetViews
+            events={events}
+            claims={claims}
+            agents={agents}
+            window={window}
+            connected={connected}
+            canMessage={canMessagePeer}
+            onMessagePeer={onMessagePeer}
           />
         ) : tab === "metrics" ? (
           <MetricsPanel

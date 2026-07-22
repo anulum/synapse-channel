@@ -131,6 +131,10 @@ export function App(): JSX.Element {
 
   // The command palette: Ctrl/Cmd+K anywhere.
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteCompose, setPaletteCompose] = useState<{
+    readonly to: string;
+    readonly nonce: number;
+  } | null>(null);
   const commandTrigger = useRef<HTMLButtonElement | null>(null);
   const [accessNotice, setAccessNotice] = useState("");
   const capabilities = capabilitiesOf(access);
@@ -139,6 +143,7 @@ export function App(): JSX.Element {
     const onKey = (event: KeyboardEvent): void => {
       if (!shellBlocked && event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
+        setPaletteCompose(null);
         setPaletteOpen((current) => !current);
       }
     };
@@ -150,6 +155,7 @@ export function App(): JSX.Element {
     previousCapabilities.current = capabilities;
     if (authBlocked || !lostWriteCapability(previous, capabilities)) return;
     setPaletteOpen(false);
+    setPaletteCompose(null);
     setAccessNotice("Dashboard access changed; write controls were removed.");
     commandTrigger.current?.focus();
   }, [authBlocked, capabilities]);
@@ -166,6 +172,14 @@ export function App(): JSX.Element {
   const onInspectAgent = useCallback((name: string) => setInspected({ kind: "agent", id: name }), []);
   const onInspectTask = useCallback((taskId: string) => setInspected({ kind: "task", id: taskId }), []);
   const onCloseDrawer = useCallback(() => setInspected(null), []);
+  const onMessagePeer = useCallback((identity: string) => {
+    setPaletteCompose((current) => ({ to: identity, nonce: (current?.nonce ?? 0) + 1 }));
+    setPaletteOpen(true);
+  }, []);
+  const onClosePalette = useCallback(() => {
+    setPaletteOpen(false);
+    setPaletteCompose(null);
+  }, []);
 
   // The focus lens and density are small persisted preferences, same
   // storage discipline as the theme (a throwing storage costs persistence).
@@ -333,6 +347,7 @@ export function App(): JSX.Element {
     setTravelState(null);
     setTravelNote(null);
     setPaletteOpen(false);
+    setPaletteCompose(null);
     setInspected(null);
     setTraceRequest(undefined);
     setToasts([]);
@@ -366,7 +381,10 @@ export function App(): JSX.Element {
           />
         }
         commandTriggerRef={commandTrigger}
-        onOpenPalette={() => setPaletteOpen(true)}
+        onOpenPalette={() => {
+          setPaletteCompose(null);
+          setPaletteOpen(true);
+        }}
       />
       <PanelBoundary name="Activity spine">
         <ActivitySpine
@@ -423,6 +441,9 @@ export function App(): JSX.Element {
                 claims={claims}
                 conflicts={conflicts}
                 liveAgentCount={snap.snapshot?.fleet.agents.live.length ?? 0}
+                agents={roster.map((entry) => entry.agent)}
+                canMessagePeer={capabilities.message_send}
+                onMessagePeer={onMessagePeer}
                 connected={connected}
                 federation={federation}
                 metrics={metrics}
@@ -469,7 +490,8 @@ export function App(): JSX.Element {
       <Palette
         open={paletteOpen}
         commands={paletteCommands}
-        onClose={() => setPaletteOpen(false)}
+        compose={paletteCompose}
+        onClose={onClosePalette}
         onRun={runPaletteCommand}
       />
       <ToastStack toasts={toasts} onDismiss={onDismissToast} />

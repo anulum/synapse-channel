@@ -137,6 +137,22 @@ describe("Palette", () => {
     );
   });
 
+  it("opens the governed composer with a selected fleet peer prefilled", () => {
+    render(
+      <Palette
+        open
+        commands={COMMANDS}
+        compose={{ to: "SYNAPSE-CHANNEL/claude-d1ae", nonce: 1 }}
+        onClose={() => {}}
+        onRun={() => {}}
+      />,
+    );
+    expect((screen.getByLabelText("Message recipient") as HTMLInputElement).value).toBe(
+      "SYNAPSE-CHANNEL/claude-d1ae",
+    );
+    expect(screen.getByText(/authorised and audited by the hub/u)).toBeTruthy();
+  });
+
   it("opens focused task forms, carries live ids, returns to commands, and closes on Escape", async () => {
     const onClose = vi.fn();
     render(<Palette open commands={COMMANDS} onClose={onClose} onRun={() => {}} />);

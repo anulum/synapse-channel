@@ -44,6 +44,8 @@ describe("InspectorTabs", () => {
     );
     expect(screen.getByRole("tab", { name: /signal log/ }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByLabelText("Signal log")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "fleet" }));
+    expect(screen.getByLabelText("Fleet communication views")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "topology" }));
     expect(screen.getByLabelText("Fleet topology")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "metrics" }));

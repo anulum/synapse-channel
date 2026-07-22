@@ -38,6 +38,8 @@ interface PaletteProps {
   readonly onClose: () => void;
   /** Executes a chosen non-write command. */
   readonly onRun: (command: Command) => void;
+  /** Opens the governed message form with one exact recipient prefilled. */
+  readonly compose?: { readonly to: string; readonly nonce: number } | null;
 }
 
 /**
@@ -45,7 +47,13 @@ interface PaletteProps {
  * message/task commands open focused forms and state the hub's outcome —
  * including "not armed", which is a fact about dashboard posture, not success.
  */
-export function Palette({ open, commands, onClose, onRun }: PaletteProps): JSX.Element | null {
+export function Palette({
+  open,
+  commands,
+  onClose,
+  onRun,
+  compose = null,
+}: PaletteProps): JSX.Element | null {
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const [composing, setComposing] = useState<"message" | OperatorTaskMode | null>(null);
@@ -58,11 +66,13 @@ export function Palette({ open, commands, onClose, onRun }: PaletteProps): JSX.E
     if (open) {
       setQuery("");
       setCursor(0);
-      setComposing(null);
+      setComposing(compose === null ? null : "message");
+      setTo(compose?.to ?? "");
+      setText("");
       setOutcome(null);
       setTimeout(() => inputRef.current?.focus(), 0);
     }
-  }, [open]);
+  }, [open, compose?.nonce, compose?.to]);
 
   // Escape closes wherever focus sits — a palette that only closes from its
   // own input is a trap after tabbing to a button.
