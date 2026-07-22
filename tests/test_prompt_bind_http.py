@@ -61,9 +61,9 @@ def test_prompt_bound_server_serves_requests() -> None:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        host, port = server.server_address[:2]
+        port = server.server_address[1]
         with urllib.request.urlopen(  # nosec B310 - fixed loopback test URL
-            f"http://{host}:{port}/", timeout=2.0
+            f"http://127.0.0.1:{port}/", timeout=2.0
         ) as response:
             assert response.status == 200
             assert response.read() == b"ok"
