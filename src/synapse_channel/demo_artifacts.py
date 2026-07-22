@@ -84,7 +84,7 @@ def write_demo_artifacts(result: GoldenDemoEvidence, output_dir: Path) -> DemoAr
         sort_keys=True,
         allow_nan=False,
     )
-    dashboard = render_dashboard_html(result.dashboard, refresh_seconds=3600)
+    dashboard = render_dashboard_html(result.dashboard, refresh_seconds=3600, static=True)
     _atomic_write(evidence_path, evidence + "\n")
     _atomic_write(dashboard_path, dashboard)
     return DemoArtifacts(

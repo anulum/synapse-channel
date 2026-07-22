@@ -98,6 +98,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- `synapse demo` now writes a genuinely self-contained static dashboard: its
+  styles and completed coordination evidence are embedded in the HTML, with no
+  missing CSS/JavaScript requests, live-feed dependency, or token prompt when
+  the generated file is opened directly.
 - `handoff` now enforces the same file-scope mutual exclusion as a direct claim:
   a transfer whose scope collides with a live claim held by an agent other than
   the recipient is refused, instead of silently leaving two different agents

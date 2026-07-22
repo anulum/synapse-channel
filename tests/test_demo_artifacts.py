@@ -85,3 +85,9 @@ def test_writer_emits_stable_json_and_visual_story(tmp_path: Path) -> None:
     assert evidence["completed"] is True
     assert evidence["steps"][0]["title"] == "CONFLICT REFUSED"
     assert "CONFLICT REFUSED" in dashboard
+    assert "recorded local evidence" in dashboard
+    assert "<style>" in dashboard
+    assert "<script" not in dashboard
+    assert "<link" not in dashboard
+    assert "snapshot.json" not in dashboard
+    assert "Dashboard token" not in dashboard

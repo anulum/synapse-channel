@@ -38,6 +38,10 @@ def test_self_contained_demo_prints_success(tmp_path: Path) -> None:
     assert evidence["receipt"]["epistemic_status"] == "supported"
     for marker in ("CONFLICT REFUSED", "MUTATION DENIED", "HANDOFF", "VERIFIED RECEIPT"):
         assert marker in dashboard
+    assert "recorded local evidence" in dashboard
+    assert "<script" not in dashboard
+    assert "<link" not in dashboard
+    assert "snapshot.json" not in dashboard
 
 
 def test_commands_overview_groups_the_surface_by_tier() -> None:

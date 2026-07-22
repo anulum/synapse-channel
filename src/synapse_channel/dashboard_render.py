@@ -22,12 +22,102 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from synapse_channel.dashboard_cockpit import render_cockpit_html
+from synapse_channel.dashboard_cockpit import load_cockpit_asset, render_cockpit_html
 from synapse_channel.dashboard_fleet import render_fleet_visibility_html
 
 if TYPE_CHECKING:
     from synapse_channel.dashboard import DashboardSnapshot, ManifestCards, SnapshotMapping
     from synapse_channel.observed_peers import ObservedPeerSnapshot
+
+
+_STATIC_FALLBACK_CSS = """
+.noscript-fallback {
+  max-width: 1500px;
+  margin: 0 auto;
+}
+.noscript-fallback > h1 {
+  margin: 4px 0 18px;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: clamp(24px, 3vw, 42px);
+  letter-spacing: -0.035em;
+}
+.noscript-fallback > .grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.noscript-fallback section {
+  min-width: 0;
+  padding: 15px 17px;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.noscript-fallback section h2 {
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.noscript-fallback ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.noscript-fallback li {
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+  border-top: 1px solid var(--line);
+}
+.noscript-fallback li:first-child {
+  border-top: 0;
+}
+.noscript-fallback strong {
+  color: var(--ink);
+}
+.noscript-fallback small,
+.noscript-fallback .muted {
+  color: var(--muted);
+}
+.static-proof {
+  margin-left: auto;
+  color: var(--synapse);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+@media (max-width: 980px) {
+  .noscript-fallback > .grid {
+    grid-template-columns: 1fr;
+  }
+}
+"""
+
+
+def _render_static_page(fallback_html: str) -> str:
+    """Return one dependency-free dashboard evidence document."""
+    stylesheet = load_cockpit_asset("cockpit.css")
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SYNAPSE CHANNEL — coordination demo evidence</title>
+  <style>{stylesheet}\n{_STATIC_FALLBACK_CSS}</style>
+</head>
+<body>
+  <header class="hud">
+    <div class="hud__mark"><b>SYNAPSE</b><span>CHANNEL</span></div>
+    <div class="static-proof">recorded local evidence</div>
+  </header>
+  <main class="noscript-fallback">{fallback_html}</main>
+</body>
+</html>
+"""
 
 
 def _escape(value: object) -> str:
@@ -162,6 +252,7 @@ def render_dashboard_html(
     *,
     refresh_seconds: int = 5,
     a2a_state_file: str | Path | None = None,
+    static: bool = False,
 ) -> str:
     """Render a complete read-only HTML dashboard page.
 
@@ -174,6 +265,9 @@ def render_dashboard_html(
     a2a_state_file : str, pathlib.Path, or None, optional
         Optional persisted A2A bridge state file used to populate the fleet
         visibility section.
+    static : bool, optional
+        Emit one dependency-free evidence document without live polling or
+        authentication controls. The default renders the live dashboard shell.
 
     Returns
     -------
@@ -200,4 +294,6 @@ def render_dashboard_html(
     </section>
     {fleet_html}
   </div>"""
+    if static:
+        return _render_static_page(fallback_html)
     return render_cockpit_html(refresh_seconds=refresh, fallback_html=fallback_html)
