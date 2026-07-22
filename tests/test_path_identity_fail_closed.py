@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import copy
+import errno
 import os
 import platform
 import uuid
@@ -532,6 +533,15 @@ def test_path_anchor_and_alias_errors_are_controlled(
 ) -> None:
     """Missing anchors, unreadable components, and invalid aliases have one error surface."""
     monkeypatch.setattr(Path, "lstat", lambda _path: (_ for _ in ()).throw(FileNotFoundError()))
+    with pytest.raises(PathIdentityError, match="no resolvable"):
+        git_identity._resolved_with_missing_tail(tmp_path / "x")
+
+    # A path too long to exist (ENAMETOOLONG, e.g. over macOS PATH_MAX) is a
+    # missing tail, not an unreadable component — it walks up like a missing path.
+    def _raise_too_long(_path: Path) -> None:
+        raise OSError(errno.ENAMETOOLONG, "File name too long")
+
+    monkeypatch.setattr(Path, "lstat", _raise_too_long)
     with pytest.raises(PathIdentityError, match="no resolvable"):
         git_identity._resolved_with_missing_tail(tmp_path / "x")
 

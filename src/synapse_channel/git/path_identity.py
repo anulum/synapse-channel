@@ -17,6 +17,7 @@ device/inode key so hard-link aliases contend.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import platform
@@ -200,13 +201,21 @@ def _resolved_with_missing_tail(path: Path) -> Path:
         try:
             anchor.lstat()
             break
-        except FileNotFoundError:
+        except OSError as exc:
+            # A missing path and a path too long to exist are both a genuinely
+            # missing tail, not an unreadable component: an over-length path cannot
+            # name a real tracked file, so it is absent. This keeps resolution
+            # consistent where PATH_MAX differs (macOS 1024 vs Linux 4096) and stays
+            # fail-closed (a missing path has no covering claim). FileNotFoundError
+            # is matched by type (its errno may be unset); other errors (EACCES,
+            # EIO, ELOOP) remain unreadable.
+            is_missing_tail = isinstance(exc, FileNotFoundError) or exc.errno == errno.ENAMETOOLONG
+            if not is_missing_tail:
+                raise PathIdentityError("claim path contains an unreadable component") from exc
             if anchor == anchor.parent:
                 raise PathIdentityError("claim path has no resolvable filesystem anchor") from None
             missing.append(anchor.name)
             anchor = anchor.parent
-        except OSError as exc:
-            raise PathIdentityError("claim path contains an unreadable component") from exc
     try:
         resolved = Path(os.path.realpath(anchor, strict=True))
     except (OSError, RuntimeError, ValueError) as exc:

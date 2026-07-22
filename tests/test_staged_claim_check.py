@@ -252,12 +252,14 @@ async def test_diagnostic_escapes_newlines_and_is_bounded(tmp_path: Path) -> Non
 
 @pytest.mark.asyncio
 async def test_diagnostic_character_budget_can_omit_the_first_path(tmp_path: Path) -> None:
-    # One path long enough to exhaust the diagnostic's character budget, built
-    # from many valid-length components rather than a single 3000-char name.
-    # macOS reports ENAMETOOLONG when lstat meets a component over NAME_MAX (255)
-    # before it reports the missing parent, so an overlong single component would
-    # fail path resolution on macOS instead of exercising the budget; nested
-    # segments stay resolvable identically on every OS.
+    # One valid-component path that exhausts the 2048-char diagnostic budget while
+    # staying within the 4096 staged-path cap. It is longer than macOS PATH_MAX
+    # (1024) but shorter than Linux PATH_MAX (4096), so lstat reports ENAMETOOLONG
+    # on macOS and ENOENT on Linux — the resolver treats both as a missing tail
+    # (see test_path_anchor_and_alias_errors_are_controlled), so the path renders,
+    # exhausts the budget, and is omitted identically on every OS. The budget
+    # (2048) already exceeds macOS PATH_MAX, so a single over-budget path cannot
+    # rely on staying filesystem-resolvable there.
     long_path = "src/" + "/".join("x" * 40 for _ in range(75))
     result = await run_staged_claim_check(
         runner=_runner(tmp_path, f"M\0{long_path}\0"),
