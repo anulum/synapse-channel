@@ -1416,6 +1416,35 @@ body {
   color: var(--now);
 }
 
+.event-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  min-height: 30px;
+  padding: var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.event-coverage__source {
+  color: var(--info);
+  font-weight: 500;
+}
+
+.event-coverage__limit {
+  margin-left: auto;
+  color: var(--dim);
+}
+
+.event-coverage__limit--full {
+  color: var(--warn);
+}
+
 .inspector__body {
   display: grid;
   min-height: 0;
@@ -2366,6 +2395,11 @@ body {
 }
 
 @media (max-width: 640px) {
+  .event-coverage__limit {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .fleet-views__toolbar {
     align-items: stretch;
     flex-direction: column;

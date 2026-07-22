@@ -71,6 +71,7 @@ export function App(): JSX.Element {
     log,
     spineSource,
     provenance,
+    coverage,
     nowMs,
     reliability,
     federation,
@@ -445,6 +446,7 @@ export function App(): JSX.Element {
                 window={brush}
                 onClearWindow={onClearWindow}
                 provenance={provenance === "hub" ? "hub" : "derived"}
+                coverage={coverage}
                 query={logQuery}
                 onQueryChange={onQueryChange}
                 claims={claims}

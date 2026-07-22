@@ -16,6 +16,11 @@ import {
   type ReceiptsState,
 } from "../lib/auditFeeds";
 import { createEventsTailSource, type SpineProvenance } from "../lib/eventsTail";
+import {
+  EVENT_RETENTION_LIMIT,
+  eventCoverageOf,
+  type EventCoverage,
+} from "../lib/eventCoverage";
 import { createFederationStore, type FederationState } from "../lib/federation";
 import {
   createHealthAnomaliesStore,
@@ -88,9 +93,6 @@ const INITIAL_OPERATOR_ACTIONS: OperatorActionsState = {
   error: null,
 };
 
-/** Most recent events retained for the signal log. */
-const LOG_LIMIT = 250;
-
 interface HeadlineMetrics {
   readonly agents: number;
   readonly claims: number;
@@ -139,6 +141,7 @@ export interface CockpitFeeds {
   readonly log: readonly CockpitEvent[];
   readonly spineSource: EventSource | undefined;
   readonly provenance: SpineProvenance;
+  readonly coverage: EventCoverage;
   readonly nowMs: number;
   readonly reliability: ReliabilityState;
   readonly federation: FederationState;
@@ -207,7 +210,7 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     });
     let active: "tail" | "derived" | null = null;
     const push = (event: CockpitEvent): void => {
-      setLog((current) => [event, ...current].slice(0, LOG_LIMIT));
+      setLog((current) => [event, ...current].slice(0, EVENT_RETENTION_LIMIT));
       for (const listener of routed) listener(event);
     };
     const unsubscribeTail = tail.subscribe((event) => {
@@ -298,6 +301,10 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     log,
     spineSource,
     provenance,
+    coverage: eventCoverageOf(
+      log,
+      provenance === "hub" ? "hub" : provenance === "connecting" ? "connecting" : "derived",
+    ),
     nowMs,
     reliability,
     federation,

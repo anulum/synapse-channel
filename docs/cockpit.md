@@ -107,6 +107,11 @@ lanes. It is not a smoothed activity estimate.
 
 The selected window filters the signal log and fleet communication views.
 
+Above those two views, the event-coverage strip states the source, retained
+count, 250-event client cap, and available sequence/time range. “Retained
+window at cap” means only that the client window reached its bound; it does not
+claim that the server log is complete or that a specific event was dropped.
+
 ## Inspect fleet communication
 
 Open the **fleet** inspector tab and choose one of three views:

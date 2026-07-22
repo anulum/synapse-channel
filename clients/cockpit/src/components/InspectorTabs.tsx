@@ -12,6 +12,7 @@ import type { OperatorActionsState, ReceiptsState } from "../lib/auditFeeds";
 import { windowEdgeLabel, type TimeWindow } from "../lib/brush";
 import type { BranchConflictView, ClaimView } from "../lib/claims";
 import type { FederationState } from "../lib/federation";
+import { eventCoverageOf, type EventCoverage } from "../lib/eventCoverage";
 import type { MetricsState } from "../lib/metrics";
 import type { SessionsState } from "../lib/sessions";
 import type { LogQuery } from "../lib/logQuery";
@@ -24,6 +25,7 @@ import {
 } from "../lib/workspace";
 import { AuditView } from "./AuditView";
 import { CausalityView, type CausalityPrefill } from "./CausalityView";
+import { DataCoverage } from "./DataCoverage";
 import { FleetViews } from "./FleetViews";
 import { SignalLog } from "./SignalLog";
 import { MetricsPanel } from "./MetricsPanel";
@@ -44,6 +46,8 @@ interface InspectorTabsProps {
   readonly onClearWindow?: (() => void) | undefined;
   /** Where the events come from: the hub's log or the snapshot derivation. */
   readonly provenance?: "hub" | "derived";
+  /** Retained event-window bounds and source. */
+  readonly coverage?: EventCoverage;
   /** The operator's log query, owned by the caller (URL-shareable). */
   readonly query?: LogQuery;
   /** Query updates from the log's controls. */
@@ -87,6 +91,7 @@ export function InspectorTabs({
   window = null,
   onClearWindow,
   provenance = "derived",
+  coverage,
   query,
   onQueryChange,
   claims = [],
@@ -105,6 +110,7 @@ export function InspectorTabs({
 }: InspectorTabsProps): JSX.Element {
   const [prefill, setPrefill] = useState<CausalityPrefill | null>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const shownCoverage = coverage ?? eventCoverageOf(events, provenance);
 
   // Master-detail hop: a task named by a log row jumps straight into the
   // causality inspector, subject adopted and traced.
@@ -174,6 +180,7 @@ export function InspectorTabs({
           </span>
         )}
       </div>
+      {(tab === "log" || tab === "fleet") && <DataCoverage coverage={shownCoverage} />}
       <div
         className="inspector__body"
         id="inspector-panel"
