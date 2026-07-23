@@ -101,14 +101,24 @@ behaviour that used to share that root component has its own lifecycle owner:
   transition notices, and clears timers when the shell locks or unmounts;
 - `useCockpitViewModel` derives the immutable panel projections. Replay can
   replace claims and tasks, but the roster and other non-journalled evidence
-  remain live.
+  remain live;
+- `useCockpitFeeds` owns only the authenticated multiplexed transport, its
+  bounded compatibility polling path, and the live event-source lifecycle;
+- `useCockpitAuxiliaryFeeds` owns the slower reliability, federation, metrics,
+  sessions, waits, and anomaly report stores. Its idempotent start signal and
+  bounded timers keep whole-log reports behind exact history without allowing
+  a hung history endpoint to starve them;
+- `cockpitLiveFrames` projects untrusted channel envelopes into snapshot,
+  event, receipt, and operator-action states without React side effects, while
+  `cockpitKpis` owns headline values, deltas, and the local freshness stamp.
 
-Each owner has a dedicated behavioural hook test. The wired `App` test still
-exercises authentication, real endpoint adapters, URL restoration, replay,
-incident evidence, command entry, and capability removal through the public
-shell. This separation is architectural: it must not change exact wire values,
-browser-principal enforcement, or the evidence boundary between retained live
-state and reconstruction.
+Each owner has a dedicated behavioural hook or projection test. The wired
+`App` and feed tests still exercise authentication, real endpoint adapters,
+URL restoration, multiplexed history, polling recovery, replay, incident
+evidence, command entry, and capability removal through public surfaces. This
+separation is architectural: it must not change exact wire values,
+browser-principal enforcement, startup ordering, or the evidence boundary
+between retained live state and reconstruction.
 
 The inspector also defines the cockpit's JavaScript delivery boundary. The
 default signal log and attention queue ship in the entry chunk because they are

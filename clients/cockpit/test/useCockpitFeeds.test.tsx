@@ -49,6 +49,9 @@ function FeedProbe(): React.JSX.Element {
         {feeds.provenance}:{feeds.log.length}
       </output>
       <output aria-label="transport probe">{feeds.transport.status}</output>
+      <output aria-label="receipt probe">
+        {feeds.receipts.data?.map((receipt) => receipt.subject).join(",") ?? ""}
+      </output>
     </>
   );
 }
@@ -142,6 +145,86 @@ describe("useCockpitFeeds startup", () => {
     expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/events.json"))).toBe(false);
     expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/receipts.json"))).toBe(false);
     expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/operator-actions.json"))).toBe(false);
+  });
+
+  it("merges a later live receipt delta without starting the polling fallback", async () => {
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const fetcher = vi.fn<typeof fetch>((input) => {
+      if (urlOf(input) !== "/live.ndjson") {
+        return Promise.resolve(new Response("absent", { status: 404 }));
+      }
+      return Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              stream = controller;
+              controller.enqueue(new TextEncoder().encode(liveLine(1, "hello")));
+              controller.enqueue(
+                new TextEncoder().encode(
+                  liveLine(2, "channel", {
+                    channel: "receipts",
+                    status: "live",
+                    data: {
+                      present: true,
+                      receipts: [
+                        {
+                          seq: 1,
+                          ts: 1,
+                          receipt_id: "delivery:1",
+                          kind: "delivery",
+                          subject: "seed",
+                          actor: "operator/test",
+                          status: "delivered",
+                          summary: "seed delivered",
+                          source_event_kind: "delivery_receipt_immediate",
+                        },
+                      ],
+                      next_cursor: 1,
+                    },
+                  }),
+                ),
+              );
+            },
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    render(<FeedProbe />);
+    await waitFor(() => expect(screen.getByLabelText("receipt probe").textContent).toBe("seed"));
+
+    act(() => {
+      stream.enqueue(
+        new TextEncoder().encode(
+          liveLine(3, "channel", {
+            channel: "receipts",
+            status: "live",
+            data: {
+              present: true,
+              receipts: [
+                {
+                  seq: 3,
+                  ts: 3,
+                  receipt_id: "delivery:3",
+                  kind: "delivery",
+                  subject: "later",
+                  actor: "operator/test",
+                  status: "undelivered",
+                  summary: "later undelivered",
+                  source_event_kind: "delivery_receipt_immediate",
+                },
+              ],
+              next_cursor: 3,
+            },
+          }),
+        ),
+      );
+    });
+
+    await waitFor(() => expect(screen.getByLabelText("receipt probe").textContent).toBe("later,seed"));
+    expect(fetcher.mock.calls.some(([input]) => urlOf(input).startsWith("/receipts.json"))).toBe(false);
   });
 
   it("starts polling after the live stream remains disconnected past the grace window", async () => {

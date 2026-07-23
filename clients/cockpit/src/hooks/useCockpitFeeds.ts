@@ -12,86 +12,57 @@ import type { Kpi } from "../components/Hud";
 import {
   createOperatorActionsStore,
   createReceiptsStore,
-  parseOperatorActionsPage,
-  parseReceiptsPage,
-  type OperatorActionRow,
   type OperatorActionsState,
-  type ReceiptRow,
   type ReceiptsState,
 } from "../lib/auditFeeds";
-import {
-  createEventsTailSource,
-  mapStoredEvent,
-  parseTail,
-  type SpineProvenance,
-} from "../lib/eventsTail";
+import { createEventsTailSource, type SpineProvenance } from "../lib/eventsTail";
 import {
   EVENT_RETENTION_LIMIT,
   eventCoverageOf,
   type EventCoverage,
 } from "../lib/eventCoverage";
-import { createFederationStore, type FederationState } from "../lib/federation";
-import {
-  createHealthAnomaliesStore,
-  type HealthAnomaliesState,
-} from "../lib/healthAnomalies";
-import { createMetricsStore, type MetricsState } from "../lib/metrics";
+import type { FederationState } from "../lib/federation";
+import type { HealthAnomaliesState } from "../lib/healthAnomalies";
+import type { MetricsState } from "../lib/metrics";
 import {
   createLiveTransport,
   type LiveChannelFrame,
   type LiveConnectionState,
 } from "../lib/liveTransport";
-import { createReliabilityStore, type ReliabilityState } from "../lib/reliability";
-import { createSessionsStore, type SessionsState } from "../lib/sessions";
+import {
+  cockpitStamp,
+  headlineKpis,
+  headlineMetricsOf,
+  ZERO_HEADLINE_METRICS,
+  type HeadlineMetrics,
+} from "../lib/cockpitKpis";
+import {
+  projectEventsFrame,
+  projectOperatorActionsFrame,
+  projectReceiptsFrame,
+  projectSnapshotFrame,
+} from "../lib/cockpitLiveFrames";
+import type { ReliabilityState } from "../lib/reliability";
+import type { SessionsState } from "../lib/sessions";
 import {
   createSnapshotStore,
-  parseSnapshot,
   withFreshness,
   type SnapshotStore,
   type SnapshotState,
 } from "../lib/snapshot";
 import { createSnapshotEventSource } from "../lib/spineEvents";
-import { createWaitsStore, type WaitsState } from "../lib/waits";
+import type { WaitsState } from "../lib/waits";
 import type { CockpitEvent, EventSource } from "../types";
+import {
+  AUXILIARY_FEED_START_FALLBACK_MS,
+  HEAVY_FEED_STAGGER_FALLBACK_MS,
+  useCockpitAuxiliaryFeeds,
+} from "./useCockpitAuxiliaryFeeds";
+
+export { AUXILIARY_FEED_START_FALLBACK_MS, HEAVY_FEED_STAGGER_FALLBACK_MS };
 
 const INITIAL_SNAPSHOT: SnapshotState = {
   snapshot: null,
-  status: "connecting",
-  fetchedAt: null,
-  error: null,
-};
-const INITIAL_RELIABILITY: ReliabilityState = {
-  data: null,
-  status: "connecting",
-  fetchedAt: null,
-  error: null,
-};
-const INITIAL_FEDERATION: FederationState = {
-  data: null,
-  status: "connecting",
-  fetchedAt: null,
-  error: null,
-};
-const INITIAL_METRICS: MetricsState = {
-  data: null,
-  status: "connecting",
-  fetchedAt: null,
-  error: null,
-};
-const INITIAL_SESSIONS: SessionsState = {
-  data: null,
-  status: "connecting",
-  fetchedAt: null,
-  error: null,
-};
-const INITIAL_WAITS: WaitsState = {
-  data: null,
-  status: "connecting",
-  fetchedAt: null,
-  error: null,
-};
-const INITIAL_ANOMALIES: HealthAnomaliesState = {
-  data: null,
   status: "connecting",
   fetchedAt: null,
   error: null,
@@ -109,67 +80,8 @@ const INITIAL_OPERATOR_ACTIONS: OperatorActionsState = {
   error: null,
 };
 
-/** Maximum wait before secondary reports start when the primary event tail hangs. */
-export const AUXILIARY_FEED_START_FALLBACK_MS = 20_000;
-
-/** Maximum stagger before the second whole-log report starts on a slow store. */
-export const HEAVY_FEED_STAGGER_FALLBACK_MS = 45_000;
-
 /** Start the legacy high-frequency feeds only after a sustained stream outage. */
 export const LIVE_TRANSPORT_FALLBACK_MS = 6_000;
-
-interface HeadlineMetrics {
-  readonly agents: number;
-  readonly claims: number;
-  readonly risk: number;
-  readonly ratePerMinute: number;
-}
-
-const ZERO_METRICS: HeadlineMetrics = { agents: 0, claims: 0, risk: 0, ratePerMinute: 0 };
-
-function metricsOf(state: SnapshotState, ratePerMinute: number): HeadlineMetrics {
-  const snapshot = state.snapshot;
-  if (snapshot === null) return { ...ZERO_METRICS, ratePerMinute };
-  return {
-    agents: snapshot.fleet.agents.live.length,
-    claims: snapshot.fleet.claims.active,
-    risk: snapshot.risk.signals.filter((signal) => signal.level === "red").length,
-    ratePerMinute,
-  };
-}
-
-function observedPerMinute(log: readonly CockpitEvent[], nowMs: number): number {
-  const since = nowMs / 1000 - 60;
-  let count = 0;
-  for (const event of log) {
-    if (event.ts < since) break;
-    count += 1;
-  }
-  return count;
-}
-
-function stampFor(ms: number | null): string {
-  if (ms === null) return "—";
-  return new Date(ms).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-}
-
-function mergeAuditRows<T extends { readonly seq: number }>(
-  current: readonly T[] | null,
-  incoming: readonly T[],
-  retainedLimit = 100,
-): readonly T[] {
-  const bySequence = new Map<number, T>();
-  for (const row of current ?? []) bySequence.set(row.seq, row);
-  for (const row of incoming) bySequence.set(row.seq, row);
-  return [...bySequence.values()]
-    .sort((left, right) => right.seq - left.seq)
-    .slice(0, retainedLimit);
-}
 
 /** Auth-bound live state consumed by the app shell. */
 export interface CockpitFeeds {
@@ -200,18 +112,13 @@ export interface CockpitFeeds {
  * from repopulating the presentation.
  */
 export function useCockpitFeeds(blocked: boolean, credentialRevision: number): CockpitFeeds {
+  const auxiliary = useCockpitAuxiliaryFeeds(blocked, credentialRevision);
   const [snap, setSnap] = useState<SnapshotState>(INITIAL_SNAPSHOT);
   const [kpis, setKpis] = useState<readonly Kpi[]>([]);
   const [log, setLog] = useState<readonly CockpitEvent[]>([]);
   const [spineSource, setSpineSource] = useState<EventSource | undefined>(undefined);
   const [provenance, setProvenance] = useState<SpineProvenance>("connecting");
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
-  const [reliability, setReliability] = useState<ReliabilityState>(INITIAL_RELIABILITY);
-  const [federation, setFederation] = useState<FederationState>(INITIAL_FEDERATION);
-  const [metrics, setMetrics] = useState<MetricsState>(INITIAL_METRICS);
-  const [sessions, setSessions] = useState<SessionsState>(INITIAL_SESSIONS);
-  const [waits, setWaits] = useState<WaitsState>(INITIAL_WAITS);
-  const [anomalyReport, setAnomalyReport] = useState<HealthAnomaliesState>(INITIAL_ANOMALIES);
   const [receipts, setReceipts] = useState<ReceiptsState>(INITIAL_RECEIPTS);
   const [operatorActions, setOperatorActions] =
     useState<OperatorActionsState>(INITIAL_OPERATOR_ACTIONS);
@@ -220,7 +127,7 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     attempt: 0,
     detail: null,
   });
-  const previous = useRef<HeadlineMetrics>(ZERO_METRICS);
+  const previous = useRef<HeadlineMetrics>(ZERO_HEADLINE_METRICS);
 
   useEffect(() => {
     setSnap(INITIAL_SNAPSHOT);
@@ -228,16 +135,10 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     setLog([]);
     setSpineSource(undefined);
     setProvenance("connecting");
-    setReliability(INITIAL_RELIABILITY);
-    setFederation(INITIAL_FEDERATION);
-    setMetrics(INITIAL_METRICS);
-    setSessions(INITIAL_SESSIONS);
-    setWaits(INITIAL_WAITS);
-    setAnomalyReport(INITIAL_ANOMALIES);
     setReceipts(INITIAL_RECEIPTS);
     setOperatorActions(INITIAL_OPERATOR_ACTIONS);
     setTransportState({ status: "connecting", attempt: 0, detail: null });
-    previous.current = ZERO_METRICS;
+    previous.current = ZERO_HEADLINE_METRICS;
     if (blocked) return;
 
     const routed = new Set<(event: CockpitEvent) => void>();
@@ -291,54 +192,6 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     });
 
     let effectActive = true;
-    let stopAuxiliaryFeeds: (() => void) | undefined;
-    let auxiliaryFallback: ReturnType<typeof setTimeout> | undefined;
-    const startAuxiliaryFeeds = (): void => {
-      if (!effectActive || stopAuxiliaryFeeds !== undefined) return;
-      if (auxiliaryFallback !== undefined) {
-        clearTimeout(auxiliaryFallback);
-        auxiliaryFallback = undefined;
-      }
-      const reliabilityStore = createReliabilityStore();
-      const federationStore = createFederationStore();
-      const unsubscribeFederation = federationStore.subscribe(setFederation);
-      const metricsStore = createMetricsStore();
-      const unsubscribeMetrics = metricsStore.subscribe(setMetrics);
-      const sessionsStore = createSessionsStore();
-      const unsubscribeSessions = sessionsStore.subscribe(setSessions);
-      const waitsStore = createWaitsStore();
-      const unsubscribeWaits = waitsStore.subscribe(setWaits);
-      let anomaliesStore: ReturnType<typeof createHealthAnomaliesStore> | undefined;
-      let unsubscribeAnomalies: (() => void) | undefined;
-      let anomalyFallback: ReturnType<typeof setTimeout> | undefined;
-      const startAnomalies = (): void => {
-        if (!effectActive || anomaliesStore !== undefined) return;
-        if (anomalyFallback !== undefined) clearTimeout(anomalyFallback);
-        anomaliesStore = createHealthAnomaliesStore();
-        unsubscribeAnomalies = anomaliesStore.subscribe(setAnomalyReport);
-      };
-      const unsubscribeReliability = reliabilityStore.subscribe((state) => {
-        setReliability(state);
-        if (state.status !== "connecting") startAnomalies();
-      });
-      anomalyFallback = setTimeout(startAnomalies, HEAVY_FEED_STAGGER_FALLBACK_MS);
-      stopAuxiliaryFeeds = () => {
-        unsubscribeReliability();
-        unsubscribeFederation();
-        unsubscribeMetrics();
-        unsubscribeSessions();
-        unsubscribeWaits();
-        if (anomalyFallback !== undefined) clearTimeout(anomalyFallback);
-        unsubscribeAnomalies?.();
-        reliabilityStore.stop();
-        federationStore.stop();
-        metricsStore.stop();
-        sessionsStore.stop();
-        waitsStore.stop();
-        anomaliesStore?.stop();
-      };
-    };
-    auxiliaryFallback = setTimeout(startAuxiliaryFeeds, AUXILIARY_FEED_START_FALLBACK_MS);
 
     let stopPollingFallback: (() => void) | undefined;
     const startPollingFallback = (): void => {
@@ -371,7 +224,7 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
         if (next !== null) activate(next, mode);
         if (mode !== "connecting") {
           startFallbackAudits();
-          startAuxiliaryFeeds();
+          auxiliary.start();
         }
       });
       fallbackAuditTimer = setTimeout(startFallbackAudits, AUXILIARY_FEED_START_FALLBACK_MS);
@@ -412,95 +265,39 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
       }
       stopPollingFallback?.();
       setTransportState({ status: "live", attempt: 0, detail: null });
-      startAuxiliaryFeeds();
+      auxiliary.start();
     };
 
     const applySnapshotFrame = (frame: LiveChannelFrame): void => {
-      if (frame.status === "unchanged") {
+      const projection = projectSnapshotFrame(frame);
+      if (projection.kind === "heartbeat") {
         setSnap((current) =>
           current.snapshot === null
             ? { ...current, status: "error", error: "snapshot heartbeat arrived before bootstrap" }
-            : { ...current, status: "live", fetchedAt: frame.sentAt, error: null },
+            : { ...current, status: "live", fetchedAt: projection.sentAt, error: null },
         );
         return;
       }
-      if (frame.status !== "live") {
-        const detail = frame.detail ?? `snapshot stream is ${frame.status}`;
-        setSnap((current) => ({ ...current, error: detail }));
+      if (projection.kind === "error") {
+        setSnap((current) => ({ ...current, error: projection.error }));
         return;
       }
-      const snapshot = parseSnapshot(frame.data);
-      if (snapshot === null) {
-        setSnap((current) => ({ ...current, error: "stream snapshot was not an object" }));
-        return;
-      }
-      publishStreamSnapshot({ snapshot, status: "live", fetchedAt: frame.sentAt, error: null });
+      publishStreamSnapshot(projection.state);
     };
 
     const applyEventsFrame = (frame: LiveChannelFrame): void => {
-      if (frame.status === "absent") {
-        activate("derived", "absent");
-        return;
-      }
-      if (frame.status === "error") {
-        setProvenance("error");
-        return;
-      }
-      const page = parseTail(frame.data);
-      if (page === null) {
-        setProvenance("error");
-        return;
-      }
-      activate("tail", "hub");
-      for (const event of page.events) push(mapStoredEvent(event));
+      const projection = projectEventsFrame(frame);
+      if (projection.mode === null) setProvenance(projection.provenance);
+      else activate(projection.mode, projection.provenance);
+      for (const event of projection.events) push(event);
     };
 
     const applyReceiptsFrame = (frame: LiveChannelFrame): void => {
-      if (frame.status === "absent") {
-        setReceipts((current) => ({ ...current, status: "absent", error: null }));
-        return;
-      }
-      if (frame.status === "error") {
-        setReceipts((current) => ({ ...current, status: "error", error: frame.detail ?? "stream error" }));
-        return;
-      }
-      const page = parseReceiptsPage(frame.data);
-      if (page === null) {
-        setReceipts((current) => ({ ...current, status: "error", error: "stream payload was not parseable" }));
-        return;
-      }
-      setReceipts((current) => ({
-        data: mergeAuditRows<ReceiptRow>(current.data, page.rows),
-        status: "live",
-        fetchedAt: frame.sentAt,
-        error: null,
-      }));
+      setReceipts((current) => projectReceiptsFrame(current, frame));
     };
 
     const applyOperatorActionsFrame = (frame: LiveChannelFrame): void => {
-      if (frame.status === "absent") {
-        setOperatorActions((current) => ({ ...current, status: "absent", error: null }));
-        return;
-      }
-      if (frame.status === "error") {
-        setOperatorActions((current) => ({ ...current, status: "error", error: frame.detail ?? "stream error" }));
-        return;
-      }
-      const page = parseOperatorActionsPage(frame.data);
-      if (page === null) {
-        setOperatorActions((current) => ({
-          ...current,
-          status: "error",
-          error: "stream payload was not parseable",
-        }));
-        return;
-      }
-      setOperatorActions((current) => ({
-        data: mergeAuditRows<OperatorActionRow>(current.data, page.rows),
-        status: "live",
-        fetchedAt: frame.sentAt,
-        error: null,
-      }));
+      setOperatorActions((current) => projectOperatorActionsFrame(current, frame));
     };
 
     const transport = createLiveTransport();
@@ -538,39 +335,28 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
 
     return () => {
       effectActive = false;
-      if (auxiliaryFallback !== undefined) clearTimeout(auxiliaryFallback);
       if (liveFallback !== undefined) clearTimeout(liveFallback);
       unsubscribeFrames();
       unsubscribeTransportState();
       unsubscribeDerived();
       transport.stop();
       stopPollingFallback?.();
-      stopAuxiliaryFeeds?.();
       clearInterval(clock);
       derived.stop();
       streamSnapshotStore.stop();
     };
-  }, [blocked, credentialRevision]);
+  }, [auxiliary.start, blocked, credentialRevision]);
 
   useEffect(() => {
-    const next = metricsOf(snap, observedPerMinute(log, nowMs));
+    const next = headlineMetricsOf(snap, log, nowMs);
     const prior = previous.current;
     previous.current = next;
-    setKpis([
-      { label: "agents online", value: next.agents, delta: next.agents - prior.agents },
-      { label: "claims held", value: next.claims, delta: next.claims - prior.claims },
-      {
-        label: "obs / min",
-        value: next.ratePerMinute,
-        delta: next.ratePerMinute - prior.ratePerMinute,
-      },
-      { label: "risk signals", value: next.risk, delta: next.risk - prior.risk },
-    ]);
+    setKpis(headlineKpis(prior, next));
   }, [snap, log, nowMs]);
 
   return {
     snap,
-    stamp: stampFor(snap.fetchedAt),
+    stamp: cockpitStamp(snap.fetchedAt),
     kpis,
     log,
     spineSource,
@@ -580,12 +366,12 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
       provenance === "hub" ? "hub" : provenance === "connecting" ? "connecting" : "derived",
     ),
     nowMs,
-    reliability,
-    federation,
-    metrics,
-    sessions,
-    waits,
-    anomalyReport,
+    reliability: auxiliary.reliability,
+    federation: auxiliary.federation,
+    metrics: auxiliary.metrics,
+    sessions: auxiliary.sessions,
+    waits: auxiliary.waits,
+    anomalyReport: auxiliary.anomalyReport,
     receipts,
     operatorActions,
     transport: transportState,

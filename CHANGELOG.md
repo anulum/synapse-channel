@@ -75,6 +75,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- The cockpit feed lifecycle is split by responsibility. `useCockpitFeeds`
+  retains the authenticated multiplexed transport and bounded polling fallback;
+  slower reliability, federation, metrics, sessions, waits, and anomaly stores
+  have an independent lifecycle owner. Pure frame projections now decode the
+  four live channels, and a separate headline projection owns KPI deltas and
+  the freshness stamp. Startup ordering, fallback timing, retained evidence,
+  credential-generation isolation, and the public hook contract are unchanged.
 - Non-default cockpit inspector panels now cross real production bundle
   boundaries. Fleet, topology, metrics, audit, incident, and causality load only
   when selected, with a localised accessible Suspense state; the default signal
