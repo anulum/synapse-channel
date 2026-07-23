@@ -10,16 +10,20 @@ import { describe, expect, it } from "vitest";
 import readmeSource from "../README.md?raw";
 import workerSource from "../public/sw.js?raw";
 
+// Guard the modules that construct HTTP reads/writes. Facades (auditFeeds,
+// eventsTail, operatorActions, snapshot) re-export only and must stay free of
+// a second fetch path; their transport/store owners carry authenticatedFetch.
 const REQUEST_MODULES = [
   "access.ts",
-  "auditFeeds.ts",
+  "auditFeedStore.ts",
   "causality.ts",
-  "eventsTail.ts",
+  "eventsTailSource.ts",
   "feed.ts",
   "history.ts",
+  "liveTransport.ts",
   "merkleVerify.ts",
-  "operatorActions.ts",
-  "snapshot.ts",
+  "operatorActionTransport.ts",
+  "snapshotStore.ts",
   "stateAt.ts",
 ] as const;
 

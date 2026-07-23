@@ -160,8 +160,9 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText("worker")).toBeTruthy());
     expect(screen.getByRole("tab", { name: "fleet" }).getAttribute("aria-selected")).toBe("true");
-    const query = screen.getByLabelText("identity or project") as HTMLInputElement;
-    const health = screen.getByLabelText("delivery health") as HTMLSelectElement;
+    // FleetViews is a deferred inspector chunk; await its filter controls.
+    const query = (await screen.findByLabelText("identity or project")) as HTMLInputElement;
+    const health = (await screen.findByLabelText("delivery health")) as HTMLSelectElement;
     expect(query.value).toBe("quantum");
     expect(health.value).toBe("failed");
 
@@ -180,12 +181,13 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText("worker")).toBeTruthy());
     await userEvent.click(screen.getByRole("tab", { name: "incident" }));
-    await userEvent.type(screen.getByLabelText("Incident title"), "Exact event review");
+    // IncidentWorkspace is a deferred inspector chunk; await its scope form.
+    await userEvent.type(await screen.findByLabelText("Incident title"), "Exact event review");
     await userEvent.click(screen.getByRole("button", { name: /continue to evidence/u }));
     expect(location.search).toContain("panel=incident");
     expect(location.search).toContain("incident=evidence");
     expect(location.search).toContain("event=42");
-    await userEvent.click(screen.getByRole("button", { name: "add current selection" }));
+    await userEvent.click(await screen.findByRole("button", { name: "add current selection" }));
     expect(screen.getByText("1 explicit reference")).toBeTruthy();
     expect(localStorage.getItem("synapse-cockpit-incident-v1:viewer")).toContain("event:42");
     await userEvent.click(screen.getByRole("button", { name: "open" }));
