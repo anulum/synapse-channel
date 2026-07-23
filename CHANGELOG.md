@@ -75,6 +75,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Non-default cockpit inspector panels now cross real production bundle
+  boundaries. Fleet, topology, metrics, audit, incident, and causality load only
+  when selected, with a localised accessible Suspense state; the default signal
+  log and attention queue remain in the entry path. The production entry falls
+  from 530.11 kB to 468.48 kB minified (151.60 kB to 137.26 kB gzip) without
+  raising the chunk warning limit, and the six deferred chunks remain bounded
+  between 4.27 kB and 29.19 kB minified.
 - The cockpit root now delegates replay reconstruction, persisted preferences,
   transient overlays and command entry, live transition toasts, and live/replay
   panel projections to dedicated hooks. `App.tsx` is limited to authenticated

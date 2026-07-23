@@ -63,6 +63,7 @@ export const FRENCH: Catalogue = {
   "tab.incident": "incident",
   "tab.causality": "causalité",
   "tabs.label": "Inspecteur",
+  "tabs.loadingPanel": "chargement du panneau…",
   "tabs.clearWindow": "Effacer la fenêtre temporelle sélectionnée",
   "mobile.label": "Section du tableau",
   "mobile.signals": "signaux",

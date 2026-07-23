@@ -110,6 +110,16 @@ shell. This separation is architectural: it must not change exact wire values,
 browser-principal enforcement, or the evidence boundary between retained live
 state and reconstruction.
 
+The inspector also defines the cockpit's JavaScript delivery boundary. The
+default signal log and attention queue ship in the entry chunk because they are
+the immediate operator surfaces. Fleet, topology, metrics, audit, incident, and
+causality are separate feature chunks requested only when their tab becomes
+active. A localised live status occupies the existing tabpanel while a deferred
+chunk loads; the surrounding panel error boundary remains responsible for a
+failed import. This is behavioural code splitting, not a warning override: the
+production entry is 468.48 kB minified / 137.26 kB gzip, down from 530.11 kB /
+151.60 kB gzip, and no configured chunk-size threshold was raised.
+
 ## Unlock a protected dashboard
 
 A loopback read-only dashboard can run without a browser bearer. A supplied

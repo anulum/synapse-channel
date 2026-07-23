@@ -76,17 +76,17 @@ describe("InspectorTabs", () => {
     await userEvent.click(screen.getByRole("tab", { name: "attention" }));
     expect(screen.getByLabelText("Fleet attention queue")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "fleet" }));
-    expect(screen.getByLabelText("Fleet communication views")).toBeTruthy();
+    expect(await screen.findByLabelText("Fleet communication views")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "topology" }));
-    expect(screen.getByLabelText("Fleet topology")).toBeTruthy();
+    expect(await screen.findByLabelText("Fleet topology")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "metrics" }));
-    expect(screen.getByLabelText("Log metrics")).toBeTruthy();
+    expect(await screen.findByLabelText("Log metrics")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "audit" }));
-    expect(screen.getByLabelText("Receipt and operator audit")).toBeTruthy();
+    expect(await screen.findByLabelText("Receipt and operator audit")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "incident" }));
-    expect(screen.getByLabelText("Guided incident workspace")).toBeTruthy();
+    expect(await screen.findByLabelText("Guided incident workspace")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "causality" }));
-    expect(screen.getByLabelText("Causality inspector")).toBeTruthy();
+    expect(await screen.findByLabelText("Causality inspector")).toBeTruthy();
   });
 
   it("shows the brushed window beside the tabs and clears it", async () => {
@@ -139,6 +139,7 @@ describe("InspectorTabs", () => {
     const onSelectionChange = vi.fn();
     render(<InspectorHarness events={EVENTS} connected onSelectionChange={onSelectionChange} />);
     await userEvent.click(screen.getByRole("tab", { name: "fleet" }));
+    await screen.findByLabelText("Fleet communication views");
     await userEvent.click(screen.getByRole("tab", { name: "timeline" }));
     await userEvent.click(screen.getByRole("button", { name: "#7" }));
     expect(onSelectionChange).toHaveBeenCalledWith({ kind: "event", seq: 7 });
@@ -151,7 +152,7 @@ describe("InspectorTabs", () => {
     log.focus();
     await user.keyboard("{ArrowRight}");
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "fleet" }));
-    expect(screen.getByLabelText("Fleet communication views")).toBeTruthy();
+    expect(await screen.findByLabelText("Fleet communication views")).toBeTruthy();
     await user.keyboard("{End}");
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "causality" }));
     await user.keyboard("{Home}");

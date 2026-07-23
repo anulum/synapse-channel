@@ -63,6 +63,7 @@ export const GERMAN: Catalogue = {
   "tab.incident": "Incident",
   "tab.causality": "Kausalität",
   "tabs.label": "Inspektor",
+  "tabs.loadingPanel": "Panel wird geladen…",
   "tabs.clearWindow": "Markiertes Zeitfenster aufheben",
   "mobile.label": "Deck-Bereich",
   "mobile.signals": "Signale",

@@ -63,6 +63,7 @@ export const SLOVAK: Catalogue = {
   "tab.incident": "incident",
   "tab.causality": "kauzalita",
   "tabs.label": "Inšpektor",
+  "tabs.loadingPanel": "načítava sa panel…",
   "tabs.clearWindow": "Zrušiť označené časové okno",
   "mobile.label": "Sekcia plochy",
   "mobile.signals": "signály",

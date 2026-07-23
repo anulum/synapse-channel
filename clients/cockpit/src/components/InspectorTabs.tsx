@@ -7,7 +7,7 @@
 // SYNAPSE_CHANNEL — tab switch between the signal log and the causality inspector
 
 import type { JSX, KeyboardEvent } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useCockpitI18n } from "../context/CockpitI18n";
 import type { OperatorActionsState, ReceiptsState } from "../lib/auditFeeds";
 import type { AttentionItem } from "../lib/attention";
@@ -31,14 +31,28 @@ import {
   type ReplayState,
 } from "../lib/workspace";
 import { AttentionQueue } from "./AttentionQueue";
-import { AuditView } from "./AuditView";
-import { CausalityView, type CausalityPrefill } from "./CausalityView";
+import type { CausalityPrefill } from "./CausalityView";
 import { DataCoverage } from "./DataCoverage";
-import { FleetViews } from "./FleetViews";
 import { SignalLog } from "./SignalLog";
-import { MetricsPanel } from "./MetricsPanel";
-import { IncidentWorkspace } from "./IncidentWorkspace";
-import { TopologyView } from "./TopologyView";
+
+const AuditView = lazy(async () => ({
+  default: (await import("./AuditView")).AuditView,
+}));
+const CausalityView = lazy(async () => ({
+  default: (await import("./CausalityView")).CausalityView,
+}));
+const FleetViews = lazy(async () => ({
+  default: (await import("./FleetViews")).FleetViews,
+}));
+const IncidentWorkspace = lazy(async () => ({
+  default: (await import("./IncidentWorkspace")).IncidentWorkspace,
+}));
+const MetricsPanel = lazy(async () => ({
+  default: (await import("./MetricsPanel")).MetricsPanel,
+}));
+const TopologyView = lazy(async () => ({
+  default: (await import("./TopologyView")).TopologyView,
+}));
 
 interface InspectorTabsProps {
   readonly tab: InspectorTab;
@@ -246,96 +260,100 @@ export function InspectorTabs({
         role="tabpanel"
         aria-labelledby={`inspector-tab-${tab}`}
       >
-        {tab === "attention" ? (
-          <AttentionQueue
-            items={attention}
-            connected={connected}
-            onInspectAgent={onInspectAgent}
-            onInspectTask={onInspectTask}
-            onInspectRoute={(source, target) =>
-              onFleetSelectionChange({ kind: "route", source, target })
-            }
-          />
-        ) : tab === "log" ? (
-          <SignalLog
-            events={events}
-            window={window}
-            onClearWindow={onClearWindow}
-            onSelectTask={onSelectTask}
-            selection={selection}
-            onSelectEvent={(seq) => onSelectionChange?.({ kind: "event", seq })}
-            provenance={provenance}
-            {...(query !== undefined ? { query } : {})}
-            onQueryChange={onQueryChange}
-          />
-        ) : tab === "fleet" ? (
-          <FleetViews
-            events={events}
-            claims={claims}
-            agents={agents}
-            window={window}
-            connected={connected}
-            canMessage={canMessagePeer}
-            onMessagePeer={onMessagePeer}
-            {...(communicationFilter !== undefined ? { filter: communicationFilter } : {})}
-            onFilterChange={onCommunicationFilterChange}
-            onOpenEvent={onOpenEvent}
-            view={fleetView}
-            onViewChange={onFleetViewChange}
-            selection={selection ?? fleetSelection}
-            onSelectionChange={(next) => {
-              if (onSelectionChange !== undefined) {
-                onSelectionChange(next);
-                return;
+        <Suspense
+          fallback={<div className="panel__empty" role="status">{t("tabs.loadingPanel")}</div>}
+        >
+          {tab === "attention" ? (
+            <AttentionQueue
+              items={attention}
+              connected={connected}
+              onInspectAgent={onInspectAgent}
+              onInspectTask={onInspectTask}
+              onInspectRoute={(source, target) =>
+                onFleetSelectionChange({ kind: "route", source, target })
               }
-              onFleetSelectionChange(fleetSelectionOf(next));
-            }}
-          />
-        ) : tab === "metrics" ? (
-          <MetricsPanel
-            state={metrics ?? { data: null, status: "connecting", fetchedAt: null, error: null }}
-            sessions={sessions}
-          />
-        ) : tab === "topology" ? (
-          <TopologyView
-            claims={claims}
-            conflicts={conflicts}
-            liveAgentCount={liveAgentCount}
-            connected={connected}
-            {...(federation !== undefined ? { federation } : {})}
-          />
-        ) : tab === "audit" ? (
-          <AuditView
-            receipts={receipts ?? { data: null, status: "connecting", fetchedAt: null, error: null }}
-            operatorActions={
-              operatorActions ?? { data: null, status: "connecting", fetchedAt: null, error: null }
-            }
-            selection={selection}
-            onSelectEvent={(seq) => onSelectionChange?.(seq === null ? null : { kind: "event", seq })}
-            onOpenEvent={onOpenEvent ?? ((seq) => onSelectionChange?.({ kind: "event", seq }))}
-          />
-        ) : tab === "incident" ? (
-          <IncidentWorkspace
-            key={incidentStorageKey}
-            step={incidentStep}
-            onStepChange={(next) => onIncidentStepChange?.(next)}
-            selection={selection}
-            replay={replay}
-            storageKey={incidentStorageKey}
-            hubVersion={hubVersion}
-            configEpoch={configEpoch}
-            onOpenEvidence={(next) => {
-              if (onOpenIncidentEvidence !== undefined) {
-                onOpenIncidentEvidence(next);
-                return;
+            />
+          ) : tab === "log" ? (
+            <SignalLog
+              events={events}
+              window={window}
+              onClearWindow={onClearWindow}
+              onSelectTask={onSelectTask}
+              selection={selection}
+              onSelectEvent={(seq) => onSelectionChange?.({ kind: "event", seq })}
+              provenance={provenance}
+              {...(query !== undefined ? { query } : {})}
+              onQueryChange={onQueryChange}
+            />
+          ) : tab === "fleet" ? (
+            <FleetViews
+              events={events}
+              claims={claims}
+              agents={agents}
+              window={window}
+              connected={connected}
+              canMessage={canMessagePeer}
+              onMessagePeer={onMessagePeer}
+              {...(communicationFilter !== undefined ? { filter: communicationFilter } : {})}
+              onFilterChange={onCommunicationFilterChange}
+              onOpenEvent={onOpenEvent}
+              view={fleetView}
+              onViewChange={onFleetViewChange}
+              selection={selection ?? fleetSelection}
+              onSelectionChange={(next) => {
+                if (onSelectionChange !== undefined) {
+                  onSelectionChange(next);
+                  return;
+                }
+                onFleetSelectionChange(fleetSelectionOf(next));
+              }}
+            />
+          ) : tab === "metrics" ? (
+            <MetricsPanel
+              state={metrics ?? { data: null, status: "connecting", fetchedAt: null, error: null }}
+              sessions={sessions}
+            />
+          ) : tab === "topology" ? (
+            <TopologyView
+              claims={claims}
+              conflicts={conflicts}
+              liveAgentCount={liveAgentCount}
+              connected={connected}
+              {...(federation !== undefined ? { federation } : {})}
+            />
+          ) : tab === "audit" ? (
+            <AuditView
+              receipts={receipts ?? { data: null, status: "connecting", fetchedAt: null, error: null }}
+              operatorActions={
+                operatorActions ?? { data: null, status: "connecting", fetchedAt: null, error: null }
               }
-              onSelectionChange?.(next);
-              onTabChange(next.kind === "task" ? "causality" : next.kind === "event" ? "log" : "fleet");
-            }}
-          />
-        ) : (
-          <CausalityView prefill={prefill} />
-        )}
+              selection={selection}
+              onSelectEvent={(seq) => onSelectionChange?.(seq === null ? null : { kind: "event", seq })}
+              onOpenEvent={onOpenEvent ?? ((seq) => onSelectionChange?.({ kind: "event", seq }))}
+            />
+          ) : tab === "incident" ? (
+            <IncidentWorkspace
+              key={incidentStorageKey}
+              step={incidentStep}
+              onStepChange={(next) => onIncidentStepChange?.(next)}
+              selection={selection}
+              replay={replay}
+              storageKey={incidentStorageKey}
+              hubVersion={hubVersion}
+              configEpoch={configEpoch}
+              onOpenEvidence={(next) => {
+                if (onOpenIncidentEvidence !== undefined) {
+                  onOpenIncidentEvidence(next);
+                  return;
+                }
+                onSelectionChange?.(next);
+                onTabChange(next.kind === "task" ? "causality" : next.kind === "event" ? "log" : "fleet");
+              }}
+            />
+          ) : (
+            <CausalityView prefill={prefill} />
+          )}
+        </Suspense>
       </div>
     </div>
   );

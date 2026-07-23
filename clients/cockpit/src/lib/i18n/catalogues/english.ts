@@ -61,6 +61,7 @@ export const ENGLISH = {
   "tab.incident": "incident",
   "tab.causality": "causality",
   "tabs.label": "Inspector",
+  "tabs.loadingPanel": "loading panel…",
   "tabs.clearWindow": "Clear the brushed window",
   "mobile.label": "Deck section",
   "mobile.signals": "signals",

@@ -82,6 +82,7 @@ describe("cockpit localisation", () => {
     expect(formatMessage("fr", "hud.transport", { status: "poll fallback" })).toBe("Transport en direct : poll fallback");
     expect(formatMessage("en", "hud.transport")).toBe("Live transport: {status}");
     expect(formatCatalogueMessage({}, "hud.live")).toBe("live");
+    expect(formatMessage("sk", "tabs.loadingPanel")).toBe("načítava sa panel…");
   });
 
   it("keeps translated protocol outcomes and setup placeholders literal", () => {
