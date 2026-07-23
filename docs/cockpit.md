@@ -145,6 +145,12 @@ behaviour that used to share that root component has its own lifecycle owner:
   compatibility backfill, incremental polling, provenance, timers, and abort
   cleanup. The stable `eventsTail` facade preserves parser, projection, source,
   and type imports used by history and live-frame consumers.
+- `auditFeedParser` strictly validates complete receipt and governed-action
+  cursor pages for both HTTP and multiplexed live-frame consumers;
+  `auditFeedStore` owns authenticated cursor advancement, retained last-good
+  evidence, absence reset, sequence de-duplication, subscriptions, timers, and
+  abort cleanup. The stable `auditFeeds` facade preserves existing component,
+  projection, evidence, and feed-hook imports.
 
 Each owner has a dedicated behavioural hook or projection test. The wired
 `App` and feed tests still exercise authentication, real endpoint adapters,

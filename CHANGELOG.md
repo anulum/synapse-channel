@@ -176,6 +176,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Durable receipt and governed-action feeds now separate strict document
+  validation from authenticated retained-cursor lifecycle behind the unchanged
+  `auditFeeds` facade. HTTP polling and multiplexed live frames still share the
+  same fail-closed schemas, while absence reset, last-good retention, ordering,
+  de-duplication, and abort behavior remain unchanged.
 - The cockpit's durable event tail now has explicit trust, projection, and
   lifecycle owners behind its unchanged import facade. Tolerant wire parsing,
   exact hub sequence/timestamp projection, current and legacy history
