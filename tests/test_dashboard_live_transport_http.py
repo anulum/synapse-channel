@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
 import time
 from pathlib import Path
 from urllib.error import HTTPError
@@ -130,3 +132,51 @@ def test_live_transport_closes_cleanly_when_the_reader_disconnects(
         server.close()
 
     assert first["kind"] == "hello"
+
+
+async def test_live_transport_serializes_overlapping_snapshot_fetches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Concurrent streams share one snapshot identity without overlap."""
+    first_entered = threading.Event()
+    state_lock = threading.Lock()
+    active = 0
+    peak_active = 0
+
+    async def slow_snapshot(**_kwargs: object) -> DashboardSnapshot:
+        nonlocal active, peak_active
+        with state_lock:
+            active += 1
+            peak_active = max(peak_active, active)
+            first = not first_entered.is_set()
+            first_entered.set()
+        if first:
+            await asyncio.sleep(0.1)
+        with state_lock:
+            active -= 1
+        return await _snapshot()
+
+    monkeypatch.setattr(dashboard_module, "fetch_dashboard_snapshot", slow_snapshot)
+    server = _feeds_server()
+    token = server.dashboard_token
+    assert token is not None
+    url = server.url("/live.ndjson?cycles=1")
+    try:
+        first = asyncio.create_task(
+            asyncio.to_thread(_http_get, url, authorization=f"Bearer {token}")
+        )
+        assert await asyncio.to_thread(first_entered.wait, 1.0)
+        second = asyncio.create_task(
+            asyncio.to_thread(_http_get, url, authorization=f"Bearer {token}")
+        )
+        responses = await asyncio.gather(first, second)
+    finally:
+        server.close()
+
+    assert peak_active == 1
+    for status, content_type, body in responses:
+        assert status == 200
+        assert content_type == "application/x-ndjson"
+        frames = [json.loads(line) for line in body.splitlines()]
+        snapshot = next(frame for frame in frames if frame.get("channel") == "snapshot")
+        assert snapshot["status"] == "live"

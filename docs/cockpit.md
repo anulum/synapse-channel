@@ -85,6 +85,12 @@ snapshot and durable cursor bootstrap replace the fallback without discarding
 the last known presentation. Unchanged snapshots travel as small freshness
 heartbeats instead of retransmitting the complete fleet document.
 
+Each HTTP stream still obtains its hub snapshot through the configured
+dashboard participant identity. Reconnects and access changes can overlap at
+the HTTP layer, so the server serializes that short-lived hub fetch per
+dashboard instance. It keeps one stable roster identity and respects the hub's
+single-owner name invariant without dropping either browser stream.
+
 ## Cockpit client architecture
 
 The browser shell has explicit responsibility boundaries. `App.tsx` performs

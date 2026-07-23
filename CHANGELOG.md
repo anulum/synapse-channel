@@ -176,6 +176,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Overlapping dashboard live transports and snapshot reads now serialize the
+  short-lived hub fetch that shares the configured dashboard identity. Browser
+  access changes can no longer race two sockets under one name, trigger the
+  hub's `4009 name conflict`, or lose a snapshot cycle; the hub's single-owner
+  identity invariant and stable roster name remain unchanged.
 - `synapse demo` now writes a genuinely self-contained static dashboard: its
   styles and completed coordination evidence are embedded in the HTML, with no
   missing CSS/JavaScript requests, live-feed dependency, or token prompt when

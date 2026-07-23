@@ -100,6 +100,7 @@ from synapse_channel.dashboard_postmortem_feed import POSTMORTEM_PATH
 from synapse_channel.dashboard_render import render_dashboard_html
 from synapse_channel.dashboard_risk import build_risk_view
 from synapse_channel.dashboard_risk_guidance import build_risk_guidance
+from synapse_channel.dashboard_snapshot_gate import DashboardSnapshotGate
 from synapse_channel.dashboard_store_feeds import event_store_key
 from synapse_channel.dashboard_studio import (
     STUDIO_REFERENCE_PATH,
@@ -476,6 +477,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     allowed_extra_hosts: ClassVar[tuple[str, ...]]
     heavy_feed_cache: ClassVar[DashboardFeedCache]
     state_feed_cache: ClassVar[DashboardFeedCache]
+    snapshot_gate: ClassVar[DashboardSnapshotGate[DashboardSnapshot]]
 
     def _reject_foreign_host(self) -> bool:
         """Refuse a request whose ``Host`` is not an admitted authority.
@@ -573,19 +575,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
             return
         try:
-            snapshot = asyncio.run(
-                fetch_dashboard_snapshot(
-                    uri=self.uri,
-                    name=self.dashboard_name,
-                    token=self.token,
-                    ready_timeout=self.ready_timeout,
-                    response_timeout=self.response_timeout,
-                    observed_peers=self.observed_peers,
-                    observed_token=self.observed_token,
-                    observed_timeout=self.observed_timeout,
-                    observed_pins=self.observed_pins,
-                )
-            )
+            snapshot = self.snapshot_gate.fetch()
         except DashboardUnavailable as exc:
             body = f"{exc}\n".encode()
             self._write(HTTPStatus.SERVICE_UNAVAILABLE, body, content_type="text/plain")
@@ -778,19 +768,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             while cycle_limit is None or cycles < cycle_limit:
                 cycles += 1
                 try:
-                    snapshot = asyncio.run(
-                        fetch_dashboard_snapshot(
-                            uri=self.uri,
-                            name=self.dashboard_name,
-                            token=self.token,
-                            ready_timeout=self.ready_timeout,
-                            response_timeout=self.response_timeout,
-                            observed_peers=self.observed_peers,
-                            observed_token=self.observed_token,
-                            observed_timeout=self.observed_timeout,
-                            observed_pins=self.observed_pins,
-                        )
-                    )
+                    snapshot = self.snapshot_gate.fetch()
                 except DashboardUnavailable as exc:
                     send("channel", channel="snapshot", status="error", detail=str(exc))
                 else:
@@ -923,6 +901,23 @@ def _handler_class(
         process_isolation=True,
     )
 
+    def _fetch_bound_snapshot() -> DashboardSnapshot:
+        return asyncio.run(
+            fetch_dashboard_snapshot(
+                uri=bound_uri,
+                name=bound_name,
+                token=bound_token,
+                ready_timeout=bound_ready_timeout,
+                response_timeout=bound_response_timeout,
+                observed_peers=bound_observed_peers,
+                observed_token=bound_observed_token,
+                observed_timeout=bound_observed_timeout,
+                observed_pins=bound_observed_pins,
+            )
+        )
+
+    bound_snapshot_gate = DashboardSnapshotGate(_fetch_bound_snapshot)
+
     class BoundDashboardHandler(_DashboardHandler):
         """Dashboard handler bound to one hub URI and dashboard identity."""
 
@@ -946,6 +941,7 @@ def _handler_class(
         allowed_extra_hosts = bound_allow_hosts
         heavy_feed_cache = bound_heavy_feed_cache
         state_feed_cache = bound_state_feed_cache
+        snapshot_gate = bound_snapshot_gate
 
     return BoundDashboardHandler
 
