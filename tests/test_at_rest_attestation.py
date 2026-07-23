@@ -39,8 +39,10 @@ def _pcr0() -> bytes:
 
 def test_hmac_policy_evidence_round_trip(tmp_path: Path) -> None:
     policy = create_hmac_policy(policy_id="seat-a", pcr_digests={0: _pcr0(), 7: _pcr0()})
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
     policy_path = write_policy_file(tmp_path / "policy.json", policy)
-    assert oct(policy_path.stat().st_mode & 0o777) == "0o600"
+    assert_owner_only_file_path(policy_path, purpose="attestation policy")
     loaded = load_policy_file(policy_path)
     assert loaded.policy_id == "seat-a"
     assert loaded.algorithm == ALGORITHM_HMAC_SHA256

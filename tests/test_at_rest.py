@@ -173,19 +173,23 @@ def test_passphrase_derivation_works_with_secure_default_parameters() -> None:
 
 
 def test_generate_key_file_writes_owner_only_and_refuses_overwrite(tmp_path: Path) -> None:
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
     key_path = tmp_path / "store.key"
     generate_key_file(key_path)
     assert key_path.stat().st_size == KEY_BYTES
-    assert key_path.stat().st_mode & 0o077 == 0
+    assert_owner_only_file_path(key_path, purpose="at-rest key")
     with pytest.raises(FileExistsError):
         generate_key_file(key_path)
 
 
 def test_generate_key_file_from_passphrase_derives_owner_only_and_usable(tmp_path: Path) -> None:
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
     key_path = tmp_path / "pp.key"
     generate_key_file_from_passphrase(key_path, "correct horse battery staple", n=2**14)
     assert key_path.stat().st_size == KEY_BYTES
-    assert key_path.stat().st_mode & 0o077 == 0
+    assert_owner_only_file_path(key_path, purpose="at-rest key")
     # The derived file is a real key: a cipher round-trips a payload through it.
     cipher = AtRestCipher.from_key_file(key_path)
     assert cipher.decrypt(cipher.encrypt(b"secret")) == b"secret"
@@ -227,9 +231,11 @@ def test_wrap_and_unwrap_reject_invalid_key_lengths() -> None:
 
 
 def test_generate_wrapped_key_file_round_trips_and_is_owner_only(tmp_path: Path) -> None:
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
     key_path = tmp_path / "wrapped.key"
     generate_wrapped_key_file(key_path, "correct horse", n=2**10)
-    assert oct(key_path.stat().st_mode & 0o777) == "0o600"
+    assert_owner_only_file_path(key_path, purpose="wrapped at-rest key")
     assert WRAPPED_KEY_SCHEMA in key_path.read_text(encoding="utf-8")
     cipher = AtRestCipher.from_wrapped_key_file(key_path, "correct horse")
     assert cipher.decrypt(cipher.encrypt(b"secret")) == b"secret"
@@ -333,6 +339,8 @@ def test_load_wrapped_key_rejects_non_wrapped_and_malformed_files(tmp_path: Path
 
 
 def test_check_key_file_accepts_a_good_key_and_rejects_problems(tmp_path: Path) -> None:
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
     good = tmp_path / "ok.key"
     generate_key_file(good)
     assert check_key_file(good) == (True, "ok")
@@ -343,15 +351,21 @@ def test_check_key_file_accepts_a_good_key_and_rejects_problems(tmp_path: Path) 
     directory.mkdir()
     assert "not a regular file" in check_key_file(directory)[1]
 
+    short = tmp_path / "short.key"
+    short.write_bytes(b"k" * 8)
+    apply_owner_only_file(short)
+    assert "exactly 32 bytes" in check_key_file(short)[1]
+
+
+@pytest.mark.skipif(
+    __import__("os").name != "posix",
+    reason="POSIX mode bits are not the owner-only floor on Windows",
+)
+def test_check_key_file_rejects_posix_group_readable(tmp_path: Path) -> None:
     loose = tmp_path / "loose.key"
     loose.write_bytes(b"k" * KEY_BYTES)
     loose.chmod(0o644)
     assert "owner-only" in check_key_file(loose)[1]
-
-    short = tmp_path / "short.key"
-    short.write_bytes(b"k" * 8)
-    short.chmod(0o600)
-    assert "exactly 32 bytes" in check_key_file(short)[1]
 
 
 def test_from_key_file_round_trips_and_rejects_bad_permissions(tmp_path: Path) -> None:
@@ -360,6 +374,8 @@ def test_from_key_file_round_trips_and_rejects_bad_permissions(tmp_path: Path) -
     cipher = AtRestCipher.from_key_file(key_path)
     assert cipher.decrypt(cipher.encrypt(b"x")) == b"x"
 
+    if __import__("os").name != "posix":
+        pytest.skip("POSIX mode bits are not the owner-only floor on Windows")
     loose = tmp_path / "loose.key"
     loose.write_bytes(b"k" * KEY_BYTES)
     loose.chmod(0o666)
@@ -413,6 +429,7 @@ def test_encrypt_file_leaves_no_temp_when_encryption_fails(tmp_path: Path) -> No
     assert list(tmp_path.glob("*.tmp")) == []
 
 
+@pytest.mark.skipif(not hasattr(os, "geteuid"), reason="os.geteuid is unavailable on this platform")
 def test_check_key_file_rejects_a_foreign_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 from pathlib import Path
 
 import pytest
@@ -67,9 +66,11 @@ def _keygen(tmp_path: Path) -> tuple[Path, Path]:
 def test_cli_keygen_sign_and_verify_round_trip(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
     key, trust = _keygen(tmp_path)
-    assert stat.S_IMODE(key.stat().st_mode) == 0o600
-    assert stat.S_IMODE(trust.stat().st_mode) == 0o600
+    assert_owner_only_file_path(key, purpose="capability-card key")
+    assert_owner_only_file_path(trust, purpose="capability-card trust")
     capsys.readouterr()
 
     card = _card(tmp_path / "card.json")
@@ -96,7 +97,7 @@ def test_cli_keygen_sign_and_verify_round_trip(
         )
         == 0
     )
-    assert stat.S_IMODE(signed.stat().st_mode) == 0o600
+    assert_owner_only_file_path(signed, purpose="signed capability-card")
     capsys.readouterr()
 
     assert (

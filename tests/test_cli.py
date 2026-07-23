@@ -154,9 +154,12 @@ def test_resolve_token_prefers_cli() -> None:
 
 
 def test_resolve_token_from_file(tmp_path: Path) -> None:
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
     f = tmp_path / "tok"
     f.write_text("file-tok\n", encoding="utf-8")
-    f.chmod(0o600)  # the token file is read through the owner-only secret floor
+    # Portable owner-only floor (POSIX mode + Windows DACL), not chmod alone.
+    apply_owner_only_file(f)
     assert cli._resolve_token(argparse.Namespace(token=None, token_file=str(f))) == "file-tok"
 
 
@@ -166,9 +169,11 @@ def test_resolve_token_from_env() -> None:
 
 
 def test_resolve_token_precedence(tmp_path: Path) -> None:
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
     f = tmp_path / "tok"
     f.write_text("file-tok", encoding="utf-8")
-    f.chmod(0o600)  # owner-only so the secret floor accepts the file
+    apply_owner_only_file(f)
     with _env_var("SYNAPSE_TOKEN", "env-tok"):
         assert cli._resolve_token(argparse.Namespace(token="cli", token_file=str(f))) == "cli"
         assert cli._resolve_token(argparse.Namespace(token=None, token_file=str(f))) == "file-tok"

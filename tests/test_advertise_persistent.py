@@ -226,10 +226,13 @@ def _capture_factory(sent: list[dict[str, Any]]) -> Callable[..., Awaitable[None
 
 def _signed_agent(tmp_path: Path, name: str = "PROJ/seat-1") -> SynapseAgent:
     """Build an unsigned-connection agent holding a real card-signing key."""
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
     key = Ed25519PrivateKey.generate()
     pem = tmp_path / "card.pem"
     pem.write_bytes(key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()))
-    pem.chmod(0o600)
+    # chmod alone is not a Windows owner-only floor; apply the portable DACL/mode.
+    apply_owner_only_file(pem)
     return SynapseAgent(
         name,
         _ignore_message,

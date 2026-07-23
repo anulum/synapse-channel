@@ -803,6 +803,12 @@ def check_key_file(path: str | Path) -> tuple[bool, str]:
         info = os.lstat(target)
     except FileNotFoundError:
         return False, f"key file does not exist: {target}"
+    # Same structural checks on every OS so callers get stable reasons
+    # (directory / symlink → "not a regular file") before ACL/mode floors.
+    # Prefer ``is_symlink()`` over mode bits alone: Windows lstat can report a
+    # reparse point with FILE attributes that still look regular to S_ISREG.
+    if target.is_symlink() or not stat.S_ISREG(info.st_mode):
+        return False, f"key file is not a regular file: {target}"
     import sys
 
     if sys.platform.startswith("win"):
@@ -836,6 +842,10 @@ def load_key_file(path: str | Path) -> bytes:
         does not hold exactly :data:`KEY_BYTES` bytes.
     """
     target = Path(path)
+    # Symlink refusal is portable: O_NOFOLLOW is POSIX-only, so check the leaf
+    # path first on every platform (Windows open would otherwise follow).
+    if target.is_symlink():
+        raise ValueError(f"key file must not be a symlink: {target}")
     try:
         fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     except FileNotFoundError as exc:
@@ -843,6 +853,24 @@ def load_key_file(path: str | Path) -> bytes:
     except OSError as exc:  # O_NOFOLLOW raises (ELOOP) when the path is a symlink.
         raise ValueError(f"key file must not be a symlink: {target}") from exc
     try:
+        if os.name == "nt":
+            # Windows has no meaningful st_mode owner-only bits; prove the NT
+            # DACL floor before reading key material.
+            from synapse_channel.core.secure_path import (
+                SecurePathError,
+                assert_owner_only_file_path,
+            )
+
+            try:
+                assert_owner_only_file_path(target, purpose="key file")
+            except SecurePathError as exc:
+                raise ValueError(
+                    f"key file must be owner-only (chmod 600): {target} ({exc})"
+                ) from exc
+            material = os.read(fd, KEY_BYTES + 1)
+            if len(material) != KEY_BYTES:
+                raise ValueError(f"key file must hold exactly {KEY_BYTES} bytes: {target}")
+            return material
         ok, reason = _validate_key_stat(os.fstat(fd), target)
         if not ok:
             raise ValueError(reason)

@@ -75,3 +75,25 @@ requires_loadavg = pytest.mark.skipif(
     reason="os.getloadavg is unavailable on this platform",
 )
 """Skip marker for tests that require host load averages."""
+
+POSIX_MODE_BITS_MEANINGFUL = os.name == "posix"
+"""Whether ``st_mode`` permission bits are the ownership floor (POSIX only).
+
+On Windows, Python ``chmod`` and ``st_mode`` do not prove owner-only access;
+the portable floor is the NT DACL (see :mod:`synapse_channel.core.secure_path`).
+"""
+
+requires_posix_mode_bits = pytest.mark.skipif(
+    not POSIX_MODE_BITS_MEANINGFUL,
+    reason="POSIX st_mode bits are not the owner-only floor on Windows",
+)
+"""Skip marker for tests that loosen or assert secrets via POSIX mode bits only."""
+
+GETEUID_AVAILABLE = hasattr(os, "geteuid")
+"""Whether ``os.geteuid`` exists (POSIX; absent on Windows)."""
+
+requires_geteuid = pytest.mark.skipif(
+    not GETEUID_AVAILABLE,
+    reason="os.geteuid is unavailable on this platform",
+)
+"""Skip marker for tests that monkeypatch or call ``os.geteuid``."""

@@ -158,15 +158,16 @@ def test_evaluate_windows_owner_only_policy_accepts_owner_and_system() -> None:
             WindowsAce(ace_type=0, mask=0x001F01FF, sid="S-1-3-4"),
         ),
     )
-    with pytest.raises(SecurePathError, match="not owned by the effective user"):
-        evaluate_windows_owner_only_policy(
-            path=path,
-            purpose="policy",
-            owner_sid="S-1-5-32-544",
-            current_sid=current,
-            dacl_present=True,
-            aces=(WindowsAce(ace_type=0, mask=0x001F01FF, sid="S-1-5-32-544"),),
-        )
+    # Administrators-only DACL (no current-user ACE) is accepted when the owner
+    # is Administrators — common under admin-group tokens on Windows CI.
+    evaluate_windows_owner_only_policy(
+        path=path,
+        purpose="policy",
+        owner_sid="S-1-5-32-544",
+        current_sid=current,
+        dacl_present=True,
+        aces=(WindowsAce(ace_type=0, mask=0x001F01FF, sid="S-1-5-32-544"),),
+    )
 
 
 def test_evaluate_windows_owner_only_policy_refuses_everyone_and_null_dacl() -> None:

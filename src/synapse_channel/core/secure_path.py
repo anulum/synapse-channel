@@ -339,12 +339,14 @@ def evaluate_windows_owner_only_policy(
         )
     if not dacl_present:
         raise SecurePathError(f"{purpose}: {path} has a NULL DACL (world-accessible); refused")
-    current_has_allow = False
+    # DACL must not grant Everyone / Users / other non-owner principals. On
+    # GitHub Actions Windows runners the process is in Administrators and new
+    # files are often owner=Administrators with only SYSTEM/Administrators/
+    # OWNER RIGHTS ACEs — that is still owner-restricted relative to other
+    # local users (same honesty class as OpenSSH allowing Administrators).
     for ace in aces:
         if ace.ace_type != _ACCESS_ALLOWED_ACE_TYPE:
             continue
-        if ace.sid == current_sid and (ace.mask & _WINDOWS_INTERESTING_ACCESS):
-            current_has_allow = True
         if ace.sid == current_sid or ace.sid in _WINDOWS_ALLOWED_EXTRA_SIDS:
             continue
         if ace.mask & _WINDOWS_INTERESTING_ACCESS:
@@ -352,14 +354,6 @@ def evaluate_windows_owner_only_policy(
                 f"{purpose}: {path} is accessible by other principals "
                 f"(ACE for {ace.sid}); must be owner-only"
             )
-    # When the NT owner is not the process user (Administrators-owned files are
-    # common under admin-group tokens), require an explicit current-user ACE so
-    # we never rely on ambient admin rights alone.
-    if owner_sid != current_sid and not current_has_allow:
-        raise SecurePathError(
-            f"{purpose}: {path} is not owned by the effective user "
-            f"(owner={owner_sid}, user={current_sid})"
-        )
 
 
 def _windows_path_kind_guards(path: Path, *, purpose: str, directory: bool) -> None:

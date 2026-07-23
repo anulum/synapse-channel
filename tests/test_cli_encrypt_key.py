@@ -143,7 +143,9 @@ def test_generate_from_passphrase_writes_a_key_check_passes(
     rc = cli_encrypt_key._cmd_generate(args, passphrase_reader=lambda _prompt: "correct horse")
     assert rc == 0
     assert key_path.stat().st_size == KEY_BYTES
-    assert oct(key_path.stat().st_mode & 0o777) == "0o600"
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
+    assert_owner_only_file_path(key_path, purpose="encrypt-key")
     assert "owner-only" in capsys.readouterr().out
 
     check_args = cli.build_parser().parse_args(["encrypt-key", "check", str(key_path)])
@@ -192,7 +194,9 @@ def test_generate_wrapped_round_trips_and_rewrap_rotates_passphrase(
         ["encrypt-key", "generate-wrapped", "--scrypt-n", "1024", str(key_path)]
     )
     assert cli_encrypt_key._cmd_generate_wrapped(gen, passphrase_reader=lambda _p: "old-pass") == 0
-    assert oct(key_path.stat().st_mode & 0o777) == "0o600"
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
+    assert_owner_only_file_path(key_path, purpose="wrapped encrypt-key")
     assert "wrapped at-rest key" in capsys.readouterr().out
 
     # The wrapped key opens the cipher and seals data.

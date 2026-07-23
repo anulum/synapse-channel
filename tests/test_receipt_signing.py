@@ -74,9 +74,13 @@ def key_path(tmp_path: Path) -> Path:
 
 
 def test_keygen_writes_owner_only_private_and_shareable_public(key_path: Path) -> None:
-    assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
+    assert_owner_only_file_path(key_path, purpose="receipt-signing private key")
     pub_path = key_path.with_name(key_path.name + ".pub")
-    assert stat.S_IMODE(pub_path.stat().st_mode) == 0o644
+    # Public material is intentionally shareable; on POSIX that is 0o644.
+    if __import__("os").name == "posix":
+        assert stat.S_IMODE(pub_path.stat().st_mode) == 0o644
     document = json.loads(pub_path.read_text(encoding="utf-8"))
     assert document["algorithm"] == "ed25519"
     assert len(document["key_id"]) == KEY_ID_HEX_CHARS

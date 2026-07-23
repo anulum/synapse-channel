@@ -37,8 +37,10 @@ def test_local_aes_kw_round_trip(tmp_path: Path) -> None:
     master = generate_key_file(tmp_path / "master.key")
     provider = LocalAesKwCloudHsmProvider.from_key_file(master)
     key_path = tmp_path / "cloud.wrapped.key"
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
     generate_wrapped_key_file_cloud_hsm(key_path, provider=provider)
-    assert oct(key_path.stat().st_mode & 0o777) == "0o600"
+    assert_owner_only_file_path(key_path, purpose="cloud-HSM wrapped key")
     document = json.loads(key_path.read_text(encoding="utf-8"))
     assert document["schema"] == WRAPPED_KEY_SCHEMA
     assert document["backend"] == CLOUD_HSM_BACKEND
@@ -79,6 +81,10 @@ def test_rejects_passphrase_backend_file(tmp_path: Path) -> None:
         cipher_from_wrapped_key_file_cloud_hsm(passphrase_path)
 
 
+@pytest.mark.skipif(
+    __import__("os").name != "posix",
+    reason="POSIX mode bits are not the owner-only floor on Windows",
+)
 def test_master_key_must_be_owner_only_full_length(tmp_path: Path) -> None:
     bad = tmp_path / "bad.key"
     bad.write_bytes(b"\x00" * KEY_BYTES)

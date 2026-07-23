@@ -21,13 +21,19 @@ from synapse_channel.core.identity_keys import (
 
 
 def test_load_signing_key_round_trips_owner_only_pem(tmp_path: Path) -> None:
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
     path = tmp_path / "id.key"
     write_signing_key(path, generate_signing_key())
-    assert path.stat().st_mode & 0o777 == 0o600
+    assert_owner_only_file_path(path, purpose="identity-signing-key")
     loaded = load_signing_key(path)
     assert load_signing_key(path).private_bytes_raw() == loaded.private_bytes_raw()
 
 
+@pytest.mark.skipif(
+    __import__("os").name != "posix",
+    reason="POSIX mode bits are not the owner-only floor on Windows",
+)
 def test_load_signing_key_refuses_world_readable_without_key_material(tmp_path: Path) -> None:
     path = tmp_path / "loose.key"
     path.write_text(

@@ -81,15 +81,17 @@ def test_key_file_round_trip(tmp_path: Path) -> None:
     out_dir = tmp_path / "shares"
     written = split_key_file(key_path, threshold=2, share_count=3, out_dir=out_dir)
     assert len(written) == 3
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
     for path in written:
-        assert oct(path.stat().st_mode & 0o777) == "0o600"
+        assert_owner_only_file_path(path, purpose="escrow share")
         share = load_escrow_share(path)
         assert share.to_document()["schema"] == ESCROW_SHARE_SCHEMA
 
     recovered_path = tmp_path / "recovered.key"
     recover_key_file([written[0], written[2]], out_path=recovered_path)
     assert load_key_file(recovered_path) == original
-    assert oct(recovered_path.stat().st_mode & 0o777) == "0o600"
+    assert_owner_only_file_path(recovered_path, purpose="recovered at-rest key")
 
 
 def test_recover_refuses_overwrite(tmp_path: Path) -> None:

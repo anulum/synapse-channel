@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import json
-import stat
 from pathlib import Path
 from typing import Any
 
@@ -90,7 +89,9 @@ def test_json_mode_writes_a_complete_owner_only_bundle(
     )
 
     assert code == 0
-    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
+    assert_owner_only_file_path(output, purpose="fleet scorecard")
     document = json.loads(output.read_text(encoding="utf-8"))
     assert document["accounting"]["totals"]["estimated_cost"] == pytest.approx(4.0)
     assert document["accounting"]["budgets"][0]["over_budget"] is True

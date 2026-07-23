@@ -10,8 +10,6 @@
 
 from __future__ import annotations
 
-import os
-import stat
 from pathlib import Path
 
 import pytest
@@ -36,10 +34,12 @@ def test_identity_dir_honours_xdg_data_home(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_first_use_provisions_an_owner_only_ed25519_key(tmp_path: Path) -> None:
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
     machine = ensure_machine_identity(base=tmp_path)
     assert machine.key_path == tmp_path / "synapse" / "identity" / MACHINE_KEY_FILENAME
     assert machine.key_path.is_file()
-    assert stat.S_IMODE(os.stat(machine.key_path).st_mode) == 0o600
+    assert_owner_only_file_path(machine.key_path, purpose="machine identity key")
     assert machine.key_id.startswith(MACHINE_KEY_ID_PREFIX)
     # The key file is a loadable Ed25519 PEM, not merely bytes on disk.
     load_signing_key(machine.key_path)

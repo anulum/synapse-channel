@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import stat
 from pathlib import Path
 
 import pytest
@@ -279,7 +278,9 @@ def test_write_archive_report_replaces_file_and_restricts_permissions(tmp_path: 
     write_archive_report(target, "<!doctype html><html><body>second</body></html>")
 
     assert target.read_text(encoding="utf-8").endswith("second</body></html>")
-    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
+    assert_owner_only_file_path(target, purpose="archive report")
 
 
 def test_write_archive_report_cleans_temporary_file_on_replace_failure(

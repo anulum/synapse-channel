@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import json
-import stat
 from pathlib import Path
 
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
@@ -68,7 +67,9 @@ def test_inbox_pages_only_matching_messages_without_skipping_the_tail(tmp_path: 
     assert second["has_more"] is False
     assert second["cursor"] == feed.stat().st_size
     assert load_cursor(cursor) == feed.stat().st_size
-    assert stat.S_IMODE(cursor.stat().st_mode) == 0o600
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
+    assert_owner_only_file_path(cursor, purpose="mailbox cursor")
 
 
 def test_partial_tail_is_retried_after_it_becomes_complete(tmp_path: Path) -> None:

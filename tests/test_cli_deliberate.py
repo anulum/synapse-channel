@@ -69,9 +69,11 @@ class TestConclude:
         assert "merkle_signature" in document["verification"]
 
     def test_owner_only_permissions_on_output(self, tmp_path: Path) -> None:
+        from synapse_channel.core.secure_path import assert_owner_only_file_path
+
         out = tmp_path / "pkg.json"
         _cmd_conclude(_conclude_ns(spec=str(_spec_file(tmp_path)), out=str(out)))
-        assert out.stat().st_mode & 0o777 == 0o600
+        assert_owner_only_file_path(out, purpose="deliberate conclusion")
 
     def test_missing_spec_file_returns_2(self, tmp_path: Path) -> None:
         rc = _cmd_conclude(_conclude_ns(spec=str(tmp_path / "nope.json"), out=str(tmp_path / "o")))

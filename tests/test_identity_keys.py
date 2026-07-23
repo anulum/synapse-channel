@@ -46,10 +46,14 @@ def test_generate_write_and_load_round_trip(tmp_path: Path) -> None:
 
 
 def test_written_key_is_owner_only(tmp_path: Path) -> None:
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
     path = tmp_path / "id.pem"
     write_signing_key(path, generate_signing_key())
 
-    assert stat.S_IMODE(path.stat().st_mode) == SIGNING_KEY_FILE_MODE
+    assert_owner_only_file_path(path, purpose="identity-signing-key")
+    if __import__("os").name == "posix":
+        assert stat.S_IMODE(path.stat().st_mode) == SIGNING_KEY_FILE_MODE
 
 
 def test_write_refuses_to_overwrite(tmp_path: Path) -> None:
