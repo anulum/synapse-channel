@@ -165,9 +165,12 @@ def test_reports_when_ancestors_cannot_be_created(
         ensure_private_dir(tmp_path / "x" / "y" / "z", parents=True, purpose="blocked parents")
 
 
-def test_refuses_on_a_platform_without_the_posix_floor(
+def test_refuses_when_the_owner_only_floor_is_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("synapse_channel.core.private_dir._POSIX", False)
+    monkeypatch.setattr(
+        "synapse_channel.core.private_dir.owner_only_floor_available",
+        lambda: False,
+    )
     with pytest.raises(PrivateDirError, match="unavailable on this platform"):
         ensure_private_dir(tmp_path / "nope", purpose="no posix")

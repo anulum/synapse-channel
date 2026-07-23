@@ -15,13 +15,15 @@ refuses one that other users could read, and never places file content in an
 error message, so a wrongly permissioned or malformed secret can be reported and
 logged without leaking what it protects.
 
-Secure file forms are fail-closed POSIX surfaces. The loader walks every path
-component through directory descriptors with ``O_NOFOLLOW``, validates the final
-descriptor as a regular file owned by the effective service user with mode
-``0600`` or stricter, reads only from it, then rechecks identity and metadata.
-Callers loading executable policy can additionally require a single-link inode.
-Platforms that cannot prove those invariants must use a validated native secret
-provider instead of these flags.
+Secure file forms are fail-closed owner-only surfaces. On POSIX the loader walks
+every path component through directory descriptors with ``O_NOFOLLOW``, validates
+the final descriptor as a regular file owned by the effective service user with
+mode ``0600`` or stricter, reads only from it, then rechecks identity and
+metadata. On Windows the loader opens the leaf without following a symlink and
+proves owner-only access via the NT DACL (see
+:mod:`~synapse_channel.core.secure_path`). Callers loading executable policy can
+additionally require a single-link inode. Platforms that cannot prove those
+invariants must use a validated native secret provider instead of these flags.
 """
 
 from __future__ import annotations
@@ -31,6 +33,11 @@ import stat
 from pathlib import Path
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.secure_path import (
+    SecurePathError,
+    assert_owner_only_file_path,
+    owner_only_floor_available,
+)
 
 _GROUP_OTHER_BITS = 0o077
 """Permission bits that grant any non-owner access to a secret file."""
@@ -40,6 +47,9 @@ DEFAULT_SECRET_FILE_LIMIT = 65_536
 
 _POSIX = os.name == "posix"
 """Whether this platform expresses POSIX permission modes; captured once at import."""
+
+_WINDOWS = os.name == "nt"
+"""Whether this platform uses NT security descriptors for the owner-only floor."""
 
 
 class SecretFileError(SynapseError, ValueError):
@@ -58,10 +68,17 @@ def open_nofollow_descriptor(file_path: str | Path, *, directory: bool = False) 
     A relative path starts at a descriptor for the current directory; an
     absolute path starts at the filesystem root. No component lookup is later
     repeated through an untrusted pathname.
+
+    On Windows the full component walk is not available; the leaf is opened after
+    refusing a symlink final path (see :func:`secure_path.open_nofollow_leaf`).
     """
+    path = Path(file_path)
+    if _WINDOWS:
+        from synapse_channel.core.secure_path import open_nofollow_leaf
+
+        return open_nofollow_leaf(path, directory=directory)
     if not _POSIX or not hasattr(os, "O_NOFOLLOW"):
         raise OSError("secure nofollow path walking is unavailable on this platform")
-    path = Path(file_path)
     directory_flags = (
         os.O_RDONLY
         | os.O_NOFOLLOW
@@ -99,9 +116,16 @@ def _read_owner_only_text(
     require_single_link: bool = False,
 ) -> str:
     """Read bounded UTF-8 from one same-descriptor owner-only regular file."""
-    if not _POSIX or not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "geteuid"):
+    if not owner_only_floor_available():
         raise SecretFileError(
             f"{flag}: secure owner-only file validation is unavailable on this platform"
+        )
+    if _WINDOWS:
+        return _read_owner_only_text_windows(
+            path,
+            flag=flag,
+            limit=limit,
+            require_single_link=require_single_link,
         )
     try:
         descriptor = open_nofollow_descriptor(path)
@@ -173,19 +197,110 @@ def _read_owner_only_text(
         raise SecretFileError(f"{flag}: {path} is not valid UTF-8") from exc
 
 
+def _read_owner_only_text_windows(
+    path: Path,
+    *,
+    flag: str,
+    limit: int,
+    require_single_link: bool,
+) -> str:
+    """Windows branch: prove NT owner-only DACL, then read bounded UTF-8."""
+    try:
+        assert_owner_only_file_path(
+            path,
+            purpose=flag,
+            require_single_link=require_single_link,
+        )
+    except SecurePathError as exc:
+        # Map portable errors onto SecretFileError so CLI callers see one type.
+        message = str(exc)
+        if "effective user" in message or "not owned" in message:
+            raise SecretFileError(
+                f"{flag}: {path} is not owned by the effective hub service user"
+            ) from exc
+        if "accessible by other" in message or "NULL DACL" in message or "ACE for" in message:
+            raise SecretFileError(
+                f"{flag}: {path} is accessible by other users; a secret file must be "
+                "owner-only (restrict the NT DACL to the current user)"
+            ) from exc
+        if "hard links" in message:
+            raise SecretFileError(message) from exc
+        if "symlink" in message:
+            raise SecretFileError(f"{flag}: cannot securely open {path}: symlink refused") from exc
+        if "not a regular" in message:
+            raise SecretFileError(f"{flag}: {path} is not a regular secret file") from exc
+        if "unavailable" in message:
+            raise SecretFileError(
+                f"{flag}: secure owner-only file validation is unavailable on this platform"
+            ) from exc
+        raise SecretFileError(f"{flag}: {message}") from exc
+    try:
+        descriptor = open_nofollow_descriptor(path)
+    except OSError as exc:
+        raise SecretFileError(
+            f"{flag}: cannot securely open {path}: {exc.strerror or exc}"
+        ) from exc
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise SecretFileError(f"{flag}: {path} is not a regular secret file")
+        if info.st_size > limit:
+            raise SecretFileError(f"{flag}: {path} exceeds the {limit}-byte secret-file limit")
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, min(65_536, limit + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > limit:
+                raise SecretFileError(f"{flag}: {path} exceeds the {limit}-byte secret-file limit")
+        after = os.fstat(descriptor)
+        if (
+            info.st_size != after.st_size
+            or info.st_mtime_ns != after.st_mtime_ns
+            or info.st_ctime_ns != after.st_ctime_ns
+        ):
+            raise SecretFileError(f"{flag}: {path} changed while its policy was being read")
+        # Re-prove the DACL after the read so a concurrent ACL loosen is caught.
+        try:
+            assert_owner_only_file_path(
+                path,
+                purpose=flag,
+                require_single_link=require_single_link,
+            )
+        except SecurePathError as exc:
+            raise SecretFileError(
+                f"{flag}: {path} changed while its policy was being read"
+            ) from exc
+    except OSError as exc:
+        raise SecretFileError(
+            f"{flag}: cannot securely read {path}: {exc.strerror or exc}"
+        ) from exc
+    finally:
+        os.close(descriptor)
+    try:
+        return b"".join(chunks).decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise SecretFileError(f"{flag}: {path} is not valid UTF-8") from exc
+
+
 def read_regular_file_bytes(
     file_path: str | Path,
     *,
     label: str,
     limit: int = DEFAULT_SECRET_FILE_LIMIT,
 ) -> bytes:
-    """Read one regular file with ``O_NOFOLLOW`` (public material; no mode floor).
+    """Read one regular file with nofollow semantics (public material; no mode floor).
 
     Used for pin certificates and public verification documents where owner-only
-    mode is not required, but symlinks in every path component must still fail
-    closed. The error never includes file content.
+    mode is not required, but symlinks in the leaf (and on POSIX every path
+    component) must still fail closed. The error never includes file content.
     """
-    if not _POSIX or not hasattr(os, "O_NOFOLLOW"):
+    if not _POSIX and not _WINDOWS:
+        raise SecretFileError(f"{label}: secure nofollow file open is unavailable on this platform")
+    if _POSIX and not hasattr(os, "O_NOFOLLOW"):
         raise SecretFileError(f"{label}: secure nofollow file open is unavailable on this platform")
     path = Path(file_path).expanduser()
     try:

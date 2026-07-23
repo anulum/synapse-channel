@@ -55,3 +55,23 @@ requires_linux = pytest.mark.skipif(
     reason="exercises a Linux-only platform feature (systemd user services)",
 )
 """Skip marker for tests of Linux-only platform features such as systemd units."""
+
+OWNER_ONLY_SECRETS_AVAILABLE = (
+    os.name == "posix" and hasattr(os, "O_NOFOLLOW") and hasattr(os, "geteuid")
+) or os.name == "nt"
+"""Whether the portable owner-only secret/directory floor works on this OS."""
+
+requires_owner_only_secrets = pytest.mark.skipif(
+    not OWNER_ONLY_SECRETS_AVAILABLE,
+    reason="owner-only secret floor needs POSIX modes or Windows NT ACLs",
+)
+"""Skip marker for tests that need the portable owner-only floor to run."""
+
+LOADAVG_AVAILABLE = hasattr(os, "getloadavg")
+"""Whether ``os.getloadavg`` is present (POSIX; absent on Windows)."""
+
+requires_loadavg = pytest.mark.skipif(
+    not LOADAVG_AVAILABLE,
+    reason="os.getloadavg is unavailable on this platform",
+)
+"""Skip marker for tests that require host load averages."""

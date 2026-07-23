@@ -30,6 +30,12 @@ def _secret(tmp_path: Path, content: str, *, mode: int = 0o600) -> Path:
     path = tmp_path / "secret"
     path.write_text(content, encoding="utf-8")
     path.chmod(mode)
+    # On Windows chmod does not produce an owner-only DACL; apply the portable
+    # floor so happy-path tests exercise the real Windows secret loader.
+    if os.name == "nt" and mode & 0o077 == 0:
+        from synapse_channel.core.secure_path import apply_owner_only_file
+
+        apply_owner_only_file(path)
     return path
 
 
@@ -45,6 +51,7 @@ def test_read_secret_file_accepts_owner_only_modes(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("mode", [0o644, 0o640, 0o604, 0o660, 0o666])
+@pytest.mark.skipif(os.name != "posix", reason="POSIX mode bits are not Windows ACLs")
 def test_read_secret_file_refuses_group_or_world_access(tmp_path: Path, mode: int) -> None:
     path = _secret(tmp_path, "leakable", mode=mode)
 
@@ -85,6 +92,7 @@ def test_read_secret_lines_refuses_a_file_with_no_entries(tmp_path: Path) -> Non
         read_secret_lines(path, flag="--message-auth-key-file")
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX mode bits are not Windows ACLs")
 def test_read_secret_lines_refuses_group_readable_file_without_content(tmp_path: Path) -> None:
     path = _secret(tmp_path, "main:s3cret:ALPHA\n", mode=0o644)
 
@@ -100,7 +108,7 @@ def test_read_secret_lines_missing_file_names_flag_not_content(tmp_path: Path) -
 
 
 @pytest.mark.parametrize("reader", [read_secret_file, read_secret_lines])
-def test_secret_file_forms_fail_closed_on_non_posix_platforms(
+def test_secret_file_forms_fail_closed_when_owner_floor_unavailable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     reader: Callable[..., object],
@@ -108,18 +116,19 @@ def test_secret_file_forms_fail_closed_on_non_posix_platforms(
     """A platform that cannot prove the owner boundary must refuse the file form."""
     import synapse_channel.core.secret_files as module
 
-    monkeypatch.setattr(module, "_POSIX", False)
+    monkeypatch.setattr(module, "owner_only_floor_available", lambda: False)
     path = _secret(tmp_path, "main:s3cret:ALPHA\n", mode=0o644)
     with pytest.raises(SecretFileError, match="validation is unavailable"):
         reader(path, flag="--message-auth-key-file")
 
 
-def test_component_walker_fails_closed_without_posix(
+def test_component_walker_fails_closed_without_posix_or_windows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import synapse_channel.core.secret_files as module
 
     monkeypatch.setattr(module, "_POSIX", False)
+    monkeypatch.setattr(module, "_WINDOWS", False)
     with pytest.raises(OSError, match="unavailable"):
         open_nofollow_descriptor("secret")
 
@@ -261,6 +270,7 @@ def test_regular_file_reader_covers_public_material_boundaries(
     import synapse_channel.core.secret_files as module
 
     monkeypatch.setattr(module, "_POSIX", False)
+    monkeypatch.setattr(module, "_WINDOWS", False)
     with pytest.raises(SecretFileError, match="unavailable"):
         read_regular_file_bytes(path, label="public")
 
@@ -289,6 +299,10 @@ def test_secret_reader_refuses_invalid_utf8_without_echoing_bytes(tmp_path: Path
     path = tmp_path / "secret"
     path.write_bytes(b"prefix-\xff-secret")
     path.chmod(0o600)
+    if os.name == "nt":
+        from synapse_channel.core.secure_path import apply_owner_only_file
+
+        apply_owner_only_file(path)
 
     with pytest.raises(SecretFileError, match="not valid UTF-8") as excinfo:
         read_secret_file(path, flag="--metrics-token-file")
@@ -337,7 +351,12 @@ def test_read_secret_file_expands_the_home_directory(
 ) -> None:
     # ~ expansion is part of the contract: operators write ~/secrets/token in units.
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     path = tmp_path / "token"
     path.write_text("home-secret\n", encoding="utf-8")
     path.chmod(0o600)
+    if os.name == "nt":
+        from synapse_channel.core.secure_path import apply_owner_only_file
+
+        apply_owner_only_file(path)
     assert read_secret_file("~/token", flag="--metrics-token-file") == "home-secret"

@@ -16,13 +16,14 @@ service writes there (session logs, wake registries, identity keys).
 ``Path.mkdir(mode=0o700, exist_ok=True)`` does not defend this: the ``mode`` is
 ignored when the directory already exists, and a pre-existing symlink or
 foreign-owned directory is accepted silently. This module is the directory
-analogue of :mod:`~synapse_channel.core.secret_files`. It creates the leaf
-explicitly and validates the *same descriptor* it opened (``O_NOFOLLOW |
+analogue of :mod:`~synapse_channel.core.secret_files`. On POSIX it creates the
+leaf explicitly and validates the *same descriptor* it opened (``O_NOFOLLOW |
 O_DIRECTORY``) as a real directory owned by the effective user with no group or
 other bits — never a symlink, never foreign-owned. A loose-but-owned directory
-is re-tightened in place through that descriptor (``fchmod``); anything else
-fails closed. Platforms that cannot prove these invariants raise rather than
-pretend.
+is re-tightened in place through that descriptor (``fchmod``). On Windows it
+creates the leaf, applies an owner-only DACL, and proves the same intent via
+:mod:`~synapse_channel.core.secure_path`. Anything else fails closed. Platforms
+that cannot prove these invariants raise rather than pretend.
 
 The strict floor is applied to the leaf — the predictable clobber target. When
 ``parents=True`` the ancestors are created owner-only under the caller's trusted
@@ -36,12 +37,21 @@ import stat
 from pathlib import Path
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.secure_path import (
+    SecurePathError,
+    apply_owner_only_dir,
+    assert_owner_only_dir_path,
+    owner_only_floor_available,
+)
 
 _GROUP_OTHER_BITS = 0o077
 """Permission bits that grant any non-owner access to a directory."""
 
 _POSIX = os.name == "posix"
 """Whether this platform expresses POSIX permission modes; captured once at import."""
+
+_WINDOWS = os.name == "nt"
+"""Whether this platform uses NT security descriptors for the owner-only floor."""
 
 
 class PrivateDirError(SynapseError, ValueError):
@@ -129,9 +139,15 @@ def ensure_private_dir(
     PrivateDirError
         When the directory cannot be created, is a symlink or non-directory,
         is owned by another user, or cannot be made owner-only. The platform
-        must express POSIX permission modes.
+        must be able to prove the owner-only floor (POSIX modes or Windows DACL).
     """
     target = Path(path)
+    if not owner_only_floor_available():
+        raise PrivateDirError(
+            f"{purpose}: owner-only directory validation is unavailable on this platform"
+        )
+    if _WINDOWS:
+        return _ensure_private_dir_windows(target, parents=parents, purpose=purpose)
     if not _POSIX or not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "geteuid"):
         raise PrivateDirError(
             f"{purpose}: owner-only directory validation is unavailable on this platform"
@@ -151,3 +167,53 @@ def ensure_private_dir(
     except OSError as exc:
         raise PrivateDirError(f"{purpose}: cannot create {target}: {exc.strerror or exc}") from exc
     return _validate_private_dir(target, purpose=purpose)
+
+
+def _ensure_private_dir_windows(
+    target: Path,
+    *,
+    parents: bool,
+    purpose: str,
+) -> Path:
+    """Create and prove an owner-only directory under the NT security model."""
+    if parents and target.parent not in (target, Path(target.anchor)):
+        try:
+            # Ancestors are a trusted root (same boundary as the POSIX path);
+            # the strict owner-only floor still applies only to the leaf.
+            target.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise PrivateDirError(
+                f"{purpose}: cannot create parents of {target}: {exc.strerror or exc}"
+            ) from exc
+    try:
+        target.mkdir(exist_ok=False)
+    except FileExistsError:
+        pass
+    except OSError as exc:
+        raise PrivateDirError(f"{purpose}: cannot create {target}: {exc.strerror or exc}") from exc
+    try:
+        apply_owner_only_dir(target)
+        assert_owner_only_dir_path(target, purpose=purpose)
+    except SecurePathError as exc:
+        message = str(exc)
+        if "symlink" in message:
+            raise PrivateDirError(
+                f"{purpose}: cannot securely open {target}: symlink refused"
+            ) from exc
+        if "not a directory" in message:
+            raise PrivateDirError(f"{purpose}: {target} is not a directory") from exc
+        if "not owned" in message or "effective user" in message:
+            raise PrivateDirError(
+                f"{purpose}: {target} is not owned by the effective user"
+            ) from exc
+        if "accessible by other" in message or "NULL DACL" in message or "ACE for" in message:
+            raise PrivateDirError(
+                f"{purpose}: {target} is accessible by other users and cannot be proven "
+                f"owner-only: {message}"
+            ) from exc
+        if "unavailable" in message:
+            raise PrivateDirError(
+                f"{purpose}: owner-only directory validation is unavailable on this platform"
+            ) from exc
+        raise PrivateDirError(f"{purpose}: {message}") from exc
+    return target

@@ -158,7 +158,9 @@ def private_runtime_parent(env: Mapping[str, str] | None = None) -> Path:
     home = env.get("HOME", "").strip()
     if home:
         return Path(home) / ".cache"
-    return Path(gettempdir()) / f"synapse-user-{os.getuid()}"
+    from synapse_channel.core.secure_path import private_temp_user_segment
+
+    return Path(gettempdir()) / f"synapse-user-{private_temp_user_segment()}"
 
 
 def runtime_dir(env: Mapping[str, str] | None = None) -> Path:

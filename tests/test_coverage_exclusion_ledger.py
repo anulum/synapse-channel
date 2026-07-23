@@ -42,6 +42,10 @@ Justification classes
     A process-blocking serve wrapper whose factory is covered by real tests.
 ``platform-guard``
     Tests for POSIX-only semantics, skipped on Windows runners.
+``platform-native``
+    Bodies that call OS-native Win32 (or other non-POSIX) APIs via ctypes and
+    can only execute on that OS; pure policy extracted from them is covered on
+    every platform, and the native body runs on cross-os Windows CI.
 ``filesystem-capability``
     Tests for real symlink, hard-link, alternate-case, or Windows short-name
     behavior, skipped only when the host filesystem cannot expose that feature.
@@ -87,6 +91,7 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/core/multihub_transport.py": (4, "protocol-body"),
     "src/synapse_channel/core/operator_relay_transport.py": (4, "protocol-body"),
     "src/synapse_channel/core/payload_crypto.py": (1, "optional-import"),
+    "src/synapse_channel/core/secure_path.py": (2, "platform-native"),
     "src/synapse_channel/core/tls.py": (2, "protocol-body"),
     "src/synapse_channel/ergonomics.py": (1, "entrypoint"),
     "src/synapse_channel/ergonomics_inbox.py": (2, "protocol-body"),
@@ -98,7 +103,7 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
 
 #: Every conditional-skip line in ``tests/``, by file: (line count, justification class).
 SKIP_LEDGER: dict[str, tuple[int, str]] = {
-    "tests/_platform_caps.py": (3, "platform-guard"),
+    "tests/_platform_caps.py": (5, "platform-guard"),
     "tests/_portable_exec.py": (1, "platform-guard"),
     "tests/fixtures/opencode/process.py": (2, "optional-dep-guard"),
     "tests/test_a2a_store.py": (3, "platform-guard"),
@@ -133,7 +138,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_private_dir.py": (1, "platform-guard"),
     "tests/test_relay_trim.py": (3, "platform-guard"),
     "tests/test_reliability_workflow_sqlcipher.py": (1, "optional-dep-guard"),
-    "tests/test_secret_files.py": (6, "platform-guard"),
+    "tests/test_secret_files.py": (8, "platform-guard"),
+    "tests/test_secure_path.py": (5, "platform-guard"),
     "tests/test_session_capability_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_shared_host_regression.py": (1, "platform-guard"),
     "tests/test_shell_integration.py": (1, "optional-dep-guard"),
