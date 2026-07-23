@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 import sqlite3
-import stat
 from pathlib import Path
 from typing import Any
 
@@ -152,11 +151,13 @@ def test_registry_preserves_replay_and_downgrade_floors_across_restarts(
             )
         )
 
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
     assert (
         _advertise(registry(), private, sequence=1, skills=["python"])
         is CapabilityCardVerificationResult.VALID
     )
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert_owner_only_file_path(path, purpose="capability-card history")
     assert (
         _advertise(registry(), private, sequence=1, skills=["python"])
         is CapabilityCardVerificationResult.SEQUENCE_MISMATCH

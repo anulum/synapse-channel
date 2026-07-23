@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 import tempfile
 from pathlib import Path
 
@@ -202,7 +201,9 @@ def test_enroll_creates_owner_only_bundle_and_refuses_duplicates(tmp_path: Path)
         expires_at=200.0,
     )
 
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
+    assert_owner_only_file_path(path, purpose="capability-card trust bundle")
     assert load_capability_card_trust_bundle(path).keys["P:key"].expires_at == 200.0
     with pytest.raises(CapabilityCardTrustError, match="already enrolled"):
         enroll_capability_card_key(

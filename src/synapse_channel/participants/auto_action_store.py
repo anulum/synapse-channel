@@ -107,6 +107,8 @@ def save_policy(path: Path, policy: AutoActionPolicy) -> None:
         _VERSION_FIELD: STORE_VERSION,
         _ARMED_FIELD: sorted(action.value for action in policy.armed),
     }
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
     payload = json.dumps(document, indent=2, sort_keys=True).encode("utf-8")
     tmp = path.with_name(f"{path.name}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -116,6 +118,7 @@ def save_policy(path: Path, policy: AutoActionPolicy) -> None:
     finally:
         os.close(fd)
     os.replace(tmp, path)
+    apply_owner_only_file(path)
 
 
 def _policy_from_document(document: Any, path: Path) -> AutoActionPolicy:

@@ -107,9 +107,16 @@ def _governor() -> str:
 
 
 def _load_average() -> tuple[float, float, float]:
-    """Return the 1/5/15-minute load averages, or zeros when unavailable."""
+    """Return the 1/5/15-minute load averages, or zeros when unavailable.
+
+    ``os.getloadavg`` is POSIX-only; Windows and other hosts report zeros
+    rather than raising ``AttributeError``.
+    """
+    getloadavg = getattr(os, "getloadavg", None)
+    if getloadavg is None:
+        return (0.0, 0.0, 0.0)
     try:
-        one, five, fifteen = os.getloadavg()
+        one, five, fifteen = getloadavg()
     except OSError:
         return (0.0, 0.0, 0.0)
     return (one, five, fifteen)

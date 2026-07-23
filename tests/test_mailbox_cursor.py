@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import stat
 from pathlib import Path
 
 import pytest
@@ -74,9 +73,11 @@ class TestSave:
 
 class TestSaveDurability:
     def test_writes_an_owner_only_file(self, tmp_path: Path) -> None:
+        from synapse_channel.core.secure_path import assert_owner_only_file_path
+
         path = tmp_path / "cur"
         save_cursor(path, 5)
-        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        assert_owner_only_file_path(path, purpose="mailbox cursor")
 
     def test_leaves_no_temporary_file_behind(self, tmp_path: Path) -> None:
         path = tmp_path / "cur"

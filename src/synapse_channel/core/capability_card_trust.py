@@ -333,6 +333,8 @@ def enroll_capability_card_key(
 
 def _write_bundle(file: Path, payload: Mapping[str, Any]) -> None:
     """Atomically write an owner-only trust bundle."""
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
     text = json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n"
     try:
         file.parent.mkdir(parents=True, exist_ok=True)
@@ -348,6 +350,7 @@ def _write_bundle(file: Path, payload: Mapping[str, Any]) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, file)
+        apply_owner_only_file(file)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise

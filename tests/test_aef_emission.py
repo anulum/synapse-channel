@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import hashlib
-import stat
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TypedDict
@@ -265,7 +264,9 @@ def test_signer_rejects_predeclared_metadata_and_log_is_owner_only(tmp_path: Pat
         assert log.encrypted is False
         _append_grant(log, "task-1", 1)
 
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
+    assert_owner_only_file_path(path, purpose="aef emission log")
 
 
 def test_read_refuses_noncanonical_stored_receipt(tmp_path: Path) -> None:

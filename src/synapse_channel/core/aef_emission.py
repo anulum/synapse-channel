@@ -20,7 +20,6 @@ import base64
 import contextlib
 import hashlib
 import json
-import os
 import re
 import threading
 from collections.abc import Mapping
@@ -401,7 +400,9 @@ class AefReceiptLog:
         if path.startswith(":memory:"):
             return
         with contextlib.suppress(OSError):
-            os.chmod(path, 0o600)
+            from synapse_channel.core.secure_path import apply_owner_only_file
+
+            apply_owner_only_file(path)
 
 
 def _public_key_bytes(signing_key: ReceiptSigningKey) -> bytes:

@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import sqlite3
-import stat
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -115,11 +114,13 @@ def test_durable_index_files_are_owner_only(tmp_path: Path) -> None:
     with AefDurableReceiptIndex(path) as index:
         assert index.classify_and_remember(_LOG_ID, 1, _RECEIPT_1) is None
 
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
+    assert_owner_only_file_path(path, purpose="aef durable index")
     for suffix in ("-wal", "-shm"):
         sidecar = Path(f"{path}{suffix}")
         if sidecar.exists():
-            assert stat.S_IMODE(sidecar.stat().st_mode) == 0o600
+            assert_owner_only_file_path(sidecar, purpose="aef durable index sidecar")
 
 
 def test_plaintext_property_and_closed_connection_failure_are_fail_closed(

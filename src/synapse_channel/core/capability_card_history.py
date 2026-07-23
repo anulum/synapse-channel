@@ -341,6 +341,8 @@ def _entry_from_row(
 
 def _prepare_history_file(path: Path) -> bool:
     """Create a fresh owner-only file or validate an existing state file."""
+    from synapse_channel.core.secure_path import SecurePathError, apply_owner_only_file
+
     try:
         info = path.lstat()
     except FileNotFoundError:
@@ -356,6 +358,13 @@ def _prepare_history_file(path: Path) -> bool:
                 f"cannot create capability-card history database {path}: {exc}"
             ) from exc
         os.close(descriptor)
+        try:
+            apply_owner_only_file(path)
+        except SecurePathError as exc:
+            path.unlink(missing_ok=True)
+            raise CapabilityCardTrustError(
+                f"cannot secure capability-card history database {path}: {exc}"
+            ) from exc
         return True
     except OSError as exc:
         raise CapabilityCardTrustError(
@@ -367,6 +376,8 @@ def _prepare_history_file(path: Path) -> bool:
 
 def _validate_history_file(path: Path, info: os.stat_result | None = None) -> None:
     """Require a regular, non-symlink, owner-controlled writable database."""
+    from synapse_channel.core.secure_path import SecurePathError, assert_owner_only_file_path
+
     snapshot = path.lstat() if info is None else info
     if not stat.S_ISREG(snapshot.st_mode):
         raise CapabilityCardTrustError(
@@ -381,6 +392,17 @@ def _validate_history_file(path: Path, info: os.stat_result | None = None) -> No
             raise CapabilityCardTrustError(
                 f"capability-card history database must be owner-only (chmod 600): {path}"
             )
+        return
+    # Real Windows hosts only (sys.platform, not a monkeypatched os.name).
+    import sys
+
+    if sys.platform.startswith("win"):
+        try:
+            assert_owner_only_file_path(path, purpose="capability-card history database")
+        except SecurePathError as exc:
+            raise CapabilityCardTrustError(
+                f"capability-card history database must be owner-only (chmod 600): {path}"
+            ) from exc
 
 
 def _connect(path: Path) -> sqlite3.Connection:

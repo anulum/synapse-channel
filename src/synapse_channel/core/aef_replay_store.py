@@ -17,7 +17,6 @@ both accept a replay or an equivocation at the same ``(log_id, seq)``.
 from __future__ import annotations
 
 import contextlib
-import os
 import re
 import threading
 from pathlib import Path
@@ -152,4 +151,6 @@ class AefDurableReceiptIndex:
         if path.startswith(":memory:"):
             return
         with contextlib.suppress(OSError):
-            os.chmod(path, 0o600)
+            from synapse_channel.core.secure_path import apply_owner_only_file
+
+            apply_owner_only_file(path)

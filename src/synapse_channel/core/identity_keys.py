@@ -78,6 +78,8 @@ def write_signing_key(path: str | Path, private_key: Ed25519PrivateKey) -> None:
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     )
+    from synapse_channel.core.secure_path import SecurePathError, apply_owner_only_file
+
     target = Path(path).expanduser()
     try:
         fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, SIGNING_KEY_FILE_MODE)
@@ -87,6 +89,11 @@ def write_signing_key(path: str | Path, private_key: Ed25519PrivateKey) -> None:
         os.write(fd, pem)
     finally:
         os.close(fd)
+    try:
+        apply_owner_only_file(target)
+    except SecurePathError as exc:
+        target.unlink(missing_ok=True)
+        raise IdentityKeyError(f"cannot secure identity key {target}: {exc}") from exc
 
 
 def load_signing_key(path: str | Path) -> Ed25519PrivateKey:

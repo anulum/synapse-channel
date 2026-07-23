@@ -145,11 +145,16 @@ def _public_bytes(private_key: Ed25519PrivateKey) -> bytes:
 
 def _write_exclusive(path: Path, payload: bytes, *, mode: int) -> None:
     """Create ``path`` with ``mode``, refusing to overwrite an existing file."""
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
     try:
         os.write(fd, payload)
     finally:
         os.close(fd)
+    # Owner-only on every platform: POSIX mode bits and Windows NT DACL.
+    if mode & 0o077 == 0:
+        apply_owner_only_file(path)
 
 
 def generate_receipt_signing_key(path: str | Path) -> ReceiptVerificationKey:

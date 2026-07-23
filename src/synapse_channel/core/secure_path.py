@@ -319,17 +319,27 @@ def evaluate_windows_owner_only_policy(
 
     Pure policy (no ctypes): unit-tested on every platform. The Windows native
     loader gathers SIDs/ACEs and calls this function.
+
+    Ownership: the NT owner SID must be the current user, or a well-known
+    privileged SID (Administrators / SYSTEM) that commonly owns files created
+    under an elevated or admin-group token on Windows CI. In the latter case
+    the current user must still hold an explicit allow ACE — privilege alone
+    is not enough.
     """
-    if owner_sid != current_sid:
+    allowed_owners = {current_sid} | _WINDOWS_ALLOWED_EXTRA_SIDS
+    if owner_sid not in allowed_owners:
         raise SecurePathError(
             f"{purpose}: {path} is not owned by the effective user "
             f"(owner={owner_sid}, user={current_sid})"
         )
     if not dacl_present:
         raise SecurePathError(f"{purpose}: {path} has a NULL DACL (world-accessible); refused")
+    current_has_allow = False
     for ace in aces:
         if ace.ace_type != _ACCESS_ALLOWED_ACE_TYPE:
             continue
+        if ace.sid == current_sid and (ace.mask & _WINDOWS_INTERESTING_ACCESS):
+            current_has_allow = True
         if ace.sid == current_sid or ace.sid in _WINDOWS_ALLOWED_EXTRA_SIDS:
             continue
         if ace.mask & _WINDOWS_INTERESTING_ACCESS:
@@ -337,6 +347,14 @@ def evaluate_windows_owner_only_policy(
                 f"{purpose}: {path} is accessible by other principals "
                 f"(ACE for {ace.sid}); must be owner-only"
             )
+    # When the NT owner is not the process user (Administrators-owned files are
+    # common under admin-group tokens), require an explicit current-user ACE so
+    # we never rely on ambient admin rights alone.
+    if owner_sid != current_sid and not current_has_allow:
+        raise SecurePathError(
+            f"{purpose}: {path} is not owned by the effective user "
+            f"(owner={owner_sid}, user={current_sid})"
+        )
 
 
 def _windows_path_kind_guards(path: Path, *, purpose: str, directory: bool) -> None:
@@ -485,12 +503,26 @@ def _windows_current_user_sid_native() -> str:  # pragma: no cover - platform-na
 
 
 def _windows_apply_owner_only(path: Path, *, directory: bool) -> None:
-    """Apply an owner-only DACL via ``icacls`` (present on every supported Windows)."""
+    """Apply an owner-only DACL via ``icacls`` (present on every supported Windows).
+
+    Also runs ``takeown`` first so the process user becomes the NT owner when
+    the host would otherwise leave Administrators as owner under an admin-group
+    token (common on GitHub Actions Windows runners).
+    """
     sid = _windows_current_user_sid()
     rights = "(OI)(CI)(F)" if directory else "(F)"
     grant = f"*{sid}:{rights}"
     try:
-        # Fixed system tool + path we own; never a shell string or untrusted binary.
+        # takeown: claim ownership when the file is Administrators-owned.
+        takeown = subprocess.run(  # nosec B603 B607 - fixed takeown argv
+            ["takeown", "/f", str(path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if takeown.returncode != 0:
+            # Non-fatal when already owned; icacls grant is the hard requirement.
+            pass
         strip = subprocess.run(  # nosec B603 B607
             ["icacls", str(path), "/inheritance:r"],
             check=False,
@@ -515,7 +547,7 @@ def _windows_apply_owner_only(path: Path, *, directory: bool) -> None:
             )
     except FileNotFoundError as exc:
         raise SecurePathError(
-            f"icacls is required to apply owner-only ACLs on Windows ({path})"
+            f"icacls/takeown is required to apply owner-only ACLs on Windows ({path})"
         ) from exc
 
 

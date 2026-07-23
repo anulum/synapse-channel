@@ -96,6 +96,8 @@ def save_cursor(path: str | Path, seq: int) -> None:
     seq : int
         Cursor value to store; negative values are clamped to ``0``.
     """
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
     marker = Path(path)
     marker.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=marker.parent, prefix=f"{marker.name}.", suffix=".tmp")
@@ -106,6 +108,7 @@ def save_cursor(path: str | Path, seq: int) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, marker)
+        apply_owner_only_file(marker)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise

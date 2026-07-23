@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import json
-import stat
 from pathlib import Path
 
 import pytest
@@ -55,7 +54,9 @@ def test_save_writes_owner_only_permissions(tmp_path: Path) -> None:
 
     save_policy(path, AutoActionPolicy(armed=frozenset({AutoAction.LOG})))
 
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    from synapse_channel.core.secure_path import assert_owner_only_file_path
+
+    assert_owner_only_file_path(path, purpose="auto-action store")
 
 
 def test_save_is_stable_and_sorted(tmp_path: Path) -> None:

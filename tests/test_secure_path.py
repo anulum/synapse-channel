@@ -144,6 +144,28 @@ def test_evaluate_windows_owner_only_policy_accepts_owner_and_system() -> None:
             WindowsAce(ace_type=1, mask=0x001F01FF, sid="S-1-1-0"),
         ),
     )
+    # Administrators-owned with an explicit current-user ACE (common under
+    # admin-group tokens on Windows CI).
+    evaluate_windows_owner_only_policy(
+        path=path,
+        purpose="policy",
+        owner_sid="S-1-5-32-544",
+        current_sid=current,
+        dacl_present=True,
+        aces=(
+            WindowsAce(ace_type=0, mask=0x001F01FF, sid=current),
+            WindowsAce(ace_type=0, mask=0x001F01FF, sid="S-1-5-32-544"),
+        ),
+    )
+    with pytest.raises(SecurePathError, match="not owned by the effective user"):
+        evaluate_windows_owner_only_policy(
+            path=path,
+            purpose="policy",
+            owner_sid="S-1-5-32-544",
+            current_sid=current,
+            dacl_present=True,
+            aces=(WindowsAce(ace_type=0, mask=0x001F01FF, sid="S-1-5-32-544"),),
+        )
 
 
 def test_evaluate_windows_owner_only_policy_refuses_everyone_and_null_dacl() -> None:
@@ -231,14 +253,15 @@ def test_windows_apply_owner_only_invokes_icacls(
     monkeypatch.setattr(module, "_windows_current_user_sid", lambda: "S-1-5-21-9")
     monkeypatch.setattr(subprocess_mod, "run", fake_run)
     module._windows_apply_owner_only(path, directory=False)
-    assert calls[0][:2] == ["icacls", str(path)]
-    assert "/inheritance:r" in calls[0]
-    assert any(a.startswith("*S-1-5-21-9:") for a in calls[1])
+    assert calls[0][:2] == ["takeown", "/f"]
+    assert calls[1][:2] == ["icacls", str(path)]
+    assert "/inheritance:r" in calls[1]
+    assert any(a.startswith("*S-1-5-21-9:") for a in calls[2])
 
     # Directory rights use object-inherit flags.
     calls.clear()
     module._windows_apply_owner_only(path, directory=True)
-    assert "(OI)(CI)(F)" in calls[1][3]
+    assert "(OI)(CI)(F)" in calls[2][3]
 
     def fail_strip(argv: list[str], **_kwargs: object) -> Result:
         if "/inheritance:r" in argv:
@@ -262,7 +285,7 @@ def test_windows_apply_owner_only_invokes_icacls(
         raise FileNotFoundError("icacls")
 
     monkeypatch.setattr(subprocess_mod, "run", missing_tool)
-    with pytest.raises(SecurePathError, match="icacls is required"):
+    with pytest.raises(SecurePathError, match="icacls/takeown is required"):
         module._windows_apply_owner_only(path, directory=False)
 
 

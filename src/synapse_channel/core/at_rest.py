@@ -469,11 +469,14 @@ def generate_key_file_from_passphrase(
 
 def _write_new_key_file(target: Path, key_bytes: bytes) -> Path:
     """Write ``key_bytes`` to a new owner-only (0600) file, never overwriting."""
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
     if target.exists():
         raise FileExistsError(f"refusing to overwrite existing key file: {target}")
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as handle:
         handle.write(key_bytes)
+    apply_owner_only_file(target)
     return target
 
 
@@ -766,7 +769,7 @@ def _validate_key_stat(info: os.stat_result, target: Path) -> tuple[bool, str]:
     """Validate a key file's stat result for regularity, mode, owner, and size."""
     if not stat.S_ISREG(info.st_mode):
         return False, f"key file is not a regular file: {target}"
-    if info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+    if os.name == "posix" and info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
         return False, f"key file must be owner-only (chmod 600): {target}"
     if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
         return False, f"key file must be owned by the current user: {target}"
@@ -780,6 +783,8 @@ def check_key_file(path: str | Path) -> tuple[bool, str]:
 
     Uses :func:`os.lstat`, so a symlink at the key path is reported as a
     non-regular file rather than silently validated against its target.
+    On Windows, owner-only is proven via the portable NT DACL floor rather
+    than POSIX mode bits (which are not meaningful there).
 
     Parameters
     ----------
@@ -791,11 +796,23 @@ def check_key_file(path: str | Path) -> tuple[bool, str]:
     tuple[bool, str]
         ``(True, "ok")`` when the key file is safe, otherwise ``(False, reason)``.
     """
+    from synapse_channel.core.secure_path import SecurePathError, assert_owner_only_file_path
+
     target = Path(path)
     try:
         info = os.lstat(target)
     except FileNotFoundError:
         return False, f"key file does not exist: {target}"
+    import sys
+
+    if sys.platform.startswith("win"):
+        try:
+            assert_owner_only_file_path(target, purpose="key file")
+        except SecurePathError as exc:
+            return False, f"key file must be owner-only (chmod 600): {target} ({exc})"
+        if info.st_size != KEY_BYTES:
+            return False, f"key file must hold exactly {KEY_BYTES} bytes: {target}"
+        return True, "ok"
     return _validate_key_stat(info, target)
 
 
@@ -1006,6 +1023,8 @@ def require_encrypted_profile(
 
 def _write_owner_only(path: Path, payload: bytes) -> None:
     """Atomically write ``payload`` to ``path`` with owner-only permissions."""
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     temp = Path(temp_name)
@@ -1015,8 +1034,7 @@ def _write_owner_only(path: Path, payload: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp, path)
-        with contextlib.suppress(OSError):
-            path.chmod(0o600)
+        apply_owner_only_file(path)
     except BaseException:
         temp.unlink(missing_ok=True)
         raise
@@ -1024,10 +1042,12 @@ def _write_owner_only(path: Path, payload: bytes) -> None:
 
 def _prepare_backup_dir(path: str | Path) -> Path:
     """Create an owner-only backup directory and return it as a path."""
+    from synapse_channel.core.secure_path import SecurePathError, apply_owner_only_dir
+
     backup_dir = Path(path)
     backup_dir.mkdir(parents=True, exist_ok=True)
-    with contextlib.suppress(OSError):
-        backup_dir.chmod(0o700)
+    with contextlib.suppress(OSError, SecurePathError):
+        apply_owner_only_dir(backup_dir)
     return backup_dir
 
 
