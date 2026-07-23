@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.13] - 2026-07-23
+
 ### Added
 
 - The five-mode fleet communication workbench now follows the selected English,
@@ -209,6 +211,16 @@ All notable changes to this project are documented here.
   a transfer whose scope collides with a live claim held by an agent other than
   the recipient is refused, instead of silently leaving two different agents
   holding the same files. Surfaced by the new coordination-spec state model.
+- Advisory cross-os process-group cleanup no longer treats Darwin `killpg(0)`
+  `PermissionError` as a hard failure: existence probes fall back to the group
+  leader's reaped state, and signal delivery can fall back to the leader when
+  group signalling is refused. Cockpit shell tests await deferred inspector
+  chunks after the lazy panel split.
+- Local setup receipt exceptions join the frozen error taxonomy; non-exception
+  setup refusal records no longer use an `*Error` class name that tripped the
+  AST drift gate.
+- Advisory `cross-os` job timeout raised from 30 to 90 minutes so the Windows
+  full-suite cell can finish instead of being cancelled mid-pytest.
 
 ## [0.99.12] - 2026-07-20
 
