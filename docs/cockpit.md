@@ -139,6 +139,12 @@ behaviour that used to share that root component has its own lifecycle owner:
   fleet documents; `snapshotStore` owns authenticated polling, last-good-state
   retention, freshness transitions, subscriptions, timers, and abort cleanup.
   The stable `snapshot` facade preserves the existing feed and parser imports.
+- `eventTailParser` defensively narrows the untrusted durable cursor document;
+  `eventProjection` maps stored facts onto cockpit lanes without changing hub
+  sequences or timestamps; `eventsTailSource` owns authenticated bootstrap,
+  compatibility backfill, incremental polling, provenance, timers, and abort
+  cleanup. The stable `eventsTail` facade preserves parser, projection, source,
+  and type imports used by history and live-frame consumers.
 
 Each owner has a dedicated behavioural hook or projection test. The wired
 `App` and feed tests still exercise authentication, real endpoint adapters,

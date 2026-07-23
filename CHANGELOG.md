@@ -176,6 +176,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- The cockpit's durable event tail now has explicit trust, projection, and
+  lifecycle owners behind its unchanged import facade. Tolerant wire parsing,
+  exact hub sequence/timestamp projection, current and legacy history
+  bootstrap, absent/error provenance, and stop/abort behavior remain unchanged
+  while each contract can evolve and fail independently.
 - Overlapping dashboard live transports and snapshot reads now serialize the
   short-lived hub fetch that shares the configured dashboard identity. Browser
   access changes can no longer race two sockets under one name, trigger the
