@@ -176,6 +176,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Governed cockpit writes now separate strict outcome/local-input validation
+  from authenticated POST transport and authority-preserving result mapping
+  behind the unchanged `operatorActions` facade. Task, semantic-response, and
+  message payloads, URLs, validation text, HTTP status semantics, and unsafe
+  detail fallbacks remain unchanged.
 - The local incident workbench now separates fail-closed draft persistence,
   typed evidence-cart mutation, and explicitly non-authoritative export
   generation behind the unchanged `incidentWorkspace` facade. Schema v1,

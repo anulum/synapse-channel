@@ -157,6 +157,11 @@ behaviour that used to share that root component has its own lifecycle owner:
   outward document and filename; immutable limits and types live in
   `incidentWorkspaceTypes`. The stable `incidentWorkspace` facade preserves the
   guided workspace component contract.
+- `operatorActionValidation` owns strict governed-outcome decoding, dependency
+  normalisation, and task-form admission; `operatorActionTransport` owns
+  authenticated POST payloads and authority-preserving HTTP/result mapping;
+  immutable input and result types live in `operatorActionTypes`. The stable
+  `operatorActions` facade preserves task, response, and palette consumers.
 
 Each owner has a dedicated behavioural hook or projection test. The wired
 `App` and feed tests still exercise authentication, real endpoint adapters,
