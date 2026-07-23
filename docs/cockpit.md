@@ -151,6 +151,12 @@ behaviour that used to share that root component has its own lifecycle owner:
   evidence, absence reset, sequence de-duplication, subscriptions, timers, and
   abort cleanup. The stable `auditFeeds` facade preserves existing component,
   projection, evidence, and feed-hook imports.
+- `incidentDraftStore` owns strict schema-v1 parsing and fail-closed browser
+  persistence; `incidentEvidence` owns typed evidence identity and bounded
+  draft mutations; `incidentExport` owns the explicitly non-authoritative
+  outward document and filename; immutable limits and types live in
+  `incidentWorkspaceTypes`. The stable `incidentWorkspace` facade preserves the
+  guided workspace component contract.
 
 Each owner has a dedicated behavioural hook or projection test. The wired
 `App` and feed tests still exercise authentication, real endpoint adapters,

@@ -176,6 +176,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- The local incident workbench now separates fail-closed draft persistence,
+  typed evidence-cart mutation, and explicitly non-authoritative export
+  generation behind the unchanged `incidentWorkspace` facade. Schema v1,
+  selection/replay validation, bounds, de-duplication, storage failure handling,
+  authority wording, and export filenames remain unchanged.
 - Durable receipt and governed-action feeds now separate strict document
   validation from authenticated retained-cursor lifecycle behind the unchanged
   `auditFeeds` facade. HTTP polling and multiplexed live frames still share the
