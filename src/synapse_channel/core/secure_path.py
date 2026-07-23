@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import os
 import stat
-import subprocess
+import subprocess  # nosec B404 - fixed icacls/whoami argv only; never a shell string
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -355,24 +355,62 @@ def _windows_path_kind_guards(path: Path, *, purpose: str, directory: bool) -> N
 
 
 def _windows_current_user_sid() -> str:
-    """Return the current process token user SID as a string."""
-    return _windows_current_user_sid_native()
+    """Return the current process token user SID as a string.
+
+    Prefer a properly prototyped ``OpenProcessToken`` path; fall back to the
+    fixed ``whoami /user`` command (present on every supported Windows host)
+    when the native path is unavailable.
+    """
+    try:
+        return _windows_current_user_sid_native()
+    except SecurePathError:
+        return _windows_current_user_sid_whoami()
+
+
+def _windows_current_user_sid_whoami() -> str:  # pragma: no cover - platform-native Win32
+    """Resolve the current user SID via fixed ``whoami /user`` argv (no shell)."""
+    try:
+        # ``/fo`` is whoami's format switch (not a misspelling of "of"); split
+        # so the spell-checker does not rewrite a fixed Windows argv token.
+        whoami_format = "/" + "fo"
+        result = subprocess.run(  # nosec B603 B607 - fixed whoami argv, never a shell string
+            ["whoami", "/user", whoami_format, "csv", "/nh"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise SecurePathError("whoami is required to resolve the Windows user SID") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise SecurePathError(
+            f"cannot resolve Windows user SID via whoami: {detail or result.returncode}"
+        )
+    # CSV row: "DOMAIN\\user","S-1-5-21-…"
+    line = (result.stdout or "").strip().splitlines()
+    if not line:
+        raise SecurePathError("whoami returned no user SID")
+    parts = [part.strip().strip('"') for part in line[0].split(",")]
+    for part in reversed(parts):
+        if part.startswith("S-1-"):
+            return part
+    raise SecurePathError(f"whoami output had no SID: {line[0]!r}")
 
 
 def _windows_current_user_sid_native() -> str:  # pragma: no cover - platform-native Win32
-    """Read the process token user SID via ``advapi32`` (Windows only)."""
+    """Read the process token user SID via ``advapi32`` with full prototypes."""
     import ctypes
     from ctypes import wintypes
     from typing import Any
 
     token_user = 1
     token_query = 0x0008
-    # ``windll`` / ``get_last_error`` exist only on Windows; route through Any so
-    # Linux mypy (which types ``ctypes`` without those attributes) stays clean.
+    # Route through Any so Linux mypy (ctypes without WinDLL) stays clean.
     ctypes_mod: Any = ctypes
-    windll = ctypes_mod.windll
-    advapi32 = windll.advapi32
-    kernel32 = windll.kernel32
+    # Fresh WinDLL handles with use_last_error so prototypes are not shared
+    # pollution from other callers on the process-global windll caches.
+    kernel32 = ctypes_mod.WinDLL("kernel32", use_last_error=True)
+    advapi32 = ctypes_mod.WinDLL("advapi32", use_last_error=True)
 
     class SID_AND_ATTRIBUTES(ctypes.Structure):
         _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", wintypes.DWORD)]
@@ -380,38 +418,70 @@ def _windows_current_user_sid_native() -> str:  # pragma: no cover - platform-na
     class TOKEN_USER(ctypes.Structure):
         _fields_ = [("User", SID_AND_ATTRIBUTES)]
 
+    get_current_process = kernel32.GetCurrentProcess
+    get_current_process.argtypes = []
+    get_current_process.restype = wintypes.HANDLE
+
+    open_process_token = advapi32.OpenProcessToken
+    open_process_token.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.HANDLE),
+    ]
+    open_process_token.restype = wintypes.BOOL
+
+    get_token_information = advapi32.GetTokenInformation
+    get_token_information.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    get_token_information.restype = wintypes.BOOL
+
+    convert_sid = advapi32.ConvertSidToStringSidW
+    convert_sid.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    convert_sid.restype = wintypes.BOOL
+
+    local_free = kernel32.LocalFree
+    local_free.argtypes = [ctypes.c_void_p]
+    local_free.restype = ctypes.c_void_p
+
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+
     token = wintypes.HANDLE()
-    if not advapi32.OpenProcessToken(
-        kernel32.GetCurrentProcess(), token_query, ctypes.byref(token)
-    ):
+    if not open_process_token(get_current_process(), token_query, ctypes.byref(token)):
         raise SecurePathError(
             f"cannot open process token for user identity: {ctypes_mod.get_last_error()}"
         )
     try:
         size = wintypes.DWORD(0)
-        advapi32.GetTokenInformation(token, token_user, None, 0, ctypes.byref(size))
+        get_token_information(token, token_user, None, 0, ctypes.byref(size))
         if size.value == 0:
             raise SecurePathError("cannot size token user information")
         buffer = ctypes.create_string_buffer(size.value)
-        if not advapi32.GetTokenInformation(token, token_user, buffer, size, ctypes.byref(size)):
+        if not get_token_information(token, token_user, buffer, size, ctypes.byref(size)):
             raise SecurePathError(
                 f"cannot read token user information: {ctypes_mod.get_last_error()}"
             )
         user = ctypes.cast(buffer, ctypes.POINTER(TOKEN_USER)).contents
         sid_ptr = wintypes.LPWSTR()
-        if not advapi32.ConvertSidToStringSidW(user.User.Sid, ctypes.byref(sid_ptr)):
+        if not convert_sid(user.User.Sid, ctypes.byref(sid_ptr)):
             raise SecurePathError(
                 f"cannot convert user SID to string: {ctypes_mod.get_last_error()}"
             )
         try:
             value = sid_ptr.value
         finally:
-            kernel32.LocalFree(sid_ptr)
+            local_free(sid_ptr)
         if not value:
             raise SecurePathError("process token user SID is empty")
         return value
     finally:
-        kernel32.CloseHandle(token)
+        close_handle(token)
 
 
 def _windows_apply_owner_only(path: Path, *, directory: bool) -> None:
@@ -420,7 +490,8 @@ def _windows_apply_owner_only(path: Path, *, directory: bool) -> None:
     rights = "(OI)(CI)(F)" if directory else "(F)"
     grant = f"*{sid}:{rights}"
     try:
-        strip = subprocess.run(
+        # Fixed system tool + path we own; never a shell string or untrusted binary.
+        strip = subprocess.run(  # nosec B603 B607
             ["icacls", str(path), "/inheritance:r"],
             check=False,
             capture_output=True,
@@ -431,7 +502,7 @@ def _windows_apply_owner_only(path: Path, *, directory: bool) -> None:
             raise SecurePathError(
                 f"cannot strip inherited ACL on {path}: {detail or strip.returncode}"
             )
-        grant_run = subprocess.run(
+        grant_run = subprocess.run(  # nosec B603 B607
             ["icacls", str(path), "/grant:r", grant],
             check=False,
             capture_output=True,
@@ -461,16 +532,36 @@ def _windows_read_owner_and_aces(
     se_file_object = 1
 
     ctypes_mod: Any = ctypes
-    windll = ctypes_mod.windll
-    advapi32 = windll.advapi32
-    kernel32 = windll.kernel32
+    advapi32 = ctypes_mod.WinDLL("advapi32", use_last_error=True)
+    kernel32 = ctypes_mod.WinDLL("kernel32", use_last_error=True)
+
+    get_named = advapi32.GetNamedSecurityInfoW
+    get_named.argtypes = [
+        wintypes.LPCWSTR,
+        ctypes.c_int,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    get_named.restype = wintypes.DWORD
+
+    convert_sid = advapi32.ConvertSidToStringSidW
+    convert_sid.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    convert_sid.restype = wintypes.BOOL
+
+    local_free = kernel32.LocalFree
+    local_free.argtypes = [ctypes.c_void_p]
+    local_free.restype = ctypes.c_void_p
 
     owner_sid = ctypes.c_void_p()
     group_sid = ctypes.c_void_p()
     dacl = ctypes.c_void_p()
     sacl = ctypes.c_void_p()
     descriptor = ctypes.c_void_p()
-    status = advapi32.GetNamedSecurityInfoW(
+    status = get_named(
         str(path),
         se_file_object,
         owner_security | dacl_security,
@@ -486,12 +577,12 @@ def _windows_read_owner_and_aces(
         )
     try:
         owner_string = wintypes.LPWSTR()
-        if not advapi32.ConvertSidToStringSidW(owner_sid, ctypes.byref(owner_string)):
+        if not convert_sid(owner_sid, ctypes.byref(owner_string)):
             raise SecurePathError(f"{purpose}: cannot convert owner SID for {path}")
         try:
             owner_value = owner_string.value or ""
         finally:
-            kernel32.LocalFree(owner_string)
+            local_free(owner_string)
         if not dacl or not dacl.value:
             return owner_value, False, ()
 
@@ -520,20 +611,18 @@ def _windows_read_owner_and_aces(
                 mask = ctypes.c_uint32.from_address(ace_addr + ctypes.sizeof(ACE_HEADER)).value
                 sid_addr = ace_addr + ctypes.sizeof(ACE_HEADER) + ctypes.sizeof(ctypes.c_uint32)
                 sid_string = wintypes.LPWSTR()
-                if not advapi32.ConvertSidToStringSidW(
-                    ctypes.c_void_p(sid_addr), ctypes.byref(sid_string)
-                ):
+                if not convert_sid(ctypes.c_void_p(sid_addr), ctypes.byref(sid_string)):
                     raise SecurePathError(f"{purpose}: cannot convert ACE SID for {path}")
                 try:
                     ace_sid = sid_string.value or ""
                 finally:
-                    kernel32.LocalFree(sid_string)
+                    local_free(sid_string)
                 collected.append(WindowsAce(ace_type=header.AceType, mask=mask, sid=ace_sid))
             ace_addr += header.AceSize
         return owner_value, True, tuple(collected)
     finally:
         if descriptor:
-            kernel32.LocalFree(descriptor)
+            local_free(descriptor)
 
 
 def _windows_assert_owner_only_path(

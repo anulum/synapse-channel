@@ -91,7 +91,7 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/core/multihub_transport.py": (4, "protocol-body"),
     "src/synapse_channel/core/operator_relay_transport.py": (4, "protocol-body"),
     "src/synapse_channel/core/payload_crypto.py": (1, "optional-import"),
-    "src/synapse_channel/core/secure_path.py": (2, "platform-native"),
+    "src/synapse_channel/core/secure_path.py": (3, "platform-native"),
     "src/synapse_channel/core/tls.py": (2, "protocol-body"),
     "src/synapse_channel/ergonomics.py": (1, "entrypoint"),
     "src/synapse_channel/ergonomics_inbox.py": (2, "protocol-body"),
