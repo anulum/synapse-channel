@@ -120,6 +120,9 @@ behaviour that used to share that root component has its own lifecycle owner:
   and tooltip; `useActivitySpine` owns live-source, animation, theme/resize,
   hover, pointer-drag, and keyboard-brush lifecycle; `activitySpineCanvas`
   performs the pure 75-second pixel projection and retained-event cutoff.
+- `InspectorTabs` owns only accessible tab chrome; `useInspectorNavigation`
+  owns roving focus and task-to-causality trace hops; `InspectorPanel` owns
+  lazy panel routing, per-panel evidence defaults, and selection fallbacks.
 
 Each owner has a dedicated behavioural hook or projection test. The wired
 `App` and feed tests still exercise authentication, real endpoint adapters,
@@ -138,6 +141,12 @@ chunk loads; the surrounding panel error boundary remains responsible for a
 failed import. This is behavioural code splitting, not a warning override: the
 production entry is 468.48 kB minified / 137.26 kB gzip, down from 530.11 kB /
 151.60 kB gzip, and no configured chunk-size threshold was raised.
+
+Tab focus and panel data routing are separate contracts. Arrow keys, Home, and
+End update the controlled tab and move focus without importing panel code;
+task trace hops update the shared selection and causality prefill. The panel
+router then adapts honest absent/connecting defaults and preserves the same
+lazy production chunks.
 
 ## Unlock a protected dashboard
 

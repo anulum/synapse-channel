@@ -75,6 +75,11 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- The cockpit inspector is split by responsibility. `InspectorTabs` now owns
+  only accessible tab chrome; `useInspectorNavigation` owns roving focus and
+  task trace hops; `InspectorPanel` owns lazy panel routing and evidence-state
+  adapters. The public props, eight panel routes, deferred chunk boundaries,
+  trace prefill, and selection fallbacks are unchanged.
 - The cockpit activity spine is split by responsibility. `ActivitySpine` now
   composes only the accessible canvas, lane labels, legend, and tooltip;
   `useActivitySpine` owns live-source subscription, animation, theme/resize,
