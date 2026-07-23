@@ -75,6 +75,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- The cockpit communication library is split by responsibility while retaining
+  its stable `communications` import facade. `communicationEvidence` owns
+  retained chat and receipt normalisation, `communicationModel` owns the
+  metadata-only fleet projection, `conversationDetail` owns the selected
+  body-bearing pair timeline, and `communicationLayout` owns deterministic web
+  and matrix bounds. Fleet views, filtering, semantic responses, and evidence
+  limits are unchanged.
 - The cockpit inspector is split by responsibility. `InspectorTabs` now owns
   only accessible tab chrome; `useInspectorNavigation` owns roving focus and
   task trace hops; `InspectorPanel` owns lazy panel routing and evidence-state

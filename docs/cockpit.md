@@ -123,6 +123,12 @@ behaviour that used to share that root component has its own lifecycle owner:
 - `InspectorTabs` owns only accessible tab chrome; `useInspectorNavigation`
   owns roving focus and task-to-causality trace hops; `InspectorPanel` owns
   lazy panel routing, per-panel evidence defaults, and selection fallbacks.
+- `communicationEvidence` normalises retained chat and receipt evidence;
+  `communicationModel` derives metadata-only nodes, routes, and project traffic;
+  `conversationDetail` admits body text only for an explicitly selected pair;
+  `communicationLayout` owns deterministic web geometry and matrix bounds. The
+  stable `communications` facade keeps existing consumers independent of these
+  internal owners.
 
 Each owner has a dedicated behavioural hook or projection test. The wired
 `App` and feed tests still exercise authentication, real endpoint adapters,

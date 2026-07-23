@@ -4,17 +4,11 @@
 // © Code 2020–2026 Miroslav Šotek. All rights reserved.
 // ORCID: 0009-0009-3560-0851
 // Contact: www.anulum.li | protoscience@anulum.li
-// SYNAPSE_CHANNEL — communication projection and stable-layout tests
+// SYNAPSE_CHANNEL — fleet communication projection tests
 
 import { describe, expect, it } from "vitest";
 
-import {
-  deriveCommunicationModel,
-  deriveConversationDetail,
-  layoutCommunicationWeb,
-  matrixIdentities,
-  projectOf,
-} from "../src/lib/communications";
+import { deriveCommunicationModel, projectOf } from "../src/lib/communicationModel";
 import type { ClaimView } from "../src/lib/claims";
 import type { CockpitEvent } from "../src/types";
 
@@ -81,26 +75,9 @@ describe("deriveCommunicationModel", () => {
   it("uses the strongest final receipt outcome once and honours the brushed window", () => {
     const model = deriveCommunicationModel(
       [
-        event(23, "delivery_receipt_expired", {
-          message_seq: 20,
-          expired: true,
-        }),
-        event(22, "delivery_receipt_deferred", {
-          message_seq: 20,
-          deferred: true,
-          delivered: true,
-        }),
-        event(
-          20,
-          "chat",
-          {
-            sender: "alpha/one",
-            target: "beta/two",
-            type: "chat",
-            payload: "x",
-          },
-          20,
-        ),
+        event(23, "delivery_receipt_expired", { message_seq: 20, expired: true }),
+        event(22, "delivery_receipt_deferred", { message_seq: 20, deferred: true, delivered: true }),
+        event(20, "chat", { sender: "alpha/one", target: "beta/two", type: "chat", payload: "x" }, 20),
         CHAT,
       ],
       [],
@@ -108,11 +85,7 @@ describe("deriveCommunicationModel", () => {
       { fromTs: 15, toTs: 30 },
     );
     expect(model.messages).toBe(1);
-    expect(model.edges[0]).toMatchObject({
-      failed: 1,
-      deferred: 0,
-      health: "failed",
-    });
+    expect(model.edges[0]).toMatchObject({ failed: 1, deferred: 0, health: "failed" });
     expect(model.nodes.some((node) => node.id === "quiet/agent" && node.messages === 0)).toBe(true);
   });
 
@@ -173,94 +146,11 @@ describe("deriveCommunicationModel", () => {
     expect(model.projects.find((project) => project.id === "p")?.claims).toBe(2);
   });
 
-  it("bounds the matrix and lays out identical data identically", () => {
-    const events = Array.from({ length: 15 }, (_, index) =>
-      event(index + 1, "chat", {
-        sender: `p/a${index}`,
-        target: "q/sink",
-        type: "chat",
-        payload: "x",
-      }),
-    );
-    const model = deriveCommunicationModel(events);
-    expect(matrixIdentities(model)).toHaveLength(12);
-    expect(layoutCommunicationWeb(model).nodes).toHaveLength(16);
-    expect(layoutCommunicationWeb(model, 760, 360, 8).nodes).toHaveLength(8);
-    expect(layoutCommunicationWeb(model)).toEqual(layoutCommunicationWeb(model));
-    expect(projectOf("bare")).toBe("unscoped");
-    expect(projectOf("SYNAPSE-CHANNEL")).toBe("SYNAPSE-CHANNEL");
+  it("derives scoped, fleet-wide, canonical, and unscoped project names", () => {
+    expect(projectOf("alpha/one")).toBe("alpha");
+    expect(projectOf("all")).toBe("fleet-wide");
     expect(projectOf("CEO")).toBe("fleet-wide");
-  });
-
-  it("reveals bodies only in a selected pair timeline and correlates semantic responses", () => {
-    const response = event(15, "ack", {
-      sender: "beta/two",
-      target: "alpha/one",
-      type: "chat",
-      payload: "Acknowledged.",
-      response_to_seq: 10,
-      response_status: "acknowledged",
-      response_evidence_scope: "recipient",
-    });
-    const receipt = event(16, "delivery_receipt_immediate", {
-      message_seq: 15,
-      delivered: true,
-    });
-    const detail = deriveConversationDetail([receipt, response, CHAT], "alpha/one", "beta/two");
-    expect(detail).toHaveLength(2);
-    expect(detail[0]).toMatchObject({
-      seq: 15,
-      body: "Acknowledged.",
-      delivery: "delivered",
-      responseToSeq: 10,
-      responseStatus: "acknowledged",
-      responseEvidenceScope: "recipient",
-    });
-    expect(detail[1]).toMatchObject({
-      seq: 10,
-      body: "secret body",
-      delivery: "unknown",
-    });
-    expect(deriveConversationDetail([CHAT], "alpha/one", "other/three")).toEqual([]);
-  });
-
-  it("bounds bodies and rejects invalid semantic metadata without losing pair order", () => {
-    const longBody = "x".repeat(501);
-    const invalid = event(21, "chat", {
-      sender: "alpha/one",
-      target: "beta/two",
-      payload: 7,
-      response_to_seq: -1,
-      response_status: "invented",
-      response_evidence_scope: 7,
-    }, 30);
-    const bounded = event(22, "chat", {
-      sender: "beta/two",
-      target: "alpha/one",
-      payload: longBody,
-      response_status: 7,
-      response_evidence_scope: "invented",
-    }, 30);
-    const detail = deriveConversationDetail(
-      [
-        event(23, "delivery_receipt_deferred", { message_seq: 22, deferred: true }),
-        event(24, "delivery_receipt_immediate", { message_seq: 22, delivered: true }),
-        invalid,
-        bounded,
-      ],
-      "alpha/one",
-      "beta/two",
-      null,
-      0,
-    );
-    expect(detail).toHaveLength(1);
-    expect(detail[0]).toMatchObject({
-      seq: 22,
-      body: `${"x".repeat(500)}…`,
-      delivery: "deferred",
-      responseToSeq: null,
-      responseStatus: null,
-      responseEvidenceScope: null,
-    });
+    expect(projectOf("SYNAPSE-CHANNEL")).toBe("SYNAPSE-CHANNEL");
+    expect(projectOf("bare")).toBe("unscoped");
   });
 });
