@@ -63,7 +63,7 @@ _OPAQUE_ID = re.compile(r"[A-Za-z0-9_-]{22,128}\Z")
 
 
 @dataclass(frozen=True)
-class SetupContractError:
+class SetupContractRefusal:
     """One stable, non-reflective setup request refusal."""
 
     code: SetupErrorCode
@@ -210,47 +210,47 @@ def evaluate_setup_posture(posture: SetupPosture) -> SetupPostureDecision:
     return SetupPostureDecision(True, "ready")
 
 
-def parse_setup_plan_request(body: bytes) -> SetupPlanRequest | SetupContractError:
+def parse_setup_plan_request(body: bytes) -> SetupPlanRequest | SetupContractRefusal:
     """Parse an exact plan request without reflecting attacker-controlled text."""
     document = _strict_document(body)
-    if isinstance(document, SetupContractError):
+    if isinstance(document, SetupContractRefusal):
         return document
     if frozenset(document) != _PLAN_FIELDS:
-        return SetupContractError("invalid_fields")
+        return SetupContractRefusal("invalid_fields")
     if not _valid_version(document["version"]):
-        return SetupContractError("invalid_version")
+        return SetupContractRefusal("invalid_version")
     request_id = document["request_id"]
     if not _valid_request_id(request_id):
-        return SetupContractError("invalid_request_id")
+        return SetupContractRefusal("invalid_request_id")
     profile = document["profile"]
     if not isinstance(profile, str) or profile not in _PROFILES:
-        return SetupContractError("unknown_profile")
+        return SetupContractRefusal("unknown_profile")
     return SetupPlanRequest(cast(str, request_id), profile)
 
 
-def parse_setup_apply_request(body: bytes) -> SetupApplyRequest | SetupContractError:
+def parse_setup_apply_request(body: bytes) -> SetupApplyRequest | SetupContractRefusal:
     """Parse an exact apply confirmation; confirmation must be literal true."""
     document = _strict_document(body)
-    if isinstance(document, SetupContractError):
+    if isinstance(document, SetupContractRefusal):
         return document
     if frozenset(document) != _APPLY_FIELDS:
-        return SetupContractError("invalid_fields")
+        return SetupContractRefusal("invalid_fields")
     if not _valid_version(document["version"]):
-        return SetupContractError("invalid_version")
+        return SetupContractRefusal("invalid_version")
     request_id = document["request_id"]
     if not _valid_request_id(request_id):
-        return SetupContractError("invalid_request_id")
+        return SetupContractRefusal("invalid_request_id")
     plan_id = document["plan_id"]
     if not isinstance(plan_id, str) or _OPAQUE_ID.fullmatch(plan_id) is None:
-        return SetupContractError("invalid_plan_id")
+        return SetupContractRefusal("invalid_plan_id")
     plan_digest = document["plan_digest"]
     if not isinstance(plan_digest, str) or _LOWER_SHA256.fullmatch(plan_digest) is None:
-        return SetupContractError("invalid_plan_digest")
+        return SetupContractRefusal("invalid_plan_digest")
     nonce = document["confirmation_nonce"]
     if not isinstance(nonce, str) or _OPAQUE_ID.fullmatch(nonce) is None:
-        return SetupContractError("invalid_confirmation_nonce")
+        return SetupContractRefusal("invalid_confirmation_nonce")
     if document["confirm"] is not True:
-        return SetupContractError("confirmation_required")
+        return SetupContractRefusal("confirmation_required")
     return SetupApplyRequest(cast(str, request_id), plan_id, plan_digest, nonce)
 
 
@@ -303,9 +303,9 @@ def _object_without_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, object
     return document
 
 
-def _strict_document(body: bytes) -> dict[str, object] | SetupContractError:
+def _strict_document(body: bytes) -> dict[str, object] | SetupContractRefusal:
     if not body or len(body) > MAX_SETUP_REQUEST_BYTES:
-        return SetupContractError("body_size")
+        return SetupContractRefusal("body_size")
     try:
         text = body.decode("utf-8", errors="strict")
         value = json.loads(
@@ -314,9 +314,9 @@ def _strict_document(body: bytes) -> dict[str, object] | SetupContractError:
             parse_constant=_reject_constant,
         )
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        return SetupContractError("invalid_json")
+        return SetupContractRefusal("invalid_json")
     if not isinstance(value, dict):
-        return SetupContractError("invalid_fields")
+        return SetupContractRefusal("invalid_fields")
     return cast(dict[str, object], value)
 
 
@@ -324,7 +324,7 @@ __all__ = [
     "MAX_SETUP_REQUEST_BYTES",
     "SETUP_CONTRACT_VERSION",
     "SetupApplyRequest",
-    "SetupContractError",
+    "SetupContractRefusal",
     "SetupEffect",
     "SetupPlan",
     "SetupPlanRequest",

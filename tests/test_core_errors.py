@@ -305,6 +305,21 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "semantic_enforcement",
         RuntimeError,
     ),
+    "SetupReceiptIntegrityError": (
+        "synapse_channel.dashboard_setup_receipts",
+        "setup_receipt_integrity",
+        ValueError,
+    ),
+    "SetupReceiptPersistenceError": (
+        "synapse_channel.dashboard_setup_receipts",
+        "setup_receipt_persistence",
+        ValueError,
+    ),
+    "SetupReceiptStoreError": (
+        "synapse_channel.dashboard_setup_receipts",
+        "setup_receipt_store",
+        ValueError,
+    ),
     "ShellClaimGuardError": (
         "synapse_channel.shell_claim_guard",
         "shell_claim_guard",

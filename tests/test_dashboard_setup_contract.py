@@ -19,7 +19,7 @@ import pytest
 from synapse_channel.dashboard_setup_contract import (
     MAX_SETUP_REQUEST_BYTES,
     SetupApplyRequest,
-    SetupContractError,
+    SetupContractRefusal,
     SetupPlanRequest,
     SetupPosture,
     SetupProfileId,
@@ -57,7 +57,7 @@ def valid_apply_document() -> dict[str, object]:
 
 
 def error_code(result: object) -> str:
-    assert isinstance(result, SetupContractError)
+    assert isinstance(result, SetupContractRefusal)
     return result.code
 
 

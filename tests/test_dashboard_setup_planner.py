@@ -26,7 +26,7 @@ from synapse_channel.dashboard_setup_planner import (
     SetupDoctorFacts,
     SetupPlanBinding,
     SetupPlanStore,
-    SetupPlanStoreError,
+    SetupPlanStoreRefusal,
     build_setup_preflight,
 )
 
@@ -112,7 +112,7 @@ def apply_request(plan: IssuedSetupPlan, **overrides: str) -> SetupApplyRequest:
 
 
 def error_code(result: object) -> str:
-    assert isinstance(result, SetupPlanStoreError)
+    assert isinstance(result, SetupPlanStoreRefusal)
     return result.code
 
 
@@ -405,13 +405,13 @@ def test_concurrent_confirmation_authorises_exactly_once() -> None:
     plan = issue(store)
     request = apply_request(plan)
 
-    def authorise(_attempt: int) -> AuthorisedSetupPlan | SetupPlanStoreError:
+    def authorise(_attempt: int) -> AuthorisedSetupPlan | SetupPlanStoreRefusal:
         return store.authorise_once(request, binding=binding(), now=101)
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         outcomes = list(pool.map(authorise, range(32)))
 
     assert sum(isinstance(outcome, AuthorisedSetupPlan) for outcome in outcomes) == 1
-    assert [outcome.code for outcome in outcomes if isinstance(outcome, SetupPlanStoreError)] == [
+    assert [outcome.code for outcome in outcomes if isinstance(outcome, SetupPlanStoreRefusal)] == [
         "replayed"
     ] * 31

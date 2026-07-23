@@ -40,7 +40,7 @@ DEFAULT_SETUP_PLAN_TTL_SECONDS = 180
 MAX_SETUP_PLAN_TTL_SECONDS = 900
 
 SetupProbeState = Literal["ready", "absent", "blocked", "unverifiable"]
-SetupPlanStoreErrorCode = Literal[
+SetupPlanStoreRefusalCode = Literal[
     "capacity",
     "duplicate_request",
     "invalid_token",
@@ -141,10 +141,10 @@ class AuthorisedSetupPlan:
 
 
 @dataclass(frozen=True, slots=True)
-class SetupPlanStoreError:
+class SetupPlanStoreRefusal:
     """One stable refusal that never reflects attacker-controlled values."""
 
-    code: SetupPlanStoreErrorCode
+    code: SetupPlanStoreRefusalCode
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,7 +208,7 @@ class SetupPlanStore:
         *,
         binding: SetupPlanBinding,
         now: int,
-    ) -> IssuedSetupPlan | SetupPlanStoreError:
+    ) -> IssuedSetupPlan | SetupPlanStoreRefusal:
         """Issue one expiring plan or refuse without evicting an unexpired record."""
         _validate_now(now)
         expires_at = now + self._ttl_seconds
@@ -224,16 +224,16 @@ class SetupPlanStore:
                 record.plan.request_id == request.request_id for record in self._records.values()
             )
             if duplicate_request:
-                return SetupPlanStoreError("duplicate_request")
+                return SetupPlanStoreRefusal("duplicate_request")
             if len(self._records) >= self._capacity:
-                return SetupPlanStoreError("capacity")
+                return SetupPlanStoreRefusal("capacity")
             tokens = self._new_tokens_locked()
-            if isinstance(tokens, SetupPlanStoreError):
+            if isinstance(tokens, SetupPlanStoreRefusal):
                 return tokens
             plan_id, nonce = tokens
             salt = self._salt_factory(32)
             if not isinstance(salt, bytes) or len(salt) != 32:
-                return SetupPlanStoreError("invalid_token")
+                return SetupPlanStoreRefusal("invalid_token")
             record = _StoredSetupPlan(
                 plan_id=plan_id,
                 plan=plan,
@@ -255,23 +255,23 @@ class SetupPlanStore:
         *,
         binding: SetupPlanBinding,
         now: int,
-    ) -> AuthorisedSetupPlan | SetupPlanStoreError:
+    ) -> AuthorisedSetupPlan | SetupPlanStoreRefusal:
         """Atomically consume a matching plan; no caller can authorise it twice."""
         _validate_now(now)
         if not _valid_apply_reference(request):
-            return SetupPlanStoreError("mismatch")
+            return SetupPlanStoreRefusal("mismatch")
         binding_digest = _binding_digest(binding)
         with self._lock:
             record = self._records.get(request.plan_id)
             if record is None:
                 self._purge_expired_locked(now)
-                return SetupPlanStoreError("not_found")
+                return SetupPlanStoreRefusal("not_found")
             if record.plan.expires_at <= now:
                 del self._records[request.plan_id]
                 self._purge_expired_locked(now)
-                return SetupPlanStoreError("expired")
+                return SetupPlanStoreRefusal("expired")
             if record.consumed:
-                return SetupPlanStoreError("replayed")
+                return SetupPlanStoreRefusal("replayed")
             nonce_digest = _nonce_digest(
                 request.confirmation_nonce,
                 salt=record.nonce_salt,
@@ -285,7 +285,7 @@ class SetupPlanStore:
                 hmac.compare_digest(record.nonce_digest, nonce_digest),
             )
             if not all(checks):
-                return SetupPlanStoreError("mismatch")
+                return SetupPlanStoreRefusal("mismatch")
             self._records[request.plan_id] = replace(record, consumed=True)
             return AuthorisedSetupPlan(request.plan_id, record.plan)
 
@@ -303,7 +303,7 @@ class SetupPlanStore:
             del self._records[plan_id]
         return len(expired)
 
-    def _new_tokens_locked(self) -> tuple[str, str] | SetupPlanStoreError:
+    def _new_tokens_locked(self) -> tuple[str, str] | SetupPlanStoreRefusal:
         plan_id = self._token_factory(24)
         nonce = self._token_factory(24)
         if (
@@ -312,9 +312,9 @@ class SetupPlanStore:
             or _OPAQUE_ID.fullmatch(plan_id) is None
             or _OPAQUE_ID.fullmatch(nonce) is None
         ):
-            return SetupPlanStoreError("invalid_token")
+            return SetupPlanStoreRefusal("invalid_token")
         if plan_id in self._records:
-            return SetupPlanStoreError("token_collision")
+            return SetupPlanStoreRefusal("token_collision")
         return plan_id, nonce
 
 
@@ -385,7 +385,7 @@ __all__ = [
     "SetupDoctorFacts",
     "SetupPlanBinding",
     "SetupPlanStore",
-    "SetupPlanStoreError",
+    "SetupPlanStoreRefusal",
     "SetupPreflight",
     "build_setup_preflight",
 ]
