@@ -70,7 +70,14 @@ def test_unavailable_load_average_reports_zeros(monkeypatch: pytest.MonkeyPatch)
     def refuse() -> tuple[float, float, float]:
         raise OSError("no loadavg on this platform")
 
-    monkeypatch.setattr("synapse_channel.benchmark.scorecard.os.getloadavg", refuse)
+    import os as os_mod
+
+    # On Windows ``os.getloadavg`` is absent; create a stub so setattr works, then
+    # refuse. getattr-based production code already returns zeros when missing.
+    if not hasattr(os_mod, "getloadavg"):
+        monkeypatch.setattr(os_mod, "getloadavg", refuse, raising=False)
+    else:
+        monkeypatch.setattr(os_mod, "getloadavg", refuse)
     context = capture_host_context()
     assert context.load_before == (0.0, 0.0, 0.0)
 

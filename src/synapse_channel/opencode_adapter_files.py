@@ -55,12 +55,24 @@ def _fingerprint(info: os.stat_result) -> _Fingerprint:
 def _validate_file(path: Path, info: os.stat_result) -> None:
     if not stat.S_ISREG(info.st_mode):
         raise OpenCodeAdapterFileError(f"OpenCode adapter path is not a regular file: {path}")
-    if info.st_uid != os.getuid():
-        raise OpenCodeAdapterFileError(f"OpenCode adapter path is not owned by this user: {path}")
-    if stat.S_IMODE(info.st_mode) & _UNSAFE_WRITE_BITS:
-        raise OpenCodeAdapterFileError(
-            f"OpenCode adapter path is writable by group or others: {path}"
-        )
+    if hasattr(os, "getuid"):
+        if info.st_uid != os.getuid():
+            raise OpenCodeAdapterFileError(
+                f"OpenCode adapter path is not owned by this user: {path}"
+            )
+        if stat.S_IMODE(info.st_mode) & _UNSAFE_WRITE_BITS:
+            raise OpenCodeAdapterFileError(
+                f"OpenCode adapter path is writable by group or others: {path}"
+            )
+    elif os.name == "nt":
+        from synapse_channel.core.secure_path import SecurePathError, assert_owner_only_file_path
+
+        try:
+            assert_owner_only_file_path(path, purpose="OpenCode adapter file")
+        except SecurePathError as exc:
+            raise OpenCodeAdapterFileError(
+                f"OpenCode adapter path is not owner-only: {path}"
+            ) from exc
 
 
 def _validate_directory_chain(path: Path) -> None:
@@ -83,20 +95,21 @@ def _validate_directory_chain(path: Path) -> None:
         mode = stat.S_IMODE(info.st_mode)
         if not found_existing:
             found_existing = True
-            if info.st_uid != os.getuid():
+            if hasattr(os, "getuid") and info.st_uid != os.getuid():
                 raise OpenCodeAdapterFileError(
                     f"OpenCode adapter parent is not owned by this user: {current}"
                 )
-        if info.st_uid == os.getuid():
-            if mode & _UNSAFE_WRITE_BITS:
-                raise OpenCodeAdapterFileError(
-                    f"OpenCode adapter parent is writable by group or others: {current}"
-                )
-        else:
-            if mode & _UNSAFE_WRITE_BITS and not mode & stat.S_ISVTX:
-                raise OpenCodeAdapterFileError(
-                    f"OpenCode adapter ancestor is writable by group or others: {current}"
-                )
+        if hasattr(os, "getuid"):
+            if info.st_uid == os.getuid():
+                if mode & _UNSAFE_WRITE_BITS:
+                    raise OpenCodeAdapterFileError(
+                        f"OpenCode adapter parent is writable by group or others: {current}"
+                    )
+            else:
+                if mode & _UNSAFE_WRITE_BITS and not mode & stat.S_ISVTX:
+                    raise OpenCodeAdapterFileError(
+                        f"OpenCode adapter ancestor is writable by group or others: {current}"
+                    )
             return
         parent = current.parent
         if parent == current:
@@ -212,10 +225,13 @@ def write_text_snapshot(path: Path, text: str, snapshot: FileSnapshot) -> None:
         raise OpenCodeAdapterFileError(f"Updated OpenCode adapter file is too large: {path}")
     _mkdir_private_parents(path.parent)
     _assert_current(path, snapshot)
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
     descriptor, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(name)
     try:
-        os.fchmod(descriptor, snapshot.mode if snapshot.existed else 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, snapshot.mode if snapshot.existed else 0o600)
         with os.fdopen(descriptor, "wb", closefd=True) as handle:
             descriptor = -1
             handle.write(data)
@@ -223,6 +239,9 @@ def write_text_snapshot(path: Path, text: str, snapshot: FileSnapshot) -> None:
             os.fsync(handle.fileno())
         _assert_current(path, snapshot)
         os.replace(temporary, path)
+        # POSIX already has fchmod for mode preservation; Windows needs DACL.
+        if not hasattr(os, "fchmod"):
+            apply_owner_only_file(path)
         _fsync_directory(path.parent)
     finally:
         if descriptor >= 0:

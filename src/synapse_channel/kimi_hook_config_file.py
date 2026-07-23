@@ -106,8 +106,16 @@ def resolve_kimi_config_path(
 def _validate_regular_owner(path: Path, info: os.stat_result) -> None:
     if not stat.S_ISREG(info.st_mode):
         raise KimiHookConfigFileError(f"Kimi config must be a regular file: {path}")
-    if info.st_uid != os.geteuid():
-        raise KimiHookConfigFileError(f"Kimi config must be owned by the current user: {path}")
+    if hasattr(os, "geteuid"):
+        if info.st_uid != os.geteuid():
+            raise KimiHookConfigFileError(f"Kimi config must be owned by the current user: {path}")
+    elif os.name == "nt":
+        from synapse_channel.core.secure_path import SecurePathError, assert_owner_only_file_path
+
+        try:
+            assert_owner_only_file_path(path, purpose="Kimi config")
+        except SecurePathError as exc:
+            raise KimiHookConfigFileError(f"Kimi config must be owner-only: {path}") from exc
     if info.st_size > MAX_KIMI_CONFIG_BYTES:
         raise KimiHookConfigFileError(
             f"Kimi config exceeds the {MAX_KIMI_CONFIG_BYTES}-byte automatic-edit limit."
@@ -214,10 +222,13 @@ def write_config_snapshot(path: Path, text: str, snapshot: ConfigSnapshot) -> No
         ) from exc
     _assert_snapshot_current(path, snapshot)
 
+    from synapse_channel.core.secure_path import apply_owner_only_file
+
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, snapshot.mode if snapshot.existed else 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, snapshot.mode if snapshot.existed else 0o600)
         with os.fdopen(descriptor, "wb", closefd=True) as handle:
             descriptor = -1
             handle.write(data)
@@ -225,6 +236,9 @@ def write_config_snapshot(path: Path, text: str, snapshot: ConfigSnapshot) -> No
             os.fsync(handle.fileno())
         _assert_snapshot_current(path, snapshot)
         os.replace(temporary, path)
+        # POSIX already has fchmod for mode preservation; Windows needs DACL.
+        if not hasattr(os, "fchmod"):
+            apply_owner_only_file(path)
         _fsync_directory(path.parent)
     finally:
         if descriptor >= 0:

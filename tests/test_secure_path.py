@@ -145,7 +145,7 @@ def test_evaluate_windows_owner_only_policy_accepts_owner_and_system() -> None:
         ),
     )
     # Administrators-owned with an explicit current-user ACE (common under
-    # admin-group tokens on Windows CI).
+    # admin-group tokens on Windows CI). OWNER RIGHTS (S-1-3-4) is virtual.
     evaluate_windows_owner_only_policy(
         path=path,
         purpose="policy",
@@ -155,6 +155,7 @@ def test_evaluate_windows_owner_only_policy_accepts_owner_and_system() -> None:
         aces=(
             WindowsAce(ace_type=0, mask=0x001F01FF, sid=current),
             WindowsAce(ace_type=0, mask=0x001F01FF, sid="S-1-5-32-544"),
+            WindowsAce(ace_type=0, mask=0x001F01FF, sid="S-1-3-4"),
         ),
     )
     with pytest.raises(SecurePathError, match="not owned by the effective user"):

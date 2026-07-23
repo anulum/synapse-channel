@@ -39,10 +39,15 @@ _WINDOWS: Final = os.name == "nt"
 # Well-known SIDs that may appear on owner-only Windows secrets without
 # meaning “world readable”. SYSTEM and Administrators already control the
 # machine; OpenSSH's Windows private-key check uses the same allowance.
+# OWNER RIGHTS (S-1-3-4) is a virtual SID that always means “the current NT
+# owner of this object” — icacls/takeown leave it on the DACL and it is not a
+# third-party principal.
 _WINDOWS_ALLOWED_EXTRA_SIDS: Final = frozenset(
     {
         "S-1-5-18",  # NT AUTHORITY\SYSTEM
         "S-1-5-32-544",  # BUILTIN\Administrators
+        "S-1-3-4",  # OWNER RIGHTS (virtual; tracks the file owner)
+        "S-1-3-0",  # CREATOR OWNER (template ACE; often left by inheritance)
     }
 )
 
