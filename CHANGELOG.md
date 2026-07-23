@@ -75,6 +75,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- The cockpit signal log is split by responsibility. `SignalLog` retains the
+  operator controls and composes the workspace; `useSignalLogWorkspace` owns
+  live-view freezing, history scrubbing and comparison, and offline post-mortem
+  lifecycle; `SignalLogRows` owns bounded flat/compact evidence rendering, raw
+  payload expansion, exact navigation, and browser-side Merkle verdicts. The
+  public component contract, evidence precedence, query semantics, render cap,
+  and fail-closed proof language are unchanged.
 - The cockpit feed lifecycle is split by responsibility. `useCockpitFeeds`
   retains the authenticated multiplexed transport and bounded polling fallback;
   slower reliability, federation, metrics, sessions, waits, and anomaly stores

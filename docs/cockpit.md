@@ -111,6 +111,11 @@ behaviour that used to share that root component has its own lifecycle owner:
 - `cockpitLiveFrames` projects untrusted channel envelopes into snapshot,
   event, receipt, and operator-action states without React side effects, while
   `cockpitKpis` owns headline values, deltas, and the local freshness stamp.
+- `SignalLog` composes only the log controls and workspace strips;
+  `useSignalLogWorkspace` owns live-view freezing, history scrub/pin/compare,
+  and validated post-mortem file lifecycle; `SignalLogRows` owns the bounded
+  flat and compact evidence views, raw payload expansion, exact navigation,
+  and client-side Merkle-verification verdicts.
 
 Each owner has a dedicated behavioural hook or projection test. The wired
 `App` and feed tests still exercise authentication, real endpoint adapters,
@@ -397,6 +402,13 @@ The signal log supports text search, event-kind filters, newest/oldest order,
 task grouping, pause, raw event detail, and export of the visible evidence.
 Its filter query lives in the URL hash, so you can copy a filtered-log address.
 The exported JSON states its query, provenance, time window, and count.
+
+These capabilities cross explicit implementation boundaries without crossing
+their evidence boundary. Workspace state selects live, history, or imported
+evidence; the row renderer receives the already-filtered immutable set and owns
+only its bounded presentation and per-row proof verdicts. Closing history or
+unmounting the log cancels a pending debounced scrub, so a stale request cannot
+revive a workspace the operator already left.
 
 When the durable state-at feed is available, history mode can reconstruct one
 selected sequence and comparison mode can pin two sequences, A and B. An
