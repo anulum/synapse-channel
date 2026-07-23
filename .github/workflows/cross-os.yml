@@ -33,7 +33,9 @@ jobs:
   # this lane, which is about OS filesystem/socket behaviour, not the crypto backends.
   cross-os-filesystem:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # Full pytest on Windows regularly exceeded 30 minutes (install + suite) and
+    # was cancelled mid-run. macOS finishes earlier; the higher bound is for NT.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
