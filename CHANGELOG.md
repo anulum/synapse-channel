@@ -75,6 +75,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- The cockpit activity spine is split by responsibility. `ActivitySpine` now
+  composes only the accessible canvas, lane labels, legend, and tooltip;
+  `useActivitySpine` owns live-source subscription, animation, theme/resize,
+  pointer, hover, and keyboard-brush lifecycle; `activitySpineCanvas` owns the
+  pure 75-second pixel projection. Public props, retained-event semantics,
+  reduced-motion behavior, brush controls, and selection evidence are
+  unchanged.
 - The cockpit signal log is split by responsibility. `SignalLog` retains the
   operator controls and composes the workspace; `useSignalLogWorkspace` owns
   live-view freezing, history scrubbing and comparison, and offline post-mortem

@@ -116,6 +116,10 @@ behaviour that used to share that root component has its own lifecycle owner:
   and validated post-mortem file lifecycle; `SignalLogRows` owns the bounded
   flat and compact evidence views, raw payload expansion, exact navigation,
   and client-side Merkle-verification verdicts.
+- `ActivitySpine` composes the accessible canvas peer, lane labels, legend,
+  and tooltip; `useActivitySpine` owns live-source, animation, theme/resize,
+  hover, pointer-drag, and keyboard-brush lifecycle; `activitySpineCanvas`
+  performs the pure 75-second pixel projection and retained-event cutoff.
 
 Each owner has a dedicated behavioural hook or projection test. The wired
 `App` and feed tests still exercise authentication, real endpoint adapters,
@@ -267,6 +271,12 @@ lanes. It is not a smoothed activity estimate.
 - Hover or focus an event mark to inspect its identity and timestamp.
 
 The selected window filters the signal log and fleet communication views.
+
+The canvas has two explicit internal boundaries. Its lifecycle owner converts
+source events and operator input into immutable frame state; the renderer owns
+pixels only and returns the still-retained events after the 75-second cutoff.
+Theme or canvas-size changes redraw immediately even under reduced motion, while
+the signal-log table remains the accessible textual peer for every impulse.
 
 Above those two views, the event-coverage strip states the source, retained
 count, 250-event client cap, and available sequence/time range. “Retained
