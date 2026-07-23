@@ -20,7 +20,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from synapse_channel.core import capability_card_history as history_module
 from synapse_channel.core.capability import CapabilityRegistry
-from synapse_channel.core.capability_card_history import PersistentCapabilityCardHistory
+from synapse_channel.core.capability_card_history import (
+    MAX_CAPABILITY_CARD_HISTORY_CAPABILITIES_BYTES,
+    PersistentCapabilityCardHistory,
+)
 from synapse_channel.core.capability_card_signing import sign_capability_card
 from synapse_channel.core.capability_card_trust import (
     CapabilityCardHistoryResult,
@@ -30,6 +33,15 @@ from synapse_channel.core.capability_card_trust import (
 from synapse_channel.core.capability_card_verification import CapabilityCardVerificationResult
 from synapse_channel.core.identity_keys import generate_signing_key
 from synapse_channel.core.message_auth import EventSignatureKey
+
+# Minimal oversize payloads: one byte past the retained-field floors. Never embed
+# multi-megabyte strings in pytest node ids — Windows Actions logs the full id
+# on ERROR/FAIL and cancels the advisory cross-os job under log bloat.
+_OVERSIZE_CAPABILITY = "x" * (MAX_CAPABILITY_CARD_HISTORY_CAPABILITIES_BYTES + 1)
+# Valid JSON array of one string; total UTF-8 length is floor + 1.
+_OVERSIZE_CAPABILITIES_JSON = (
+    '["' + "x" * (MAX_CAPABILITY_CARD_HISTORY_CAPABILITIES_BYTES - 3) + '"]'
+)
 
 
 def _history(
@@ -265,7 +277,18 @@ def test_runtime_lock_and_missing_database_project_history_unavailable(tmp_path:
         {"card_digest": "x" * 513},
         {"expires_at": float("nan")},
         {"now": float("inf")},
-        {"route_capabilities": frozenset({"x" * (2 * 1024 * 1024)})},
+        {"route_capabilities": frozenset({_OVERSIZE_CAPABILITY})},
+    ],
+    ids=[
+        "empty-agent",
+        "empty-key-id",
+        "zero-sequence",
+        "capabilities-not-frozenset",
+        "empty-capability-token",
+        "card-digest-too-large",
+        "nan-expiry",
+        "inf-now",
+        "capability-token-too-large",
     ],
 )
 def test_invalid_runtime_transition_is_fail_visible(
@@ -291,7 +314,7 @@ _CORRUPTION_UPDATES = {
         ("route_capabilities", sqlite3.Binary(b"x"), "non-text capabilities"),
         (
             "route_capabilities",
-            '["' + "x" * (2 * 1024 * 1024) + '"]',
+            _OVERSIZE_CAPABILITIES_JSON,
             "capability floor is too large",
         ),
         ("route_capabilities", "{", "invalid capability JSON"),
@@ -304,6 +327,20 @@ _CORRUPTION_UPDATES = {
         ("expires_at", float("inf"), "non-finite timestamps"),
         ("agent", sqlite3.Binary(b"x"), "invalid binding"),
         ("agent", "x" * 513, "agent is too large"),
+    ],
+    ids=[
+        "caps-non-text",
+        "caps-floor-too-large",
+        "caps-invalid-json",
+        "caps-empty-object",
+        "caps-empty-string-token",
+        "sequence-binary",
+        "digest-binary",
+        "expiry-bad",
+        "observed-bad",
+        "expiry-inf",
+        "agent-binary",
+        "agent-too-large",
     ],
 )
 def test_startup_rejects_each_corrupt_retained_field(
