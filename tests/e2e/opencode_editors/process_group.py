@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
 import subprocess  # nosec B404
@@ -20,13 +21,44 @@ _POLL_INTERVAL_SECONDS = 0.1
 PROCESS_GROUP_CLEANUP_TIMEOUT_SECONDS = _TERM_TIMEOUT_SECONDS + _KILL_TIMEOUT_SECONDS
 
 
-def _process_group_exists(process_group: int) -> bool:
-    """Return whether an isolated process group still has a member."""
+def _process_group_exists(
+    process_group: int,
+    *,
+    leader: subprocess.Popen[str],
+) -> bool:
+    """Return whether an isolated process group still has a live member.
+
+    ``os.killpg(..., 0)`` is the portable group probe. On Darwin runners (and
+    some sandboxes) that probe can raise :class:`PermissionError` even for a
+    group this process created. When that happens, fall back to the group
+    leader's reaped state: a reaped leader means cleanup has finished for our
+    purposes; a live leader means the group is still present.
+    """
     try:
         os.killpg(process_group, 0)
     except ProcessLookupError:
         return False
+    except PermissionError:
+        return leader.poll() is None
     return True
+
+
+def _signal_group_or_leader(
+    process_group: int,
+    sig: signal.Signals,
+    leader: subprocess.Popen[str],
+) -> None:
+    """Signal the process group, falling back to the leader on permission refusal."""
+    try:
+        os.killpg(process_group, sig)
+    except ProcessLookupError:
+        raise
+    except PermissionError:
+        with contextlib.suppress(ProcessLookupError):
+            if sig == signal.SIGTERM:
+                leader.terminate()
+            elif sig == signal.SIGKILL:
+                leader.kill()
 
 
 def _wait_for_process_group_exit(
@@ -39,11 +71,11 @@ def _wait_for_process_group_exit(
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         process.poll()
-        if not _process_group_exists(process_group):
+        if not _process_group_exists(process_group, leader=process):
             return True
         time.sleep(poll_interval)
     process.poll()
-    return not _process_group_exists(process_group)
+    return not _process_group_exists(process_group, leader=process)
 
 
 def terminate_isolated_process_group(
@@ -82,7 +114,7 @@ def terminate_isolated_process_group(
 
     process_group = process.pid
     try:
-        os.killpg(process_group, signal.SIGTERM)
+        _signal_group_or_leader(process_group, signal.SIGTERM, process)
     except ProcessLookupError:
         try:
             process.wait(timeout=0)
@@ -95,10 +127,8 @@ def terminate_isolated_process_group(
         term_timeout,
         poll_interval,
     ):
-        try:
-            os.killpg(process_group, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        with contextlib.suppress(ProcessLookupError):
+            _signal_group_or_leader(process_group, signal.SIGKILL, process)
         if not _wait_for_process_group_exit(
             process,
             process_group,

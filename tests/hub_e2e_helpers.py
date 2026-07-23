@@ -196,10 +196,22 @@ class AgentHandle:
     task: asyncio.Task[None]
 
     async def close(self) -> None:
+        """Stop the agent and wait for the hub-side disconnect path to run.
+
+        Closing the WebSocket first makes the hub handler leave its receive
+        loop and run ``unregister`` on the same event loop before this returns.
+        A short yield still follows so deferred hub cleanup is scheduled.
+        """
         self.agent.running = False
+        connection = self.agent.connection
+        if connection is not None:
+            with contextlib.suppress(Exception):
+                await connection.close()
         self.task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await self.task
+        # Let the hub connection handler finish unregister/capability drop.
+        await asyncio.sleep(0)
 
 
 async def connect_agent(

@@ -22,6 +22,17 @@ import pytest
 from e2e.opencode_editors.process_group import terminate_isolated_process_group
 
 
+def _assert_process_group_gone(process_group: int) -> None:
+    """Accept ESRCH or Darwin EPERM once the reaped group is no longer signalable."""
+    try:
+        os.killpg(process_group, 0)
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        return
+    raise AssertionError(f"process group {process_group} is still signalable")
+
+
 class _FakeProcess:
     """Minimal typed process double for deterministic group cleanup tests."""
 
@@ -88,8 +99,7 @@ def test_cleanup_terminates_a_real_editor_process_group(tmp_path: Path) -> None:
 
     assert marker.read_text(encoding="utf-8").isdigit()
     assert process.returncode == -signal.SIGTERM
-    with pytest.raises(ProcessLookupError):
-        os.killpg(process.pid, 0)
+    _assert_process_group_gone(process.pid)
 
 
 def test_cleanup_kills_a_real_group_that_ignores_sigterm(tmp_path: Path) -> None:
@@ -105,8 +115,7 @@ def test_cleanup_kills_a_real_group_that_ignores_sigterm(tmp_path: Path) -> None
     )
 
     assert process.returncode == -signal.SIGKILL
-    with pytest.raises(ProcessLookupError):
-        os.killpg(process.pid, 0)
+    _assert_process_group_gone(process.pid)
 
 
 def test_cleanup_terminates_the_complete_isolated_group(
@@ -223,6 +232,28 @@ def test_cleanup_handles_a_group_that_exits_before_kill(
     monkeypatch.setattr(os, "killpg", killpg)
 
     terminate_isolated_process_group(_popen(process), term_timeout=0.0)
+
+
+def test_cleanup_treats_permission_probe_as_leader_liveness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Darwin may raise EPERM on killpg(0); fall back to the leader poll."""
+    process = _FakeProcess(790)
+    signals: list[int] = []
+
+    def killpg(_process_group: int, requested_signal: int) -> None:
+        if requested_signal == 0:
+            raise PermissionError
+        signals.append(requested_signal)
+        if requested_signal == signal.SIGKILL:
+            process.returncode = -9
+
+    monkeypatch.setattr(os, "killpg", killpg)
+
+    terminate_isolated_process_group(_popen(process), term_timeout=0.0, poll_interval=0.001)
+
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+    assert process.returncode == -9
 
 
 def test_cleanup_refuses_a_group_that_survives_kill(monkeypatch: pytest.MonkeyPatch) -> None:

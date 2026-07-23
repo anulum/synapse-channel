@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
@@ -172,6 +173,13 @@ async def test_capability_card_dropped_on_disconnect_end_to_end() -> None:
         await fast.recorder.wait_for(lambda m: m.get("type") == "capability_advertised")
         assert hub.capabilities.get("FAST") is not None
         await fast.close()
+        # Hub unregister is concurrent with client teardown; poll until the
+        # live card is forgotten (macOS scheduling was losing a bare assert).
+        deadline = asyncio.get_running_loop().time() + 3.0
+        while asyncio.get_running_loop().time() < deadline:
+            if hub.capabilities.get("FAST") is None:
+                break
+            await asyncio.sleep(0.01)
         assert hub.capabilities.get("FAST") is None
 
 
