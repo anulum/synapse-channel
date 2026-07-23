@@ -129,6 +129,10 @@ behaviour that used to share that root component has its own lifecycle owner:
   `communicationLayout` owns deterministic web geometry and matrix bounds. The
   stable `communications` facade keeps existing consumers independent of these
   internal owners.
+- `snapshotParser` owns defensive narrowing and safe defaults for untrusted
+  fleet documents; `snapshotStore` owns authenticated polling, last-good-state
+  retention, freshness transitions, subscriptions, timers, and abort cleanup.
+  The stable `snapshot` facade preserves the existing feed and parser imports.
 
 Each owner has a dedicated behavioural hook or projection test. The wired
 `App` and feed tests still exercise authentication, real endpoint adapters,

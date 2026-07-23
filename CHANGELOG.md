@@ -75,6 +75,12 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- The cockpit snapshot data layer is split by responsibility behind its stable
+  `snapshot` import facade. `snapshotParser` now owns defensive narrowing of
+  partial or malformed hub documents, while `snapshotStore` owns authenticated
+  polling, listener delivery, freshness, timers, and abort lifecycle. Snapshot
+  defaults, status transitions, held-last-good behaviour, and consumer imports
+  are unchanged.
 - The cockpit communication library is split by responsibility while retaining
   its stable `communications` import facade. `communicationEvidence` owns
   retained chat and receipt normalisation, `communicationModel` owns the
