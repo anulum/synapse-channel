@@ -842,46 +842,27 @@ def load_key_file(path: str | Path) -> bytes:
         does not hold exactly :data:`KEY_BYTES` bytes.
     """
     target = Path(path)
-    # Symlink refusal is portable: O_NOFOLLOW is POSIX-only, so check the leaf
-    # path first on every platform (Windows open would otherwise follow).
-    if target.is_symlink():
-        raise ValueError(f"key file must not be a symlink: {target}")
-    try:
-        fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-    except FileNotFoundError as exc:
-        raise ValueError(f"key file does not exist: {target}") from exc
-    except OSError as exc:  # O_NOFOLLOW raises (ELOOP) when the path is a symlink.
-        raise ValueError(f"key file must not be a symlink: {target}") from exc
-    try:
-        if os.name == "nt":
-            # Windows has no meaningful st_mode owner-only bits; prove the NT
-            # DACL floor before reading key material. Prefer Path.read_bytes after
-            # the ACL proof so a held descriptor cannot be left at a non-zero
-            # offset by intervening ACL tools.
-            from synapse_channel.core.secure_path import (
-                SecurePathError,
-                assert_owner_only_file_path,
-            )
+    from synapse_channel.core.secure_path import SecurePathError, read_owner_only_file_bytes
 
-            try:
-                assert_owner_only_file_path(target, purpose="key file")
-            except SecurePathError as exc:
-                raise ValueError(
-                    f"key file must be owner-only (chmod 600): {target} ({exc})"
-                ) from exc
-            material = target.read_bytes()
-            if len(material) != KEY_BYTES:
-                raise ValueError(f"key file must hold exactly {KEY_BYTES} bytes: {target}")
-            return material
-        ok, reason = _validate_key_stat(os.fstat(fd), target)
-        if not ok:
-            raise ValueError(reason)
-        material = os.read(fd, KEY_BYTES)
-        if len(material) != KEY_BYTES:
-            raise ValueError(f"key file must hold exactly {KEY_BYTES} bytes: {target}")
-        return material
-    finally:
-        os.close(fd)
+    try:
+        return read_owner_only_file_bytes(
+            target,
+            purpose="key file",
+            expected_size=KEY_BYTES,
+        )
+    except SecurePathError as exc:
+        message = str(exc)
+        if "does not exist" in message:
+            raise ValueError(f"key file does not exist: {target}") from exc
+        if "symlink" in message or "cannot open" in message:
+            raise ValueError(f"key file must not be a symlink: {target}") from exc
+        if "exactly" in message and "bytes" in message:
+            raise ValueError(f"key file must hold exactly {KEY_BYTES} bytes: {target}") from exc
+        if "owner-only" in message or "accessible by other" in message or "owned by" in message:
+            raise ValueError(f"key file must be owner-only (chmod 600): {target} ({exc})") from exc
+        if "not a regular" in message:
+            raise ValueError(f"key file is not a regular file: {target}") from exc
+        raise ValueError(f"key file must be owner-only (chmod 600): {target} ({exc})") from exc
 
 
 def encrypt_file(path: str | Path, plaintext: bytes, cipher: AtRestCipher) -> None:

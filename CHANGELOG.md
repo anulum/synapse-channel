@@ -22,6 +22,12 @@ All notable changes to this project are documented here.
   `--insecure-off-loopback` remains the single explicit override for both the
   unauthenticated and plaintext-bearer off-loopback postures. Pure bind
   matrix lives in `a2a_bind_exposure.a2a_bind_problems`.
+- At-rest and payload key loaders (`load_key_file`, `load_payload_key`) now
+  read secret bytes through `secure_path.read_owner_only_file_bytes`: open
+  without following a leaf symlink, prove the owner-only floor, and read from
+  the same descriptor so a second-open TOCTOU cannot swap key material under
+  the handle. Windows still uses a path-based NT DACL proof (Win32 security
+  APIs are path-keyed); content always comes from the held descriptor.
 
 ## [0.99.13] - 2026-07-24
 

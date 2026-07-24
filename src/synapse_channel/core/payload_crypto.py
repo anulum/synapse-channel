@@ -99,48 +99,37 @@ def load_payload_key(path: str | Path) -> bytes:
         When the key file is absent, unsafe, or the wrong length.
     """
     target = Path(path)
-    # Symlink refusal is portable: O_NOFOLLOW is POSIX-only, so check the leaf
-    # path first on every platform (Windows open would otherwise follow).
-    if target.is_symlink():
-        raise PayloadCryptoError(f"payload key file must not be a symlink: {target}")
-    if target.exists() and not target.is_file():
-        raise PayloadCryptoError(f"payload key file is not a regular file: {target}")
-    try:
-        fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-    except FileNotFoundError as exc:
-        raise PayloadCryptoError(f"payload key file does not exist: {target}") from exc
-    except OSError as exc:
-        raise PayloadCryptoError(f"payload key file must not be a symlink: {target}") from exc
-    try:
-        if os.name == "nt":
-            # Windows has no meaningful st_mode owner-only bits; prove the NT
-            # DACL floor before reading key material (same floor as at-rest keys).
-            from synapse_channel.core.secure_path import (
-                SecurePathError,
-                assert_owner_only_file_path,
-            )
+    from synapse_channel.core.secure_path import SecurePathError, read_owner_only_file_bytes
 
-            try:
-                assert_owner_only_file_path(target, purpose="payload key file")
-            except SecurePathError as exc:
-                raise PayloadCryptoError(
-                    f"payload key file must be owner-only (chmod 600): {target} ({exc})"
-                ) from exc
-            try:
-                key = target.read_bytes()
-            except OSError as exc:
-                raise PayloadCryptoError(
-                    f"payload key file cannot be read: {target} ({exc})"
-                ) from exc
-        else:
-            info = os.fstat(fd)
-            _validate_key_stat(info, target)
-            key = os.read(fd, KEY_BYTES)
-    finally:
-        os.close(fd)
-    if len(key) != KEY_BYTES:
-        raise PayloadCryptoError(f"payload key file must hold exactly {KEY_BYTES} bytes: {target}")
-    return key
+    try:
+        return read_owner_only_file_bytes(
+            target,
+            purpose="payload key file",
+            expected_size=KEY_BYTES,
+        )
+    except SecurePathError as exc:
+        message = str(exc)
+        if "does not exist" in message:
+            raise PayloadCryptoError(f"payload key file does not exist: {target}") from exc
+        if "symlink" in message or "cannot open" in message:
+            raise PayloadCryptoError(f"payload key file must not be a symlink: {target}") from exc
+        if "exactly" in message and "bytes" in message:
+            raise PayloadCryptoError(
+                f"payload key file must hold exactly {KEY_BYTES} bytes: {target}"
+            ) from exc
+        if "not a regular" in message:
+            raise PayloadCryptoError(f"payload key file is not a regular file: {target}") from exc
+        if "not owned by the effective user" in message or "not owned" in message:
+            raise PayloadCryptoError(
+                f"payload key file must be owned by the current user: {target}"
+            ) from exc
+        if "owner-only" in message or "accessible by other" in message:
+            raise PayloadCryptoError(
+                f"payload key file must be owner-only (chmod 600): {target}"
+            ) from exc
+        raise PayloadCryptoError(
+            f"payload key file must be owner-only (chmod 600): {target} ({exc})"
+        ) from exc
 
 
 def payload_key_fingerprint(key: bytes) -> str:

@@ -294,6 +294,111 @@ def open_nofollow_leaf(path: str | Path, *, directory: bool = False) -> int:
     raise OSError("secure nofollow open is unavailable on this platform")
 
 
+def read_owner_only_file_bytes(
+    path: str | Path,
+    *,
+    purpose: str,
+    expected_size: int | None = None,
+    max_bytes: int | None = None,
+) -> bytes:
+    """Read secret file bytes after an owner-only floor, without re-opening for content.
+
+    POSIX opens with ``O_NOFOLLOW``, proves the floor on the ``fstat`` of that
+    descriptor, then reads from the same handle so a TOCTOU between
+    ``assert_owner_only_file_path`` and ``Path.read_bytes`` cannot swap the
+    bytes under a second open.
+
+    Windows opens with :func:`open_nofollow_leaf` (symlink refuse), proves the
+    NT DACL via the path (Win32 security APIs are path-based; a residual
+    rename race on the path string remains documented), then reads from the
+    held descriptor so the inode content cannot be swapped under the handle.
+
+    Parameters
+    ----------
+    path :
+        Secret file path (must be a regular file, not a symlink leaf).
+    purpose :
+        Short label for error messages (for example ``key file``).
+    expected_size :
+        When set, the file must hold exactly this many bytes.
+    max_bytes :
+        When set without ``expected_size``, refuse files larger than this.
+        When neither size bound is set, the whole file is read (callers that
+        need a hard cap must pass one).
+
+    Returns
+    -------
+    bytes
+        File contents.
+
+    Raises
+    ------
+    SecurePathError
+        Floor or kind failures (symlink, non-regular, non-owner, loose ACL).
+    OSError
+        Open/read failures not already mapped to :class:`SecurePathError`.
+    """
+    if not owner_only_floor_available():
+        raise SecurePathError(
+            f"{purpose}: secure owner-only file validation is unavailable on this platform"
+        )
+    target = Path(path)
+    if expected_size is not None and expected_size < 0:
+        raise SecurePathError(f"{purpose}: expected_size must be non-negative")
+    if max_bytes is not None and max_bytes < 0:
+        raise SecurePathError(f"{purpose}: max_bytes must be non-negative")
+    try:
+        fd = open_nofollow_leaf(target, directory=False)
+    except FileNotFoundError as exc:
+        raise SecurePathError(f"{purpose}: {target} does not exist") from exc
+    except OSError as exc:
+        # ELOOP / Windows symlink refuse and other open failures stay fail-closed.
+        detail = getattr(exc, "strerror", None) or str(exc)
+        raise SecurePathError(f"{purpose}: cannot open {target}: {detail}") from exc
+    try:
+        info = os.fstat(fd)
+        if _POSIX:
+            assert_posix_owner_only_file_info(info, path=target, purpose=purpose)
+        else:
+            # Path-based NT DACL proof; content still comes from ``fd``.
+            assert_owner_only_file_path(target, purpose=purpose)
+            if not stat.S_ISREG(info.st_mode):
+                raise SecurePathError(f"{purpose}: {target} is not a regular file")
+        size = int(info.st_size)
+        if expected_size is not None and size != expected_size:
+            raise SecurePathError(
+                f"{purpose}: {target} must hold exactly {expected_size} bytes (found {size})"
+            )
+        if max_bytes is not None and size > max_bytes:
+            raise SecurePathError(
+                f"{purpose}: {target} exceeds the {max_bytes}-byte secret-file limit"
+            )
+        if expected_size is not None:
+            material = os.read(fd, expected_size + 1)
+            if len(material) != expected_size:
+                raise SecurePathError(
+                    f"{purpose}: {target} must hold exactly {expected_size} bytes "
+                    f"(found {len(material)})"
+                )
+            return material
+        limit = max_bytes if max_bytes is not None else size
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(fd, min(65_536, max(1, limit + 1 - total)))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if max_bytes is not None and total > max_bytes:
+                raise SecurePathError(
+                    f"{purpose}: {target} exceeds the {max_bytes}-byte secret-file limit"
+                )
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
 # ---------------------------------------------------------------------------
 # Windows SID / DACL helpers
 # ---------------------------------------------------------------------------
