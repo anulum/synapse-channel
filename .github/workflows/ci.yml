@@ -37,6 +37,8 @@ jobs:
       - run: python -m bandit -q -r src -c pyproject.toml
       - name: Capability snapshot drift
         run: python tools/capability_manifest.py --check
+      - name: Test taxonomy inventory (docs_contract / e2e honesty)
+        run: python tools/report_test_taxonomy.py --tests-root tests
       - name: Cockpit CI and npm-lock integrity
         run: python tools/check_cockpit_ci.py --check
 

@@ -36,6 +36,9 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Advisory CI step and `tools/report_test_taxonomy.py` publish counts of
+  `docs_contract` / `real_hub` modules and e2e vs design_docs file names
+  for audit honesty (no fail gate).
 - Document hub warm-start reconnect storms (accept-queue / Recv-Q
   saturation after mass waiter re-arm) in deployment and
   troubleshooting guides.

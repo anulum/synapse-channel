@@ -66,7 +66,8 @@ The `Makefile` wraps the common tasks (`make help` lists them):
   model for journeys that exercise a live process path (CLI subprocess,
   hub socket, or `real_hub`). Documentation and design-doc guards use
   `pytest.mark.docs_contract` (see `tests/*_design_docs.py`). Do not name
-  a docs-only guard `*_e2e_*`.
+  a docs-only guard `*_e2e_*`. CI prints an advisory inventory via
+  `python tools/report_test_taxonomy.py` (counts only; never a red gate).
 - **Coverage exclusions are ledgered.** Every `pragma: no cover` in `src/` and
   every conditional skip in `tests/` is enumerated with a justification class
   in `tests/test_coverage_exclusion_ledger.py`; the suite fails the moment the
