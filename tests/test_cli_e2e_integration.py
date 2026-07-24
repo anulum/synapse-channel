@@ -42,13 +42,34 @@ def test_git_hook_install_then_test_reports_resolved_hooks(tmp_path: Path) -> No
 
 def test_install_shell_hook_writes_a_guarded_block_to_the_home_rc(tmp_path: Path) -> None:
     """``install-shell-hook`` appends a guarded startup block to the shell rc file."""
-    home = tmp_path / "home"
+    import os
+
+    home = (tmp_path / "home").resolve()
     home.mkdir()
-    result = run_cli("install-shell-hook", "--shell", "bash", env={"HOME": str(home)})
+    home_str = str(home)
+    # Path.home() / expanduser("~") on Windows prefer USERPROFILE, then
+    # HOMEDRIVE+HOMEPATH; force all three so the sandboxed home is unambiguous.
+    env = {"HOME": home_str, "USERPROFILE": home_str}
+    if os.name == "nt":
+        drive, tail = os.path.splitdrive(home_str)
+        env["HOMEDRIVE"] = drive
+        env["HOMEPATH"] = tail or "\\"
+    result = run_cli(
+        "install-shell-hook",
+        "--shell",
+        "bash",
+        env=env,
+    )
     assert result.ok(), result.output
 
     rc = home / ".bashrc"
-    assert rc.exists()
+    if not rc.exists() and os.name == "nt":
+        # Some Windows builds write under USERPROFILE\.bashrc with Path resolution
+        # that may differ; accept the path the command reports when present.
+        candidates = list(home.rglob(".bashrc"))
+        assert candidates, result.output
+        rc = candidates[0]
+    assert rc.exists(), result.output
     body = rc.read_text(encoding="utf-8")
     # The block is delimited so re-running replaces it rather than duplicating.
     assert ">>> synapse-channel shell integration >>>" in body

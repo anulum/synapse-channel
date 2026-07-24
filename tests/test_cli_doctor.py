@@ -189,7 +189,13 @@ async def test_diagnose_flags_off_loopback_without_token_and_disk_pressure(
     assert code == 0
     assert any("off loopback with no token" in line for line in lines)
     assert any("[warn] disk:" in line for line in lines)
-    assert any(str(tmp_path) in line for line in lines)
+    # Path display may use native separators or a resolved form; match on the
+    # path stem that is unique to this fixture.
+    assert any(
+        str(tmp_path) in line or tmp_path.as_posix() in line or tmp_path.name in line
+        for line in lines
+        if "disk" in line
+    )
 
 
 async def test_diagnose_warns_on_hyphen_send_identity() -> None:
@@ -251,8 +257,14 @@ async def test_diagnose_reports_outbound_mcp_config_trust(tmp_path: Path) -> Non
 
 
 async def test_diagnose_fails_closed_on_loose_mcp_config(tmp_path: Path) -> None:
+    import os
+
     async def no_roster(**_: Any) -> list[str]:
         return []
+
+    # POSIX mode bits are not the owner-only floor on Windows (NT DACL is).
+    if os.name != "posix":
+        pytest.skip("POSIX mode-bit loosen path; Windows uses NT DACL owner-only floor")
 
     config = tmp_path / "mcp.json"
     config.write_text('{"version":1,"servers":[]}', encoding="utf-8")

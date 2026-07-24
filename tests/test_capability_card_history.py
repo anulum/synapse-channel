@@ -377,7 +377,9 @@ def test_creation_and_owner_validation_fail_before_sqlite_opens(
 ) -> None:
     occupied_parent = tmp_path / "occupied"
     occupied_parent.write_text("not a directory", encoding="utf-8")
-    with pytest.raises(CapabilityCardTrustError, match="cannot inspect"):
+    # POSIX: inspect fails closed before create. Windows: mkdir/create reports
+    # FileExistsError when the parent leaf is already a file (WinError 183).
+    with pytest.raises(CapabilityCardTrustError, match="cannot inspect|cannot create"):
         _history(occupied_parent / "history.db")
 
     path = tmp_path / "history.db"

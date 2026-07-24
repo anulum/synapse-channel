@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import shlex
 import unicodedata
+from pathlib import Path
 
 
 def terminal_text(value: object) -> str:
@@ -54,8 +55,15 @@ def shell_command_arg(value: object) -> str:
     commands. Callers must still close the receiving command's option parser:
     use :func:`shell_long_option` for long-option values or an explicit ``--``
     before positional arguments that may start with a dash.
+
+    Paths are rendered with forward slashes so the same copyable command is
+    valid for POSIX shells even when the validating process runs on Windows.
     """
-    return shlex.quote(terminal_text(value))
+    if isinstance(value, Path):
+        text = value.as_posix()
+    else:
+        text = terminal_text(value)
+    return shlex.quote(text)
 
 
 def shell_long_option(name: str, value: object) -> str:

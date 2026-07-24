@@ -99,6 +99,11 @@ def test_bash_script_completes_commands_nested_groups_and_flags() -> None:
 
 def test_bash_script_quotes_embedded_single_quotes() -> None:
     """A summary or option containing a quote must not break the script."""
+    import os
+    import shutil
+
+    if os.name == "nt" or shutil.which("bash") is None:
+        pytest.skip("bash -n requires a real POSIX bash (absent or broken on Windows GHA)")
     script = bash_script(_spec())
     proc = subprocess.run(  # nosec B603 B607 — fixed argv, generated input
         ["bash", "-n", "/dev/stdin"], input=script, capture_output=True, text=True
@@ -108,6 +113,11 @@ def test_bash_script_quotes_embedded_single_quotes() -> None:
 
 def test_bash_script_for_the_live_tree_passes_a_bash_syntax_check(tmp_path: Path) -> None:
     """The real generated script parses cleanly under ``bash -n``."""
+    import os
+    import shutil
+
+    if os.name == "nt" or shutil.which("bash") is None:
+        pytest.skip("bash -n requires a real POSIX bash (absent or broken on Windows GHA)")
     script = bash_script(command_tree())
     target = tmp_path / "synapse.bash"
     target.write_text(script, encoding="utf-8")

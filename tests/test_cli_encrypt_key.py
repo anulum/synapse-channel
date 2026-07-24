@@ -308,6 +308,10 @@ def test_generate_refuses_to_overwrite(tmp_path: Path, capsys: pytest.CaptureFix
 
 
 def test_check_reports_a_bad_key(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    import os
+
+    if os.name != "posix":
+        pytest.skip("POSIX mode bits are not the owner-only floor on Windows")
     loose = tmp_path / "loose.key"
     loose.write_bytes(b"k" * KEY_BYTES)
     loose.chmod(0o644)

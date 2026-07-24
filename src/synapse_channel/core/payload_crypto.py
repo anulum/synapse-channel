@@ -99,6 +99,10 @@ def load_payload_key(path: str | Path) -> bytes:
         When the key file is absent, unsafe, or the wrong length.
     """
     target = Path(path)
+    # Symlink refusal is portable: O_NOFOLLOW is POSIX-only, so check the leaf
+    # path first on every platform (Windows open would otherwise follow).
+    if target.is_symlink():
+        raise PayloadCryptoError(f"payload key file must not be a symlink: {target}")
     try:
         fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     except FileNotFoundError as exc:
@@ -106,9 +110,25 @@ def load_payload_key(path: str | Path) -> bytes:
     except OSError as exc:
         raise PayloadCryptoError(f"payload key file must not be a symlink: {target}") from exc
     try:
-        info = os.fstat(fd)
-        _validate_key_stat(info, target)
-        key = os.read(fd, KEY_BYTES)
+        if os.name == "nt":
+            # Windows has no meaningful st_mode owner-only bits; prove the NT
+            # DACL floor before reading key material (same floor as at-rest keys).
+            from synapse_channel.core.secure_path import (
+                SecurePathError,
+                assert_owner_only_file_path,
+            )
+
+            try:
+                assert_owner_only_file_path(target, purpose="payload key file")
+            except SecurePathError as exc:
+                raise PayloadCryptoError(
+                    f"payload key file must be owner-only (chmod 600): {target} ({exc})"
+                ) from exc
+            key = target.read_bytes()
+        else:
+            info = os.fstat(fd)
+            _validate_key_stat(info, target)
+            key = os.read(fd, KEY_BYTES)
     finally:
         os.close(fd)
     if len(key) != KEY_BYTES:

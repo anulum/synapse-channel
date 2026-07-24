@@ -210,8 +210,13 @@ def test_main_reports_unreadable_token_file(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    import os
+
     # A group/world-readable token file is refused by the owner-only secret floor;
     # ``main`` must report it (exit 2), not crash on the SecretFileError.
+    # POSIX mode bits are not the owner-only floor on Windows (NT DACL is).
+    if os.name != "posix":
+        pytest.skip("POSIX mode-bit loosen path; Windows uses NT DACL owner-only floor")
     secret = tmp_path / "tok"
     secret.write_text("t", encoding="utf-8")
     secret.chmod(0o644)

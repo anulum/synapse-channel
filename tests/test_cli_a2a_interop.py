@@ -141,14 +141,21 @@ def test_cli_host_port_writes_live_receipt(
     ("arguments", "diagnostic"),
     [
         (["--endpoint-url", "ftp://peer.example/a2a"], "supports http:// endpoints only"),
-        (["--host", "127.0.0.1", "--port", "1", "--timeout", "0.1"], "connection refused"),
+        # Windows often surfaces a closed loopback port as a short-timeout rather
+        # than the POSIX "connection refused" wording; accept either form.
+        (
+            ["--host", "127.0.0.1", "--port", "1", "--timeout", "0.1"],
+            "connection refused|timed out",
+        ),
     ],
 )
 def test_cli_reports_invalid_or_unreachable_bridge(
     arguments: list[str], diagnostic: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Invalid configuration and a refused live connection fail through the CLI boundary."""
+    import re
+
     assert cli.main(["a2a-interop-trace", *arguments]) == 1
     error = capsys.readouterr().err
     assert error.startswith("a2a-interop-trace:")
-    assert diagnostic in error.lower()
+    assert re.search(diagnostic, error.lower()) is not None

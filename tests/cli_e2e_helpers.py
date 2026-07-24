@@ -60,6 +60,10 @@ def _candidate_environment(overrides: Mapping[str, str] | None) -> dict[str, str
         entry for entry in environment.get("PYTHONPATH", "").split(os.pathsep) if entry
     )
     environment["PYTHONPATH"] = os.pathsep.join(dict.fromkeys((*_CANDIDATE_PYTHONPATH, *inherited)))
+    # Force UTF-8 stdio so journey assertions on glyphs/em-dashes are stable on
+    # Windows consoles that otherwise default to a legacy code page.
+    environment.setdefault("PYTHONIOENCODING", "utf-8")
+    environment.setdefault("PYTHONUTF8", "1")
     return environment
 
 
@@ -163,6 +167,8 @@ def run_cli(
         [*_CLI, *argv],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         input=stdin,
         cwd=None if cwd is None else str(cwd),

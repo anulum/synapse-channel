@@ -263,6 +263,10 @@ def test_canonical_coverage_keeps_legal_posix_roots_distinct(
     """Lossy display normalization cannot merge distinct POSIX repositories."""
     if alias_kind == "backslash" and __import__("os").name == "nt":
         pytest.skip("a backslash is a separator on Windows")
+    if alias_kind == "trailing-space" and __import__("os").name == "nt":
+        # Win32 path APIs strip or collapse trailing spaces in directory names,
+        # so ``repo`` and ``repo `` are not distinct create targets.
+        pytest.skip("trailing-space directory names are not distinct on Windows")
     claimed_root = tmp_path / "repo"
     target_root = (
         tmp_path / "repo " if alias_kind == "trailing-space" else tmp_path / "repo\\nested"

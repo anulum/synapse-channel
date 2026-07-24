@@ -855,7 +855,9 @@ def load_key_file(path: str | Path) -> bytes:
     try:
         if os.name == "nt":
             # Windows has no meaningful st_mode owner-only bits; prove the NT
-            # DACL floor before reading key material.
+            # DACL floor before reading key material. Prefer Path.read_bytes after
+            # the ACL proof so a held descriptor cannot be left at a non-zero
+            # offset by intervening ACL tools.
             from synapse_channel.core.secure_path import (
                 SecurePathError,
                 assert_owner_only_file_path,
@@ -867,7 +869,7 @@ def load_key_file(path: str | Path) -> bytes:
                 raise ValueError(
                     f"key file must be owner-only (chmod 600): {target} ({exc})"
                 ) from exc
-            material = os.read(fd, KEY_BYTES + 1)
+            material = target.read_bytes()
             if len(material) != KEY_BYTES:
                 raise ValueError(f"key file must hold exactly {KEY_BYTES} bytes: {target}")
             return material

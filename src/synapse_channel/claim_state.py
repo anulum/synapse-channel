@@ -133,7 +133,9 @@ async def fetch_state_snapshot(
         )
         _raise_if_connection_ended(connection)
         if readiness not in done:
-            raise ClaimStateError("Synapse hub readiness timed out; claim denied fail-closed.")
+            raise ClaimStateError(
+                "Synapse hub unavailable: readiness timed out; claim denied fail-closed."
+            )
         if not readiness.result():
             raise ClaimStateError(_HUB_UNAVAILABLE)
 
@@ -146,7 +148,9 @@ async def fetch_state_snapshot(
         )
         _raise_if_connection_ended(connection)
         if response not in done:
-            raise ClaimStateError("Synapse state query timed out; claim denied fail-closed.")
+            raise ClaimStateError(
+                "Synapse hub unavailable: state query timed out; claim denied fail-closed."
+            )
         if not result:
             raise ClaimStateError("Synapse returned an invalid state snapshot.")
         return result[-1]

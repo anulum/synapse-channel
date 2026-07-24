@@ -497,12 +497,17 @@ def test_cmd_git_init_installs_services(
         assert "Traceback" not in captured_io.out + captured_io.err
         assert_no_git_init_mutation()
 
+    import os
+
     hostile_bin = tmp_path / "hostile bin"
     hostile_bin.mkdir()
-    executable = hostile_bin / "synapse"
+    # Windows PATH uses ';' and which() looks for PATHEXT entries (``.exe``).
+    synapse_name = "synapse.exe" if os.name == "nt" else "synapse"
+    executable = hostile_bin / synapse_name
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     executable.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{hostile_bin}:/usr/bin:/bin")
+    path_sep = os.pathsep
+    monkeypatch.setenv("PATH", f"{hostile_bin}{path_sep}/usr/bin{path_sep}/bin")
     code = cli.main(["git-init", "--install-user-services"])
     captured_io = capsys.readouterr()
     assert code == 2
@@ -512,10 +517,10 @@ def test_cmd_git_init_installs_services(
 
     relative_bin = repo / "relative-bin"
     relative_bin.mkdir()
-    relative_executable = relative_bin / "synapse"
+    relative_executable = relative_bin / synapse_name
     relative_executable.write_text("#!/bin/sh\n", encoding="utf-8")
     relative_executable.chmod(0o755)
-    monkeypatch.setenv("PATH", "relative-bin:/usr/bin:/bin")
+    monkeypatch.setenv("PATH", f"relative-bin{path_sep}/usr/bin{path_sep}/bin")
     injected_invalid_executables = (
         "relative-bin/synapse",
         ".",
