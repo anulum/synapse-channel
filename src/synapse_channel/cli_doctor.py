@@ -51,6 +51,7 @@ from synapse_channel.cli_queries import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.client.diagnostics import (
     Diagnosis,
+    check_a2a_bind_posture,
     check_a2a_origin_policy,
     check_deaf_agents,
     check_disk_space,
@@ -255,6 +256,11 @@ async def _diagnose(
     event_store_key_file: str | Path | None = None,
     a2a_policy: bool = False,
     a2a_allow_origins: tuple[str, ...] = (),
+    a2a_bind_host: str | None = None,
+    a2a_bearer_auth: bool = False,
+    a2a_tls: bool = False,
+    a2a_insecure_off_loopback: bool = False,
+    a2a_endpoint_url: str | None = None,
     mcp_policy: bool = False,
     mcp_config: str | Path | None = None,
     mcp_config_trust_bundle: str | Path | None = None,
@@ -335,6 +341,24 @@ async def _diagnose(
     )
     if a2a_policy or a2a_allow_origins:
         diagnoses.append(check_a2a_origin_policy(allow_origins=a2a_allow_origins))
+    # Bind posture: always with --a2a-policy, or when any bind-posture flag is set.
+    if (
+        a2a_policy
+        or a2a_bind_host is not None
+        or a2a_bearer_auth
+        or a2a_tls
+        or a2a_insecure_off_loopback
+        or a2a_endpoint_url is not None
+    ):
+        diagnoses.append(
+            check_a2a_bind_posture(
+                host=a2a_bind_host if a2a_bind_host is not None else "127.0.0.1",
+                bearer_auth=a2a_bearer_auth,
+                tls_active=a2a_tls,
+                insecure_off_loopback=a2a_insecure_off_loopback,
+                endpoint_url=a2a_endpoint_url,
+            )
+        )
     if mcp_policy:
         diagnoses.append(
             check_mcp_posture(
@@ -496,6 +520,11 @@ def _cmd_doctor(
                 event_store_key_file=getattr(args, "db_key_file", None),
                 a2a_policy=bool(getattr(args, "a2a_policy", False)),
                 a2a_allow_origins=tuple(getattr(args, "a2a_allow_origin", ()) or ()),
+                a2a_bind_host=getattr(args, "a2a_bind_host", None),
+                a2a_bearer_auth=bool(getattr(args, "a2a_bearer_auth", False)),
+                a2a_tls=bool(getattr(args, "a2a_tls", False)),
+                a2a_insecure_off_loopback=bool(getattr(args, "a2a_insecure_off_loopback", False)),
+                a2a_endpoint_url=getattr(args, "a2a_endpoint_url", None),
                 mcp_policy=bool(getattr(args, "mcp_policy", False)),
                 mcp_config=mcp_config,
                 mcp_config_trust_bundle=getattr(args, "mcp_config_trust_bundle", None),
@@ -802,7 +831,8 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help=(
             "Report the A2A Origin/Host browser-boundary policy (opaque null always "
-            "rejected; allow-list off by default). Combine with --a2a-allow-origin."
+            "rejected; allow-list off by default) and the default loopback bind "
+            "posture. Combine with --a2a-allow-origin and bind-posture flags."
         ),
     )
     doctor.add_argument(
@@ -813,6 +843,39 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Concrete HTTP(S) origin to include in the A2A allow-list policy report "
             "(repeatable; same shape as synapse a2a-serve --allow-origin)."
+        ),
+    )
+    doctor.add_argument(
+        "--a2a-bind-host",
+        default=None,
+        metavar="HOST",
+        help=(
+            "Planned a2a-serve --host for bind-posture diagnosis (default 127.0.0.1 "
+            "when any A2A bind-posture flag or --a2a-policy is set)."
+        ),
+    )
+    doctor.add_argument(
+        "--a2a-bearer-auth",
+        action="store_true",
+        help="Diagnose as if a2a-serve --bearer-auth were set.",
+    )
+    doctor.add_argument(
+        "--a2a-tls",
+        action="store_true",
+        help="Diagnose as if a2a-serve native TLS (--tls-certfile/--tls-keyfile) were active.",
+    )
+    doctor.add_argument(
+        "--a2a-insecure-off-loopback",
+        action="store_true",
+        help="Diagnose as if a2a-serve --insecure-off-loopback were set.",
+    )
+    doctor.add_argument(
+        "--a2a-endpoint-url",
+        default=None,
+        metavar="URL",
+        help=(
+            "Planned a2a-serve --endpoint-url for Agent Card scheme consistency "
+            "warnings against --a2a-tls."
         ),
     )
     doctor.add_argument(

@@ -1987,6 +1987,12 @@ Operational boundaries:
   | non-loopback | yes | `--tls-certfile` + `--tls-keyfile` | allow (native HTTPS) |
   | non-loopback | yes | `--insecure-off-loopback` | warn + allow |
 
+  Align `--endpoint-url` with the listen scheme: native TLS should advertise
+  `https://…`; an `https://` card without native TLS assumes a reverse proxy.
+  `synapse doctor --a2a-policy` (plus `--a2a-bind-host` / `--a2a-bearer-auth` /
+  `--a2a-tls` / `--a2a-endpoint-url`) reports the same bind matrix without
+  starting the bridge.
+
 - `--allow-origin ORIGIN` is opt-in browser hardening: restrict requests to the
   exact concrete web origins your browser UI serves from
   (`scheme://host[:port]`; repeat for several). Opaque `null` origins are

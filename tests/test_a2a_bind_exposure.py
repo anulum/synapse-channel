@@ -11,7 +11,11 @@ from __future__ import annotations
 
 import pytest
 
-from synapse_channel.a2a_bind_exposure import a2a_bind_problems, is_loopback_host
+from synapse_channel.a2a_bind_exposure import (
+    a2a_bind_problems,
+    a2a_endpoint_scheme_warnings,
+    is_loopback_host,
+)
 
 
 @pytest.mark.parametrize(
@@ -63,3 +67,20 @@ def test_lan_host_bearer_plaintext_same_as_bind_all() -> None:
     problems = a2a_bind_problems("10.0.0.5", bearer_auth=True)
     assert len(problems) == 1
     assert "plaintext HTTP" in problems[0]
+
+
+def test_endpoint_scheme_warns_http_when_tls_active() -> None:
+    notes = a2a_endpoint_scheme_warnings("http://agent.example/a2a", tls_active=True)
+    assert len(notes) == 1
+    assert "https://" in notes[0]
+
+
+def test_endpoint_scheme_warns_https_without_native_tls() -> None:
+    notes = a2a_endpoint_scheme_warnings("https://agent.example/a2a", tls_active=False)
+    assert len(notes) == 1
+    assert "reverse proxy" in notes[0] or "tls-certfile" in notes[0]
+
+
+def test_endpoint_scheme_clear_when_aligned() -> None:
+    assert a2a_endpoint_scheme_warnings("https://agent.example/a2a", tls_active=True) == []
+    assert a2a_endpoint_scheme_warnings("http://127.0.0.1:8877", tls_active=False) == []

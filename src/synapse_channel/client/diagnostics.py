@@ -407,6 +407,82 @@ def check_a2a_origin_policy(*, allow_origins: tuple[str, ...] = ()) -> Diagnosis
     )
 
 
+def check_a2a_bind_posture(
+    *,
+    host: str = "127.0.0.1",
+    bearer_auth: bool = False,
+    tls_active: bool = False,
+    insecure_off_loopback: bool = False,
+    endpoint_url: str | None = None,
+) -> Diagnosis:
+    """Report the A2A bind exposure matrix (R4 + native TLS).
+
+    Mirrors :func:`synapse_channel.a2a_bind_exposure.a2a_bind_problems` so
+    operators can diagnose a planned ``a2a-serve`` posture without starting the
+    bridge. Optional ``endpoint_url`` adds Agent Card scheme consistency
+    advisories from :func:`~synapse_channel.a2a_bind_exposure.a2a_endpoint_scheme_warnings`.
+    """
+    from synapse_channel.a2a_bind_exposure import (
+        a2a_bind_problems,
+        a2a_endpoint_scheme_warnings,
+    )
+
+    problems = a2a_bind_problems(
+        host,
+        bearer_auth=bearer_auth,
+        tls_active=tls_active,
+    )
+    scheme_notes = (
+        a2a_endpoint_scheme_warnings(endpoint_url, tls_active=tls_active) if endpoint_url else []
+    )
+    posture = (
+        f"host={host!r}; bearer_auth={bearer_auth}; "
+        f"tls_active={tls_active}; insecure_off_loopback={insecure_off_loopback}"
+    )
+    if problems and not insecure_off_loopback:
+        detail = f"{posture}; refuse: {'; '.join(problems)}"
+        if scheme_notes:
+            detail = f"{detail}; scheme: {'; '.join(scheme_notes)}"
+        return Diagnosis(
+            check="a2a_bind_posture",
+            status="fail",
+            detail=detail,
+            remedy=(
+                "bind loopback, enable --bearer-auth with --tls-certfile/"
+                "--tls-keyfile off loopback, or pass --insecure-off-loopback only "
+                "on a trusted private network"
+            ),
+        )
+    if problems and insecure_off_loopback:
+        detail = f"{posture}; override: {'; '.join(problems)}"
+        if scheme_notes:
+            detail = f"{detail}; scheme: {'; '.join(scheme_notes)}"
+        return Diagnosis(
+            check="a2a_bind_posture",
+            status="warn",
+            detail=detail,
+            remedy=(
+                "prefer native TLS or loopback; --insecure-off-loopback accepts "
+                "cleartext residual risk"
+            ),
+        )
+    if scheme_notes:
+        return Diagnosis(
+            check="a2a_bind_posture",
+            status="warn",
+            detail=f"{posture}; scheme: {'; '.join(scheme_notes)}",
+            remedy=(
+                "align --endpoint-url scheme with native TLS or the reverse-proxy termination model"
+            ),
+        )
+    return Diagnosis(
+        check="a2a_bind_posture",
+        status="pass",
+        detail=f"{posture}; bind matrix clear",
+        remedy="mirror this posture on synapse a2a-serve",
+    )
+
+
 def check_multi_seat_posture(
     *,
     roster: list[str] | None,

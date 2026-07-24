@@ -17,7 +17,7 @@ from collections.abc import Callable
 from typing import Any
 
 from synapse_channel.a2a import agent_card_from_manifest
-from synapse_channel.a2a_bind_exposure import a2a_bind_problems
+from synapse_channel.a2a_bind_exposure import a2a_bind_problems, a2a_endpoint_scheme_warnings
 from synapse_channel.a2a_http import serve_a2a_http
 from synapse_channel.a2a_http_protocol import endpoint_authorities, normalise_origin
 from synapse_channel.a2a_server import A2ABridge, SynapseAgentRuntime
@@ -132,6 +132,11 @@ def _cmd_a2a_serve(
             return 2
         for problem in bind_problems:
             print(f"[{args.name}] WARNING: {problem}.", file=sys.stderr)
+    for warning in a2a_endpoint_scheme_warnings(
+        args.endpoint_url,
+        tls_active=tls_active,
+    ):
+        print(f"[{args.name}] WARNING: {warning}.", file=sys.stderr)
     manifest = async_runner(
         manifest_fetcher(uri=args.uri, name=f"{args.name}-manifest", token=args.token)
     )

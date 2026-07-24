@@ -42,6 +42,11 @@ All notable changes to this project are documented here.
 
 - A2A edge: `make_a2a_http_server` / `serve_a2a_http` accept an optional
   `ssl_context` and wrap the listening socket for native HTTPS.
+- `synapse doctor` A2A bind-posture diagnosis (`check_a2a_bind_posture`) with
+  `--a2a-bind-host`, `--a2a-bearer-auth`, `--a2a-tls`,
+  `--a2a-insecure-off-loopback`, and `--a2a-endpoint-url`; also runs under
+  `--a2a-policy`. Serve warns when `--endpoint-url` scheme disagrees with
+  native TLS.
 
 ### Changed
 

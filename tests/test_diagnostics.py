@@ -16,6 +16,7 @@ import pytest
 
 from synapse_channel.client.diagnostics import (
     Diagnosis,
+    check_a2a_bind_posture,
     check_a2a_origin_policy,
     check_deaf_agents,
     check_disk_space,
@@ -312,6 +313,57 @@ def test_a2a_origin_policy_fails_opaque_null() -> None:
     diagnosis = check_a2a_origin_policy(allow_origins=("null",))
     assert diagnosis.status == "fail"
     assert "invalid" in diagnosis.detail
+
+
+# --- check_a2a_bind_posture ---------------------------------------------------
+
+
+def test_a2a_bind_posture_pass_loopback() -> None:
+    diagnosis = check_a2a_bind_posture(host="127.0.0.1")
+    assert diagnosis.check == "a2a_bind_posture"
+    assert diagnosis.status == "pass"
+    assert "bind matrix clear" in diagnosis.detail
+
+
+def test_a2a_bind_posture_fail_plaintext_bearer_off_loopback() -> None:
+    diagnosis = check_a2a_bind_posture(
+        host="0.0.0.0",
+        bearer_auth=True,
+        tls_active=False,
+    )
+    assert diagnosis.status == "fail"
+    assert "plaintext HTTP" in diagnosis.detail
+    assert "tls-certfile" in diagnosis.remedy or "native TLS" in diagnosis.remedy
+
+
+def test_a2a_bind_posture_pass_off_loopback_bearer_with_tls() -> None:
+    diagnosis = check_a2a_bind_posture(
+        host="0.0.0.0",
+        bearer_auth=True,
+        tls_active=True,
+    )
+    assert diagnosis.status == "pass"
+
+
+def test_a2a_bind_posture_warn_insecure_override() -> None:
+    diagnosis = check_a2a_bind_posture(
+        host="0.0.0.0",
+        bearer_auth=True,
+        tls_active=False,
+        insecure_off_loopback=True,
+    )
+    assert diagnosis.status == "warn"
+    assert "override" in diagnosis.detail
+
+
+def test_a2a_bind_posture_warn_endpoint_scheme_mismatch() -> None:
+    diagnosis = check_a2a_bind_posture(
+        host="127.0.0.1",
+        tls_active=True,
+        endpoint_url="http://127.0.0.1:8877/a2a",
+    )
+    assert diagnosis.status == "warn"
+    assert "https://" in diagnosis.detail or "advertise" in diagnosis.detail
 
 
 # --- check_mcp_posture --------------------------------------------------------

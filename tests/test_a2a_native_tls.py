@@ -122,6 +122,32 @@ def test_cmd_a2a_serve_allows_off_loopback_bearer_when_tls_configured(
     assert "Could not reach hub" in err
 
 
+def test_cmd_a2a_serve_warns_when_endpoint_scheme_mismatches_tls(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    certfile, keyfile = _write_server_tls_pair(tmp_path)
+
+    async def unavailable(**_: Any) -> None:
+        return None
+
+    ns = cli.build_parser().parse_args(
+        [
+            "a2a-serve",
+            "--endpoint-url",
+            "http://example.test/a2a/v1",
+            "--tls-certfile",
+            str(certfile),
+            "--tls-keyfile",
+            str(keyfile),
+        ]
+    )
+    assert cli_a2a._cmd_a2a_serve(ns, manifest_fetcher=unavailable) == 1
+    err = capsys.readouterr().err
+    assert "WARNING:" in err
+    assert "https://" in err
+
+
 def test_cmd_a2a_serve_passes_ssl_context_and_prints_https(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

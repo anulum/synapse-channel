@@ -16,9 +16,15 @@ accept either risk pass ``--insecure-off-loopback`` (the same flag as the hub).
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from synapse_channel.core.hub_exposure import is_loopback_host
 
-__all__ = ("a2a_bind_problems", "is_loopback_host")
+__all__ = (
+    "a2a_bind_problems",
+    "a2a_endpoint_scheme_warnings",
+    "is_loopback_host",
+)
 
 
 def a2a_bind_problems(
@@ -63,3 +69,35 @@ def a2a_bind_problems(
             "--insecure-off-loopback to accept cleartext bearer traffic"
         )
     return problems
+
+
+def a2a_endpoint_scheme_warnings(
+    endpoint_url: str,
+    *,
+    tls_active: bool,
+) -> list[str]:
+    """Return advisory mismatches between advertised endpoint URL and bind TLS.
+
+    These do not refuse the bind; they catch Agent Card / client discovery
+    drift (for example native HTTPS while ``--endpoint-url`` still says
+    ``http://``, or an ``https://`` card while the process has no native TLS
+    and must rely on a reverse proxy).
+    """
+    scheme = (urlparse(endpoint_url).scheme or "").lower()
+    if not scheme:
+        return [
+            f"--endpoint-url {endpoint_url!r} has no scheme; use absolute "
+            "http:// or https:// for Agent Card discovery"
+        ]
+    if tls_active and scheme == "http":
+        return [
+            "native TLS is enabled but --endpoint-url uses http://; advertise "
+            "https:// in the Agent Card so clients match the listen scheme"
+        ]
+    if not tls_active and scheme == "https":
+        return [
+            "--endpoint-url uses https:// while the process listens without "
+            "native TLS; terminate TLS at a reverse proxy in front of a "
+            "loopback bind, or pass --tls-certfile and --tls-keyfile"
+        ]
+    return []
