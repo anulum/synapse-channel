@@ -115,20 +115,35 @@ class A2ATaskEvents:
         wait_seconds: float | None,
         default_wait_seconds: float,
     ) -> list[JsonMap]:
-        """Return bounded replay plus queued updates for one subscription."""
+        """Return bounded durable replay plus optional live updates.
+
+        When the current task snapshot is terminal (including post-restart
+        recovery of open tasks to ``TASK_STATE_FAILED``), the full durable
+        history is returned in order. If that history ends on a different
+        state than the current snapshot, the current terminal event is
+        appended so operators see both prior lifecycle events and recovery.
+        Live waits apply only for non-terminal tasks.
+        """
         updates: queue.Queue[JsonMap] = queue.Queue()
         current_event = self._event(task)
         current_state = self._last_state([current_event])
-        if current_state in TERMINAL_TASK_STATES:
-            return [current_event]
         with self._lock:
             events = copy.deepcopy(self._history.get(task_id, []))
+
+        if current_state in TERMINAL_TASK_STATES:
             if not events:
-                events = [current_event]
-            elif self._last_state(events) in TERMINAL_TASK_STATES:
-                events.insert(0, current_event)
-            state = self._last_state(events)
-            if state not in TERMINAL_TASK_STATES:
+                return [current_event]
+            if self._last_state(events) != current_state:
+                events.append(current_event)
+            return events
+
+        if not events:
+            events = [current_event]
+        elif self._last_state(events) in TERMINAL_TASK_STATES:
+            events.insert(0, current_event)
+        state = self._last_state(events)
+        if state not in TERMINAL_TASK_STATES:
+            with self._lock:
                 self._subscribers.setdefault(task_id, []).append(updates)
         if state in TERMINAL_TASK_STATES:
             return events

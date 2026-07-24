@@ -632,7 +632,13 @@ class A2ABridge:
         *,
         wait_seconds: float | None = None,
     ) -> list[JsonMap] | None:
-        """Return bounded memory-only task events for one local subscription."""
+        """Return durable lifecycle replay (and optional live wait) for one task.
+
+        After a multi-process restart that reloads the state file, open tasks
+        are recovered as failed, but prior durable history is still replayed
+        through this entry so stream/subscribe clients observe ordered
+        lifecycle events from before the restart.
+        """
         self._gc_retained_tasks()
         task = self.store.get(task_id)
         if task is None:

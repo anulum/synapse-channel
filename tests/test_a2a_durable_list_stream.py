@@ -124,6 +124,11 @@ def test_durable_event_history_survives_store_reload(tmp_path: Path) -> None:
 
 
 def test_subscribe_replays_durable_history_after_restart(tmp_path: Path) -> None:
+    """Production subscribe after state-file restart must return ordered durable events.
+
+    Open tasks are recovered as FAILED on load; that must not discard prior
+    WORKING lifecycle events stored in durable eventHistory.
+    """
     state = tmp_path / "a2a-state.json"
     store = A2ATaskStore(storage_path=state)
     bridge = A2ABridge(
@@ -142,15 +147,17 @@ def test_subscribe_replays_durable_history_after_restart(tmp_path: Path) -> None
         }
     )
     task_id = str(working["id"])
-    # Force a second lifecycle publish via status update
     bridge._set_task_status(
         working,
         state="TASK_STATE_WORKING",
         message={"messageId": "m2", "role": "ROLE_AGENT", "parts": [{"text": "progress"}]},
     )
-    assert store.event_history(task_id)
+    durable_before = store.event_history(task_id)
+    assert len(durable_before) >= 2
+    pre_states = [str(e["task"]["status"]["state"]) for e in durable_before]
+    assert pre_states.count("TASK_STATE_WORKING") >= 1
 
-    # Simulate multi-process restart: new store + bridge on same state file
+    # Multi-process restart: new store + bridge load the same state file.
     store2 = A2ATaskStore(storage_path=state)
     bridge2 = A2ABridge(
         agent=RecordingAgent(),
@@ -160,17 +167,19 @@ def test_subscribe_replays_durable_history_after_restart(tmp_path: Path) -> None
     )
     recovered = store2.get(task_id)
     assert recovered is not None
-    # Terminal recovery may fail stale tasks; ensure open or use history directly
-    replayed = bridge2._events.history_for(task_id)
-    assert len(replayed) >= 1
-    assert all(event["task"]["id"] == task_id for event in replayed)
-    # Subscribe path must surface prior durable snapshots for open tasks
-    if recovered.get("status", {}).get("state") not in {
-        "TASK_STATE_FAILED",
-        "TASK_STATE_COMPLETED",
-        "TASK_STATE_CANCELED",
-        "TASK_STATE_REJECTED",
-    }:
-        events = bridge2.subscribe_task_events(task_id, wait_seconds=0.0)
-        assert events
-        assert events[0]["task"]["id"] == task_id
+    # Restart recovery marks in-flight tasks failed (production behaviour).
+    assert recovered["status"]["state"] == "TASK_STATE_FAILED"
+    assert len(store2.event_history(task_id)) >= 2
+
+    # Real public entry: subscribe_task_events (same path as SSE :subscribe).
+    events = bridge2.subscribe_task_events(task_id, wait_seconds=0.0)
+    assert events is not None
+    assert len(events) >= 2
+    assert all(event["task"]["id"] == task_id for event in events)
+    states = [str(event["task"]["status"]["state"]) for event in events]
+    # Prior WORKING lifecycle must appear before the recovered FAILED snapshot.
+    assert "TASK_STATE_WORKING" in states
+    assert states[-1] == "TASK_STATE_FAILED"
+    first_working = states.index("TASK_STATE_WORKING")
+    last_failed = len(states) - 1 - states[::-1].index("TASK_STATE_FAILED")
+    assert first_working < last_failed
