@@ -6,8 +6,12 @@ import re
 import shlex
 from pathlib import Path
 
+import pytest
+
 from synapse_channel import cli
 from synapse_channel.core.paranoid import apply_paranoid_hub_profile
+
+pytestmark = pytest.mark.docs_contract
 
 ROOT = Path(__file__).resolve().parents[1]
 PARANOID_DOC = ROOT / "docs" / "paranoid-mode.md"

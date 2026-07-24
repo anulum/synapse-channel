@@ -11,6 +11,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.docs_contract
+
 ROOT = Path(__file__).resolve().parents[1]
 IDENTITY_ACL_DOC = ROOT / "docs" / "identity-and-acl.md"
 

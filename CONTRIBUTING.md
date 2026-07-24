@@ -62,6 +62,11 @@ The `Makefile` wraps the common tasks (`make help` lists them):
 
 - **Tests.** Every new module, function, and branch ships with tests. Aggregate
   coverage stays above the 98% floor; a change must not lower it.
+- **Test taxonomy.** Reserve the `e2e` name and real-runtime CI mental
+  model for journeys that exercise a live process path (CLI subprocess,
+  hub socket, or `real_hub`). Documentation and design-doc guards use
+  `pytest.mark.docs_contract` (see `tests/*_design_docs.py`). Do not name
+  a docs-only guard `*_e2e_*`.
 - **Coverage exclusions are ledgered.** Every `pragma: no cover` in `src/` and
   every conditional skip in `tests/` is enumerated with a justification class
   in `tests/test_coverage_exclusion_ledger.py`; the suite fails the moment the

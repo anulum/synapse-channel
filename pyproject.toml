@@ -224,6 +224,10 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 addopts = "-q --tb=short --strict-markers"
 asyncio_mode = "auto"
+markers = [
+  "docs_contract: documentation/design-contract guards (not a runtime e2e journey)",
+  "real_hub: exercises a live or subprocess hub runtime path",
+]
 
 [tool.coverage.run]
 source = ["synapse_channel"]

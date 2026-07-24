@@ -11,6 +11,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.docs_contract
+
 ROOT = Path(__file__).resolve().parents[1]
 SIGNED_CAPABILITY_CARDS_DOC = ROOT / "docs" / "signed-capability-cards.md"
 
