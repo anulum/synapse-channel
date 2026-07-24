@@ -103,11 +103,13 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
 
 #: Every conditional-skip line in ``tests/``, by file: (line count, justification class).
 SKIP_LEDGER: dict[str, tuple[int, str]] = {
-    "tests/_platform_caps.py": (5, "platform-guard"),
+    "tests/_platform_caps.py": (7, "platform-guard"),
     "tests/_portable_exec.py": (1, "platform-guard"),
     "tests/fixtures/opencode/process.py": (2, "optional-dep-guard"),
     "tests/test_a2a_store.py": (3, "platform-guard"),
     "tests/test_analysis_sqlcipher_readers.py": (1, "optional-dep-guard"),
+    "tests/test_at_rest.py": (3, "platform-guard"),
+    "tests/test_at_rest_cloud_hsm.py": (1, "platform-guard"),
     "tests/test_at_rest_pkcs11.py": (1, "optional-dep-guard"),
     "tests/test_at_rest_tpm2.py": (1, "optional-dep-guard"),
     "tests/test_benchmark.py": (1, "optional-dep-guard"),
@@ -119,6 +121,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_dashboard_access_store.py": (1, "platform-guard"),
     "tests/test_dashboard_feeds_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_hub_sqlcipher_e2e.py": (1, "optional-dep-guard"),
+    "tests/test_identity_keys_secret_floor.py": (1, "platform-guard"),
     "tests/test_multihub_mcp_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_opencode_compatibility_smoke.py": (2, "operator-smoke"),
     "tests/test_operator_sqlcipher_readers.py": (1, "optional-dep-guard"),

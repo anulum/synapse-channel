@@ -326,10 +326,12 @@ def evaluate_windows_owner_only_policy(
     loader gathers SIDs/ACEs and calls this function.
 
     Ownership: the NT owner SID must be the current user, or a well-known
-    privileged SID (Administrators / SYSTEM) that commonly owns files created
-    under an elevated or admin-group token on Windows CI. In the latter case
-    the current user must still hold an explicit allow ACE — privilege alone
-    is not enough.
+    privileged SID (Administrators / SYSTEM / OWNER RIGHTS / CREATOR OWNER)
+    that commonly owns files created under an elevated or admin-group token
+    on Windows CI. A privileged owner with a DACL that grants interesting
+    access only to the current user and other allowlisted SIDs is accepted;
+    ambient admin rights alone are not enough if Everyone/Users-style ACEs
+    remain. Fail closed on a NULL DACL or any non-allowlisted principal.
     """
     allowed_owners = {current_sid} | _WINDOWS_ALLOWED_EXTRA_SIDS
     if owner_sid not in allowed_owners:
