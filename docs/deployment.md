@@ -421,6 +421,33 @@ restart the service, and the fleet re-arms against the fresh hub on its own. Pic
 quiet moment, announce before and after, and never start a restart that would strand
 a client too old to exit-on-drop.
 
+### Warm-start reconnect storm (mass waiter re-arm)
+
+After a hub process restart (upgrade, `systemctl --user restart synapse-hub`,
+or a crash recovery), **every** live waiter and presence socket tries to
+reconnect at once. On a busy dogfood workstation that can briefly:
+
+- fill the listen accept queue (`ss` shows large `Recv-Q` on the hub port);
+- make `synapse who` / `synapse health` fail or time out for a few seconds;
+- log a burst of connect/welcome frames until the queue drains.
+
+This is **expected transient behaviour**, not a permanent outage. Mitigations:
+
+1. **Expect brief unavailability.** Allow 5–30 seconds for the accept queue to
+   drain before treating `who` failures as a broken install.
+2. **Stagger intentional restarts when you can.** Prefer upgrading one machine
+   at a time; avoid bouncing the hub during a fleet-wide agent restart storm.
+3. **Systemd restart pacing.** For the user unit, a short `RestartSec=` (for
+   example `2`–`5`) reduces tight crash-loop reconnect storms; do not set it
+   so high that a genuine crash stays dark.
+4. **Capacity.** If the storm routinely hits `--max-clients`, raise the ceiling
+   or reap stale waiters (`syn-reap`) before the bounce so fewer sockets re-arm.
+5. **Do not SIGKILL the hub while Recv-Q is still draining** unless the process
+   is wedged; a second restart only multiplies the reconnect wave.
+
+See also [Troubleshooting](troubleshooting.md) for capacity and exit-code `3`
+re-arm behaviour.
+
 ## Claim-quota principals
 
 `--max-claims-per-agent` is enforced against a hub-derived **quota principal**, not

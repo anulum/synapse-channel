@@ -52,6 +52,14 @@ network drop). This is expected — re-arm the waiter. A `--timeout 0` (indefini
 waiter prints this instead of hanging on a dead socket, precisely so the caller
 re-arms rather than going silently dark.
 
+### Right after a hub restart, `who` / `health` fail and the port shows high Recv-Q
+
+A mass reconnect storm is normal when dozens of waiters re-arm together. Wait
+for the accept queue to drain (seconds to half a minute on a large fleet)
+before diagnosing further. Prefer staggered restarts, a modest systemd
+`RestartSec`, and reaping stale waiters before the bounce. Details:
+[Warm-start reconnect storm](deployment.md#warm-start-reconnect-storm-mass-waiter-re-arm).
+
 If this repeats, inspect the hub log. Accepted takeovers, takeover cooldown
 refusals, name conflicts, and name-switch denials are logged with the sender
 name, remote host, and close reason, without chat or task payloads.

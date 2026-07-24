@@ -34,6 +34,12 @@ All notable changes to this project are documented here.
   the handle. Windows still uses a path-based NT DACL proof (Win32 security
   APIs are path-keyed); content always comes from the held descriptor.
 
+### Changed
+
+- Document hub warm-start reconnect storms (accept-queue / Recv-Q
+  saturation after mass waiter re-arm) in deployment and
+  troubleshooting guides.
+
 ## [0.99.13] - 2026-07-24
 
 ### Security
