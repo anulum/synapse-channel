@@ -51,5 +51,15 @@ jobs:
       # `benchmark` (tiktoken, cross-platform wheels) is included so the declared
       # dev-tooling closure the drift check validates is actually present on this OS.
       - run: python -m pip install -e ".[dev,benchmark]"
+      # Windows has historically hung mid-suite (KeyboardInterrupt in asyncio with
+      # zero F marks around ~24%). Install pytest-timeout only on NT so a stuck
+      # test is named and failed instead of taking down the whole job.
+      - name: Install per-test timeout plugin (Windows)
+        if: runner.os == 'Windows'
+        run: python -m pip install "pytest-timeout>=2.3"
       - name: Run the suite on this OS (SQLCipher/TPM suites skip without their backends)
-        run: python -m pytest -q -p no:cacheprovider
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: >-
+          python -m pytest -q -p no:cacheprovider
+          ${{ runner.os == 'Windows' && '--timeout=120 --timeout-method=thread' || '' }}
