@@ -51,12 +51,30 @@ jobs:
       # `benchmark` (tiktoken, cross-platform wheels) is included so the declared
       # dev-tooling closure the drift check validates is actually present on this OS.
       - run: python -m pip install -e ".[dev,benchmark]"
-      # Windows has historically hung mid-suite around ~24% with KeyboardInterrupt
-      # and zero F marks. Dump all-thread stacks if a test stalls (ini option;
-      # the CLI flag is not registered without an extra plugin on this lane).
-      - name: Run the suite on this OS (SQLCipher/TPM suites skip without their backends)
+      # macOS: full suite (finishes cleanly).
+      - name: Run the suite (macOS)
+        if: runner.os == 'macOS'
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: python -m pytest -q -p no:cacheprovider
+      # Windows: run non-e2e first, then e2e. Full alphabetical order puts e2e
+      # claim-hook hubs around ~20% and then dies at ~24% with KeyboardInterrupt
+      # and zero F marks (likely leftover hub/socket pressure on NT). Splitting
+      # isolates NT filesystem semantics from e2e duration and leak risk.
+      - name: Run non-e2e suite (Windows)
+        if: runner.os == 'Windows'
         env:
           PYTHONUNBUFFERED: "1"
         run: >-
           python -m pytest -q -p no:cacheprovider
-          ${{ runner.os == 'Windows' && format('-o faulthandler_timeout={0}', 180) || '' }}
+          --ignore-glob=**/test_cli_e2e_*.py
+          --ignore-glob=**/test_*_e2e_*.py
+          -o faulthandler_timeout=180
+      - name: Run e2e suite (Windows)
+        if: runner.os == 'Windows'
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: >-
+          python -m pytest -q -p no:cacheprovider
+          tests -k e2e
+          -o faulthandler_timeout=180
