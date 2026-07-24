@@ -91,12 +91,23 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "advertised by --endpoint-url, including requests without Origin. Off by default.",
     )
     serve.add_argument(
+        "--tls-certfile",
+        default=None,
+        help="PEM certificate chain for native HTTPS on the A2A edge; requires --tls-keyfile.",
+    )
+    serve.add_argument(
+        "--tls-keyfile",
+        default=None,
+        help="PEM private key for native HTTPS on the A2A edge; requires --tls-certfile.",
+    )
+    serve.add_argument(
         "--insecure-off-loopback",
         action="store_true",
         help=(
             "Allow a non-loopback A2A bind without bearer authentication, or "
             "with bearer authentication over plaintext HTTP. Default refuses "
-            "both postures; use only on a trusted private network."
+            "both postures; prefer --tls-certfile/--tls-keyfile off loopback. "
+            "Use only on a trusted private network."
         ),
     )
     serve.add_argument(

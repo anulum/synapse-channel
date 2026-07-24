@@ -36,10 +36,10 @@ def a2a_bind_problems(
       operator opts in with ``--insecure-off-loopback``;
     * with bearer auth over plaintext HTTP (``tls_active=False``) the bearer
       and protected route traffic ride the wire in the clear — refuse unless
-      the same override is set. ``tls_active=True`` clears only the plaintext
-      bearer problem (native TLS or a documented TLS-terminating front); the
-      A2A bridge itself is currently HTTP-only, so callers pass ``False``
-      unless a future TLS bind path sets it.
+      the same override is set. ``tls_active=True`` (native ``--tls-certfile`` /
+      ``--tls-keyfile``, or an operator-documented TLS-terminating front that
+      still binds the process off-loopback only after explicit risk acceptance)
+      clears only the plaintext-bearer problem.
 
     Returns a list of human-readable problem strings suitable for refuse or
     warning messages. Empty means the bind is allowed without override.
@@ -57,8 +57,9 @@ def a2a_bind_problems(
         problems.append(
             f"authenticates with a bearer token on non-loopback host {host!r} "
             "over plaintext HTTP; the token and protected A2A traffic are "
-            "readable on the network path — terminate TLS at a reverse proxy "
-            "in front of a loopback bind, or pass --insecure-off-loopback to "
-            "accept cleartext bearer traffic"
+            "readable on the network path — enable native TLS with "
+            "--tls-certfile and --tls-keyfile, terminate TLS at a reverse "
+            "proxy in front of a loopback bind, or pass "
+            "--insecure-off-loopback to accept cleartext bearer traffic"
         )
     return problems

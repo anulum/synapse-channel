@@ -23,16 +23,25 @@ All notable changes to this project are documented here.
 - `synapse a2a-serve` now refuses a non-loopback bind that enables
   `--bearer-auth` over plaintext HTTP (hub R4 parity). The bearer and
   protected A2A traffic would otherwise ride the LAN in the clear. Prefer a
-  loopback bind behind a TLS-terminating reverse proxy;
+  loopback bind behind a TLS-terminating reverse proxy **or** native HTTPS;
   `--insecure-off-loopback` remains the single explicit override for both the
   unauthenticated and plaintext-bearer off-loopback postures. Pure bind
   matrix lives in `a2a_bind_exposure.a2a_bind_problems`.
+- `synapse a2a-serve` supports **native HTTPS** via `--tls-certfile` and
+  `--tls-keyfile` (same TLSv1.2+ server context builder as the hub). When
+  native TLS is active, the off-loopback plaintext-bearer refuse is cleared
+  and the listen banner prints `https://…`.
 - At-rest and payload key loaders (`load_key_file`, `load_payload_key`) now
   read secret bytes through `secure_path.read_owner_only_file_bytes`: open
   without following a leaf symlink, prove the owner-only floor, and read from
   the same descriptor so a second-open TOCTOU cannot swap key material under
   the handle. Windows still uses a path-based NT DACL proof (Win32 security
   APIs are path-keyed); content always comes from the held descriptor.
+
+### Added
+
+- A2A edge: `make_a2a_http_server` / `serve_a2a_http` accept an optional
+  `ssl_context` and wrap the listening socket for native HTTPS.
 
 ### Changed
 

@@ -1972,8 +1972,9 @@ Operational boundaries:
   loopback (`127.0.0.1`). A non-loopback host is **refused** without bearer
   auth, and a non-loopback host **with** bearer auth is also **refused** while
   the bridge listens on plaintext HTTP so the bearer never rides the LAN in
-  the clear by default. Prefer a loopback bind behind a TLS-terminating reverse
-  proxy (see the [A2A deployment threat model](a2a-deployment-threat-model.md)).
+  the clear by default. Prefer native HTTPS with `--tls-certfile` and
+  `--tls-keyfile`, or a loopback bind behind a TLS-terminating reverse proxy
+  (see the [A2A deployment threat model](a2a-deployment-threat-model.md)).
   `--insecure-off-loopback` downgrades either refusal to a warning for a trusted
   private network; it is not a production deployment mode. The bind matrix:
 
@@ -1983,6 +1984,7 @@ Operational boundaries:
   | non-loopback | no | no override | **refuse** |
   | non-loopback | no | `--insecure-off-loopback` | warn + allow |
   | non-loopback | yes | plaintext HTTP, no override | **refuse** |
+  | non-loopback | yes | `--tls-certfile` + `--tls-keyfile` | allow (native HTTPS) |
   | non-loopback | yes | `--insecure-off-loopback` | warn + allow |
 
 - `--allow-origin ORIGIN` is opt-in browser hardening: restrict requests to the

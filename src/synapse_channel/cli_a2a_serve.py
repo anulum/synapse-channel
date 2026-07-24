@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ssl
 import sys
 from collections.abc import Callable
 from typing import Any
@@ -32,6 +33,7 @@ from synapse_channel.cli_a2a_types import (
 )
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.tls import HubTLSConfigError, build_server_ssl_context
 
 
 async def _fetch_manifest(
@@ -103,14 +105,22 @@ def _cmd_a2a_serve(
             file=sys.stderr,
         )
         return 2
-    # A2A serve is currently HTTP-only (stdlib edge); tls_active stays False
-    # until a native TLS bind path exists. Operators who terminate TLS at a
-    # reverse proxy should bind the bridge on loopback, not off-loopback with
-    # a cleartext bearer. --insecure-off-loopback acknowledges residual risk.
+    try:
+        ssl_context: ssl.SSLContext | None = build_server_ssl_context(
+            certfile=getattr(args, "tls_certfile", None),
+            keyfile=getattr(args, "tls_keyfile", None),
+        )
+    except HubTLSConfigError as exc:
+        print(f"[{args.name}] A2A TLS configuration error: {exc}.", file=sys.stderr)
+        return 2
+    tls_active = ssl_context is not None
+    # Native TLS (--tls-certfile/--tls-keyfile) clears the plaintext-bearer refuse.
+    # Operators who terminate TLS at a reverse proxy should still bind the bridge
+    # on loopback; --insecure-off-loopback acknowledges residual cleartext risk.
     bind_problems = a2a_bind_problems(
         args.host,
         bearer_auth=bool(args.bearer_auth),
-        tls_active=False,
+        tls_active=tls_active,
     )
     if bind_problems:
         if not args.insecure_off_loopback:
@@ -182,14 +192,16 @@ def _cmd_a2a_serve(
         )
         runtime.stop()
         return 2
+    scheme = "https" if tls_active else "http"
     try:
-        print(f"[{args.name}] A2A bridge listening on http://{args.host}:{args.port}")
+        print(f"[{args.name}] A2A bridge listening on {scheme}://{args.host}:{args.port}")
         server_runner(
             bridge=bridge,
             host=args.host,
             port=args.port,
             max_concurrent_requests=max_concurrent,
             request_read_timeout_seconds=read_timeout,
+            ssl_context=ssl_context,
         )
     except KeyboardInterrupt:
         print(f"\n[{args.name}] A2A bridge stopped by user.")

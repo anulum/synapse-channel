@@ -144,23 +144,24 @@ When that boundary is crossed, the proportionate controls are:
   Bearer auth with `--bearer-auth --a2a-token`, with bearer values compared in
   constant time. A non-loopback bind without bearer auth is refused; a
   non-loopback bind *with* bearer auth over plaintext HTTP is also refused so the
-  token never rides the LAN in the clear by default (hub R4 parity). Prefer a
-  loopback bind behind a TLS-terminating reverse proxy;
-  `--insecure-off-loopback` downgrades either refuse to a warning on a trusted
-  private network. Request bodies are capped by byte size and JSON nesting depth
-  before A2A dispatch. Persisted A2A state files and write temp files are
-  restricted to owner-only permissions. Webhook delivery resolves each
-  target once and pins the connection to that validated address, so a DNS name
-  cannot rebind to a local address between the check and the connect. It admits
-  only globally routable destinations — rejecting loopback, private, link-local,
-  carrier-grade NAT, multicast, reserved, and unspecified addresses, including
-  IPv4-mapped IPv6 — applies the same policy to redirect targets, preserves the
-  hostname for TLS, ignores environment proxies, and reads the discarded response
-  under a fixed byte bound. Stored tasks, task
-  history, artifacts, push configs, in-process replay history, and terminal-task
-  retention are bounded. Treat any non-loopback A2A bind as an exposed HTTP
-  service: use bearer auth, keep state files private, and do not claim external
-  A2A conformance until interoperability and webhook validation have run.
+  token never rides the LAN in the clear by default (hub R4 parity). Prefer
+  native HTTPS (`--tls-certfile` / `--tls-keyfile`, TLSv1.2+) or a loopback bind
+  behind a TLS-terminating reverse proxy; `--insecure-off-loopback` downgrades
+  either refuse to a warning on a trusted private network. Request bodies are
+  capped by byte size and JSON nesting depth before A2A dispatch. Persisted A2A
+  state files and write temp files are restricted to owner-only permissions.
+  Webhook delivery resolves each target once and pins the connection to that
+  validated address, so a DNS name cannot rebind to a local address between the
+  check and the connect. It admits only globally routable destinations —
+  rejecting loopback, private, link-local, carrier-grade NAT, multicast,
+  reserved, and unspecified addresses, including IPv4-mapped IPv6 — applies the
+  same policy to redirect targets, preserves the hostname for TLS, ignores
+  environment proxies, and reads the discarded response under a fixed byte
+  bound. Stored tasks, task history, artifacts, push configs, in-process replay
+  history, and terminal-task retention are bounded. Treat any non-loopback A2A
+  bind as an exposed edge: use bearer auth and TLS (native or proxy), keep state
+  files private, and do not claim external A2A conformance until interoperability
+  and webhook validation have run.
 - **Dashboard Host boundary.** The read-only `synapse dashboard` serves live JSON
   and audit feeds unauthenticated on loopback so the browser cockpit — which
   cannot attach an `Authorization` header on navigation — can load. That open read

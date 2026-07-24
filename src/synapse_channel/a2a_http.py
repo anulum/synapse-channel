@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import socket
+import ssl
 import threading
 import time
 from collections.abc import Iterable
@@ -607,6 +608,31 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
     return A2ARequestHandler
 
 
+def wrap_a2a_server_socket(
+    server: A2AHTTPServer,
+    ssl_context: ssl.SSLContext | None,
+) -> A2AHTTPServer:
+    """Optionally wrap an A2A server socket for native TLS.
+
+    Parameters
+    ----------
+    server :
+        Bound A2A HTTP server (plaintext until wrapped).
+    ssl_context :
+        Server-side TLS context from :func:`build_server_ssl_context`, or
+        ``None`` to leave the socket plaintext.
+
+    Returns
+    -------
+    A2AHTTPServer
+        The same server instance, with a TLS-wrapped socket when ``ssl_context``
+        is provided.
+    """
+    if ssl_context is not None:
+        server.socket = ssl_context.wrap_socket(server.socket, server_side=True)
+    return server
+
+
 def make_a2a_http_server(
     *,
     bridge: A2ABridge,
@@ -614,8 +640,9 @@ def make_a2a_http_server(
     port: int,
     max_concurrent_requests: int = DEFAULT_MAX_CONCURRENT_A2A_REQUESTS,
     request_read_timeout_seconds: float = DEFAULT_A2A_REQUEST_READ_TIMEOUT_SECONDS,
+    ssl_context: ssl.SSLContext | None = None,
 ) -> A2AHTTPServer:
-    """Build a stdlib A2A HTTP server for callers that manage its lifecycle.
+    """Build a stdlib A2A HTTP(S) server for callers that manage its lifecycle.
 
     Parameters
     ----------
@@ -629,18 +656,21 @@ def make_a2a_http_server(
         Hard ceiling on concurrent in-flight HTTP requests (default 32).
     request_read_timeout_seconds : float, optional
         Wall-clock budget for reading one request body (default 30s).
+    ssl_context : ssl.SSLContext or None, optional
+        When set, the listening socket is wrapped for native HTTPS after bind.
 
     Returns
     -------
     A2AHTTPServer
-        Configured HTTP server with bounded admission and read deadlines.
+        Configured HTTP(S) server with bounded admission and read deadlines.
     """
-    return A2AHTTPServer(
+    server = A2AHTTPServer(
         (host, port),
         build_a2a_handler(bridge),
         max_concurrent_requests=max_concurrent_requests,
         request_read_timeout_seconds=request_read_timeout_seconds,
     )
+    return wrap_a2a_server_socket(server, ssl_context)
 
 
 def serve_a2a_http(
@@ -650,10 +680,11 @@ def serve_a2a_http(
     port: int,
     max_concurrent_requests: int = DEFAULT_MAX_CONCURRENT_A2A_REQUESTS,
     request_read_timeout_seconds: float = DEFAULT_A2A_REQUEST_READ_TIMEOUT_SECONDS,
+    ssl_context: ssl.SSLContext | None = None,
 ) -> (
     None
 ):  # pragma: no cover - blocking process wrapper; server factory is covered by real HTTP tests.
-    """Run a blocking A2A HTTP server.
+    """Run a blocking A2A HTTP or HTTPS server.
 
     Parameters
     ----------
@@ -667,6 +698,8 @@ def serve_a2a_http(
         Hard ceiling on concurrent in-flight HTTP requests (default 32).
     request_read_timeout_seconds : float, optional
         Wall-clock budget for reading one request body (default 30s).
+    ssl_context : ssl.SSLContext or None, optional
+        Native TLS context; when set the edge serves HTTPS.
     """
     server = make_a2a_http_server(
         bridge=bridge,
@@ -674,6 +707,7 @@ def serve_a2a_http(
         port=port,
         max_concurrent_requests=max_concurrent_requests,
         request_read_timeout_seconds=request_read_timeout_seconds,
+        ssl_context=ssl_context,
     )
     try:
         server.serve_forever()
