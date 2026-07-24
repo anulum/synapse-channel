@@ -88,6 +88,9 @@ mcp = [
   "mcp==1.28.1",
   "cryptography>=42.0",
 ]
+a2a-grpc = [
+  "grpcio>=1.62.0",
+]
 semantic = [
   "tree-sitter>=0.26.0",
   "tree-sitter-python>=0.25.0",

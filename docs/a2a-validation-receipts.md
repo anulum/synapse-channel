@@ -128,8 +128,10 @@ The TCK loopback webhook is rejected by the production SSRF guard. Separate
 repository tests exercise authenticated HTTPS delivery, a real 307 redirect,
 and DNS-rebinding refusal under an explicit local-test policy. Native TLS
 `a2a-serve` plus dual `a2a-interop-trace` HTTPS runs are covered locally.
-SYNAPSE also has no outbound A2A client/adapter yet, so an independent
-external-server pass remains a recorded product gap.
+Outbound HTTP(S) discovery/send/get is available via `synapse a2a-client`
+and `synapse_channel.a2a_client.A2AOutboundClient` against a second peer.
+Production public-webhook operator sign-off and full external TCK certification
+remain open.
 
 This upgrades the matrix with real official-SDK and official-TCK evidence plus
 in-repo residual scenario handlers, but it is still **partial validation, not A2A certification or full conformance**.

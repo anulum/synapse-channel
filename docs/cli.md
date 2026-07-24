@@ -32,6 +32,7 @@ everything, since they need the whole command table.
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-conformance` | Print the local Agent2Agent conformance matrix. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
+| `synapse a2a-client` | Outbound A2A HTTP(S) client: Agent Card discovery, message:send, and GET task against a second peer. |
 | `synapse a2a-interop-trace` | Run an independent stdlib HTTP(S) client against a live `a2a-serve` bridge and emit a discovery + task-lifecycle interop receipt. |
 | `synapse channel` | Manage private-channel membership and member-visible history; pair with `synapse send --channel`. |
 | `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |

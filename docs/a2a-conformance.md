@@ -73,7 +73,7 @@ value. Ordinary chat sends still return an asynchronous working Task and
 forward into SYNAPSE. A fresh official TCK re-run is optional evidence —
 these claims rest on in-repo residual tests of production dispatch.
 
-The in-tree `synapse a2a-interop-trace` provides a deterministic second
+Outbound `synapse a2a-client` and the in-tree `synapse a2a-interop-trace` provide deterministic second
 client stack for discovery, `message:send`, and `GET /tasks/{id}` over
 **HTTP and HTTPS** (native TLS via `a2a-serve --tls-certfile` /
 `--tls-keyfile`, with `--ca-file` or `--tls-insecure` on the client). These

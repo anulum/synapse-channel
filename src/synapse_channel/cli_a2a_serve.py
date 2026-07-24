@@ -33,7 +33,11 @@ from synapse_channel.cli_a2a_types import (
 )
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
-from synapse_channel.core.tls import HubTLSConfigError, build_server_ssl_context
+from synapse_channel.core.tls import (
+    HubTLSConfigError,
+    build_mutual_tls_server_ssl_context,
+    build_server_ssl_context,
+)
 
 
 async def _fetch_manifest(
@@ -105,11 +109,20 @@ def _cmd_a2a_serve(
             file=sys.stderr,
         )
         return 2
+    client_ca = getattr(args, "mtls_client_ca_file", None)
+    ssl_context: ssl.SSLContext | None
     try:
-        ssl_context: ssl.SSLContext | None = build_server_ssl_context(
-            certfile=getattr(args, "tls_certfile", None),
-            keyfile=getattr(args, "tls_keyfile", None),
-        )
+        if client_ca:
+            ssl_context = build_mutual_tls_server_ssl_context(
+                certfile=getattr(args, "tls_certfile", None),
+                keyfile=getattr(args, "tls_keyfile", None),
+                client_ca_file=client_ca,
+            )
+        else:
+            ssl_context = build_server_ssl_context(
+                certfile=getattr(args, "tls_certfile", None),
+                keyfile=getattr(args, "tls_keyfile", None),
+            )
     except HubTLSConfigError as exc:
         print(f"[{args.name}] A2A TLS configuration error: {exc}.", file=sys.stderr)
         return 2
@@ -198,8 +211,39 @@ def _cmd_a2a_serve(
         runtime.stop()
         return 2
     scheme = "https" if tls_active else "http"
+    grpc_port = getattr(args, "grpc_port", None)
+    grpc_server = None
+    if grpc_port is not None:
+        try:
+            from synapse_channel.a2a_grpc import SERVICE_NAME, start_grpc_in_background
+
+            grpc_host = args.host
+            grpc_server, _grpc_thread = start_grpc_in_background(
+                bridge, host=grpc_host, port=int(grpc_port)
+            )
+            interfaces = agent_card.setdefault("supportedInterfaces", [])
+            if isinstance(interfaces, list):
+                interfaces.append(
+                    {
+                        "url": f"grpc://{grpc_host}:{int(grpc_port)}",
+                        "protocolBinding": "GRPC",
+                        "protocolVersion": "1.0",
+                        "service": SERVICE_NAME,
+                    }
+                )
+            print(
+                f"[{args.name}] A2A gRPC binding on grpc://{grpc_host}:{int(grpc_port)} "
+                f"({SERVICE_NAME})"
+            )
+        except RuntimeError as exc:
+            print(f"[{args.name}] A2A gRPC unavailable: {exc}.", file=sys.stderr)
+            runtime.stop()
+            return 2
     try:
-        print(f"[{args.name}] A2A bridge listening on {scheme}://{args.host}:{args.port}")
+        mtls_note = " (mTLS client-CA required)" if client_ca else ""
+        print(
+            f"[{args.name}] A2A bridge listening on {scheme}://{args.host}:{args.port}{mtls_note}"
+        )
         server_runner(
             bridge=bridge,
             host=args.host,
@@ -211,5 +255,7 @@ def _cmd_a2a_serve(
     except KeyboardInterrupt:
         print(f"\n[{args.name}] A2A bridge stopped by user.")
     finally:
+        if grpc_server is not None:
+            grpc_server.stop(grace=None)
         runtime.stop()
     return 0

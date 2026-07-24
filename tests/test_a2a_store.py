@@ -131,9 +131,22 @@ def test_a2a_task_store_import_boundary_is_stable() -> None:
 
 def test_a2a_task_store_lists_tasks_by_state_and_id() -> None:
     store = A2ATaskStore()
-    store.put({"id": "task-b", "status": {"state": "TASK_STATE_COMPLETED"}})
-    store.put({"id": "task-a", "status": {"state": "TASK_STATE_WORKING"}})
+    store.put(
+        {
+            "id": "task-b",
+            "status": {"state": "TASK_STATE_COMPLETED"},
+            "metadata": {"updatedAt": 1.0, "createdAt": 1.0},
+        }
+    )
+    store.put(
+        {
+            "id": "task-a",
+            "status": {"state": "TASK_STATE_WORKING"},
+            "metadata": {"updatedAt": 2.0, "createdAt": 2.0},
+        }
+    )
 
+    # Newest updatedAt first; id is only a stable tie-break.
     assert [task["id"] for task in store.list_tasks()] == ["task-a", "task-b"]
     assert [task["id"] for task in store.list_tasks(state="TASK_STATE_WORKING")] == ["task-a"]
 
@@ -145,7 +158,8 @@ def test_a2a_task_store_bounds_stored_tasks_and_removes_push_configs() -> None:
     store.put(_stored_task("middle", updated_at=2.0))
     store.put(_stored_task("new", updated_at=3.0))
 
-    assert [task["id"] for task in store.list_tasks()] == ["middle", "new"]
+    # Timestamp-descending order (new then middle after quota eviction of old).
+    assert [task["id"] for task in store.list_tasks()] == ["new", "middle"]
     assert store.get("old") is None
     assert store.list_push_configs("old") == []
 

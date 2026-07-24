@@ -5,11 +5,11 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — Agent2Agent bridge task events
-"""In-process task-event fanout for the Agent2Agent bridge.
+"""Task-event fanout for the Agent2Agent bridge with optional durable history.
 
-The bridge intentionally keeps subscription replay in local process memory. The
-task store is responsible for durable task snapshots, while this module only
-serves bounded replay for subscribers attached to the currently running bridge.
+Live subscribers remain process-local queues. When a durable store is provided,
+lifecycle events are also persisted so a restarted bridge can replay prior
+snapshots to new subscribers of an existing task.
 """
 
 from __future__ import annotations
@@ -17,29 +17,69 @@ from __future__ import annotations
 import copy
 import queue
 import threading
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Protocol
 
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
 
 
-class A2ATaskEvents:
-    """Bounded, memory-only subscribers for A2A task lifecycle updates."""
+class EventHistoryStore(Protocol):
+    """Minimal durable event-history surface used by :class:`A2ATaskEvents`."""
 
-    def __init__(self, *, max_history_events: int = 64) -> None:
+    def append_event(self, task_id: str, event: JsonMap) -> None:
+        """Persist one lifecycle event for ``task_id``."""
+
+    def all_event_history(self) -> dict[str, list[JsonMap]]:
+        """Return all persisted lifecycle event histories."""
+
+
+class A2ATaskEvents:
+    """Bounded subscribers for A2A task lifecycle updates.
+
+    Parameters
+    ----------
+    max_history_events : int, optional
+        Maximum in-memory events retained per task (default 64).
+    durable_store : EventHistoryStore or None, optional
+        When set, events are appended to durable storage and the in-memory
+        history is seeded from that store at construction time.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_history_events: int = 64,
+        durable_store: EventHistoryStore | None = None,
+    ) -> None:
         self.max_history_events = max(max_history_events, 1)
+        self._durable_store = durable_store
         self._subscribers: dict[str, list[queue.Queue[JsonMap]]] = {}
         self._history: dict[str, list[JsonMap]] = {}
         self._lock = threading.RLock()
+        if durable_store is not None:
+            self.seed_history(durable_store.all_event_history())
+
+    def seed_history(self, history: Mapping[str, list[JsonMap]]) -> None:
+        """Replace in-memory history from a durable snapshot (e.g. after restart)."""
+        with self._lock:
+            seeded: dict[str, list[JsonMap]] = {}
+            for task_id, events in history.items():
+                cleaned = [copy.deepcopy(event) for event in events if isinstance(event, dict)]
+                if cleaned:
+                    seeded[str(task_id)] = cleaned[-self.max_history_events :]
+            self._history = seeded
 
     def publish(self, task_id: str, task: JsonMap) -> None:
-        """Publish one task update to local subscribers and replay history."""
+        """Publish one task update to local subscribers and durable history."""
         event = self._event(task)
         with self._lock:
             history = self._history.setdefault(task_id, [])
             history.append(copy.deepcopy(event))
             del history[: -self.max_history_events]
             subscribers = list(self._subscribers.get(task_id, []))
+        if self._durable_store is not None:
+            self._durable_store.append_event(task_id, event)
         for subscriber in subscribers:
             subscriber.put(copy.deepcopy(event))
 
@@ -62,6 +102,11 @@ class A2ATaskEvents:
         with self._lock:
             return bool(self._subscribers.get(task_id))
 
+    def history_for(self, task_id: str) -> list[JsonMap]:
+        """Return a copy of the in-memory lifecycle history for ``task_id``."""
+        with self._lock:
+            return copy.deepcopy(self._history.get(task_id, []))
+
     def subscribe(
         self,
         task_id: str,
@@ -70,7 +115,7 @@ class A2ATaskEvents:
         wait_seconds: float | None,
         default_wait_seconds: float,
     ) -> list[JsonMap]:
-        """Return bounded in-process replay plus queued updates for one subscription."""
+        """Return bounded replay plus queued updates for one subscription."""
         updates: queue.Queue[JsonMap] = queue.Queue()
         current_event = self._event(task)
         current_state = self._last_state([current_event])

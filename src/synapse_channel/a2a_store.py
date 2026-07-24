@@ -78,18 +78,20 @@ class A2ATaskStore:
     ) -> None:
         self._tasks: dict[str, JsonMap] = {}
         self._push_configs: dict[str, dict[str, JsonMap]] = {}
+        self._event_history: dict[str, list[JsonMap]] = {}
         self._storage_path = Path(storage_path) if storage_path is not None else None
         self._state_writer = state_writer
         self.max_tasks = max(max_tasks, 1)
         self.max_task_history = max(max_task_history, 0)
         self.max_task_artifacts = max(max_task_artifacts, 0)
         self.max_push_configs_per_task = max(max_push_configs_per_task, 0)
+        self.max_event_history = max(max_task_history, 1) if max_task_history else 64
         self.retention_seconds = max(retention_seconds, 0.0)
         self._lock = threading.RLock()
         self._load()
 
     def _load(self) -> None:
-        """Load persisted tasks and push configs when a state file exists."""
+        """Load persisted tasks, push configs, and event history when present."""
         if self._storage_path is None or not self._storage_path.exists():
             return
         try:
@@ -98,6 +100,7 @@ class A2ATaskStore:
             raise A2AStoreError(f"Invalid A2A state file: {self._storage_path}") from exc
         tasks = data.get("tasks", {})
         push_configs = data.get("pushConfigs", {})
+        event_history = data.get("eventHistory", {})
         if isinstance(tasks, dict):
             self._tasks = {
                 str(task_id): self._recover_task(task)
@@ -114,6 +117,15 @@ class A2ATaskStore:
                 for task_id, configs in push_configs.items()
                 if isinstance(configs, dict)
             }
+        if isinstance(event_history, dict):
+            loaded: dict[str, list[JsonMap]] = {}
+            for task_id, events in event_history.items():
+                if not isinstance(events, list):
+                    continue
+                cleaned = [event for event in events if isinstance(event, dict)]
+                if cleaned:
+                    loaded[str(task_id)] = cleaned[-self.max_event_history :]
+            self._event_history = loaded
 
     def _recover_task(self, task: JsonMap) -> JsonMap:
         """Return a safe restart view for one persisted task."""
@@ -161,9 +173,10 @@ class A2ATaskStore:
         return isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES
 
     def _remove_task_locked(self, task_id: str) -> None:
-        """Remove one task and its push configs while the store lock is held."""
+        """Remove one task, its push configs, and durable events while locked."""
         self._tasks.pop(task_id, None)
         self._push_configs.pop(task_id, None)
+        self._event_history.pop(task_id, None)
 
     def _task_ids_by_age(self, *, terminal_only: bool) -> list[str]:
         """Return task ids ordered oldest first for quota eviction."""
@@ -202,6 +215,10 @@ class A2ATaskStore:
             previous_push_configs = {
                 task_id: dict(configs) for task_id, configs in self._push_configs.items()
             }
+            previous_events = {
+                task_id: [dict(item) for item in events]
+                for task_id, events in self._event_history.items()
+            }
             removed = [
                 task_id
                 for task_id, task in self._tasks.items()
@@ -217,6 +234,7 @@ class A2ATaskStore:
             except Exception:
                 self._tasks = previous_tasks
                 self._push_configs = previous_push_configs
+                self._event_history = previous_events
                 raise
             return sorted(removed)
 
@@ -229,6 +247,7 @@ class A2ATaskStore:
         payload = {
             "tasks": self._tasks,
             "pushConfigs": self._push_configs,
+            "eventHistory": self._event_history,
         }
         try:
             self._state_writer(tmp_path, json.dumps(payload, sort_keys=True))
@@ -265,12 +284,58 @@ class A2ATaskStore:
             return self._tasks.get(task_id)
 
     def list_tasks(self, *, state: str | None = None) -> list[JsonMap]:
-        """Return tasks, optionally filtered by A2A status state."""
+        """Return tasks ordered by status-update timestamp descending.
+
+        Ordering uses ``metadata.updatedAt`` (falling back to ``createdAt``),
+        newest first. Task id is a stable ascending tie-break.
+
+        Parameters
+        ----------
+        state : str or None, optional
+            When set, only tasks whose status state equals ``state`` are returned.
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            Filtered tasks in descending update-time order.
+        """
         with self._lock:
             tasks = list(self._tasks.values())
         if state:
             tasks = [task for task in tasks if task.get("status", {}).get("state") == state]
-        return sorted(tasks, key=lambda task: str(task["id"]))
+        return sorted(
+            tasks,
+            key=lambda task: (-self._task_updated_at(task), str(task.get("id") or "")),
+        )
+
+    def append_event(self, task_id: str, event: JsonMap) -> None:
+        """Append one durable lifecycle event for ``task_id`` and persist."""
+        with self._lock:
+            previous = {
+                stored_id: [dict(item) for item in events]
+                for stored_id, events in self._event_history.items()
+            }
+            history = self._event_history.setdefault(task_id, [])
+            history.append(dict(event))
+            del history[: -self.max_event_history]
+            try:
+                self._save()
+            except Exception:
+                self._event_history = previous
+                raise
+
+    def event_history(self, task_id: str) -> list[JsonMap]:
+        """Return a copy of durable lifecycle events for ``task_id``."""
+        with self._lock:
+            return [dict(event) for event in self._event_history.get(task_id, [])]
+
+    def all_event_history(self) -> dict[str, list[JsonMap]]:
+        """Return a detached copy of all durable lifecycle event histories."""
+        with self._lock:
+            return {
+                task_id: [dict(event) for event in events]
+                for task_id, events in self._event_history.items()
+            }
 
     def put_push_config(self, task_id: str, config: JsonMap) -> JsonMap:
         """Store one push notification config for ``task_id``."""

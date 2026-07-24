@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 
 from synapse_channel.cli_a2a_card import _cmd_a2a_card
+from synapse_channel.cli_a2a_client import add_parsers as add_client_parsers
 from synapse_channel.cli_a2a_interop import add_parsers as add_interop_parsers
 from synapse_channel.cli_a2a_serve import _cmd_a2a_serve
 from synapse_channel.client.agent import default_hub_uri
@@ -20,6 +21,7 @@ from synapse_channel.client.agent import default_hub_uri
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register A2A bridge subcommands."""
     add_interop_parsers(subparsers)
+    add_client_parsers(subparsers)
     card = subparsers.add_parser(
         "a2a-card",
         help="Print an A2A Agent Card projected from the live SYNAPSE capability manifest.",
@@ -101,6 +103,23 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="PEM private key for native HTTPS on the A2A edge; requires --tls-certfile.",
     )
     serve.add_argument(
+        "--mtls-client-ca-file",
+        default=None,
+        help=(
+            "PEM CA bundle used to require and verify client certificates on the "
+            "native HTTPS A2A edge (mutual TLS). Requires --tls-certfile/--tls-keyfile."
+        ),
+    )
+    serve.add_argument(
+        "--grpc-port",
+        type=int,
+        default=None,
+        help=(
+            "When set, also serve the optional A2A gRPC binding (SendMessage/GetTask) "
+            "on this TCP port (requires grpcio / synapse-channel[a2a-grpc])."
+        ),
+    )
+    serve.add_argument(
         "--insecure-off-loopback",
         action="store_true",
         help=(
@@ -113,7 +132,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     serve.add_argument(
         "--state-file",
         default=None,
-        help="Optional JSON state file for persisted A2A tasks and push configs.",
+        help=(
+            "Optional JSON state file for persisted A2A tasks, push configs, "
+            "and durable lifecycle event history for stream replay after restart."
+        ),
     )
     serve.add_argument(
         "--task-timeout",

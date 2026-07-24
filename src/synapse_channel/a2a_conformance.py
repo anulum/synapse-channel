@@ -138,7 +138,10 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
         status="partial",
         synapse_surface="GET /tasks; JSON-RPC tasks/list",
         evidence="Task listing, state filter, and cursor-shaped pagination are covered locally.",
-        limitation="Ordering is deterministic by task id rather than status timestamp descending.",
+        limitation=(
+            "Ordering is status-update timestamp descending with task-id ascending "
+            "tie-break; timestamps come from bridge-local metadata."
+        ),
         spec_reference="A2A 1.0.0 §3.1.4",
     ),
     A2AConformanceRow(
@@ -158,7 +161,11 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
         status="partial",
         synapse_surface="POST /tasks/{id}:subscribe",
         evidence="SSE subscription tests cover snapshot delivery and bounded queued updates.",
-        limitation="Subscriptions are memory-only and reject terminal recovered tasks.",
+        limitation=(
+            "Live queues are process-local; lifecycle history is durable when a state "
+            "file is configured so restarted bridges can replay prior snapshots. "
+            "Terminal recovered tasks still reject new subscriptions."
+        ),
         spec_reference="A2A 1.0.0 §3.1.6",
     ),
     A2AConformanceRow(
@@ -216,10 +223,21 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
     A2AConformanceRow(
         area="binding",
         item="gRPC",
-        status="unsupported",
-        synapse_surface="none",
-        evidence="No gRPC server, dependency, or CLI surface exists in this package.",
-        limitation="A gRPC adapter would be a separate optional surface.",
+        status="partial",
+        synapse_surface=(
+            "synapse a2a-serve --grpc-port; synapse_channel.a2a_grpc "
+            "(optional grpcio / [a2a-grpc] extra)"
+        ),
+        evidence=(
+            "Optional gRPC service synapse.a2a.v1.A2ABridge exposes SendMessage and "
+            "GetTask over JSON-serialised payloads; Agent Card can advertise a GRPC "
+            "interface URL; focused in-process client/server tests."
+        ),
+        limitation=(
+            "Custom SYNAPSE JSON-over-gRPC binding, not a generated official A2A "
+            "proto stub set; install grpcio separately; full multi-method A2A gRPC "
+            "surface remains incomplete."
+        ),
         spec_reference="A2A 1.0.0 §10",
     ),
     A2AConformanceRow(
@@ -227,21 +245,21 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
         item="Independent interoperability",
         status="partial",
         synapse_surface=(
-            "synapse a2a-interop-trace; synapse_channel.a2a_interop_trace; "
-            "docs/a2a-validation-receipts.md"
+            "synapse a2a-interop-trace; synapse a2a-client; "
+            "synapse_channel.a2a_client; docs/a2a-validation-receipts.md"
         ),
         evidence=(
             "Official a2a-sdk 1.1.0 completed Agent Card discovery plus "
             "send/get/list/cancel over RestTransport; official A2A TCK 5996b79 "
             "historically finished 55/5/175 on HTTP+JSON MUST; in-repo residual "
-            "handlers and dual HTTPS interop-trace runs cover structured "
-            "Message/Artifact scenarios and native TLS discovery/send/get; "
-            "stdlib http.client records discovery/send/get over http and https."
+            "handlers, dual HTTPS interop-trace, and outbound a2a-client dual-peer "
+            "runs cover discovery/send/get; optional gRPC SendMessage/GetTask tests."
         ),
         limitation=(
-            "This is partial validation, not certification: an outbound external-server "
-            "pass, public webhook, reverse-proxy production sign-off, and durable-history "
-            "replay receipts remain open. A fresh official TCK re-run is optional evidence."
+            "This is partial validation, not certification: public webhook operator "
+            "sign-off, reverse-proxy production attestation, and full external TCK "
+            "certification remain open. Outbound client (`synapse a2a-client`) and "
+            "local dual-process passes are covered in-repo."
         ),
         spec_reference="A2A 1.0.0 goals and operation model",
     ),

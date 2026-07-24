@@ -35,7 +35,7 @@ def _subcommand_choices() -> dict[str, argparse.ArgumentParser]:
 
 
 class TestRegistration:
-    """The three A2A subcommands and the interop parser are registered."""
+    """A2A subcommands including interop and outbound client are registered."""
 
     def test_card_and_serve_are_registered(self) -> None:
         choices = _subcommand_choices()
@@ -45,6 +45,9 @@ class TestRegistration:
     def test_interop_parsers_are_delegated(self) -> None:
         # ``add_parsers`` calls the interop registrar first, so its command appears.
         assert "a2a-interop-trace" in _subcommand_choices()
+
+    def test_outbound_client_parser_is_registered(self) -> None:
+        assert "a2a-client" in _subcommand_choices()
 
 
 class TestCardParser:

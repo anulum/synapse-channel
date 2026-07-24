@@ -185,7 +185,9 @@ class A2ABridge:
         self.task_timeout_seconds = max(task_timeout_seconds, 0.0)
         self.subscribe_wait_seconds = max(subscribe_wait_seconds, 0.0)
         self._pending_by_target: dict[str, list[str]] = {}
-        self._events = A2ATaskEvents()
+        # Durable event history is shared with the task store so a restarted
+        # bridge can replay prior lifecycle snapshots for open tasks.
+        self._events = A2ATaskEvents(durable_store=self.store)
         self._task_creation_lock = threading.RLock()
         self._correlation_lock = threading.RLock()
         self._recover_stale_open_tasks(now=time.time())
