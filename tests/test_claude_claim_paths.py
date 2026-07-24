@@ -38,9 +38,13 @@ def _event(root: Path, path: Path, *, tool: str = "Edit") -> str:
 
 
 def _runner(root: Path, branch: str = "main") -> Callable[[list[str]], str]:
+    """Stub git: rev-parse, optional core.ignorecase probe, then ls-files."""
+
     def run(args: list[str]) -> str:
         if args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]:
             return f"{root}\n{branch}"
+        if "core.ignorecase" in args:
+            return "false"
         assert args[-3:] == ["ls-files", "-z", "--cached"]
         return ""
 
@@ -158,6 +162,8 @@ def test_resolve_repository_target_walks_to_existing_parent(tmp_path: Path) -> N
         if args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]:
             assert args[1] == str(tmp_path)
             return f"{tmp_path}\nmain"
+        if "core.ignorecase" in args:
+            return "false"
         assert args[-3:] == ["ls-files", "-z", "--cached"]
         return ""
 

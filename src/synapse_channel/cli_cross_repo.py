@@ -102,8 +102,11 @@ def run_notify_command(command: str, added: list[str], removed: list[str], root:
         + "\n"
     )
     try:
+        # posix=False on Windows so backslashes in interpreter paths are literal;
+        # default posix=True treats ``\`` as escapes and yields WinError 2.
+        argv = shlex.split(command, posix=os.name != "nt")
         completed = subprocess.run(  # nosec B603
-            shlex.split(command),
+            argv,
             input=summary,
             text=True,
             timeout=NOTIFY_TIMEOUT_SECONDS,

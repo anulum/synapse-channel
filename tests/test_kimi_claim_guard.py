@@ -42,9 +42,13 @@ def _event(
 
 
 def _runner(root: Path, branch: str = "main") -> Callable[[list[str]], str]:
+    """Stub git: rev-parse, optional core.ignorecase probe, then ls-files."""
+
     def run(args: list[str]) -> str:
         if args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]:
             return f"{root}\n{branch}"
+        if "core.ignorecase" in args:
+            return "false"
         assert args[-3:] == ["ls-files", "-z", "--cached"]
         return ""
 

@@ -50,9 +50,11 @@ class TestListMainMoves:
 
     def test_builds_first_parent_reverse_argv_with_ref_and_repo(self) -> None:
         runner = _runner_returning("")
-        list_main_moves(Path("/repo"), ref="origin/main", runner=runner)
+        repo = Path("/repo")
+        list_main_moves(repo, ref="origin/main", runner=runner)
         argv = runner.calls[0]
-        assert argv[:2] == ["-C", "/repo"]
+        # Path("/repo") string form is platform-native (e.g. ``\repo`` on NT).
+        assert argv[:2] == ["-C", str(repo)]
         assert "--first-parent" in argv
         assert "--reverse" in argv
         assert argv[-1] == "origin/main"

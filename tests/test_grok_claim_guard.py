@@ -24,11 +24,17 @@ from synapse_channel.grok_claim_guard import (
 
 
 def _runner(root: Path, branch: str = "main") -> Callable[[list[str]], str]:
-    """Return a deterministic runner for Git context and index queries."""
+    """Return a deterministic runner for Git context and index queries.
+
+    Accepts the optional ``core.ignorecase`` probe used when the filesystem
+    case-sensitivity probe cannot decide (common under empty Windows temps).
+    """
 
     def run(args: list[str]) -> str:
         if args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]:
             return f"{root}\n{branch}"
+        if "core.ignorecase" in args:
+            return "false"
         assert args[-3:] == ["ls-files", "-z", "--cached"]
         return ""
 

@@ -43,9 +43,13 @@ def _event(root: Path, command: str, *, tool: str = "apply_patch") -> str:
 
 
 def _runner(root: Path) -> Callable[[list[str]], str]:
+    """Stub git: rev-parse, optional core.ignorecase probe, then ls-files."""
+
     def run(args: list[str]) -> str:
         if args[-4:] == ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]:
             return f"{root}\nmain"
+        if "core.ignorecase" in args:
+            return "false"
         assert args[-3:] == ["ls-files", "-z", "--cached"]
         return ""
 
