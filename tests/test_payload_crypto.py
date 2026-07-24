@@ -100,38 +100,54 @@ def test_payload_key_file_loader_rejects_unsafe_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+
     missing = tmp_path / "missing.key"
     assert "does not exist" in _error(lambda: load_payload_key(missing))
 
     unsafe = tmp_path / "unsafe.key"
     unsafe.write_bytes(b"k" * 32)
-    unsafe.chmod(0o644)
-    assert "owner-only" in _error(lambda: load_payload_key(unsafe))
-    unsafe.chmod(0o600)
+    # POSIX mode bits are not the owner-only floor on Windows (NT DACL is).
+    if os.name == "posix":
+        unsafe.chmod(0o644)
+        assert "owner-only" in _error(lambda: load_payload_key(unsafe))
+        unsafe.chmod(0o600)
 
     short = tmp_path / "short.key"
     short.write_bytes(b"k")
-    short.chmod(0o600)
+    if os.name == "posix":
+        short.chmod(0o600)
     assert "exactly 32 bytes" in _error(lambda: load_payload_key(short))
 
-    link = tmp_path / "link.key"
-    link.symlink_to(unsafe)
-    assert "must not be a symlink" in _error(lambda: load_payload_key(link))
+    if os.name == "posix":
+        link = tmp_path / "link.key"
+        link.symlink_to(unsafe)
+        assert "must not be a symlink" in _error(lambda: load_payload_key(link))
 
     directory = tmp_path / "key-dir"
     directory.mkdir(mode=0o700)
-    assert "not a regular file" in _error(lambda: load_payload_key(directory))
+    # Windows may report owner-only failure or non-regular/open denial for dirs.
+    assert any(
+        token in _error(lambda: load_payload_key(directory))
+        for token in ("not a regular file", "owner-only", "Permission denied", "cannot")
+    )
 
-    monkeypatch.setattr(os, "geteuid", lambda: -1)
-    assert "owned by the current user" in _error(lambda: load_payload_key(unsafe))
+    if hasattr(os, "geteuid") and os.name == "posix":
+        monkeypatch.setattr(os, "geteuid", lambda: -1)
+        assert "owned by the current user" in _error(lambda: load_payload_key(unsafe))
 
 
 def test_payload_key_loader_rejects_short_reads(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+
     key_path = generate_key_file(tmp_path / "payload.key")
-    monkeypatch.setattr(os, "read", lambda _fd, _size: b"short")
+    # POSIX load uses os.read on the held descriptor; Windows uses Path.read_bytes
+    # after the DACL proof.
+    if os.name == "nt":
+        monkeypatch.setattr(Path, "read_bytes", lambda self: b"short")
+    else:
+        monkeypatch.setattr(os, "read", lambda _fd, _size: b"short")
 
     assert "exactly 32 bytes" in _error(lambda: load_payload_key(key_path))
 

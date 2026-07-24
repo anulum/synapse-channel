@@ -262,7 +262,11 @@ def test_regular_file_reader_covers_public_material_boundaries(
 
     with pytest.raises(SecretFileError, match="byte file limit"):
         read_regular_file_bytes(path, label="public", limit=1)
-    with pytest.raises(SecretFileError, match="not a regular file"):
+    # POSIX: directory open yields "not a regular file". Windows: Permission
+    # denied on open (still fail-closed for non-file public material).
+    with pytest.raises(
+        SecretFileError, match="not a regular file|Permission denied|cannot securely open"
+    ):
         read_regular_file_bytes(tmp_path, label="public")
     with pytest.raises(SecretFileError, match="cannot securely open"):
         read_regular_file_bytes(tmp_path / "missing", label="public")

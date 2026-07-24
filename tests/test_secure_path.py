@@ -330,7 +330,8 @@ def test_dispatch_branches_when_forced_windows(
     import synapse_channel.core.secure_path as module
 
     path = tmp_path / "token"
-    path.write_text("win-secret\n", encoding="utf-8")
+    # Binary write so Windows does not inject CRLF into the expected payload.
+    path.write_bytes(b"win-secret\n")
     current = "S-1-5-21-force"
 
     monkeypatch.setattr(module, "_WINDOWS", True)
@@ -609,11 +610,17 @@ def test_windows_open_and_single_link_and_private_dir_os_errors(
     # open_nofollow_leaf Windows branch
     fd = module.open_nofollow_leaf(path)
     os.close(fd)
-    # directory branch no-op flag
+    # directory branch: on real Windows, opening a directory as a file raises
+    # PermissionError; the POSIX host with forced _WINDOWS still exercises the
+    # flag wiring via a successful open.
     d = tmp_path / "d"
     d.mkdir()
-    fd = module.open_nofollow_leaf(d, directory=True)
-    os.close(fd)
+    if os.name == "nt":
+        with pytest.raises(OSError):
+            module.open_nofollow_leaf(d, directory=True)
+    else:
+        fd = module.open_nofollow_leaf(d, directory=True)
+        os.close(fd)
 
     # symlink refuse on windows open
     if os.name == "posix":
