@@ -36,6 +36,9 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Document permanent policy: advisory Windows `cross-os` proof is the NT
+  security-floor pack; full alphabetical Windows suite remains hang-prone
+  and is not a required gate (Linux `ci` owns full coverage).
 - Advisory CI step and `tools/report_test_taxonomy.py` publish counts of
   `docs_contract` / `real_hub` modules and e2e vs design_docs file names
   for audit honesty (no fail gate).

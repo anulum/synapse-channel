@@ -432,6 +432,13 @@ loopback would only break port publishing without adding security.
   encryption for the live store and AES-256-GCM whole-file envelopes are shipped
   opt-ins; they require explicit key management and do not protect a running
   hub's RAM or create multi-tenant isolation.
+- **Windows CI proof surface.** The advisory `cross-os` Windows job runs a
+  focused NT security-floor pack (secure path, secret files, at-rest/payload
+  keys, claim coverage) rather than the full alphabetical pytest suite. The
+  full Windows suite has historically hung mid-run with KeyboardInterrupt and
+  zero failures (runner/asyncio class). Required coverage remains the Linux
+  `ci` matrix; the floor pack is the intentional Windows security-floor proof.
+  Do not weaken floor asserts to chase a full-suite green on Windows.
 - The A2A bridge is a local HTTP+JSON bridge over SYNAPSE capabilities, not
   externally validated for full A2A conformance. Remote conformance, real webhook
   receiver behavior, and operator-visible production deployment receipts remain
