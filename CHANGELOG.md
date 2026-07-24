@@ -13,7 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-## [0.99.13] - 2026-07-23
+## [0.99.13] - 2026-07-24
+
+### Security
+
+- Portable owner-only secret and private-directory floors now cover real
+  Windows NT DACLs (exclusive owner ACE, fail-closed world-readable
+  secrets) alongside the existing POSIX `0600` / `0700` mode floor. Key and
+  payload loaders assert the owner-only floor before reading secret bytes;
+  non-regular key paths (directories, unexpected types) are refused before
+  DACL/read. Advisory Windows CI exercises a focused NT security-floor pack
+  rather than the hang-prone full alphabetical suite; required Linux `ci`
+  remains the full-coverage merge gate.
 
 ### Added
 
@@ -221,6 +232,18 @@ All notable changes to this project are documented here.
   AST drift gate.
 - Advisory `cross-os` job timeout raised from 30 to 90 minutes so the Windows
   full-suite cell can finish instead of being cancelled mid-pytest.
+- Windows claim/timeout messages, shell path quoting (`Path.as_posix`),
+  UTF-8 CLI e2e helpers, systemd notify shlex, and gitclaim runner encoding
+  no longer fail closed on NT path or console code-page differences that are
+  not security regressions.
+- Advisory Windows cross-os install uses the universal hash-locked
+  `requirements-dev.txt` (`--require-hashes`) plus editable `--no-deps`
+  install (same supply-chain pattern as required `ci`), closing the Scorecard
+  Pinned-Dependencies finding on unhashed `pip install` of the dev extras.
+- Windows advisory lane runs a focused NT security-floor pytest pack (secure
+  path, secrets, at-rest keys, claims, CLI floors, path identity) so portable
+  owner-only floors stay proven without the mid-suite KeyboardInterrupt hang
+  class that still affects the full alphabetical Windows suite.
 
 ## [0.99.12] - 2026-07-20
 
