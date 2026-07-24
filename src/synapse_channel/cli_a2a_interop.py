@@ -25,9 +25,11 @@ def _cmd_a2a_interop_trace(args: argparse.Namespace) -> int:
     """Run discovery + task lifecycle against a live bridge; print or write receipt."""
     try:
         if args.endpoint_url:
-            host, port, prefix = parse_endpoint(args.endpoint_url)
+            scheme, host, port, prefix = parse_endpoint(args.endpoint_url)
         else:
-            host, port, prefix = args.host, int(args.port), ""
+            scheme, host, port, prefix = "http", args.host, int(args.port), ""
+        if getattr(args, "scheme", None):
+            scheme = str(args.scheme)
         receipt = run_local_interop_trace(
             host=host,
             port=port,
@@ -35,6 +37,9 @@ def _cmd_a2a_interop_trace(args: argparse.Namespace) -> int:
             token=args.a2a_token,
             message_text=args.message,
             timeout=float(args.timeout),
+            scheme=scheme,
+            ca_file=getattr(args, "ca_file", None),
+            tls_insecure=bool(getattr(args, "tls_insecure", False)),
         )
     except (ValueError, A2AInteropTraceError, OSError) as exc:
         print(f"a2a-interop-trace: {exc}", file=sys.stderr)
@@ -52,17 +57,33 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     cmd = subparsers.add_parser(
         "a2a-interop-trace",
         help=(
-            "Run an independent stdlib HTTP client against a live a2a-serve bridge "
+            "Run an independent stdlib HTTP(S) client against a live a2a-serve bridge "
             "and emit a discovery + task-lifecycle interop receipt."
         ),
     )
     cmd.add_argument(
         "--endpoint-url",
         default=None,
-        help="Absolute http:// URL of the bridge (overrides --host/--port).",
+        help="Absolute http:// or https:// URL of the bridge (overrides --host/--port).",
     )
     cmd.add_argument("--host", default="127.0.0.1", help="Bridge host (default 127.0.0.1).")
     cmd.add_argument("--port", type=int, default=8877, help="Bridge port (default 8877).")
+    cmd.add_argument(
+        "--scheme",
+        default=None,
+        choices=("http", "https"),
+        help="Override URL scheme when --host/--port are used (default http).",
+    )
+    cmd.add_argument(
+        "--ca-file",
+        default=None,
+        help="PEM CA/trust file for HTTPS verification of the bridge certificate.",
+    )
+    cmd.add_argument(
+        "--tls-insecure",
+        action="store_true",
+        help="Skip HTTPS certificate verification (local self-signed drills only).",
+    )
     cmd.add_argument(
         "--a2a-token",
         default=None,

@@ -31,6 +31,12 @@ from synapse_channel.a2a_http_protocol import (
 )
 from synapse_channel.a2a_push import PushDeliverer, deliver_push_notification, http_push_deliverer
 from synapse_channel.a2a_rpc import dispatch_json_rpc
+from synapse_channel.a2a_scenario_responses import (
+    ScenarioKind,
+    build_completed_task_with_artifact,
+    build_direct_message_response,
+    resolve_scenario,
+)
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.a2a_task_flow import (
     build_working_task,
@@ -240,35 +246,99 @@ class A2ABridge:
         return self.create_working_task(message, target=target)
 
     def send_message(self, payload: JsonMap, *, protocol_version: str | None = None) -> JsonMap:
-        """Handle an A2A ``message:send`` request."""
-        task = self._send_message_task(payload, protocol_version=protocol_version)
+        """Handle an A2A ``message:send`` request.
+
+        Default behaviour returns a working Task and forwards into SYNAPSE.
+        When the payload matches a structured scenario (official TCK residual
+        ``messageId`` prefixes or explicit ``a2aScenario`` metadata), the bridge
+        answers immediately with either a direct Message or a completed Task
+        that carries the required Artifact shape.
+        """
+        message, configuration = self._validated_send_inputs(payload)
+        scenario = resolve_scenario(message, configuration)
+        if scenario is ScenarioKind.MESSAGE_RESPONSE:
+            return build_direct_message_response(message)
+        if scenario is not None:
+            task = self._create_scenario_completed_task(message, scenario)
+            self._store_request_push_config(payload, task_id=str(task["id"]))
+            return {"task": task}
+        task = self._send_message_task(
+            payload,
+            protocol_version=protocol_version,
+            message=message,
+        )
         self._store_request_push_config(payload, task_id=str(task["id"]))
         return {"task": task}
 
     def stream_message(self, payload: JsonMap, *, protocol_version: str | None = None) -> JsonMap:
         """Handle an A2A ``message:stream`` request as an immediate lifecycle stream."""
-        task = self._send_message_task(payload, protocol_version=protocol_version)
+        message, configuration = self._validated_send_inputs(payload)
+        scenario = resolve_scenario(message, configuration)
+        if scenario is ScenarioKind.MESSAGE_RESPONSE:
+            return build_direct_message_response(message)
+        if scenario is not None:
+            task = self._create_scenario_completed_task(message, scenario)
+            self._store_request_push_config(payload, task_id=str(task["id"]))
+            return {"task": task}
+        task = self._send_message_task(
+            payload,
+            protocol_version=protocol_version,
+            message=message,
+        )
         self._store_request_push_config(payload, task_id=str(task["id"]))
         return {"task": task}
+
+    def _validated_send_inputs(self, payload: JsonMap) -> tuple[JsonMap, JsonMap | None]:
+        """Validate the send envelope and return ``(message, configuration)``."""
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            raise a2a_errors.A2AValidationError("message must be an object")
+        if not message.get("messageId"):
+            raise a2a_errors.A2AValidationError("message.messageId is required")
+        if message.get("role") != "ROLE_USER":
+            raise a2a_errors.A2AValidationError("message.role must be ROLE_USER")
+        validate_message_parts(message.get("parts"))
+        validate_bridge_id(message.get("taskId"), field="taskId")
+        validate_bridge_id(message.get("contextId"), field="contextId")
+        configuration = payload.get("configuration")
+        if configuration is not None and not isinstance(configuration, dict):
+            raise a2a_errors.A2AValidationError("configuration must be an object")
+        return message, configuration if isinstance(configuration, dict) else None
+
+    def _create_scenario_completed_task(self, message: JsonMap, scenario: ScenarioKind) -> JsonMap:
+        """Persist a completed Task with the structured artifact for ``scenario``."""
+        with self._task_creation_lock:
+            self._gc_retained_tasks()
+            raw_task_id = message.get("taskId")
+            raw_context_id = message.get("contextId")
+            task_id = str(raw_task_id or uuid.uuid4())
+            context_id = str(raw_context_id or uuid.uuid4())
+            if raw_task_id is not None and self.store.get(task_id) is not None:
+                raise a2a_errors.A2AConflictError("message.taskId already exists")
+            target = resolve_target(message, default=self.target)
+            task = build_completed_task_with_artifact(
+                message,
+                kind=scenario,
+                task_id=task_id,
+                context_id=context_id,
+                target=target,
+                now=time.time(),
+            )
+            stored = self.store.put(task)
+            self._publish_task_update(stored, deliver_push=False)
+            return stored
 
     def _send_message_task(
         self,
         payload: JsonMap,
         *,
         protocol_version: str | None = None,
+        message: JsonMap | None = None,
     ) -> JsonMap:
-        """Validate a send payload and return the created task."""
+        """Validate a send payload and return the created working task."""
         with self._task_creation_lock:
-            message = payload.get("message")
-            if not isinstance(message, dict):
-                raise a2a_errors.A2AValidationError("message must be an object")
-            if not message.get("messageId"):
-                raise a2a_errors.A2AValidationError("message.messageId is required")
-            if message.get("role") != "ROLE_USER":
-                raise a2a_errors.A2AValidationError("message.role must be ROLE_USER")
-            validate_message_parts(message.get("parts"))
-            validate_bridge_id(message.get("taskId"), field="taskId")
-            validate_bridge_id(message.get("contextId"), field="contextId")
+            if message is None:
+                message, _configuration = self._validated_send_inputs(payload)
             task_id = message.get("taskId")
             existing = self.store.get(str(task_id)) if task_id is not None else None
             if protocol_version == "1.0" and task_id is not None:

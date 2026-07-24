@@ -140,7 +140,10 @@ def test_cli_host_port_writes_live_receipt(
 @pytest.mark.parametrize(
     ("arguments", "diagnostic"),
     [
-        (["--endpoint-url", "ftp://peer.example/a2a"], "supports http:// endpoints only"),
+        (
+            ["--endpoint-url", "ftp://peer.example/a2a"],
+            "supports http:// and https:// endpoints only",
+        ),
         # Windows often surfaces a closed loopback port as a short-timeout rather
         # than the POSIX "connection refused" wording; accept either form.
         (

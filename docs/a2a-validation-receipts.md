@@ -111,19 +111,28 @@ profile:
 The run closed wire timestamp, explicit version negotiation, AIP-193 error
 shape, HTTP media-type, unknown-task, continuation, and direct A2A 1.0 inline
 push-config defects found by the initial diagnostic. The five remaining
-failures are response-content scenarios: four require exact structured
-artifacts and one requires a direct Message response. The bridge instead
-returns a working Task and waits for a SYNAPSE identity; its current plain-chat
-correlation path cannot express every artifact variant.
+failures on that date were response-content scenarios: four require exact
+structured artifacts and one requires a direct Message response.
+
+**Update (2026-07-24):** the shipped bridge now implements those residual
+profiles on production `message:send` / JSON-RPC dispatch. Official TCK
+`messageId` prefixes (`tck-artifact-text-*`, `tck-artifact-file-*`,
+`tck-artifact-file-url-*`, `tck-artifact-data-*`, `tck-message-response-*`)
+and explicit `a2aScenario` metadata/configuration select immediate
+completed-Task-with-Artifact or direct Message responses. Ordinary chat
+sends still return an asynchronous working Task. In-repo residual tests
+exercise the real handlers; a re-run of the external TCK suite is optional
+evidence and is **not** claimed as full certification.
 
 The TCK loopback webhook is rejected by the production SSRF guard. Separate
 repository tests exercise authenticated HTTPS delivery, a real 307 redirect,
-and DNS-rebinding refusal under an explicit local-test policy. SYNAPSE also has
-no outbound A2A client/adapter yet, so an independent server pass remains a
-recorded product gap.
+and DNS-rebinding refusal under an explicit local-test policy. Native TLS
+`a2a-serve` plus dual `a2a-interop-trace` HTTPS runs are covered locally.
+SYNAPSE also has no outbound A2A client/adapter yet, so an independent
+external-server pass remains a recorded product gap.
 
-This upgrades the matrix with real official-SDK and official-TCK evidence, but
-it is **partial validation, not A2A certification or full conformance**.
+This upgrades the matrix with real official-SDK and official-TCK evidence plus
+in-repo residual scenario handlers, but it is still **partial validation, not A2A certification or full conformance**.
 
 ## How to contribute one
 

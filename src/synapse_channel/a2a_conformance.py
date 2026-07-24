@@ -99,10 +99,15 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
         item="Send Message",
         status="partial",
         synapse_surface="POST /message:send; JSON-RPC message/send",
-        evidence="Bridge task creation, metadata correlation, state persistence, and HTTP tests.",
+        evidence=(
+            "Bridge task creation, metadata correlation, state persistence, HTTP tests, "
+            "and residual TCK structured Message/Artifact scenario handlers."
+        ),
         limitation=(
-            "The bridge always returns a task wrapper immediately; it does not implement the "
-            "blocking-by-default direct Message response profile."
+            "Default sends still return an asynchronous working Task (SYNAPSE-forward). "
+            "Direct Message and completed structured-Artifact responses are supported for "
+            "named scenarios (official TCK messageId prefixes and explicit a2aScenario "
+            "metadata/configuration), not as the default for every ordinary chat send."
         ),
         spec_reference="A2A 1.0.0 §3.1.1 and §3.2.2",
     ),
@@ -189,11 +194,13 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
         synapse_surface="synapse a2a-serve",
         evidence=(
             "Official a2a-sdk 1.1.0 selected HTTP+JSON RestTransport and completed "
-            "discovery/send/get/list/cancel; official TCK 5996b79 exercises the binding."
+            "discovery/send/get/list/cancel; official TCK 5996b79 exercises the binding; "
+            "native HTTPS bind and independent HTTPS interop-trace are covered locally."
         ),
         limitation=(
-            "The TCK still exposes structured-response scenario gaps; external "
-            "reverse-proxy and TLS deployment validation remains open."
+            "In-repo residual structured Message/Artifact handlers close the five TCK "
+            "content scenarios; re-running the external TCK for a fresh receipt remains "
+            "optional evidence. Reverse-proxy production sign-off stays external."
         ),
         spec_reference="A2A 1.0.0 §11",
     ),
@@ -226,13 +233,15 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
         evidence=(
             "Official a2a-sdk 1.1.0 completed Agent Card discovery plus "
             "send/get/list/cancel over RestTransport; official A2A TCK 5996b79 "
-            "finished with 55 passed, 5 failed, and 175 skipped HTTP+JSON MUST tests; "
-            "the in-tree stdlib http.client independently records discovery/send/get."
+            "historically finished 55/5/175 on HTTP+JSON MUST; in-repo residual "
+            "handlers and dual HTTPS interop-trace runs cover structured "
+            "Message/Artifact scenarios and native TLS discovery/send/get; "
+            "stdlib http.client records discovery/send/get over http and https."
         ),
         limitation=(
-            "This is partial validation, not certification: structured artifact/direct "
-            "Message scenarios, an outbound external-server pass, public webhook, "
-            "proxy/TLS, and durable-history receipts remain open."
+            "This is partial validation, not certification: an outbound external-server "
+            "pass, public webhook, reverse-proxy production sign-off, and durable-history "
+            "replay receipts remain open. A fresh official TCK re-run is optional evidence."
         ),
         spec_reference="A2A 1.0.0 goals and operation model",
     ),

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import ssl
 import time
 import uuid
 from collections.abc import Mapping
@@ -53,8 +54,10 @@ def _request(
     headers: Mapping[str, str] | None = None,
     token: str | None = None,
     timeout: float = 5.0,
+    scheme: str = "http",
+    ssl_context: ssl.SSLContext | None = None,
 ) -> tuple[int, dict[str, Any] | str]:
-    """Issue one HTTP request and return status plus JSON or text body."""
+    """Issue one HTTP(S) request and return status plus JSON or text body."""
     payload = b""
     req_headers = {"Accept": "application/json", **dict(headers or {})}
     if body is not None:
@@ -63,7 +66,14 @@ def _request(
         req_headers["Content-Length"] = str(len(payload))
     if token:
         req_headers["Authorization"] = f"Bearer {token}"
-    conn = http.client.HTTPConnection(host, port, timeout=timeout)
+    use_tls = scheme == "https"
+    if use_tls:
+        context = ssl_context if ssl_context is not None else ssl.create_default_context()
+        conn: http.client.HTTPConnection = http.client.HTTPSConnection(
+            host, port, timeout=timeout, context=context
+        )
+    else:
+        conn = http.client.HTTPConnection(host, port, timeout=timeout)
     try:
         conn.request(method, path, body=payload, headers=req_headers)
         response = conn.getresponse()
@@ -79,26 +89,37 @@ def _request(
         return status, raw.decode("utf-8", errors="replace")
 
 
-def parse_endpoint(url: str) -> tuple[str, int, str]:
-    """Return ``(host, port, path_prefix)`` from an absolute HTTP endpoint URL.
+def parse_endpoint(url: str) -> tuple[str, str, int, str]:
+    """Return ``(scheme, host, port, path_prefix)`` from an absolute endpoint URL.
 
     Parameters
     ----------
     url : str
-        Absolute ``http://`` URL of the bridge root (e.g. ``http://127.0.0.1:8877``).
+        Absolute ``http://`` or ``https://`` URL of the bridge root
+        (e.g. ``https://127.0.0.1:8877``).
 
     Returns
     -------
-    tuple[str, int, str]
-        Host, port, and optional path prefix (empty when the URL is the origin).
+    tuple[str, str, int, str]
+        Scheme (``http`` or ``https``), host, port, and optional path prefix
+        (empty when the URL is the origin).
+
+    Raises
+    ------
+    ValueError
+        When the URL scheme is not HTTP or HTTPS.
     """
     parsed = urlparse(url)
-    if parsed.scheme not in {"http", ""}:
-        raise ValueError(f"a2a interop trace supports http:// endpoints only, got {url!r}")
+    scheme = (parsed.scheme or "http").lower()
+    if scheme not in {"http", "https"}:
+        raise ValueError(
+            f"a2a interop trace supports http:// and https:// endpoints only, got {url!r}"
+        )
     host = parsed.hostname or "127.0.0.1"
-    port = int(parsed.port or 80)
+    default_port = 443 if scheme == "https" else 80
+    port = int(parsed.port or default_port)
     prefix = (parsed.path or "").rstrip("/")
-    return host, port, prefix
+    return scheme, host, port, prefix
 
 
 def run_local_interop_trace(
@@ -109,6 +130,10 @@ def run_local_interop_trace(
     token: str | None = None,
     message_text: str = "synapse interop probe",
     timeout: float = 5.0,
+    scheme: str = "http",
+    ssl_context: ssl.SSLContext | None = None,
+    ca_file: str | Path | None = None,
+    tls_insecure: bool = False,
 ) -> dict[str, Any]:
     """Exercise discovery + message send + task get as an independent client.
 
@@ -124,6 +149,15 @@ def run_local_interop_trace(
         Text part sent via ``POST /message:send``.
     timeout : float, optional
         Per-request timeout in seconds.
+    scheme : str, optional
+        ``http`` (default) or ``https`` for native TLS bridges.
+    ssl_context : ssl.SSLContext or None, optional
+        Explicit TLS context. When omitted and ``scheme`` is ``https``, a
+        default context is built from ``ca_file`` / ``tls_insecure``.
+    ca_file : str or pathlib.Path or None, optional
+        PEM trust anchor for server certificate verification.
+    tls_insecure : bool, optional
+        When true, skip certificate verification (local self-signed drills only).
 
     Returns
     -------
@@ -134,14 +168,36 @@ def run_local_interop_trace(
     ------
     A2AInteropTraceError
         When a step fails (non-OK status or missing fields).
+    ValueError
+        When ``scheme`` is not ``http`` or ``https``.
     """
+    normalised_scheme = scheme.lower().strip() or "http"
+    if normalised_scheme not in {"http", "https"}:
+        raise ValueError(f"unsupported interop scheme: {scheme!r}")
+    context = ssl_context
+    if normalised_scheme == "https" and context is None:
+        context = ssl.create_default_context()
+        if tls_insecure:
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+        elif ca_file is not None:
+            context.load_verify_locations(cafile=str(ca_file))
     prefix = path_prefix.rstrip("/")
     started = time.time()
     if prefix:
         card_path = f"{prefix}/.well-known/agent-card.json"
     else:
         card_path = "/.well-known/agent-card.json"
-    status, card = _request(host, port, "GET", card_path, token=None, timeout=timeout)
+    status, card = _request(
+        host,
+        port,
+        "GET",
+        card_path,
+        token=None,
+        timeout=timeout,
+        scheme=normalised_scheme,
+        ssl_context=context,
+    )
     if status != 200 or not isinstance(card, dict):
         raise A2AInteropTraceError(f"discovery failed: HTTP {status} body={card!r}")
 
@@ -155,7 +211,15 @@ def run_local_interop_trace(
     }
     send_path = f"{prefix}/message:send" if prefix else "/message:send"
     status, send_result = _request(
-        host, port, "POST", send_path, body=send_body, token=token, timeout=timeout
+        host,
+        port,
+        "POST",
+        send_path,
+        body=send_body,
+        token=token,
+        timeout=timeout,
+        scheme=normalised_scheme,
+        ssl_context=context,
     )
     if status != 200 or not isinstance(send_result, dict):
         raise A2AInteropTraceError(f"message:send failed: HTTP {status} body={send_result!r}")
@@ -164,9 +228,45 @@ def run_local_interop_trace(
         raise A2AInteropTraceError(f"message:send missing task id: {send_result!r}")
     task_id = str(task["id"])
     state = str((task.get("status") or {}).get("state") or "")
+    # Message body must survive the round-trip (not merely HTTP 200).
+    send_history = task.get("history")
+    history_texts: list[str] = []
+    if isinstance(send_history, list):
+        for item in send_history:
+            if not isinstance(item, dict):
+                continue
+            for part in item.get("parts") or []:
+                if isinstance(part, dict) and part.get("text"):
+                    history_texts.append(str(part["text"]))
+    if message_text not in history_texts:
+        # Status message may carry the user part when history is projected later.
+        status_message = (
+            (task.get("status") or {}).get("message")
+            if isinstance(task.get("status"), dict)
+            else None
+        )
+        status_parts = status_message.get("parts") if isinstance(status_message, dict) else None
+        status_texts = [
+            str(part["text"])
+            for part in (status_parts or [])
+            if isinstance(part, dict) and part.get("text")
+        ]
+        if message_text not in status_texts and message_text not in history_texts:
+            raise A2AInteropTraceError(
+                f"message:send task missing sent text {message_text!r} in history/status"
+            )
 
     get_path = f"{prefix}/tasks/{task_id}" if prefix else f"/tasks/{task_id}"
-    status, got = _request(host, port, "GET", get_path, token=token, timeout=timeout)
+    status, got = _request(
+        host,
+        port,
+        "GET",
+        get_path,
+        token=token,
+        timeout=timeout,
+        scheme=normalised_scheme,
+        ssl_context=context,
+    )
     if status != 200 or not isinstance(got, dict):
         raise A2AInteropTraceError(f"GET task failed: HTTP {status} body={got!r}")
     got_id = str(got.get("id") or (got.get("task") or {}).get("id") or "")
@@ -174,12 +274,27 @@ def run_local_interop_trace(
         raise A2AInteropTraceError(f"task id mismatch: sent {task_id!r} got {got_id!r}")
 
     finished = time.time()
+    tls_dimension = "recorded" if normalised_scheme == "https" else "not_exercised"
+    limitations = [
+        "Local independent HTTP+JSON client only; not a third-party A2A SDK.",
+        "Webhook and durable-history replay receipts remain external.",
+    ]
+    if normalised_scheme == "http":
+        limitations.append(
+            "Plaintext HTTP path only; use scheme=https against native TLS serve for TLS receipts."
+        )
     return {
         "schema": RECEIPT_SCHEMA,
         "generated_at": finished,
         "duration_seconds": round(finished - started, 3),
         "client": {"name": CLIENT_NAME, "version": CLIENT_VERSION, "stack": "http.client"},
-        "endpoint": {"host": host, "port": port, "path_prefix": prefix or "/"},
+        "endpoint": {
+            "scheme": normalised_scheme,
+            "host": host,
+            "port": port,
+            "path_prefix": prefix or "/",
+            "url": f"{normalised_scheme}://{host}:{port}{prefix or ''}",
+        },
         "auth_mode": "bearer" if token else "none",
         "discovery": {
             "path": card_path,
@@ -187,10 +302,12 @@ def run_local_interop_trace(
             "agent_card_name": str(card.get("name") or ""),
             "protocol_binding": _first_binding(card),
             "version": str(card.get("version") or ""),
+            "url_scheme": normalised_scheme,
         },
         "task_lifecycle": {
             "message_id": message_id,
             "task_id": task_id,
+            "message_text": message_text,
             "send_http_status": 200,
             "observed_state_after_send": state,
             "get_http_status": 200,
@@ -200,14 +317,11 @@ def run_local_interop_trace(
             "discovery": "recorded",
             "task_lifecycle": "recorded",
             "webhook": "not_exercised",
-            "proxy_tls": "not_exercised",
+            "proxy_tls": tls_dimension,
             "replay_subscription": "not_exercised",
             "threat_model": "not_exercised",
         },
-        "limitations": [
-            "Local independent HTTP+JSON client only; not a third-party A2A SDK.",
-            "Webhook, proxy/TLS, and durable-history replay receipts remain external.",
-        ],
+        "limitations": limitations,
     }
 
 

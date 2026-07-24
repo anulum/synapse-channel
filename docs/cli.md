@@ -32,7 +32,7 @@ everything, since they need the whole command table.
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-conformance` | Print the local Agent2Agent conformance matrix. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
-| `synapse a2a-interop-trace` | Run an independent stdlib HTTP client against a live `a2a-serve` bridge and emit a discovery + task-lifecycle interop receipt. |
+| `synapse a2a-interop-trace` | Run an independent stdlib HTTP(S) client against a live `a2a-serve` bridge and emit a discovery + task-lifecycle interop receipt. |
 | `synapse channel` | Manage private-channel membership and member-visible history; pair with `synapse send --channel`. |
 | `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |
 | `synapse sqlcipher` | SQLCipher page-encryption ops for the hub event store: `rekey` via PRAGMA rekey, `migrate` plaintext → encrypted. |
@@ -2055,11 +2055,13 @@ Unsupported or externally gated:
 
 - Independent evidence includes an official `a2a-sdk==1.1.0`
   discovery/send/get/list/cancel lifecycle and an official A2A TCK HTTP+JSON
-  MUST run (55 passed, 5 structured-response failures, 175 skipped). This is
+  MUST run (historically 55 passed, 5 structured-response failures, 175
+  skipped). Residual structured Message/Artifact scenarios are now answered by
+  shipped handlers (TCK messageId prefixes / `a2aScenario`). This remains
   partial validation, not certification or full conformance.
-- Structured artifact/direct Message scenarios, an outbound external-server
-  pass, remote public webhook and proxy/TLS receipts, durable replay, and
-  operator deployment sign-off remain open.
+- An outbound external-server pass, remote public webhook and reverse-proxy
+  production receipts, durable replay, and operator deployment sign-off remain
+  open. Native HTTPS bind + dual interop-trace runs are covered in-repo.
 - `synapse a2a-conformance` is the live local matrix for those supported,
   partial, unsupported, and external rows.
 - Exposed A2A bridge deployments should follow the

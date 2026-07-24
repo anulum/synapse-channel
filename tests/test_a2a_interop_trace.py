@@ -39,10 +39,19 @@ def _serve_bridge(bridge: A2ABridge) -> tuple[ThreadingHTTPServer, int, threadin
 
 
 def test_parse_endpoint_accepts_http_url() -> None:
-    host, port, prefix = parse_endpoint("http://127.0.0.1:8877/a2a")
+    scheme, host, port, prefix = parse_endpoint("http://127.0.0.1:8877/a2a")
+    assert scheme == "http"
     assert host == "127.0.0.1"
     assert port == 8877
     assert prefix == "/a2a"
+
+
+def test_parse_endpoint_accepts_https_url() -> None:
+    scheme, host, port, prefix = parse_endpoint("https://127.0.0.1:9443")
+    assert scheme == "https"
+    assert host == "127.0.0.1"
+    assert port == 9443
+    assert prefix == ""
 
 
 def test_local_interop_trace_against_live_bridge(tmp_path: Path) -> None:

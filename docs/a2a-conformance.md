@@ -61,13 +61,23 @@ Card and completed send, get, list, and cancel. The official TCK at
 `5996b79` (A2A specification commit `1736957`) finished its HTTP+JSON MUST
 run with 55 passed, 5 failed, and 175 skipped pytest cases; all Agent Card,
 wire timestamp, version-negotiation, media-type, AIP-193 error, and unknown-task
-checks exercised by the run passed. The five failures require structured
-artifact or direct Message responses that the asynchronous plain-chat bridge
-does not currently express.
+checks exercised by the run passed. The five residual failures were
+response-content scenarios (four structured artifacts + one direct Message).
 
-The in-tree `synapse a2a-interop-trace` still provides a deterministic second
-client stack for discovery, `message:send`, and `GET /tasks/{id}`. These
-receipts are not certification or full conformance. An outbound external-server
-pass, public webhook, proxy/TLS, durable-history, and production operator
-receipts remain open — record them with
+The bridge now answers those residual scenarios on the shipped
+`message:send` path when the request matches official TCK `messageId`
+prefixes (`tck-artifact-text-*`, `tck-artifact-file-*`,
+`tck-artifact-file-url-*`, `tck-artifact-data-*`, `tck-message-response-*`)
+or an explicit `a2aScenario` / `synapseScenario` metadata or configuration
+value. Ordinary chat sends still return an asynchronous working Task and
+forward into SYNAPSE. A fresh official TCK re-run is optional evidence —
+these claims rest on in-repo residual tests of production dispatch.
+
+The in-tree `synapse a2a-interop-trace` provides a deterministic second
+client stack for discovery, `message:send`, and `GET /tasks/{id}` over
+**HTTP and HTTPS** (native TLS via `a2a-serve --tls-certfile` /
+`--tls-keyfile`, with `--ca-file` or `--tls-insecure` on the client). These
+receipts are not certification or full conformance. An outbound
+external-server pass, public webhook, reverse-proxy production sign-off,
+durable-history, and operator receipts remain open — record them with
 [A2A bridge validation receipts](a2a-validation-receipts.md).

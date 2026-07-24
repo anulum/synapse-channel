@@ -123,12 +123,13 @@ class HandlerHarness:
         *,
         body: dict[str, Any] | bytes | None = None,
         headers: dict[str, str] | None = None,
+        bridge: Any | None = None,
     ) -> None:
         self.method = method
         self.path = path
         self.body = body
         self.headers = headers or {}
-        self.handler = BridgeRef(_default_bridge())
+        self.handler = BridgeRef(bridge if bridge is not None else _default_bridge())
 
     def run(self) -> tuple[int, dict[str, Any]]:
         """Run the configured request and return HTTP status plus decoded body."""
