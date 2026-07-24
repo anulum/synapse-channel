@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- `synapse a2a-serve` now refuses a non-loopback bind that enables
+  `--bearer-auth` over plaintext HTTP (hub R4 parity). The bearer and
+  protected A2A traffic would otherwise ride the LAN in the clear. Prefer a
+  loopback bind behind a TLS-terminating reverse proxy;
+  `--insecure-off-loopback` remains the single explicit override for both the
+  unauthenticated and plaintext-bearer off-loopback postures. Pure bind
+  matrix lives in `a2a_bind_exposure.a2a_bind_problems`.
+
 ## [0.99.13] - 2026-07-24
 
 ### Security

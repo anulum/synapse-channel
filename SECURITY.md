@@ -142,7 +142,12 @@ When that boundary is crossed, the proportionate controls are:
   defaults to `127.0.0.1`. Its public Agent Card is intentionally readable; the
   task, RPC, extended-card, and push-configuration routes can require HTTP
   Bearer auth with `--bearer-auth --a2a-token`, with bearer values compared in
-  constant time. Request bodies are capped by byte size and JSON nesting depth
+  constant time. A non-loopback bind without bearer auth is refused; a
+  non-loopback bind *with* bearer auth over plaintext HTTP is also refused so the
+  token never rides the LAN in the clear by default (hub R4 parity). Prefer a
+  loopback bind behind a TLS-terminating reverse proxy;
+  `--insecure-off-loopback` downgrades either refuse to a warning on a trusted
+  private network. Request bodies are capped by byte size and JSON nesting depth
   before A2A dispatch. Persisted A2A state files and write temp files are
   restricted to owner-only permissions. Webhook delivery resolves each
   target once and pins the connection to that validated address, so a DNS name

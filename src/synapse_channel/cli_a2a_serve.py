@@ -16,6 +16,7 @@ from collections.abc import Callable
 from typing import Any
 
 from synapse_channel.a2a import agent_card_from_manifest
+from synapse_channel.a2a_bind_exposure import a2a_bind_problems
 from synapse_channel.a2a_http import serve_a2a_http
 from synapse_channel.a2a_http_protocol import endpoint_authorities, normalise_origin
 from synapse_channel.a2a_server import A2ABridge, SynapseAgentRuntime
@@ -30,7 +31,6 @@ from synapse_channel.cli_a2a_types import (
     StoreFactory,
 )
 from synapse_channel.client.agent import SynapseAgent
-from synapse_channel.core.hub import is_loopback_host
 from synapse_channel.core.protocol import MessageType
 
 
@@ -103,20 +103,25 @@ def _cmd_a2a_serve(
             file=sys.stderr,
         )
         return 2
-    if not is_loopback_host(args.host) and not args.bearer_auth:
+    # A2A serve is currently HTTP-only (stdlib edge); tls_active stays False
+    # until a native TLS bind path exists. Operators who terminate TLS at a
+    # reverse proxy should bind the bridge on loopback, not off-loopback with
+    # a cleartext bearer. --insecure-off-loopback acknowledges residual risk.
+    bind_problems = a2a_bind_problems(
+        args.host,
+        bearer_auth=bool(args.bearer_auth),
+        tls_active=False,
+    )
+    if bind_problems:
         if not args.insecure_off_loopback:
+            joined = "; ".join(bind_problems)
             print(
-                f"[{args.name}] Refusing to bind A2A bridge to non-loopback host "
-                f"{args.host!r} without --bearer-auth and --a2a-token. Pass "
-                "--insecure-off-loopback to bind anyway.",
+                f"[{args.name}] Refusing to bind A2A bridge: {joined}.",
                 file=sys.stderr,
             )
             return 2
-        print(
-            f"[{args.name}] WARNING: binding A2A bridge to non-loopback host "
-            f"{args.host!r} without bearer authentication.",
-            file=sys.stderr,
-        )
+        for problem in bind_problems:
+            print(f"[{args.name}] WARNING: {problem}.", file=sys.stderr)
     manifest = async_runner(
         manifest_fetcher(uri=args.uri, name=f"{args.name}-manifest", token=args.token)
     )

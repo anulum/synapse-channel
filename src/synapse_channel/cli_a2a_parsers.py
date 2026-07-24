@@ -93,7 +93,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     serve.add_argument(
         "--insecure-off-loopback",
         action="store_true",
-        help="Allow a non-loopback A2A bind without bearer authentication.",
+        help=(
+            "Allow a non-loopback A2A bind without bearer authentication, or "
+            "with bearer authentication over plaintext HTTP. Default refuses "
+            "both postures; use only on a trusted private network."
+        ),
     )
     serve.add_argument(
         "--state-file",

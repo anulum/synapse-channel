@@ -1968,6 +1968,23 @@ Operational boundaries:
 
 - Bearer auth is opt-in with `--bearer-auth --a2a-token "$A2A_TOKEN"` and applies
   to protected bridge routes. The public Agent Card remains public discovery.
+- Bind exposure (hub R4 parity for the HTTP edge): the bridge defaults to
+  loopback (`127.0.0.1`). A non-loopback host is **refused** without bearer
+  auth, and a non-loopback host **with** bearer auth is also **refused** while
+  the bridge listens on plaintext HTTP so the bearer never rides the LAN in
+  the clear by default. Prefer a loopback bind behind a TLS-terminating reverse
+  proxy (see the [A2A deployment threat model](a2a-deployment-threat-model.md)).
+  `--insecure-off-loopback` downgrades either refusal to a warning for a trusted
+  private network; it is not a production deployment mode. The bind matrix:
+
+  | Host | Bearer | TLS / override | Result |
+  | --- | --- | --- | --- |
+  | loopback | no or yes | — | allow |
+  | non-loopback | no | no override | **refuse** |
+  | non-loopback | no | `--insecure-off-loopback` | warn + allow |
+  | non-loopback | yes | plaintext HTTP, no override | **refuse** |
+  | non-loopback | yes | `--insecure-off-loopback` | warn + allow |
+
 - `--allow-origin ORIGIN` is opt-in browser hardening: restrict requests to the
   exact concrete web origins your browser UI serves from
   (`scheme://host[:port]`; repeat for several). Opaque `null` origins are

@@ -317,7 +317,32 @@ def test_cmd_a2a_serve_refuses_unauthenticated_off_loopback(
     )
 
     assert cli_a2a._cmd_a2a_serve(ns) == 2
-    assert "Refusing to bind A2A bridge" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "Refusing to bind A2A bridge" in err
+    assert "without --bearer-auth" in err
+
+
+def test_cmd_a2a_serve_refuses_plaintext_bearer_off_loopback(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """R4 parity: bearer over cleartext HTTP off loopback is refuse, not allow."""
+    ns = cli.build_parser().parse_args(
+        [
+            "a2a-serve",
+            "--endpoint-url",
+            "https://example.test/a2a/v1",
+            "--host",
+            "0.0.0.0",
+            "--bearer-auth",
+            "--a2a-token",
+            "a2a-secret",
+        ]
+    )
+
+    assert cli_a2a._cmd_a2a_serve(ns) == 2
+    err = capsys.readouterr().err
+    assert "Refusing to bind A2A bridge" in err
+    assert "plaintext HTTP" in err
 
 
 def test_cmd_a2a_serve_warns_when_off_loopback_override_is_explicit(
@@ -339,7 +364,37 @@ def test_cmd_a2a_serve_warns_when_off_loopback_override_is_explicit(
 
     assert cli_a2a._cmd_a2a_serve(ns, manifest_fetcher=unavailable) == 1
     captured = capsys.readouterr()
-    assert "WARNING: binding A2A bridge" in captured.err
+    assert "WARNING:" in captured.err
+    assert "without --bearer-auth" in captured.err
+    assert "Could not reach hub" in captured.err
+
+
+def test_cmd_a2a_serve_warns_when_plaintext_bearer_override_is_explicit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Explicit --insecure-off-loopback downgrades plaintext-bearer refuse to warn."""
+
+    async def unavailable(**_: Any) -> None:
+        return None
+
+    ns = cli.build_parser().parse_args(
+        [
+            "a2a-serve",
+            "--endpoint-url",
+            "https://example.test/a2a/v1",
+            "--host",
+            "0.0.0.0",
+            "--bearer-auth",
+            "--a2a-token",
+            "a2a-secret",
+            "--insecure-off-loopback",
+        ]
+    )
+
+    assert cli_a2a._cmd_a2a_serve(ns, manifest_fetcher=unavailable) == 1
+    captured = capsys.readouterr()
+    assert "WARNING:" in captured.err
+    assert "plaintext HTTP" in captured.err
     assert "Could not reach hub" in captured.err
 
 

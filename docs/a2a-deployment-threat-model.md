@@ -37,7 +37,7 @@ Out of scope:
 
 | Asset | Why it matters | Required handling |
 | --- | --- | --- |
-| A2A bearer token | Protects task, RPC, extended-card, and push-config routes. | Enable `--bearer-auth --a2a-token` before any non-loopback exposure. |
+| A2A bearer token | Protects task, RPC, extended-card, and push-config routes. | Enable `--bearer-auth --a2a-token` and keep the process on loopback behind TLS (or pass `--insecure-off-loopback` only when accepting cleartext bearer traffic). |
 | Hub token | Lets the bridge connect to a secured Synapse hub. | Pass with `--token`; do not expose it through proxy logs or shell history. |
 | Task payloads and artifacts | May carry operator or agent data. | Keep bridge state local, bounded, and owner-readable only. |
 | A2A state file | Persists task and push-config state across restart. | Store it on a local trusted filesystem; rely on owner-only temp/state writes. |
@@ -48,7 +48,7 @@ Out of scope:
 
 | Boundary | Main risk | Shipped control | Operator duty |
 | --- | --- | --- | --- |
-| A2A client -> reverse proxy -> bridge | Untrusted clients submit task or push-config requests. | Non-loopback bind refuses to start without bearer auth unless `--insecure-off-loopback` is set. | Terminate TLS at the proxy or bind natively with TLS; require bearer auth for protected routes. |
+| A2A client -> reverse proxy -> bridge | Untrusted clients submit task or push-config requests. | Non-loopback bind refuses without bearer auth; non-loopback bind with bearer over plaintext HTTP also refuses unless `--insecure-off-loopback` is set (hub R4 parity). | Terminate TLS at the proxy and bind the bridge on loopback; require bearer auth for protected routes. |
 | Bridge -> Synapse hub | Bridge forwards task text/data/file parts into Synapse chat. | Bridge uses the configured hub URI and optional hub token. | Point the bridge only at the intended hub and target. |
 | Bridge -> webhook receiver | A client can configure outbound webhook targets. | Delivery resolves each target once and pins the connection to that validated address (no re-resolve between check and connect), admits only globally routable destinations — rejecting loopback, private, link-local, carrier-grade NAT, multicast, reserved, and unspecified addresses including IPv4-mapped IPv6 — applies the same policy to redirect targets, ignores environment proxies, and bounds the discarded response body. | Permit only receiver domains that match the deployment policy; review redirects. |
 | Bridge -> local filesystem | State persistence can leak task metadata if permissions are loose. | A2A state and temp files are owner-only and writes replace atomically. | Place `--state-file` on a trusted local disk, not a shared web root. |
@@ -73,10 +73,12 @@ synapse a2a-serve \
   --subscribe-timeout 10
 ```
 
-Put a TLS-terminating reverse proxy in front of the loopback bridge, or bind the
-bridge on a private interface only when the surrounding host firewall and proxy
-policy require it. Do not use `--insecure-off-loopback` for a shared or public
-deployment; it exists only as an explicit local override.
+Put a TLS-terminating reverse proxy in front of the loopback bridge. Binding the
+bridge on a private non-loopback interface with `--bearer-auth` still presents
+the bearer over plaintext HTTP to that interface, so the process refuses that
+posture unless you pass `--insecure-off-loopback`. Do not use that override for a
+shared or public deployment; it exists only as an explicit local risk acceptance
+(same flag semantics as the hub's plaintext-token refuse).
 
 When a browser-based operator UI calls the bridge, add `--allow-origin` for each
 exact concrete web origin that UI serves from (`scheme://host[:port]`). Opaque
