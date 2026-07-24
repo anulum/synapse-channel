@@ -451,11 +451,14 @@ def test_fetch_writes_the_bundle_and_prints_the_same_fingerprints(
     peer = decode_federation_offer(_material())
     assert peer_from_dict(json.loads(out_file.read_text(encoding="utf-8"))) == peer
     out = capsys.readouterr().out
+    from synapse_channel.terminal_text import shell_command_arg
+
     assert f"bundle fingerprint: {bundle_fingerprint(peer)}" in out
     assert "NOT imported" in out
     assert "synapse federation import --confirmed-by='<operator>'" in out
     assert f"--source='{uri}'" in out
-    assert f"-- '{out_file}'" in out
+    # Copyable import argv uses shell_command_arg (Path.as_posix on Windows).
+    assert f"-- {shell_command_arg(out_file)}" in out
     assert captured["uri"] == uri
     assert captured["local_id"] == "federation-fetch"
     assert captured["token"] is None

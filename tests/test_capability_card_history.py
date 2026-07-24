@@ -384,6 +384,10 @@ def test_creation_and_owner_validation_fail_before_sqlite_opens(
 
     path = tmp_path / "history.db"
     _history(path)
+    # Owner-uid enforcement is a POSIX surface (geteuid + st_uid). Windows uses
+    # the NT DACL owner-only floor instead; there is no geteuid to monkeypatch.
+    if not hasattr(os, "geteuid"):
+        return
     monkeypatch.setattr(os, "geteuid", lambda: path.stat().st_uid + 1)
     with pytest.raises(CapabilityCardTrustError, match="owned by the current user"):
         _history(path)

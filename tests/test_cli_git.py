@@ -550,6 +550,12 @@ def test_cmd_git_init_installs_services(
         assert "Traceback" not in captured_io.out + captured_io.err
         assert_no_git_init_mutation()
 
+    # systemd unit install requires a POSIX absolute token without backslashes.
+    # Windows PATH resolution always yields drive-letter paths the validator
+    # correctly refuses; the happy path is Linux-only.
+    if os.name != "posix":
+        return
+
     code = cli.main(["git-init", "--install-user-services"])
     captured_io = capsys.readouterr()
     assert code == 0
