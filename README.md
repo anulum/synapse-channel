@@ -1510,15 +1510,15 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.13 |
 | Public API exports | 70 |
-| Package modules | 517 |
-| Classes | 752 |
+| Package modules | 520 |
+| Classes | 757 |
 | Wire message types | 80 |
-| CLI subcommands | 182 |
-| Test functions | 8876 |
+| CLI subcommands | 183 |
+| Test functions | 8889 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 61 |
 | GitHub Actions workflows | 25 |
-| Optional-dependency groups | 13 |
+| Optional-dependency groups | 14 |
 
 This snapshot is a static inventory generated from the source tree. Performance and coverage claims have their own committed evidence — see `VALIDATION.md` and `benchmarks/`.
 <!-- capability-snapshot:end -->
