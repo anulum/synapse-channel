@@ -248,7 +248,12 @@ def _stop_group(proc: subprocess.Popen[str]) -> None:
     ``synapse team`` starts its hub (and any workers) as children in the session
     it leads, so signalling only the parent would orphan them; this signals the
     group so the hub's port is released before the next journey binds one.
+
+    Windows has no ``getpgid``/``killpg``; fall back to single-process stop.
     """
+    if not hasattr(os, "getpgid") or not hasattr(os, "killpg"):
+        _stop(proc)
+        return
     try:
         group = os.getpgid(proc.pid)
     except ProcessLookupError:

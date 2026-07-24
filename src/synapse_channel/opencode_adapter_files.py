@@ -211,7 +211,17 @@ def _assert_current(path: Path, snapshot: FileSnapshot) -> None:
 
 
 def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    """Durably flush directory metadata when the platform supports it.
+
+    Windows refuses ``os.open`` on directories, so directory fsync is skipped
+    after the file itself has already been fsynced.
+    """
+    if os.name == "nt" or not hasattr(os, "O_DIRECTORY"):
+        return
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    except OSError:
+        return
     try:
         os.fsync(descriptor)
     finally:

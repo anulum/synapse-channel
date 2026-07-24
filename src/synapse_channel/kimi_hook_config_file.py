@@ -199,8 +199,19 @@ def _assert_snapshot_current(path: Path, snapshot: ConfigSnapshot) -> None:
 
 
 def _fsync_directory(directory: Path) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    descriptor = os.open(directory, flags)
+    """Durably flush directory metadata when the platform supports it.
+
+    Windows refuses ``os.open`` on directories (PermissionError / errno 13), so
+    directory fsync is skipped there after the file itself has already been
+    fsynced. On POSIX, keep the O_DIRECTORY + fsync durability path.
+    """
+    if os.name == "nt" or not hasattr(os, "O_DIRECTORY"):
+        return
+    flags = os.O_RDONLY | os.O_DIRECTORY
+    try:
+        descriptor = os.open(directory, flags)
+    except OSError:
+        return
     try:
         os.fsync(descriptor)
     finally:

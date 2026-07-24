@@ -188,16 +188,22 @@ def validate_systemd_executable(value: str) -> str:
             "synapse executable path must not start with a systemd ExecStart control "
             f"prefix ({prefixes})"
         )
-    if Path(value).is_absolute():
+    # systemd units always use POSIX absolute paths. On Windows,
+    # Path("/bin/synapse").is_absolute() is False, so also treat leading "/" as
+    # absolute (validators run on every OS; units only deploy on Linux).
+    is_absolute = Path(value).is_absolute() or value.startswith("/")
+    if is_absolute:
         encoded = value.encode("utf-8")
+        components = value.replace("\\", "/").split("/")
         oversized_component = any(
             len(component.encode("utf-8")) > _SYSTEMD_SIMPLE_NAME_MAX_BYTES
-            for component in value.split("/")
+            for component in components
+            if component not in ("",)
         )
         if (
             len(encoded) >= _SYSTEMD_PATH_MAX_BYTES
             or oversized_component
-            or value.endswith(("/", "/.", "/.."))
+            or value.endswith(("/", "/.", "/..", "\\", "\\.", "\\.."))
         ):
             raise ValueError(
                 "synapse executable absolute path must not imply a directory, must keep "
@@ -205,6 +211,7 @@ def validate_systemd_executable(value: str) -> str:
             )
     elif (
         "/" in value
+        or "\\" in value
         or value in _SYSTEMD_INVALID_SIMPLE_EXECUTABLES
         or len(value.encode("utf-8")) > _SYSTEMD_SIMPLE_NAME_MAX_BYTES
     ):

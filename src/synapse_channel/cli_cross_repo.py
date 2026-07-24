@@ -102,9 +102,11 @@ def run_notify_command(command: str, added: list[str], removed: list[str], root:
         + "\n"
     )
     try:
-        # posix=False on Windows so backslashes in interpreter paths are literal;
-        # default posix=True treats ``\`` as escapes and yields WinError 2.
-        argv = shlex.split(command, posix=os.name != "nt")
+        # On Windows, normalise ``\`` to ``/`` before POSIX shlex so drive paths
+        # stay intact (posix=True would eat backslashes; posix=False keeps quotes
+        # inside -c payloads). CreateProcess accepts forward-slash paths.
+        to_split = command.replace("\\", "/") if os.name == "nt" else command
+        argv = shlex.split(to_split, posix=True)
         completed = subprocess.run(  # nosec B603
             argv,
             input=summary,
