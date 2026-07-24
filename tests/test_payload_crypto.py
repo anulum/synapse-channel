@@ -125,11 +125,7 @@ def test_payload_key_file_loader_rejects_unsafe_paths(
 
     directory = tmp_path / "key-dir"
     directory.mkdir(mode=0o700)
-    # Windows may report owner-only failure or non-regular/open denial for dirs.
-    assert any(
-        token in _error(lambda: load_payload_key(directory))
-        for token in ("not a regular file", "owner-only", "Permission denied", "cannot")
-    )
+    assert "not a regular file" in _error(lambda: load_payload_key(directory))
 
     if hasattr(os, "geteuid") and os.name == "posix":
         monkeypatch.setattr(os, "geteuid", lambda: -1)

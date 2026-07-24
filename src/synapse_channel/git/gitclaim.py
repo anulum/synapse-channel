@@ -83,6 +83,8 @@ def _default_git_runner(args: list[str]) -> str:
             [git, *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
             check=True,
         )
     except FileNotFoundError as exc:
@@ -90,7 +92,8 @@ def _default_git_runner(args: list[str]) -> str:
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or "").strip() or f"git {' '.join(args)} exited non-zero"
         raise GitError(detail) from exc
-    return result.stdout.rstrip("\r\n")
+    stdout = result.stdout if result.stdout is not None else ""
+    return stdout.rstrip("\r\n")
 
 
 def resolve_branch(*, runner: GitRunner = _default_git_runner) -> str:

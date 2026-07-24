@@ -103,6 +103,8 @@ def load_payload_key(path: str | Path) -> bytes:
     # path first on every platform (Windows open would otherwise follow).
     if target.is_symlink():
         raise PayloadCryptoError(f"payload key file must not be a symlink: {target}")
+    if target.exists() and not target.is_file():
+        raise PayloadCryptoError(f"payload key file is not a regular file: {target}")
     try:
         fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     except FileNotFoundError as exc:
@@ -124,7 +126,12 @@ def load_payload_key(path: str | Path) -> bytes:
                 raise PayloadCryptoError(
                     f"payload key file must be owner-only (chmod 600): {target} ({exc})"
                 ) from exc
-            key = target.read_bytes()
+            try:
+                key = target.read_bytes()
+            except OSError as exc:
+                raise PayloadCryptoError(
+                    f"payload key file cannot be read: {target} ({exc})"
+                ) from exc
         else:
             info = os.fstat(fd)
             _validate_key_stat(info, target)
