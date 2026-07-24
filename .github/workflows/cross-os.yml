@@ -52,12 +52,11 @@ jobs:
       # dev-tooling closure the drift check validates is actually present on this OS.
       - run: python -m pip install -e ".[dev,benchmark]"
       # Windows has historically hung mid-suite around ~24% with KeyboardInterrupt
-      # and zero F marks. pytest-timeout's thread method also aborts the whole
-      # suite on NT+asyncio; use pytest's built-in faulthandler dump instead so
-      # a stuck test is named in the log without suite-killing KeyboardInterrupt.
+      # and zero F marks. Dump all-thread stacks if a test stalls (ini option;
+      # the CLI flag is not registered without an extra plugin on this lane).
       - name: Run the suite on this OS (SQLCipher/TPM suites skip without their backends)
         env:
           PYTHONUNBUFFERED: "1"
         run: >-
           python -m pytest -q -p no:cacheprovider
-          ${{ runner.os == 'Windows' && '--faulthandler-timeout=180' || '' }}
+          ${{ runner.os == 'Windows' && format('-o faulthandler_timeout={0}', 180) || '' }}
