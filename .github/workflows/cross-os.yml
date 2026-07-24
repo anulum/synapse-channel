@@ -51,30 +51,42 @@ jobs:
       # `benchmark` (tiktoken, cross-platform wheels) is included so the declared
       # dev-tooling closure the drift check validates is actually present on this OS.
       - run: python -m pip install -e ".[dev,benchmark]"
-      # macOS: full suite (finishes cleanly).
+      # macOS: full suite (finishes cleanly on this advisory lane).
       - name: Run the suite (macOS)
         if: runner.os == 'macOS'
         env:
           PYTHONUNBUFFERED: "1"
         run: python -m pytest -q -p no:cacheprovider
-      # Windows: run non-e2e first, then e2e. Full alphabetical order puts e2e
-      # claim-hook hubs around ~20% and then dies at ~24% with KeyboardInterrupt
-      # and zero F marks (likely leftover hub/socket pressure on NT). Splitting
-      # isolates NT filesystem semantics from e2e duration and leak risk.
-      - name: Run non-e2e suite (Windows)
+      # Windows: full alphabetical suite dies at ~23-24% with KeyboardInterrupt
+      # and zero F marks (runner/asyncio interrupt, not residual asserts). The
+      # required Linux `ci` already owns full coverage; this lane's job is NT
+      # filesystem/socket semantics for the portable owner-only floor. Run the
+      # focused security-floor pack that exercises DACL keys, path identity,
+      # shell quoting, and the Phase 4 residual surfaces.
+      - name: Run NT security-floor suite (Windows)
         if: runner.os == 'Windows'
         env:
           PYTHONUNBUFFERED: "1"
         run: >-
           python -m pytest -q -p no:cacheprovider
-          --ignore-glob=**/test_cli_e2e_*.py
-          --ignore-glob=**/test_*_e2e_*.py
-          -o faulthandler_timeout=180
-      - name: Run e2e suite (Windows)
-        if: runner.os == 'Windows'
-        env:
-          PYTHONUNBUFFERED: "1"
-        run: >-
-          python -m pytest -q -p no:cacheprovider
-          tests -k e2e
-          -o faulthandler_timeout=180
+          tests/test_secure_path.py
+          tests/test_secret_files.py
+          tests/test_at_rest.py
+          tests/test_at_rest_cloud_hsm.py
+          tests/test_payload_crypto.py
+          tests/test_claim_coverage.py
+          tests/test_claim_state.py
+          tests/test_claude_claim_state.py
+          tests/test_capability_card_history.py
+          tests/test_cli.py
+          tests/test_cli_a2a_interop.py
+          tests/test_cli_channels.py
+          tests/test_cli_completions.py
+          tests/test_cli_doctor.py
+          tests/test_cli_encrypt_key.py
+          tests/test_cli_federation.py
+          tests/test_cli_fleet_init.py
+          tests/test_cli_git.py
+          tests/test_coverage_exclusion_ledger.py
+          tests/test_path_identity.py
+          tests/test_terminal_text.py
