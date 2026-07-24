@@ -266,8 +266,9 @@ function __synapse_identity_is_foreign_auto
   # minted by a shell OUTSIDE this session's lineage — the shared-name
   # collision of the 2026-07-16 delivery-integrity incident (DEL-INT-C).
   # Manual and provider identities are never judged foreign; an explicit
-  # provider session (SYN_TMUX_PROVIDER=1) keeps its handed-down identity;
-  # without /proc the answer is "not foreign" (fail-open).
+  # provider session (SYN_TMUX_PROVIDER=1) keeps its handed-down identity.
+  # Without /proc lineage cannot be proven, so a terminal-* auto identity is
+  # treated as foreign (fail-closed re-mint) rather than silently kept.
   if not string match -q "*/terminal-*" -- "$argv[1]"
     return 1
   end
@@ -279,7 +280,7 @@ function __synapse_identity_is_foreign_auto
     return 1
   end
   if not test -d /proc
-    return 1
+    return 0
   end
   if __synapse_pid_in_session_lineage "$suffix"
     return 1
@@ -312,9 +313,12 @@ function __synapse_auto_arm --on-event fish_prompt
 
   # A numeric terminal id inherited from outside this session's lineage must
   # never name this session: it is how one shell's exported id resurrects the
-  # shared name on every later prompt, even after a re-mint.
-  if string match -qr '^[0-9]+$' -- "$terminal_id"; and test -d /proc
-    if test "$SYN_TMUX_PROVIDER" != "1"; and not __synapse_pid_in_session_lineage "$terminal_id"
+  # shared name on every later prompt, even after a re-mint. Without /proc the
+  # lineage cannot be proven, so re-mint to this shell's pid (fail-closed).
+  if string match -qr '^[0-9]+$' -- "$terminal_id"; and test "$SYN_TMUX_PROVIDER" != "1"
+    if not test -d /proc
+      set terminal_id (echo %self)
+    else if not __synapse_pid_in_session_lineage "$terminal_id"
       set terminal_id (echo %self)
     end
   end
@@ -557,9 +561,9 @@ __synapse_identity_is_foreign_auto() {{
   # on the workstation silently coordinates under one shared name — the
   # 2026-07-16 delivery-integrity incident (DEL-INT-C). Manual and provider
   # identities (non-terminal shapes, non-numeric ids) are never judged
-  # foreign, an explicit provider session (SYN_TMUX_PROVIDER=1) keeps its
-  # handed-down identity, and without /proc the answer is "not foreign"
-  # (fail-open to the old behaviour).
+  # foreign; an explicit provider session (SYN_TMUX_PROVIDER=1) keeps its
+  # handed-down identity. Without /proc, lineage cannot be proven, so a
+  # terminal-* auto identity is treated as foreign (fail-closed re-mint).
   local suffix
   case "$1" in
     */terminal-*) suffix="${{1##*/terminal-}}" ;;
@@ -569,7 +573,7 @@ __synapse_identity_is_foreign_auto() {{
     ''|*[!0-9]*) return 1 ;;
   esac
   [ "${{SYN_TMUX_PROVIDER:-0}}" = "1" ] && return 1
-  [ -d /proc ] || return 1
+  [ -d /proc ] || return 0
   __synapse_pid_in_session_lineage "$suffix" && return 1
   return 0
 }}
@@ -592,12 +596,14 @@ __synapse_auto_arm() {{
   terminal_id="${{SYN_AGENT_ID:-${{SYNAPSE_TERMINAL_ID:-$$}}}}"
   # A numeric terminal id inherited from outside this session's lineage must
   # never name this session: it is how one shell's exported id resurrects the
-  # shared name on every later prompt, even after a re-mint.
+  # shared name on every later prompt, even after a re-mint. Without /proc the
+  # lineage cannot be proven, so re-mint to this shell's pid (fail-closed).
   case "$terminal_id" in
     ''|*[!0-9]*) : ;;
-    *) if [ -d /proc ] && [ "${{SYN_TMUX_PROVIDER:-0}}" != "1" ] \\
-          && ! __synapse_pid_in_session_lineage "$terminal_id"; then
-         terminal_id=$$
+    *) if [ "${{SYN_TMUX_PROVIDER:-0}}" != "1" ]; then
+         if [ ! -d /proc ] || ! __synapse_pid_in_session_lineage "$terminal_id"; then
+           terminal_id=$$
+         fi
        fi ;;
   esac
   if [ -n "${{SYN_IDENTITY:-}}" ] && [ "${{__SYNAPSE_AUTO_IDENTITY:-}}" != "$SYN_IDENTITY" ] \\

@@ -734,3 +734,19 @@ def test_fish_hook_carries_the_foreign_auto_identity_guard() -> None:
     assert "__synapse_identity_is_foreign_auto" in fish
     assert "__synapse_pid_in_session_lineage" in fish
     assert "re-minting" in fish
+
+
+def test_hooks_treat_missing_proc_as_foreign_for_terminal_auto_identities() -> None:
+    """Without /proc, terminal-* auto identities re-mint (AUD-E2E-03 fail-closed)."""
+    bash = render_shell_hook(shell="bash", provider_commands=())
+    fish = render_shell_hook(shell="fish", provider_commands=())
+    zsh = render_shell_hook(shell="zsh", provider_commands=())
+    assert "[ -d /proc ] || return 0" in bash
+    assert "[ -d /proc ] || return 0" in zsh
+    # Fish: missing /proc → return 0 (foreign) inside __synapse_identity_is_foreign_auto
+    assert "if not test -d /proc" in fish
+    foreign_fn = fish.split("function __synapse_identity_is_foreign_auto", 1)[1]
+    foreign_fn = foreign_fn.split("function ", 1)[0]
+    assert "return 0" in foreign_fn.split("if not test -d /proc", 1)[1][:80]
+    assert "fail-closed" in bash or "cannot be proven" in bash
+    assert "cannot be proven" in fish

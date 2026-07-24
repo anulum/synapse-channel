@@ -15,6 +15,11 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Shell integration treats a default-shape `*/terminal-<pid>` auto identity
+  as foreign when `/proc` is missing (fail-closed re-mint), instead of
+  fail-open keeping a possibly layered foreign seat (DEL-INT-C class).
+  Provider sessions (`SYN_TMUX_PROVIDER=1`) and manual identities are
+  unchanged. Applies to Bash, Zsh, and Fish hooks.
 - `synapse a2a-serve` now refuses a non-loopback bind that enables
   `--bearer-auth` over plaintext HTTP (hub R4 parity). The bearer and
   protected A2A traffic would otherwise ride the LAN in the clear. Prefer a

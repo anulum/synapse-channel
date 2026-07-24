@@ -2166,6 +2166,12 @@ synapse arm install --identity my-repo/agent --start    # install/start only one
 synapse install-shell-hook                              # auto-arm Bash, Zsh, and Fish on new terminals
 synapse install-shell-hook --shell fish                 # only the Fish integration
 synapse shell-hook                                      # print the block instead of installing it
+
+Shell auto-identity: a default-shape `*/terminal-<pid>` identity is re-minted
+when `/proc` is missing or the pid is outside this session's lineage (fail-closed
+against DEL-INT-C env layering). Manual seats and `SYN_TMUX_PROVIDER=1` stay
+unchanged. macOS and containers without `/proc` therefore get a fresh terminal
+id each arm rather than keeping a foreign inherited auto name.
 synapse completions bash > ~/.local/share/bash-completion/completions/synapse   # tab completion
 synapse completions fish > ~/.config/fish/completions/synapse.fish              # (re-run after upgrades)
 synapse arm --name my-repo --for "my-repo,my-repo/*"    # keep a waiter armed, re-arming after each wake
