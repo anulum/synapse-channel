@@ -468,7 +468,8 @@ async def test_arm_disarms_when_the_owner_dies_mid_wait(
     probes = iter([True, False])
 
     async def wait_forever(**_kwargs: Any) -> int:
-        await asyncio.sleep(3600)
+        # Cancellable park used when the arm path must outlive a timeout bound.
+        await asyncio.Event().wait()
         return 0
 
     code = await asyncio.wait_for(

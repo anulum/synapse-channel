@@ -276,7 +276,9 @@ class _ScriptedLockAgent:
         self.release_error: Exception | None = None
 
     async def connect(self) -> None:
-        await asyncio.sleep(3600)
+        # Park until the lock path cancels the connect task on teardown.
+        # Prefer Event.wait over sleep(3600): cancel is immediate and clean.
+        await asyncio.Event().wait()
 
     async def wait_until_ready(self, timeout: float) -> bool:
         del timeout

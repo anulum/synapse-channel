@@ -313,7 +313,8 @@ class _ScriptedClaimAgent:
         self.last_close_reason = ""
 
     async def connect(self) -> None:
-        await asyncio.sleep(3600)
+        # Park until teardown cancels the connect task (cancellable hang).
+        await asyncio.Event().wait()
 
     async def wait_until_ready(self, timeout: float) -> bool:
         del timeout
