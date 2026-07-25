@@ -29,6 +29,11 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Add an operable, audited multi-hub serving-policy file with optional client-CA
+  verification, and paired owner-only client identities for pinned watch, claim,
+  operator-relay, and dead-letter routes. Partial identities, unpinned mTLS
+  routes, unsafe files, unknown grants, and revoked peers fail closed.
+
 - Upgrade `vitest` / `@vitest/coverage-v8` to 4.1.10 in `clients/vscode` to
   clear GHSA-mh99-v99m-4gvg (brace-expansion DoS) without a broken overrides pin.
 - Bump `postcss` to 8.5.23 in `clients/js` and `clients/vscode` (Dependabot
@@ -58,6 +63,10 @@ All notable changes to this project are documented here.
   APIs are path-keyed); content always comes from the held descriptor.
 
 ### Added
+
+- Hub CLI wiring for `--multihub-serving-policy`, `--claim-peer-pin`, and
+  independent `--relay-peer`/token/pin routes; direct `federation relay` can
+  likewise pin the server and present a client certificate.
 
 - A2A edge: `make_a2a_http_server` / `serve_a2a_http` accept an optional
   `ssl_context` and wrap the listening socket for native HTTPS.

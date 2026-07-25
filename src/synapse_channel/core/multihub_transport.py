@@ -41,6 +41,7 @@ import logging
 import time
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
+from pathlib import Path
 from typing import Any, Protocol, cast
 
 from websockets.asyncio.client import connect
@@ -68,6 +69,7 @@ from synapse_channel.core.protocol import (
 from synapse_channel.core.tls import (
     HubTLSConfigError,
     live_peer_certificate_pin,
+    load_client_certificate_chain,
     pin_trust_client_context,
 )
 
@@ -134,7 +136,12 @@ class _PinnedSocket(_Socket, Protocol):
     transport: _ExtraInfoTransport
 
 
-def pinned_connector(expected_pin: str) -> _Connector:
+def pinned_connector(
+    expected_pin: str,
+    *,
+    client_certificate_file: str | Path | None = None,
+    client_key_file: str | Path | None = None,
+) -> _Connector:
     """Return a connector that accepts a ``wss://`` peer certificate only by SHA-256 pin.
 
     The pull-side counterpart of
@@ -152,6 +159,10 @@ def pinned_connector(expected_pin: str) -> _Connector:
         this value. A missing TLS object, absent certificate, malformed
         certificate, or mismatch fails the fetch before any snapshot frame is
         trusted, so the follower's cursor is left unadvanced.
+    client_certificate_file, client_key_file : str or None, optional
+        Paired owner-only PEM identity presented to a serving policy.  The
+        exact files are captured together when the connector is built; partial,
+        unsafe, malformed, or mismatched material fails before any socket opens.
 
     Returns
     -------
@@ -159,13 +170,21 @@ def pinned_connector(expected_pin: str) -> _Connector:
         Connector suitable for :func:`network_fetcher`.
     """
     normalized = expected_pin.strip().lower()
+    context = pin_trust_client_context()
+    try:
+        load_client_certificate_chain(
+            context,
+            certfile=client_certificate_file,
+            keyfile=client_key_file,
+        )
+    except HubTLSConfigError as exc:
+        raise MultiHubFetchError(str(exc)) from exc
 
     @contextlib.asynccontextmanager
     async def _open(uri: str) -> AsyncIterator[_Socket]:
         if not uri.startswith("wss://"):
             msg = "--pin requires a wss:// peer URI"
             raise MultiHubFetchError(msg)
-        context = pin_trust_client_context()
         async with connect(uri, ping_interval=PING_INTERVAL, ssl=context) as socket:
             pinned = cast(_PinnedSocket, socket)
             actual = _live_certificate_pin(pinned)

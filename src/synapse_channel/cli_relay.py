@@ -30,6 +30,7 @@ import sys
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from synapse_channel.core.multihub_transport import MultiHubFetchError, pinned_connector
 from synapse_channel.core.operator_relay import RELAYABLE_ACTIONS
 from synapse_channel.core.operator_relay_transport import (
     DEFAULT_RELAY_TIMEOUT,
@@ -75,16 +76,22 @@ def _cmd_relay(args: argparse.Namespace, *, relayer: Relayer = relay_operator_ac
         break_glass=args.break_glass,
     )
     try:
-        result = asyncio.run(
-            relayer(
-                request,
-                uri=args.peer,
-                local_id=args.local_id,
-                token=args.peer_token,
-                timeout=args.timeout,
+        relay_kwargs: dict[str, Any] = {
+            "uri": args.peer,
+            "local_id": args.local_id,
+            "token": args.peer_token,
+            "timeout": args.timeout,
+        }
+        if args.pin:
+            relay_kwargs["connector"] = pinned_connector(
+                args.pin,
+                client_certificate_file=args.client_certfile,
+                client_key_file=args.client_keyfile,
             )
-        )
-    except RelayTransportError as exc:
+        elif args.client_certfile or args.client_keyfile:
+            raise MultiHubFetchError("--client-certfile/--client-keyfile require --pin")
+        result = asyncio.run(relayer(request, **relay_kwargs))
+    except (RelayTransportError, MultiHubFetchError) as exc:
         print(f"could not relay the action: {terminal_text(exc)}", file=sys.stderr)
         return 2
     if args.json:
@@ -150,6 +157,24 @@ def add_relay_parser(group: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Origin identity stamped on the relay; must match a grant on the peer's policy.",
     )
     relay.add_argument("--peer-token", default=None, help="Token for a secured peer hub.")
+    relay.add_argument(
+        "--pin",
+        default=None,
+        metavar="sha256:HEX",
+        help="Accept the peer's live WSS certificate only by this SHA-256 pin.",
+    )
+    relay.add_argument(
+        "--client-certfile",
+        default=None,
+        metavar="FILE",
+        help="Owner-only PEM client certificate presented to the peer; requires --pin and key.",
+    )
+    relay.add_argument(
+        "--client-keyfile",
+        default=None,
+        metavar="FILE",
+        help="Owner-only PEM private key paired with --client-certfile.",
+    )
     relay.add_argument(
         "--reason",
         default=None,

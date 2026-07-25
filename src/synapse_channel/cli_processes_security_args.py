@@ -43,6 +43,19 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
         help="PEM private key for native WSS; requires --tls-certfile.",
     )
     hub.add_argument(
+        "--multihub-client-certfile",
+        default=None,
+        metavar="FILE",
+        help="Owner-only PEM client certificate chain presented by this hub to pinned "
+        "multi-hub watch, claim, and relay peers; requires --multihub-client-keyfile.",
+    )
+    hub.add_argument(
+        "--multihub-client-keyfile",
+        default=None,
+        metavar="FILE",
+        help="Owner-only PEM private key paired with --multihub-client-certfile.",
+    )
+    hub.add_argument(
         "--paranoid",
         action="store_true",
         help="Require a strict local hub profile and print missing hardening hooks.",

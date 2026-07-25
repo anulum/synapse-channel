@@ -114,6 +114,35 @@ def test_relay_transport_error_exits_two(capsys: pytest.CaptureFixture[str]) -> 
     assert "could not relay the action: peer unreachable" in capsys.readouterr().err
 
 
+def test_relay_builds_pinned_client_authenticated_connector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connector = object()
+    captured: dict[str, Any] = {}
+
+    def _pinned(pin: str, **kwargs: Any) -> object:
+        captured.update(pin=pin, **kwargs)
+        return connector
+
+    monkeypatch.setattr(cli_relay, "pinned_connector", _pinned)
+    relay = _relayer(_applied(), captured=captured)
+    rc = cli_relay._cmd_relay(
+        _args(
+            "--pin",
+            "sha256:" + "1" * 64,
+            "--client-certfile",
+            "client.pem",
+            "--client-keyfile",
+            "client.key",
+        ),
+        relayer=relay,
+    )
+
+    assert rc == 0
+    assert captured["client_certificate_file"] == "client.pem"
+    assert captured["kwargs"]["connector"] is connector
+
+
 def _pending(detail: str = "recorded; awaiting approval by a second operator") -> RelayActionResult:
     return RelayActionResult(
         applied=False,

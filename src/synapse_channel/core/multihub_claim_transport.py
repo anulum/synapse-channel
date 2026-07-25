@@ -29,8 +29,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol, cast
 
 from websockets.asyncio.client import connect
@@ -44,6 +45,7 @@ from synapse_channel.core.multihub_claim_wire import (
     decode_claim_forward_result,
     encode_claim_forward_request,
 )
+from synapse_channel.core.multihub_transport import pinned_connector
 from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
 
 DEFAULT_FORWARD_TIMEOUT = 10.0
@@ -70,6 +72,10 @@ class ClaimForwardTimeoutError(ClaimForwardError):
     code = "claim_forward_timeout"
 
 
+Connector = Callable[[str], AbstractAsyncContextManager[Any]]
+"""Connector shape retained by a configured secure claim peer."""
+
+
 @dataclass(frozen=True, slots=True)
 class ClaimForwardPeer:
     """How a non-owning hub reaches an owning hub to forward a claim to it.
@@ -85,14 +91,23 @@ class ClaimForwardPeer:
     token : str or None
         An authentication token carried on the forwarded request where the owner gates the
         first frame; ``None`` for an open or mutual-TLS-only owner.
+    connector : Connector or None
+        Pinned, optionally client-authenticated connection factory.  ``None``
+        keeps the default system-CA transport.
     """
 
     uri: str
     token: str | None = None
+    connector: Connector | None = field(default=None, repr=False, compare=False)
 
 
 def parse_claim_peers(
-    values: list[str], *, token: str | None = None
+    values: list[str],
+    *,
+    token: str | None = None,
+    pins: Mapping[str, str] | None = None,
+    client_certificate_file: str | None = None,
+    client_key_file: str | None = None,
 ) -> dict[str, ClaimForwardPeer]:
     """Parse repeatable ``HUB_ID=URI`` CLI values into a claim-forwarding route map.
 
@@ -112,6 +127,11 @@ def parse_claim_peers(
         Authentication token applied to every route's forwarded requests, for
         owners that gate the first frame. ``None`` leaves each route unauthenticated
         (an open or mutual-TLS-only owner).
+    pins : Mapping[str, str] or None, optional
+        Certificate pin per owning hub id.
+    client_certificate_file, client_key_file : str or None, optional
+        Paired owner-only identity.  When configured every route must also be
+        pinned, so client authentication never weakens server authentication.
 
     Returns
     -------
@@ -123,6 +143,8 @@ def parse_claim_peers(
     ValueError
         If a value has no ``=``, an empty hub id or URI, or a repeated hub id.
     """
+    if (client_certificate_file is None) != (client_key_file is None):
+        raise ValueError("multi-hub client certificate and private key must be configured together")
     peers: dict[str, ClaimForwardPeer] = {}
     for value in values:
         hub_id, sep, uri = value.partition("=")
@@ -131,7 +153,30 @@ def parse_claim_peers(
             raise ValueError(f"--claim-peer must use HUB_ID=URI, got {value!r}")
         if hub_id in peers:
             raise ValueError(f"--claim-peer names hub {hub_id!r} twice")
-        peers[hub_id] = ClaimForwardPeer(uri=uri, token=token)
+        pin = pins.get(hub_id) if pins is not None else None
+        if client_certificate_file is not None and pin is None:
+            raise ValueError(
+                f"multi-hub client identity requires --claim-peer-pin for hub {hub_id!r}"
+            )
+        connector = (
+            None
+            if pin is None
+            else cast(
+                "Connector",
+                pinned_connector(
+                    pin,
+                    client_certificate_file=client_certificate_file,
+                    client_key_file=client_key_file,
+                ),
+            )
+        )
+        peers[hub_id] = ClaimForwardPeer(uri=uri, token=token, connector=connector)
+    if pins is not None:
+        unknown = sorted(set(pins) - set(peers))
+        if unknown:
+            raise ValueError(
+                f"--claim-peer-pin names hubs not configured by --claim-peer: {', '.join(unknown)}"
+            )
     return peers
 
 

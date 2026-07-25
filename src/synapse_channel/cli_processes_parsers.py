@@ -387,6 +387,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--require-message-auth.",
     )
     hub.add_argument(
+        "--multihub-serving-policy",
+        default="",
+        metavar="FILE",
+        help="Versioned deny-by-default policy configuring multi-hub serving grants, "
+        "the audited federation store, and the required client CA. Requires native "
+        "--tls-certfile/--tls-keyfile; ordinary clients may connect without a client "
+        "certificate, while multi-hub requests still refuse without an authorised one.",
+    )
+    hub.add_argument(
         "--hub-id",
         default=None,
         metavar="ID",
@@ -452,6 +461,46 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         metavar="TOKEN",
         help="Authentication token sent on forwarded claims to secured owning hubs "
         "(applies to every --claim-peer route).",
+    )
+    hub.add_argument(
+        "--claim-peer-pin",
+        action="append",
+        default=[],
+        metavar="HUB_ID=sha256:HEX",
+        help="Pin the named claim owner's live WSS certificate (repeatable). Required for "
+        "every claim route when --multihub-client-certfile is configured.",
+    )
+    hub.add_argument(
+        "--relay-peer",
+        action="append",
+        default=[],
+        metavar="HUB_ID=URI",
+        help="Route operator relays and dead-letter pointers to this owning hub (repeatable). "
+        "Requires --namespace-owner and is deliberately independent of claim routes.",
+    )
+    hub.add_argument(
+        "--relay-peer-token",
+        default=None,
+        metavar="TOKEN",
+        help="Authentication token sent to every configured relay peer.",
+    )
+    hub.add_argument(
+        "--relay-peer-pin",
+        action="append",
+        default=[],
+        metavar="HUB_ID=sha256:HEX",
+        help="Pin the named relay owner's live WSS certificate (repeatable). Required for "
+        "every relay route when --multihub-client-certfile is configured.",
+    )
+    hub.add_argument(
+        "--require-relay-reason",
+        action="store_true",
+        help="Refuse governed operator relays that do not carry an auditable reason.",
+    )
+    hub.add_argument(
+        "--require-two-person-relay",
+        action="store_true",
+        help="Hold an authorised relay until a second trust-domain principal approves it.",
     )
     hub.add_argument(
         "--insecure-off-loopback",

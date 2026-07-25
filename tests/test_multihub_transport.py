@@ -619,6 +619,57 @@ async def test_pinned_pull_accepts_a_self_signed_wss_peer(tmp_path: Path) -> Non
     assert [event.seq for event in events] == [1, 2]
 
 
+async def test_pinned_pull_presents_client_identity_to_optional_ca_policy(tmp_path: Path) -> None:
+    """The operable serving policy and outbound connector complete a real mTLS pull."""
+    (tmp_path / "server").mkdir()
+    (tmp_path / "client").mkdir()
+    server_cert, server_key = _write_self_signed_cert(tmp_path / "server")
+    client_cert, client_key = _write_self_signed_cert(tmp_path / "client")
+    client_cert.chmod(0o600)
+    client_key.chmod(0o600)
+    server_context = build_server_ssl_context(
+        certfile=server_cert,
+        keyfile=server_key,
+        client_ca_file=client_cert,
+    )
+    server_pin = certificate_sha256_pin(server_cert)
+    client_pin = certificate_sha256_pin(client_cert)
+    client_der = x509.load_pem_x509_certificate(client_cert.read_bytes()).public_bytes(
+        serialization.Encoding.DER
+    )
+    store = EventStore(tmp_path / "events.db")
+    from synapse_channel.core.hub import SynapseHub
+
+    hub = SynapseHub(
+        hub_id="syn-mtls",
+        journal=store,
+        multihub_serving_policy=_serving_policy(client_pin, client_der, ("follower",)),
+    )
+    port = _free_port()
+    task = asyncio.create_task(hub.serve("localhost", port, ssl_context=server_context))
+    try:
+        await _await_listening(port)
+        uri = f"wss://localhost:{port}"
+        await _seed_chats_tls(uri, server_cert, 1)
+        fetch = network_fetcher(
+            uri,
+            local_id="follower",
+            connector=pinned_connector(
+                server_pin,
+                client_certificate_file=client_cert,
+                client_key_file=client_key,
+            ),
+        )
+        events = await fetch(0)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        store.close()
+
+    assert [event.kind for event in events] == ["chat"]
+
+
 async def test_pinned_pull_rejects_a_mismatched_certificate_pin(tmp_path: Path) -> None:
     """A wrong pin fails the pull closed before any snapshot frame is trusted."""
     certfile, keyfile = _write_self_signed_cert(tmp_path)

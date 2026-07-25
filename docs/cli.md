@@ -1096,6 +1096,12 @@ synapse ingest ./synapse.db --cursor ./ingest.cursor    # drain new events as JS
 synapse multihub observe --peer-db ./peer.db --json     # fold a peer hub's log offline
 synapse multihub follow --peer-uri ws://peer:8876       # pull a peer's board over a connection
 synapse multihub follow --peer-uri wss://peer:8877 --pin sha256:HEX  # pin a self-signed TLS peer
+
+# Serve authenticated multi-hub frames and use pinned client-auth routes.
+synapse hub --tls-certfile hub.pem --tls-keyfile hub.key \
+  --multihub-serving-policy serving.json \
+  --multihub-client-certfile client.pem --multihub-client-keyfile client.key \
+  --relay-peer syn-owner=wss://owner:8876 --relay-peer-pin syn-owner=sha256:HEX
 synapse supervisor --idle-seconds 300 --history-multiplier 3
 synapse capability-card keygen --key-id PROJECT:worker:v1 --private-out ./card.pem --agent PROJECT/worker --project PROJECT --trust ./card-trust.json
 synapse capability-card sign ./card.json --key ./card.pem --key-id PROJECT:worker:v1 --sequence 1 --out ./signed-card.json
@@ -2308,6 +2314,9 @@ synapse federation list --store ./federation.json              # imported peer d
 synapse federation list --store ./federation.json --max-age 90 # flag active peerings imported >90 days ago; exit 1
 synapse federation revoke example.org --store ./federation.json
 synapse federation relay release --peer ws://peer-hub:8876 --namespace TEAM-X --task build-7  # force-release a stuck lease on a peer hub
+synapse federation relay release --peer wss://peer-hub:8876 --pin sha256:HEX \
+  --client-certfile client.pem --client-keyfile client.key \
+  --namespace TEAM-X --task build-7
 synapse federation relay release --peer ws://peer-hub:8876 --namespace TEAM-X --task build-7 --reason "wedged by a crashed agent" --break-glass  # with an auditable reason, tagged break-glass
 synapse encrypt-key generate ./synapse.key                     # write a fresh owner-only 32-byte key file
 synapse encrypt-key generate --from-passphrase ./synapse.key   # derive the key from a prompted passphrase (scrypt) instead of random bytes

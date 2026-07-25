@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
+import os
 import ssl
+import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
@@ -17,13 +19,77 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from synapse_channel.core.errors import SynapseError
-from synapse_channel.core.secret_files import SecretFileError, read_regular_file_bytes
+from synapse_channel.core.secret_files import (
+    SecretFileError,
+    read_regular_file_bytes,
+    read_secret_file,
+)
 
 
 class HubTLSConfigError(SynapseError, ValueError):
     """Raised when the hub TLS certificate configuration is incomplete or invalid."""
 
     code = "hub_tls_config"
+
+
+def _write_private_tls_material(path: Path, material: bytes) -> None:
+    """Write one mode-0600, create-new TLS staging file."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        view = memoryview(material)
+        written = 0
+        while written < len(view):
+            written += os.write(descriptor, view[written:])
+    finally:
+        os.close(descriptor)
+
+
+def load_client_certificate_chain(
+    context: ssl.SSLContext,
+    *,
+    certfile: str | Path | None,
+    keyfile: str | Path | None,
+) -> None:
+    """Load one paired owner-only client identity into ``context``.
+
+    Both operator files are captured through the no-follow owner-only loader,
+    then staged in a fresh private directory for ``SSLContext.load_cert_chain``.
+    The TLS library never reopens the operator paths, so a concurrent rotation
+    cannot combine certificate and key bytes from different generations.
+
+    Raises
+    ------
+    HubTLSConfigError
+        If only one path is supplied, either file is unsafe, or the captured
+        certificate and key are malformed or mismatched.
+    """
+    if (certfile is None) != (keyfile is None):
+        raise HubTLSConfigError(
+            "multi-hub client certificate and private key must be configured together"
+        )
+    if certfile is None or keyfile is None:
+        return
+    try:
+        certificate = read_secret_file(
+            certfile,
+            flag="--multihub-client-certfile",
+            require_single_link=True,
+        ).encode("utf-8")
+        private_key = read_secret_file(
+            keyfile,
+            flag="--multihub-client-keyfile",
+            require_single_link=True,
+        ).encode("utf-8")
+        with tempfile.TemporaryDirectory(prefix="synapse-multihub-client-") as directory:
+            root = Path(directory)
+            captured_cert = root / "client-cert.pem"
+            captured_key = root / "client-key.pem"
+            _write_private_tls_material(captured_cert, certificate)
+            _write_private_tls_material(captured_key, private_key)
+            context.load_cert_chain(certfile=str(captured_cert), keyfile=str(captured_key))
+    except (OSError, ssl.SSLError, SecretFileError) as exc:
+        raise HubTLSConfigError(f"could not load multi-hub client identity: {exc}") from exc
 
 
 class MTLSVerificationResult(str, Enum):
@@ -328,7 +394,10 @@ def live_peer_certificate_pin(transport: _ExtraInfoTransport) -> str:
 
 
 def build_server_ssl_context(
-    *, certfile: str | Path | None, keyfile: str | Path | None
+    *,
+    certfile: str | Path | None,
+    keyfile: str | Path | None,
+    client_ca_file: str | Path | None = None,
 ) -> ssl.SSLContext | None:
     """Build a server-side SSL context for native WSS.
 
@@ -338,6 +407,10 @@ def build_server_ssl_context(
         PEM certificate chain file passed to ``SSLContext.load_cert_chain``.
     keyfile : str or pathlib.Path or None
         PEM private-key file paired with ``certfile``.
+    client_ca_file : str or pathlib.Path or None, optional
+        CA bundle used to request and verify optional client certificates.
+        Ordinary clients may still connect without one; multi-hub handlers
+        independently require a certificate through their serving policy.
 
     Returns
     -------
@@ -348,9 +421,10 @@ def build_server_ssl_context(
     Raises
     ------
     HubTLSConfigError
-        If only one path is supplied or the certificate chain cannot be loaded.
+        If only one server path is supplied, a client CA is configured without
+        native TLS, or certificate material cannot be loaded.
     """
-    if certfile is None and keyfile is None:
+    if certfile is None and keyfile is None and client_ca_file is None:
         return None
     if certfile is None or keyfile is None:
         raise HubTLSConfigError("native WSS requires both --tls-certfile and --tls-keyfile")
@@ -360,6 +434,12 @@ def build_server_ssl_context(
         context.load_cert_chain(certfile=str(certfile), keyfile=str(keyfile))
     except (OSError, ssl.SSLError) as exc:
         raise HubTLSConfigError(f"could not load hub TLS certificate chain: {exc}") from exc
+    if client_ca_file is not None:
+        context.verify_mode = ssl.CERT_OPTIONAL
+        try:
+            context.load_verify_locations(cafile=str(client_ca_file))
+        except (OSError, ssl.SSLError) as exc:
+            raise HubTLSConfigError(f"could not load mTLS client CA bundle: {exc}") from exc
     return context
 
 
@@ -392,13 +472,15 @@ def build_mutual_tls_server_ssl_context(
     """
     if client_ca_file is None:
         raise HubTLSConfigError("mutual TLS requires --mtls-client-ca-file")
-    context = build_server_ssl_context(certfile=certfile, keyfile=keyfile)
+    if certfile is None or keyfile is None:
+        raise HubTLSConfigError("mutual TLS requires --tls-certfile and --tls-keyfile")
+    context = build_server_ssl_context(
+        certfile=certfile,
+        keyfile=keyfile,
+        client_ca_file=client_ca_file,
+    )
     if context is None:
         raise HubTLSConfigError("mutual TLS requires --tls-certfile and --tls-keyfile")
     context.verify_mode = ssl.CERT_REQUIRED
     context.check_hostname = False
-    try:
-        context.load_verify_locations(cafile=str(client_ca_file))
-    except (OSError, ssl.SSLError) as exc:
-        raise HubTLSConfigError(f"could not load mTLS client CA bundle: {exc}") from exc
     return context

@@ -340,9 +340,14 @@ async def _forward_dead_letter_to_peer(hub: SynapseHub, *, target: str, count: i
     if hub.dead_letter_forwarder is None:
         return
     try:
-        await hub.dead_letter_forwarder(
-            notice, uri=route.peer.uri, local_id=hub.hub_id, token=route.peer.token
-        )
+        kwargs: dict[str, Any] = {
+            "uri": route.peer.uri,
+            "local_id": hub.hub_id,
+            "token": route.peer.token,
+        }
+        if route.peer.connector is not None:
+            kwargs["connector"] = route.peer.connector
+        await hub.dead_letter_forwarder(notice, **kwargs)
     except DeadLetterForwardError as exc:
         # Best-effort over the already-durable audit: a peer we could not reach degrades to
         # "recorded but not delivered", never a lost signal or a crashed escalation.

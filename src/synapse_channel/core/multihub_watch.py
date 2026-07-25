@@ -168,6 +168,10 @@ class MultiHubWatch:
         :func:`parse_watch_pins`). A pinned peer's ``wss://`` connection is
         trusted by live certificate pin instead of CA chain; a mismatch fails
         that poll closed. Peers absent from the map use the default transport.
+    client_certificate_file, client_key_file : str or None, optional
+        Paired owner-only client identity presented to every pinned peer.  An
+        identity requires a pin for every watched peer so adding client auth
+        can never silently weaken server authentication.
     namespace_ownership : NamespaceOwnership or None, optional
         Static ownership map used to distinguish a real contest from the
         configured remote owner asserting its own namespace.  Required for
@@ -189,6 +193,8 @@ class MultiHubWatch:
         follower: MultiHubFollower | None = None,
         fetcher_factory: FetcherFactory = network_fetcher,
         pins: Mapping[str, str] | None = None,
+        client_certificate_file: str | None = None,
+        client_key_file: str | None = None,
         namespace_ownership: NamespaceOwnership | None = None,
         journal: EventStore | None = None,
     ) -> None:
@@ -198,12 +204,27 @@ class MultiHubWatch:
         self._namespace_ownership = namespace_ownership
         self._journal = journal
         self._fetchers: dict[str, EventFetcher] = {}
+        if (client_certificate_file is None) != (client_key_file is None):
+            raise ValueError(
+                "multi-hub client certificate and private key must be configured together"
+            )
+        if client_certificate_file is not None:
+            missing_pins = sorted(set(peers) - set(pins or {}))
+            if missing_pins:
+                raise ValueError(
+                    "multi-hub client identity requires a certificate pin for every watched "
+                    f"peer; missing: {', '.join(missing_pins)}"
+                )
         for peer, uri in peers.items():
             extra: dict[str, object] = {}
             if pins and peer in pins:
                 # A pinned wss:// peer is trusted by certificate pin, not CA chain;
                 # the connector fails the poll closed on any mismatch.
-                extra["connector"] = pinned_connector(pins[peer])
+                extra["connector"] = pinned_connector(
+                    pins[peer],
+                    client_certificate_file=client_certificate_file,
+                    client_key_file=client_key_file,
+                )
             self._fetchers[peer] = fetcher_factory(uri, local_id=local_id, token=token, **extra)
         self._partitioned = (
             restore_active_multihub_partitions(journal)

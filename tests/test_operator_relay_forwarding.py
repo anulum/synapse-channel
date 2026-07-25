@@ -210,6 +210,36 @@ class TestHandledPaths:
         assert audits[0]["direction"] == RELAY_DIRECTION_OUT
         assert audits[0]["applied"] is True
 
+    async def test_forward_passes_a_configured_secure_connector(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        connector = object()
+        peer = OperatorRelayPeer(uri="wss://owner.test", connector=connector)  # type: ignore[arg-type]
+        monkeypatch.setattr(
+            orf,
+            "route_operator_relay",
+            lambda d, *, relay_peers: RelayRoute(RelayRouteKind.FORWARD, peer=peer),
+        )
+        monkeypatch.setattr(orf, "decode_relay_request", lambda data: _REQUEST)
+        captured: dict[str, Any] = {}
+
+        async def _forwarder(request: RelayActionRequest, **kwargs: Any) -> RelayActionResult:
+            captured.update(kwargs)
+            return RelayActionResult(
+                applied=True,
+                action=request.action,
+                namespace=request.namespace,
+                task_id=request.task_id,
+                owner_hub_id="syn-owner",
+                detail="released",
+            )
+
+        gate = _build(ownership=_Ownership(), forwarder=_forwarder, recorder=_Recorder())
+        await gate.route(
+            "alice", MessageType.OPERATOR_RELAY_REQUEST, {"namespace": "lab-a/shared"}, object()
+        )
+        assert captured["connector"] is connector
+
     async def test_forward_transport_failure_fails_closed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

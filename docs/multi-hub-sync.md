@@ -91,6 +91,40 @@ contested namespace, have shipped:
   nothing. A hub with no policy refuses every peer — the gate is fail-closed by
   default.
 
+The production CLI loads that policy through `--multihub-serving-policy FILE`.
+The strict version-one JSON names one audited federation store, one client CA,
+and exact sender/domain/namespace/signing-key grants. Relative paths resolve
+beside the policy; unsafe, symlinked, duplicate, unknown, or inconsistent input
+refuses startup. Native TLS requests a client certificate for multi-hub frames
+while ordinary local clients may still connect without one; the multi-hub gate
+then denies a missing, revoked, wrongly pinned, or out-of-scope identity.
+
+```json
+{
+  "version": 1,
+  "federation_store": "federation.json",
+  "client_ca_file": "client-ca.pem",
+  "grants": [
+    {
+      "sender": "syn-west",
+      "domain_id": "west.example",
+      "namespace": "PROJECT",
+      "signing_key_id": "PROJECT:hub:2026-07"
+    }
+  ]
+}
+```
+
+Outbound secure routes share one paired owner-only identity configured by
+`--multihub-client-certfile` and `--multihub-client-keyfile`. Every such watch,
+claim, or relay route must also carry its named SHA-256 server pin. Claim and
+relay maps stay independent, and the relay connector is also used for the
+content-free dead-letter escalation pointer. Captured client material is loaded
+at process startup; rotate it by restarting the Core hub.
+Use `--require-relay-reason` to make every governed action explain itself and
+`--require-two-person-relay` to hold it for a distinct trust-domain principal;
+these policies apply equally to direct and routed relays.
+
 - `core/multihub_watch.py` — the hub's own standing follower: polls each operator-named
   peer over that same pull, folds the observed claims with the gate's namespace
   derivation, and holds the per-namespace asserting-hub view partition detection

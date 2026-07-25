@@ -23,6 +23,7 @@ from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.operator_relay_transport import (
     OperatorRelayPeer,
     RelayTransportError,
+    parse_relay_peers,
     relay_operator_action,
 )
 from synapse_channel.core.operator_relay_wire import (
@@ -53,6 +54,36 @@ def test_operator_relay_peer_defaults_its_token_to_none() -> None:
     assert open_peer.token is None
     secured = OperatorRelayPeer(uri="wss://owner/", token="tok")
     assert secured.token == "tok"
+
+
+def test_secure_relay_routes_require_complete_pinned_client_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connector = object()
+    captured: dict[str, object] = {}
+
+    def _pinned(pin: str, **kwargs: object) -> object:
+        captured.update(pin=pin, **kwargs)
+        return connector
+
+    monkeypatch.setattr("synapse_channel.core.operator_relay_transport.pinned_connector", _pinned)
+    peers = parse_relay_peers(
+        ["syn-owner=wss://owner/"],
+        pins={"syn-owner": "sha256:" + "1" * 64},
+        client_certificate_file="client.pem",
+        client_key_file="client.key",
+    )
+    assert peers["syn-owner"].connector is connector
+    assert captured["client_certificate_file"] == "client.pem"
+
+    with pytest.raises(ValueError, match="requires --relay-peer-pin"):
+        parse_relay_peers(
+            ["syn-owner=wss://owner/"],
+            client_certificate_file="client.pem",
+            client_key_file="client.key",
+        )
+    with pytest.raises(ValueError, match="not configured"):
+        parse_relay_peers(["syn-owner=wss://owner/"], pins={"syn-other": "sha256:" + "2" * 64})
 
 
 def _wire(frame: dict[str, Any]) -> str:

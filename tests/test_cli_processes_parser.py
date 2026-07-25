@@ -368,3 +368,30 @@ def test_parser_hub_tls_certificate_chain() -> None:
 
     assert args.tls_certfile == "cert.pem"
     assert args.tls_keyfile == "key.pem"
+
+
+def test_parser_hub_multihub_serving_policy() -> None:
+    args = cli.build_parser().parse_args(
+        ["hub", "--multihub-serving-policy", "serving-policy.json"]
+    )
+
+    assert args.multihub_serving_policy == "serving-policy.json"
+
+
+def test_parser_hub_governed_secure_relay_routes() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "hub",
+            "--relay-peer",
+            "syn-b=wss://b:8876",
+            "--relay-peer-pin",
+            "syn-b=sha256:" + "1" * 64,
+            "--require-relay-reason",
+            "--require-two-person-relay",
+        ]
+    )
+
+    assert args.relay_peer == ["syn-b=wss://b:8876"]
+    assert args.relay_peer_pin == ["syn-b=sha256:" + "1" * 64]
+    assert args.require_relay_reason is True
+    assert args.require_two_person_relay is True

@@ -26,14 +26,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol, cast
 
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.multihub_transport import pinned_connector
 from synapse_channel.core.operator_relay_wire import (
     RelayActionRequest,
     RelayActionResult,
@@ -61,6 +63,9 @@ class RelayTransportError(SynapseError, RuntimeError):
     code = "relay_transport"
 
 
+Connector = Callable[[str], AbstractAsyncContextManager[Any]]
+
+
 @dataclass(frozen=True, slots=True)
 class OperatorRelayPeer:
     """How an origin hub reaches an owning hub to relay a governed action to it.
@@ -80,10 +85,59 @@ class OperatorRelayPeer:
         An authentication token carried on the relayed request where the owner gates the
         first frame; ``None`` for an open or mutual-TLS-only owner. The origin hub holds this
         so the operator relaying through it never needs the peer's credentials directly.
+    connector : Connector or None
+        Pinned, optionally client-authenticated connection factory.
     """
 
     uri: str
     token: str | None = None
+    connector: Connector | None = field(default=None, repr=False, compare=False)
+
+
+def parse_relay_peers(
+    values: list[str],
+    *,
+    token: str | None = None,
+    pins: Mapping[str, str] | None = None,
+    client_certificate_file: str | None = None,
+    client_key_file: str | None = None,
+) -> dict[str, OperatorRelayPeer]:
+    """Parse fail-closed ``HUB_ID=URI`` relay routes and their secure connectors."""
+    if (client_certificate_file is None) != (client_key_file is None):
+        raise ValueError("multi-hub client certificate and private key must be configured together")
+    peers: dict[str, OperatorRelayPeer] = {}
+    for value in values:
+        hub_id, sep, uri = value.partition("=")
+        hub_id, uri = hub_id.strip(), uri.strip()
+        if not sep or not hub_id or not uri:
+            raise ValueError(f"--relay-peer must use HUB_ID=URI, got {value!r}")
+        if hub_id in peers:
+            raise ValueError(f"--relay-peer names hub {hub_id!r} twice")
+        pin = pins.get(hub_id) if pins is not None else None
+        if client_certificate_file is not None and pin is None:
+            raise ValueError(
+                f"multi-hub client identity requires --relay-peer-pin for hub {hub_id!r}"
+            )
+        connector = (
+            None
+            if pin is None
+            else cast(
+                "Connector",
+                pinned_connector(
+                    pin,
+                    client_certificate_file=client_certificate_file,
+                    client_key_file=client_key_file,
+                ),
+            )
+        )
+        peers[hub_id] = OperatorRelayPeer(uri=uri, token=token, connector=connector)
+    if pins is not None:
+        unknown = sorted(set(pins) - set(peers))
+        if unknown:
+            raise ValueError(
+                f"--relay-peer-pin names hubs not configured by --relay-peer: {', '.join(unknown)}"
+            )
+    return peers
 
 
 class RelayForwarder(Protocol):

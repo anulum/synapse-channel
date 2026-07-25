@@ -314,9 +314,14 @@ class HubFrameGates:
         )
         self._counters.forwarded_claims += 1
         try:
-            result = await self._claim_forwarder(
-                request, uri=peer.uri, local_id=self._hub_id, token=peer.token
-            )
+            forward_kwargs: dict[str, Any] = {
+                "uri": peer.uri,
+                "local_id": self._hub_id,
+                "token": peer.token,
+            }
+            if peer.connector is not None:
+                forward_kwargs["connector"] = peer.connector
+            result = await self._claim_forwarder(request, **forward_kwargs)
         except ClaimForwardTimeoutError:
             self._counters.forwarded_claim_timeouts += 1
             logger.warning(

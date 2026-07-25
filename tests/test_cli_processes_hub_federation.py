@@ -49,6 +49,90 @@ def test_cmd_hub_composes_federation_store_into_the_bundle(tmp_path: Path) -> No
     assert bundle.domains() == ("domain-b",)
 
 
+def test_cmd_hub_wires_operable_serving_policy_and_optional_client_ca(tmp_path: Path) -> None:
+    from synapse_channel.core.multihub_serving import MultiHubServingPolicy
+
+    store = Path(_federation_store(tmp_path))
+    client_ca = tmp_path / "client-ca.pem"
+    client_ca.write_text("public CA material\n", encoding="utf-8")
+    policy_path = tmp_path / "serving-policy.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "federation_store": store.name,
+                "client_ca_file": client_ca.name,
+                "grants": [
+                    {
+                        "sender": "fleet-a",
+                        "domain_id": "domain-b",
+                        "namespace": "SYNAPSE-CHANNEL",
+                        "signing_key_id": "domain-b:main",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    hub_kwargs: dict[str, Any] = {}
+    tls_kwargs: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        hub_kwargs.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    def build_tls(**kwargs: Any) -> None:
+        tls_kwargs.update(kwargs)
+
+    ns = _hub_ns(
+        tls_certfile="server-cert.pem",
+        tls_keyfile="server-key.pem",
+        multihub_serving_policy=str(policy_path),
+    )
+    assert (
+        cli_processes._cmd_hub(
+            ns,
+            runner=_close_runner,
+            hub_factory=build_hub,
+            tls_context_factory=build_tls,
+        )
+        == 0
+    )
+    assert isinstance(hub_kwargs["multihub_serving_policy"], MultiHubServingPolicy)
+    assert tls_kwargs == {
+        "certfile": "server-cert.pem",
+        "keyfile": "server-key.pem",
+        "client_ca_file": client_ca,
+    }
+
+
+def test_cmd_hub_refuses_an_invalid_serving_policy_before_tls_or_hub(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "serving-policy.json"
+    path.write_text("{}", encoding="utf-8")
+    calls: list[str] = []
+
+    def build_hub(**_kwargs: Any) -> SynapseHub:
+        calls.append("hub")
+        return SynapseHub()
+
+    def build_tls(**_kwargs: Any) -> None:
+        calls.append("tls")
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(multihub_serving_policy=str(path)),
+            runner=_close_runner,
+            hub_factory=build_hub,
+            tls_context_factory=build_tls,
+        )
+        == 2
+    )
+    assert calls == []
+    assert "multi-hub serving policy" in capsys.readouterr().err
+
+
 def test_cmd_hub_refuses_scope_granting_store_without_message_auth(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -306,6 +390,15 @@ def test_cmd_hub_rejects_a_repeated_claim_peer(
     )
     assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
     assert "names hub 'syn-b' twice" in capsys.readouterr().err
+
+
+def test_cmd_hub_rejects_a_relay_pin_without_a_route(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns = _hub_ns(relay_peer_pin=["syn-b=sha256:" + "1" * 64])
+
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert "--relay-peer-pin requires --relay-peer" in capsys.readouterr().err
 
 
 def test_cmd_hub_wires_claim_peers_forwarding_route(tmp_path: Path) -> None:

@@ -30,6 +30,7 @@ from synapse_channel.core.tls import (
     certificate_sha256_pin,
     certificate_sha256_pin_from_der,
     live_peer_certificate_pin,
+    load_client_certificate_chain,
     pin_trust_client_context,
 )
 
@@ -154,6 +155,36 @@ def test_mutual_tls_server_context_requires_client_certificate_authority(
             certfile=certfile,
             keyfile=keyfile,
             client_ca_file=None,
+        )
+
+
+def test_server_context_can_request_optional_client_certificates(tmp_path: Path) -> None:
+    """A multi-hub hub can keep ordinary clients while inspecting peer certificates."""
+    certfile, keyfile = _write_self_signed_cert(tmp_path)
+
+    context = build_server_ssl_context(
+        certfile=certfile,
+        keyfile=keyfile,
+        client_ca_file=certfile,
+    )
+
+    assert context is not None
+    assert context.verify_mode is ssl.CERT_OPTIONAL
+    assert context.minimum_version >= ssl.TLSVersion.TLSv1_2
+
+
+def test_optional_client_ca_requires_native_tls_and_valid_ca(tmp_path: Path) -> None:
+    certfile, keyfile = _write_self_signed_cert(tmp_path)
+    bad_ca = tmp_path / "bad-client-ca.pem"
+    bad_ca.write_text("not a CA\n", encoding="utf-8")
+
+    with pytest.raises(HubTLSConfigError, match="requires both"):
+        build_server_ssl_context(certfile=None, keyfile=None, client_ca_file=certfile)
+    with pytest.raises(HubTLSConfigError, match="could not load mTLS client CA bundle"):
+        build_server_ssl_context(
+            certfile=certfile,
+            keyfile=keyfile,
+            client_ca_file=bad_ca,
         )
 
 
@@ -404,6 +435,21 @@ def test_pin_trust_client_context_skips_chain_validation() -> None:
     context = pin_trust_client_context()
     assert context.check_hostname is False
     assert context.verify_mode is ssl.CERT_NONE
+
+
+def test_client_identity_loader_requires_paired_owner_only_material(tmp_path: Path) -> None:
+    certfile, keyfile = _write_self_signed_cert(tmp_path)
+    certfile.chmod(0o600)
+    keyfile.chmod(0o600)
+    load_client_certificate_chain(pin_trust_client_context(), certfile=certfile, keyfile=keyfile)
+
+    with pytest.raises(HubTLSConfigError, match="configured together"):
+        load_client_certificate_chain(pin_trust_client_context(), certfile=certfile, keyfile=None)
+    certfile.chmod(0o644)
+    with pytest.raises(HubTLSConfigError, match="could not load multi-hub client identity"):
+        load_client_certificate_chain(
+            pin_trust_client_context(), certfile=certfile, keyfile=keyfile
+        )
 
 
 def test_live_peer_certificate_pin_matches_the_file_pin(tmp_path: Path) -> None:

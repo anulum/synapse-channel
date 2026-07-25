@@ -59,8 +59,14 @@ from synapse_channel.core.message_auth_durable import (
     SequenceFloorMode,
 )
 from synapse_channel.core.multihub_claim_transport import ClaimForwardPeer, parse_claim_peers
+from synapse_channel.core.multihub_serving_config import (
+    LoadedMultiHubServingConfig,
+    MultiHubServingConfigError,
+    load_multihub_serving_config,
+)
 from synapse_channel.core.multihub_watch import MultiHubWatch, parse_watch_peers, parse_watch_pins
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
+from synapse_channel.core.operator_relay_transport import OperatorRelayPeer, parse_relay_peers
 from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_profile
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
@@ -120,6 +126,22 @@ def _parse_namespace_owners(values: list[str]) -> dict[str, str]:
             raise ValueError(f"--namespace-owner names namespace {namespace!r} twice")
         owners[namespace] = hub_id
     return owners
+
+
+def _parse_named_pins(values: list[str], *, flag: str) -> dict[str, str]:
+    """Parse repeatable ``NAME=sha256:HEX`` values without guessing a peer."""
+    pins: dict[str, str] = {}
+    for value in values:
+        name, separator, pin = value.partition("=")
+        name, pin = name.strip(), pin.strip()
+        if not separator or not name or not pin:
+            raise ValueError(f"{flag} must use NAME=sha256:<hex>, got {value!r}")
+        if not pin.lower().startswith("sha256:"):
+            raise ValueError(f"{flag} pin must be sha256:<hex>, got {pin!r}")
+        if name in pins:
+            raise ValueError(f"{flag} names {name!r} twice")
+        pins[name] = pin
+    return pins
 
 
 async def _serve_with_watch(
@@ -332,8 +354,26 @@ def _cmd_hub(
     # REV-SEC-06: after security profiles, fill disabled flood limits on exposed
     # hubs that are not under --secure (which already normalises limits).
     _apply_auto_rate_policy(args)
+    serving_config: LoadedMultiHubServingConfig | None = None
+    serving_policy_path = getattr(args, "multihub_serving_policy", "")
+    if serving_policy_path:
+        try:
+            serving_config = load_multihub_serving_config(serving_policy_path)
+        except MultiHubServingConfigError as exc:
+            print(f"synapse hub: {exc}", file=sys.stderr)
+            return 2
     try:
-        ssl_context = tls_context_factory(certfile=args.tls_certfile, keyfile=args.tls_keyfile)
+        if serving_config is None:
+            ssl_context = tls_context_factory(
+                certfile=args.tls_certfile,
+                keyfile=args.tls_keyfile,
+            )
+        else:
+            ssl_context = tls_context_factory(
+                certfile=args.tls_certfile,
+                keyfile=args.tls_keyfile,
+                client_ca_file=serving_config.client_ca_file,
+            )
     except HubTLSConfigError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
@@ -647,9 +687,41 @@ def _cmd_hub(
             file=sys.stderr,
         )
         return 2
+    relay_peer_values = getattr(args, "relay_peer", [])
+    if getattr(args, "relay_peer_pin", []) and not relay_peer_values:
+        print(
+            "synapse hub: --relay-peer-pin requires --relay-peer; a pin without a route "
+            "cannot secure any owner connection.",
+            file=sys.stderr,
+        )
+        return 2
+    if relay_peer_values and not args.namespace_owner:
+        print(
+            "synapse hub: --relay-peer requires --namespace-owner; relay routes are keyed "
+            "by the authoritative owning hub id.",
+            file=sys.stderr,
+        )
+        return 2
+    if getattr(args, "claim_peer_pin", []) and not args.claim_peer:
+        print(
+            "synapse hub: --claim-peer-pin requires --claim-peer; a pin without a route "
+            "cannot secure any owner connection.",
+            file=sys.stderr,
+        )
+        return 2
+    client_certfile = getattr(args, "multihub_client_certfile", None)
+    client_keyfile = getattr(args, "multihub_client_keyfile", None)
+    if (client_certfile is None) != (client_keyfile is None):
+        print(
+            "synapse hub: --multihub-client-certfile and --multihub-client-keyfile "
+            "must be configured together.",
+            file=sys.stderr,
+        )
+        return 2
     namespace_ownership: NamespaceOwnership | None = None
     watch: MultiHubWatch | None = None
     claim_peers: dict[str, ClaimForwardPeer] | None = None
+    relay_peers: dict[str, OperatorRelayPeer] | None = None
     try:
         if args.namespace_owner:
             namespace_ownership = NamespaceOwnership(
@@ -664,11 +736,32 @@ def _cmd_hub(
                 token=args.multihub_watch_token,
                 interval=args.multihub_watch_interval,
                 pins=parse_watch_pins(args.multihub_watch_pin, watch_peers),
+                client_certificate_file=client_certfile,
+                client_key_file=client_keyfile,
                 namespace_ownership=namespace_ownership,
                 journal=journal,
             )
         if args.claim_peer:
-            claim_peers = parse_claim_peers(args.claim_peer, token=args.claim_peer_token)
+            claim_peers = parse_claim_peers(
+                args.claim_peer,
+                token=args.claim_peer_token,
+                pins=_parse_named_pins(
+                    getattr(args, "claim_peer_pin", []),
+                    flag="--claim-peer-pin",
+                ),
+                client_certificate_file=client_certfile,
+                client_key_file=client_keyfile,
+            )
+        if relay_peer_values:
+            relay_peers = parse_relay_peers(
+                relay_peer_values,
+                token=getattr(args, "relay_peer_token", None),
+                pins=_parse_named_pins(
+                    getattr(args, "relay_peer_pin", []), flag="--relay-peer-pin"
+                ),
+                client_certificate_file=client_certfile,
+                client_key_file=client_keyfile,
+            )
     except ValueError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
@@ -748,6 +841,10 @@ def _cmd_hub(
         "namespace_ownership": namespace_ownership,
         "observed_asserting_hubs": (watch.observed_asserting_hubs if watch is not None else None),
         "claim_peers": claim_peers,
+        "relay_peers": relay_peers,
+        "require_relay_reason": getattr(args, "require_relay_reason", False),
+        "require_two_person_relay": getattr(args, "require_two_person_relay", False),
+        "multihub_serving_policy": (serving_config.policy if serving_config is not None else None),
         "insecure_off_loopback": args.insecure_off_loopback,
         "insecure_plaintext_at_rest": getattr(args, "insecure_plaintext_at_rest", False),
     }

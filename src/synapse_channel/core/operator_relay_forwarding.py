@@ -159,8 +159,17 @@ class OperatorRelayForwarding:
             )
             return False
         if route.kind is RelayRouteKind.FORWARD:
-            assert route.peer is not None  # FORWARD always carries the resolved route
-            result = await self._forward(sender, request, route.peer, decision)
+            if route.peer is None:  # Defensive fail-closed guard for an invalid injected route.
+                result = RelayActionResult(
+                    applied=False,
+                    action=request.action,
+                    namespace=request.namespace,
+                    task_id=request.task_id,
+                    owner_hub_id=decision.owner_hub_id or self._hub_id,
+                    detail="relay route has no configured peer",
+                )
+            else:
+                result = await self._forward(sender, request, route.peer, decision)
         else:
             logger.warning(
                 "Refused operator relay %r from %r in namespace %r: %s",
@@ -205,9 +214,14 @@ class OperatorRelayForwarding:
             break_glass=request.break_glass,
         )
         try:
-            result = await self._relay_forwarder(
-                forwarded, uri=peer.uri, local_id=self._hub_id, token=peer.token
-            )
+            kwargs: dict[str, Any] = {
+                "uri": peer.uri,
+                "local_id": self._hub_id,
+                "token": peer.token,
+            }
+            if peer.connector is not None:
+                kwargs["connector"] = peer.connector
+            result = await self._relay_forwarder(forwarded, **kwargs)
         except RelayTransportError:
             logger.warning(
                 "Relaying %r for %r to owner %s failed",
