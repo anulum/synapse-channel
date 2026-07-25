@@ -98,6 +98,10 @@ beside the policy; unsafe, symlinked, duplicate, unknown, or inconsistent input
 refuses startup. Native TLS requests a client certificate for multi-hub frames
 while ordinary local clients may still connect without one; the multi-hub gate
 then denies a missing, revoked, wrongly pinned, or out-of-scope identity.
+The policy, federation store, and client-CA file must each be owned by the
+effective hub service user and use mode `0400` or `0600`. Core captures all
+three through full-component no-follow descriptor reads; OpenSSL receives the
+captured CA bytes and never reopens the configured path.
 
 ```json
 {

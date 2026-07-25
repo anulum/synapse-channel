@@ -1102,6 +1102,7 @@ synapse hub --tls-certfile hub.pem --tls-keyfile hub.key \
   --multihub-serving-policy serving.json \
   --multihub-client-certfile client.pem --multihub-client-keyfile client.key \
   --relay-peer syn-owner=wss://owner:8876 --relay-peer-pin syn-owner=sha256:HEX
+# serving.json, its federation store, and client CA must be service-owned 0400/0600 files
 synapse supervisor --idle-seconds 300 --history-multiplier 3
 synapse capability-card keygen --key-id PROJECT:worker:v1 --private-out ./card.pem --agent PROJECT/worker --project PROJECT --trust ./card-trust.json
 synapse capability-card sign ./card.json --key ./card.pem --key-id PROJECT:worker:v1 --sequence 1 --out ./signed-card.json

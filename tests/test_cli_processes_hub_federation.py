@@ -55,6 +55,7 @@ def test_cmd_hub_wires_operable_serving_policy_and_optional_client_ca(tmp_path: 
     store = Path(_federation_store(tmp_path))
     client_ca = tmp_path / "client-ca.pem"
     client_ca.write_text("public CA material\n", encoding="utf-8")
+    client_ca.chmod(0o600)
     policy_path = tmp_path / "serving-policy.json"
     policy_path.write_text(
         json.dumps(
@@ -74,6 +75,7 @@ def test_cmd_hub_wires_operable_serving_policy_and_optional_client_ca(tmp_path: 
         ),
         encoding="utf-8",
     )
+    policy_path.chmod(0o600)
     hub_kwargs: dict[str, Any] = {}
     tls_kwargs: dict[str, Any] = {}
 
@@ -102,7 +104,7 @@ def test_cmd_hub_wires_operable_serving_policy_and_optional_client_ca(tmp_path: 
     assert tls_kwargs == {
         "certfile": "server-cert.pem",
         "keyfile": "server-key.pem",
-        "client_ca_file": client_ca,
+        "client_ca_data": b"public CA material",
     }
 
 
@@ -111,6 +113,7 @@ def test_cmd_hub_refuses_an_invalid_serving_policy_before_tls_or_hub(
 ) -> None:
     path = tmp_path / "serving-policy.json"
     path.write_text("{}", encoding="utf-8")
+    path.chmod(0o600)
     calls: list[str] = []
 
     def build_hub(**_kwargs: Any) -> SynapseHub:

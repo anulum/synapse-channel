@@ -71,9 +71,12 @@ def _document(**updates: object) -> dict[str, object]:
 def _policy(tmp_path: Path, document: dict[str, object] | None = None) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
     _store(tmp_path / "federation.json")
-    (tmp_path / "client-ca.pem").write_text("public CA material\n", encoding="utf-8")
+    client_ca = tmp_path / "client-ca.pem"
+    client_ca.write_text("public CA material\n", encoding="utf-8")
+    client_ca.chmod(0o600)
     path = tmp_path / "serving-policy.json"
     path.write_text(json.dumps(document or _document()), encoding="utf-8")
+    path.chmod(0o600)
     return path
 
 
@@ -81,6 +84,7 @@ def test_loads_relative_paths_and_composes_one_trust_source(tmp_path: Path) -> N
     loaded = load_multihub_serving_config(_policy(tmp_path))
 
     assert loaded.client_ca_file == tmp_path / "client-ca.pem"
+    assert loaded.client_ca_data == b"public CA material"
     assert loaded.federation_store == tmp_path / "federation.json"
     assert loaded.policy.federation.domains() == ("domain-a",)
     grant = loaded.policy.grants["fleet-a"]
@@ -188,4 +192,25 @@ def test_refuses_missing_client_ca_before_hub_start(tmp_path: Path) -> None:
     (tmp_path / "client-ca.pem").unlink()
 
     with pytest.raises(MultiHubServingConfigError, match="multi-hub client CA"):
+        load_multihub_serving_config(path)
+
+
+@pytest.mark.parametrize("trust_name", ["federation.json", "client-ca.pem"])
+def test_refuses_symlinked_referenced_trust_input(tmp_path: Path, trust_name: str) -> None:
+    path = _policy(tmp_path)
+    target = tmp_path / trust_name
+    moved = tmp_path / f"real-{trust_name}"
+    target.rename(moved)
+    target.symlink_to(moved)
+
+    with pytest.raises(MultiHubServingConfigError, match="cannot securely open"):
+        load_multihub_serving_config(path)
+
+
+@pytest.mark.parametrize("trust_name", ["serving-policy.json", "federation.json", "client-ca.pem"])
+def test_refuses_non_owner_only_trust_input(tmp_path: Path, trust_name: str) -> None:
+    path = _policy(tmp_path)
+    (tmp_path / trust_name).chmod(0o644)
+
+    with pytest.raises(MultiHubServingConfigError, match="owner-only|accessible by other"):
         load_multihub_serving_config(path)

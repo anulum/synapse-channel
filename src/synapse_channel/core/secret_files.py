@@ -334,7 +334,13 @@ def read_regular_file_bytes(
     return b"".join(chunks)
 
 
-def read_secret_file(file_path: str | Path, *, flag: str, require_single_link: bool = False) -> str:
+def read_secret_file(
+    file_path: str | Path,
+    *,
+    flag: str,
+    require_single_link: bool = False,
+    limit: int = DEFAULT_SECRET_FILE_LIMIT,
+) -> str:
     """Read one owner-only secret value, stripped of surrounding whitespace.
 
     Parameters
@@ -347,6 +353,9 @@ def read_secret_file(file_path: str | Path, *, flag: str, require_single_link: b
     require_single_link : bool, optional
         Reject a final inode with any other hardlink. Executable policy loaders
         enable this so a repository path cannot alias an outside policy file.
+    limit : int, optional
+        Maximum accepted bytes. Defaults to the ordinary secret-file ceiling;
+        structured owner-only policy callers may select a larger bounded cap.
 
     Returns
     -------
@@ -364,6 +373,7 @@ def read_secret_file(file_path: str | Path, *, flag: str, require_single_link: b
         path,
         flag=flag,
         require_single_link=require_single_link,
+        limit=limit,
     ).strip()
     if not secret:
         raise SecretFileError(f"{flag}: {path} is empty; expected one secret value")

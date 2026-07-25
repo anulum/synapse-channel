@@ -248,6 +248,16 @@ def load_store(path: str | Path) -> dict[str, FederationRecord]:
     except OSError as exc:
         msg = f"cannot read federation store {file}: {exc}"
         raise FederationStoreError(msg) from exc
+    return load_store_text(raw)
+
+
+def load_store_text(raw: str) -> dict[str, FederationRecord]:
+    """Parse a federation store already captured by a trusted descriptor read.
+
+    Serving-policy startup uses this boundary so the policy loader can enforce
+    owner and no-follow custody once, then parse the exact captured bytes
+    without reopening the operator path.
+    """
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:

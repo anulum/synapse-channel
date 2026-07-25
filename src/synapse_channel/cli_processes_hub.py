@@ -372,7 +372,7 @@ def _cmd_hub(
             ssl_context = tls_context_factory(
                 certfile=args.tls_certfile,
                 keyfile=args.tls_keyfile,
-                client_ca_file=serving_config.client_ca_file,
+                client_ca_data=serving_config.client_ca_data,
             )
     except HubTLSConfigError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)

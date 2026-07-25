@@ -33,12 +33,12 @@ from typing import Any, cast
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.federation import FederationBundle
-from synapse_channel.core.federation_store import FederationStoreError, load_store
+from synapse_channel.core.federation_store import FederationStoreError, load_store_text
 from synapse_channel.core.multihub_serving import (
     MultiHubServingGrant,
     MultiHubServingPolicy,
 )
-from synapse_channel.core.secret_files import SecretFileError, read_regular_file_bytes
+from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.core.tls import MTLSPeerTrustBundle, MTLSTrustedPeer
 
 SERVING_POLICY_VERSION = 1
@@ -46,6 +46,12 @@ SERVING_POLICY_VERSION = 1
 
 MAX_SERVING_POLICY_BYTES = 65_536
 """Maximum accepted policy document size."""
+
+MAX_FEDERATION_STORE_BYTES = 1_048_576
+"""Maximum accepted federation trust-store size."""
+
+MAX_CLIENT_CA_BYTES = 1_048_576
+"""Maximum accepted client-CA bundle size."""
 
 _ROOT_FIELDS = frozenset({"version", "federation_store", "client_ca_file", "grants"})
 _GRANT_FIELDS = frozenset({"sender", "domain_id", "namespace", "signing_key_id"})
@@ -59,21 +65,24 @@ class MultiHubServingConfigError(SynapseError, ValueError):
 
 @dataclass(frozen=True, slots=True)
 class LoadedMultiHubServingConfig:
-    """Runtime serving policy and its validated client-CA path.
+    """Runtime serving policy and its captured client-CA material.
 
     Attributes
     ----------
     policy : MultiHubServingPolicy
         Deny-by-default live peer authorisation policy.
     client_ca_file : pathlib.Path
-        CA bundle used by the hub TLS context to request and verify client
-        certificates.  The path has already passed a bounded no-follow read.
+        Operator path retained for bounded diagnostics only.
+    client_ca_data : bytes
+        CA bundle captured through the owner-only no-follow loader. The TLS
+        context consumes these bytes and never reopens the operator path.
     federation_store : pathlib.Path
         Audited federation store from which the policy was derived.
     """
 
     policy: MultiHubServingPolicy
     client_ca_file: Path
+    client_ca_data: bytes
     federation_store: Path
 
 
@@ -218,11 +227,12 @@ def load_multihub_serving_config(path: str | Path) -> LoadedMultiHubServingConfi
     """
     policy_path = Path(path).expanduser()
     try:
-        raw = read_regular_file_bytes(
+        raw = read_secret_file(
             policy_path,
-            label="multi-hub serving policy",
+            flag="--multihub-serving-policy",
+            require_single_link=True,
             limit=MAX_SERVING_POLICY_BYTES,
-        )
+        ).encode("utf-8")
         document = _parse_document(raw)
         version = document["version"]
         if isinstance(version, bool) or not isinstance(version, int):
@@ -238,8 +248,19 @@ def load_multihub_serving_config(path: str | Path) -> LoadedMultiHubServingConfi
         client_ca_file = _resolved_path(
             document["client_ca_file"], label="client_ca_file", base=base
         )
-        read_regular_file_bytes(client_ca_file, label="multi-hub client CA")
-        records = load_store(federation_store)
+        client_ca_data = read_secret_file(
+            client_ca_file,
+            flag="multi-hub client CA",
+            require_single_link=True,
+            limit=MAX_CLIENT_CA_BYTES,
+        ).encode("utf-8")
+        store_text = read_secret_file(
+            federation_store,
+            flag="multi-hub federation store",
+            require_single_link=True,
+            limit=MAX_FEDERATION_STORE_BYTES,
+        )
+        records = load_store_text(store_text)
         grants = _parse_grants(document["grants"])
         mtls = _mtls_bundle(grants, records)
     except (FederationStoreError, SecretFileError) as exc:
@@ -252,5 +273,6 @@ def load_multihub_serving_config(path: str | Path) -> LoadedMultiHubServingConfi
             clock=time.time,
         ),
         client_ca_file=client_ca_file,
+        client_ca_data=client_ca_data,
         federation_store=federation_store,
     )

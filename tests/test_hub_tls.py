@@ -173,6 +173,23 @@ def test_server_context_can_request_optional_client_certificates(tmp_path: Path)
     assert context.minimum_version >= ssl.TLSVersion.TLSv1_2
 
 
+def test_server_context_accepts_captured_client_ca_without_a_path(tmp_path: Path) -> None:
+    certfile, keyfile = _write_self_signed_cert(tmp_path)
+    captured_ca = certfile.read_bytes()
+    certfile.unlink()
+    replacement_cert = tmp_path / "replacement-cert.pem"
+    replacement_cert.write_bytes(captured_ca)
+
+    context = build_server_ssl_context(
+        certfile=replacement_cert,
+        keyfile=keyfile,
+        client_ca_data=captured_ca,
+    )
+
+    assert context is not None
+    assert context.verify_mode is ssl.CERT_OPTIONAL
+
+
 def test_optional_client_ca_requires_native_tls_and_valid_ca(tmp_path: Path) -> None:
     certfile, keyfile = _write_self_signed_cert(tmp_path)
     bad_ca = tmp_path / "bad-client-ca.pem"

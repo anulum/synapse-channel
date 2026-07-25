@@ -67,6 +67,9 @@ All notable changes to this project are documented here.
 - Hub CLI wiring for `--multihub-serving-policy`, `--claim-peer-pin`, and
   independent `--relay-peer`/token/pin routes; direct `federation relay` can
   likewise pin the server and present a client certificate.
+- Multi-hub serving policy, federation-store, and client-CA inputs now require
+  owner-only descriptor custody; TLS consumes captured CA bytes without a
+  second path open.
 
 - A2A edge: `make_a2a_http_server` / `serve_a2a_http` accept an optional
   `ssl_context` and wrap the listening socket for native HTTPS.

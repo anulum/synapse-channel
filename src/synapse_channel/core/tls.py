@@ -398,6 +398,7 @@ def build_server_ssl_context(
     certfile: str | Path | None,
     keyfile: str | Path | None,
     client_ca_file: str | Path | None = None,
+    client_ca_data: bytes | None = None,
 ) -> ssl.SSLContext | None:
     """Build a server-side SSL context for native WSS.
 
@@ -411,6 +412,9 @@ def build_server_ssl_context(
         CA bundle used to request and verify optional client certificates.
         Ordinary clients may still connect without one; multi-hub handlers
         independently require a certificate through their serving policy.
+    client_ca_data : bytes or None, optional
+        Already-captured PEM CA data. Mutually exclusive with
+        ``client_ca_file``; avoids reopening a validated operator path.
 
     Returns
     -------
@@ -424,7 +428,9 @@ def build_server_ssl_context(
         If only one server path is supplied, a client CA is configured without
         native TLS, or certificate material cannot be loaded.
     """
-    if certfile is None and keyfile is None and client_ca_file is None:
+    if client_ca_file is not None and client_ca_data is not None:
+        raise HubTLSConfigError("mTLS client CA path and captured data are mutually exclusive")
+    if certfile is None and keyfile is None and client_ca_file is None and client_ca_data is None:
         return None
     if certfile is None or keyfile is None:
         raise HubTLSConfigError("native WSS requires both --tls-certfile and --tls-keyfile")
@@ -434,11 +440,14 @@ def build_server_ssl_context(
         context.load_cert_chain(certfile=str(certfile), keyfile=str(keyfile))
     except (OSError, ssl.SSLError) as exc:
         raise HubTLSConfigError(f"could not load hub TLS certificate chain: {exc}") from exc
-    if client_ca_file is not None:
+    if client_ca_file is not None or client_ca_data is not None:
         context.verify_mode = ssl.CERT_OPTIONAL
         try:
-            context.load_verify_locations(cafile=str(client_ca_file))
-        except (OSError, ssl.SSLError) as exc:
+            if client_ca_data is not None:
+                context.load_verify_locations(cadata=client_ca_data.decode("ascii"))
+            else:
+                context.load_verify_locations(cafile=str(client_ca_file))
+        except (OSError, ssl.SSLError, UnicodeDecodeError) as exc:
             raise HubTLSConfigError(f"could not load mTLS client CA bundle: {exc}") from exc
     return context
 
