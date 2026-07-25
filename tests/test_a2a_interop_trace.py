@@ -123,4 +123,7 @@ def test_conformance_marks_independent_interop_partial() -> None:
     row = next(r for r in conformance_rows() if r.item == "Independent interoperability")
     assert row.status == "partial"
     assert "a2a-interop-trace" in row.synapse_surface
-    assert "http.client" in row.evidence
+    # Evidence names the dual-peer CLI and official-sdk surfaces, not a raw
+    # stdlib transport string (http.client is an implementation detail).
+    assert "a2a-client" in row.evidence or "a2a-sdk" in row.evidence
+    assert "interop" in row.evidence.lower() or "TCK" in row.evidence

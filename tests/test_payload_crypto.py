@@ -138,12 +138,8 @@ def test_payload_key_loader_rejects_short_reads(
 ) -> None:
 
     key_path = generate_key_file(tmp_path / "payload.key")
-    # POSIX load uses os.read on the held descriptor; Windows uses Path.read_bytes
-    # after the DACL proof.
-    if os.name == "nt":
-        monkeypatch.setattr(Path, "read_bytes", lambda self: b"short")
-    else:
-        monkeypatch.setattr(os, "read", lambda _fd, _size: b"short")
+    # Same-descriptor loader (POSIX and Windows) reads via os.read on the held fd.
+    monkeypatch.setattr(os, "read", lambda _fd, _size: b"short")
 
     assert "exactly 32 bytes" in _error(lambda: load_payload_key(key_path))
 

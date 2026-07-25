@@ -250,11 +250,12 @@ def test_task_list_supports_page_size_and_page_token() -> None:
     second.handler.bridge = bridge
     second_status, second_body = second.run()
 
+    # list_tasks is ordered by status updatedAt descending; task-b is newer.
     assert first_status == HTTPStatus.OK
-    assert first_body["tasks"][0]["id"] == "task-a"
+    assert first_body["tasks"][0]["id"] == "task-b"
     assert first_body["nextPageToken"] == "1"
     assert second_status == HTTPStatus.OK
-    assert second_body["tasks"][0]["id"] == "task-b"
+    assert second_body["tasks"][0]["id"] == "task-a"
     assert second_body["nextPageToken"] == ""
 
 

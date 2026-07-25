@@ -76,12 +76,14 @@ def test_parser_a2a_conformance() -> None:
 
 
 def test_cmd_a2a_conformance_prints_markdown(capsys: pytest.CaptureFixture[str]) -> None:
-    args = cli.build_parser().parse_args(["a2a-conformance", "--status", "unsupported"])
+    # gRPC binding is partial (optional SendMessage/GetTask); filter partial rows.
+    args = cli.build_parser().parse_args(["a2a-conformance", "--status", "partial"])
 
     assert _cmd_a2a_conformance(args) == 0
     captured = capsys.readouterr()
     assert f"A2A conformance matrix (spec {SPEC_VERSION})" in captured.out
-    assert "| binding | gRPC | unsupported | none |" in captured.out
+    assert "| Area | Item | Status | SYNAPSE surface | Evidence | Limitation |" in captured.out
+    assert "| binding | gRPC | partial |" in captured.out
 
 
 def test_cmd_a2a_conformance_prints_json(capsys: pytest.CaptureFixture[str]) -> None:

@@ -42,6 +42,11 @@ _SRC = Path(__file__).resolve().parent.parent / "src" / "synapse_channel"
 # A row may be ADDED for a new error class; an existing row must never change.
 # ---------------------------------------------------------------------------
 FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
+    "A2AClientError": (
+        "synapse_channel.a2a_client",
+        "a2a_client",
+        RuntimeError,
+    ),
     "A2AConflictError": (
         "synapse_channel.a2a_errors",
         "a2a_conflict",

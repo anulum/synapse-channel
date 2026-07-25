@@ -42,6 +42,15 @@ def _write_ca_and_certs(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
         .not_valid_before(now - datetime.timedelta(days=1))
         .not_valid_after(now + datetime.timedelta(days=1))
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        # Python 3.13 OpenSSL requires Authority Key Identifier on the chain.
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key()),
+            critical=False,
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
+            critical=False,
+        )
         .sign(ca_key, hashes.SHA256())
     )
     ca_path = tmp_path / "ca.pem"
@@ -58,6 +67,14 @@ def _write_ca_and_certs(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
             .serial_number(x509.random_serial_number())
             .not_valid_before(now - datetime.timedelta(days=1))
             .not_valid_after(now + datetime.timedelta(days=1))
+            .add_extension(
+                x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
+                critical=False,
+            )
+            .add_extension(
+                x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
+                critical=False,
+            )
         )
         if san_ip:
             builder = builder.add_extension(

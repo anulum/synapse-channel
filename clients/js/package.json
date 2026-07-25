@@ -39,6 +39,7 @@
     "directory": "clients/js"
   },
   "devDependencies": {
+    "postcss": "^8.5.23",
     "typescript": "^5.6.0",
     "vitest": "^3.2.6"
   }

@@ -563,7 +563,9 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                 if events is None:
                     self._send_not_found(f"Unknown task: {task_id}")
                     return
-                task = events[0]["task"]
+                # Durable history may start with non-terminal WORKING events; the
+                # current (final) snapshot decides whether the task is terminal.
+                task = events[-1]["task"]
                 state = str(task.get("status", {}).get("state", ""))
                 if state in TERMINAL_TASK_STATES:
                     self._send_json(

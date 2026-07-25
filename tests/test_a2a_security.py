@@ -265,13 +265,18 @@ def test_a2a_serve_insecure_override_allows_exposed_manifest_fetch(
     assert cli_a2a._cmd_a2a_serve(args, manifest_fetcher=fail_to_reach_hub) == 1
     captured = capsys.readouterr()
     assert fetched == [True]
-    assert "WARNING: binding A2A bridge" in captured.err
+    assert "WARNING: bound to non-loopback host" in captured.err
     assert "Could not reach hub" in captured.err
 
 
 def test_a2a_serve_allows_exposed_bearer_auth_without_override(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """Plaintext bearer on a non-loopback bind is refused without the override.
+
+    R4 parity: a bearer token on cleartext HTTP off-loopback is network-readable,
+    so a2a-serve fails closed unless --insecure-off-loopback or native TLS is set.
+    """
     fetched: list[bool] = []
 
     async def fail_to_reach_hub(**_kwargs: object) -> list[dict[str, Any]] | None:
@@ -297,12 +302,11 @@ def test_a2a_serve_allows_exposed_bearer_auth_without_override(
         insecure_off_loopback=False,
     )
 
-    assert cli_a2a._cmd_a2a_serve(args, manifest_fetcher=fail_to_reach_hub) == 1
+    assert cli_a2a._cmd_a2a_serve(args, manifest_fetcher=fail_to_reach_hub) == 2
     captured = capsys.readouterr()
-    assert fetched == [True]
-    assert "Refusing to bind" not in captured.err
-    assert "WARNING: binding A2A bridge" not in captured.err
-    assert "Could not reach hub" in captured.err
+    assert fetched == []
+    assert "Refusing to bind" in captured.err
+    assert "plaintext HTTP" in captured.err or "cleartext bearer" in captured.err
 
 
 def test_default_timeout_boundary_fails_stale_open_task() -> None:

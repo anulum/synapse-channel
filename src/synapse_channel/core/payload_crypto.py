@@ -111,14 +111,20 @@ def load_payload_key(path: str | Path) -> bytes:
         message = str(exc)
         if "does not exist" in message:
             raise PayloadCryptoError(f"payload key file does not exist: {target}") from exc
-        if "symlink" in message or "cannot open" in message:
+        if "not a regular" in message:
+            raise PayloadCryptoError(f"payload key file is not a regular file: {target}") from exc
+        # POSIX O_NOFOLLOW leaf symlinks surface as ELOOP ("Too many levels of
+        # symbolic links"); Windows open_nofollow_leaf refuses with "symlink".
+        if (
+            "symlink" in message
+            or "Too many levels of symbolic links" in message
+            or "symbolic link" in message
+        ):
             raise PayloadCryptoError(f"payload key file must not be a symlink: {target}") from exc
         if "exactly" in message and "bytes" in message:
             raise PayloadCryptoError(
                 f"payload key file must hold exactly {KEY_BYTES} bytes: {target}"
             ) from exc
-        if "not a regular" in message:
-            raise PayloadCryptoError(f"payload key file is not a regular file: {target}") from exc
         if "not owned by the effective user" in message or "not owned" in message:
             raise PayloadCryptoError(
                 f"payload key file must be owned by the current user: {target}"
@@ -127,6 +133,12 @@ def load_payload_key(path: str | Path) -> bytes:
             raise PayloadCryptoError(
                 f"payload key file must be owner-only (chmod 600): {target}"
             ) from exc
+        # Windows often fails to open a directory as a secret file with a
+        # generic "cannot open" message (not "not a regular file"). Map that
+        # fail-closed to the regular-file rejection rather than the symlink
+        # wording; genuine leaf-symlink opens still match above.
+        if "cannot open" in message:
+            raise PayloadCryptoError(f"payload key file is not a regular file: {target}") from exc
         raise PayloadCryptoError(
             f"payload key file must be owner-only (chmod 600): {target} ({exc})"
         ) from exc

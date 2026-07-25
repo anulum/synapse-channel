@@ -66,7 +66,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: Every ``pragma: no cover`` in ``src/``, by file: (line count, justification class).
 PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
+    "src/synapse_channel/a2a_grpc.py": (1, "optional-import"),
     "src/synapse_channel/a2a_http.py": (1, "blocking-wrapper"),
+    "src/synapse_channel/a2a_scenario_responses.py": (1, "validated-helper-boundary"),
     "src/synapse_channel/ack.py": (2, "protocol-body"),
     "src/synapse_channel/cli.py": (1, "env-defensive"),
     "src/synapse_channel/cli_doctor_federation.py": (5, "protocol-body"),
@@ -106,7 +108,9 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/_platform_caps.py": (7, "platform-guard"),
     "tests/_portable_exec.py": (1, "platform-guard"),
     "tests/fixtures/opencode/process.py": (2, "optional-dep-guard"),
+    "tests/test_a2a_grpc.py": (1, "optional-dep-guard"),
     "tests/test_a2a_store.py": (3, "platform-guard"),
+    "tests/test_read_owner_only_file_bytes.py": (3, "platform-guard"),
     "tests/test_analysis_sqlcipher_readers.py": (1, "optional-dep-guard"),
     "tests/test_at_rest.py": (3, "platform-guard"),
     "tests/test_at_rest_cloud_hsm.py": (1, "platform-guard"),

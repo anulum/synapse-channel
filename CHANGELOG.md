@@ -13,8 +13,25 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- HTTP `:subscribe` decides terminal refusal from the **final** durable
+  event snapshot (not the first history event), restoring CONFLICT problem
+  JSON for completed/failed tasks while keeping ordered durable replay on
+  the bridge API after multi-process restart.
+- Payload-key error mapping: POSIX leaf-symlink opens (ELOOP) still report
+  "must not be a symlink"; Windows directory opens that surface as
+  "cannot open" report "not a regular file".
+- Surface taxonomy and public docs list `a2a-client`; frozen error registry
+  includes `A2AClientError`; coverage/skip ledgers cover new A2A modules
+  and owner-only file tests; mTLS fixture certs carry Authority Key
+  Identifier for Python 3.13 OpenSSL.
+
 ### Security
 
+- Bump `postcss` to 8.5.23 in `clients/js` and `clients/vscode` (Dependabot
+  GHSA path-traversal on previous source-map auto-loading; patched from
+  8.5.18+).
 - Shell integration treats a default-shape `*/terminal-<pid>` auto identity
   as foreign when `/proc` is missing (fail-closed re-mint), instead of
   fail-open keeping a possibly layered foreign seat (DEL-INT-C class).
