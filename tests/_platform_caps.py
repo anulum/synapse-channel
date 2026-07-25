@@ -41,8 +41,13 @@ requires_sealed_launch = pytest.mark.skipif(
 )
 """Skip marker for tests that need the sealed-launch mechanism to actually run."""
 
-PROC_AVAILABLE = Path("/proc/self/cmdline").exists()
-"""Whether the Linux ``/proc`` process filesystem is present."""
+PROC_AVAILABLE = sys.platform.startswith("linux") and Path("/proc/self/status").is_file()
+"""Whether Linux ``/proc/<pid>/status`` lineage inspection is available.
+
+Some non-Linux runners expose a partial compatibility ``/proc`` tree.  The
+shell identity guard needs Linux ``PPid`` status records, not merely a readable
+``/proc/self/cmdline`` file, so those partial trees must remain unsupported.
+"""
 
 requires_proc = pytest.mark.skipif(
     not PROC_AVAILABLE,
