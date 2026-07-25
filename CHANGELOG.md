@@ -29,8 +29,8 @@ All notable changes to this project are documented here.
 
 ### Security
 
-- Pin `brace-expansion@5.0.8` via npm `overrides` in `clients/vscode` to clear
-  GHSA-mh99-v99m-4gvg (high) transitively pulled by `@vitest/coverage-v8`.
+- Upgrade `vitest` / `@vitest/coverage-v8` to 4.1.10 in `clients/vscode` to
+  clear GHSA-mh99-v99m-4gvg (brace-expansion DoS) without a broken overrides pin.
 - Bump `postcss` to 8.5.23 in `clients/js` and `clients/vscode` (Dependabot
   GHSA path-traversal on previous source-map auto-loading; patched from
   8.5.18+).
