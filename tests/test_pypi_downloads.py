@@ -48,6 +48,16 @@ def test_detect_package_missing_name_raises(tmp_path: Path) -> None:
     pyproject.write_text('[build-system]\nrequires = ["setuptools"]\n')
     with pytest.raises(ValueError, match="no \\[project\\] name"):
         dl.detect_package(pyproject)
+    dl.require_project_csv_target("synapse-channel", Path("downloads/synapse-channel.csv"))
+    with pytest.raises(ValueError, match="package must be"):
+        dl.require_project_csv_target("other-package", Path("downloads/synapse-channel.csv"))
+    for refused in (
+        Path("downloads/other.csv"),
+        Path("./downloads/../downloads/synapse-channel.csv"),
+        Path("/tmp/downloads/synapse-channel.csv"),
+    ):
+        with pytest.raises(ValueError, match="metrics CSV must be"):
+            dl.require_project_csv_target("synapse-channel", refused)
 
 
 def test_daily_counts_parses_both_categories() -> None:
@@ -181,11 +191,45 @@ def test_main_upserts_into_existing_csv(tmp_path: Path) -> None:
     assert set(rows) == {"2026-06-20", "2026-06-21", "2026-06-22"}
 
 
-def test_main_requires_csv_unless_printing(tmp_path: Path) -> None:
+def test_main_requires_csv_and_metrics_writer_is_bounded(tmp_path: Path) -> None:
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text('[project]\nname = "synapse-channel"\n')
     with pytest.raises(SystemExit):
         dl.main(["--pyproject", str(pyproject)])
+    fetched = False
+
+    def unexpected_fetch(url: str) -> bytes:
+        nonlocal fetched
+        fetched = True
+        return b"{}"
+
+    with pytest.raises(SystemExit):
+        dl.main(
+            [
+                "--package",
+                "synapse-channel",
+                "--csv",
+                str(tmp_path / "downloads" / "synapse-channel.csv"),
+                "--project-csv-only",
+            ],
+            fetch=unexpected_fetch,
+        )
+    assert not fetched
+    workflow = (
+        Path(__file__).resolve().parents[1] / ".github" / "workflows" / "pypi-downloads.yml"
+    ).read_text(encoding="utf-8")
+    assert workflow.count("contents: write") == 1
+    assert workflow.count("contents: read") == 1
+    assert "if: github.ref == 'refs/heads/main'" in workflow
+    assert "ref: ${{ github.sha }}" in workflow
+    assert "ref: metrics" in workflow
+    assert "path: metrics-branch" in workflow
+    assert "persist-credentials: false" in workflow
+    assert workflow.count("downloads/synapse-channel.csv") >= 3
+    assert "--project-csv-only" in workflow
+    assert "git diff --cached --name-only" in workflow
+    assert "git push origin HEAD:refs/heads/metrics" in workflow
+    assert "x-access-token" not in workflow
 
 
 def test_main_returns_one_on_fetch_error(

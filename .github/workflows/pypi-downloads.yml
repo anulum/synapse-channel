@@ -4,13 +4,10 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — daily PyPI download snapshot (main seed + artifact; no metrics branch push)
+# SYNAPSE CHANNEL — daily PyPI download snapshot on the metrics branch
 #
-# Canonical series seed: downloads/<package>.csv on the default branch.
-# Daily runs upsert into the workspace copy and upload a pinned artifact (retention 90 days).
-# Governed compact-land: a non-author lander must refresh the main seed from the latest
-# artifact (or re-run of this tool) at least every 90 days and before every release tag.
-# Do not delete origin/metrics until seed+workflow are green and the bundle archive exists.
+# This job may update exactly downloads/synapse-channel.csv on origin/metrics.
+# It never writes main, tags, releases, attestations, or any other metrics path.
 name: pypi-downloads
 
 on:
@@ -28,43 +25,60 @@ concurrency:
 
 jobs:
   snapshot:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Check out the default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check out the metrics branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: metrics
+          path: metrics-branch
+          persist-credentials: true
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Snapshot downloads into the main CSV seed
-        id: snapshot
+      - name: Snapshot and commit the bounded metrics path
+        working-directory: metrics-branch
+        shell: bash
         run: |
           set -euo pipefail
-          package="$(python tools/pypi_downloads.py --print-package)"
-          csv_path="downloads/${package}.csv"
-          mkdir -p downloads
-          python tools/pypi_downloads.py \
+          readonly package="synapse-channel"
+          readonly csv_path="downloads/synapse-channel.csv"
+          detected="$(python ../tools/pypi_downloads.py \
+            --pyproject ../pyproject.toml --print-package)"
+          test "$detected" = "$package"
+          python ../tools/pypi_downloads.py \
             --package "$package" \
-            --csv "$csv_path"
-          echo "package=${package}" >> "$GITHUB_OUTPUT"
-          echo "csv_path=${csv_path}" >> "$GITHUB_OUTPUT"
-          if git diff --quiet -- "$csv_path"; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            --csv "$csv_path" \
+            --project-csv-only
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "$csv_path"
+          if git diff --cached --quiet; then
+            echo "No download changes to record."
+            exit 0
           fi
+          mapfile -t staged_paths < <(git diff --cached --name-only)
+          if (( ${#staged_paths[@]} != 1 )) || [[ "${staged_paths[0]}" != "$csv_path" ]]; then
+            printf 'Refusing unexpected staged paths:\n' >&2
+            printf '  %s\n' "${staged_paths[@]}" >&2
+            exit 1
+          fi
+          git commit -m "metrics: pypi download snapshot for ${package}"
+          git push origin HEAD:refs/heads/metrics
       - name: Upload download series artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: pypi-downloads-${{ steps.snapshot.outputs.package }}
-          path: ${{ steps.snapshot.outputs.csv_path }}
+          name: pypi-downloads-synapse-channel
+          path: metrics-branch/downloads/synapse-channel.csv
           if-no-files-found: error
           retention-days: 90
-      - name: Note compact-land obligation
-        if: steps.snapshot.outputs.changed == 'true'
-        run: |
-          echo "CSV seed changed in this workspace run."
-          echo "A governed non-author compact-land must merge the updated series to main"
-          echo "within 90 days and before the next release tag (no bot self-land)."

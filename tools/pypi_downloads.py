@@ -16,12 +16,10 @@ strips mirror-sync traffic) and the ``with_mirrors`` count. Upserting by date
 means a missed run self-heals on the next one and history is never lost, even as
 the upstream 180-day window rolls forward.
 
-The CSV seed lives on the default branch under ``downloads/<package>.csv``.
-The accompanying workflow upserts the series in CI and uploads a 90-day artifact;
-a governed non-author compact-land refreshes the main seed at least every 90 days
-and before every release tag. A full ``origin/metrics`` git bundle remains the
-history archive until that side branch is deliberately retired after seed+workflow
-are green.
+The canonical daily series lives on the ``metrics`` branch at the exact project
+path ``downloads/synapse-channel.csv``. The accompanying workflow uses the
+``--project-csv-only`` guard before it can stage or push that single path. The
+default-branch seed remains a recovery snapshot and is never written by the bot.
 """
 
 from __future__ import annotations
@@ -57,6 +55,12 @@ RETRY_SCHEDULE = (30.0, 60.0, 120.0)
 MAX_RETRY_AFTER = 600.0
 """Ceiling for an upstream Retry-After, so a hostile header cannot hang the job."""
 
+PROJECT_PACKAGE = "synapse-channel"
+"""Distribution identity accepted by the repository's bounded metrics writer."""
+
+PROJECT_CSV = Path("downloads/synapse-channel.csv")
+"""Only repository path the bounded metrics writer may update."""
+
 Fetch = Callable[[str], bytes]
 """A URL-to-bytes fetcher, injected so the network call is replaceable in tests."""
 
@@ -73,9 +77,23 @@ def detect_package(pyproject_path: Path) -> str:
     return name
 
 
+def require_project_csv_target(package: str, csv_path: Path) -> None:
+    """Refuse any metrics-writer target except this repository's exact CSV.
+
+    The workflow runs from the checked-out ``metrics`` branch, so a lexical
+    exact-path check is intentional: absolute paths, alternate dot spellings,
+    and a different distribution name all fail closed before network access.
+    """
+    if package != PROJECT_PACKAGE:
+        raise ValueError(f"project metrics package must be {PROJECT_PACKAGE!r}")
+    if csv_path.is_absolute() or csv_path.as_posix() != PROJECT_CSV.as_posix():
+        raise ValueError(f"project metrics CSV must be {PROJECT_CSV.as_posix()!r}")
+
+
 def _http_get(url: str) -> bytes:
     """Fetch a URL and return its body as bytes (the default network fetcher)."""
-    with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310 (fixed https pypistats URL)
+    # The caller always forms this URL from the fixed HTTPS pypistats endpoint.
+    with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310  # nosec B310
         body: bytes = response.read()
         return body
 
@@ -196,6 +214,11 @@ def main(argv: list[str] | None = None, fetch: Fetch = _http_get, sleep: Sleep =
     parser.add_argument("--package", default=None, help="Override the package name.")
     parser.add_argument("--csv", default=None, help="CSV time series to upsert into.")
     parser.add_argument(
+        "--project-csv-only",
+        action="store_true",
+        help="Refuse every package/path except downloads/synapse-channel.csv.",
+    )
+    parser.add_argument(
         "--print-package",
         action="store_true",
         help="Print the resolved package name and exit (for shell use).",
@@ -208,6 +231,13 @@ def main(argv: list[str] | None = None, fetch: Fetch = _http_get, sleep: Sleep =
         return 0
     if not args.csv:
         parser.error("--csv is required unless --print-package is given")
+
+    csv_path = Path(args.csv)
+    if args.project_csv_only:
+        try:
+            require_project_csv_target(package, csv_path)
+        except ValueError as exc:
+            parser.error(str(exc))
 
     try:
         overall = fetch_overall_with_retry(package, fetch, sleep)
@@ -227,7 +257,6 @@ def main(argv: list[str] | None = None, fetch: Fetch = _http_get, sleep: Sleep =
         )
         return 0
     fresh = daily_counts(overall)
-    csv_path = Path(args.csv)
     merged = merge(read_csv(csv_path), fresh)
     write_csv(csv_path, merged)
     print(_summary(package, merged))
