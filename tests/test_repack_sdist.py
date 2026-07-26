@@ -98,6 +98,7 @@ def test_repack_is_byte_reproducible_and_normalizes_metadata(tmp_path: Path) -> 
     ("members", "message"),
     [
         ([], "must not be empty"),
+        ([(".", b"x", tarfile.REGTYPE)], "unsafe member"),
         ([("/absolute", b"x", tarfile.REGTYPE)], "unsafe member"),
         ([("./package/file", b"x", tarfile.REGTYPE)], "unsafe member"),
         ([("package/./file", b"x", tarfile.REGTYPE)], "unsafe member"),

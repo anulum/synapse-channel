@@ -67,6 +67,7 @@ def _checked_members(source: tarfile.TarFile) -> tuple[tarfile.TarInfo, ...]:
         canonical_name = path.as_posix()
         if (
             not name
+            or not path.parts
             or name.startswith("/")
             or "\\" in name
             or any(part in {"", ".", ".."} for part in path.parts)
