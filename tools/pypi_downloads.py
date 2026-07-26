@@ -6,15 +6,15 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — daily PyPI download snapshot, recorded to a CSV time series
-"""Record a daily PyPI download snapshot for this project to a CSV time series.
+"""Record SYNAPSE CHANNEL's daily PyPI downloads to its bounded CSV time series.
 
-The package name is read from ``pyproject.toml`` (``[project] name``) so the same
-script and workflow drop into any PyPI-published repository unchanged. It fetches
-the per-day series from pypistats' ``/overall`` endpoint and upserts it by date
-into a CSV, keeping both the ``without_mirrors`` count (the meaningful one — it
-strips mirror-sync traffic) and the ``with_mirrors`` count. Upserting by date
-means a missed run self-heals on the next one and history is never lost, even as
-the upstream 180-day window rolls forward.
+The package identity and writable CSV path are deliberately pinned to this
+repository. The tool fetches the per-day series from pypistats' ``/overall``
+endpoint and upserts it by date into a CSV, keeping both the ``without_mirrors``
+count (the meaningful one — it strips mirror-sync traffic) and the
+``with_mirrors`` count. Upserting by date means a missed run self-heals on the
+next one and history is never lost, even as the upstream 180-day window rolls
+forward.
 
 The canonical daily series lives on the ``metrics`` branch at the exact project
 path ``downloads/synapse-channel.csv``. The accompanying workflow uses the
@@ -52,8 +52,16 @@ RETRYABLE_STATUSES = (429, 502, 503, 504)
 RETRY_SCHEDULE = (30.0, 60.0, 120.0)
 """Fallback seconds between attempts when the throttle names no Retry-After."""
 
-MAX_RETRY_AFTER = 600.0
+HTTP_TIMEOUT = 30.0
+"""Maximum seconds allocated to one pypistats request."""
+
+MAX_RETRY_AFTER = 120.0
 """Ceiling for an upstream Retry-After, so a hostile header cannot hang the job."""
+
+MAX_FETCH_BUDGET_SECONDS = HTTP_TIMEOUT * (len(RETRY_SCHEDULE) + 1) + MAX_RETRY_AFTER * len(
+    RETRY_SCHEDULE
+)
+"""Worst-case request plus retry time; 480 seconds within the 20-minute job."""
 
 PROJECT_PACKAGE = "synapse-channel"
 """Distribution identity accepted by the repository's bounded metrics writer."""
@@ -93,7 +101,7 @@ def require_project_csv_target(package: str, csv_path: Path) -> None:
 def _http_get(url: str) -> bytes:
     """Fetch a URL and return its body as bytes (the default network fetcher)."""
     # The caller always forms this URL from the fixed HTTPS pypistats endpoint.
-    with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310  # nosec B310
+    with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT) as response:  # noqa: S310  # nosec B310
         body: bytes = response.read()
         return body
 

@@ -295,10 +295,13 @@ def test_fetch_overall_with_retry_gives_up_after_the_schedule() -> None:
     waits: list[float] = []
 
     def always_throttled(url: str) -> bytes:
-        raise _throttle(code=503)
+        raise _throttle(code=503, retry_after="600")
 
     assert dl.fetch_overall_with_retry("synapse-channel", always_throttled, waits.append) is None
-    assert waits == list(dl.RETRY_SCHEDULE)
+    assert waits == [dl.MAX_RETRY_AFTER] * len(dl.RETRY_SCHEDULE)
+    assert sum(waits) + dl.HTTP_TIMEOUT * (len(waits) + 1) == dl.MAX_FETCH_BUDGET_SECONDS
+    assert dl.MAX_FETCH_BUDGET_SECONDS == 480.0
+    assert dl.MAX_FETCH_BUDGET_SECONDS < 20 * 60
 
 
 def test_fetch_overall_with_retry_propagates_a_hard_http_error() -> None:
