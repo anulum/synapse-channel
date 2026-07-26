@@ -35,13 +35,14 @@ jobs:
           export SOURCE_DATE_EPOCH
           SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
           mkdir -p build/raw-dist release-artifact
-          python -m build --sdist --outdir build/raw-dist
-          python -m build --wheel --outdir release-artifact
+          python -m build --outdir build/raw-dist
+          raw_wheels=(build/raw-dist/*.whl)
           raw_sdists=(build/raw-dist/*.tar.gz)
-          if [ "${#raw_sdists[@]}" -ne 1 ]; then
-            echo "expected exactly one raw sdist" >&2
+          if [ "${#raw_wheels[@]}" -ne 1 ] || [ "${#raw_sdists[@]}" -ne 1 ]; then
+            echo "expected exactly one raw wheel and one raw sdist" >&2
             exit 1
           fi
+          mv "${raw_wheels[0]}" release-artifact/
           python tools/repack_sdist.py \
             --input "${raw_sdists[0]}" \
             --output "release-artifact/$(basename "${raw_sdists[0]}")" \
@@ -55,6 +56,7 @@ jobs:
           .sbom-venv/bin/python -m pip install release-artifact/*.whl
           python -m pip install --require-hashes -r .github/requirements/requirements-sbom.txt
           cyclonedx-py environment .sbom-venv/bin/python \
+            --output-reproducible \
             --output-format JSON \
             --output-file "release-artifact/synapse-channel-${GITHUB_REF_NAME}-sbom.cdx.json"
       - name: Record the exact release payload and digests

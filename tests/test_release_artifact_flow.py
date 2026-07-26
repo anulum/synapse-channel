@@ -28,7 +28,10 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     attest, publish_job = after_integrity.split("\n  publish:", maxsplit=1)
 
     assert (release + publish).count("python -m build") == 1
-    assert "python -m build --outdir release-artifact" in build
+    assert "python -m build --outdir build/raw-dist" in build
+    assert "python tools/repack_sdist.py" in build
+    assert 'mv "${raw_wheels[0]}" release-artifact/' in build
+    assert "--output-reproducible" in build
     assert "sha256sum -- *.whl *.tar.gz *-sbom.cdx.json > SHA256SUMS" in build
     assert "release-artifact/synapse-channel-${GITHUB_REF_NAME}-sbom.cdx.json" in build
     assert "name: release-dist" in build
