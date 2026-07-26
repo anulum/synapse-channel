@@ -289,6 +289,8 @@ def test_fetch_overall_with_retry_honours_a_sane_retry_after() -> None:
     assert dl._retry_delay(_throttle(retry_after="99999"), 30.0) == dl.MAX_RETRY_AFTER
     assert dl._retry_delay(_throttle(retry_after="0"), 30.0) == 1.0
     assert dl._retry_delay(_throttle(retry_after="soon"), 30.0) == 30.0
+    assert dl._retry_delay(_throttle(retry_after="NaN"), 30.0) == 30.0
+    assert dl._retry_delay(_throttle(retry_after="Infinity"), 30.0) == 30.0
 
 
 def test_fetch_overall_with_retry_gives_up_after_the_schedule() -> None:

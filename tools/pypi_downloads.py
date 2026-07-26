@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import sys
 import time
 import urllib.error
@@ -119,6 +120,8 @@ def _retry_delay(exc: urllib.error.HTTPError, fallback: float) -> float:
     try:
         delay = float(header)
     except ValueError:
+        return fallback
+    if not math.isfinite(delay):
         return fallback
     return min(max(delay, 1.0), MAX_RETRY_AFTER)
 
