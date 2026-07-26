@@ -304,9 +304,11 @@ def test_a2a_origin_policy_pass_with_normalised_origins() -> None:
         allow_origins=(" HTTPS://IDE.Example/ ", "http://127.0.0.1:8877")
     )
     assert diagnosis.status == "pass"
-    assert "ON" in diagnosis.detail
-    assert "https://ide.example" in diagnosis.detail
-    assert "http://127.0.0.1:8877" in diagnosis.detail
+    assert diagnosis.detail == (
+        "opaque null origins rejected; allow-list ON; "
+        "origins=[https://ide.example, http://127.0.0.1:8877]; "
+        "Host authority binding enforced when allow-list is on"
+    )
 
 
 def test_a2a_origin_policy_fails_opaque_null() -> None:
