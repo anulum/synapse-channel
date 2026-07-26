@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.14] - 2026-07-26
+
 ### Fixed
 
 - Normalize source-distribution member order, ownership, modes, and timestamps,
