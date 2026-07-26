@@ -31,7 +31,7 @@ everything, since they need the whole command table.
 | `synapse adapters` | Detect coding tools and wire them to the hub with a claim-aware adapter (`list`/`install`/`uninstall`). |
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-conformance` | Print the local Agent2Agent conformance matrix. |
-| `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge. |
+| `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge; an optional default-off gRPC subset has a separate security boundary described below. |
 | `synapse a2a-client` | Outbound A2A HTTP(S) client: Agent Card discovery, message:send, and GET task against a second peer. |
 | `synapse a2a-interop-trace` | Run an independent stdlib HTTP(S) client against a live `a2a-serve` bridge and emit a discovery + task-lifecycle interop receipt. |
 | `synapse channel` | Manage private-channel membership and member-visible history; pair with `synapse send --channel`. |
@@ -1976,6 +1976,17 @@ Operational boundaries:
 
 - Bearer auth is opt-in with `--bearer-auth --a2a-token "$A2A_TOKEN"` and applies
   to protected bridge routes. The public Agent Card remains public discovery.
+- `--grpc-port PORT` enables a default-off, optional JSON-over-gRPC
+  `SendMessage` / `GetTask` subset on the same `--host`. The integrated CLI
+  currently advertises `grpc://` and does **not** pass the HTTP edge's bearer,
+  TLS/mTLS, Host/Origin, request-admission, or read-timeout policy to that
+  listener, nor does it set explicit gRPC message-size, concurrency, deadline,
+  or stable-error policy. HTTP `--bearer-auth`, `--tls-certfile`,
+  `--tls-keyfile`, and `--mtls-client-ca-file` therefore do not protect gRPC.
+  Keep it disabled for exposed deployments; use it on loopback only when every
+  local process is trusted. The low-level builder can accept explicit gRPC
+  server credentials, but the CLI does not supply them and TLS alone would not
+  establish policy parity. See [Current gRPC activation boundary](a2a-deployment-threat-model.md#current-grpc-activation-boundary).
 - Bind exposure (hub R4 parity for the HTTP edge): the bridge defaults to
   loopback (`127.0.0.1`). A non-loopback host is **refused** without bearer
   auth, and a non-loopback host **with** bearer auth is also **refused** while

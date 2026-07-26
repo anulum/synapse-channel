@@ -448,6 +448,17 @@ loopback would only break port publishing without adding security.
   boundary is **opt-in** (`synapse a2a-serve --allow-origin`); opaque `null`
   origins are always rejected. Print the effective policy with
   `synapse doctor --a2a-policy` (and optional `--a2a-allow-origin` mirrors).
+- The optional `synapse a2a-serve --grpc-port` listener is **default-off** and
+  `partial`. When enabled, the integrated CLI binds it on the same `--host` but
+  does not apply the HTTP edge's bearer authentication, TLS/mTLS context,
+  Host/Origin checks, admission limit, or request-read timeout, and it sets no
+  explicit gRPC message-size, concurrency, deadline, or stable-error policy;
+  protecting the HTTP listener does not protect gRPC. Keep it disabled for
+  exposed deployments. On loopback, enable it only when every local process is
+  trusted. The low-level builder can accept explicit gRPC server credentials,
+  but the CLI does not pass them, and TLS alone would not close the remaining
+  policy gaps. See the
+  [A2A deployment threat model](docs/a2a-deployment-threat-model.md#current-grpc-activation-boundary).
 - Provider mutation claim hooks are **not** a full OS sandbox. Supported shell
   hooks require an exclusive whole-worktree claim instead of guessing paths from
   command text. Several hosts still fail open on crash/timeout, Codex documents

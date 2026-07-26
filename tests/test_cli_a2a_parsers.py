@@ -110,7 +110,7 @@ class TestCardParser:
 class TestServeParser:
     """Cover the ``a2a-serve`` argument surface."""
 
-    def test_defaults_and_func_binding(self) -> None:
+    def test_defaults_and_func_binding(self, capsys: pytest.CaptureFixture[str]) -> None:
         parser = _registered_parser()
         args = parser.parse_args(["a2a-serve", "--endpoint-url", "https://example.test/a2a/v1"])
         assert args.func is _cmd_a2a_serve
@@ -127,12 +127,21 @@ class TestServeParser:
         assert args.bearer_auth is False
         assert args.a2a_token is None
         assert args.allow_origin is None
+        assert args.grpc_port is None
         assert args.insecure_off_loopback is False
         assert args.state_file is None
         assert args.task_timeout == pytest.approx(300.0)
         assert args.subscribe_timeout == pytest.approx(0.0)
         assert args.max_concurrent_requests == 32
         assert args.request_read_timeout == pytest.approx(30.0)
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["a2a-serve", "--help"])
+        assert exc_info.value.code == 0
+        help_text = " ".join(capsys.readouterr().out.split())
+        assert "Default-off; the integrated CLI does not inherit HTTP bearer" in help_text
+        assert "TLS/mTLS, or resource-limit policy" in help_text
+        assert "use only on trusted loopback" in help_text
 
     def test_numeric_arguments_are_coerced(self) -> None:
         parser = _registered_parser()
@@ -151,6 +160,8 @@ class TestServeParser:
                 "4",
                 "--request-read-timeout",
                 "1.5",
+                "--grpc-port",
+                "50051",
             ]
         )
         assert args.port == 9999
@@ -159,6 +170,7 @@ class TestServeParser:
         assert args.subscribe_timeout == pytest.approx(3.0)
         assert args.max_concurrent_requests == 4
         assert args.request_read_timeout == pytest.approx(1.5)
+        assert args.grpc_port == 50051
 
     def test_allow_origin_appends_each_value(self) -> None:
         parser = _registered_parser()

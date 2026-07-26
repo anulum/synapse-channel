@@ -9,10 +9,10 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # A2A deployment threat model
 
-This review covers the `synapse a2a-serve` HTTP+JSON edge when an operator runs
-it beyond a single loopback-only workstation. It is a deployment checklist and
-threat model for the bridge surface; it is not an external A2A interoperability
-receipt and it is not a production operator sign-off.
+This review covers the `synapse a2a-serve` HTTP+JSON edge and its optional gRPC
+listener. It is a deployment checklist and threat model for the bridge surface;
+it is not an external A2A interoperability receipt and it is not a production
+operator sign-off.
 
 ## Scope
 
@@ -20,6 +20,8 @@ In scope:
 
 - Agent Card discovery, task routes, JSON-RPC, streaming, and push-notification
   configuration routes served by `synapse a2a-serve`.
+- The optional JSON-over-gRPC `SendMessage` and `GetTask` methods enabled by
+  `--grpc-port`.
 - A reverse proxy or native process bind that exposes the A2A bridge to other
   hosts.
 - Local bridge state written through `--state-file`.
@@ -49,15 +51,43 @@ Out of scope:
 | Boundary | Main risk | Shipped control | Operator duty |
 | --- | --- | --- | --- |
 | A2A client -> reverse proxy -> bridge | Untrusted clients submit task or push-config requests. | Non-loopback bind refuses without bearer auth; non-loopback bind with bearer over plaintext HTTP also refuses unless native TLS or `--insecure-off-loopback` is set (hub R4 parity). | Prefer loopback + proxy TLS, or native `--tls-certfile`/`--tls-keyfile`; require bearer auth for protected routes. |
+| A2A gRPC client -> bridge | The optional listener can submit messages and read tasks. | `--grpc-port` is absent by default and the common bind host defaults to loopback. The integrated CLI does not currently apply the HTTP edge's bearer, TLS/mTLS, browser-authority, admission, or read-timeout policy to gRPC. | Do not enable gRPC outside a workstation where every local process is trusted. Do not expose it through a proxy, container port, LAN bind, or public interface. |
 | Bridge -> Synapse hub | Bridge forwards task text/data/file parts into Synapse chat. | Bridge uses the configured hub URI and optional hub token. | Point the bridge only at the intended hub and target. |
 | Bridge -> webhook receiver | A client can configure outbound webhook targets. | Delivery resolves each target once and pins the connection to that validated address (no re-resolve between check and connect), admits only globally routable destinations — rejecting loopback, private, link-local, carrier-grade NAT, multicast, reserved, and unspecified addresses including IPv4-mapped IPv6 — applies the same policy to redirect targets, ignores environment proxies, and bounds the discarded response body. | Permit only receiver domains that match the deployment policy; review redirects. |
 | Bridge -> local filesystem | State persistence can leak task metadata if permissions are loose. | A2A state and temp files are owner-only and writes replace atomically. | Place `--state-file` on a trusted local disk, not a shared web root. |
 | Bridge logs -> operators | Logs can leak bearer tokens or task payloads. | The stdlib handler suppresses default access logging. | If a proxy logs requests, redact `Authorization` and avoid body logging. |
 
+## Current gRPC activation boundary
+
+`--grpc-port` is absent by default and requires the optional `a2a-grpc` extra.
+When enabled, the integrated `synapse a2a-serve` command starts the
+`synapse.a2a.v1.A2ABridge` JSON-over-gRPC service on the same `--host` and
+advertises a plaintext `grpc://` endpoint.
+
+The current CLI path does **not** pass the HTTP edge's bearer authentication,
+native TLS/mTLS context, Host/Origin checks, `--max-concurrent-requests`, or
+`--request-read-timeout` into that listener. It also sets no explicit gRPC
+message-size ceiling, `maximum_concurrent_rpcs`, call deadline, or stable
+sanitized-error policy. Securing the HTTP endpoint with
+`--bearer-auth`, `--tls-certfile`, `--tls-keyfile`, or
+`--mtls-client-ca-file` therefore does not secure gRPC. Do not enable this
+listener on a non-loopback interface or expose it through a reverse proxy,
+container port, LAN, or public endpoint. On loopback, use it only when every
+local process is trusted.
+
+The low-level `build_a2a_grpc_server` API can accept explicit gRPC server
+credentials for an embedded deployment, but `synapse a2a-serve --grpc-port`
+does not supply them. TLS alone would also leave authentication,
+authorization, resource-limit, deadline, and error-policy parity unresolved.
+This binding is a custom two-method JSON-over-gRPC subset, not the generated
+official A2A protobuf contract. It remains `partial` and is not approved as an
+exposed production surface.
+
 ## Required Exposed-Bridge Posture
 
 Use this posture before accepting traffic from any host other than the local
-operator machine:
+operator machine. These examples protect the HTTP+JSON listener only; do not add
+`--grpc-port` to them:
 
 ```bash
 synapse a2a-serve \
@@ -148,6 +178,11 @@ public receipts.
 ## Residual Risk
 
 - The bridge uses bearer-token authorization, not per-client identity binding.
+- The optional gRPC listener is default-off. When enabled through
+  `synapse a2a-serve`, it does not inherit the HTTP listener's bearer, TLS/mTLS,
+  Host/Origin, admission, or read-timeout policy, and it has no explicit gRPC
+  message-size, concurrency, deadline, or stable-error policy. It must remain on
+  trusted loopback until parity is implemented and independently cleared.
 - Reverse-proxy TLS proves transport protection to the proxy boundary; it is not
   hub mTLS and does not authenticate Synapse agents.
 - Subscription replay is local process memory, not a durable cross-restart

@@ -51,6 +51,18 @@ def test_a2a_deployment_threat_model_pins_exposed_bridge_controls() -> None:
     assert "Opaque `null` origins are refused" in threat_model
     assert "a non-browser client sends no `Origin` and is unaffected" not in threat_model
     assert "redact `Authorization`" in threat_model
+    assert "`--grpc-port` is absent by default" in threat_model
+    assert "does **not** pass the HTTP edge's bearer authentication" in threat_model
+    assert "does not secure gRPC" in threat_model
+    assert "Do not enable this listener on a non-loopback interface" in threat_model
+    assert "low-level `build_a2a_grpc_server` API can accept" in threat_model
+    assert "not the generated official A2A protobuf contract" in threat_model
+    assert "no explicit gRPC message-size ceiling" in threat_model
+    assert "`maximum_concurrent_rpcs`" in threat_model
+    assert "call deadline" in threat_model
+    assert "stable sanitized-error policy" in threat_model
+    assert "does not apply the HTTP edge's bearer authentication" in combined
+    assert "protecting the HTTP listener does not protect gRPC" in combined
     assert "operator deployment sign-off" in combined
     assert "A2A deployment threat model" in combined
 

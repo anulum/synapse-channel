@@ -69,6 +69,11 @@ def test_matrix_keeps_external_validation_gates_visible() -> None:
     assert "a2a-sdk 1.1.0" in interop.evidence
     assert "TCK 5996b79" in interop.evidence
     assert "not certification" in interop.limitation
+    grpc = next(row for row in CONFORMANCE_ROWS if row.item == "gRPC")
+    assert grpc.status == "partial"
+    assert "default-off" in grpc.limitation
+    assert "does not inherit HTTP bearer, TLS/mTLS" in grpc.limitation
+    assert "trusted loopback until parity" in grpc.limitation
 
 
 def test_matrix_records_real_webhook_receiver_progress_as_partial() -> None:

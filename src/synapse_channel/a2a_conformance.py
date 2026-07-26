@@ -236,7 +236,11 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
         limitation=(
             "Custom SYNAPSE JSON-over-gRPC binding, not a generated official A2A "
             "proto stub set; install grpcio separately; full multi-method A2A gRPC "
-            "surface remains incomplete."
+            "surface remains incomplete. The listener is default-off; the integrated "
+            "CLI does not inherit HTTP bearer, TLS/mTLS, Host/Origin, admission, or "
+            "read-timeout policy and sets no explicit gRPC message-size, concurrency, "
+            "deadline, or stable-error policy, so it is restricted to trusted loopback "
+            "until parity."
         ),
         spec_reference="A2A 1.0.0 §10",
     ),

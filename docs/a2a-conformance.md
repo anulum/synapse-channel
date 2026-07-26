@@ -45,6 +45,16 @@ JSON-RPC dispatch, bridge-local task storage, local Server-Sent Events snapshots
 and push-notification configuration storage. The matrix marks these as
 `supported` or `partial` according to the local behavior and its limits.
 
+The optional gRPC row is `partial` for both protocol and security reasons.
+`--grpc-port` is default-off and starts only the custom JSON-over-gRPC
+`SendMessage` / `GetTask` subset. In the integrated CLI it does not inherit the
+HTTP edge's bearer authentication, TLS/mTLS context, Host/Origin checks,
+admission limit, or request-read timeout, and it has no explicit gRPC
+message-size, concurrency, deadline, or stable-error policy. It must remain
+disabled for exposed deployments and may be used on loopback only when every
+local process is trusted. See the
+[current gRPC activation boundary](a2a-deployment-threat-model.md#current-grpc-activation-boundary).
+
 The real-webhook row is `partial`: focused tests deliver to real local HTTPS
 receivers with a test CA, follow a real 307 proxy redirect, and block a
 delivery-time DNS rebinding attempt before send, while remote public receivers

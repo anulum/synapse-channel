@@ -116,7 +116,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         help=(
             "When set, also serve the optional A2A gRPC binding (SendMessage/GetTask) "
-            "on this TCP port (requires grpcio / synapse-channel[a2a-grpc])."
+            "on this TCP port (requires grpcio / synapse-channel[a2a-grpc]). "
+            "Default-off; the integrated CLI does not inherit HTTP bearer, TLS/mTLS, "
+            "or resource-limit policy, so use only on trusted loopback."
         ),
     )
     serve.add_argument(
