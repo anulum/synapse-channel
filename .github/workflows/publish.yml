@@ -32,6 +32,9 @@ jobs:
       - name: Build a reproducible release payload
         run: |
           set -euo pipefail
+          # The build frontend creates the wheel from a temporary sdist extraction.
+          # Fix its umask so archive modes do not depend on the runner or operator.
+          umask 0022
           export SOURCE_DATE_EPOCH
           SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
           mkdir -p build/raw-dist release-artifact
