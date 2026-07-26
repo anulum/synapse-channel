@@ -65,3 +65,12 @@ def test_multi_hub_sync_keeps_local_first_boundaries() -> None:
     assert "no single global leader" in text or "does not introduce a global consensus" in text
     for sibling in ("signed-events-mtls.md", "federated-trust-model.md"):
         assert sibling in _read(DOC)
+
+
+def test_multi_hub_sync_states_that_claim_forwarding_ships() -> None:
+    """The status summary must match the shipped opt-in forwarding path."""
+    text = _collapsed(DOC)
+    assert "opt-in claim forwarding also ships" in text
+    assert "--namespace-owner" in text
+    assert "--claim-peer hub_id=uri" in text
+    assert "routing a real claim to its namespace's owning hub" not in text

@@ -304,8 +304,11 @@ clock-agreement bound.
 The cross-host event-log pull above now ships, so a hub can *observe* another over a real
 connection, and the federation/mTLS gate is now enforced on **both** sides — the following
 side before it pulls, and the serving side before it serves (`MultiHubServingPolicy`, see
-[Boundaries](#boundaries)). What is still not built is the rest of *sync*: routing a real
-claim to its namespace's owning hub.
+[Boundaries](#boundaries)). Opt-in claim forwarding also ships: a hub configured with
+`--namespace-owner` and `--claim-peer HUB_ID=URI` routes a remote-owned claim to that
+namespace's owning hub and relays the owner's verdict. What remains outside this design is
+automatic peer discovery, global consensus, and a merge that could turn observed peer state
+into local claim authority.
 
 ## State, split by what merges
 
