@@ -195,6 +195,13 @@ def test_optional_client_ca_requires_native_tls_and_valid_ca(tmp_path: Path) -> 
     bad_ca = tmp_path / "bad-client-ca.pem"
     bad_ca.write_text("not a CA\n", encoding="utf-8")
 
+    with pytest.raises(HubTLSConfigError, match="mutually exclusive"):
+        build_server_ssl_context(
+            certfile=certfile,
+            keyfile=keyfile,
+            client_ca_file=certfile,
+            client_ca_data=certfile.read_bytes(),
+        )
     with pytest.raises(HubTLSConfigError, match="requires both"):
         build_server_ssl_context(certfile=None, keyfile=None, client_ca_file=certfile)
     with pytest.raises(HubTLSConfigError, match="could not load mTLS client CA bundle"):
