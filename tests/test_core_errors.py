@@ -256,6 +256,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "multihub_fetch",
         RuntimeError,
     ),
+    "MultiHubServingConfigError": (
+        "synapse_channel.core.multihub_serving_config",
+        "multihub_serving_config",
+        ValueError,
+    ),
     "MultiHubWireError": ("synapse_channel.core.multihub_wire", "multihub_wire", ValueError),
     "OpenCodeAdapterError": ("synapse_channel.opencode_adapter", "opencode_adapter", ValueError),
     "OpenCodeAdapterFileError": (

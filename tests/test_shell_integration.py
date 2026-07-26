@@ -687,6 +687,7 @@ def test_bash_hook_keeps_a_manual_non_terminal_identity(tmp_path: Path) -> None:
     assert "re-minting" not in proc.stderr
 
 
+@requires_proc
 def test_bash_hook_keeps_an_auto_identity_minted_by_a_live_ancestor(tmp_path: Path) -> None:
     # A nested shell under the minting shell shares its seat deliberately:
     # the embedded pid IS an ancestor, so the identity is not foreign.
