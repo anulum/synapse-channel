@@ -13,6 +13,7 @@ import argparse
 import gzip
 import os
 import tarfile
+import unicodedata
 from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 
@@ -21,14 +22,49 @@ class SdistRepackError(ValueError):
     """The source archive cannot be safely normalized."""
 
 
+_WINDOWS_FORBIDDEN_CHARS = frozenset('<>:"|?*')
+_WINDOWS_RESERVED_NAMES = frozenset(
+    {
+        "aux",
+        "clock$",
+        "con",
+        "conin$",
+        "conout$",
+        "nul",
+        "prn",
+    }
+    | {f"{prefix}{suffix}" for prefix in ("com", "lpt") for suffix in (*"123456789", "¹", "²", "³")}
+)
+
+
+def _portable_component_identity(component: str) -> str:
+    """Return one collision identity for a portable extraction component."""
+    if component.endswith((" ", ".")) or any(
+        ord(character) < 32 or character in _WINDOWS_FORBIDDEN_CHARS for character in component
+    ):
+        raise SdistRepackError(f"sdist contains a non-portable member path: {component!r}")
+    identity = unicodedata.normalize("NFC", unicodedata.normalize("NFC", component).casefold())
+    reserved_stem = identity.partition(".")[0].rstrip(" ")
+    if reserved_stem in _WINDOWS_RESERVED_NAMES:
+        raise SdistRepackError(f"sdist contains a non-portable member path: {component!r}")
+    return identity
+
+
+def _portable_path_identity(path: PurePosixPath) -> tuple[str, ...]:
+    """Return a case- and normalization-insensitive extraction identity."""
+    return tuple(_portable_component_identity(part) for part in path.parts)
+
+
 def _checked_members(source: tarfile.TarFile) -> tuple[tarfile.TarInfo, ...]:
     members = source.getmembers()
     if not members:
         raise SdistRepackError("sdist archive must not be empty")
-    seen: set[str] = set()
+    seen_portable: set[tuple[str, ...]] = set()
+    seen_regular: set[tuple[str, ...]] = set()
     for member in members:
         name = member.name
         path = PurePosixPath(name)
+        canonical_name = path.as_posix()
         if (
             not name
             or name.startswith("/")
@@ -36,11 +72,27 @@ def _checked_members(source: tarfile.TarFile) -> tuple[tarfile.TarInfo, ...]:
             or any(part in {"", ".", ".."} for part in path.parts)
         ):
             raise SdistRepackError(f"sdist contains an unsafe member path: {name!r}")
-        if name in seen:
+        portable_identity = _portable_path_identity(path)
+        if portable_identity in seen_portable:
             raise SdistRepackError(f"sdist contains a duplicate member: {name!r}")
+        if name != canonical_name:
+            raise SdistRepackError(f"sdist contains an unsafe member path: {name!r}")
         if not (member.isdir() or member.isreg()):
             raise SdistRepackError(f"sdist contains a non-file member: {name!r}")
-        seen.add(name)
+        if any(
+            portable_identity[:depth] in seen_regular for depth in range(1, len(portable_identity))
+        ) or (
+            member.isreg()
+            and any(
+                len(existing) > len(portable_identity)
+                and existing[: len(portable_identity)] == portable_identity
+                for existing in seen_portable
+            )
+        ):
+            raise SdistRepackError(f"sdist contains a conflicting member path: {name!r}")
+        seen_portable.add(portable_identity)
+        if member.isreg():
+            seen_regular.add(portable_identity)
     return tuple(sorted(members, key=lambda member: member.name))
 
 

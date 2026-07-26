@@ -99,14 +99,59 @@ def test_repack_is_byte_reproducible_and_normalizes_metadata(tmp_path: Path) -> 
     [
         ([], "must not be empty"),
         ([("/absolute", b"x", tarfile.REGTYPE)], "unsafe member"),
+        ([("./package/file", b"x", tarfile.REGTYPE)], "unsafe member"),
+        ([("package/./file", b"x", tarfile.REGTYPE)], "unsafe member"),
+        ([("package//file", b"x", tarfile.REGTYPE)], "unsafe member"),
         ([("package/../escape", b"x", tarfile.REGTYPE)], "unsafe member"),
         ([("package\\escape", b"x", tarfile.REGTYPE)], "unsafe member"),
+        ([("package/file.", b"x", tarfile.REGTYPE)], "non-portable member"),
+        ([("package/file ", b"x", tarfile.REGTYPE)], "non-portable member"),
+        ([("package/a:b", b"x", tarfile.REGTYPE)], "non-portable member"),
+        ([("package/control\x01", b"x", tarfile.REGTYPE)], "non-portable member"),
+        ([("package/CON", b"x", tarfile.REGTYPE)], "non-portable member"),
+        ([("package/aux.txt", b"x", tarfile.REGTYPE)], "non-portable member"),
+        ([("package/COM¹.log", b"x", tarfile.REGTYPE)], "non-portable member"),
+        (
+            [
+                ("package/file", b"canonical", tarfile.REGTYPE),
+                ("package/./file", b"collision", tarfile.REGTYPE),
+            ],
+            "duplicate member",
+        ),
+        (
+            [
+                ("package/File.py", b"upper", tarfile.REGTYPE),
+                ("package/file.py", b"lower", tarfile.REGTYPE),
+            ],
+            "duplicate member",
+        ),
+        (
+            [
+                ("package/café.py", b"nfc", tarfile.REGTYPE),
+                ("package/cafe\u0301.py", b"nfd", tarfile.REGTYPE),
+            ],
+            "duplicate member",
+        ),
         (
             [
                 ("package/file", b"one", tarfile.REGTYPE),
                 ("package/file", b"two", tarfile.REGTYPE),
             ],
             "duplicate member",
+        ),
+        (
+            [
+                ("package/file", b"parent", tarfile.REGTYPE),
+                ("package/file/child", b"child", tarfile.REGTYPE),
+            ],
+            "conflicting member",
+        ),
+        (
+            [
+                ("package/file/child", b"child", tarfile.REGTYPE),
+                ("package/file", b"parent", tarfile.REGTYPE),
+            ],
+            "conflicting member",
         ),
         ([("package/link", None, tarfile.SYMTYPE)], "non-file member"),
     ],
@@ -124,6 +169,18 @@ def test_repack_refuses_unsafe_members(
         repack_sdist(source, output, source_date_epoch=EPOCH)
 
     assert not output.exists()
+
+
+def test_repack_preserves_one_exact_portable_unicode_spelling(tmp_path: Path) -> None:
+    source = tmp_path / "source.tar.gz"
+    decomposed_name = "package/cafe\u0301.py"
+    _archive(source, [(decomposed_name, b"data", tarfile.REGTYPE)], mtime=10, uid=1000)
+    output = tmp_path / "output.tar.gz"
+
+    repack_sdist(source, output, source_date_epoch=EPOCH)
+
+    with tarfile.open(output, mode="r:gz") as archive:
+        assert archive.getnames() == [decomposed_name]
 
 
 def test_repack_refuses_invalid_paths_epoch_and_existing_output(tmp_path: Path) -> None:
