@@ -29,7 +29,23 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-tools.txt
-      - run: python -m build --outdir release-artifact
+      - name: Build a reproducible release payload
+        run: |
+          set -euo pipefail
+          export SOURCE_DATE_EPOCH
+          SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
+          mkdir -p build/raw-dist release-artifact
+          python -m build --sdist --outdir build/raw-dist
+          python -m build --wheel --outdir release-artifact
+          raw_sdists=(build/raw-dist/*.tar.gz)
+          if [ "${#raw_sdists[@]}" -ne 1 ]; then
+            echo "expected exactly one raw sdist" >&2
+            exit 1
+          fi
+          python tools/repack_sdist.py \
+            --input "${raw_sdists[0]}" \
+            --output "release-artifact/$(basename "${raw_sdists[0]}")" \
+            --source-date-epoch "${SOURCE_DATE_EPOCH}"
       - run: python -m twine check release-artifact/*.whl release-artifact/*.tar.gz
       - name: Generate CycloneDX SBOM for the built wheel
         run: |

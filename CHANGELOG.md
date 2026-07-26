@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Normalize source-distribution member order, ownership, modes, and timestamps,
+  plus gzip metadata, against the commit `SOURCE_DATE_EPOCH`. Trusted publish
+  now builds the raw sdist outside the release payload and emits a safe,
+  byte-reproducible archive without extracting untrusted member paths.
 - HTTP `:subscribe` decides terminal refusal from the **final** durable
   event snapshot (not the first history event), restoring CONFLICT problem
   JSON for completed/failed tasks while keeping ordered durable replay on
