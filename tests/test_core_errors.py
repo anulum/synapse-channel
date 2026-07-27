@@ -68,6 +68,16 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "a2a_plaintext_bearer",
         ValueError,
     ),
+    "A2AReceiptWriteError": (
+        "synapse_channel.a2a_outbound_response",
+        "a2a_receipt_write",
+        RuntimeError,
+    ),
+    "A2AResponseShapeError": (
+        "synapse_channel.a2a_outbound_response",
+        "a2a_response_shape",
+        ValueError,
+    ),
     "A2AQuotaError": ("synapse_channel.a2a_errors", "a2a_quota", ValueError),
     "A2AStoreError": ("synapse_channel.a2a_errors", "a2a_store", ValueError),
     "A2AValidationError": (

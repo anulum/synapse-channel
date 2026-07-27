@@ -20,6 +20,7 @@ from synapse_channel.a2a_interop_trace import (
     run_local_interop_trace,
     write_interop_receipt,
 )
+from synapse_channel.a2a_outbound_response import A2AReceiptWriteError
 from synapse_channel.core.secret_files import SecretFileError
 
 
@@ -55,7 +56,11 @@ def _cmd_a2a_interop_trace(args: argparse.Namespace) -> int:
         print(f"a2a-interop-trace: {exc}", file=sys.stderr)
         return 1
     if args.output:
-        written = write_interop_receipt(args.output, receipt)
+        try:
+            written = write_interop_receipt(args.output, receipt)
+        except A2AReceiptWriteError as exc:
+            print(f"a2a-interop-trace: {exc}", file=sys.stderr)
+            return 1
         print(f"wrote interop receipt: {written}")
     else:
         print(json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=True))

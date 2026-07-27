@@ -25,7 +25,12 @@ from urllib.parse import urljoin, urlparse
 
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_credentials import guard_a2a_bearer_transport
+from synapse_channel.a2a_outbound_response import (
+    A2AResponseShapeError,
+    read_a2a_response,
+)
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.http_response import BoundedReadError
 
 
 class A2AClientError(SynapseError, RuntimeError):
@@ -47,7 +52,7 @@ def _request(
     timeout: float = 10.0,
     ssl_context: ssl.SSLContext | None = None,
 ) -> tuple[int, dict[str, Any] | str]:
-    """Issue one HTTP(S) request and return status plus JSON or text body."""
+    """Issue one HTTP(S) request and return status plus JSON or a fixed body kind."""
     payload = b""
     req_headers = {"Accept": "application/json", **dict(headers or {})}
     if body is not None:
@@ -66,16 +71,17 @@ def _request(
     try:
         conn.request(method, path, body=payload, headers=req_headers)
         response = conn.getresponse()
-        raw = response.read()
         status = int(response.status)
+        try:
+            decoded, response_kind = read_a2a_response(
+                response,
+                purpose="outbound A2A response",
+            )
+        except (BoundedReadError, A2AResponseShapeError) as exc:
+            raise A2AClientError(str(exc)) from exc
     finally:
         conn.close()
-    if not raw:
-        return status, ""
-    try:
-        return status, json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return status, raw.decode("utf-8", errors="replace")
+    return status, decoded if decoded is not None else response_kind
 
 
 def parse_a2a_endpoint(url: str) -> tuple[str, str, int, str]:
@@ -162,7 +168,8 @@ class A2AOutboundClient:
             ssl_context=self._ssl_context,
         )
         if status != 200 or not isinstance(body, dict):
-            raise A2AClientError(f"agent-card discovery failed: HTTP {status} body={body!r}")
+            kind = "object" if isinstance(body, dict) else body
+            raise A2AClientError(f"agent-card discovery failed: HTTP {status} response_kind={kind}")
         return body
 
     def send_message(
@@ -200,7 +207,8 @@ class A2AOutboundClient:
             headers={"A2A-Version": "1.0"},
         )
         if status != 200 or not isinstance(body, dict):
-            raise A2AClientError(f"message:send failed: HTTP {status} body={body!r}")
+            kind = "object" if isinstance(body, dict) else body
+            raise A2AClientError(f"message:send failed: HTTP {status} response_kind={kind}")
         return body
 
     def get_task(self, task_id: str) -> JsonMap:
@@ -217,7 +225,8 @@ class A2AOutboundClient:
             headers={"A2A-Version": "1.0"},
         )
         if status != 200 or not isinstance(body, dict):
-            raise A2AClientError(f"GET task failed: HTTP {status} body={body!r}")
+            kind = "object" if isinstance(body, dict) else body
+            raise A2AClientError(f"GET task failed: HTTP {status} response_kind={kind}")
         return body
 
     def discover_send_get(

@@ -15,6 +15,7 @@ import sys
 
 from synapse_channel.a2a_client import A2AClientError, A2AOutboundClient
 from synapse_channel.a2a_credentials import A2APlaintextBearerError, resolve_a2a_token
+from synapse_channel.a2a_outbound_response import A2AReceiptWriteError, write_a2a_receipt
 from synapse_channel.core.secret_files import SecretFileError
 
 
@@ -41,10 +42,11 @@ def _cmd_a2a_client(args: argparse.Namespace) -> int:
         print(f"a2a-client: {exc}", file=sys.stderr)
         return 1
     if args.output:
-        path = args.output
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(receipt, handle, indent=2, sort_keys=True, ensure_ascii=True)
-            handle.write("\n")
+        try:
+            path = write_a2a_receipt(args.output, receipt)
+        except A2AReceiptWriteError as exc:
+            print(f"a2a-client: {exc}", file=sys.stderr)
+            return 1
         print(f"wrote outbound receipt: {path}")
     else:
         print(json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=True))

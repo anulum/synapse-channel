@@ -92,6 +92,12 @@ synapse a2a-interop-trace --host 127.0.0.1 --port 8877 --output /tmp/a2a-interop
 
 The receipt schema is `synapse.a2a_interop_trace.v1` (discovery + task lifecycle).
 It is the deterministic second client stack for the independent matrix row.
+Both this stack and `synapse a2a-client` cap peer responses at one MiB, apply
+the shared 64-level JSON nesting guard and a 4,096-member cumulative shape
+ceiling, and keep peer values out of failure messages. `--output` uses an
+owner-only temporary file plus fsync and atomic replacement. This protects
+local receipt custody; it does not establish certificate pinning,
+client-certificate identity, public-network validation, or certification.
 
 ## Official SDK and TCK receipt (2026-07-10)
 

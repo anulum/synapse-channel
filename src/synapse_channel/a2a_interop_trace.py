@@ -27,7 +27,13 @@ from typing import Any
 from urllib.parse import urlparse
 
 from synapse_channel.a2a_credentials import guard_a2a_bearer_transport
+from synapse_channel.a2a_outbound_response import (
+    A2AResponseShapeError,
+    read_a2a_response,
+    write_a2a_receipt,
+)
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.http_response import BoundedReadError
 
 CLIENT_NAME = "synapse-stdlib-http-client"
 """Identity of this independent client for receipts."""
@@ -58,7 +64,7 @@ def _request(
     scheme: str = "http",
     ssl_context: ssl.SSLContext | None = None,
 ) -> tuple[int, dict[str, Any] | str]:
-    """Issue one HTTP(S) request and return status plus JSON or text body."""
+    """Issue one HTTP(S) request and return status plus JSON or a fixed body kind."""
     payload = b""
     req_headers = {"Accept": "application/json", **dict(headers or {})}
     if body is not None:
@@ -78,16 +84,17 @@ def _request(
     try:
         conn.request(method, path, body=payload, headers=req_headers)
         response = conn.getresponse()
-        raw = response.read()
         status = int(response.status)
+        try:
+            decoded, response_kind = read_a2a_response(
+                response,
+                purpose="A2A interop response",
+            )
+        except (BoundedReadError, A2AResponseShapeError) as exc:
+            raise A2AInteropTraceError(str(exc)) from exc
     finally:
         conn.close()
-    if not raw:
-        return status, ""
-    try:
-        return status, json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return status, raw.decode("utf-8", errors="replace")
+    return status, decoded if decoded is not None else response_kind
 
 
 def parse_endpoint(url: str) -> tuple[str, str, int, str]:
@@ -210,7 +217,8 @@ def run_local_interop_trace(
         ssl_context=context,
     )
     if status != 200 or not isinstance(card, dict):
-        raise A2AInteropTraceError(f"discovery failed: HTTP {status} body={card!r}")
+        kind = "object" if isinstance(card, dict) else card
+        raise A2AInteropTraceError(f"discovery failed: HTTP {status} response_kind={kind}")
 
     message_id = f"interop-{uuid.uuid4().hex[:12]}"
     send_body = {
@@ -233,10 +241,11 @@ def run_local_interop_trace(
         ssl_context=context,
     )
     if status != 200 or not isinstance(send_result, dict):
-        raise A2AInteropTraceError(f"message:send failed: HTTP {status} body={send_result!r}")
+        kind = "object" if isinstance(send_result, dict) else send_result
+        raise A2AInteropTraceError(f"message:send failed: HTTP {status} response_kind={kind}")
     task = send_result.get("task")
     if not isinstance(task, dict) or not task.get("id"):
-        raise A2AInteropTraceError(f"message:send missing task id: {send_result!r}")
+        raise A2AInteropTraceError("message:send response is missing a task id")
     task_id = str(task["id"])
     state = str((task.get("status") or {}).get("state") or "")
     # Message body must survive the round-trip (not merely HTTP 200).
@@ -263,9 +272,7 @@ def run_local_interop_trace(
             if isinstance(part, dict) and part.get("text")
         ]
         if message_text not in status_texts and message_text not in history_texts:
-            raise A2AInteropTraceError(
-                f"message:send task missing sent text {message_text!r} in history/status"
-            )
+            raise A2AInteropTraceError("message:send task is missing sent text in history/status")
 
     get_path = f"{prefix}/tasks/{task_id}" if prefix else f"/tasks/{task_id}"
     status, got = _request(
@@ -279,10 +286,11 @@ def run_local_interop_trace(
         ssl_context=context,
     )
     if status != 200 or not isinstance(got, dict):
-        raise A2AInteropTraceError(f"GET task failed: HTTP {status} body={got!r}")
+        kind = "object" if isinstance(got, dict) else got
+        raise A2AInteropTraceError(f"GET task failed: HTTP {status} response_kind={kind}")
     got_id = str(got.get("id") or (got.get("task") or {}).get("id") or "")
     if got_id and got_id != task_id:
-        raise A2AInteropTraceError(f"task id mismatch: sent {task_id!r} got {got_id!r}")
+        raise A2AInteropTraceError("task id mismatch between send and get responses")
 
     finished = time.time()
     tls_dimension = "recorded" if normalised_scheme == "https" else "not_exercised"
@@ -347,11 +355,5 @@ def _first_binding(card: Mapping[str, Any]) -> str:
 
 
 def write_interop_receipt(path: str | Path, receipt: Mapping[str, Any]) -> Path:
-    """Write a receipt JSON document with owner-readable formatting."""
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        json.dumps(dict(receipt), indent=2, sort_keys=True, ensure_ascii=True) + "\n",
-        encoding="utf-8",
-    )
-    return target
+    """Atomically write an owner-only receipt JSON document."""
+    return write_a2a_receipt(path, receipt)

@@ -1985,6 +1985,12 @@ Operational boundaries:
   refuse plaintext HTTP outside a literal IPv4/IPv6 loopback destination before
   network I/O. `--a2a-allow-insecure-http` is the explicit cleartext-risk
   override; it does not disable certificate verification for HTTPS.
+- Both outbound clients cap each response at one MiB, apply the shared
+  64-level JSON nesting guard plus a 4,096-member cumulative shape ceiling,
+  and reduce malformed or wrong-shape peer bodies to fixed value-free failure
+  kinds. Their `--output` receipts use owner-only sibling temporary files,
+  fsync, and atomic replacement. Certificate pinning and outbound
+  client-certificate identity are not provided by these controls.
 - `--grpc-port PORT` enables a default-off, optional JSON-over-gRPC
   `SendMessage` / `GetTask` subset on the same `--host`. The integrated CLI
   applies the selected A2A shared bearer and native TLS/mTLS files to both

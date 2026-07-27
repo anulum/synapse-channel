@@ -99,8 +99,12 @@ client stack for discovery, `message:send`, and `GET /tasks/{id}` over
 clients and `a2a-serve` accept owner-only, same-descriptor
 `--a2a-token-file` credentials with explicit argv-over-file precedence.
 Outbound bearer-over-HTTP is refused outside a literal loopback IP unless the
-operator explicitly supplies `--a2a-allow-insecure-http`. These
-receipts are not certification or full conformance. An outbound
+operator explicitly supplies `--a2a-allow-insecure-http`. Both clients also
+cap responses at one MiB, enforce 64-level nesting and 4,096 cumulative JSON
+members, sanitize peer-controlled failures, and atomically write owner-only
+receipts. These controls do not add certificate pinning or outbound
+client-certificate identity. These receipts are not certification or full
+conformance. An outbound
 external-server pass, public webhook, reverse-proxy production sign-off,
 durable-history, and operator receipts remain open — record them with
 [A2A bridge validation receipts](a2a-validation-receipts.md).

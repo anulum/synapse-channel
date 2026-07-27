@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import json
+import stat
+import sys
 import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -17,10 +19,15 @@ from pathlib import Path
 import pytest
 
 from a2a_server_helpers import RecordingAgent, _default_bridge, _free_port
-from synapse_channel import cli
-from synapse_channel.a2a_client import A2AOutboundClient, parse_a2a_endpoint
+from synapse_channel import a2a_client as a2a_client_module
+from synapse_channel import cli, cli_a2a_client
+from synapse_channel.a2a_client import A2AClientError, A2AOutboundClient, parse_a2a_endpoint
 from synapse_channel.a2a_credentials import A2APlaintextBearerError
 from synapse_channel.a2a_http import build_a2a_handler
+from synapse_channel.a2a_outbound_response import (
+    A2A_MAX_RESPONSE_BYTES,
+    A2AReceiptWriteError,
+)
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
@@ -56,6 +63,61 @@ def test_outbound_client_explicit_plaintext_override_allows_configuration() -> N
         allow_insecure_http=True,
     )
     assert client.host == "peer.example"
+
+
+def test_outbound_request_wraps_streamed_oversize_without_echoing_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = b"peer-secret-response"
+
+    class Response:
+        status = 200
+        headers: dict[str, str] = {}
+
+        def read(self, amount: int) -> bytes:
+            return (secret * ((amount // len(secret)) + 1))[:amount]
+
+    class Connection:
+        def request(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "synapse_channel.a2a_client.http.client.HTTPConnection",
+        lambda *_args, **_kwargs: Connection(),
+    )
+
+    with pytest.raises(A2AClientError) as caught:
+        a2a_client_module._request(
+            scheme="http",
+            host="127.0.0.1",
+            port=8877,
+            method="GET",
+            path="/agent-card.json",
+        )
+    assert str(A2A_MAX_RESPONSE_BYTES) in str(caught.value)
+    assert secret.decode() not in str(caught.value)
+
+
+def test_outbound_status_error_does_not_echo_a_json_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = A2AOutboundClient("http://127.0.0.1:8877")
+    monkeypatch.setattr(
+        a2a_client_module,
+        "_request",
+        lambda **_kwargs: (502, {"detail": "peer-secret-detail"}),
+    )
+
+    with pytest.raises(A2AClientError) as caught:
+        client.get_agent_card()
+    assert str(caught.value) == ("agent-card discovery failed: HTTP 502 response_kind=object")
+    assert "peer-secret-detail" not in str(caught.value)
 
 
 def test_outbound_client_discover_send_get_twice() -> None:
@@ -125,6 +187,45 @@ def test_cli_a2a_client_writes_receipt(tmp_path: Path) -> None:
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["task_id"]
     assert data["message_text"] == "cli-outbound"
+    if sys.platform != "win32":
+        assert stat.S_IMODE(out.stat().st_mode) == 0o600
+
+
+def test_cli_a2a_client_reports_bounded_receipt_write_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class Client:
+        def discover_send_get(self, _message: str) -> dict[str, object]:
+            return {"task_id": "peer-secret-task", "send_response": {}}
+
+    monkeypatch.setattr(
+        cli_a2a_client,
+        "A2AOutboundClient",
+        lambda *_args, **_kwargs: Client(),
+    )
+    monkeypatch.setattr(
+        cli_a2a_client,
+        "write_a2a_receipt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            A2AReceiptWriteError("A2A receipt write failed")
+        ),
+    )
+
+    code = cli.main(
+        [
+            "a2a-client",
+            "--endpoint-url",
+            "http://127.0.0.1:8877",
+            "--output",
+            str(tmp_path / "receipt.json"),
+        ]
+    )
+    assert code == 1
+    error = capsys.readouterr().err
+    assert error == "a2a-client: A2A receipt write failed\n"
+    assert "peer-secret-task" not in error
 
 
 def test_cli_a2a_client_refuses_remote_plaintext_bearer_before_io(

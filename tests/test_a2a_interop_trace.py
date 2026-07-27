@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import json
+import stat
+import sys
 import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -16,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from a2a_server_helpers import RecordingAgent, _default_bridge, _free_port
+from synapse_channel import a2a_interop_trace as interop_module
 from synapse_channel import cli
 from synapse_channel.a2a_conformance import conformance_rows
 from synapse_channel.a2a_credentials import A2APlaintextBearerError
@@ -27,6 +30,7 @@ from synapse_channel.a2a_interop_trace import (
     run_local_interop_trace,
     write_interop_receipt,
 )
+from synapse_channel.a2a_outbound_response import A2A_MAX_JSON_MEMBERS
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
@@ -96,6 +100,92 @@ def test_interop_trace_refuses_bearer_to_named_plaintext_peer() -> None:
         run_local_interop_trace(host="peer.example", token="never echoed")
 
 
+def test_interop_request_wraps_wide_json_without_echoing_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = json.dumps({"items": ["peer-secret"] * A2A_MAX_JSON_MEMBERS}).encode()
+
+    class Response:
+        status = 200
+        headers: dict[str, str] = {}
+
+        def read(self, amount: int) -> bytes:
+            return body[:amount]
+
+    class Connection:
+        def request(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "synapse_channel.a2a_interop_trace.http.client.HTTPConnection",
+        lambda *_args, **_kwargs: Connection(),
+    )
+
+    with pytest.raises(A2AInteropTraceError) as caught:
+        interop_module._request("127.0.0.1", 8877, "GET", "/agent-card.json")
+    assert str(A2A_MAX_JSON_MEMBERS) in str(caught.value)
+    assert "peer-secret" not in str(caught.value)
+
+
+def test_interop_missing_text_error_does_not_echo_message_or_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    responses: list[tuple[int, dict[str, object] | str]] = [
+        (200, {"name": "card"}),
+        (
+            200,
+            {
+                "task": {
+                    "id": "peer-secret-task-id",
+                    "status": {"state": "TASK_STATE_WORKING"},
+                    "history": [],
+                },
+                "peer-secret-field": "peer-secret-result",
+            },
+        ),
+    ]
+    monkeypatch.setattr(interop_module, "_request", lambda *_args, **_kwargs: responses.pop(0))
+
+    with pytest.raises(A2AInteropTraceError) as caught:
+        run_local_interop_trace(message_text="peer-secret-message")
+    assert "peer-secret-message" not in str(caught.value)
+    assert "peer-secret-task-id" not in str(caught.value)
+    assert "peer-secret-result" not in str(caught.value)
+
+
+def test_interop_task_mismatch_error_does_not_echo_identifiers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = "probe"
+    responses: list[tuple[int, dict[str, object] | str]] = [
+        (200, {"name": "card"}),
+        (
+            200,
+            {
+                "task": {
+                    "id": "peer-secret-sent-id",
+                    "status": {"state": "TASK_STATE_WORKING"},
+                    "history": [{"parts": [{"text": message}]}],
+                }
+            },
+        ),
+        (200, {"id": "peer-secret-got-id"}),
+    ]
+    monkeypatch.setattr(interop_module, "_request", lambda *_args, **_kwargs: responses.pop(0))
+
+    with pytest.raises(A2AInteropTraceError) as caught:
+        run_local_interop_trace(message_text=message)
+    assert str(caught.value) == "task id mismatch between send and get responses"
+    assert "peer-secret-sent-id" not in str(caught.value)
+    assert "peer-secret-got-id" not in str(caught.value)
+
+
 def test_cli_a2a_interop_trace_writes_receipt(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -133,6 +223,8 @@ def test_cli_a2a_interop_trace_writes_receipt(
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["schema"] == RECEIPT_SCHEMA
     assert data["task_lifecycle"]["task_id"]
+    if sys.platform != "win32":
+        assert stat.S_IMODE(out.stat().st_mode) == 0o600
 
 
 def test_cli_a2a_interop_refuses_remote_plaintext_bearer_before_io(

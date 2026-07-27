@@ -22,6 +22,7 @@ from a2a_server_helpers import _default_bridge, _free_port
 from synapse_channel import cli, cli_a2a_interop
 from synapse_channel.a2a_http import build_a2a_handler
 from synapse_channel.a2a_interop_trace import RECEIPT_SCHEMA
+from synapse_channel.a2a_outbound_response import A2AReceiptWriteError
 from synapse_channel.a2a_server import A2ABridge
 
 
@@ -143,6 +144,37 @@ def test_cli_host_port_writes_live_receipt(
     receipt = json.loads(output.read_text(encoding="utf-8"))
     assert receipt["schema"] == RECEIPT_SCHEMA
     assert receipt["task_lifecycle"]["task_id"]
+
+
+def test_cli_reports_bounded_receipt_write_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli_a2a_interop,
+        "run_local_interop_trace",
+        lambda **_kwargs: {"task_lifecycle": {"task_id": "peer-secret-task"}},
+    )
+    monkeypatch.setattr(
+        cli_a2a_interop,
+        "write_interop_receipt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            A2AReceiptWriteError("A2A receipt write failed")
+        ),
+    )
+
+    code = cli.main(
+        [
+            "a2a-interop-trace",
+            "--output",
+            str(tmp_path / "receipt.json"),
+        ]
+    )
+    assert code == 1
+    error = capsys.readouterr().err
+    assert error == "a2a-interop-trace: A2A receipt write failed\n"
+    assert "peer-secret-task" not in error
 
 
 @pytest.mark.parametrize(
