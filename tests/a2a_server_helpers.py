@@ -124,12 +124,23 @@ class HandlerHarness:
         body: dict[str, Any] | bytes | None = None,
         headers: dict[str, str] | None = None,
         bridge: Any | None = None,
+        skip_host: bool = False,
+        extra_header_pairs: list[tuple[str, str]] | None = None,
     ) -> None:
         self.method = method
         self.path = path
         self.body = body
         self.headers = headers or {}
-        self.handler = BridgeRef(bridge if bridge is not None else _default_bridge())
+        self.skip_host = skip_host
+        self.extra_header_pairs = extra_header_pairs or []
+        selected_bridge = bridge if bridge is not None else _default_bridge()
+        if not selected_bridge.allowed_authorities:
+            # Legacy route fixtures may omit an Agent Card because the route
+            # behavior is under test. The real HTTP harness still supplies one
+            # explicit advertised authority instead of exercising an
+            # unrestricted edge.
+            selected_bridge.allowed_authorities = ("example.test",)
+        self.handler = BridgeRef(selected_bridge)
 
     def run(self) -> tuple[int, dict[str, Any]]:
         """Run the configured request and return HTTP status plus decoded body."""
@@ -149,6 +160,10 @@ class HandlerHarness:
         return status, [json.loads(line.removeprefix(b"data: ").decode("utf-8")) for line in lines]
 
     def _request(self) -> tuple[int, dict[str, str], bytes]:
+        if not self.handler.bridge.allowed_authorities:
+            # Some legacy tests replace ``handler.bridge`` after construction.
+            # Keep the real HTTP harness explicit and bounded in that setup too.
+            self.handler.bridge.allowed_authorities = ("example.test",)
         port = _free_port()
         server = ThreadingHTTPServer(("127.0.0.1", port), build_a2a_handler(self.handler.bridge))
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -161,9 +176,26 @@ class HandlerHarness:
             else:
                 payload = json.dumps(self.body).encode("utf-8")
             headers = {"Content-Length": str(len(payload)), **self.headers}
+            if not self.skip_host and "Host" not in headers:
+                authorities = self.handler.bridge.allowed_authorities
+                if authorities:
+                    headers["Host"] = authorities[0]
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5.0)
             try:
-                conn.request(self.method, self.path, body=payload, headers=headers)
+                if self.skip_host or self.extra_header_pairs:
+                    manual_skip_host = (
+                        self.skip_host
+                        or "Host" in headers
+                        or any(key.lower() == "host" for key, _value in self.extra_header_pairs)
+                    )
+                    conn.putrequest(self.method, self.path, skip_host=manual_skip_host)
+                    for key, value in headers.items():
+                        conn.putheader(key, value)
+                    for key, value in self.extra_header_pairs:
+                        conn.putheader(key, value)
+                    conn.endheaders(payload)
+                else:
+                    conn.request(self.method, self.path, body=payload, headers=headers)
                 response = conn.getresponse()
                 body = response.read()
                 parsed_headers = {key: value for key, value in response.getheaders()}

@@ -47,7 +47,10 @@ def _post_json(port: int, path: str, body: dict[str, Any]) -> tuple[int, dict[st
             "POST",
             path,
             body=payload,
-            headers={"Content-Length": str(len(payload))},
+            headers={
+                "Content-Length": str(len(payload)),
+                "Host": "load.test",
+            },
         )
         response = connection.getresponse()
         raw_body = response.read()
@@ -64,6 +67,7 @@ def test_real_http_send_path_persists_bounded_request_churn(tmp_path: Path) -> N
         agent_card={},
         target="WORKER",
         store=A2ATaskStore(storage_path=state_file, max_tasks=32),
+        allowed_authorities=("load.test",),
     )
     port = _free_port()
     server = make_a2a_http_server(bridge=bridge, host="127.0.0.1", port=port)

@@ -26,6 +26,7 @@ from synapse_channel import a2a_errors
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_events import A2ATaskEvents
 from synapse_channel.a2a_http_protocol import (
+    endpoint_authorities,
     non_negative_int,
     normalise_authority,
     normalise_origin,
@@ -62,6 +63,31 @@ A2A_METADATA_TASK_ID = "a2aTaskId"
 
 A2A_METADATA_CONTEXT_ID = "a2aContextId"
 """Chat metadata key carrying the bridge context id."""
+
+
+def _agent_card_http_authorities(agent_card: JsonMap) -> tuple[str, ...]:
+    """Derive exact authorities from advertised HTTP+JSON interfaces."""
+    interfaces = agent_card.get("supportedInterfaces")
+    authorities: list[str] = []
+    urls: list[str] = []
+    if isinstance(interfaces, list):
+        for interface in interfaces:
+            if not isinstance(interface, dict):
+                continue
+            if str(interface.get("protocolBinding") or "").upper() != "HTTP+JSON":
+                continue
+            url = interface.get("url")
+            if not isinstance(url, str) or not url.strip():
+                raise ValueError("an advertised HTTP+JSON interface requires an endpoint URL")
+            urls.append(url)
+    legacy_url = agent_card.get("url")
+    if isinstance(legacy_url, str) and legacy_url.strip():
+        urls.append(legacy_url)
+    for url in urls:
+        for authority in endpoint_authorities(url):
+            if authority not in authorities:
+                authorities.append(authority)
+    return tuple(authorities)
 
 
 def _valid_metadata_id(value: object) -> str | None:
@@ -188,7 +214,7 @@ class A2ABridge:
         push_deliverer: PushDeliverer | None = None,
         auth_token: str | None = None,
         allowed_origins: Sequence[str] = (),
-        allowed_authorities: Sequence[str] = (),
+        allowed_authorities: Sequence[str] | None = None,
         task_timeout_seconds: float = 300.0,
         subscribe_wait_seconds: float = 0.0,
     ) -> None:
@@ -202,11 +228,16 @@ class A2ABridge:
         # Normalised once here so the per-request check is a plain membership
         # test and the HTTP edge never re-implements origin comparison rules.
         self.allowed_origins = tuple(normalise_origin(origin) for origin in allowed_origins)
+        authority_source = (
+            _agent_card_http_authorities(agent_card)
+            if allowed_authorities is None
+            else allowed_authorities
+        )
         self.allowed_authorities = tuple(
-            normalise_authority(authority) for authority in allowed_authorities
+            normalise_authority(authority) for authority in authority_source
         )
         if self.allowed_origins and not self.allowed_authorities:
-            raise ValueError("an Origin allow-list requires one trusted endpoint authority")
+            raise ValueError("an Origin allow-list requires a trusted endpoint authority")
         self.task_timeout_seconds = max(task_timeout_seconds, 0.0)
         self.subscribe_wait_seconds = max(subscribe_wait_seconds, 0.0)
         self._pending_by_target: dict[str, list[str]] = {}

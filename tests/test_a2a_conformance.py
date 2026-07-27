@@ -69,6 +69,9 @@ def test_matrix_keeps_external_validation_gates_visible() -> None:
     assert "a2a-sdk 1.1.0" in interop.evidence
     assert "TCK 5996b79" in interop.evidence
     assert "not certification" in interop.limitation
+    http_json = next(row for row in CONFORMANCE_ROWS if row.item == "HTTP+JSON/REST")
+    assert "Every route enforces the advertised Host authority" in http_json.evidence
+    assert "browser Origins independently default-denied" in http_json.evidence
     grpc = next(row for row in CONFORMANCE_ROWS if row.item == "gRPC")
     assert grpc.status == "partial"
     assert "default-off" in grpc.limitation

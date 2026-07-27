@@ -101,7 +101,7 @@ def _cmd_a2a_serve(
         allowed_origins = tuple(
             normalise_origin(origin) for origin in (getattr(args, "allow_origin", None) or ())
         )
-        allowed_authorities = endpoint_authorities(args.endpoint_url) if allowed_origins else ()
+        allowed_authorities = endpoint_authorities(args.endpoint_url)
     except ValueError as exc:
         print(f"[{args.name}] Invalid A2A browser boundary: {exc}.", file=sys.stderr)
         return 2

@@ -87,10 +87,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="append",
         default=None,
         metavar="ORIGIN",
-        help="Restrict browser requests to this exact concrete Origin "
+        help="Permit browser requests from this exact concrete Origin "
         "(scheme://host[:port]); repeat to allow several. Opaque 'null' origins are "
-        "refused. When enabled, every request must also use the exact Host authority "
-        "advertised by --endpoint-url, including requests without Origin. Off by default.",
+        "refused. Every request must use the exact Host authority advertised by "
+        "--endpoint-url. Without this option, requests carrying Origin are refused; "
+        "origin-less clients remain allowed through the Host boundary.",
     )
     serve.add_argument(
         "--tls-certfile",

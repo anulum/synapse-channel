@@ -17,6 +17,7 @@ import pytest
 
 from a2a_server_helpers import HandlerHarness, RecordingAgent
 from synapse_channel import cli_a2a
+from synapse_channel.a2a_http import build_a2a_handler
 from synapse_channel.a2a_http_protocol import (
     describe_a2a_origin_policy,
     endpoint_authorities,
@@ -97,6 +98,7 @@ def test_auth_token_leaves_well_known_card_public() -> None:
         target="WORKER",
         store=A2ATaskStore(),
         auth_token="secret",
+        allowed_authorities=("bridge.test",),
     )
     harness = HandlerHarness("GET", "/.well-known/agent-card.json")
     harness.handler.bridge = bridge
@@ -114,6 +116,7 @@ def test_auth_token_protects_a2a_routes() -> None:
         target="WORKER",
         store=A2ATaskStore(),
         auth_token="secret",
+        allowed_authorities=("bridge.test",),
     )
     routes = [
         ("GET", "/extendedAgentCard", None),
@@ -142,6 +145,7 @@ def test_auth_token_accepts_bearer_for_message_send() -> None:
         target="WORKER",
         store=A2ATaskStore(),
         auth_token="secret",
+        allowed_authorities=("bridge.test",),
     )
 
     harness = HandlerHarness(
@@ -184,6 +188,7 @@ def test_auth_token_uses_constant_time_bearer_comparison(
         target="WORKER",
         store=A2ATaskStore(),
         auth_token="secret",
+        allowed_authorities=("bridge.test",),
     )
     harness = HandlerHarness("GET", "/tasks", headers=headers)
     harness.handler.bridge = bridge
@@ -368,18 +373,24 @@ def test_describe_a2a_origin_policy_reports_defaults_and_enabled_list() -> None:
     assert off["opaque_null_rejected"] is True
     assert off["allow_list_enabled"] is False
     assert off["default_allow_list"] == "off"
-    assert off["host_authority_binding_when_enabled"] is True
+    assert off["host_authority_binding"] == "always"
+    assert off["present_origin_default"] == "deny"
     on = describe_a2a_origin_policy(allow_origins=("https://ide.example",))
     assert on["allow_list_enabled"] is True
     assert on["allow_origins"] == ["https://ide.example"]
 
 
 def test_endpoint_authorities_cover_only_the_advertised_default_port() -> None:
-    assert endpoint_authorities("https://IDE.example/a2a/v1") == (
+    assert endpoint_authorities("https://IDE.example./a2a/v1") == (
         "ide.example",
         "ide.example:443",
     )
+    assert endpoint_authorities("http://Bridge.example/a2a/v1") == (
+        "bridge.example",
+        "bridge.example:80",
+    )
     assert endpoint_authorities("http://127.0.0.1:8877") == ("127.0.0.1:8877",)
+    assert endpoint_authorities("http://[::1]/a2a/v1") == ("[::1]", "[::1]:80")
     assert normalise_authority(" IDE.EXAMPLE:443 ") == "ide.example:443"
 
 
@@ -411,8 +422,9 @@ def test_endpoint_authorities_refuse_credential_or_delimiter_ambiguity() -> None
 @pytest.mark.parametrize(
     ("origin_header", "host_header", "allowed", "authorities", "expected"),
     [
-        (None, None, (), (), True),  # feature off, no headers
-        ("https://x", "host", (), (), True),  # feature off
+        (None, None, (), ("bridge.test",), False),
+        (None, "bridge.test", (), ("bridge.test",), True),
+        ("https://x", "bridge.test", (), ("bridge.test",), False),
         (None, "bridge.test", ("https://x",), ("bridge.test",), True),
         (None, "evil.test", ("https://x",), ("bridge.test",), False),
         ("https://x", "bridge.test", ("https://x",), ("bridge.test",), True),
@@ -517,19 +529,32 @@ def test_opaque_origin_is_always_refused() -> None:
     assert status == HTTPStatus.FORBIDDEN
 
 
-def test_no_allow_list_admits_any_browser_origin() -> None:
+def test_no_allow_list_refuses_every_present_browser_origin() -> None:
     harness = HandlerHarness(
-        "GET", "/.well-known/agent-card.json", headers={"Origin": "https://anything.example"}
+        "GET",
+        "/.well-known/agent-card.json",
+        headers={"Host": "bridge.test", "Origin": "https://anything.example"},
     )
     harness.handler.bridge = _bridge()
 
-    status, _body = harness.run()
+    status, body = harness.run()
 
-    assert status == HTTPStatus.OK
+    assert status == HTTPStatus.FORBIDDEN
+    assert body["detail"] == "Origin or Host not allowed"
 
 
-def test_a2a_serve_threads_allow_origin_into_the_bridge() -> None:
-    """The CLI flag reaches the bridge, normalised, without touching the bind gate."""
+@pytest.mark.parametrize(
+    ("allow_origin", "expected_origins"),
+    [
+        (["https://IDE.example/"], ("https://ide.example",)),
+        (None, ()),
+    ],
+)
+def test_a2a_serve_always_threads_endpoint_authorities_into_the_bridge(
+    allow_origin: list[str] | None,
+    expected_origins: tuple[str, ...],
+) -> None:
+    """The CLI always derives Host authority; Origin remains independently optional."""
     captured: dict[str, Any] = {}
 
     class _Runtime:
@@ -571,7 +596,7 @@ def test_a2a_serve_threads_allow_origin_into_the_bridge() -> None:
         documentation_url="https://anulum.github.io/synapse-channel",
         bearer_auth=False,
         a2a_token=None,
-        allow_origin=["https://IDE.example/"],
+        allow_origin=allow_origin,
         state_file=None,
         task_timeout=300.0,
         subscribe_timeout=0.0,
@@ -589,8 +614,195 @@ def test_a2a_serve_threads_allow_origin_into_the_bridge() -> None:
         )
         == 0
     )
-    assert captured["allowed_origins"] == ("https://ide.example",)
+    assert captured["allowed_origins"] == expected_origins
     assert captured["allowed_authorities"] == ("bridge.example", "bridge.example:443")
+
+
+def test_direct_http_handler_refuses_bridge_without_endpoint_authority() -> None:
+    bridge = A2ABridge(
+        agent=RecordingAgent(),
+        agent_card={},
+        target="WORKER",
+        store=A2ATaskStore(),
+    )
+
+    with pytest.raises(ValueError, match="trusted endpoint authority"):
+        build_a2a_handler(bridge)
+
+
+@pytest.mark.parametrize(
+    "agent_card",
+    [
+        {
+            "supportedInterfaces": [
+                {
+                    "url": "https://Bridge.Example/a2a",
+                    "protocolBinding": "HTTP+JSON",
+                }
+            ]
+        },
+        {"url": "https://Bridge.Example/a2a"},
+    ],
+)
+def test_direct_bridge_derives_authorities_from_advertised_http_url(
+    agent_card: dict[str, object],
+) -> None:
+    bridge = A2ABridge(
+        agent=RecordingAgent(),
+        agent_card=agent_card,
+        target="WORKER",
+        store=A2ATaskStore(),
+    )
+
+    assert bridge.allowed_authorities == ("bridge.example", "bridge.example:443")
+    handler = cast(Any, build_a2a_handler(bridge))
+    assert handler.bridge is bridge
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("GET", "/.well-known/agent-card.json", None),
+        ("GET", "/extendedAgentCard", None),
+        ("GET", "/tasks", None),
+        ("GET", "/tasks/missing?historyLength=1", None),
+        ("GET", "/tasks/missing/pushNotificationConfigs", None),
+        ("GET", "/tasks/missing/pushNotificationConfigs/config", None),
+        (
+            "POST",
+            "/message:send",
+            {
+                "message": {
+                    "messageId": "host-boundary-send",
+                    "role": "ROLE_USER",
+                    "parts": [{"text": "work"}],
+                }
+            },
+        ),
+        ("POST", "/rpc", {"jsonrpc": "2.0", "id": "host-boundary-rpc", "method": "tasks/list"}),
+        ("POST", "/tasks/missing:cancel", None),
+        ("POST", "/tasks/missing:subscribe", None),
+        ("POST", "/tasks/missing/pushNotificationConfigs", {"url": "https://receiver.test"}),
+        ("DELETE", "/tasks/missing/pushNotificationConfigs/config", None),
+    ],
+)
+def test_exact_host_without_origin_reaches_every_route_boundary(
+    method: str,
+    path: str,
+    body: dict[str, object] | None,
+) -> None:
+    status, _response = HandlerHarness(
+        method,
+        path,
+        body=body,
+        headers={"Host": "example.test"},
+    ).run()
+
+    assert status != HTTPStatus.FORBIDDEN
+
+
+@pytest.mark.parametrize(
+    ("host", "skip_host"),
+    [
+        ("attacker.test", False),
+        ("user@example.test", False),
+        ("example.test,attacker.test", False),
+        ("", True),
+    ],
+)
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("GET", "/.well-known/agent-card.json", None),
+        ("GET", "/extendedAgentCard", None),
+        ("GET", "/tasks", None),
+        ("GET", "/tasks/missing?historyLength=1", None),
+        ("GET", "/tasks/missing/pushNotificationConfigs", None),
+        ("GET", "/tasks/missing/pushNotificationConfigs/config", None),
+        (
+            "POST",
+            "/message:send",
+            {
+                "message": {
+                    "messageId": "host-denied-send",
+                    "role": "ROLE_USER",
+                    "parts": [{"text": "must not dispatch"}],
+                }
+            },
+        ),
+        (
+            "POST",
+            "/message:stream",
+            {
+                "message": {
+                    "messageId": "host-denied-stream",
+                    "role": "ROLE_USER",
+                    "parts": [{"text": "must not dispatch"}],
+                }
+            },
+        ),
+        ("POST", "/rpc", {"jsonrpc": "2.0", "id": "host-denied-rpc", "method": "tasks/list"}),
+        ("POST", "/tasks/missing:cancel", None),
+        ("POST", "/tasks/missing:subscribe", None),
+        ("POST", "/tasks/missing/pushNotificationConfigs", {"url": "https://receiver.test"}),
+        ("DELETE", "/tasks/missing/pushNotificationConfigs/config", None),
+    ],
+)
+def test_untrusted_or_missing_host_is_refused_before_every_route(
+    host: str,
+    skip_host: bool,
+    method: str,
+    path: str,
+    body: dict[str, object] | None,
+) -> None:
+    headers = {} if skip_host else {"Host": host}
+    harness = HandlerHarness(
+        method,
+        path,
+        body=body,
+        headers=headers,
+        skip_host=skip_host,
+    )
+
+    status, response = harness.run()
+
+    assert status == HTTPStatus.FORBIDDEN
+    assert response["detail"] == "Origin or Host not allowed"
+    assert response["error"]["details"][0]["reason"] == "ORIGIN_OR_HOST_NOT_ALLOWED"
+    assert harness.handler.bridge.store.list_tasks() == []
+    assert harness.handler.bridge.agent.messages == []
+
+
+@pytest.mark.parametrize(
+    ("headers", "extra_header_pairs", "bridge"),
+    [
+        (
+            {"Host": "bridge.test"},
+            [("Host", "attacker.test")],
+            _bridge(),
+        ),
+        (
+            {"Host": "bridge.test", "Origin": "https://ide.example"},
+            [("Origin", "https://attacker.example")],
+            _bridge(allowed_origins=("https://ide.example",)),
+        ),
+    ],
+)
+def test_duplicate_host_or_origin_headers_fail_closed(
+    headers: dict[str, str],
+    extra_header_pairs: list[tuple[str, str]],
+    bridge: A2ABridge,
+) -> None:
+    status, response = HandlerHarness(
+        "GET",
+        "/.well-known/agent-card.json",
+        headers=headers,
+        bridge=bridge,
+        extra_header_pairs=extra_header_pairs,
+    ).run()
+
+    assert status == HTTPStatus.FORBIDDEN
+    assert response["error"]["details"][0]["reason"] == "ORIGIN_OR_HOST_NOT_ALLOWED"
 
 
 def test_a2a_serve_refuses_opaque_origin_before_hub_access(

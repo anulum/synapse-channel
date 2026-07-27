@@ -48,8 +48,11 @@ def test_a2a_deployment_threat_model_pins_exposed_bridge_controls() -> None:
     assert "--insecure-off-loopback" in threat_model
     assert "DNS rebinding" in threat_model
     assert "exact Host authority" in threat_model
-    assert "Opaque `null` origins are refused" in threat_model
+    assert "opaque `null` is never permitted" in threat_model
     assert "a non-browser client sends no `Origin` and is unaffected" not in threat_model
+    assert "Every present Origin is denied by default" in threat_model
+    assert "direct HTTP handler refuses construction" in threat_model
+    assert "Host authority is **always enforced**" in combined
     assert "redact `Authorization`" in threat_model
     assert "`--grpc-port` is absent by default" in threat_model
     assert "Missing or wrong bearer metadata is refused" in threat_model

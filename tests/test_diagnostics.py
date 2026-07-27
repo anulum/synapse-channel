@@ -290,12 +290,13 @@ class TestUnreadAddressees:
 # --- check_a2a_origin_policy --------------------------------------------------
 
 
-def test_a2a_origin_policy_warns_when_allow_list_off() -> None:
+def test_a2a_origin_policy_passes_safe_default_when_allow_list_off() -> None:
     diagnosis = check_a2a_origin_policy()
     assert diagnosis.check == "a2a_origin_policy"
-    assert diagnosis.status == "warn"
+    assert diagnosis.status == "pass"
     assert "opaque null" in diagnosis.detail
-    assert "OFF" in diagnosis.detail
+    assert "OFF (default deny)" in diagnosis.detail
+    assert "Host authority binding always enforced" in diagnosis.detail
     assert "--allow-origin" in diagnosis.remedy or "a2a-allow-origin" in diagnosis.remedy
 
 
@@ -307,7 +308,7 @@ def test_a2a_origin_policy_pass_with_normalised_origins() -> None:
     assert diagnosis.detail == (
         "opaque null origins rejected; allow-list ON; "
         "origins=[https://ide.example, http://127.0.0.1:8877]; "
-        "Host authority binding enforced when allow-list is on"
+        "Host authority binding always enforced"
     )
 
 

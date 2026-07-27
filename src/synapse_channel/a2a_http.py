@@ -150,7 +150,14 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
     -------
     type[BaseHTTPRequestHandler]
         Configured stdlib HTTP handler class.
+
+    Raises
+    ------
+    ValueError
+        If the bridge has no trusted advertised endpoint authority.
     """
+    if not bridge.allowed_authorities:
+        raise ValueError("A2A HTTP requires at least one trusted endpoint authority")
 
     class A2ARequestHandler(BaseHTTPRequestHandler):
         """HTTP handler for one A2A bridge."""
@@ -319,18 +326,22 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
         def _require_browser_boundary(self) -> bool:
             """Refuse a request outside the configured Origin/Host boundary.
 
-            Runs before authentication and on every route, the public agent card
-            included: the allow-list exists to stop a hostile web page (DNS
-            rebinding, drive-by requests to a loopback bridge) from reading or
-            mutating anything through a victim's browser. When the feature is
-            enabled, even a request without ``Origin`` must address the exact
-            advertised endpoint authority; with no list the check is a no-op.
+            Runs before authentication and on every route, including the public
+            agent card. Every request must address the exact advertised endpoint
+            authority. A present Origin is an independent browser permission and
+            must match the configured allow-list.
             """
-            if origin_allowed(
-                self.headers.get("Origin"),
-                self.headers.get("Host"),
-                self.bridge.allowed_origins,
-                self.bridge.allowed_authorities,
+            origin_headers = self.headers.get_all("Origin") or []
+            host_headers = self.headers.get_all("Host") or []
+            if (
+                len(host_headers) == 1
+                and len(origin_headers) <= 1
+                and origin_allowed(
+                    origin_headers[0] if origin_headers else None,
+                    host_headers[0],
+                    self.bridge.allowed_origins,
+                    self.bridge.allowed_authorities,
+                )
             ):
                 return True
             self._send_json(

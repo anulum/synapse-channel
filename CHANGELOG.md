@@ -21,6 +21,13 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Enforce the A2A HTTP endpoint's advertised `Host` authority on every route,
+  independently of browser Origin configuration. Requests with missing,
+  malformed, ambiguous, or hostile Host values now fail `403` before
+  authentication or routing; requests carrying `Origin` require an explicit
+  exact `--allow-origin`, while origin-less clients remain compatible through
+  the Host boundary. The CLI always derives authorities from `--endpoint-url`,
+  and direct HTTP handler construction fails closed without one.
 - Close the optional, default-off `a2a-serve --grpc-port` effective-policy gap:
   the CLI now composes its selected shared bearer, native TLS/mTLS files,
   concurrency ceiling, one-MiB request/response bounds, bounded JSON parser,

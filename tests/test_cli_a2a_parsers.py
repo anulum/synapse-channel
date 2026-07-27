@@ -143,6 +143,8 @@ class TestServeParser:
         assert "native TLS/mTLS files" in help_text
         assert "1 MiB message ceiling" in help_text
         assert "deadline not to exceed --request-read-timeout" in help_text
+        assert "Every request must use the exact Host authority" in help_text
+        assert "requests carrying Origin are refused" in help_text
 
     def test_numeric_arguments_are_coerced(self) -> None:
         parser = _registered_parser()

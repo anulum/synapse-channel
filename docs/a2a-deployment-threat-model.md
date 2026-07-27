@@ -50,7 +50,7 @@ Out of scope:
 
 | Boundary | Main risk | Shipped control | Operator duty |
 | --- | --- | --- | --- |
-| A2A client -> reverse proxy -> bridge | Untrusted clients submit task or push-config requests. | Non-loopback bind refuses without bearer auth; non-loopback bind with bearer over plaintext HTTP also refuses unless native TLS or `--insecure-off-loopback` is set (hub R4 parity). | Prefer loopback + proxy TLS, or native `--tls-certfile`/`--tls-keyfile`; require bearer auth for protected routes. |
+| A2A client -> reverse proxy -> bridge | Untrusted clients submit task or push-config requests. | Every route first requires an exact Host authority derived from `--endpoint-url`; every present Origin requires an explicit exact allow-list entry. Non-loopback bind refuses without bearer auth; non-loopback bind with bearer over plaintext HTTP also refuses unless native TLS or `--insecure-off-loopback` is set (hub R4 parity). | Preserve the advertised Host at the proxy; configure each browser Origin explicitly; prefer loopback + proxy TLS, or native `--tls-certfile`/`--tls-keyfile`; require bearer auth for protected routes. |
 | A2A gRPC client -> bridge | The optional listener can submit messages and read tasks. | `--grpc-port` is absent by default. When enabled, the CLI composes its shared bearer, native TLS/mTLS files, concurrency ceiling, one-MiB message bounds, bounded JSON parser, finite deadline ceiling, and stable errors into gRPC. | Supply the bearer and a deadline from every client. Use native TLS/mTLS or an explicitly configured gRPC-capable TLS proxy for exposure; the shared bearer is not per-client identity. |
 | Bridge -> Synapse hub | Bridge forwards task text/data/file parts into Synapse chat. | Bridge uses the configured hub URI and optional hub token. | Point the bridge only at the intended hub and target. |
 | Bridge -> webhook receiver | A client can configure outbound webhook targets. | Delivery resolves each target once and pins the connection to that validated address (no re-resolve between check and connect), admits only globally routable destinations — rejecting loopback, private, link-local, carrier-grade NAT, multicast, reserved, and unspecified addresses including IPv4-mapped IPv6 — applies the same policy to redirect targets, ignores environment proxies, and bounds the discarded response body. | Permit only receiver domains that match the deployment policy; review redirects. |
@@ -138,16 +138,22 @@ pass `--insecure-off-loopback`. Do not use that override for a shared or public
 deployment; it exists only as an explicit local risk acceptance (same flag
 semantics as the hub's plaintext-token refuse).
 
-When a browser-based operator UI calls the bridge, add `--allow-origin` for each
-exact concrete web origin that UI serves from (`scheme://host[:port]`). Opaque
-`null` origins are refused because they do not identify one principal. The list
-is an opt-in defence against DNS rebinding and drive-by requests: with it
-configured, every request must address the exact Host authority advertised by
-`--endpoint-url`, and any present `Origin` must be listed. Both checks run on
-every route, including the public agent card, before authentication. A
-non-browser client without `Origin` remains compatible only through that exact
-Host boundary. A reverse proxy must therefore preserve the advertised Host. With
-no list configured the check is a no-op.
+Every HTTP request must address the exact Host authority advertised by
+`--endpoint-url`. The CLI derives that authority unconditionally; a direct
+HTTP handler refuses construction when its bridge has no advertised or
+explicit trusted authority. Missing, malformed, credential-bearing,
+delimiter-ambiguous, and untrusted Host values fail `403` before
+authentication or routing on every route, including the public agent card.
+Forwarded proxy headers do not replace the direct Host decision. A reverse
+proxy must preserve the advertised Host.
+
+When a browser-based operator UI calls the bridge, add `--allow-origin` for
+each exact concrete web origin that UI serves from
+(`scheme://host[:port]`). Every present Origin is denied by default and must
+match this independent allow-list; opaque `null` is never permitted.
+Origin-less clients remain compatible only through the always-on Host
+boundary. These independent checks guard against DNS rebinding and drive-by
+requests without relying on browser CORS behavior.
 
 ## Route Policy
 

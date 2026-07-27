@@ -64,6 +64,10 @@ def _serve_https(
     bridge: A2ABridge, certfile: Path, keyfile: Path
 ) -> tuple[A2AHTTPServer, int, threading.Thread]:
     port = _free_port()
+    bridge.allowed_authorities = (f"127.0.0.1:{port}",)
+    interfaces = bridge.agent_card.get("supportedInterfaces")
+    if isinstance(interfaces, list) and interfaces and isinstance(interfaces[0], dict):
+        interfaces[0]["url"] = f"https://127.0.0.1:{port}"
     ssl_context = build_server_ssl_context(certfile=certfile, keyfile=keyfile)
     assert ssl_context is not None
     server = make_a2a_http_server(

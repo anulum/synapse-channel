@@ -202,7 +202,9 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
         evidence=(
             "Official a2a-sdk 1.1.0 selected HTTP+JSON RestTransport and completed "
             "discovery/send/get/list/cancel; official TCK 5996b79 exercises the binding; "
-            "native HTTPS bind and independent HTTPS interop-trace are covered locally."
+            "native HTTPS bind and independent HTTPS interop-trace are covered locally. "
+            "Every route enforces the advertised Host authority before auth/routing, "
+            "with present browser Origins independently default-denied."
         ),
         limitation=(
             "In-repo residual structured Message/Artifact handlers close the five TCK "

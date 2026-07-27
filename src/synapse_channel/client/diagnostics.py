@@ -362,9 +362,8 @@ def check_mcp_posture(
 def check_a2a_origin_policy(*, allow_origins: tuple[str, ...] = ()) -> Diagnosis:
     """Report the effective A2A Origin/Host browser-boundary policy (SCH-H-NEW-04).
 
-    Always records that opaque ``null`` origins are rejected. When no allow-list
-    entries are supplied the check warns that the browser boundary is off by
-    default; when entries are supplied they are normalised and listed.
+    Host authority is always enforced. Opaque ``null`` and every other present
+    Origin are denied unless an exact allow-list entry is supplied.
     """
     from synapse_channel.a2a_http_protocol import describe_a2a_origin_policy
 
@@ -385,9 +384,9 @@ def check_a2a_origin_policy(*, allow_origins: tuple[str, ...] = ()) -> Diagnosis
     origin_text = ", ".join(origins) if origins else "(none)"
     detail = (
         "opaque null origins rejected; "
-        f"allow-list {'ON' if enabled else 'OFF (default)'}; "
+        f"allow-list {'ON' if enabled else 'OFF (default deny)'}; "
         f"origins=[{origin_text}]; "
-        "Host authority binding enforced when allow-list is on"
+        "Host authority binding always enforced"
     )
     if enabled:
         return Diagnosis(
@@ -398,11 +397,11 @@ def check_a2a_origin_policy(*, allow_origins: tuple[str, ...] = ()) -> Diagnosis
         )
     return Diagnosis(
         check="a2a_origin_policy",
-        status="warn",
+        status="pass",
         detail=detail,
         remedy=(
-            "for browser-facing A2A, pass --a2a-allow-origin (and a2a-serve "
-            "--allow-origin) for each concrete origin; opaque null is always rejected"
+            "origin-less clients remain allowed through exact Host; for a browser UI, "
+            "pass --a2a-allow-origin and a2a-serve --allow-origin for each concrete origin"
         ),
     )
 

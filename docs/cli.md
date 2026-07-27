@@ -2016,14 +2016,17 @@ Operational boundaries:
   `--a2a-tls` / `--a2a-endpoint-url`) reports the same bind matrix without
   starting the bridge.
 
-- `--allow-origin ORIGIN` is opt-in browser hardening: restrict requests to the
-  exact concrete web origins your browser UI serves from
-  (`scheme://host[:port]`; repeat for several). Opaque `null` origins are
-  refused. When enabled, every request must also use the exact Host authority
-  advertised by `--endpoint-url`, including requests without `Origin`; an
-  unlisted present `Origin` is refused `403` on every route, the agent card
-  included, before authentication. Reverse proxies must preserve that Host. The
-  paired boundary guards against DNS rebinding and drive-by browser requests.
+- Every HTTP request must use an exact Host authority derived from
+  `--endpoint-url`, including requests without `Origin`. Missing, malformed,
+  ambiguous, or untrusted Host values are refused `403` on every route, the
+  public agent card included, before authentication. Reverse proxies must
+  preserve the advertised Host.
+- `--allow-origin ORIGIN` additionally permits browser requests from one exact
+  concrete web origin (`scheme://host[:port]`; repeat for several). Without it,
+  every request carrying `Origin` is refused; opaque `null` is never
+  allow-listed. Origin-less clients remain compatible through the always-on
+  Host boundary. The independent checks guard against DNS rebinding and
+  drive-by browser requests.
 - `--state-file` persists bridge tasks and push configs. Corrupt state files fail
   fast; non-terminal persisted tasks recover as failed on restart; failed writes
   roll back the in-memory task/config view.

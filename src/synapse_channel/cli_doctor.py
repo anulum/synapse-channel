@@ -830,9 +830,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--a2a-policy",
         action="store_true",
         help=(
-            "Report the A2A Origin/Host browser-boundary policy (opaque null always "
-            "rejected; allow-list off by default) and the default loopback bind "
-            "posture. Combine with --a2a-allow-origin and bind-posture flags."
+            "Report the A2A Origin/Host policy (Host authority always enforced; "
+            "present Origin denied unless explicitly allowed) and the default "
+            "loopback bind posture. Combine with --a2a-allow-origin and "
+            "bind-posture flags."
         ),
     )
     doctor.add_argument(
@@ -841,8 +842,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=[],
         metavar="ORIGIN",
         help=(
-            "Concrete HTTP(S) origin to include in the A2A allow-list policy report "
-            "(repeatable; same shape as synapse a2a-serve --allow-origin)."
+            "Concrete HTTP(S) origin to permit in the A2A policy report "
+            "(repeatable; same shape as synapse a2a-serve --allow-origin). "
+            "When absent, every request carrying Origin is denied."
         ),
     )
     doctor.add_argument(

@@ -444,9 +444,12 @@ loopback would only break port publishing without adding security.
   externally validated for full A2A conformance. Remote conformance, real webhook
   receiver behavior, and operator-visible production deployment receipts remain
   external validation work. The A2A-specific exposed-edge threat model is
-  documented in `docs/a2a-deployment-threat-model.md`. The Origin/Host browser
-  boundary is **opt-in** (`synapse a2a-serve --allow-origin`); opaque `null`
-  origins are always rejected. Print the effective policy with
+  documented in `docs/a2a-deployment-threat-model.md`. Exact advertised Host
+  authority is **always enforced** on every HTTP route. Browser Origin
+  permission is opt-in (`synapse a2a-serve --allow-origin`): every present
+  Origin, including opaque `null`, is rejected unless an exact concrete Origin
+  is configured. Origin-less clients remain compatible only through the Host
+  boundary. Print the effective policy with
   `synapse doctor --a2a-policy` (and optional `--a2a-allow-origin` mirrors).
 - The optional `synapse a2a-serve --grpc-port` listener is **default-off** and
   `partial`. When enabled, the integrated CLI binds it on the same `--host` and

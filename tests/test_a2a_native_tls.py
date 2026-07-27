@@ -215,7 +215,16 @@ def test_make_a2a_http_server_wraps_socket_for_https(tmp_path: Path) -> None:
 
     bridge = A2ABridge(
         agent=Agent(),
-        agent_card={"name": "t", "url": "https://example.test/a2a/v1", "capabilities": {}},
+        agent_card={
+            "name": "t",
+            "supportedInterfaces": [
+                {
+                    "url": "https://example.test/a2a/v1",
+                    "protocolBinding": "HTTP+JSON",
+                }
+            ],
+            "capabilities": {},
+        },
         target="all",
     )
     server = make_a2a_http_server(
@@ -254,7 +263,12 @@ def test_https_agent_card_reachable_through_native_tls(tmp_path: Path) -> None:
         agent=Agent(),
         agent_card={
             "name": "TLS Bridge",
-            "url": "https://127.0.0.1/a2a/v1",
+            "supportedInterfaces": [
+                {
+                    "url": "https://127.0.0.1/a2a/v1",
+                    "protocolBinding": "HTTP+JSON",
+                }
+            ],
             "capabilities": {},
         },
         target="all",
@@ -275,7 +289,11 @@ def test_https_agent_card_reachable_through_native_tls(tmp_path: Path) -> None:
         # Prefer http.client so the test does not depend on urllib SSL context wiring.
         conn = http.client.HTTPSConnection("127.0.0.1", port, context=client_ctx, timeout=5.0)
         try:
-            conn.request("GET", "/.well-known/agent-card.json")
+            conn.request(
+                "GET",
+                "/.well-known/agent-card.json",
+                headers={"Host": "127.0.0.1"},
+            )
             response = conn.getresponse()
             body = response.read()
             assert response.status == 200

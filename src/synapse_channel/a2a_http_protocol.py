@@ -69,8 +69,8 @@ def describe_a2a_origin_policy(*, allow_origins: tuple[str, ...] = ()) -> dict[s
     -------
     dict[str, object]
         Stable mapping: whether opaque ``null`` is rejected, whether the allow-list
-        is active, the normalised origins, and that Host authority binding applies
-        when the list is non-empty.
+        is active, the normalised origins, and that Host authority binding is
+        always enforced independently of the Origin policy.
 
     Raises
     ------
@@ -82,7 +82,9 @@ def describe_a2a_origin_policy(*, allow_origins: tuple[str, ...] = ()) -> dict[s
         "opaque_null_rejected": True,
         "allow_list_enabled": bool(normalised),
         "allow_origins": list(normalised),
+        "host_authority_binding": "always",
         "host_authority_binding_when_enabled": True,
+        "present_origin_default": "deny",
         "default_allow_list": "off",
     }
 
@@ -93,15 +95,13 @@ def origin_allowed(
     allowed_origins: tuple[str, ...],
     allowed_authorities: tuple[str, ...],
 ) -> bool:
-    """Decide whether a request passes the optional browser/Host boundary.
+    """Decide whether a request passes the Host and optional Origin boundaries.
 
-    The list is an opt-in hardening against browser-borne requests (DNS
-    rebinding, malicious pages calling a loopback bridge): with no list
-    configured every request passes unchanged. With a list configured, every
-    request must carry the advertised endpoint's exact ``Host`` authority. A
-    present ``Origin`` must additionally match one concrete allow-list entry.
-    A request without ``Origin`` may pass only through that Host boundary, so a
-    hostile DNS-rebinding authority cannot be mistaken for a non-browser client.
+    Every request must carry the advertised endpoint's exact ``Host`` authority.
+    A request without ``Origin`` may pass after that check. A present ``Origin``
+    must additionally match one concrete allow-list entry, so an empty
+    allow-list denies browser-originated requests rather than disabling Host
+    enforcement.
 
     Parameters
     ----------
@@ -110,7 +110,7 @@ def origin_allowed(
     host_header : str or None
         The HTTP Host header carrying the requested authority.
     allowed_origins : tuple of str
-        Normalised allow-list entries; empty means the feature is off.
+        Normalised browser Origin entries; empty denies every present Origin.
     allowed_authorities : tuple of str
         Exact advertised endpoint authorities accepted in Host.
 
@@ -119,8 +119,6 @@ def origin_allowed(
     bool
         Whether the request may proceed.
     """
-    if not allowed_origins:
-        return True
     try:
         authority = normalise_authority(host_header or "")
     except ValueError:
@@ -129,6 +127,8 @@ def origin_allowed(
         return False
     if origin_header is None:
         return True
+    if not allowed_origins:
+        return False
     try:
         origin = normalise_origin(origin_header)
     except ValueError:

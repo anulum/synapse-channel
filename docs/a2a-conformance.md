@@ -45,6 +45,13 @@ JSON-RPC dispatch, bridge-local task storage, local Server-Sent Events snapshots
 and push-notification configuration storage. The matrix marks these as
 `supported` or `partial` according to the local behavior and its limits.
 
+The HTTP+JSON edge derives exact Host authorities from the advertised endpoint
+on every CLI start and enforces them before authentication and routing on every
+route. A present browser Origin is independently denied unless explicitly
+permitted with `--allow-origin`; origin-less clients still require the exact
+Host. Direct HTTP handler construction fails closed without an advertised or
+explicit trusted authority.
+
 The optional gRPC row remains `partial` because `--grpc-port` starts only the
 custom JSON-over-gRPC `SendMessage` / `GetTask` subset, not the generated
 official protobuf surface. The listener is default-off. When enabled, the

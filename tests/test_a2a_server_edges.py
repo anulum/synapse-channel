@@ -58,8 +58,8 @@ def test_http_push_deliverer_blocks_loopback_http_target() -> None:
 def test_make_a2a_http_server_serves_agent_card_over_real_http() -> None:
     import http.client
 
-    bridge = _bridge()
     port = _free_port()
+    bridge = _bridge(allowed_authorities=(f"127.0.0.1:{port}",))
     server = make_a2a_http_server(bridge=bridge, host="127.0.0.1", port=port)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

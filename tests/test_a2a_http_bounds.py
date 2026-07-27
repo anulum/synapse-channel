@@ -103,7 +103,7 @@ def _get_agent_card(port: int, *, timeout: float = 2.0) -> tuple[int, dict[str, 
     try:
         sock.sendall(
             b"GET /.well-known/agent-card.json HTTP/1.1\r\n"
-            b"Host: 127.0.0.1\r\n"
+            b"Host: example.test\r\n"
             b"Connection: close\r\n"
             b"\r\n"
         )
@@ -210,7 +210,7 @@ def _post_message_send(port: int, *, timeout: float = 2.0) -> tuple[int, dict[st
     ).encode("utf-8")
     request = (
         b"POST /message:send HTTP/1.1\r\n"
-        b"Host: 127.0.0.1\r\n"
+        b"Host: example.test\r\n"
         b"Content-Type: application/json\r\n"
         + f"Content-Length: {len(body)}\r\n".encode("ascii")
         + b"Connection: close\r\n"
@@ -329,7 +329,7 @@ def test_incomplete_slow_body_times_out_without_long_sleep() -> None:
             # Announce 64 body bytes but send only a tiny prefix, then stall.
             headers = (
                 b"POST /message:send HTTP/1.1\r\n"
-                b"Host: 127.0.0.1\r\n"
+                b"Host: example.test\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: 64\r\n"
                 b"Connection: close\r\n"

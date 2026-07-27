@@ -24,6 +24,10 @@ from synapse_channel.a2a_store import A2ATaskStore
 
 def _serve(bridge: A2ABridge) -> tuple[ThreadingHTTPServer, int]:
     port = _free_port()
+    bridge.allowed_authorities = (f"127.0.0.1:{port}",)
+    interfaces = bridge.agent_card.get("supportedInterfaces")
+    if isinstance(interfaces, list) and interfaces and isinstance(interfaces[0], dict):
+        interfaces[0]["url"] = f"http://127.0.0.1:{port}"
     server = ThreadingHTTPServer(("127.0.0.1", port), build_a2a_handler(bridge))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, port
