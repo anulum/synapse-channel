@@ -432,6 +432,9 @@ def test_cmd_a2a_serve_starts_bridge_and_stops_runtime(
         assert bridge.auth_token == "a2a-secret"
         raise KeyboardInterrupt
 
+    def unexpected_grpc(**_: Any) -> tuple[Any, Any]:
+        raise AssertionError("default a2a-serve must not start gRPC")
+
     ns = cli.build_parser().parse_args(
         [
             "a2a-serve",
@@ -449,11 +452,157 @@ def test_cmd_a2a_serve_starts_bridge_and_stops_runtime(
             manifest_fetcher=manifest,
             runtime_factory=Runtime,
             server_runner=serve,
+            grpc_server_starter=unexpected_grpc,
         )
         == 0
     )
     assert events == ["start", "stop"]
     assert "A2A bridge listening" in capsys.readouterr().out
+
+
+def test_cmd_a2a_serve_composes_grpc_policy_and_closes_listener(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, Any] = {}
+    events: list[str] = []
+
+    async def manifest(**_: Any) -> list[dict[str, Any]]:
+        return []
+
+    class Runtime:
+        def __init__(self, agent: Any) -> None:
+            self.agent = agent
+
+        def start(self) -> bool:
+            return True
+
+        def run(self, coro: Any) -> Any:
+            coro.close()
+            return None
+
+        def stop(self) -> None:
+            events.append("runtime-stop")
+
+    class GrpcServer:
+        def stop(self, *, grace: None) -> None:
+            assert grace is None
+            events.append("grpc-stop")
+
+    def start_grpc(bridge: Any, **kwargs: Any) -> tuple[GrpcServer, object]:
+        captured["bridge"] = bridge
+        captured.update(kwargs)
+        return GrpcServer(), object()
+
+    def serve(**kwargs: Any) -> None:
+        interfaces = kwargs["bridge"].agent_card["supportedInterfaces"]
+        assert interfaces[-1]["url"] == "grpc://127.0.0.1:50051"
+        raise KeyboardInterrupt
+
+    ns = cli.build_parser().parse_args(
+        [
+            "a2a-serve",
+            "--endpoint-url",
+            "http://127.0.0.1:8877",
+            "--bearer-auth",
+            "--a2a-token",
+            "a2a-secret",
+            "--grpc-port",
+            "50051",
+            "--max-concurrent-requests",
+            "3",
+            "--request-read-timeout",
+            "2.5",
+        ]
+    )
+    assert (
+        cli_a2a._cmd_a2a_serve(
+            ns,
+            manifest_fetcher=manifest,
+            runtime_factory=Runtime,
+            server_runner=serve,
+            grpc_server_starter=start_grpc,
+        )
+        == 0
+    )
+    policy = captured["policy"]
+    assert policy.bearer_token == "a2a-secret"
+    assert policy.max_concurrent_rpcs == 3
+    assert policy.max_rpc_seconds == pytest.approx(2.5)
+    assert policy.max_receive_message_bytes == 1024 * 1024
+    assert policy.max_send_message_bytes == 1024 * 1024
+    assert captured["server_credentials"] is None
+    assert events == ["grpc-stop", "runtime-stop"]
+    out = capsys.readouterr().out
+    assert "bearer=required" in out
+    assert "max-rpcs=3" in out
+    assert "deadline=2.5s" in out
+
+
+def test_cmd_a2a_serve_grpc_start_failure_closes_runtime(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    events: list[str] = []
+
+    async def manifest(**_: Any) -> list[dict[str, Any]]:
+        return []
+
+    class Runtime:
+        def __init__(self, agent: Any) -> None:
+            self.agent = agent
+
+        def start(self) -> bool:
+            return True
+
+        def run(self, coro: Any) -> Any:
+            coro.close()
+            return None
+
+        def stop(self) -> None:
+            events.append("runtime-stop")
+
+    def fail_grpc(_bridge: Any, **_: Any) -> tuple[Any, Any]:
+        raise RuntimeError("listener bind failed")
+
+    ns = cli.build_parser().parse_args(
+        [
+            "a2a-serve",
+            "--endpoint-url",
+            "http://127.0.0.1:8877",
+            "--grpc-port",
+            "50051",
+        ]
+    )
+    assert (
+        cli_a2a._cmd_a2a_serve(
+            ns,
+            manifest_fetcher=manifest,
+            runtime_factory=Runtime,
+            grpc_server_starter=fail_grpc,
+        )
+        == 2
+    )
+    assert events == ["runtime-stop"]
+    assert "A2A gRPC unavailable: listener bind failed" in capsys.readouterr().err
+
+
+def test_cmd_a2a_serve_refuses_non_finite_read_timeout_before_runtime(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ns = cli.build_parser().parse_args(
+        [
+            "a2a-serve",
+            "--endpoint-url",
+            "http://127.0.0.1:8877",
+            "--request-read-timeout",
+            "nan",
+        ]
+    )
+
+    def unexpected_runtime(_agent: Any) -> Any:
+        raise AssertionError("invalid timeout must fail before runtime creation")
+
+    assert cli_a2a._cmd_a2a_serve(ns, runtime_factory=unexpected_runtime) == 2
+    assert "--request-read-timeout must be finite and > 0" in capsys.readouterr().err
 
 
 def test_cmd_a2a_serve_tolerates_non_mapping_capabilities() -> None:

@@ -15,6 +15,7 @@ HTTP edge and push delivery helpers live in focused sibling modules.
 from __future__ import annotations
 
 import asyncio
+import math
 import threading
 import time
 import uuid
@@ -98,8 +99,16 @@ def _a2a_metadata_correlation(data: JsonMap) -> tuple[str | None, str | None, bo
 class SynapseAgentRuntime:
     """Background event-loop owner for a live ``SynapseAgent`` connection."""
 
-    def __init__(self, agent: SynapseAgent) -> None:
+    def __init__(
+        self,
+        agent: SynapseAgent,
+        *,
+        operation_timeout_seconds: float = 30.0,
+    ) -> None:
+        if not math.isfinite(operation_timeout_seconds) or operation_timeout_seconds <= 0.0:
+            raise ValueError("operation_timeout_seconds must be finite and > 0")
         self.agent = agent
+        self.operation_timeout_seconds = float(operation_timeout_seconds)
         self.loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_loop, name="synapse-a2a", daemon=True)
 
@@ -117,9 +126,25 @@ class SynapseAgentRuntime:
         )
         return bool(ready.result(timeout=max(ready_timeout + 1.0, 1.0)))
 
-    def run(self, coro: Coroutine[Any, Any, Any]) -> Any:
-        """Run one coroutine on the agent loop and return its result."""
-        return asyncio.run_coroutine_threadsafe(coro, self.loop).result()
+    def run(
+        self,
+        coro: Coroutine[Any, Any, Any],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> Any:
+        """Run one coroutine within the runtime and optional caller deadline."""
+        timeout = self.operation_timeout_seconds
+        if timeout_seconds is not None:
+            if not math.isfinite(timeout_seconds) or timeout_seconds <= 0.0:
+                coro.close()
+                raise TimeoutError("A2A operation timed out")
+            timeout = min(timeout, timeout_seconds)
+        submitted = asyncio.run_coroutine_threadsafe(coro, self.loop)
+        try:
+            return submitted.result(timeout=timeout)
+        except TimeoutError:
+            submitted.cancel()
+            raise TimeoutError("A2A operation timed out") from None
 
     def stop(self) -> None:
         """Cancel private-loop tasks, then stop and close the event loop."""
@@ -159,7 +184,7 @@ class A2ABridge:
         agent_card: JsonMap,
         target: str,
         store: A2ATaskStore | None = None,
-        submit: Callable[[Coroutine[Any, Any, Any]], Any] | None = None,
+        submit: Callable[..., Any] | None = None,
         push_deliverer: PushDeliverer | None = None,
         auth_token: str | None = None,
         allowed_origins: Sequence[str] = (),
@@ -202,13 +227,28 @@ class A2ABridge:
         self._events.drop(removed)
         return removed
 
-    def _run(self, coro: Coroutine[Any, Any, Any]) -> Any:
-        """Run ``coro`` through the configured submitter or a fresh event loop."""
+    def _run(
+        self,
+        coro: Coroutine[Any, Any, Any],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> Any:
+        """Run ``coro`` through the submitter and propagate a caller deadline."""
         if self._submit is not None:
+            if timeout_seconds is not None:
+                return self._submit(coro, timeout_seconds=timeout_seconds)
             return self._submit(coro)
+        if timeout_seconds is not None:
+            return asyncio.run(asyncio.wait_for(coro, timeout=timeout_seconds))
         return asyncio.run(coro)
 
-    def create_working_task(self, message: JsonMap, *, target: str | None = None) -> JsonMap:
+    def create_working_task(
+        self,
+        message: JsonMap,
+        *,
+        target: str | None = None,
+        operation_timeout_seconds: float | None = None,
+    ) -> JsonMap:
         """Create a working A2A task and forward the request into SYNAPSE."""
         with self._task_creation_lock:
             self._gc_retained_tasks()
@@ -233,6 +273,7 @@ class A2ABridge:
                 task_id=task_id,
                 context_id=context_id,
                 target=resolved_target,
+                operation_timeout_seconds=operation_timeout_seconds,
             )
             stored = self._set_task_status(
                 task,
@@ -247,7 +288,13 @@ class A2ABridge:
         """Create a task for compatibility with older callers."""
         return self.create_working_task(message, target=target)
 
-    def send_message(self, payload: JsonMap, *, protocol_version: str | None = None) -> JsonMap:
+    def send_message(
+        self,
+        payload: JsonMap,
+        *,
+        protocol_version: str | None = None,
+        operation_timeout_seconds: float | None = None,
+    ) -> JsonMap:
         """Handle an A2A ``message:send`` request.
 
         Default behaviour returns a working Task and forwards into SYNAPSE.
@@ -268,6 +315,7 @@ class A2ABridge:
             payload,
             protocol_version=protocol_version,
             message=message,
+            operation_timeout_seconds=operation_timeout_seconds,
         )
         self._store_request_push_config(payload, task_id=str(task["id"]))
         return {"task": task}
@@ -336,6 +384,7 @@ class A2ABridge:
         *,
         protocol_version: str | None = None,
         message: JsonMap | None = None,
+        operation_timeout_seconds: float | None = None,
     ) -> JsonMap:
         """Validate a send payload and return the created working task."""
         with self._task_creation_lock:
@@ -346,12 +395,25 @@ class A2ABridge:
             if protocol_version == "1.0" and task_id is not None:
                 if existing is None:
                     raise a2a_errors.A2ANotFoundError(f"Unknown task: {task_id}")
-                return self._continue_working_task(existing, message)
+                return self._continue_working_task(
+                    existing,
+                    message,
+                    operation_timeout_seconds=operation_timeout_seconds,
+                )
             if task_id is not None and existing is not None:
                 raise a2a_errors.A2AConflictError("message.taskId already exists")
-            return self.create_working_task(message)
+            return self.create_working_task(
+                message,
+                operation_timeout_seconds=operation_timeout_seconds,
+            )
 
-    def _continue_working_task(self, task: JsonMap, message: JsonMap) -> JsonMap:
+    def _continue_working_task(
+        self,
+        task: JsonMap,
+        message: JsonMap,
+        *,
+        operation_timeout_seconds: float | None = None,
+    ) -> JsonMap:
         """Continue a non-terminal task under A2A 1.0 task-id semantics."""
         status = task.get("status")
         if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
@@ -368,6 +430,7 @@ class A2ABridge:
             task_id=task_id,
             context_id=context_id,
             target=target,
+            operation_timeout_seconds=operation_timeout_seconds,
         )
         return self._set_task_status(
             task,
@@ -382,6 +445,7 @@ class A2ABridge:
         task_id: str,
         context_id: str,
         target: str,
+        operation_timeout_seconds: float | None = None,
     ) -> None:
         """Forward one task-bound message and maintain fallback correlation."""
         pending = self._pending_by_target.setdefault(target, [])
@@ -397,7 +461,8 @@ class A2ABridge:
                         A2A_METADATA_TASK_ID: task_id,
                         A2A_METADATA_CONTEXT_ID: context_id,
                     },
-                )
+                ),
+                timeout_seconds=operation_timeout_seconds,
             )
 
     def _store_request_push_config(self, payload: JsonMap, *, task_id: str) -> JsonMap | None:

@@ -449,15 +449,18 @@ loopback would only break port publishing without adding security.
   origins are always rejected. Print the effective policy with
   `synapse doctor --a2a-policy` (and optional `--a2a-allow-origin` mirrors).
 - The optional `synapse a2a-serve --grpc-port` listener is **default-off** and
-  `partial`. When enabled, the integrated CLI binds it on the same `--host` but
-  does not apply the HTTP edge's bearer authentication, TLS/mTLS context,
-  Host/Origin checks, admission limit, or request-read timeout, and it sets no
-  explicit gRPC message-size, concurrency, deadline, or stable-error policy;
-  protecting the HTTP listener does not protect gRPC. Keep it disabled for
-  exposed deployments. On loopback, enable it only when every local process is
-  trusted. The low-level builder can accept explicit gRPC server credentials,
-  but the CLI does not pass them, and TLS alone would not close the remaining
-  policy gaps. See the
+  `partial`. When enabled, the integrated CLI binds it on the same `--host` and
+  composes the selected A2A shared bearer, native TLS certificate/key and mTLS
+  client CA, `--max-concurrent-requests`, and
+  `--request-read-timeout` into the gRPC policy. Every request is capped at one
+  MiB and bounded JSON depth, every client must supply a finite deadline no
+  longer than the configured ceiling, pending hub work is cancelled when that
+  deadline expires, and rejected or failed calls return stable value-free
+  details. HTTP Host/Origin checks are browser/HTTP controls and do not apply
+  to gRPC. The gRPC bearer is still a shared credential, not per-client
+  identity or a method-level ACL; the custom two-method binding remains
+  `partial` until official protobuf interoperability is independently
+  demonstrated. See the
   [A2A deployment threat model](docs/a2a-deployment-threat-model.md#current-grpc-activation-boundary).
 - Provider mutation claim hooks are **not** a full OS sandbox. Supported shell
   hooks require an exclusive whole-worktree claim instead of guessing paths from

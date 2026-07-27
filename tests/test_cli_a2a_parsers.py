@@ -139,9 +139,10 @@ class TestServeParser:
             parser.parse_args(["a2a-serve", "--help"])
         assert exc_info.value.code == 0
         help_text = " ".join(capsys.readouterr().out.split())
-        assert "Default-off; the integrated CLI does not inherit HTTP bearer" in help_text
-        assert "TLS/mTLS, or resource-limit policy" in help_text
-        assert "use only on trusted loopback" in help_text
+        assert "Default-off; when enabled it uses the selected A2A bearer" in help_text
+        assert "native TLS/mTLS files" in help_text
+        assert "1 MiB message ceiling" in help_text
+        assert "deadline not to exceed --request-read-timeout" in help_text
 
     def test_numeric_arguments_are_coerced(self) -> None:
         parser = _registered_parser()

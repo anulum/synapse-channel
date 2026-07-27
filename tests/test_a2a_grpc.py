@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any, cast
 
 import pytest
 
@@ -17,6 +18,7 @@ from a2a_server_helpers import RecordingAgent, _free_port
 from synapse_channel.a2a_conformance import conformance_rows
 from synapse_channel.a2a_grpc import (
     A2AGrpcClient,
+    A2AGrpcPolicy,
     grpc_available,
     start_grpc_in_background,
 )
@@ -87,5 +89,92 @@ def test_grpc_get_unknown_task_returns_not_found() -> None:
             code = getattr(caught, "code", None)
             assert callable(code)
             assert code().name == "NOT_FOUND"
+            assert cast(Any, caught).details() == "task not found"
     finally:
         server.stop(grace=None)
+
+
+def test_grpc_policy_requires_bearer_before_any_bridge_effect() -> None:
+    agent = RecordingAgent()
+    bridge = A2ABridge(
+        agent=agent,
+        agent_card={"name": "grpc-bridge"},
+        target="WORKER",
+        store=A2ATaskStore(),
+    )
+    port = _free_port()
+    server, _thread = start_grpc_in_background(
+        bridge,
+        host="127.0.0.1",
+        port=port,
+        policy=A2AGrpcPolicy(bearer_token="correct"),
+    )
+    time.sleep(0.05)
+    payload = {
+        "message": {
+            "messageId": "grpc-auth-1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "protected", "mediaType": "text/plain"}],
+        }
+    }
+    try:
+        for supplied in (None, "wrong"):
+            caught: object | None = None
+            try:
+                with A2AGrpcClient(
+                    f"127.0.0.1:{port}",
+                    bearer_token=supplied,
+                ) as client:
+                    client.send_message(payload)
+            except Exception as exc:
+                caught = exc
+            assert caught is not None
+            code = getattr(caught, "code", None)
+            assert callable(code)
+            assert code().name == "UNAUTHENTICATED"
+            assert cast(Any, caught).details() == "authentication required"
+            assert bridge.store.list_tasks() == []
+            assert agent.messages == []
+            with pytest.raises(Exception) as read_error:
+                with A2AGrpcClient(
+                    f"127.0.0.1:{port}",
+                    bearer_token=supplied,
+                ) as client:
+                    client.get_task("known-or-unknown")
+            assert cast(Any, read_error.value).code().name == "UNAUTHENTICATED"
+            assert cast(Any, read_error.value).details() == "authentication required"
+
+        with A2AGrpcClient(
+            f"127.0.0.1:{port}",
+            bearer_token="correct",
+        ) as client:
+            sent = client.send_message(payload)
+        assert sent["task"]["id"]
+        assert len(bridge.store.list_tasks()) == 1
+        assert agent.messages == [("WORKER", "protected")]
+    finally:
+        server.stop(grace=None)
+
+
+def test_grpc_policy_refuses_non_positive_limits() -> None:
+    with pytest.raises(ValueError, match="bearer_token must not be empty"):
+        A2AGrpcPolicy(bearer_token="")
+    with pytest.raises(ValueError, match="max_receive_message_bytes must be >= 1"):
+        A2AGrpcPolicy(max_receive_message_bytes=0)
+    with pytest.raises(ValueError, match="max_send_message_bytes must be >= 1"):
+        A2AGrpcPolicy(max_send_message_bytes=0)
+    with pytest.raises(ValueError, match="max_concurrent_rpcs must be >= 1"):
+        A2AGrpcPolicy(max_concurrent_rpcs=0)
+    with pytest.raises(ValueError, match="max_rpc_seconds must be finite and > 0"):
+        A2AGrpcPolicy(max_rpc_seconds=0.0)
+    with pytest.raises(ValueError, match="max_rpc_seconds must be finite and > 0"):
+        A2AGrpcPolicy(max_rpc_seconds=float("inf"))
+
+
+def test_grpc_client_refuses_non_positive_timeout() -> None:
+    with pytest.raises(ValueError, match="timeout_seconds must be finite and > 0"):
+        A2AGrpcClient("127.0.0.1:1", timeout_seconds=0.0)
+    with pytest.raises(ValueError, match="timeout_seconds must be finite and > 0"):
+        A2AGrpcClient("127.0.0.1:1", timeout_seconds=float("nan"))
+    with pytest.raises(ValueError, match="bearer_token must not be empty"):
+        A2AGrpcClient("127.0.0.1:1", bearer_token="")

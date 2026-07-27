@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-from typing import Any
+from typing import Any, cast
 from urllib.error import URLError
 
 import pytest
@@ -22,6 +22,7 @@ from synapse_channel.a2a_http import make_a2a_http_server, parse_push_config_pat
 from synapse_channel.a2a_push import http_push_deliverer
 from synapse_channel.a2a_server import A2ABridge, SynapseAgentRuntime
 from synapse_channel.a2a_store import A2ATaskStore
+from synapse_channel.client.agent import SynapseAgent
 
 
 def _bridge(**kwargs: Any) -> A2ABridge:
@@ -130,6 +131,52 @@ def test_synapse_agent_runtime_start_run_and_stop() -> None:
     assert not runtime._thread.is_alive()
     assert runtime.loop.is_closed()
     runtime.stop()
+
+
+def test_synapse_agent_runtime_cancels_an_operation_at_its_deadline() -> None:
+    class RuntimeAgent:
+        def __init__(self) -> None:
+            self.running = True
+            self.connected = False
+
+        async def connect(self) -> None:
+            self.connected = True
+
+        async def wait_until_ready(self, timeout: float) -> bool:
+            return self.connected
+
+    cancelled = threading.Event()
+
+    async def hanging_operation() -> None:
+        try:
+            await asyncio.Future()
+        finally:
+            cancelled.set()
+
+    agent = RuntimeAgent()
+    runtime = SynapseAgentRuntime(
+        cast(SynapseAgent, agent),
+        operation_timeout_seconds=0.05,
+    )
+    try:
+        assert runtime.start(ready_timeout=0.1) is True
+        with pytest.raises(TimeoutError, match="A2A operation timed out"):
+            runtime.run(hanging_operation())
+        assert cancelled.wait(timeout=0.2)
+    finally:
+        runtime.stop()
+
+    assert not runtime._thread.is_alive()
+    assert runtime.loop.is_closed()
+
+
+def test_synapse_agent_runtime_rejects_non_finite_operation_deadline() -> None:
+    agent = cast(SynapseAgent, object())
+    with pytest.raises(
+        ValueError,
+        match="operation_timeout_seconds must be finite and > 0",
+    ):
+        SynapseAgentRuntime(agent, operation_timeout_seconds=float("inf"))
 
 
 def test_synapse_agent_runtime_stop_drains_private_loop_tasks() -> None:

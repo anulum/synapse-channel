@@ -231,16 +231,18 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
         evidence=(
             "Optional gRPC service synapse.a2a.v1.A2ABridge exposes SendMessage and "
             "GetTask over JSON-serialised payloads; Agent Card can advertise a GRPC "
-            "interface URL; focused in-process client/server tests."
+            "interface URL. Focused real client/server tests cover shared-bearer "
+            "authentication, TLS/mTLS, message bounds, finite deadlines, admission "
+            "recovery, stable errors, and startup cleanup."
         ),
         limitation=(
             "Custom SYNAPSE JSON-over-gRPC binding, not a generated official A2A "
             "proto stub set; install grpcio separately; full multi-method A2A gRPC "
-            "surface remains incomplete. The listener is default-off; the integrated "
-            "CLI does not inherit HTTP bearer, TLS/mTLS, Host/Origin, admission, or "
-            "read-timeout policy and sets no explicit gRPC message-size, concurrency, "
-            "deadline, or stable-error policy, so it is restricted to trusted loopback "
-            "until parity."
+            "surface remains incomplete. The listener is default-off. The integrated "
+            "CLI composes its selected shared bearer, native TLS/mTLS files, request "
+            "concurrency ceiling, one-MiB message bounds, bounded JSON parser, finite "
+            "call-deadline ceiling, and value-free error policy into gRPC. The shared "
+            "bearer is not per-client identity or method-level ACL."
         ),
         spec_reference="A2A 1.0.0 §10",
     ),

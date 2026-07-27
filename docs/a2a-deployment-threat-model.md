@@ -51,7 +51,7 @@ Out of scope:
 | Boundary | Main risk | Shipped control | Operator duty |
 | --- | --- | --- | --- |
 | A2A client -> reverse proxy -> bridge | Untrusted clients submit task or push-config requests. | Non-loopback bind refuses without bearer auth; non-loopback bind with bearer over plaintext HTTP also refuses unless native TLS or `--insecure-off-loopback` is set (hub R4 parity). | Prefer loopback + proxy TLS, or native `--tls-certfile`/`--tls-keyfile`; require bearer auth for protected routes. |
-| A2A gRPC client -> bridge | The optional listener can submit messages and read tasks. | `--grpc-port` is absent by default and the common bind host defaults to loopback. The integrated CLI does not currently apply the HTTP edge's bearer, TLS/mTLS, browser-authority, admission, or read-timeout policy to gRPC. | Do not enable gRPC outside a workstation where every local process is trusted. Do not expose it through a proxy, container port, LAN bind, or public interface. |
+| A2A gRPC client -> bridge | The optional listener can submit messages and read tasks. | `--grpc-port` is absent by default. When enabled, the CLI composes its shared bearer, native TLS/mTLS files, concurrency ceiling, one-MiB message bounds, bounded JSON parser, finite deadline ceiling, and stable errors into gRPC. | Supply the bearer and a deadline from every client. Use native TLS/mTLS or an explicitly configured gRPC-capable TLS proxy for exposure; the shared bearer is not per-client identity. |
 | Bridge -> Synapse hub | Bridge forwards task text/data/file parts into Synapse chat. | Bridge uses the configured hub URI and optional hub token. | Point the bridge only at the intended hub and target. |
 | Bridge -> webhook receiver | A client can configure outbound webhook targets. | Delivery resolves each target once and pins the connection to that validated address (no re-resolve between check and connect), admits only globally routable destinations — rejecting loopback, private, link-local, carrier-grade NAT, multicast, reserved, and unspecified addresses including IPv4-mapped IPv6 — applies the same policy to redirect targets, ignores environment proxies, and bounds the discarded response body. | Permit only receiver domains that match the deployment policy; review redirects. |
 | Bridge -> local filesystem | State persistence can leak task metadata if permissions are loose. | A2A state and temp files are owner-only and writes replace atomically. | Place `--state-file` on a trusted local disk, not a shared web root. |
@@ -62,32 +62,47 @@ Out of scope:
 `--grpc-port` is absent by default and requires the optional `a2a-grpc` extra.
 When enabled, the integrated `synapse a2a-serve` command starts the
 `synapse.a2a.v1.A2ABridge` JSON-over-gRPC service on the same `--host` and
-advertises a plaintext `grpc://` endpoint.
+advertises `grpcs://` when native TLS is selected and `grpc://` otherwise.
 
-The current CLI path does **not** pass the HTTP edge's bearer authentication,
-native TLS/mTLS context, Host/Origin checks, `--max-concurrent-requests`, or
-`--request-read-timeout` into that listener. It also sets no explicit gRPC
-message-size ceiling, `maximum_concurrent_rpcs`, call deadline, or stable
-sanitized-error policy. Securing the HTTP endpoint with
-`--bearer-auth`, `--tls-certfile`, `--tls-keyfile`, or
-`--mtls-client-ca-file` therefore does not secure gRPC. Do not enable this
-listener on a non-loopback interface or expose it through a reverse proxy,
-container port, LAN, or public endpoint. On loopback, use it only when every
-local process is trusted.
+The CLI composes `--bearer-auth --a2a-token`, the native TLS certificate/key,
+the optional mTLS client CA, `--max-concurrent-requests`, and
+`--request-read-timeout` into a typed gRPC policy. Missing or wrong bearer
+metadata is refused before either method reaches the bridge. Requests and
+responses are capped at one MiB; JSON nesting uses the same bounded parser as
+the hub/HTTP edge; `maximum_concurrent_rpcs` enforces admission and recovers
+capacity after a call exits; every call must include a finite deadline no
+longer than the configured ceiling; pending hub work is cancelled when that
+deadline expires; and errors contain stable value-free details. The shipped
+client applies a finite deadline and accepts bearer and channel credentials
+explicitly.
 
-The low-level `build_a2a_grpc_server` API can accept explicit gRPC server
-credentials for an embedded deployment, but `synapse a2a-serve --grpc-port`
-does not supply them. TLS alone would also leave authentication,
-authorization, resource-limit, deadline, and error-policy parity unresolved.
+Host/Origin policy is specific to the HTTP/browser boundary and is not a gRPC
+authentication mechanism. The shared bearer authorises both shipped methods;
+it does not establish per-client identity or a method-level ACL. A
+TLS-terminating HTTP reverse proxy protects gRPC only if it is separately
+configured to proxy the gRPC listener.
 This binding is a custom two-method JSON-over-gRPC subset, not the generated
-official A2A protobuf contract. It remains `partial` and is not approved as an
-exposed production surface.
+official A2A protobuf contract. It remains `partial`; do not claim official
+interoperability or certification from the policy repair.
+
+### Effective gRPC profile matrix
+
+| Operator profile | gRPC result | Effective security boundary |
+| --- | --- | --- |
+| No `--grpc-port` | No gRPC listener or advertised interface | Safe default; capability remains installed but inactive. |
+| Loopback + `--grpc-port`, no bearer/TLS | Explicit plaintext local listener | One-MiB bounds, parser, admission, deadlines, cancellation, and stable errors apply; every local process remains inside the trust boundary. |
+| Loopback + bearer | Plaintext listener requiring bearer metadata | Missing, wrong, empty, or duplicate bearer metadata is refused before bridge effects; use TLS as well if traffic crosses a transport boundary. |
+| Native TLS + bearer | `grpcs://` listener requiring trusted server TLS and bearer metadata | Plaintext clients fail; bearer remains a shared credential. |
+| Native mTLS + bearer | `grpcs://` listener requiring a client certificate rooted in the configured CA plus bearer metadata | Missing or untrusted client certificates fail during transport setup; the bearer still authorises both shipped methods. |
+| Non-loopback without the existing HTTP exposure prerequisites | Startup refused before listener creation | Same fail-closed bind gate as the HTTP edge. |
+| Explicit `--insecure-off-loopback` override | Selected downgrade is allowed and warned | gRPC still applies bounds, deadlines, cancellation, and stable errors, but plaintext/no-bearer traffic is not made secure by those resource controls. |
 
 ## Required Exposed-Bridge Posture
 
 Use this posture before accepting traffic from any host other than the local
-operator machine. These examples protect the HTTP+JSON listener only; do not add
-`--grpc-port` to them:
+operator machine. This reverse-proxy example protects the HTTP+JSON listener.
+Add `--grpc-port` only when the proxy is also configured for gRPC and forwards
+the bearer metadata, or use native TLS/mTLS for both listeners:
 
 ```bash
 synapse a2a-serve \
@@ -178,11 +193,12 @@ public receipts.
 ## Residual Risk
 
 - The bridge uses bearer-token authorization, not per-client identity binding.
-- The optional gRPC listener is default-off. When enabled through
-  `synapse a2a-serve`, it does not inherit the HTTP listener's bearer, TLS/mTLS,
-  Host/Origin, admission, or read-timeout policy, and it has no explicit gRPC
-  message-size, concurrency, deadline, or stable-error policy. It must remain on
-  trusted loopback until parity is implemented and independently cleared.
+- The optional gRPC listener is default-off and composes the CLI's shared
+  bearer, native TLS/mTLS, message, concurrency, deadline, parser, and error
+  policy when enabled. The shared bearer authorises both methods and does not
+  provide per-client identity or method-level ACLs. The custom protocol remains
+  partial and requires independent exact-object clearance before a security
+  release claim.
 - Reverse-proxy TLS proves transport protection to the proxy boundary; it is not
   hub mTLS and does not authenticate Synapse agents.
 - Subscription replay is local process memory, not a durable cross-restart

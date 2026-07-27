@@ -117,8 +117,10 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "When set, also serve the optional A2A gRPC binding (SendMessage/GetTask) "
             "on this TCP port (requires grpcio / synapse-channel[a2a-grpc]). "
-            "Default-off; the integrated CLI does not inherit HTTP bearer, TLS/mTLS, "
-            "or resource-limit policy, so use only on trusted loopback."
+            "Default-off; when enabled it uses the selected A2A bearer and native "
+            "TLS/mTLS files, the HTTP request concurrency ceiling, a 1 MiB message "
+            "ceiling, bounded JSON parsing, stable errors, and requires each call "
+            "deadline not to exceed --request-read-timeout."
         ),
     )
     serve.add_argument(
@@ -166,7 +168,8 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=30.0,
         help=(
             "Wall-clock seconds allowed to finish reading one HTTP request body "
-            "(default 30). Incomplete or stalled bodies receive 408."
+            "(default 30). Incomplete or stalled bodies receive 408. Also the "
+            "maximum required deadline for one optional gRPC call."
         ),
     )
     serve.set_defaults(func=_cmd_a2a_serve)

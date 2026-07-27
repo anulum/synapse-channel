@@ -72,8 +72,9 @@ def test_matrix_keeps_external_validation_gates_visible() -> None:
     grpc = next(row for row in CONFORMANCE_ROWS if row.item == "gRPC")
     assert grpc.status == "partial"
     assert "default-off" in grpc.limitation
-    assert "does not inherit HTTP bearer, TLS/mTLS" in grpc.limitation
-    assert "trusted loopback until parity" in grpc.limitation
+    assert "composes its selected shared bearer, native TLS/mTLS files" in grpc.limitation
+    assert "one-MiB message bounds" in grpc.limitation
+    assert "not per-client identity or method-level ACL" in grpc.limitation
 
 
 def test_matrix_records_real_webhook_receiver_progress_as_partial() -> None:

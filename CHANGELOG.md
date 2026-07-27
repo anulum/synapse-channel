@@ -21,13 +21,13 @@ All notable changes to this project are documented here.
 
 ### Security
 
-- Make the optional, default-off `a2a-serve --grpc-port` boundary explicit in
-  CLI help, conformance output, and public security/deployment documentation:
-  the integrated CLI currently does not pass the HTTP edge's bearer, TLS/mTLS,
-  browser-authority, admission, or read-timeout policy into gRPC. The listener
-  must remain disabled for exposed deployments and restricted to trusted
-  loopback until policy parity is implemented and independently cleared. This
-  clarification does not change transport behavior.
+- Close the optional, default-off `a2a-serve --grpc-port` effective-policy gap:
+  the CLI now composes its selected shared bearer, native TLS/mTLS files,
+  concurrency ceiling, one-MiB request/response bounds, bounded JSON parser,
+  finite call-deadline ceiling with cancellation of pending hub work, stable
+  value-free errors, and listener cleanup into gRPC. The custom two-method
+  binding remains `partial` protocol support and the shared bearer is not
+  per-client identity or a method-level ACL.
 
 ## [0.99.14] - 2026-07-26
 

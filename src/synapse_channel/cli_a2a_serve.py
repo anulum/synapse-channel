@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import math
 import ssl
 import sys
 from collections.abc import Callable
@@ -93,6 +94,7 @@ def _cmd_a2a_serve(
     bridge_factory: BridgeFactory = A2ABridge,
     store_factory: StoreFactory = A2ATaskStore,
     server_runner: ServerRunner = serve_a2a_http,
+    grpc_server_starter: Callable[..., tuple[Any, Any]] | None = None,
 ) -> int:
     """Dispatch the ``a2a-serve`` subcommand."""
     try:
@@ -150,6 +152,20 @@ def _cmd_a2a_serve(
         tls_active=tls_active,
     ):
         print(f"[{args.name}] WARNING: {warning}.", file=sys.stderr)
+    max_concurrent = int(getattr(args, "max_concurrent_requests", 32))
+    read_timeout = float(getattr(args, "request_read_timeout", 30.0))
+    if max_concurrent < 1:
+        print(
+            f"[{args.name}] --max-concurrent-requests must be >= 1.",
+            file=sys.stderr,
+        )
+        return 2
+    if not math.isfinite(read_timeout) or read_timeout <= 0.0:
+        print(
+            f"[{args.name}] --request-read-timeout must be finite and > 0.",
+            file=sys.stderr,
+        )
+        return 2
     manifest = async_runner(
         manifest_fetcher(uri=args.uri, name=f"{args.name}-manifest", token=args.token)
     )
@@ -177,6 +193,8 @@ def _cmd_a2a_serve(
 
     agent = agent_factory(args.name, _handler, uri=args.uri, verbose=False, token=args.token)
     runtime = runtime_factory(agent)
+    if isinstance(runtime, SynapseAgentRuntime):
+        runtime.operation_timeout_seconds = read_timeout
     if not runtime.start():
         print(f"[{args.name}] Could not establish persistent hub connection.", file=sys.stderr)
         runtime.stop()
@@ -194,48 +212,62 @@ def _cmd_a2a_serve(
         subscribe_wait_seconds=args.subscribe_timeout,
     )
     bridge_ref["bridge"] = bridge
-    max_concurrent = int(getattr(args, "max_concurrent_requests", 32))
-    read_timeout = float(getattr(args, "request_read_timeout", 30.0))
-    if max_concurrent < 1:
-        print(
-            f"[{args.name}] --max-concurrent-requests must be >= 1.",
-            file=sys.stderr,
-        )
-        runtime.stop()
-        return 2
-    if read_timeout <= 0.0:
-        print(
-            f"[{args.name}] --request-read-timeout must be > 0.",
-            file=sys.stderr,
-        )
-        runtime.stop()
-        return 2
     scheme = "https" if tls_active else "http"
     grpc_port = getattr(args, "grpc_port", None)
     grpc_server = None
     if grpc_port is not None:
         try:
-            from synapse_channel.a2a_grpc import SERVICE_NAME, start_grpc_in_background
+            from synapse_channel.a2a_grpc import (
+                DEFAULT_MAX_GRPC_MESSAGE_BYTES,
+                SERVICE_NAME,
+                A2AGrpcPolicy,
+                build_grpc_server_credentials,
+                start_grpc_in_background,
+            )
 
             grpc_host = args.host
-            grpc_server, _grpc_thread = start_grpc_in_background(
-                bridge, host=grpc_host, port=int(grpc_port)
+            grpc_credentials = (
+                build_grpc_server_credentials(
+                    certfile=args.tls_certfile,
+                    keyfile=args.tls_keyfile,
+                    client_ca_file=client_ca,
+                )
+                if tls_active
+                else None
             )
+            grpc_policy = A2AGrpcPolicy(
+                bearer_token=bridge.auth_token,
+                max_receive_message_bytes=DEFAULT_MAX_GRPC_MESSAGE_BYTES,
+                max_send_message_bytes=DEFAULT_MAX_GRPC_MESSAGE_BYTES,
+                max_concurrent_rpcs=max_concurrent,
+                max_rpc_seconds=read_timeout,
+            )
+            starter = grpc_server_starter or start_grpc_in_background
+            grpc_server, _grpc_thread = starter(
+                bridge,
+                host=grpc_host,
+                port=int(grpc_port),
+                server_credentials=grpc_credentials,
+                policy=grpc_policy,
+            )
+            grpc_scheme = "grpcs" if grpc_credentials is not None else "grpc"
             interfaces = agent_card.setdefault("supportedInterfaces", [])
             if isinstance(interfaces, list):
                 interfaces.append(
                     {
-                        "url": f"grpc://{grpc_host}:{int(grpc_port)}",
+                        "url": f"{grpc_scheme}://{grpc_host}:{int(grpc_port)}",
                         "protocolBinding": "GRPC",
                         "protocolVersion": "1.0",
                         "service": SERVICE_NAME,
                     }
                 )
             print(
-                f"[{args.name}] A2A gRPC binding on grpc://{grpc_host}:{int(grpc_port)} "
-                f"({SERVICE_NAME})"
+                f"[{args.name}] A2A gRPC binding on "
+                f"{grpc_scheme}://{grpc_host}:{int(grpc_port)} ({SERVICE_NAME}; "
+                f"bearer={'required' if bridge.auth_token else 'off'}; "
+                f"max-rpcs={max_concurrent}; deadline={read_timeout:g}s)"
             )
-        except RuntimeError as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             print(f"[{args.name}] A2A gRPC unavailable: {exc}.", file=sys.stderr)
             runtime.stop()
             return 2

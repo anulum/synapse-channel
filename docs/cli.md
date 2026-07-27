@@ -1978,15 +1978,19 @@ Operational boundaries:
   to protected bridge routes. The public Agent Card remains public discovery.
 - `--grpc-port PORT` enables a default-off, optional JSON-over-gRPC
   `SendMessage` / `GetTask` subset on the same `--host`. The integrated CLI
-  currently advertises `grpc://` and does **not** pass the HTTP edge's bearer,
-  TLS/mTLS, Host/Origin, request-admission, or read-timeout policy to that
-  listener, nor does it set explicit gRPC message-size, concurrency, deadline,
-  or stable-error policy. HTTP `--bearer-auth`, `--tls-certfile`,
-  `--tls-keyfile`, and `--mtls-client-ca-file` therefore do not protect gRPC.
-  Keep it disabled for exposed deployments; use it on loopback only when every
-  local process is trusted. The low-level builder can accept explicit gRPC
-  server credentials, but the CLI does not supply them and TLS alone would not
-  establish policy parity. See [Current gRPC activation boundary](a2a-deployment-threat-model.md#current-grpc-activation-boundary).
+  applies the selected A2A shared bearer and native TLS/mTLS files to both
+  transports. It maps `--max-concurrent-requests` to
+  `maximum_concurrent_rpcs`, caps gRPC requests and responses at one MiB, uses
+  the bounded JSON parser, returns stable value-free errors, and requires every
+  gRPC call to carry a finite deadline no longer than
+  `--request-read-timeout`; pending hub work is cancelled when the deadline
+  expires. The shipped `A2AGrpcClient` supplies that deadline and accepts the
+  shared bearer and channel credentials explicitly. With native TLS the
+  advertised interface uses `grpcs://`; otherwise it uses `grpc://`. HTTP
+  Host/Origin checks are browser/HTTP controls and do not apply to gRPC. The
+  shared bearer is not per-client identity or a method-level ACL, and the custom
+  two-method binding remains `partial`. See
+  [Current gRPC activation boundary](a2a-deployment-threat-model.md#current-grpc-activation-boundary).
 - Bind exposure (hub R4 parity for the HTTP edge): the bridge defaults to
   loopback (`127.0.0.1`). A non-loopback host is **refused** without bearer
   auth, and a non-loopback host **with** bearer auth is also **refused** while
