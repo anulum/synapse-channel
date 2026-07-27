@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Generate and ship the permanent `synapse arm install` user-service template
+  with `Restart=always`, matching the documented contract so systemd re-arms
+  the exact-identity mailbox waiter after both clean and non-zero exits.
+
 ### Security
 
 - Make the optional, default-off `a2a-serve --grpc-port` boundary explicit in
