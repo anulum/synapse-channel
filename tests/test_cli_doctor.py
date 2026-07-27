@@ -168,6 +168,26 @@ async def test_diagnose_unreachable_fails() -> None:
     assert [d.check for d in diagnoses if d.status == "fail"] == ["hub"]
 
 
+async def test_a2a_policy_includes_webhook_redirect_credential_boundary() -> None:
+    async def no_roster(**_: Any) -> list[str]:
+        return []
+
+    code, lines, diagnoses = await cli_doctor._diagnose(
+        feed_tail_reader=lambda _env: [],
+        cursor_names_reader=lambda _env: [],
+        uri="ws://127.0.0.1:8876",
+        project="demorepo",
+        agent_id=None,
+        token=None,
+        roster_probe=no_roster,
+        a2a_policy=True,
+    )
+
+    assert code == 0
+    assert "a2a_webhook_redirect_policy" in {diagnosis.check for diagnosis in diagnoses}
+    assert any("sensitive headers stay on exact origin" in line for line in lines)
+
+
 async def test_diagnose_flags_off_loopback_without_token_and_disk_pressure(
     tmp_path: Path,
 ) -> None:

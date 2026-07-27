@@ -406,6 +406,30 @@ def check_a2a_origin_policy(*, allow_origins: tuple[str, ...] = ()) -> Diagnosis
     )
 
 
+def check_a2a_webhook_redirect_policy() -> Diagnosis:
+    """Report the fixed A2A webhook redirect credential-custody policy."""
+    from synapse_channel.safe_webhook_transport import describe_webhook_redirect_policy
+
+    policy = describe_webhook_redirect_policy()
+    raw_statuses = policy["authenticated_statuses"]
+    statuses = (
+        "/".join(str(item) for item in raw_statuses) if isinstance(raw_statuses, list) else ""
+    )
+    return Diagnosis(
+        check="a2a_webhook_redirect_policy",
+        status="warn",
+        detail=(
+            f"HTTPS downgrade {policy['https_downgrade']}; sensitive headers stay on "
+            f"{policy['authenticated_origin']} origin and require {statuses}; "
+            f"redirect limit={policy['max_redirects']}"
+        ),
+        remedy=(
+            "configure authenticated webhook URLs with HTTPS; initial plaintext "
+            "credential transport is a separate residual policy"
+        ),
+    )
+
+
 def check_a2a_bind_posture(
     *,
     host: str = "127.0.0.1",

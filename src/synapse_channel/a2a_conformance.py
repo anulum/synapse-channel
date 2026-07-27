@@ -278,11 +278,13 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
         synapse_surface="docs/a2a-validation-receipts.md",
         evidence=(
             "Focused tests POST to real local HTTPS receivers with a test CA and through a "
-            "real 307 proxy redirect; delivery-time DNS rebinding is blocked before send."
+            "real 307 proxy redirect; delivery-time DNS rebinding is blocked before send. "
+            "Authenticated 301/302/303, cross-origin 307/308, and every HTTPS downgrade "
+            "are refused; exact same-origin 307/308 preserve POST under a five-hop cap."
         ),
         limitation=(
-            "Remote public receivers, production TLS termination, and operator-visible receipts "
-            "remain external."
+            "Remote public receivers, initial authenticated-URL HTTPS enforcement, "
+            "production TLS termination, and operator-visible receipts remain external."
         ),
         spec_reference="A2A 1.0.0 push notification operations",
     ),

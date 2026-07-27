@@ -82,6 +82,12 @@ def test_matrix_keeps_external_validation_gates_visible() -> None:
 
 def test_matrix_records_real_webhook_receiver_progress_as_partial() -> None:
     partial_items = {row.item for row in conformance_rows(status="partial")}
+    webhook = next(row for row in CONFORMANCE_ROWS if row.item == "Real webhook receiver")
 
     assert "Real webhook receiver" in partial_items
     assert "Deployment threat model" in partial_items
+    assert "Authenticated 301/302/303" in webhook.evidence
+    assert "cross-origin 307/308" in webhook.evidence
+    assert "every HTTPS downgrade" in webhook.evidence
+    assert "five-hop cap" in webhook.evidence
+    assert "initial authenticated-URL HTTPS enforcement" in webhook.limitation

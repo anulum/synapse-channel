@@ -37,11 +37,25 @@ from typing import IO
 from urllib.error import URLError
 from urllib.parse import urljoin, urlparse
 
+from synapse_channel.core.http_authority import normalise_url_origin
+
 LOCAL_TARGET_ERROR = "pushNotificationConfig.webhookUrl must not target local networks"
 """Deny message raised when a webhook target is not a globally routable address."""
 
 WEBHOOK_MAX_RESPONSE_BYTES = 64 * 1024
 """Upper bound on the discarded webhook response body, in bytes."""
+
+WEBHOOK_MAX_REDIRECTS = 5
+"""Maximum redirects admitted for one webhook delivery."""
+
+SENSITIVE_WEBHOOK_HEADERS = frozenset({"authorization", "proxy-authorization", "cookie", "cookie2"})
+"""Credential-bearing headers whose authority is bound to one exact origin."""
+
+REDIRECT_DOWNGRADE_ERROR = "webhook redirects must not downgrade HTTPS to HTTP"
+AUTH_REDIRECT_STATUS_ERROR = "authenticated webhook redirects require status 307 or 308"
+AUTH_REDIRECT_ORIGIN_ERROR = "sensitive webhook headers must not cross origins"
+REDIRECT_TARGET_ERROR = "webhook redirect target must identify one exact HTTP(S) origin"
+REDIRECT_LIMIT_ERROR = "webhook redirect limit exceeded"
 
 
 def is_public_address(raw_address: str) -> bool:
@@ -235,7 +249,10 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
 
 
 class _SafePinnedRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Follow redirects only to http(s) targets and preserve the POST body."""
+    """Apply credential-origin policy before every pinned redirect connect."""
+
+    max_redirections = WEBHOOK_MAX_REDIRECTS
+    max_repeats = min(urllib.request.HTTPRedirectHandler.max_repeats, WEBHOOK_MAX_REDIRECTS)
 
     def redirect_request(
         self,
@@ -246,19 +263,54 @@ class _SafePinnedRedirectHandler(urllib.request.HTTPRedirectHandler):
         headers: HTTPMessage,
         newurl: str,
     ) -> urllib.request.Request | None:
-        """Validate a redirect target's scheme before the pinned connect runs."""
+        """Validate redirect transport, origin, status, and sensitive headers."""
         redirect_url = urljoin(req.full_url, newurl)
-        scheme = urlparse(redirect_url).scheme
-        if scheme not in {"http", "https"}:
-            raise URLError("webhook redirect target must use http or https")
+        redirect_history = getattr(req, "redirect_dict", {})
+        if isinstance(redirect_history, dict) and (
+            redirect_history.get(redirect_url, 0) >= self.max_repeats
+            or len(redirect_history) >= self.max_redirections
+        ):
+            raise URLError(REDIRECT_LIMIT_ERROR)
+        try:
+            source_origin = normalise_url_origin(req.full_url)
+            redirect_origin = normalise_url_origin(redirect_url)
+        except ValueError as exc:
+            raise URLError(REDIRECT_TARGET_ERROR) from exc
+
+        source_scheme = urlparse(source_origin).scheme
+        redirect_scheme = urlparse(redirect_origin).scheme
+        if source_scheme == "https" and redirect_scheme == "http":
+            raise URLError(REDIRECT_DOWNGRADE_ERROR)
+
+        header_items = req.header_items()
+        has_sensitive_headers = any(
+            name.casefold() in SENSITIVE_WEBHOOK_HEADERS for name, _value in header_items
+        )
+        if has_sensitive_headers:
+            if code not in {307, 308}:
+                raise URLError(AUTH_REDIRECT_STATUS_ERROR)
+            if source_origin != redirect_origin:
+                raise URLError(AUTH_REDIRECT_ORIGIN_ERROR)
+
         if code in {307, 308}:
             return urllib.request.Request(
                 redirect_url,
                 data=req.data,
-                headers=dict(req.headers),
+                headers=dict(header_items),
                 method=req.get_method(),
             )
         return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def describe_webhook_redirect_policy() -> dict[str, object]:
+    """Return the fixed credential-custody policy used by webhook delivery."""
+    return {
+        "https_downgrade": "deny",
+        "sensitive_headers": sorted(SENSITIVE_WEBHOOK_HEADERS),
+        "authenticated_statuses": [307, 308],
+        "authenticated_origin": "exact",
+        "max_redirects": WEBHOOK_MAX_REDIRECTS,
+    }
 
 
 def build_safe_opener(

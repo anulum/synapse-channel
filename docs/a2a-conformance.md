@@ -63,8 +63,11 @@ shared bearer is not per-client identity or a method-level ACL. See the
 
 The real-webhook row is `partial`: focused tests deliver to real local HTTPS
 receivers with a test CA, follow a real 307 proxy redirect, and block a
-delivery-time DNS rebinding attempt before send, while remote public receivers
-and operator-visible deployment receipts remain external.
+delivery-time DNS rebinding attempt before send. Authenticated redirect tests
+refuse 301/302/303, cross-origin 307/308, and every HTTPS downgrade; exact
+same-origin 307/308 preserve the POST body and sensitive header under a bounded
+five-redirect policy. Remote public receivers, initial authenticated-URL HTTPS
+enforcement, and operator-visible deployment receipts remain external.
 
 The deployment-threat-model row is also `partial`: the local review records the
 required exposed-bridge posture for bearer auth, TLS/proxy placement, state-file

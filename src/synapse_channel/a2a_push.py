@@ -10,7 +10,8 @@
 Delivery goes out over the SSRF-resistant transport in
 :mod:`synapse_channel.safe_webhook_transport`, which resolves each target once,
 admits only globally routable addresses, pins the connection to the validated
-address, and bounds the discarded response body.
+address, bounds the discarded response body, refuses HTTPS downgrade, and
+keeps credential-bearing redirects on the configured exact origin.
 """
 
 from __future__ import annotations
@@ -63,7 +64,9 @@ class WebhookDeliveryClient:
         The URL scheme and host are checked before the request is built, and the
         actual connection is pinned to a validated globally routable address by
         the safe transport, so a DNS answer cannot change between validation and
-        connect.
+        connect. The transport also owns a fixed redirect policy: sensitive
+        headers can follow only exact same-origin 307/308 responses, while every
+        HTTPS-to-HTTP redirect fails closed.
 
         Parameters
         ----------
@@ -148,6 +151,8 @@ def _validate_webhook_target(url: str, *, allow_local_targets: bool = False) -> 
     hostname = parsed.hostname
     if hostname is None:
         raise URLError("pushNotificationConfig.webhookUrl must include a host")
+    if parsed.username is not None or parsed.password is not None:
+        raise URLError("pushNotificationConfig.webhookUrl must not include credentials")
     if not allow_local_targets and hostname.lower() == "localhost":
         raise URLError(LOCAL_TARGET_ERROR)
     try:

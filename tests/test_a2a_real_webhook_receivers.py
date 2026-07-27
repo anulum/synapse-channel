@@ -84,6 +84,35 @@ def test_real_reverse_proxy_redirect_preserves_post_to_https_receiver(
     }
 
 
+def test_real_authenticated_cross_port_redirect_is_refused_before_second_receiver(
+    tmp_path: Path,
+) -> None:
+    certfile, keyfile = _write_localhost_cert(tmp_path)
+    with _WebhookReceiver(certfile=certfile, keyfile=keyfile) as receiver:
+        with _RedirectProxy(
+            location=f"{receiver.url}/must-not-arrive",
+            certfile=certfile,
+            keyfile=keyfile,
+        ) as proxy:
+            client = a2a_push.WebhookDeliveryClient(
+                allow_local_targets=True,
+                ca_file=str(certfile),
+                timeout_seconds=2.0,
+            )
+            with pytest.raises(URLError, match="must not cross origins"):
+                client(
+                    {
+                        "url": f"{proxy.url}/start",
+                        "headers": {"Authorization": "Bearer test-only-secret"},
+                        "payload": {"task": {"id": "task-cross-port"}},
+                    }
+                )
+
+    assert proxy.requests == [{"method": "POST", "path": "/start"}]
+    assert proxy.sensitive_header_names == [{"authorization"}]
+    assert receiver.requests == []
+
+
 def test_default_webhook_delivery_client_still_blocks_local_receivers() -> None:
     with _WebhookReceiver() as receiver:
         with pytest.raises(URLError, match="must not target local networks"):
@@ -182,15 +211,31 @@ class _WebhookReceiver:
 
 
 class _RedirectProxy:
-    def __init__(self, *, location: str) -> None:
+    def __init__(
+        self,
+        *,
+        location: str,
+        certfile: Path | None = None,
+        keyfile: Path | None = None,
+    ) -> None:
         self.location = location
         self.port = _free_port()
         self.requests: list[dict[str, str]] = []
+        self.sensitive_header_names: list[set[str]] = []
+        self._scheme = "https" if certfile is not None else "http"
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
                 owner.requests.append({"method": self.command, "path": self.path})
+                owner.sensitive_header_names.append(
+                    {
+                        str(name).casefold()
+                        for name in self.headers
+                        if str(name).casefold()
+                        in {"authorization", "proxy-authorization", "cookie", "cookie2"}
+                    }
+                )
                 self.send_response(HTTPStatus.TEMPORARY_REDIRECT)
                 self.send_header("Location", owner.location)
                 self.send_header("Content-Length", "0")
@@ -200,11 +245,16 @@ class _RedirectProxy:
                 return None
 
         self._server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
+        if certfile is not None and keyfile is not None:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_cert_chain(certfile, keyfile)
+            self._server.socket = context.wrap_socket(self._server.socket, server_side=True)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
 
     @property
     def url(self) -> str:
-        return f"http://localhost:{self.port}"
+        return f"{self._scheme}://localhost:{self.port}"
 
     def __enter__(self) -> _RedirectProxy:
         self._thread.start()

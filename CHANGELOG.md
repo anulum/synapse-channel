@@ -21,6 +21,15 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Bind outbound webhook credentials to their exact normalized origin across
+  redirects. Credential-bearing 301/302/303 responses now fail closed instead
+  of becoming authenticated GET requests; 307/308 preserve method, body, and
+  sensitive headers only for the same scheme, canonical lowercase
+  ASCII/punycode hostname, and effective port; Unicode authority spellings fail
+  closed instead of relying on ambiguous IDNA mappings. Every HTTPS-to-HTTP
+  redirect is refused, redirect chains are capped at five, and `Authorization`,
+  `Proxy-Authorization`, `Cookie`, and `Cookie2` are recognized
+  case-insensitively without logging their values.
 - Enforce the A2A HTTP endpoint's advertised `Host` authority on every route,
   independently of browser Origin configuration. Requests with missing,
   malformed, ambiguous, or hostile Host values now fail `403` before

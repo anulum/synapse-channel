@@ -53,7 +53,7 @@ Out of scope:
 | A2A client -> reverse proxy -> bridge | Untrusted clients submit task or push-config requests. | Every route first requires an exact Host authority derived from `--endpoint-url`; every present Origin requires an explicit exact allow-list entry. Non-loopback bind refuses without bearer auth; non-loopback bind with bearer over plaintext HTTP also refuses unless native TLS or `--insecure-off-loopback` is set (hub R4 parity). | Preserve the advertised Host at the proxy; configure each browser Origin explicitly; prefer loopback + proxy TLS, or native `--tls-certfile`/`--tls-keyfile`; require bearer auth for protected routes. |
 | A2A gRPC client -> bridge | The optional listener can submit messages and read tasks. | `--grpc-port` is absent by default. When enabled, the CLI composes its shared bearer, native TLS/mTLS files, concurrency ceiling, one-MiB message bounds, bounded JSON parser, finite deadline ceiling, and stable errors into gRPC. | Supply the bearer and a deadline from every client. Use native TLS/mTLS or an explicitly configured gRPC-capable TLS proxy for exposure; the shared bearer is not per-client identity. |
 | Bridge -> Synapse hub | Bridge forwards task text/data/file parts into Synapse chat. | Bridge uses the configured hub URI and optional hub token. | Point the bridge only at the intended hub and target. |
-| Bridge -> webhook receiver | A client can configure outbound webhook targets. | Delivery resolves each target once and pins the connection to that validated address (no re-resolve between check and connect), admits only globally routable destinations — rejecting loopback, private, link-local, carrier-grade NAT, multicast, reserved, and unspecified addresses including IPv4-mapped IPv6 — applies the same policy to redirect targets, ignores environment proxies, and bounds the discarded response body. | Permit only receiver domains that match the deployment policy; review redirects. |
+| Bridge -> webhook receiver | A client can configure outbound webhook targets. | Delivery resolves each target once and pins the connection to that validated address (no re-resolve between check and connect), admits only globally routable destinations, and applies the same policy to redirects. Authenticated 301/302/303, cross-origin sensitive 307/308, every HTTPS downgrade, and chains beyond five redirects fail closed before the next request. | Permit only receiver domains that match the deployment policy; use HTTPS for every authenticated initial URL; review redirects. |
 | Bridge -> local filesystem | State persistence can leak task metadata if permissions are loose. | A2A state and temp files are owner-only and writes replace atomically. | Place `--state-file` on a trusted local disk, not a shared web root. |
 | Bridge logs -> operators | Logs can leak bearer tokens or task payloads. | The stdlib handler suppresses default access logging. | If a proxy logs requests, redact `Authorization` and avoid body logging. |
 
@@ -155,6 +155,30 @@ Origin-less clients remain compatible only through the always-on Host
 boundary. These independent checks guard against DNS rebinding and drive-by
 requests without relying on browser CORS behavior.
 
+## Webhook Redirect Credential Custody
+
+Webhook redirect admission is independent of the SSRF destination check. Every
+destination still resolves once, admits only globally routable addresses by
+default, pins the validated address, preserves TLS hostname verification,
+ignores environment proxies, and bounds the response read.
+
+`Authorization`, `Proxy-Authorization`, `Cookie`, and `Cookie2` are treated
+case-insensitively as sensitive. A request carrying any of them may follow only
+307/308 to the exact same normalized scheme, lowercase ASCII/punycode hostname,
+and effective port; Unicode authority spellings fail closed rather than relying
+on ambiguous IDNA mappings. 301/302/303 are refused rather than converted into
+an authenticated GET. HTTPS-to-HTTP is refused even without a sensitive
+header, and the redirect chain is capped at five. Relative and scheme-relative
+locations receive the same normalized-origin decision. Errors contain no
+credential value.
+
+Updating a stored push configuration replaces the configuration. Changing its
+URL without supplying authentication therefore removes the prior credential;
+supplying authentication with the replacement is explicit reauthorization.
+Initial authenticated `http://` webhook URLs are not yet refused by the bridge,
+which is a separate residual transport policy. Configure authenticated receiver
+URLs with HTTPS.
+
 ## Route Policy
 
 | Route class | Public without bearer auth | Protected posture |
@@ -175,6 +199,10 @@ requests without relying on browser CORS behavior.
 | Client configures `localhost`, loopback, private, link-local, CGNAT, or other non-routable webhook URLs, or a name that rebinds to one after validation. | Delivery pins the once-resolved address and rejects any non-globally-routable target before the socket is opened. |
 | Client configures a public-looking host that resolves to a local address. | Delivery rejects the target before sending. |
 | Webhook receiver redirects to a local address. | Redirect handler validates and rejects the new target before following it. |
+| Authenticated webhook receives 301/302/303. | Redirect is refused before an authenticated GET can be opened. |
+| Sensitive webhook header would cross hostname, scheme, or effective port on 307/308. | Redirect is refused before the second request; header values are not logged. |
+| Webhook redirects from HTTPS to HTTP. | Redirect is always refused, with or without credentials. |
+| Receiver loops redirects or exceeds five hops. | The bounded redirect handler refuses the chain. |
 | Reverse proxy strips the `Authorization` header. | Protected routes fail authentication at the bridge. |
 | A hostile web page in the operator's browser calls the loopback bridge (DNS rebinding / drive-by). | With `--allow-origin` configured, an unlisted or opaque `Origin` is refused `403 Forbidden`; a missing `Origin` still requires the exact advertised Host, so a rebound hostile authority is also refused. |
 | Bridge restarts with open tasks. | Persisted non-terminal tasks recover as failed according to the local state policy. |

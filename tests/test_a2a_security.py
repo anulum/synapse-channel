@@ -28,6 +28,7 @@ from synapse_channel.a2a_http_protocol import (
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.http_authority import normalise_url_origin
 from synapse_channel.core.protocol import MAX_JSON_DEPTH
 
 
@@ -361,6 +362,8 @@ def test_normalise_origin_lowercases_and_trims(value: str, expected: str) -> Non
         "https://bad host",
         "https://host\\@attacker.example",
         "https://host\x7f",
+        "https://BÜCHER.example",
+        "https://\ud800.example",
     ],
 )
 def test_normalise_origin_refuses_non_exact_principals(value: str) -> None:
@@ -395,6 +398,46 @@ def test_endpoint_authorities_cover_only_the_advertised_default_port() -> None:
 
 
 @pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://EXAMPLE.test/path?x=1#fragment", "https://example.test:443"),
+        ("https://example.test:443/other", "https://example.test:443"),
+        ("https://example.test:8443/other", "https://example.test:8443"),
+        ("http://example.test/path", "http://example.test:80"),
+        ("http://[::1]/path", "http://[::1]:80"),
+        ("https://xn--bcher-kva.example/path", "https://xn--bcher-kva.example:443"),
+        ("https://xn--fa-hia.de/path", "https://xn--fa-hia.de:443"),
+        ("https://fass.de/path", "https://fass.de:443"),
+    ],
+)
+def test_normalise_url_origin_uses_effective_port_and_canonical_hostname(
+    url: str,
+    expected: str,
+) -> None:
+    assert normalise_url_origin(url) == expected
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "file://example.test/hook",
+        "https://user@example.test/hook",
+        "https://example.test:/hook",
+        "https://example.test,attacker.test/hook",
+        "https://example.test\\@attacker.test/hook",
+        "https://%65xample.test/hook",
+        "https://./hook",
+        "https://BÜCHER.example/hook",
+        "https://faß.de/hook",
+        "https://\ud800.example/hook",
+    ],
+)
+def test_normalise_url_origin_refuses_ambiguous_authorities(url: str) -> None:
+    with pytest.raises(ValueError, match="exact HTTP\\(S\\) origin"):
+        normalise_url_origin(url)
+
+
+@pytest.mark.parametrize(
     "value",
     [
         "",
@@ -403,6 +446,7 @@ def test_endpoint_authorities_cover_only_the_advertised_default_port() -> None:
         "bridge.test:invalid",
         "bridge.test,attacker.test",
         "bad host",
+        "\ud800.example",
     ],
 )
 def test_normalise_authority_refuses_ambiguous_host_values(value: str) -> None:
@@ -417,6 +461,10 @@ def test_endpoint_authorities_refuse_credential_or_delimiter_ambiguity() -> None
         endpoint_authorities("https://bridge.test\\@attacker.example/a2a")
     with pytest.raises(ValueError, match="authority"):
         endpoint_authorities("https://bridge.test:/a2a")
+    with pytest.raises(ValueError, match="authority"):
+        endpoint_authorities("https://BÜCHER.example/a2a")
+    with pytest.raises(ValueError, match="authority"):
+        endpoint_authorities("https://\ud800.example/a2a")
 
 
 @pytest.mark.parametrize(

@@ -191,10 +191,209 @@ def test_safe_opener_follows_a_plain_302_redirect() -> None:
     assert receiver.methods == ["GET"]
 
 
+@pytest.mark.parametrize("code", [307, 308])
+def test_authenticated_same_origin_redirect_preserves_post_and_sensitive_header(
+    code: int,
+) -> None:
+    with _Redirect(location="/final", code=code) as endpoint:
+        opener = transport.build_safe_opener(allow_local=True)
+        req = Request(
+            f"{endpoint.url}/start",
+            data=b'{"task":"safe"}',
+            headers={
+                "Authorization": "Bearer test-only-secret",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with opener.open(req, timeout=2.0) as response:
+            transport.read_bounded(response)
+
+    assert endpoint.paths == ["/start", "/final"]
+    assert endpoint.methods == ["POST", "POST"]
+    assert endpoint.sensitive_header_names == [{"authorization"}, {"authorization"}]
+    assert endpoint.bodies == [b'{"task":"safe"}', b'{"task":"safe"}']
+
+
+@pytest.mark.parametrize("code", [301, 302, 303])
+def test_authenticated_redirect_refuses_method_rewrite_statuses(code: int) -> None:
+    with _Redirect(location="/final", code=code) as endpoint:
+        opener = transport.build_safe_opener(allow_local=True)
+        req = Request(
+            f"{endpoint.url}/start",
+            data=b"{}",
+            headers={"Authorization": "Bearer test-only-secret"},
+            method="POST",
+        )
+        with pytest.raises(URLError, match="require status 307 or 308"):
+            opener.open(req, timeout=2.0)
+
+    assert endpoint.paths == ["/start"]
+
+
+@pytest.mark.parametrize(
+    "header_name",
+    [
+        "Authorization",
+        "authorization",
+        "Proxy-Authorization",
+        "Cookie",
+        "Cookie2",
+    ],
+)
+@pytest.mark.parametrize("code", [307, 308])
+def test_sensitive_header_never_crosses_origin(
+    header_name: str,
+    code: int,
+) -> None:
+    with _Receiver() as receiver:
+        with _Redirect(location=f"{receiver.url}/final", code=code) as proxy:
+            opener = transport.build_safe_opener(allow_local=True)
+            req = Request(
+                f"{proxy.url}/start",
+                data=b"{}",
+                headers={header_name: "test-only-secret"},
+                method="POST",
+            )
+            with pytest.raises(URLError, match="must not cross origins"):
+                opener.open(req, timeout=2.0)
+
+    assert proxy.paths == ["/start"]
+    assert receiver.paths == []
+
+
+def test_sensitive_header_never_crosses_hostname_on_the_same_port() -> None:
+    with _Redirect(location="/unused", code=307) as endpoint:
+        endpoint.location = f"http://127.0.0.1:{endpoint.port}/final"
+        opener = transport.build_safe_opener(allow_local=True)
+        req = Request(
+            f"{endpoint.url}/start",
+            data=b"{}",
+            method="POST",
+        )
+        req.add_unredirected_header("Authorization", "Bearer test-only-secret")
+        with pytest.raises(URLError, match="must not cross origins"):
+            opener.open(req, timeout=2.0)
+
+    assert endpoint.paths == ["/start"]
+
+
+def test_authenticated_http_to_https_redirect_is_refused(tmp_path: Path) -> None:
+    certfile, keyfile = _localhost_cert(tmp_path)
+    with _Receiver(certfile=certfile, keyfile=keyfile) as receiver:
+        with _Redirect(location=f"{receiver.url}/upgraded", code=307) as proxy:
+            opener = transport.build_safe_opener(allow_local=True, ca_file=str(certfile))
+            req = Request(
+                f"{proxy.url}/start",
+                data=b"{}",
+                headers={"Authorization": "Bearer test-only-secret"},
+                method="POST",
+            )
+            with pytest.raises(URLError, match="must not cross origins"):
+                opener.open(req, timeout=2.0)
+
+    assert proxy.paths == ["/start"]
+    assert receiver.paths == []
+
+
+@pytest.mark.parametrize("authenticated", [False, True])
+def test_https_to_http_redirect_is_always_refused(
+    tmp_path: Path,
+    authenticated: bool,
+) -> None:
+    certfile, keyfile = _localhost_cert(tmp_path)
+    headers = {"Authorization": "Bearer test-only-secret"} if authenticated else {}
+    with _Receiver() as receiver:
+        with _Redirect(
+            location=f"{receiver.url}/downgraded",
+            code=307,
+            certfile=certfile,
+            keyfile=keyfile,
+        ) as proxy:
+            opener = transport.build_safe_opener(allow_local=True, ca_file=str(certfile))
+            req = Request(
+                f"{proxy.url}/start",
+                data=b"{}",
+                headers=headers,
+                method="POST",
+            )
+            with pytest.raises(URLError, match="must not downgrade HTTPS to HTTP"):
+                opener.open(req, timeout=2.0)
+
+    assert proxy.paths == ["/start"]
+    assert receiver.paths == []
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "http://user@localhost/final",
+        "http://localhost:/final",
+        "http://localhost,attacker.test/final",
+        "http://localhost\\@attacker.test/final",
+        "http://%6cocalhost/final",
+    ],
+)
+def test_redirect_refuses_credential_or_ambiguous_authority(location: str) -> None:
+    with _Redirect(location=location, code=307) as proxy:
+        opener = transport.build_safe_opener(allow_local=True)
+        with pytest.raises(URLError, match="one exact HTTP\\(S\\) origin"):
+            opener.open(f"{proxy.url}/start", timeout=2.0)
+
+    assert proxy.paths == ["/start"]
+
+
+def test_scheme_relative_same_origin_307_is_permitted() -> None:
+    with _Redirect(location="/unused", code=307) as endpoint:
+        endpoint.location = f"//localhost:{endpoint.port}/final"
+        opener = transport.build_safe_opener(allow_local=True)
+        req = Request(
+            f"{endpoint.url}/start",
+            data=b"{}",
+            headers={"Authorization": "Bearer test-only-secret"},
+            method="POST",
+        )
+        with opener.open(req, timeout=2.0) as response:
+            transport.read_bounded(response)
+
+    assert endpoint.paths == ["/start", "/final"]
+
+
+def test_redirect_chain_limit_is_explicit_and_bounded() -> None:
+    with _Redirect(location="/loop", code=307, always_redirect=True) as endpoint:
+        opener = transport.build_safe_opener(allow_local=True)
+        req = Request(
+            f"{endpoint.url}/start",
+            data=b"{}",
+            headers={"Authorization": "Bearer test-only-secret"},
+            method="POST",
+        )
+        with pytest.raises(URLError, match="redirect limit exceeded") as exc_info:
+            opener.open(req, timeout=2.0)
+
+    assert len(endpoint.paths) <= transport.WEBHOOK_MAX_REDIRECTS + 1
+    assert "test-only-secret" not in str(exc_info.value)
+
+
+def test_webhook_redirect_policy_descriptor_is_stable_and_value_free() -> None:
+    assert transport.describe_webhook_redirect_policy() == {
+        "https_downgrade": "deny",
+        "sensitive_headers": [
+            "authorization",
+            "cookie",
+            "cookie2",
+            "proxy-authorization",
+        ],
+        "authenticated_statuses": [307, 308],
+        "authenticated_origin": "exact",
+        "max_redirects": 5,
+    }
+
+
 def test_safe_opener_refuses_a_redirect_to_a_non_http_scheme() -> None:
     with _Redirect(location="ftp://example.invalid/loot", code=302) as proxy:
         opener = transport.build_safe_opener(allow_local=True)
-        with pytest.raises(URLError, match="must use http or https"):
+        with pytest.raises(URLError, match="one exact HTTP\\(S\\) origin"):
             opener.open(f"http://localhost:{proxy.port}/start", timeout=2.0)
 
 
@@ -280,20 +479,49 @@ class _Receiver:
         self._server.server_close()
         self._thread.join(timeout=2.0)
 
+    @property
+    def url(self) -> str:
+        return f"{self._scheme}://localhost:{self.port}"
+
 
 class _Redirect:
-    def __init__(self, *, location: str, code: int) -> None:
+    def __init__(
+        self,
+        *,
+        location: str,
+        code: int,
+        certfile: Path | None = None,
+        keyfile: Path | None = None,
+        always_redirect: bool = False,
+    ) -> None:
         self.location = location
         self.code = code
+        self.always_redirect = always_redirect
         self.port = _free_port()
         self.paths: list[str] = []
+        self.methods: list[str] = []
+        self.sensitive_header_names: list[set[str]] = []
+        self.bodies: list[bytes] = []
+        self._scheme = "https" if certfile is not None else "http"
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
             def _handle(self) -> None:
                 owner.paths.append(self.path)
-                self.send_response(owner.code)
-                self.send_header("Location", owner.location)
+                owner.methods.append(self.command)
+                owner.sensitive_header_names.append(
+                    {
+                        str(name).casefold()
+                        for name in self.headers
+                        if str(name).casefold() in transport.SENSITIVE_WEBHOOK_HEADERS
+                    }
+                )
+                length = int(self.headers.get("Content-Length") or "0")
+                owner.bodies.append(self.rfile.read(length) if length else b"")
+                should_redirect = owner.always_redirect or self.path == "/start"
+                self.send_response(owner.code if should_redirect else HTTPStatus.NO_CONTENT)
+                if should_redirect:
+                    self.send_header("Location", owner.location)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
 
@@ -304,7 +532,16 @@ class _Redirect:
                 return None
 
         self._server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
+        if certfile is not None and keyfile is not None:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_cert_chain(certfile, keyfile)
+            self._server.socket = context.wrap_socket(self._server.socket, server_side=True)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    @property
+    def url(self) -> str:
+        return f"{self._scheme}://localhost:{self.port}"
 
     def __enter__(self) -> _Redirect:
         self._thread.start()

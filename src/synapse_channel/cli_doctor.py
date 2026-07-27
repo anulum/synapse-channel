@@ -53,6 +53,7 @@ from synapse_channel.client.diagnostics import (
     Diagnosis,
     check_a2a_bind_posture,
     check_a2a_origin_policy,
+    check_a2a_webhook_redirect_policy,
     check_deaf_agents,
     check_disk_space,
     check_exposure,
@@ -341,6 +342,8 @@ async def _diagnose(
     )
     if a2a_policy or a2a_allow_origins:
         diagnoses.append(check_a2a_origin_policy(allow_origins=a2a_allow_origins))
+    if a2a_policy:
+        diagnoses.append(check_a2a_webhook_redirect_policy())
     # Bind posture: always with --a2a-policy, or when any bind-posture flag is set.
     if (
         a2a_policy
@@ -831,9 +834,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help=(
             "Report the A2A Origin/Host policy (Host authority always enforced; "
-            "present Origin denied unless explicitly allowed) and the default "
-            "loopback bind posture. Combine with --a2a-allow-origin and "
-            "bind-posture flags."
+            "present Origin denied unless explicitly allowed), authenticated "
+            "webhook redirect credential policy, and default loopback bind posture. "
+            "Combine with --a2a-allow-origin and bind-posture flags."
         ),
     )
     doctor.add_argument(

@@ -245,6 +245,42 @@ def test_push_notification_config_rejects_missing_webhook_host() -> None:
         raise AssertionError("hostless webhook URL was accepted")
 
 
+def test_push_config_origin_change_without_reauthorization_drops_credentials() -> None:
+    bridge = A2ABridge(agent=RecordingAgent(), agent_card={}, target="WORKER", store=A2ATaskStore())
+    task = bridge.create_completed_task(
+        {
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    first = bridge.create_push_notification_config(
+        task["id"],
+        {
+            "id": "cfg-a",
+            "webhookUrl": "https://first.example/hook",
+            "authentication": {"scheme": "Bearer", "credentials": "test-only-secret"},
+        },
+    )
+    assert first is not None
+    assert a2a_push.build_push_delivery(task=task, config=first)["headers"] == {
+        "Authorization": "Bearer test-only-secret"
+    }
+
+    updated = bridge.create_push_notification_config(
+        task["id"],
+        {
+            "id": "cfg-a",
+            "webhookUrl": "https://second.example/hook",
+        },
+    )
+
+    assert updated is not None
+    assert "authentication" not in updated
+    assert a2a_push.build_push_delivery(task=task, config=updated)["headers"] == {}
+
+
 # --- SSRF-guard branches in the webhook target validator -----------------------
 
 
@@ -254,6 +290,8 @@ def test_validate_webhook_target_rejects_each_unsafe_shape() -> None:
         a2a_push._validate_webhook_target("ftp://example.org/hook")
     with pytest.raises(URLError, match="must include a host"):
         a2a_push._validate_webhook_target("http:///hook")
+    with pytest.raises(URLError, match="must not include credentials"):
+        a2a_push._validate_webhook_target("http://user:secret@example.org/hook")
     with pytest.raises(URLError, match="local network"):
         a2a_push._validate_webhook_target("http://LOCALHOST/hook")
     with pytest.raises(URLError, match="invalid port"):

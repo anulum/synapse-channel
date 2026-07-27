@@ -157,11 +157,19 @@ When that boundary is crossed, the proportionate controls are:
   reserved, and unspecified addresses, including IPv4-mapped IPv6 — applies the
   same policy to redirect targets, preserves the hostname for TLS, ignores
   environment proxies, and reads the discarded response under a fixed byte
-  bound. Stored tasks, task history, artifacts, push configs, in-process replay
-  history, and terminal-task retention are bounded. Treat any non-loopback A2A
-  bind as an exposed edge: use bearer auth and TLS (native or proxy), keep state
-  files private, and do not claim external A2A conformance until interoperability
-  and webhook validation have run.
+  bound. Redirect credentials are origin-bound: authenticated 301/302/303 are
+  refused, and sensitive headers may follow 307/308 only to the exact normalized
+  scheme, lowercase ASCII/punycode hostname, and effective port. Unicode
+  authority spellings fail closed instead of using ambiguous IDNA mappings.
+  HTTPS-to-HTTP redirects are always refused and chains stop after five
+  redirects. Initial authenticated webhook URLs are not yet required to use
+  HTTPS, so operators must configure HTTPS explicitly; this residual is
+  distinct from redirect custody. Stored
+  tasks, task history, artifacts, push configs, in-process replay history, and
+  terminal-task retention are bounded. Treat any non-loopback A2A bind as an
+  exposed edge: use bearer auth and TLS (native or proxy), keep state files
+  private, and do not claim external A2A conformance until interoperability and
+  webhook validation have run.
 - **Dashboard Host boundary.** The read-only `synapse dashboard` serves live JSON
   and audit feeds unauthenticated on loopback so the browser cockpit — which
   cannot attach an `Authorization` header on navigation — can load. That open read

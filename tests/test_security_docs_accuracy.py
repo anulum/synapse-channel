@@ -53,6 +53,12 @@ def test_a2a_deployment_threat_model_pins_exposed_bridge_controls() -> None:
     assert "Every present Origin is denied by default" in threat_model
     assert "direct HTTP handler refuses construction" in threat_model
     assert "Host authority is **always enforced**" in combined
+    assert "Authenticated webhook receives 301/302/303" in threat_model
+    assert "exact same normalized scheme, lowercase ASCII/punycode hostname" in threat_model
+    assert "Unicode authority spellings fail closed" in threat_model
+    assert "HTTPS-to-HTTP is refused even without a sensitive header" in threat_model
+    assert "redirect chain is capped at five" in threat_model
+    assert "Initial authenticated `http://` webhook URLs are not yet refused" in threat_model
     assert "redact `Authorization`" in threat_model
     assert "`--grpc-port` is absent by default" in threat_model
     assert "Missing or wrong bearer metadata is refused" in threat_model

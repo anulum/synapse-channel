@@ -18,6 +18,7 @@ from synapse_channel.client.diagnostics import (
     Diagnosis,
     check_a2a_bind_posture,
     check_a2a_origin_policy,
+    check_a2a_webhook_redirect_policy,
     check_deaf_agents,
     check_disk_space,
     check_exposure,
@@ -316,6 +317,18 @@ def test_a2a_origin_policy_fails_opaque_null() -> None:
     diagnosis = check_a2a_origin_policy(allow_origins=("null",))
     assert diagnosis.status == "fail"
     assert "invalid" in diagnosis.detail
+
+
+def test_a2a_webhook_redirect_policy_reports_fixed_credential_boundary() -> None:
+    diagnosis = check_a2a_webhook_redirect_policy()
+
+    assert diagnosis.check == "a2a_webhook_redirect_policy"
+    assert diagnosis.status == "warn"
+    assert "HTTPS downgrade deny" in diagnosis.detail
+    assert "exact origin" in diagnosis.detail
+    assert "307/308" in diagnosis.detail
+    assert "redirect limit=5" in diagnosis.detail
+    assert "initial plaintext credential transport" in diagnosis.remedy
 
 
 # --- check_a2a_bind_posture ---------------------------------------------------

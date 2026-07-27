@@ -2055,7 +2055,13 @@ Operational boundaries:
 - Caller-supplied `taskId` and `contextId` values are restricted to bridge-safe
   characters. Duplicate caller task ids are rejected.
 - Webhook URLs must be HTTP(S), include a host, omit embedded credentials, and not
-  target localhost, loopback, private, or link-local IP literals.
+  target localhost, loopback, private, or link-local IP literals. Redirects
+  retain the same DNS-pinning and address checks. Credential-bearing
+  301/302/303 are refused; 307/308 may preserve sensitive headers only across an
+  exact normalized same-origin redirect. HTTPS-to-HTTP is always refused and
+  redirect chains stop after five. Initial authenticated webhook URLs are not
+  yet forced to HTTPS, so configure them with HTTPS explicitly. Inspect the
+  fixed rule with `synapse doctor --a2a-policy`.
 
 State-file durability matrix:
 
