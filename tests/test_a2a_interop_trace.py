@@ -18,6 +18,7 @@ import pytest
 from a2a_server_helpers import RecordingAgent, _default_bridge, _free_port
 from synapse_channel import cli
 from synapse_channel.a2a_conformance import conformance_rows
+from synapse_channel.a2a_credentials import A2APlaintextBearerError
 from synapse_channel.a2a_http import build_a2a_handler
 from synapse_channel.a2a_interop_trace import (
     RECEIPT_SCHEMA,
@@ -90,6 +91,11 @@ def test_interop_trace_fails_closed_when_bridge_down() -> None:
         run_local_interop_trace(host="127.0.0.1", port=1, timeout=0.3)
 
 
+def test_interop_trace_refuses_bearer_to_named_plaintext_peer() -> None:
+    with pytest.raises(A2APlaintextBearerError, match="literal loopback"):
+        run_local_interop_trace(host="peer.example", token="never echoed")
+
+
 def test_cli_a2a_interop_trace_writes_receipt(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -98,9 +104,13 @@ def test_cli_a2a_interop_trace_writes_receipt(
         agent_card=_default_bridge().agent_card,
         target="WORKER",
         store=A2ATaskStore(),
+        auth_token="file-bearer",
     )
     server, port, _thread = _serve_bridge(bridge)
     out = tmp_path / "cli-receipt.json"
+    token_file = tmp_path / "a2a.token"
+    token_file.write_text("file-bearer\n", encoding="utf-8")
+    token_file.chmod(0o600)
     try:
         code = cli.main(
             [
@@ -109,6 +119,8 @@ def test_cli_a2a_interop_trace_writes_receipt(
                 "127.0.0.1",
                 "--port",
                 str(port),
+                "--a2a-token-file",
+                str(token_file),
                 "--output",
                 str(out),
             ]
@@ -121,6 +133,37 @@ def test_cli_a2a_interop_trace_writes_receipt(
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["schema"] == RECEIPT_SCHEMA
     assert data["task_lifecycle"]["task_id"]
+
+
+def test_cli_a2a_interop_refuses_remote_plaintext_bearer_before_io(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = cli.main(
+        [
+            "a2a-interop-trace",
+            "--host",
+            "peer.example",
+            "--a2a-token",
+            "never-print-this-bearer",
+        ]
+    )
+    assert code == 2
+    error = capsys.readouterr().err
+    assert "plaintext HTTP" in error
+    assert "never-print-this-bearer" not in error
+
+
+def test_cli_a2a_interop_parser_exposes_safe_file_and_unsafe_override() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "a2a-interop-trace",
+            "--a2a-token-file",
+            "/run/secrets/a2a",
+            "--a2a-allow-insecure-http",
+        ]
+    )
+    assert args.a2a_token_file == "/run/secrets/a2a"
+    assert args.a2a_allow_insecure_http is True
 
 
 def test_conformance_marks_independent_interop_partial() -> None:

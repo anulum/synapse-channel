@@ -964,6 +964,10 @@ intentionally **local-first HTTP+JSON bridge**:
 - Operational bounds: Bearer auth plus request size/depth limits, durable task
   state with `--state-file`, stale-task failure with `--task-timeout`, one
   bounded subscription wait with `--subscribe-timeout`.
+- Bearer custody: prefer owner-only `--a2a-token-file PATH` on serving and
+  outbound commands. Explicit `--a2a-token` remains a process-visible
+  compatibility override. Outbound clients refuse bearer-over-HTTP except to a
+  literal loopback IP unless `--a2a-allow-insecure-http` accepts the risk.
 - Task correlation travels in structured chat metadata (`a2aTaskId`,
   `a2aContextId`) — the bridge never appends or trusts inline markers in chat
   text, so user-authored message bodies stay data rather than task selectors.
@@ -1516,7 +1520,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 761 |
 | Wire message types | 80 |
 | CLI subcommands | 183 |
-| Test functions | 8957 |
+| Test functions | 8965 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 61 |
 | GitHub Actions workflows | 25 |

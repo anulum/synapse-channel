@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from synapse_channel.a2a_credentials import guard_a2a_bearer_transport
 from synapse_channel.core.errors import SynapseError
 
 CLIENT_NAME = "synapse-stdlib-http-client"
@@ -134,6 +135,7 @@ def run_local_interop_trace(
     ssl_context: ssl.SSLContext | None = None,
     ca_file: str | Path | None = None,
     tls_insecure: bool = False,
+    allow_insecure_http: bool = False,
 ) -> dict[str, Any]:
     """Exercise discovery + message send + task get as an independent client.
 
@@ -158,6 +160,9 @@ def run_local_interop_trace(
         PEM trust anchor for server certificate verification.
     tls_insecure : bool, optional
         When true, skip certificate verification (local self-signed drills only).
+    allow_insecure_http : bool, optional
+        Explicitly accept sending ``token`` over plaintext HTTP outside a
+        literal loopback IP. Disabled by default.
 
     Returns
     -------
@@ -174,6 +179,12 @@ def run_local_interop_trace(
     normalised_scheme = scheme.lower().strip() or "http"
     if normalised_scheme not in {"http", "https"}:
         raise ValueError(f"unsupported interop scheme: {scheme!r}")
+    guard_a2a_bearer_transport(
+        scheme=normalised_scheme,
+        host=host,
+        token=token,
+        allow_insecure_http=allow_insecure_http,
+    )
     context = ssl_context
     if normalised_scheme == "https" and context is None:
         context = ssl.create_default_context()

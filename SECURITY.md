@@ -141,8 +141,12 @@ When that boundary is crossed, the proportionate controls are:
 - **A2A HTTP bridge.** `synapse a2a-serve` is a separate stdlib HTTP edge that
   defaults to `127.0.0.1`. Its public Agent Card is intentionally readable; the
   task, RPC, extended-card, and push-configuration routes can require HTTP
-  Bearer auth with `--bearer-auth --a2a-token`, with bearer values compared in
-  constant time. A non-loopback bind without bearer auth is refused; a
+  Bearer auth with `--bearer-auth --a2a-token-file PATH` (or the
+  process-visible compatibility form `--a2a-token`), with bearer values
+  compared in constant time. The file form uses the same bounded,
+  same-descriptor owner-only loader as other CLI secrets; explicit argv wins,
+  and file errors never contain the value. A non-loopback bind without bearer
+  auth is refused; a
   non-loopback bind *with* bearer auth over plaintext HTTP is also refused so the
   token never rides the LAN in the clear by default (hub R4 parity). Prefer
   native HTTPS (`--tls-certfile` / `--tls-keyfile`, TLSv1.2+) or a loopback bind
@@ -150,6 +154,10 @@ When that boundary is crossed, the proportionate controls are:
   either refuse to a warning on a trusted private network. Request bodies are
   capped by byte size and JSON nesting depth before A2A dispatch. Persisted A2A
   state files and write temp files are restricted to owner-only permissions.
+  The outbound `a2a-client` and `a2a-interop-trace` use the same bearer-file
+  contract and refuse a bearer over plaintext HTTP outside a literal loopback
+  IP unless `--a2a-allow-insecure-http` explicitly accepts cleartext credential
+  exposure.
   Webhook delivery resolves each target once and pins the connection to that
   validated address, so a DNS name cannot rebind to a local address between the
   check and the connect. It admits only globally routable destinations —

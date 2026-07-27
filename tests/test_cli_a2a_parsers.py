@@ -126,6 +126,7 @@ class TestServeParser:
         assert args.documentation_url == "https://anulum.github.io/synapse-channel"
         assert args.bearer_auth is False
         assert args.a2a_token is None
+        assert args.a2a_token_file is None
         assert args.allow_origin is None
         assert args.grpc_port is None
         assert args.insecure_off_loopback is False
@@ -201,6 +202,8 @@ class TestServeParser:
                 "--insecure-off-loopback",
                 "--a2a-token",
                 "bearer-value",
+                "--a2a-token-file",
+                "/run/secrets/a2a",
                 "--state-file",
                 "/tmp/a2a-state.json",
                 "--target",
@@ -210,6 +213,7 @@ class TestServeParser:
         assert args.bearer_auth is True
         assert args.insecure_off_loopback is True
         assert args.a2a_token == "bearer-value"
+        assert args.a2a_token_file == "/run/secrets/a2a"
         assert args.state_file == "/tmp/a2a-state.json"
         assert args.target == "AGENT-A"
 

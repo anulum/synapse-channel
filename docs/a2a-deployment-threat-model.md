@@ -39,7 +39,7 @@ Out of scope:
 
 | Asset | Why it matters | Required handling |
 | --- | --- | --- |
-| A2A bearer token | Protects task, RPC, extended-card, and push-config routes. | Enable `--bearer-auth --a2a-token` with native HTTPS (`--tls-certfile` / `--tls-keyfile`) or a loopback bind behind a TLS-terminating proxy (or pass `--insecure-off-loopback` only when accepting cleartext bearer traffic). |
+| A2A bearer token | Protects task, RPC, extended-card, and push-config routes. | Put it in an owner-only file and enable `--bearer-auth --a2a-token-file PATH` with native HTTPS (`--tls-certfile` / `--tls-keyfile`) or a loopback bind behind a TLS-terminating proxy. Explicit `--a2a-token` wins but is process-visible. Use `--insecure-off-loopback` only when accepting cleartext serving traffic. |
 | Hub token | Lets the bridge connect to a secured Synapse hub. | Pass with `--token`; do not expose it through proxy logs or shell history. |
 | Task payloads and artifacts | May carry operator or agent data. | Keep bridge state local, bounded, and owner-readable only. |
 | A2A state file | Persists task and push-config state across restart. | Store it on a local trusted filesystem; rely on owner-only temp/state writes. |
@@ -64,7 +64,8 @@ When enabled, the integrated `synapse a2a-serve` command starts the
 `synapse.a2a.v1.A2ABridge` JSON-over-gRPC service on the same `--host` and
 advertises `grpcs://` when native TLS is selected and `grpc://` otherwise.
 
-The CLI composes `--bearer-auth --a2a-token`, the native TLS certificate/key,
+The CLI composes `--bearer-auth` and the resolved
+`--a2a-token-file`/`--a2a-token`, the native TLS certificate/key,
 the optional mTLS client CA, `--max-concurrent-requests`, and
 `--request-read-timeout` into a typed gRPC policy. Missing or wrong bearer
 metadata is refused before either method reaches the bridge. Requests and
@@ -112,7 +113,7 @@ synapse a2a-serve \
   --port 8877 \
   --endpoint-url https://agent.example.com/a2a/v1 \
   --bearer-auth \
-  --a2a-token "$A2A_TOKEN" \
+  --a2a-token-file /run/secrets/synapse-a2a \
   --state-file /var/lib/synapse-channel/a2a-state.json \
   --task-timeout 300 \
   --subscribe-timeout 10
@@ -127,7 +128,7 @@ synapse a2a-serve \
   --port 8877 \
   --endpoint-url https://agent.example.com/a2a/v1 \
   --bearer-auth \
-  --a2a-token "$A2A_TOKEN" \
+  --a2a-token-file /run/secrets/synapse-a2a \
   --tls-certfile /etc/synapse/a2a-fullchain.pem \
   --tls-keyfile /etc/synapse/a2a-privkey.pem
 ```
@@ -184,7 +185,7 @@ URLs with HTTPS.
 | Route class | Public without bearer auth | Protected posture |
 | --- | --- | --- |
 | Agent Card discovery | Acceptable when the card contains only intended public metadata. | Keep endpoint URLs and documentation links accurate. |
-| Task, RPC, extended-card, and push-config routes | No. | Require `--bearer-auth --a2a-token`; compare bearer values through the bridge path. |
+| Task, RPC, extended-card, and push-config routes | No. | Require `--bearer-auth --a2a-token-file PATH`; compare bearer values through the bridge path. The argv form is process-visible compatibility only. |
 | Streaming and subscription routes | No. | Keep `--subscribe-timeout` bounded so one client cannot hold a worker indefinitely. |
 | Push delivery | No inbound route by itself, but push config creates egress. | Keep webhook SSRF and redirect validation enabled; review receiver domains. |
 
@@ -213,7 +214,7 @@ A deployment receipt should record:
 
 - bridge command line with secrets redacted;
 - proxy origin, TLS termination point, and forwarded host/path policy;
-- whether `--bearer-auth --a2a-token` was enabled;
+- whether `--bearer-auth` and an owner-only `--a2a-token-file` were enabled;
 - state-file path class and filesystem ownership policy;
 - webhook receiver allowlist or domain policy;
 - negative tests for missing bearer auth, local webhook targets, DNS rebinding,

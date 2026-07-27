@@ -13,17 +13,23 @@ import argparse
 import json
 import sys
 
+from synapse_channel.a2a_credentials import A2APlaintextBearerError, resolve_a2a_token
 from synapse_channel.a2a_interop_trace import (
     A2AInteropTraceError,
     parse_endpoint,
     run_local_interop_trace,
     write_interop_receipt,
 )
+from synapse_channel.core.secret_files import SecretFileError
 
 
 def _cmd_a2a_interop_trace(args: argparse.Namespace) -> int:
     """Run discovery + task lifecycle against a live bridge; print or write receipt."""
     try:
+        token = resolve_a2a_token(
+            getattr(args, "a2a_token", None),
+            getattr(args, "a2a_token_file", None),
+        )
         if args.endpoint_url:
             scheme, host, port, prefix = parse_endpoint(args.endpoint_url)
         else:
@@ -34,13 +40,17 @@ def _cmd_a2a_interop_trace(args: argparse.Namespace) -> int:
             host=host,
             port=port,
             path_prefix=prefix,
-            token=args.a2a_token,
+            token=token,
             message_text=args.message,
             timeout=float(args.timeout),
             scheme=scheme,
             ca_file=getattr(args, "ca_file", None),
             tls_insecure=bool(getattr(args, "tls_insecure", False)),
+            allow_insecure_http=bool(getattr(args, "a2a_allow_insecure_http", False)),
         )
+    except (SecretFileError, A2APlaintextBearerError) as exc:
+        print(f"a2a-interop-trace: {exc}", file=sys.stderr)
+        return 2
     except (ValueError, A2AInteropTraceError, OSError) as exc:
         print(f"a2a-interop-trace: {exc}", file=sys.stderr)
         return 1
@@ -87,7 +97,27 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     cmd.add_argument(
         "--a2a-token",
         default=None,
-        help="Bearer token when the bridge protects message/task routes.",
+        help=(
+            "Bearer token when the bridge protects message/task routes "
+            "(process-visible; prefer the file form)."
+        ),
+    )
+    cmd.add_argument(
+        "--a2a-token-file",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Read the A2A bearer from this owner-only file. An explicit "
+            "--a2a-token wins without opening the file."
+        ),
+    )
+    cmd.add_argument(
+        "--a2a-allow-insecure-http",
+        action="store_true",
+        help=(
+            "Explicitly allow a bearer over plaintext HTTP outside a literal "
+            "loopback IP; accepts cleartext credential risk."
+        ),
     )
     cmd.add_argument(
         "--message",

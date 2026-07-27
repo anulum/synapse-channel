@@ -1052,7 +1052,7 @@ synapse memory-recall ./synapse.db "transport handoff" --json
 synapse a2a-card --endpoint-url https://agent.example.com/a2a/v1
 synapse a2a-conformance --json
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877
-synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --bearer-auth --a2a-token "$A2A_TOKEN" --state-file ./a2a-state.json
+synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --bearer-auth --a2a-token-file ~/.config/synapse/a2a-token --state-file ./a2a-state.json
 synapse a2a-serve --endpoint-url http://127.0.0.1:8877 --task-timeout 300 --subscribe-timeout 1
 synapse relay ./feed.ndjson --cursor ./feed.cursor
 synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report ./compact-report.html
@@ -1974,8 +1974,17 @@ Supported local subset:
 
 Operational boundaries:
 
-- Bearer auth is opt-in with `--bearer-auth --a2a-token "$A2A_TOKEN"` and applies
-  to protected bridge routes. The public Agent Card remains public discovery.
+- Bearer auth is opt-in with
+  `--bearer-auth --a2a-token-file /run/secrets/synapse-a2a` and applies to
+  protected bridge routes. The file must be owner-only and is read from the
+  validated descriptor; errors never contain its value. The process-visible
+  `--a2a-token "$A2A_TOKEN"` compatibility form wins when both are supplied.
+  The public Agent Card remains public discovery.
+- `a2a-client` and `a2a-interop-trace` accept the same
+  `--a2a-token-file`/`--a2a-token` precedence. With a resolved bearer, they
+  refuse plaintext HTTP outside a literal IPv4/IPv6 loopback destination before
+  network I/O. `--a2a-allow-insecure-http` is the explicit cleartext-risk
+  override; it does not disable certificate verification for HTTPS.
 - `--grpc-port PORT` enables a default-off, optional JSON-over-gRPC
   `SendMessage` / `GetTask` subset on the same `--host`. The integrated CLI
   applies the selected A2A shared bearer and native TLS/mTLS files to both

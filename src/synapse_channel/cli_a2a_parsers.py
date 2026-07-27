@@ -80,7 +80,19 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     serve.add_argument(
         "--a2a-token",
         default=None,
-        help="Bearer token required by protected A2A bridge routes.",
+        help=(
+            "Bearer token required by protected A2A bridge routes (process-visible; "
+            "prefer --a2a-token-file)."
+        ),
+    )
+    serve.add_argument(
+        "--a2a-token-file",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Read the A2A bearer from this owner-only file. An explicit "
+            "--a2a-token wins without opening the file."
+        ),
     )
     serve.add_argument(
         "--allow-origin",

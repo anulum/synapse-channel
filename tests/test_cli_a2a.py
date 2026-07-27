@@ -11,10 +11,12 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Coroutine
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from _platform_caps import requires_posix_mode_bits
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_a2a
 from synapse_channel.a2a_conformance import SPEC_VERSION
@@ -47,6 +49,8 @@ def test_parser_a2a_serve() -> None:
             "--bearer-auth",
             "--a2a-token",
             "secret",
+            "--a2a-token-file",
+            "/run/secrets/a2a",
             "--state-file",
             "/tmp/synapse-a2a-state.json",
             "--task-timeout",
@@ -61,6 +65,7 @@ def test_parser_a2a_serve() -> None:
     assert args.port == 8899
     assert args.bearer_auth is True
     assert args.a2a_token == "secret"
+    assert args.a2a_token_file == "/run/secrets/a2a"
     assert args.state_file == "/tmp/synapse-a2a-state.json"
     assert args.task_timeout == 30.0
     assert args.subscribe_timeout == 0.25
@@ -308,7 +313,7 @@ def test_cmd_a2a_serve_requires_bearer_token(capsys: pytest.CaptureFixture[str])
     )
 
     assert cli_a2a._cmd_a2a_serve(ns) == 2
-    assert "--a2a-token is required" in capsys.readouterr().err
+    assert "--a2a-token or --a2a-token-file is required" in capsys.readouterr().err
 
 
 def test_cmd_a2a_serve_refuses_unauthenticated_off_loopback(
@@ -401,6 +406,7 @@ def test_cmd_a2a_serve_warns_when_plaintext_bearer_override_is_explicit(
 
 
 def test_cmd_a2a_serve_starts_bridge_and_stops_runtime(
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     events: list[str] = []
@@ -435,14 +441,17 @@ def test_cmd_a2a_serve_starts_bridge_and_stops_runtime(
     def unexpected_grpc(**_: Any) -> tuple[Any, Any]:
         raise AssertionError("default a2a-serve must not start gRPC")
 
+    token_file = tmp_path / "a2a.token"
+    token_file.write_text("a2a-secret\n", encoding="utf-8")
+    token_file.chmod(0o600)
     ns = cli.build_parser().parse_args(
         [
             "a2a-serve",
             "--endpoint-url",
             "https://example.test/a2a/v1",
             "--bearer-auth",
-            "--a2a-token",
-            "a2a-secret",
+            "--a2a-token-file",
+            str(token_file),
         ]
     )
 
@@ -460,7 +469,33 @@ def test_cmd_a2a_serve_starts_bridge_and_stops_runtime(
     assert "A2A bridge listening" in capsys.readouterr().out
 
 
+@requires_posix_mode_bits
+def test_cmd_a2a_serve_redacts_rejected_token_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    token_file = tmp_path / "a2a.token"
+    token_file.write_text("never-print-this-a2a-secret\n", encoding="utf-8")
+    token_file.chmod(0o644)
+    ns = cli.build_parser().parse_args(
+        [
+            "a2a-serve",
+            "--endpoint-url",
+            "https://example.test/a2a/v1",
+            "--bearer-auth",
+            "--a2a-token-file",
+            str(token_file),
+        ]
+    )
+
+    assert cli_a2a._cmd_a2a_serve(ns) == 2
+    error = capsys.readouterr().err
+    assert "--a2a-token-file" in error
+    assert "never-print-this-a2a-secret" not in error
+
+
 def test_cmd_a2a_serve_composes_grpc_policy_and_closes_listener(
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     captured: dict[str, Any] = {}
@@ -498,14 +533,17 @@ def test_cmd_a2a_serve_composes_grpc_policy_and_closes_listener(
         assert interfaces[-1]["url"] == "grpc://127.0.0.1:50051"
         raise KeyboardInterrupt
 
+    token_file = tmp_path / "grpc-a2a.token"
+    token_file.write_text("a2a-secret\n", encoding="utf-8")
+    token_file.chmod(0o600)
     ns = cli.build_parser().parse_args(
         [
             "a2a-serve",
             "--endpoint-url",
             "http://127.0.0.1:8877",
             "--bearer-auth",
-            "--a2a-token",
-            "a2a-secret",
+            "--a2a-token-file",
+            str(token_file),
             "--grpc-port",
             "50051",
             "--max-concurrent-requests",

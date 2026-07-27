@@ -30,6 +30,7 @@ def live_bridge() -> Iterator[tuple[A2ABridge, int]]:
     """Run the production A2A HTTP handler on a disposable loopback port."""
     bridge = _default_bridge()
     server = ThreadingHTTPServer(("127.0.0.1", _free_port()), build_a2a_handler(bridge))
+    bridge.allowed_authorities = (f"127.0.0.1:{server.server_port}",)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -52,6 +53,8 @@ def test_add_parsers_registers_defaults_and_operator_overrides() -> None:
     assert defaults.host == "127.0.0.1"
     assert defaults.port == 8877
     assert defaults.a2a_token is None
+    assert defaults.a2a_token_file is None
+    assert defaults.a2a_allow_insecure_http is False
     assert defaults.message == "synapse interop probe"
     assert defaults.timeout == 5.0
     assert defaults.output is None
@@ -67,6 +70,9 @@ def test_add_parsers_registers_defaults_and_operator_overrides() -> None:
             "9001",
             "--a2a-token",
             "fixture-token",
+            "--a2a-token-file",
+            "/run/secrets/a2a",
+            "--a2a-allow-insecure-http",
             "--message",
             "contract probe",
             "--timeout",
@@ -79,6 +85,8 @@ def test_add_parsers_registers_defaults_and_operator_overrides() -> None:
     assert configured.host == "ignored.example"
     assert configured.port == 9001
     assert configured.a2a_token == "fixture-token"
+    assert configured.a2a_token_file == "/run/secrets/a2a"
+    assert configured.a2a_allow_insecure_http is True
     assert configured.message == "contract probe"
     assert configured.timeout == 1.5
     assert configured.output == "receipt.json"

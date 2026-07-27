@@ -63,6 +63,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "a2a_not_found",
         ValueError,
     ),
+    "A2APlaintextBearerError": (
+        "synapse_channel.a2a_credentials",
+        "a2a_plaintext_bearer",
+        ValueError,
+    ),
     "A2AQuotaError": ("synapse_channel.a2a_errors", "a2a_quota", ValueError),
     "A2AStoreError": ("synapse_channel.a2a_errors", "a2a_store", ValueError),
     "A2AValidationError": (

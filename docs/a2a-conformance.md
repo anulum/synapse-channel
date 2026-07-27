@@ -96,6 +96,10 @@ Outbound `synapse a2a-client` and the in-tree `synapse a2a-interop-trace` provid
 client stack for discovery, `message:send`, and `GET /tasks/{id}` over
 **HTTP and HTTPS** (native TLS via `a2a-serve --tls-certfile` /
 `--tls-keyfile`, with `--ca-file` or `--tls-insecure` on the client). These
+clients and `a2a-serve` accept owner-only, same-descriptor
+`--a2a-token-file` credentials with explicit argv-over-file precedence.
+Outbound bearer-over-HTTP is refused outside a literal loopback IP unless the
+operator explicitly supplies `--a2a-allow-insecure-http`. These
 receipts are not certification or full conformance. An outbound
 external-server pass, public webhook, reverse-proxy production sign-off,
 durable-history, and operator receipts remain open — record them with

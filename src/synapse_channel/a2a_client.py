@@ -24,6 +24,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from synapse_channel.a2a import JsonMap
+from synapse_channel.a2a_credentials import guard_a2a_bearer_transport
 from synapse_channel.core.errors import SynapseError
 
 
@@ -107,6 +108,9 @@ class A2AOutboundClient:
         PEM trust anchor when building a default HTTPS context.
     tls_insecure : bool, optional
         Skip certificate verification for local self-signed drills only.
+    allow_insecure_http : bool, optional
+        Explicitly accept sending ``token`` over plaintext HTTP outside a
+        literal loopback IP. Disabled by default.
     """
 
     def __init__(
@@ -118,11 +122,19 @@ class A2AOutboundClient:
         ssl_context: ssl.SSLContext | None = None,
         ca_file: str | Path | None = None,
         tls_insecure: bool = False,
+        allow_insecure_http: bool = False,
     ) -> None:
         self.endpoint_url = endpoint_url.rstrip("/")
         self.token = token
         self.timeout = timeout
         self.scheme, self.host, self.port, self.path_prefix = parse_a2a_endpoint(self.endpoint_url)
+        parsed_host = urlparse(self.endpoint_url).hostname or ""
+        guard_a2a_bearer_transport(
+            scheme=self.scheme,
+            host=parsed_host,
+            token=self.token,
+            allow_insecure_http=allow_insecure_http,
+        )
         self._ssl_context = ssl_context
         if self.scheme == "https" and self._ssl_context is None:
             self._ssl_context = ssl.create_default_context()

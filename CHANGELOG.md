@@ -21,6 +21,13 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Add `--a2a-token-file` to `a2a-serve`, `a2a-client`, and
+  `a2a-interop-trace`, backed by the shared same-descriptor owner-only secret
+  loader. Explicit `--a2a-token` retains precedence without opening the file;
+  rejected files produce value-free diagnostics. Both outbound clients now
+  refuse to send a bearer over plaintext HTTP unless the destination is a
+  literal loopback IP or `--a2a-allow-insecure-http` explicitly accepts the
+  cleartext risk.
 - Bind outbound webhook credentials to their exact normalized origin across
   redirects. Credential-bearing 301/302/303 responses now fail closed instead
   of becoming authenticated GET requests; 307/308 preserve method, body, and

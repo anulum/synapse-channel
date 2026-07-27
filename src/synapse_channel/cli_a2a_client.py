@@ -14,19 +14,29 @@ import json
 import sys
 
 from synapse_channel.a2a_client import A2AClientError, A2AOutboundClient
+from synapse_channel.a2a_credentials import A2APlaintextBearerError, resolve_a2a_token
+from synapse_channel.core.secret_files import SecretFileError
 
 
 def _cmd_a2a_client(args: argparse.Namespace) -> int:
     """Discover, send, and get against ``--endpoint-url``."""
     try:
+        token = resolve_a2a_token(
+            getattr(args, "a2a_token", None),
+            getattr(args, "a2a_token_file", None),
+        )
         client = A2AOutboundClient(
             args.endpoint_url,
-            token=args.a2a_token,
+            token=token,
             timeout=float(args.timeout),
             ca_file=args.ca_file,
             tls_insecure=bool(args.tls_insecure),
+            allow_insecure_http=bool(getattr(args, "a2a_allow_insecure_http", False)),
         )
         receipt = client.discover_send_get(args.message)
+    except (SecretFileError, A2APlaintextBearerError) as exc:
+        print(f"a2a-client: {exc}", file=sys.stderr)
+        return 2
     except (ValueError, A2AClientError, OSError) as exc:
         print(f"a2a-client: {exc}", file=sys.stderr)
         return 1
@@ -57,7 +67,28 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         required=True,
         help="Absolute http:// or https:// URL of the peer A2A bridge.",
     )
-    cmd.add_argument("--a2a-token", default=None, help="Bearer token when the peer requires auth.")
+    cmd.add_argument(
+        "--a2a-token",
+        default=None,
+        help="Bearer token when the peer requires auth (process-visible; prefer the file form).",
+    )
+    cmd.add_argument(
+        "--a2a-token-file",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Read the A2A bearer from this owner-only file. An explicit "
+            "--a2a-token wins without opening the file."
+        ),
+    )
+    cmd.add_argument(
+        "--a2a-allow-insecure-http",
+        action="store_true",
+        help=(
+            "Explicitly allow a bearer over plaintext HTTP outside a literal "
+            "loopback IP; accepts cleartext credential risk."
+        ),
+    )
     cmd.add_argument(
         "--message",
         default="synapse outbound a2a probe",
