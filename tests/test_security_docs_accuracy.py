@@ -105,6 +105,7 @@ def test_file_scope_docs_describe_literal_prefix_overlap_not_glob() -> None:
 def test_provider_claim_wording_stays_within_enforced_boundaries() -> None:
     """Public guidance must not turn scoped authority into sandbox claims."""
     public_paths = (
+        "CHANGELOG.md",
         "README.md",
         "TEAM_PROTOCOL.md",
         "docs/agent-air-traffic-control.md",
@@ -114,8 +115,13 @@ def test_provider_claim_wording_stays_within_enforced_boundaries() -> None:
         "docs/faq.md",
         "docs/glossary.md",
         "docs/multi-hub-sync.md",
+        "docs/quickstart.md",
         "docs/recipes.md",
         "docs/tutorial.md",
+        "docs/use-cases.md",
+        "examples/README.md",
+        "notebooks/getting-started.ipynb",
+        "src/synapse_channel/git/gitinit.py",
     )
     combined = _single_spaced("\n".join(_read_repo_text(path) for path in public_paths))
 
@@ -125,13 +131,22 @@ def test_provider_claim_wording_stays_within_enforced_boundaries() -> None:
         "two agents never edit the same files",
         "two agents never edit the same file at once",
         "two agents never work the same files",
+        "agents never collide",
+        "working sets never intersect",
+        "file-scope claims never overlap on disk",
+        "keep the agents in any one repository off each other's files",
     )
     assert not any(claim in combined for claim in forbidden)
-    assert "provider hooks cover only" in combined
-    assert "staged Git check covers only the index at commit time" in combined
-    assert "alter the working tree outside those hooks" in combined
-    assert "data exfiltration" in combined
-    assert "external side effects" in combined
+
+    guard_contract = _single_spaced(_read_repo_text("docs/claim-guard-hooks.md"))
+    assert "provider hooks cover only the native tools and host behaviours" in guard_contract
+    assert "staged Git check covers only the index at commit time" in guard_contract
+    assert "Unsupported, custom, MCP, or direct filesystem writers" in guard_contract
+    assert "alter the working tree outside those hooks" in guard_contract
+    assert "hosts fail open when a hook crashes or times out" in guard_contract
+    assert "data exfiltration" in guard_contract
+    assert "network or service mutations" in guard_contract
+    assert "external side effects" in guard_contract
 
 
 def test_metrics_token_docs_keep_query_tokens_opt_in() -> None:

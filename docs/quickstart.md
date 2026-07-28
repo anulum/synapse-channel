@@ -189,7 +189,7 @@ synapse hub --port 8876 --db ~/synapse/hub.db --token-file ~/synapse/token &
 export SYNAPSE_TOKEN=$(cat ~/synapse/token)
 syn-wait --directed-only   # background; re-arm after each wake
 
-# 4. Claim work so agents never collide
+# 4. Claim work so the hub refuses overlapping live authority
 synapse git-init --name myproj/alice
 # …or synapse claim / lock for file scope in your workflow
 

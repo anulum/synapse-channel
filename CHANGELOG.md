@@ -5685,8 +5685,9 @@ All notable changes to this project are documented here.
 ### Added
 - A "parallel coding agents on one repository" recipe (`docs/recipes.md`) and a
   worked `examples/coding_agents_demo.py`: two agents lease disjoint file scopes,
-  the hub refuses the overlapping claim so they never touch the same file, and
-  they coordinate directly — the no-collision use case end to end.
+  the hub refuses an overlapping live claim, the configured mutation guard denies
+  an unclaimed covered edit, and they coordinate directly through the supported
+  path.
 
 ## [0.21.0] - 2026-06-21
 

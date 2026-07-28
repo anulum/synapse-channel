@@ -57,7 +57,7 @@ def _scaffold_body(*, name: str, base_branch: str) -> str:
         "which branch owns which scope.\n\n"
         "## One worktree per claim (recommended)\n\n"
         "Run parallel claims in separate git worktrees, so each has its own checkout\n"
-        "and the file-scope claims never overlap on disk:\n\n"
+        "and direct working-tree edits are physically isolated:\n\n"
         "```\n"
         "git worktree add ../<repo>-<task-id> -b claim/<task-id>\n"
         "cd ../<repo>-<task-id>\n"

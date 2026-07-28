@@ -60,7 +60,9 @@ within a single repository or spread across a whole ecosystem of them. One
 WebSocket hub is the shared source of truth for **presence**, **work claims**,
 **chat**, **task status**, and **resource offers**: agents address each other
 across projects and share one plan, while file-scope claims keep the agents in any
-one repository off each other's files.
+one repository from receiving overlapping live authority. Documented provider
+hooks and the staged Git gate enforce that authority only on their covered
+mutation surfaces.
 
 > **New here?** Read [**Why SYNAPSE CHANNEL**](docs/why-synapse.md) — a
 > five-minute read on what it is, what you build on it, how it differs from the

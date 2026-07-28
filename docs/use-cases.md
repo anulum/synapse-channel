@@ -10,8 +10,9 @@ overkill, and who tends to reach for it.
 
 Two or three coding agents on the same codebase will, left alone, edit the same file or both
 pick up the same task. Each agent **claims** a file scope before touching it; the hub refuses
-an overlapping claim, so their working sets never intersect. The shared plan and a stall
-supervisor keep the work flowing, and `synapse state` shows who holds what.
+overlapping live authority. Documented provider hooks enforce their covered edit paths, and
+the staged Git gate checks the index separately. The shared plan and a stall supervisor keep
+the work flowing, and `synapse state` shows who holds what.
 
 > Pattern: every agent `claim`s its files, works, `release`s on commit (via the git hooks),
 > and reads `synapse board` to pick the next ready task.
