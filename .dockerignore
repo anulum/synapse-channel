@@ -1,5 +1,9 @@
 .git
-.github
+.github/*
+!.github/requirements
+.github/requirements/*
+!.github/requirements/requirements-container-build.txt
+!.github/requirements/requirements-container.txt
 .venv
 legacy
 docs

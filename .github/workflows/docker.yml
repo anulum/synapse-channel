@@ -16,6 +16,9 @@ on:
       - docker-compose.yml
       - "src/**"
       - pyproject.toml
+      - .github/requirements/requirements-container-build.txt
+      - .github/requirements/requirements-container.txt
+      - tools/container_release_manifest.py
       - .github/workflows/docker.yml
   pull_request:
     paths:
@@ -24,6 +27,9 @@ on:
       - docker-compose.yml
       - "src/**"
       - pyproject.toml
+      - .github/requirements/requirements-container-build.txt
+      - .github/requirements/requirements-container.txt
+      - tools/container_release_manifest.py
       - .github/workflows/docker.yml
   release:
     types: [published]
@@ -39,33 +45,69 @@ permissions:
 
 jobs:
   image:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+      - name: Resolve the source epoch
+        id: source
+        run: echo "epoch=$(git show -s --format=%ct HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Build the pull-request or main image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          push: false
+          provenance: false
+          sbom: false
+          build-args: SOURCE_DATE_EPOCH=${{ steps.source.outputs.epoch }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release-image:
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      artifact-metadata: write
+      attestations: write
+      contents: write
+      id-token: write
       packages: write
+    env:
+      IMAGE_NAME: ghcr.io/anulum/synapse-channel
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.release_tag || github.ref }}
           fetch-depth: 1
           fetch-tags: true
-      - name: Validate the dispatched release tag
-        if: github.event_name == 'workflow_dispatch'
+          persist-credentials: false
+      - name: Resolve and validate the immutable release source
+        id: release
         env:
-          RELEASE_TAG: ${{ inputs.release_tag }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          EVENT_RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "invalid release tag: $RELEASE_TAG" >&2
+          release_tag="${INPUT_RELEASE_TAG:-$EVENT_RELEASE_TAG}"
+          if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "invalid release tag: $release_tag" >&2
             exit 1
           fi
-          tag_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
-          if [[ "$tag_commit" != "$(git rev-parse HEAD)" ]]; then
-            echo "$RELEASE_TAG does not resolve to the checked-out commit" >&2
+          tag_commit="$(git rev-list -n 1 "$release_tag")"
+          source_commit="$(git rev-parse HEAD)"
+          if [[ "$tag_commit" != "$source_commit" ]]; then
+            echo "$release_tag does not resolve to the checked-out commit" >&2
             exit 1
           fi
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$source_commit" >> "$GITHUB_OUTPUT"
+          echo "epoch=$(git show -s --format=%ct HEAD)" >> "$GITHUB_OUTPUT"
+          echo "created=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
       - name: Log in to GHCR
-        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
         uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4
         with:
           registry: ghcr.io
@@ -76,16 +118,105 @@ jobs:
         with:
           images: ghcr.io/anulum/synapse-channel
           tags: |
-            type=ref,event=tag
-            type=raw,value=${{ inputs.release_tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' || github.event_name == 'release' }}
-      - name: Build (and push on release)
+            type=raw,value=${{ steps.release.outputs.tag }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.created=${{ steps.release.outputs.created }}
+            org.opencontainers.image.revision=${{ steps.release.outputs.commit }}
+      - name: Build and push the immutable release image
+        id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
-          push: ${{ github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          sbom: false
+          build-args: SOURCE_DATE_EPOCH=${{ steps.release.outputs.epoch }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Prepare the release evidence directory
+        run: mkdir -p container-release
+      - name: Generate the published image SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: container-release/synapse-channel-${{ steps.release.outputs.tag }}-image.spdx.json
+          syft-version: v1.50.0
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest the published image build provenance
+        id: provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Attest the image SBOM
+        id: sbom-attestation
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: container-release/synapse-channel-${{ steps.release.outputs.tag }}-image.spdx.json
+          push-to-registry: true
+      - name: Bind image, SBOM, and attestations into the release manifest
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          SBOM_ATTESTATION_BUNDLE: ${{ steps.sbom-attestation.outputs.bundle-path }}
+          SOURCE_COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          provenance_asset="container-release/synapse-channel-${RELEASE_TAG}-image-provenance.sigstore.json"
+          sbom_attestation_asset="container-release/synapse-channel-${RELEASE_TAG}-image-sbom.sigstore.json"
+          cp "$PROVENANCE_BUNDLE" "$provenance_asset"
+          cp "$SBOM_ATTESTATION_BUNDLE" "$sbom_attestation_asset"
+          python tools/container_release_manifest.py \
+            --image "$IMAGE_NAME" \
+            --tag "$RELEASE_TAG" \
+            --digest "$IMAGE_DIGEST" \
+            --source-repository "$GITHUB_REPOSITORY" \
+            --source-commit "$SOURCE_COMMIT" \
+            --sbom "container-release/synapse-channel-${RELEASE_TAG}-image.spdx.json" \
+            --provenance-bundle "$provenance_asset" \
+            --sbom-attestation-bundle "$sbom_attestation_asset" \
+            --output "container-release/synapse-channel-${RELEASE_TAG}-container-release-manifest.json"
+          cd container-release
+          sha256sum -- \
+            "synapse-channel-${RELEASE_TAG}-image.spdx.json" \
+            "synapse-channel-${RELEASE_TAG}-image-provenance.sigstore.json" \
+            "synapse-channel-${RELEASE_TAG}-image-sbom.sigstore.json" \
+            "synapse-channel-${RELEASE_TAG}-container-release-manifest.json" \
+            > "synapse-channel-${RELEASE_TAG}-container-SHA256SUMS"
+      - name: Preserve the container release evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: container-release-${{ steps.release.outputs.tag }}
+          path: container-release/
+          if-no-files-found: error
+      - name: Attach immutable container evidence to the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          existing_dir="$RUNNER_TEMP/container-release-existing"
+          mkdir -p "$existing_dir"
+          existing_assets="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
+          for asset in container-release/*; do
+            asset_name="$(basename "$asset")"
+            if grep -Fxq "$asset_name" <<< "$existing_assets"; then
+              gh release download "$RELEASE_TAG" --pattern "$asset_name" --dir "$existing_dir"
+              if ! cmp --silent "$asset" "$existing_dir/$asset_name"; then
+                echo "existing release asset differs: $asset_name" >&2
+                exit 1
+              fi
+            else
+              gh release upload "$RELEASE_TAG" "$asset"
+            fi
+          done
 
   compose-smoke:
     # Exercise the shipped docker-compose.yml exactly as an operator would: build

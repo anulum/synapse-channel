@@ -273,6 +273,44 @@ and `latest` at `ghcr.io/anulum/synapse-channel`. The dispatch is also the bound
 recovery path if registry publication needs to be retried. Every change to the image
 or compose file runs a compose smoke that waits for the container to report healthy.
 
+The image build uses the same hash-locked build frontend/backend inputs as the
+distribution workflow, disables isolated backend resolution, installs an exact
+hashed base-runtime closure, and installs the locally built wheel with `--no-deps`
+and `--no-index`. The release job then generates an SPDX 2.3 SBOM from the published
+digest and records two GitHub attestations against that digest: build provenance and
+the SBOM binding. Five release assets preserve the portable evidence:
+
+- `synapse-channel-vX.Y.Z-container-release-manifest.json` binds source tag and
+  commit, immutable image reference, SBOM digest, and both attestation bundles;
+- `synapse-channel-vX.Y.Z-image.spdx.json` is the image SBOM;
+- `synapse-channel-vX.Y.Z-image-{provenance,sbom}.sigstore.json` are the portable
+  attestation bundles;
+- `synapse-channel-vX.Y.Z-container-SHA256SUMS` covers the four files above.
+
+Verify the release evidence before pulling by mutable tag:
+
+```bash
+tag=vX.Y.Z
+gh release download "$tag" -R anulum/synapse-channel \
+  --pattern "synapse-channel-${tag}-container-*" \
+  --pattern "synapse-channel-${tag}-image-*"
+sha256sum --check "synapse-channel-${tag}-container-SHA256SUMS"
+manifest="synapse-channel-${tag}-container-release-manifest.json"
+image="$(jq -r '.image.reference' "$manifest")"
+sbom="$(jq -r '.sbom.name' "$manifest")"
+test "sha256:$(sha256sum "$sbom" | cut -d' ' -f1)" = \
+  "$(jq -r '.sbom.digest' "$manifest")"
+gh attestation verify "oci://${image}" \
+  --repo anulum/synapse-channel \
+  --signer-workflow anulum/synapse-channel/.github/workflows/docker.yml \
+  --source-ref "refs/tags/${tag}" \
+  --deny-self-hosted-runners
+docker pull "$image"
+```
+
+The workflow never overwrites an existing release asset: a retry accepts a
+byte-identical asset and fails if the same name already carries different bytes.
+
 ## Exposure and security
 
 The hub binds loopback and runs unauthenticated by default — correct for one

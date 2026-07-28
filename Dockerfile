@@ -8,11 +8,18 @@
 
 # Build the wheel in a throwaway stage so the runtime image carries no build tools.
 FROM python:3.13-slim@sha256:c33f0bc4364a6881bed1ec0cc2665e6c53c87a43e774aaeab88e6f17af105e4f AS build
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 WORKDIR /src
+COPY .github/requirements/requirements-container-build.txt /tmp/requirements-container-build.txt
 COPY pyproject.toml README.md ./
+COPY LICENSE NOTICE.md ./
+COPY LICENSES ./LICENSES
 COPY src ./src
-RUN python -m pip install --no-cache-dir build \
-    && python -m build --wheel --outdir /dist
+RUN python -m pip install --no-cache-dir --no-compile --no-deps \
+        --only-binary=:all: --require-hashes \
+        -r /tmp/requirements-container-build.txt \
+    && python -m build --wheel --no-isolation --outdir /dist
 
 FROM python:3.13-slim@sha256:c33f0bc4364a6881bed1ec0cc2665e6c53c87a43e774aaeab88e6f17af105e4f
 LABEL org.opencontainers.image.title="synapse-channel" \
@@ -22,8 +29,13 @@ LABEL org.opencontainers.image.title="synapse-channel" \
 
 # Run as an unprivileged user; persist the durable log under /data.
 RUN useradd --create-home --uid 10001 synapse && mkdir /data && chown synapse /data
+COPY .github/requirements/requirements-container.txt /tmp/requirements-container.txt
 COPY --from=build /dist/*.whl /tmp/
-RUN python -m pip install --no-cache-dir /tmp/*.whl && rm -f /tmp/*.whl
+RUN python -m pip install --no-cache-dir --no-compile --no-deps \
+        --only-binary=:all: --require-hashes \
+        -r /tmp/requirements-container.txt \
+    && python -m pip install --no-cache-dir --no-compile --no-deps --no-index /tmp/*.whl \
+    && rm -f /tmp/*.whl /tmp/requirements-container.txt
 USER synapse
 WORKDIR /home/synapse
 EXPOSE 8876

@@ -278,6 +278,20 @@ worth stating plainly:
   provenance bundle. A valid attestation binds bytes to the named repository,
   workflow, and source ref; it is not a semantic safety review. It also does not
   enable GitHub's separate owner-controlled immutable-release setting.
+- **Published container provenance.** Release-image construction uses the
+  digest-pinned Python base plus hash-locked build frontend, backend, and base
+  runtime inputs. PEP 517 build isolation is disabled after those inputs are
+  installed, and the resulting wheel is installed with `--no-deps --no-index`,
+  so neither build-backend nor runtime dependency resolution floats inside the
+  Docker build. The release workflow signs GitHub build provenance for the
+  published GHCR digest, generates an SPDX 2.3 SBOM from that exact digest, and
+  signs the SBOM-to-image binding. The GitHub Release carries both portable
+  bundles, the SBOM, a versioned manifest binding their digests to the source
+  tag/commit and image digest, and a separate checksum file. See the
+  [container deployment guide](docs/deployment.md#container) for the exact
+  verification commands. The `latest` tag remains a convenience pointer; use
+  the manifest's `ghcr.io/anulum/synapse-channel@sha256:...` reference wherever
+  immutable deployment identity matters.
 
 [`synapse hub --team-secure`](docs/team-secure.md) is the multi-seat trust
 preset: it requires a connect token, an identity trust bundle with binding

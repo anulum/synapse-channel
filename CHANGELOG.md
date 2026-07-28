@@ -19,6 +19,14 @@ All notable changes to this project are documented here.
   `all` views to `synapse commands`, including a versioned JSON contract for
   concept count, exact journey, package extras, implicit services, and explicit
   activation/deactivation boundaries while preserving the complete CLI surface.
+- Attach a container release manifest, SPDX image SBOM, checksums, and portable
+  build-provenance/SBOM attestation bundles to each published release image.
+
+### Security
+
+- Build the container from hash-locked build frontend, backend, and runtime
+  inputs; disable build isolation and live wheel dependency resolution; and
+  attest the exact immutable GHCR digest plus its generated image SBOM.
 
 ### Fixed
 

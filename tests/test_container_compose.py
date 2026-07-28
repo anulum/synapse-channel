@@ -17,6 +17,11 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "docker-compose.yml"
 DOCKER_WORKFLOW = ROOT / ".github" / "workflows" / "docker.yml"
 DOCKERFILE = ROOT / "Dockerfile"
+DOCKERIGNORE = ROOT / ".dockerignore"
+CONTAINER_BUILD_REQUIREMENTS = (
+    ROOT / ".github" / "requirements" / "requirements-container-build.txt"
+)
+CONTAINER_REQUIREMENTS = ROOT / ".github" / "requirements" / "requirements-container.txt"
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -123,18 +128,107 @@ def test_docker_workflow_can_publish_an_immutable_release_tag_after_automation()
     """A trusted dispatch must publish the named tag, never mutable main content."""
     source = DOCKER_WORKFLOW.read_text(encoding="utf-8")
     workflow = _load(DOCKER_WORKFLOW)
-    image = workflow["jobs"]["image"]
+    image = workflow["jobs"]["release-image"]
     steps = image["steps"]
 
     assert "\n  workflow_dispatch:" in source
     assert "release_tag:" in source
     assert "ref: ${{ inputs.release_tag || github.ref }}" in source
-    assert 'git rev-list -n 1 "$RELEASE_TAG"' in source
+    assert 'git rev-list -n 1 "$release_tag"' in source
     assert "^v[0-9]+\\.[0-9]+\\.[0-9]+" in source
 
     login = next(step for step in steps if step.get("name") == "Log in to GHCR")
-    build = next(step for step in steps if step.get("name") == "Build (and push on release)")
-    assert "github.event_name == 'workflow_dispatch'" in login["if"]
-    assert "github.event_name == 'workflow_dispatch'" in str(build["with"]["push"])
-    assert "type=raw,value=${{ inputs.release_tag }}" in source
+    build = next(
+        step for step in steps if step.get("name") == "Build and push the immutable release image"
+    )
+    assert "if" not in login
+    assert build["with"]["push"] is True
+    assert "type=raw,value=${{ steps.release.outputs.tag }}" in source
     assert "type=raw,value=latest" in source
+
+
+def test_dockerfile_installs_only_hash_locked_build_and_runtime_inputs() -> None:
+    """The image must never resolve build backends or wheel dependencies live."""
+    dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+    _, build_stage, runtime_stage = dockerfile.split("FROM python:3.13-slim@")
+
+    assert "requirements-container-build.txt" in build_stage
+    assert "--require-hashes" in build_stage
+    assert "--only-binary=:all:" in build_stage
+    assert "python -m build --wheel --no-isolation" in build_stage
+    assert "pip install --no-cache-dir build" not in build_stage
+    assert "COPY LICENSE NOTICE.md ./" in build_stage
+    assert "COPY LICENSES ./LICENSES" in build_stage
+
+    assert "requirements-container.txt" in runtime_stage
+    assert "--require-hashes" in runtime_stage
+    assert "--only-binary=:all:" in runtime_stage
+    assert "--no-index /tmp/*.whl" in runtime_stage
+    assert runtime_stage.index("-r /tmp/requirements-container.txt") < runtime_stage.index(
+        "--no-index /tmp/*.whl"
+    )
+
+
+def test_container_runtime_lock_matches_the_base_project_dependency() -> None:
+    """The base image closure stays exact, hashed, and aligned with metadata."""
+    lock = CONTAINER_REQUIREMENTS.read_text(encoding="utf-8")
+    assert "websockets==16.0" in lock
+    assert "--hash=sha256:95724e638f0f9c350bb1c2b0a7ad0e83d9cc0c9259f3ea94e40d7b02a2179ae5" in lock
+    assert lock.count("--hash=sha256:") == 1
+    assert "websockets>=13.0" in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+
+def test_container_build_lock_contains_only_the_required_exact_toolchain() -> None:
+    """The throwaway builder installs no unrelated CI or release utilities."""
+    lock = CONTAINER_BUILD_REQUIREMENTS.read_text(encoding="utf-8")
+    packages = {
+        line.split("==", maxsplit=1)[0]
+        for line in lock.splitlines()
+        if line and not line.startswith(("#", " "))
+    }
+    assert packages == {"build", "packaging", "pyproject-hooks", "setuptools", "wheel"}
+    assert lock.count("--hash=sha256:") == 8
+
+
+def test_docker_context_exposes_only_the_two_required_lock_files() -> None:
+    """Docker can read its locks without admitting the complete GitHub tree."""
+    ignored = DOCKERIGNORE.read_text(encoding="utf-8")
+    assert ".github/*" in ignored
+    assert "!.github/requirements/requirements-container-build.txt" in ignored
+    assert "!.github/requirements/requirements-container.txt" in ignored
+
+
+def test_release_image_is_attested_and_bound_to_release_assets() -> None:
+    """The published digest, SPDX SBOM, and bundles must converge in one manifest."""
+    source = DOCKER_WORKFLOW.read_text(encoding="utf-8")
+    release_source = source.split("\n  release-image:", maxsplit=1)[1]
+    workflow = _load(DOCKER_WORKFLOW)
+    release_image = workflow["jobs"]["release-image"]
+    permissions = release_image["permissions"]
+
+    assert permissions == {
+        "actions": "read",
+        "artifact-metadata": "write",
+        "attestations": "write",
+        "contents": "write",
+        "id-token": "write",
+        "packages": "write",
+    }
+    assert "anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610" in source
+    assert "syft-version: v1.50.0" in source
+    assert source.count("actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6") == 2
+    assert source.count("push-to-registry: true") == 2
+    assert "tools/container_release_manifest.py" in source
+    assert "subject-digest: ${{ steps.build.outputs.digest }}" in source
+    assert "name: container-release-${{ steps.release.outputs.tag }}" in source
+    assert 'gh release upload "$RELEASE_TAG" "$asset"' in source
+    assert "--clobber" not in source
+    assert release_source.index("id: build") < release_source.index(
+        "Generate the published image SBOM"
+    )
+    assert release_source.index("Generate the published image SBOM") < release_source.index(
+        "tools/container_release_manifest.py"
+    )
+    assert release_source.index("tools/container_release_manifest.py") < release_source.index(
+        'gh release upload "$RELEASE_TAG" "$asset"'
+    )
