@@ -228,6 +228,64 @@ def test_cli_a2a_client_reports_bounded_receipt_write_failure(
     assert "peer-secret-task" not in error
 
 
+def test_cli_a2a_client_rejects_non_finite_stdout_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class Client:
+        def discover_send_get(self, _message: str) -> dict[str, object]:
+            return {"task_id": "peer-secret-task", "value": float("inf")}
+
+    monkeypatch.setattr(
+        cli_a2a_client,
+        "A2AOutboundClient",
+        lambda *_args, **_kwargs: Client(),
+    )
+
+    code = cli.main(["a2a-client", "--endpoint-url", "http://127.0.0.1:8877"])
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == ""
+    assert captured.err == "a2a-client: A2A receipt serialization failed\n"
+    assert "peer-secret-task" not in captured.err
+
+
+def test_cli_a2a_client_contains_pre_temp_receipt_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class Client:
+        def discover_send_get(self, _message: str) -> dict[str, object]:
+            return {"task_id": "peer-secret-task", "send_response": {}}
+
+    monkeypatch.setattr(
+        cli_a2a_client,
+        "A2AOutboundClient",
+        lambda *_args, **_kwargs: Client(),
+    )
+    occupied = tmp_path / "occupied"
+    occupied.write_text("unchanged", encoding="utf-8")
+
+    code = cli.main(
+        [
+            "a2a-client",
+            "--endpoint-url",
+            "http://127.0.0.1:8877",
+            "--output",
+            str(occupied / "receipt.json"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == ""
+    assert captured.err == "a2a-client: A2A receipt write failed\n"
+    assert "peer-secret-task" not in captured.err
+    assert occupied.read_text(encoding="utf-8") == "unchanged"
+
+
 def test_cli_a2a_client_refuses_remote_plaintext_bearer_before_io(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

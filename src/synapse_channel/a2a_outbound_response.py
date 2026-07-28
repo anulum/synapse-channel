@@ -105,26 +105,54 @@ def _fsync_parent(path: Path) -> None:
             os.close(fd)
 
 
+def serialize_a2a_receipt(receipt: Mapping[str, Any]) -> str:
+    """Serialize one receipt as strict RFC 8259 JSON without non-finite values."""
+    try:
+        return (
+            json.dumps(
+                dict(receipt),
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=True,
+                allow_nan=False,
+            )
+            + "\n"
+        )
+    except Exception as exc:
+        raise A2AReceiptWriteError("A2A receipt serialization failed") from exc
+
+
 def write_a2a_receipt(path: str | Path, receipt: Mapping[str, Any]) -> Path:
     """Atomically replace ``path`` with an owner-only A2A receipt."""
     target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(
-        dir=target.parent,
-        prefix=f".{target.name}.",
-        suffix=".tmp",
-    )
-    temporary = Path(temporary_name)
+    fd: int | None = None
+    temporary_name: str | None = None
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(dict(receipt), handle, indent=2, sort_keys=True, ensure_ascii=True)
-            handle.write("\n")
+        document = serialize_a2a_receipt(receipt)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary_name = tempfile.mkstemp(
+            dir=target.parent,
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+        )
+        handle = os.fdopen(fd, "w", encoding="utf-8")
+        fd = None
+        with handle:
+            handle.write(document)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, target)
+        os.replace(Path(temporary_name), target)
+        temporary_name = None
         _fsync_parent(target)
     except BaseException as exc:
-        temporary.unlink(missing_ok=True)
+        if fd is not None:
+            with suppress(OSError):
+                os.close(fd)
+        if temporary_name is not None:
+            with suppress(OSError):
+                Path(temporary_name).unlink(missing_ok=True)
+        if isinstance(exc, A2AReceiptWriteError):
+            raise
         if isinstance(exc, Exception):
             raise A2AReceiptWriteError("A2A receipt write failed") from exc
         raise

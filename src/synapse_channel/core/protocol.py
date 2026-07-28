@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import math
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -261,10 +262,17 @@ def loads_bounded(raw: str | bytes, max_depth: int = MAX_JSON_DEPTH) -> Any:
             # normalize its exception to the one every frame caller already handles.
             raise json.JSONDecodeError("JSON integer literal is too long", text, 0) from exc
 
+    def _parse_finite_float(number: str) -> float:
+        value = float(number)
+        if not math.isfinite(value):
+            raise json.JSONDecodeError("non-finite JSON number is not permitted", text, 0)
+        return value
+
     try:
         return json.loads(
             raw,
             parse_constant=_reject_non_finite,
+            parse_float=_parse_finite_float,
             parse_int=_parse_bounded_int,
         )
     except UnicodeDecodeError as exc:

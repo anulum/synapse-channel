@@ -21,6 +21,11 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Bound both outbound A2A HTTP clients to one MiB per response, 64 JSON nesting
+  levels, and 4,096 cumulative members without retaining hostile values. JSON
+  exponent overflow and non-finite receipt values now fail closed; CLI and file
+  receipts use strict RFC 8259 serialization, and every atomic-write setup step
+  is contained behind the stable value-free receipt error boundary.
 - Add `--a2a-token-file` to `a2a-serve`, `a2a-client`, and
   `a2a-interop-trace`, backed by the shared same-descriptor owner-only secret
   loader. Explicit `--a2a-token` retains precedence without opening the file;

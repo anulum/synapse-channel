@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 
 from synapse_channel.a2a_credentials import A2APlaintextBearerError, resolve_a2a_token
@@ -20,7 +19,7 @@ from synapse_channel.a2a_interop_trace import (
     run_local_interop_trace,
     write_interop_receipt,
 )
-from synapse_channel.a2a_outbound_response import A2AReceiptWriteError
+from synapse_channel.a2a_outbound_response import A2AReceiptWriteError, serialize_a2a_receipt
 from synapse_channel.core.secret_files import SecretFileError
 
 
@@ -55,15 +54,15 @@ def _cmd_a2a_interop_trace(args: argparse.Namespace) -> int:
     except (ValueError, A2AInteropTraceError, OSError) as exc:
         print(f"a2a-interop-trace: {exc}", file=sys.stderr)
         return 1
-    if args.output:
-        try:
+    try:
+        if args.output:
             written = write_interop_receipt(args.output, receipt)
-        except A2AReceiptWriteError as exc:
-            print(f"a2a-interop-trace: {exc}", file=sys.stderr)
-            return 1
-        print(f"wrote interop receipt: {written}")
-    else:
-        print(json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=True))
+            print(f"wrote interop receipt: {written}")
+        else:
+            print(serialize_a2a_receipt(receipt), end="")
+    except A2AReceiptWriteError as exc:
+        print(f"a2a-interop-trace: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 

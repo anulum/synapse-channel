@@ -401,6 +401,12 @@ def test_loads_bounded_rejects_non_finite_constants(frame: str) -> None:
         loads_bounded(frame)
 
 
+@pytest.mark.parametrize("frame", ['{"x": 1e999}', '{"x": -1e999}'])
+def test_loads_bounded_rejects_float_overflow(frame: str) -> None:
+    with pytest.raises(json.JSONDecodeError, match="non-finite JSON number"):
+        loads_bounded(frame)
+
+
 def test_loads_bounded_keeps_ordinary_finite_numbers() -> None:
     # The rejection must not touch ordinary finite numbers, including exponents.
     assert loads_bounded('{"ts": 123.5, "neg": -3.2, "big": 1e10, "n": 42, "neg_int": -7}') == {

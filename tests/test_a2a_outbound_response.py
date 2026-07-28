@@ -81,6 +81,13 @@ def test_reduces_too_deep_json_to_a_fixed_kind() -> None:
     assert read_a2a_response(_Response(body), purpose="test response")[1] == "non_json"
 
 
+@pytest.mark.parametrize("body", [b'{"value":1e999}', b'{"value":-1e999}'])
+def test_reduces_float_overflow_to_a_fixed_kind(body: bytes) -> None:
+    decoded, kind = read_a2a_response(_Response(body), purpose="test response")
+    assert decoded is None
+    assert kind == "non_json"
+
+
 def test_accepts_exact_cumulative_json_member_limit() -> None:
     body = json.dumps({"items": [0] * (A2A_MAX_JSON_MEMBERS - 1)}).encode()
     decoded, kind = read_a2a_response(_Response(body), purpose="test response")
@@ -191,12 +198,33 @@ def test_receipt_serialization_failure_preserves_target_and_cleans_temp(tmp_path
     cyclic: dict[str, object] = {}
     cyclic["self"] = cyclic
 
-    with pytest.raises(A2AReceiptWriteError, match="A2A receipt write failed") as caught:
+    with pytest.raises(A2AReceiptWriteError, match="serialization failed") as caught:
         write_a2a_receipt(target, cyclic)
 
     assert isinstance(caught.value.__cause__, ValueError)
     assert target.read_text(encoding="utf-8") == "old\n"
     assert list(tmp_path.glob(".receipt.json.*.tmp")) == []
+
+
+def test_receipt_rejects_non_finite_values_before_creating_output(tmp_path: Path) -> None:
+    target = tmp_path / "nested" / "receipt.json"
+
+    with pytest.raises(A2AReceiptWriteError, match="serialization failed") as caught:
+        write_a2a_receipt(target, {"value": float("inf")})
+
+    assert isinstance(caught.value.__cause__, ValueError)
+    assert not target.parent.exists()
+
+
+def test_receipt_parent_setup_failure_uses_domain_error(tmp_path: Path) -> None:
+    occupied = tmp_path / "occupied"
+    occupied.write_text("unchanged", encoding="utf-8")
+
+    with pytest.raises(A2AReceiptWriteError, match="write failed") as caught:
+        write_a2a_receipt(occupied / "receipt.json", {"safe": True})
+
+    assert isinstance(caught.value.__cause__, FileExistsError)
+    assert occupied.read_text(encoding="utf-8") == "unchanged"
 
 
 def test_parent_fsync_noops_off_posix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
