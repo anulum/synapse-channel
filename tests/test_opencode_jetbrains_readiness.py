@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from e2e.opencode_editors.jetbrains_readiness import prerequisite_then_all
+from e2e.opencode_editors.jetbrains_readiness import all_then_completion, prerequisite_then_all
 
 _PREREQUISITE = "plugins ready"
 _COMPLETIONS = ("session started", "commands available")
@@ -61,3 +61,50 @@ def test_readiness_refuses_ambiguous_contracts(
     """Reject contracts whose event identities cannot be distinguished."""
     with pytest.raises(ValueError, match=message):
         prerequisite_then_all("ready\ndone\n", prerequisite, completions)
+
+
+@pytest.mark.parametrize(
+    "contents",
+    (
+        "agent ready\nproject open\nindexing done\n",
+        "project open\nagent ready\nindexing done\n",
+    ),
+)
+def test_readiness_accepts_unordered_prerequisites_before_completion(contents: str) -> None:
+    assert all_then_completion(contents, ("agent ready", "project open"), "indexing done")
+
+
+@pytest.mark.parametrize(
+    "contents",
+    (
+        "",
+        "agent ready\nindexing done\n",
+        "project open\nindexing done\n",
+        "indexing done\nagent ready\nproject open\n",
+    ),
+)
+def test_readiness_refuses_missing_or_early_completion(contents: str) -> None:
+    assert not all_then_completion(
+        contents,
+        ("agent ready", "project open"),
+        "indexing done",
+    )
+
+
+@pytest.mark.parametrize(
+    ("prerequisites", "completion", "message"),
+    (
+        ((), "done", "prerequisites"),
+        (("",), "done", "prerequisites"),
+        (("ready",), "", "completion"),
+        (("ready",), "ready", "distinct"),
+        (("ready", "ready"), "done", "distinct"),
+    ),
+)
+def test_unordered_readiness_refuses_ambiguous_contracts(
+    prerequisites: tuple[str, ...],
+    completion: str,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        all_then_completion("ready\ndone\n", prerequisites, completion)

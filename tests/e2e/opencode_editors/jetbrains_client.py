@@ -24,7 +24,7 @@ from e2e.opencode_editors.jetbrains_evidence import (
     wait_for_trace,
 )
 from e2e.opencode_editors.jetbrains_lifecycle import JetBrainsLifecycleGuard
-from e2e.opencode_editors.jetbrains_readiness import prerequisite_then_all
+from e2e.opencode_editors.jetbrains_readiness import all_then_completion, prerequisite_then_all
 from e2e.opencode_editors.jetbrains_selector import (
     AGENT_NAME as _AGENT_NAME,
 )
@@ -55,6 +55,8 @@ _CHAT_READY_MARKERS = (
     "fileOpened README.md",
     "exit dumb mode [project]",
 )
+_CHAT_READY_PREREQUISITES = _CHAT_READY_MARKERS[:2]
+_CHAT_READY_COMPLETION = _CHAT_READY_MARKERS[2]
 _ACP_SESSION_PREREQUISITE = "Required plugins check passed"
 _ACP_SESSION_COMPLETIONS = (
     "Starting ACP client session ",
@@ -148,6 +150,11 @@ def main() -> int:
                 chat_deadline,
                 process.poll,
                 retry=lambda: _show_ai_chat(window, deadline=chat_deadline),
+                matcher=lambda contents: all_then_completion(
+                    contents,
+                    _CHAT_READY_PREREQUISITES,
+                    _CHAT_READY_COMPLETION,
+                ),
             )
             lifecycle = JetBrainsLifecycleGuard.capture(
                 log_root,
