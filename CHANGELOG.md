@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Resolve the arm service's machine identity through a hardened-namespace-safe
+  relative XDG data path, so pinned receivers present their existing proof
+  instead of degrading to unsigned reconnect loops.
+- Give deliberate arm disarms a dedicated successful exit status that systemd
+  never restarts, covering active-provider yield, identity recovery, and name
+  takeover while retaining `Restart=always` self-healing for unexpected exits.
+
 ## [0.99.15] - 2026-07-28
 
 ### Fixed

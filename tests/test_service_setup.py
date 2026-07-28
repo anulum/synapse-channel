@@ -57,7 +57,11 @@ def test_render_arm_unit_uses_non_llm_synapse_arm(
     assert "--directed-only" in unit
     assert "--mailbox" in unit
     assert "Restart=always" in unit
+    assert "SuccessExitStatus=78" in unit
+    assert "RestartPreventExitStatus=78" in unit
     assert "Restart=on-failure" not in unit
+    assert "WorkingDirectory=%h/.local/share" in unit
+    assert "Environment=XDG_DATA_HOME=." in unit
     assert "Wants=synapse-hub.service" not in unit
     assert "After=synapse-hub.service" in unit
 
@@ -187,7 +191,11 @@ def test_checked_in_arm_template_matches_generated_runtime_contract() -> None:
     assert "Wants=synapse-hub.service" not in template
     assert "--directed-only --mailbox --uri=ws://localhost:8876" in template
     assert "Restart=always" in template
+    assert "SuccessExitStatus=78" in template
+    assert "RestartPreventExitStatus=78" in template
     assert "Restart=on-failure" not in template
+    assert "WorkingDirectory=%h/.local/share" in template
+    assert "Environment=XDG_DATA_HOME=." in template
 
 
 def test_install_arm_service_writes_only_waiter_unit(tmp_path: Path) -> None:
@@ -202,7 +210,11 @@ def test_install_arm_service_writes_only_waiter_unit(tmp_path: Path) -> None:
     assert sorted(path.name for path in unit_dir.iterdir()) == ["synapse-arm@.service"]
     installed_unit = (unit_dir / "synapse-arm@.service").read_text(encoding="utf-8")
     assert "Restart=always" in installed_unit
+    assert "SuccessExitStatus=78" in installed_unit
+    assert "RestartPreventExitStatus=78" in installed_unit
     assert "Restart=on-failure" not in installed_unit
+    assert "WorkingDirectory=%h/.local/share" in installed_unit
+    assert "Environment=XDG_DATA_HOME=." in installed_unit
     assert any(
         "systemd-escape --template=synapse-arm@.service -- repo/ux" in line for line in result.lines
     )

@@ -680,7 +680,8 @@ async def test_arm_disarms_after_a_takeover_displacement(
         ),
         timeout=5.0,
     )
-    assert code == 0
+    assert code == cli_arm.NO_RESTART_EXIT_CODE
+    assert code == 78
     assert "another connection holds this name; disarming" in capsys.readouterr().out
 
 
@@ -701,7 +702,9 @@ async def test_arm_stops_cleanly_when_identity_recovery_is_required(
         wait_runner=identity_refused,
     )
 
-    assert code == 0
+    assert code == cli_arm.NO_RESTART_EXIT_CODE
+    assert code == cli_arm.IDENTITY_RECOVERY_EXIT_CODE
+    assert code == 78
     assert "identity recovery required; disarming without restart" in capsys.readouterr().out
 
 

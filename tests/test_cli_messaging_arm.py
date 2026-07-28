@@ -183,7 +183,10 @@ def test_cmd_arm_yields_when_tmux_provider_is_live(
         token=None,
         owner_pid=None,
     )
-    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda c: asyncio.run(c)) == 0
+    assert (
+        cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda c: asyncio.run(c))
+        == cli_arm.NO_RESTART_EXIT_CODE
+    )
     assert not calls
     out = capsys.readouterr().out
     assert "active tmux provider detected for B" in out
@@ -220,7 +223,10 @@ def test_cmd_arm_refuses_legacy_project_scoped_terminal_waiter_before_provider_p
         token=None,
         owner_pid=None,
     )
-    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda c: asyncio.run(c)) == 0
+    assert (
+        cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda c: asyncio.run(c))
+        == cli_arm.NO_RESTART_EXIT_CODE
+    )
     assert not calls
     out = capsys.readouterr().out
     assert "legacy broad project wait for user" in out
@@ -251,7 +257,10 @@ def test_cmd_arm_refuses_legacy_project_scoped_terminal_sidecar(
         token=None,
         owner_pid=None,
     )
-    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda c: asyncio.run(c)) == 0
+    assert (
+        cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda c: asyncio.run(c))
+        == cli_arm.NO_RESTART_EXIT_CODE
+    )
     assert not calls
     out = capsys.readouterr().out
     assert "legacy broad project wait for user" in out
@@ -366,7 +375,7 @@ async def test_arm_passes_roles_to_each_wait() -> None:
         reconnect_delay=0.0,
         wait_runner=wait_once,
     )
-    assert code == 0
+    assert code == cli_arm.NO_RESTART_EXIT_CODE
     assert captured["roles"] == ("proj/coordinator",)
 
 
@@ -384,7 +393,7 @@ async def test_arm_passes_passive_wake_capability_to_each_wait() -> None:
         reconnect_delay=0.0,
         wait_runner=wait_once,
     )
-    assert code == 0
+    assert code == cli_arm.NO_RESTART_EXIT_CODE
     assert captured["wake_capability"] == WAKE_PASSIVE
 
 
@@ -640,7 +649,7 @@ async def test_arm_passes_mailbox_and_cursor_to_each_wait(tmp_path: Path) -> Non
         mailbox=True,
         mailbox_cursor_path=cursor,
     )
-    assert code == 0
+    assert code == cli_arm.NO_RESTART_EXIT_CODE
     assert captured["mailbox"] is True
     assert captured["mailbox_cursor_path"] == cursor
 

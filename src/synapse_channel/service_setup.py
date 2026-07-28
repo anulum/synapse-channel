@@ -253,9 +253,13 @@ def render_arm_unit(
         "Type=simple\n"
         "Environment=SYN_PROJECT=%I\n"
         "Environment=SYN_IDENTITY=%I\n"
+        "WorkingDirectory=%h/.local/share\n"
+        "Environment=XDG_DATA_HOME=.\n"
         f"ExecStart={executable} arm --name=%I-rx --for=%I --directed-only "
         f"--mailbox --uri={hub_uri}{extra_argument}\n"
+        "SuccessExitStatus=78\n"
         "Restart=always\n"
+        "RestartPreventExitStatus=78\n"
         "RestartSec=2\n"
         + hardening_directives(write_paths=LISTENER_WRITE_PATHS, nofile=LISTENER_NOFILE)
         + "\n"

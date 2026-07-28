@@ -32,8 +32,12 @@ StartLimitIntervalSec=0
 Type=simple
 Environment=SYN_PROJECT=%I
 Environment=SYN_IDENTITY=%I
+WorkingDirectory=%h/.local/share
+Environment=XDG_DATA_HOME=.
 ExecStart=%h/.local/bin/synapse arm --name=%I-rx --for=%I --directed-only --mailbox --uri=ws://localhost:8876
+SuccessExitStatus=78
 Restart=always
+RestartPreventExitStatus=78
 RestartSec=2
 NoNewPrivileges=yes
 UMask=0077

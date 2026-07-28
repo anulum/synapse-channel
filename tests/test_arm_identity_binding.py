@@ -178,7 +178,7 @@ def test_provider_env_flag_still_suppresses_the_ambient_identitys_arm(
     args = _parse_arm(["--name", AMBIENT, "--directed-only", "--max-wakes", "1"])
     code = cli_arm._cmd_arm(args, arm_runner=arm_capture)
 
-    assert code == 0
+    assert code == cli_arm.NO_RESTART_EXIT_CODE
     assert not called, "ambient-identity arm must yield to the provider"
     assert "provider" in capsys.readouterr().out.lower()
 

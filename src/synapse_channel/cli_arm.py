@@ -43,6 +43,12 @@ PidProbe = Callable[[int], bool]
 
 OWNER_CHECK_INTERVAL_SECONDS = 5.0
 
+NO_RESTART_EXIT_CODE = 78
+"""Service exit for an intentional disarm that must not be relaunched."""
+
+IDENTITY_RECOVERY_EXIT_CODE = NO_RESTART_EXIT_CODE
+"""Backward-readable name for the identity-repair form of intentional disarm."""
+
 
 def pid_alive(pid: int) -> bool:
     """Return whether a process with ``pid`` exists (signal 0 probe).
@@ -189,10 +195,10 @@ async def _arm(
             continue
         if code == 4:
             print(f"[{name}] another connection holds this name; disarming.")
-            return 0
+            return NO_RESTART_EXIT_CODE
         if code == 5:
             print(f"[{name}] identity recovery required; disarming without restart.")
-            return 0
+            return NO_RESTART_EXIT_CODE
         if reconnect_delay > 0:
             await sleep_runner(reconnect_delay)
     return 0
@@ -233,9 +239,12 @@ def _cmd_arm(
     Returns
     -------
     int
-        A process exit code: ``0`` for every clean stop — keyboard interrupt,
-        owner-pid exit, a newer waiter taking the name, or a deliberate
-        legacy/provider yield.
+        A process exit code. Keyboard interrupt, owner-pid exit, and bounded
+        wake completion return ``0``. Name takeover, identity recovery,
+        deliberate legacy-wait refusal, and active-provider yield return
+        :data:`NO_RESTART_EXIT_CODE` so a service manager does not relaunch a
+        waiter that intentionally disarmed. Service installation returns its
+        own status unchanged.
     """
     install_status = maybe_install_arm(args)
     if install_status is not None:
@@ -249,7 +258,7 @@ def _cmd_arm(
             f"[{connect_name}] legacy broad project wait for {for_name} would wake "
             f"on every project message; re-arm for exact identity {legacy_terminal} instead."
         )
-        return 0
+        return NO_RESTART_EXIT_CODE
     provider_identities = (for_name, waiter_owner(connect_name))
 
     # Provider-aware early yield: an active tmux provider (worker-session +
@@ -266,7 +275,7 @@ def _cmd_arm(
             "pane_bridge / agent-tmux is the live waker. "
             "Yielding plain passive arm to avoid supersession/name collision."
         )
-        return 0
+        return NO_RESTART_EXIT_CODE
 
     roles = tuple(r.strip() for r in (getattr(args, "role", None) or ()) if r.strip())
     # State the binding OUT LOUD before holding a socket for hours: an operator
