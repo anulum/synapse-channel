@@ -1990,6 +1990,9 @@ Supported local subset:
   `POST /tasks/{id}:subscribe` for bridge-local task lifecycle operations.
 - `POST|GET|DELETE /tasks/{id}/pushNotificationConfigs[/config_id]` for stored
   push-notification configuration.
+- `GET /tasks/{id}/pushNotificationDeliveries` for the authenticated SYNAPSE
+  extension that lists credential-free durable attempt evidence. JSON-RPC uses
+  `tasks/pushNotificationDelivery/list` for the same task-scoped view.
 - `POST /rpc` for JSON-RPC 2.0 dispatch to the same operations.
 
 Operational boundaries:
@@ -2062,9 +2065,10 @@ Operational boundaries:
   allow-listed. Origin-less clients remain compatible through the always-on
   Host boundary. The independent checks guard against DNS rebinding and
   drive-by browser requests.
-- `--state-file` persists bridge tasks and push configs. Corrupt state files fail
-  fast; non-terminal persisted tasks recover as failed on restart; failed writes
-  roll back the in-memory task/config view.
+- `--state-file` persists bridge tasks, push configs, and bounded push-delivery
+  attempt evidence. Corrupt state files fail fast; non-terminal persisted tasks
+  recover as failed on restart; failed writes roll back the corresponding
+  in-memory view.
 - Terminal task states are immutable: cancel and late SYNAPSE replies do not
   reopen or rewrite completed, failed, canceled, or rejected tasks.
 - `--task-timeout` marks open tasks failed when no correlated SYNAPSE reply arrives
@@ -2097,17 +2101,29 @@ Operational boundaries:
   redirect chains stop after five. Initial authenticated webhook URLs are not
   yet forced to HTTPS, so configure them with HTTPS explicitly. Inspect the
   fixed rule with `synapse doctor --a2a-policy`.
+- Push delivery makes at most three attempts: immediately, after 0.25 seconds,
+  and after one additional second. Each expected network failure is reduced to
+  `timeout`, `url-error`, or `os-error`; exception text, URL, headers, payload,
+  and authentication material never enter delivery evidence. Evidence records
+  a per-update delivery id, task/config ids, attempt, failure class, retry
+  delay/time and 1.25-second retry-delay window, then ends in `succeeded` or
+  `dead-lettered`. The delivery id keeps concurrent or repeated task updates
+  independently auditable. Each transport
+  attempt retains its separate five-second socket timeout. A webhook failure is
+  delivery truth only: the valid task transition is stored first and is never
+  rewritten by retry exhaustion.
 
 State-file durability matrix:
 
 | Case | Behavior | Focused coverage |
 | --- | --- | --- |
-| Clean restart | Tasks and push configs reload from `--state-file`. | `test_task_store_persists_tasks_and_push_configs` |
+| Clean restart | Tasks, push configs, and bounded credential-free delivery evidence reload from `--state-file`. | `test_task_store_persists_tasks_and_push_configs`, `test_a2a_task_store_persists_bounded_credential_free_delivery_evidence` |
 | Corrupt JSON | Startup fails fast with `Invalid A2A state file`. | `test_task_store_reports_corrupt_state_file` |
 | Atomic write | Writes go through an owner-only temp file, fsync the file, replace the state file, and best-effort fsync the parent directory. | `test_a2a_task_store_fsyncs_state_file_and_parent_directory` |
 | Failed write | In-memory task/config changes roll back; the previous committed state file is left intact. | `test_a2a_task_store_keeps_committed_state_file_when_temp_write_fails` |
 | Stale in-flight task | Persisted non-terminal tasks recover as failed on restart. | `test_state_file_recovery_fails_stale_working_tasks` |
 | Push config recovery | Push configs persist, reload, list, get, delete, and roll back failed writes/deletes. | `test_a2a_task_store_push_config_get_list_delete_paths` |
+| Push outcome recovery | Each attempt is atomically appended; failed evidence writes roll back, task expiry removes its evidence, and authenticated HTTP/JSON-RPC reads remain task-scoped. | `test_a2a_task_store_rolls_back_delivery_evidence_when_save_fails`, `test_push_delivery_evidence_route_is_authenticated_and_task_scoped` |
 
 Bounded local soak coverage:
 
@@ -2115,7 +2131,7 @@ Bounded local soak coverage:
 | --- | --- | --- |
 | Network handler churn | Sixteen real localhost `POST /message:send` requests through one stdlib HTTP server persist and reload from a state file. | This is not a latency or throughput benchmark. |
 | Persistence churn | The same run exercises repeated fsynced state writes under a fixed task cap. | It does not simulate power loss or filesystem faults beyond focused write-failure tests. |
-| Webhook failure pressure | Twelve task completions continue while configured webhook deliveries raise timeout errors. | It uses an injected failing deliverer, not a remote receiver. |
+| Webhook failure pressure | Twelve task completions continue while all 36 bounded webhook attempts raise timeout errors and end in 12 durable dead letters. | It uses an injected failing deliverer with zero-delay test scheduling, not a remote receiver. |
 | Subscriber fanout | Twelve concurrent subscribers receive the terminal update and the bridge clears subscriber queues. | It is bounded local thread pressure, not multi-process soak. |
 
 Unsupported or externally gated:

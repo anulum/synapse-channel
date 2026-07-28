@@ -24,6 +24,9 @@ All notable changes to this project are documented here.
 - Publish and continuously validate one machine-readable effective-policy
   contract across all nine externally reachable transport families without
   replacing the immutable hub configuration API.
+- Persist credential-free A2A push-delivery attempt evidence, expose it through
+  authenticated task-scoped HTTP and JSON-RPC reads, and return typed success or
+  terminal dead-letter results after a bounded 0.25/1-second retry schedule.
 
 ### Security
 
@@ -46,6 +49,9 @@ All notable changes to this project are documented here.
 - Give deliberate arm disarms a dedicated successful exit status that systemd
   never restarts, covering active-provider yield, identity recovery, and name
   takeover while retaining `Restart=always` self-healing for unexpected exits.
+- Keep valid A2A task transitions independent from outbound webhook outcomes:
+  expected network failures no longer vanish silently or rewrite task state,
+  and every retry, success, or terminal dead letter is committed separately.
 
 ## [0.99.15] - 2026-07-28
 

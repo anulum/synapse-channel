@@ -174,14 +174,17 @@ CONFORMANCE_ROWS: tuple[A2AConformanceRow, ...] = (
         status="partial",
         synapse_surface=(
             "POST|GET|DELETE /tasks/{id}/pushNotificationConfigs[/config_id]; "
-            "JSON-RPC tasks/pushNotificationConfig/*"
+            "GET /tasks/{id}/pushNotificationDeliveries; JSON-RPC "
+            "tasks/pushNotificationConfig/* and tasks/pushNotificationDelivery/list"
         ),
         evidence=(
-            "Config persistence, SSRF guard, delivery envelope, failure paths, and real "
-            "local HTTPS/proxy receiver plus DNS-rebinding guard tests."
+            "Config persistence, SSRF guard, delivery envelope, bounded retries, durable "
+            "credential-free attempt evidence, task-independent terminal dead letters, and "
+            "real local HTTPS/proxy receiver plus DNS-rebinding guard tests."
         ),
         limitation=(
-            "Remote public receivers, retry policy, and operator-signoff traces remain external."
+            "Remote public receiver acknowledgement, cross-replica outbox semantics, and "
+            "operator-signoff traces remain external."
         ),
         spec_reference="A2A 1.0.0 §3.1.7-§3.1.10",
     ),

@@ -42,7 +42,8 @@ Status labels:
 
 The bridge currently exposes Agent Card discovery, HTTP+JSON/REST routes,
 JSON-RPC dispatch, bridge-local task storage, local Server-Sent Events snapshots,
-and push-notification configuration storage. The matrix marks these as
+push-notification configuration storage, and authenticated task-scoped delivery
+evidence. The matrix marks these as
 `supported` or `partial` according to the local behavior and its limits.
 
 The HTTP+JSON edge derives exact Host authorities from the advertised endpoint
@@ -68,6 +69,18 @@ refuse 301/302/303, cross-origin 307/308, and every HTTPS downgrade; exact
 same-origin 307/308 preserve the POST body and sensitive header under a bounded
 five-redirect policy. Remote public receivers, initial authenticated-URL HTTPS
 enforcement, and operator-visible deployment receipts remain external.
+
+Expected push network failures follow a fixed, bounded three-attempt policy:
+immediate, 0.25 seconds, then one additional second. The bridge commits the A2A
+task transition before notification delivery, so exhaustion cannot rewrite task
+truth. A configured state file separately commits a per-update delivery id,
+per-attempt task/config ids, attempt number, value-free failure class,
+retry schedule/window, and final
+`succeeded` or `dead-lettered` state. URL, headers, payload, credentials, and
+exception text are excluded. Authenticated operators can read this SYNAPSE
+extension at `GET /tasks/{id}/pushNotificationDeliveries` or JSON-RPC
+`tasks/pushNotificationDelivery/list`; this evidence is local bridge state, not
+an external receiver acknowledgement or cross-replica outbox guarantee.
 
 The deployment-threat-model row is also `partial`: the local review records the
 required exposed-bridge posture for bearer auth, TLS/proxy placement, state-file

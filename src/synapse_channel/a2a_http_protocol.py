@@ -161,6 +161,18 @@ def parse_push_config_path(path: str) -> tuple[str, str | None] | None:
     return task_id, tail.strip("/") or None
 
 
+def parse_push_delivery_path(path: str) -> str | None:
+    """Parse the exact ``/tasks/{task}/pushNotificationDeliveries`` path."""
+    prefix = "/tasks/"
+    suffix = "/pushNotificationDeliveries"
+    if not path.startswith(prefix) or not path.endswith(suffix):
+        return None
+    task_id = path.removeprefix(prefix).removesuffix(suffix)
+    if not task_id or "/" in task_id:
+        return None
+    return task_id
+
+
 def requested_a2a_version(header_value: str | None, query_values: list[str]) -> str | None:
     """Resolve the requested version from the header, then query parameter."""
     if header_value is not None:

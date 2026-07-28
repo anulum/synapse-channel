@@ -101,8 +101,9 @@ default thresholds — tune `rule_max_chars`/`heavy_min_chars` for your workload
 
 Measures local Agent2Agent bridge costs without a network server: task creation,
 SYNAPSE reply correlation, bridge-local task listing, push-delivery callback
-dispatch, and bounded subscriber fanout. It is an in-process regression harness,
-not a third-party A2A conformance or real webhook latency test.
+dispatch, credential-free delivery-evidence recording, and bounded subscriber
+fanout. It is an in-process regression harness, not a third-party A2A
+conformance or real webhook latency test.
 
 ### Run
 
@@ -114,10 +115,11 @@ python benchmarks/a2a_bridge_benchmark.py
 
 | Operation | Result |
 | --- | ---: |
-| Task creation | 5,383 tasks/s |
-| Reply correlation | 12,166 tasks/s |
+| Task creation | 4,187 tasks/s |
+| Reply correlation + delivery evidence | 3,158 tasks/s |
 | Task listing | 250 tasks |
 | Push delivery callbacks | 250 deliveries |
+| Push delivery evidence | 250 terminal successes |
 | Subscriber fanout | 32 terminal events |
 
 ## `coding_fleet_benchmark.py`

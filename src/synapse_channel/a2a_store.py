@@ -19,6 +19,7 @@ from pathlib import Path
 
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_errors import A2AQuotaError, A2AStoreError
+from synapse_channel.a2a_push_delivery import PushDeliveryAttempt
 from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
 from synapse_channel.core.numeric_coercion import safe_float
 
@@ -28,6 +29,7 @@ DEFAULT_MAX_STORED_TASKS = 1024
 DEFAULT_MAX_TASK_HISTORY = 64
 DEFAULT_MAX_TASK_ARTIFACTS = 64
 DEFAULT_MAX_PUSH_CONFIGS_PER_TASK = 16
+DEFAULT_MAX_PUSH_DELIVERY_ATTEMPTS_PER_TASK = 256
 DEFAULT_TASK_RETENTION_SECONDS = 7 * 24 * 60 * 60
 StateWriter = Callable[[Path, str], None]
 
@@ -74,10 +76,12 @@ class A2ATaskStore:
         max_task_history: int = DEFAULT_MAX_TASK_HISTORY,
         max_task_artifacts: int = DEFAULT_MAX_TASK_ARTIFACTS,
         max_push_configs_per_task: int = DEFAULT_MAX_PUSH_CONFIGS_PER_TASK,
+        max_push_delivery_attempts_per_task: int = DEFAULT_MAX_PUSH_DELIVERY_ATTEMPTS_PER_TASK,
         retention_seconds: float = DEFAULT_TASK_RETENTION_SECONDS,
     ) -> None:
         self._tasks: dict[str, JsonMap] = {}
         self._push_configs: dict[str, dict[str, JsonMap]] = {}
+        self._push_delivery_attempts: dict[str, list[JsonMap]] = {}
         self._event_history: dict[str, list[JsonMap]] = {}
         self._storage_path = Path(storage_path) if storage_path is not None else None
         self._state_writer = state_writer
@@ -85,13 +89,14 @@ class A2ATaskStore:
         self.max_task_history = max(max_task_history, 0)
         self.max_task_artifacts = max(max_task_artifacts, 0)
         self.max_push_configs_per_task = max(max_push_configs_per_task, 0)
+        self.max_push_delivery_attempts_per_task = max(max_push_delivery_attempts_per_task, 1)
         self.max_event_history = max(max_task_history, 1) if max_task_history else 64
         self.retention_seconds = max(retention_seconds, 0.0)
         self._lock = threading.RLock()
         self._load()
 
     def _load(self) -> None:
-        """Load persisted tasks, push configs, and event history when present."""
+        """Load persisted tasks, push configs, delivery evidence, and events."""
         if self._storage_path is None or not self._storage_path.exists():
             return
         try:
@@ -100,6 +105,7 @@ class A2ATaskStore:
             raise A2AStoreError(f"Invalid A2A state file: {self._storage_path}") from exc
         tasks = data.get("tasks", {})
         push_configs = data.get("pushConfigs", {})
+        push_delivery_attempts = data.get("pushDeliveryAttempts", {})
         event_history = data.get("eventHistory", {})
         if isinstance(tasks, dict):
             self._tasks = {
@@ -116,6 +122,14 @@ class A2ATaskStore:
                 }
                 for task_id, configs in push_configs.items()
                 if isinstance(configs, dict)
+            }
+        if isinstance(push_delivery_attempts, dict):
+            self._push_delivery_attempts = {
+                str(task_id): [dict(attempt) for attempt in attempts if isinstance(attempt, dict)][
+                    -self.max_push_delivery_attempts_per_task :
+                ]
+                for task_id, attempts in push_delivery_attempts.items()
+                if isinstance(attempts, list) and str(task_id) in self._tasks
             }
         if isinstance(event_history, dict):
             loaded: dict[str, list[JsonMap]] = {}
@@ -176,6 +190,7 @@ class A2ATaskStore:
         """Remove one task, its push configs, and durable events while locked."""
         self._tasks.pop(task_id, None)
         self._push_configs.pop(task_id, None)
+        self._push_delivery_attempts.pop(task_id, None)
         self._event_history.pop(task_id, None)
 
     def _task_ids_by_age(self, *, terminal_only: bool) -> list[str]:
@@ -219,6 +234,10 @@ class A2ATaskStore:
                 task_id: [dict(item) for item in events]
                 for task_id, events in self._event_history.items()
             }
+            previous_push_delivery_attempts = {
+                task_id: [dict(item) for item in attempts]
+                for task_id, attempts in self._push_delivery_attempts.items()
+            }
             removed = [
                 task_id
                 for task_id, task in self._tasks.items()
@@ -235,11 +254,12 @@ class A2ATaskStore:
                 self._tasks = previous_tasks
                 self._push_configs = previous_push_configs
                 self._event_history = previous_events
+                self._push_delivery_attempts = previous_push_delivery_attempts
                 raise
             return sorted(removed)
 
     def _save(self) -> None:
-        """Persist tasks and push configs to disk when configured."""
+        """Persist tasks, push configs, delivery evidence, and events."""
         if self._storage_path is None:
             return
         self._storage_path.parent.mkdir(parents=True, exist_ok=True)
@@ -247,6 +267,7 @@ class A2ATaskStore:
         payload = {
             "tasks": self._tasks,
             "pushConfigs": self._push_configs,
+            "pushDeliveryAttempts": self._push_delivery_attempts,
             "eventHistory": self._event_history,
         }
         try:
@@ -268,6 +289,14 @@ class A2ATaskStore:
             previous_push_configs = {
                 stored_id: dict(configs) for stored_id, configs in self._push_configs.items()
             }
+            previous_events = {
+                stored_id: [dict(item) for item in events]
+                for stored_id, events in self._event_history.items()
+            }
+            previous_push_delivery_attempts = {
+                stored_id: [dict(item) for item in attempts]
+                for stored_id, attempts in self._push_delivery_attempts.items()
+            }
             self._tasks[task_id] = self._normalize_task(task)
             self._enforce_task_limit_locked(protected_task_id=task_id)
             try:
@@ -275,6 +304,8 @@ class A2ATaskStore:
             except Exception:
                 self._tasks = previous_tasks
                 self._push_configs = previous_push_configs
+                self._event_history = previous_events
+                self._push_delivery_attempts = previous_push_delivery_attempts
                 raise
         return task
 
@@ -336,6 +367,30 @@ class A2ATaskStore:
                 task_id: [dict(event) for event in events]
                 for task_id, events in self._event_history.items()
             }
+
+    def record_push_delivery_attempt(self, attempt: PushDeliveryAttempt) -> None:
+        """Append one credential-free delivery attempt and persist it."""
+        task_id = attempt.task_id
+        with self._lock:
+            if task_id not in self._tasks:
+                raise A2AStoreError(f"Unknown task for push delivery evidence: {task_id}")
+            previous = [dict(item) for item in self._push_delivery_attempts.get(task_id, [])]
+            attempts = self._push_delivery_attempts.setdefault(task_id, [])
+            attempts.append(attempt.to_json())
+            del attempts[: -self.max_push_delivery_attempts_per_task]
+            try:
+                self._save()
+            except Exception:
+                if previous:
+                    self._push_delivery_attempts[task_id] = previous
+                else:
+                    self._push_delivery_attempts.pop(task_id, None)
+                raise
+
+    def list_push_delivery_attempts(self, task_id: str) -> list[JsonMap]:
+        """Return detached delivery evidence for ``task_id`` in attempt order."""
+        with self._lock:
+            return [dict(attempt) for attempt in self._push_delivery_attempts.get(task_id, [])]
 
     def put_push_config(self, task_id: str, config: JsonMap) -> JsonMap:
         """Store one push notification config for ``task_id``."""

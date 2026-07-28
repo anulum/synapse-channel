@@ -91,3 +91,15 @@ def test_matrix_records_real_webhook_receiver_progress_as_partial() -> None:
     assert "every HTTPS downgrade" in webhook.evidence
     assert "five-hop cap" in webhook.evidence
     assert "initial authenticated-URL HTTPS enforcement" in webhook.limitation
+
+
+def test_matrix_records_durable_push_outcomes_without_overclaiming() -> None:
+    """The push row exposes local evidence and retains external acknowledgement gates."""
+    push = next(row for row in CONFORMANCE_ROWS if row.item == "Push Notification Configs")
+
+    assert "pushNotificationDeliveries" in push.synapse_surface
+    assert "bounded retries" in push.evidence
+    assert "credential-free attempt evidence" in push.evidence
+    assert "task-independent terminal dead letters" in push.evidence
+    assert "Remote public receiver acknowledgement" in push.limitation
+    assert "cross-replica outbox semantics" in push.limitation

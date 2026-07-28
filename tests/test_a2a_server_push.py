@@ -17,6 +17,7 @@ import pytest
 
 from a2a_server_helpers import HandlerHarness, RecordingAgent
 from synapse_channel import a2a_push, safe_webhook_transport
+from synapse_channel.a2a_push_delivery import PushDeliveryState
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
@@ -349,3 +350,64 @@ def test_build_push_delivery_skips_incomplete_authentication() -> None:
         },
     )
     assert complete["headers"] == {"Authorization": "Bearer tok"}
+
+
+def test_failed_push_keeps_task_truth_and_records_terminal_delivery_truth() -> None:
+    """Webhook exhaustion cannot roll back a valid task transition."""
+    calls = 0
+    sleeps: list[float] = []
+
+    def fail(_delivery: dict[str, Any]) -> None:
+        nonlocal calls
+        calls += 1
+        raise URLError("secret diagnostic must not persist")
+
+    bridge = A2ABridge(
+        agent=RecordingAgent(),
+        agent_card={},
+        target="WORKER",
+        store=A2ATaskStore(),
+        push_deliverer=fail,
+        push_retry_delays_seconds=(0.0,),
+        push_sleep=sleeps.append,
+        push_clock=iter((10.0, 11.0)).__next__,
+    )
+    task = bridge.create_working_task(
+        {
+            "taskId": "task-a",
+            "messageId": "m1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        target="WORKER",
+    )
+    config = bridge.create_push_notification_config(
+        str(task["id"]),
+        {
+            "id": "cfg-a",
+            "webhookUrl": "https://example.test/hook",
+            "authentication": {"scheme": "Bearer", "credentials": "push-secret"},
+        },
+    )
+    assert config is not None
+
+    canceled = bridge.cancel_task(str(task["id"]))
+
+    assert canceled is not None
+    assert canceled["status"]["state"] == "TASK_STATE_CANCELED"
+    stored = bridge.get_task(str(task["id"]))
+    assert stored is not None
+    assert stored["status"]["state"] == "TASK_STATE_CANCELED"
+    evidence = bridge.list_push_notification_deliveries(str(task["id"]))[
+        "pushNotificationDeliveries"
+    ]
+    assert [attempt["state"] for attempt in evidence] == [
+        PushDeliveryState.RETRY_SCHEDULED.value,
+        PushDeliveryState.DEAD_LETTERED.value,
+    ]
+    assert evidence[-1]["failureClass"] == "url-error"
+    assert len({attempt["deliveryId"] for attempt in evidence}) == 1
+    assert calls == 2
+    assert sleeps == [0.0]
+    assert "push-secret" not in repr(evidence)
+    assert "secret diagnostic" not in repr(evidence)

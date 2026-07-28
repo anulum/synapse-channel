@@ -110,6 +110,11 @@ def _dispatch_method(
             _task_id(params),
             _config_id(params),
         )
+    if method == "tasks/pushNotificationDelivery/list":
+        task_id = _task_id(params)
+        if bridge.get_task(task_id, history_length=None) is None:
+            raise a2a_errors.A2ANotFoundError(f"Unknown task: {task_id}")
+        return bridge.list_push_notification_deliveries(task_id)["pushNotificationDeliveries"]
     if method == "agent/getAuthenticatedExtendedCard":
         return bridge.agent_card
     raise KeyError(method)

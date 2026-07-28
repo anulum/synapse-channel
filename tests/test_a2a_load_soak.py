@@ -106,6 +106,8 @@ def test_webhook_failures_do_not_block_bounded_completion_pressure() -> None:
         target="WORKER",
         store=A2ATaskStore(),
         push_deliverer=failing_deliverer,
+        push_retry_delays_seconds=(0.0, 0.0),
+        push_sleep=lambda _seconds: None,
     )
 
     for index in range(12):
@@ -123,10 +125,19 @@ def test_webhook_failures_do_not_block_bounded_completion_pressure() -> None:
             }
         )
 
-    assert len(attempts) == 12
+    assert len(attempts) == 36
     assert {
         task["status"]["state"] for task in bridge.list_tasks(state="TASK_STATE_COMPLETED")["tasks"]
     } == {"TASK_STATE_COMPLETED"}
+    for index in range(12):
+        evidence = bridge.list_push_notification_deliveries(f"task-{index:02d}")[
+            "pushNotificationDeliveries"
+        ]
+        assert [attempt["state"] for attempt in evidence] == [
+            "retry-scheduled",
+            "retry-scheduled",
+            "dead-lettered",
+        ]
 
 
 def test_subscriber_fanout_pressure_delivers_terminal_update_and_cleans_up() -> None:

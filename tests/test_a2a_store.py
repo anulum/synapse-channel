@@ -19,6 +19,11 @@ from pathlib import Path
 import pytest
 
 from synapse_channel.a2a_errors import A2AQuotaError, A2AStoreError
+from synapse_channel.a2a_push_delivery import (
+    PushDeliveryAttempt,
+    PushDeliveryState,
+    PushFailureClass,
+)
 from synapse_channel.a2a_store import A2ATaskStore, _fsync_parent
 
 
@@ -155,6 +160,17 @@ def test_a2a_task_store_bounds_stored_tasks_and_removes_push_configs() -> None:
     store = A2ATaskStore(max_tasks=2)
     store.put(_stored_task("old", updated_at=1.0))
     store.put_push_config("old", {"id": "cfg-old", "webhookUrl": "https://example.test/old"})
+    store.record_push_delivery_attempt(
+        PushDeliveryAttempt(
+            task_id="old",
+            config_id="cfg-old",
+            delivery_id="delivery-old",
+            attempt=1,
+            state=PushDeliveryState.SUCCEEDED,
+            occurred_at=1.0,
+            retry_window_seconds=1.25,
+        )
+    )
     store.put(_stored_task("middle", updated_at=2.0))
     store.put(_stored_task("new", updated_at=3.0))
 
@@ -162,6 +178,7 @@ def test_a2a_task_store_bounds_stored_tasks_and_removes_push_configs() -> None:
     assert [task["id"] for task in store.list_tasks()] == ["new", "middle"]
     assert store.get("old") is None
     assert store.list_push_configs("old") == []
+    assert store.list_push_delivery_attempts("old") == []
 
 
 def test_a2a_task_store_rolls_back_quota_eviction_when_save_fails(tmp_path: Path) -> None:
@@ -183,6 +200,18 @@ def test_a2a_task_store_prunes_expired_terminal_tasks() -> None:
         "old-terminal",
         {"id": "cfg-old", "webhookUrl": "https://example.test/old"},
     )
+    store.record_push_delivery_attempt(
+        PushDeliveryAttempt(
+            task_id="old-terminal",
+            config_id="cfg-old",
+            delivery_id="delivery-old",
+            attempt=1,
+            state=PushDeliveryState.DEAD_LETTERED,
+            occurred_at=5.0,
+            retry_window_seconds=1.25,
+            failure_class=PushFailureClass.TIMEOUT,
+        )
+    )
     store.put(_stored_task("old-open", state="TASK_STATE_WORKING", updated_at=5.0))
     store.put(_stored_task("recent-terminal", updated_at=12.0))
 
@@ -191,6 +220,7 @@ def test_a2a_task_store_prunes_expired_terminal_tasks() -> None:
     assert removed == ["old-terminal"]
     assert store.get("old-terminal") is None
     assert store.list_push_configs("old-terminal") == []
+    assert store.list_push_delivery_attempts("old-terminal") == []
     assert store.get("old-open") is not None
     assert store.get("recent-terminal") is not None
 
@@ -319,6 +349,102 @@ def test_a2a_task_store_marks_stale_inflight_tasks_failed(tmp_path: Path) -> Non
         },
     }
     assert store.get("task-b") == {"id": "task-b", "status": {"state": "TASK_STATE_COMPLETED"}}
+
+
+def test_a2a_task_store_persists_bounded_credential_free_delivery_evidence(
+    tmp_path: Path,
+) -> None:
+    """Delivery attempts survive restart without webhook or credential material."""
+    storage_path = tmp_path / "a2a-state.json"
+    store = A2ATaskStore(storage_path, max_push_delivery_attempts_per_task=1)
+    store.put(_stored_task("task-a"))
+    for attempt, state in (
+        (1, PushDeliveryState.RETRY_SCHEDULED),
+        (2, PushDeliveryState.SUCCEEDED),
+    ):
+        store.record_push_delivery_attempt(
+            PushDeliveryAttempt(
+                task_id="task-a",
+                config_id="cfg-a",
+                delivery_id="delivery-a",
+                attempt=attempt,
+                state=state,
+                occurred_at=float(attempt),
+                retry_window_seconds=0.25,
+            )
+        )
+
+    reloaded = A2ATaskStore(storage_path, max_push_delivery_attempts_per_task=1)
+    attempts = reloaded.list_push_delivery_attempts("task-a")
+
+    assert [attempt["attempt"] for attempt in attempts] == [2]
+    serialized = storage_path.read_text(encoding="utf-8")
+    assert "webhookUrl" not in serialized
+    assert "credentials" not in serialized
+
+
+def test_a2a_task_store_rejects_evidence_for_unknown_task() -> None:
+    """An attempt cannot create an orphan audit trail."""
+    store = A2ATaskStore()
+    attempt = PushDeliveryAttempt(
+        task_id="missing",
+        config_id="cfg-a",
+        delivery_id="delivery-a",
+        attempt=1,
+        state=PushDeliveryState.SUCCEEDED,
+        occurred_at=1.0,
+        retry_window_seconds=0.0,
+    )
+
+    with pytest.raises(A2AStoreError, match="Unknown task for push delivery evidence"):
+        store.record_push_delivery_attempt(attempt)
+
+
+def test_a2a_task_store_rolls_back_delivery_evidence_when_save_fails(
+    tmp_path: Path,
+) -> None:
+    """A failed atomic save does not leave non-durable in-memory evidence."""
+    store = A2ATaskStore(
+        tmp_path / "a2a-state.json",
+        state_writer=_writer_failing_after(1),
+    )
+    store.put(_stored_task("task-a"))
+    attempt = PushDeliveryAttempt(
+        task_id="task-a",
+        config_id="cfg-a",
+        delivery_id="delivery-a",
+        attempt=1,
+        state=PushDeliveryState.SUCCEEDED,
+        occurred_at=1.0,
+        retry_window_seconds=0.0,
+    )
+
+    with pytest.raises(OSError, match="blocked write"):
+        store.record_push_delivery_attempt(attempt)
+
+    assert store.list_push_delivery_attempts("task-a") == []
+
+
+def test_a2a_task_store_ignores_malformed_delivery_evidence_on_load(tmp_path: Path) -> None:
+    """Malformed optional evidence cannot poison otherwise valid task state."""
+    storage_path = tmp_path / "a2a-state.json"
+    storage_path.write_text(
+        json.dumps(
+            {
+                "tasks": {"task-a": _stored_task("task-a")},
+                "pushDeliveryAttempts": {
+                    "task-a": [{"attempt": 1}, "bad"],
+                    "task-b": "bad",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    store = A2ATaskStore(storage_path)
+
+    assert store.list_push_delivery_attempts("task-a") == [{"attempt": 1}]
+    assert store.list_push_delivery_attempts("task-b") == []
 
 
 def test_a2a_task_store_keeps_tasks_without_status_unchanged(tmp_path: Path) -> None:

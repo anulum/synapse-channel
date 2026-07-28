@@ -38,6 +38,9 @@ class _FakeBridge:
             "list_push_notification_configs": {"pushNotificationConfigs": [{"id": "c1"}]},
             "get_push_notification_config": {"id": "c1"},
             "delete_push_notification_config": {"deleted": True},
+            "list_push_notification_deliveries": {
+                "pushNotificationDeliveries": [{"attempt": 1, "state": "succeeded"}]
+            },
         }
         self._returns.update(returns)
 
@@ -72,6 +75,9 @@ class _FakeBridge:
     def delete_push_notification_config(self, task_id: str, config_id: str) -> Any:
         return self._record("delete_push_notification_config", task_id, config_id)
 
+    def list_push_notification_deliveries(self, task_id: str) -> Any:
+        return self._record("list_push_notification_deliveries", task_id)
+
 
 def _as_bridge(bridge: _FakeBridge) -> A2ABridge:
     """Present the structural fake as the concrete bridge type the dispatch expects."""
@@ -87,6 +93,24 @@ def _request(method: str, params: Any = None, *, rpc_id: Any = 1) -> JsonMap:
 
 def _dispatch(bridge: _FakeBridge, method: str, params: Any = None, **kwargs: Any) -> JsonMap:
     return a2a_rpc.dispatch_json_rpc(_as_bridge(bridge), _request(method, params), **kwargs)
+
+
+def test_push_delivery_evidence_dispatch_and_unknown_task() -> None:
+    """The JSON-RPC extension shares the task-scoped sanitized evidence view."""
+    bridge = _FakeBridge()
+
+    result = _dispatch(bridge, "tasks/pushNotificationDelivery/list", {"taskId": "t1"})
+
+    assert result["result"] == [{"attempt": 1, "state": "succeeded"}]
+    assert bridge.calls[-1] == ("list_push_notification_deliveries", ("t1",), {})
+
+    missing = _FakeBridge(get_task=None)
+    error = _dispatch(
+        missing,
+        "tasks/pushNotificationDelivery/list",
+        {"taskId": "missing"},
+    )
+    assert error["error"]["message"] == "Unknown task: missing"
 
 
 def _dispatch_raw(bridge: _FakeBridge, body: JsonMap) -> JsonMap:

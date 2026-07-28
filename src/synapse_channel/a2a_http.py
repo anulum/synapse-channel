@@ -47,6 +47,7 @@ bearer_token_matches = _protocol.bearer_token_matches
 non_negative_int = _protocol.non_negative_int
 origin_allowed = _protocol.origin_allowed
 parse_push_config_path = _protocol.parse_push_config_path
+parse_push_delivery_path = _protocol.parse_push_delivery_path
 problem_response = _protocol.problem_response
 
 
@@ -390,6 +391,14 @@ def build_a2a_handler(bridge: A2ABridge) -> type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/extendedAgentCard":
                 self._send_json(HTTPStatus.OK, self.bridge.agent_card)
+                return
+            push_delivery_task_id = parse_push_delivery_path(parsed.path)
+            if push_delivery_task_id is not None:
+                if self.bridge.get_task(push_delivery_task_id) is None:
+                    self._send_not_found(f"Unknown task: {push_delivery_task_id}")
+                    return
+                deliveries = self.bridge.list_push_notification_deliveries(push_delivery_task_id)
+                self._send_json(HTTPStatus.OK, deliveries)
                 return
             push_path = parse_push_config_path(parsed.path)
             if push_path is not None:

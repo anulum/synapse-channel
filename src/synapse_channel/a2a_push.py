@@ -17,13 +17,24 @@ keeps credential-bearing redirects on the configured exact origin.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+import time
+import uuid
+from collections.abc import Callable, Sequence
 from urllib import request
 from urllib.error import URLError
 from urllib.parse import urlparse
 
 from synapse_channel import a2a_http_protocol, safe_webhook_transport
 from synapse_channel.a2a import JsonMap
+from synapse_channel.a2a_push_delivery import (
+    DEFAULT_PUSH_RETRY_DELAYS_SECONDS,
+    AttemptRecorder,
+    Clock,
+    PushDeliveryAttempt,
+    PushDeliveryResult,
+    Sleeper,
+    deliver_with_retries,
+)
 
 PushDeliverer = Callable[[JsonMap], None]
 LOCAL_TARGET_ERROR = safe_webhook_transport.LOCAL_TARGET_ERROR
@@ -168,8 +179,13 @@ def deliver_push_notification(
     task: JsonMap,
     config: JsonMap,
     push_deliverer: PushDeliverer,
-) -> None:
-    """Deliver one task update and preserve best-effort failure handling.
+    record_attempt: AttemptRecorder | None = None,
+    delivery_id: str | None = None,
+    retry_delays_seconds: Sequence[float] = DEFAULT_PUSH_RETRY_DELAYS_SECONDS,
+    sleep: Sleeper = time.sleep,
+    clock: Clock = time.time,
+) -> PushDeliveryResult:
+    """Deliver one task update with typed, bounded, sanitized outcomes.
 
     Parameters
     ----------
@@ -179,8 +195,32 @@ def deliver_push_notification(
         Stored push-notification configuration.
     push_deliverer : PushDeliverer
         Callable that sends the prepared delivery envelope.
+    record_attempt : AttemptRecorder or None, optional
+        Durable evidence callback. ``None`` retains typed results for callers
+        that do not own a persistent store.
+    delivery_id : str or None, optional
+        Stable identifier grouping every retry for this task update. A fresh
+        UUID is generated when omitted.
+    retry_delays_seconds : Sequence[float], optional
+        Finite delays before retries; validated by the bounded retry engine.
+
+    Returns
+    -------
+    PushDeliveryResult
+        Final success or terminal dead-letter result.
     """
-    try:
-        push_deliverer(build_push_delivery(task=task, config=config))
-    except (OSError, TimeoutError, URLError):
-        return
+    delivery = build_push_delivery(task=task, config=config)
+
+    def discard_attempt(_attempt: PushDeliveryAttempt) -> None:
+        """Accept typed evidence when the caller has no persistent store."""
+
+    return deliver_with_retries(
+        task_id=str(task.get("id") or ""),
+        config_id=str(config.get("id") or ""),
+        delivery_id=delivery_id or str(uuid.uuid4()),
+        deliver=lambda: push_deliverer(delivery),
+        record_attempt=record_attempt or discard_attempt,
+        retry_delays_seconds=retry_delays_seconds,
+        sleep=sleep,
+        clock=clock,
+    )

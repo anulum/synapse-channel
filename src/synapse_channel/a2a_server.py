@@ -33,6 +33,13 @@ from synapse_channel.a2a_http_protocol import (
     normalise_origin,
 )
 from synapse_channel.a2a_push import PushDeliverer, deliver_push_notification, http_push_deliverer
+from synapse_channel.a2a_push_delivery import (
+    DEFAULT_PUSH_RETRY_DELAYS_SECONDS,
+    Clock,
+    PushDeliveryResult,
+    Sleeper,
+    validate_retry_delays,
+)
 from synapse_channel.a2a_rpc import dispatch_json_rpc
 from synapse_channel.a2a_scenario_responses import (
     ScenarioKind,
@@ -213,6 +220,9 @@ class A2ABridge:
         store: A2ATaskStore | None = None,
         submit: Callable[..., Any] | None = None,
         push_deliverer: PushDeliverer | None = None,
+        push_retry_delays_seconds: Sequence[float] = DEFAULT_PUSH_RETRY_DELAYS_SECONDS,
+        push_sleep: Sleeper = time.sleep,
+        push_clock: Clock = time.time,
         auth_token: str | None = None,
         allowed_origins: Sequence[str] = (),
         allowed_authorities: Sequence[str] | None = None,
@@ -225,6 +235,9 @@ class A2ABridge:
         self.store = store or A2ATaskStore()
         self._submit = submit
         self._push_deliverer = push_deliverer or http_push_deliverer
+        self._push_retry_delays_seconds = validate_retry_delays(push_retry_delays_seconds)
+        self._push_sleep = push_sleep
+        self._push_clock = push_clock
         self.auth_token = auth_token
         # Normalised once here so the per-request check is a plain membership
         # test and the HTTP edge never re-implements origin comparison rules.
@@ -519,9 +532,17 @@ class A2ABridge:
         self._deliver_push_notification(task=task, config=stored)
         return stored
 
-    def _deliver_push_notification(self, *, task: JsonMap, config: JsonMap) -> None:
-        """Deliver one task update to a configured push-notification webhook."""
-        deliver_push_notification(task=task, config=config, push_deliverer=self._push_deliverer)
+    def _deliver_push_notification(self, *, task: JsonMap, config: JsonMap) -> PushDeliveryResult:
+        """Deliver one task update and durably record its sanitized result."""
+        return deliver_push_notification(
+            task=task,
+            config=config,
+            push_deliverer=self._push_deliverer,
+            record_attempt=self.store.record_push_delivery_attempt,
+            retry_delays_seconds=self._push_retry_delays_seconds,
+            sleep=self._push_sleep,
+            clock=self._push_clock,
+        )
 
     def _deliver_push_notifications(self, task: JsonMap) -> None:
         """Deliver one task update to every stored push config for the task."""
@@ -763,6 +784,11 @@ class A2ABridge:
         """Return all push notification configs for ``task_id``."""
         self._gc_retained_tasks()
         return {"pushNotificationConfigs": self.store.list_push_configs(task_id)}
+
+    def list_push_notification_deliveries(self, task_id: str) -> JsonMap:
+        """Return durable, credential-free delivery attempts for ``task_id``."""
+        self._gc_retained_tasks()
+        return {"pushNotificationDeliveries": self.store.list_push_delivery_attempts(task_id)}
 
     def get_push_notification_config(self, task_id: str, config_id: str) -> JsonMap | None:
         """Return one push notification config."""

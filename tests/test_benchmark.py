@@ -306,6 +306,8 @@ def test_a2a_benchmark_profile_reports_operations() -> None:
     assert summary["correlation"]["tasks_per_sec"] > 0
     assert summary["listing"]["tasks"] == 8
     assert summary["push_delivery"]["deliveries"] == 8
+    assert summary["push_delivery"]["evidence_records"] == 8
+    assert summary["push_delivery"]["terminal_successes"] == 8
     assert summary["subscriber_fanout"]["events"] == 3
     assert summary["correlated_replies"] == 8
 

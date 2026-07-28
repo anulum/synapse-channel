@@ -981,10 +981,13 @@ intentionally **local-first HTTP+JSON bridge**:
 - Serves the public Agent Card; forwards `POST /message:send` text/data/file
   parts into SYNAPSE chat; supports immediate `POST /message:stream`
   Server-Sent Events; exposes bridge-local task list/get/cancel and
-  push-notification configuration routes; accepts JSON-RPC 2.0 on `/rpc`.
+  push-notification configuration routes; exposes authenticated task-scoped,
+  credential-free push-delivery evidence; accepts JSON-RPC 2.0 on `/rpc`.
 - Operational bounds: Bearer auth plus request size/depth limits, durable task
   state with `--state-file`, stale-task failure with `--task-timeout`, one
-  bounded subscription wait with `--subscribe-timeout`.
+  bounded subscription wait with `--subscribe-timeout`, plus a fixed bounded
+  three-attempt webhook retry schedule whose exhaustion dead-letters delivery
+  without rewriting the stored task transition.
 - Bearer custody: prefer owner-only `--a2a-token-file PATH` on serving and
   outbound commands. Explicit `--a2a-token` remains a process-visible
   compatibility override. Outbound clients refuse bearer-over-HTTP except to a
@@ -1541,11 +1544,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.15 |
 | Public API exports | 70 |
-| Package modules | 524 |
-| Classes | 772 |
+| Package modules | 525 |
+| Classes | 776 |
 | Wire message types | 80 |
 | CLI subcommands | 183 |
-| Test functions | 9071 |
+| Test functions | 9098 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 61 |
 | GitHub Actions workflows | 25 |

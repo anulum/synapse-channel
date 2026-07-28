@@ -15,6 +15,7 @@ import pytest
 
 from a2a_server_helpers import HandlerHarness, RecordingAgent
 from synapse_channel.a2a_errors import A2AStoreError
+from synapse_channel.a2a_push_delivery import PushDeliveryAttempt, PushDeliveryState
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
@@ -603,3 +604,67 @@ def test_delete_route_requires_authorization() -> None:
 
     assert status == HTTPStatus.UNAUTHORIZED
     assert body["title"] == "Unauthorized"
+
+
+def test_push_delivery_evidence_route_is_authenticated_and_task_scoped() -> None:
+    """The real HTTP read surface exposes only sanitized durable evidence."""
+    store = A2ATaskStore()
+    bridge = A2ABridge(
+        agent=RecordingAgent(),
+        agent_card={},
+        target="WORKER",
+        store=store,
+        auth_token="secret",
+    )
+    task = bridge.create_completed_task(
+        {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hello"}]},
+        target="WORKER",
+    )
+    store.record_push_delivery_attempt(
+        PushDeliveryAttempt(
+            task_id=str(task["id"]),
+            config_id="cfg-a",
+            delivery_id="delivery-a",
+            attempt=1,
+            state=PushDeliveryState.SUCCEEDED,
+            occurred_at=10.0,
+            retry_window_seconds=1.25,
+        )
+    )
+    path = f"/tasks/{task['id']}/pushNotificationDeliveries"
+    unauthorized = HandlerHarness("GET", path)
+    unauthorized.handler.bridge = bridge
+    authorized = HandlerHarness(
+        "GET",
+        path,
+        headers={"Authorization": "Bearer secret"},
+    )
+    authorized.handler.bridge = bridge
+    missing = HandlerHarness(
+        "GET",
+        "/tasks/missing/pushNotificationDeliveries",
+        headers={"Authorization": "Bearer secret"},
+    )
+    missing.handler.bridge = bridge
+
+    unauthorized_status, _ = unauthorized.run()
+    status, body = authorized.run()
+    missing_status, missing_body = missing.run()
+
+    assert unauthorized_status == HTTPStatus.UNAUTHORIZED
+    assert status == HTTPStatus.OK
+    assert body == {
+        "pushNotificationDeliveries": [
+            {
+                "taskId": task["id"],
+                "configId": "cfg-a",
+                "deliveryId": "delivery-a",
+                "attempt": 1,
+                "state": "succeeded",
+                "occurredAt": 10.0,
+                "retryWindowSeconds": 1.25,
+            }
+        ]
+    }
+    assert missing_status == HTTPStatus.NOT_FOUND
+    assert missing_body["detail"] == "Unknown task: missing"

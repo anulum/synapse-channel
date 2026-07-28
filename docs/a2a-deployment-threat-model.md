@@ -42,7 +42,7 @@ Out of scope:
 | A2A bearer token | Protects task, RPC, extended-card, and push-config routes. | Put it in an owner-only file and enable `--bearer-auth --a2a-token-file PATH` with native HTTPS (`--tls-certfile` / `--tls-keyfile`) or a loopback bind behind a TLS-terminating proxy. Explicit `--a2a-token` wins but is process-visible. Use `--insecure-off-loopback` only when accepting cleartext serving traffic. |
 | Hub token | Lets the bridge connect to a secured Synapse hub. | Pass with `--token`; do not expose it through proxy logs or shell history. |
 | Task payloads and artifacts | May carry operator or agent data. | Keep bridge state local, bounded, and owner-readable only. |
-| A2A state file | Persists task and push-config state across restart. | Store it on a local trusted filesystem; rely on owner-only temp/state writes. |
+| A2A state file | Persists task, push-config, and credential-free push-attempt state across restart. | Store it on a local trusted filesystem; rely on owner-only temp/state writes. |
 | Webhook URLs and headers | Control bridge egress to external receivers. | Treat them as egress policy inputs; keep SSRF checks enabled. |
 | Access logs and validation receipts | Prove deployment behavior but can reveal metadata. | Record route, status, timing, and decision; avoid payload and token logging. |
 
@@ -54,7 +54,7 @@ Out of scope:
 | Outbound A2A client -> peer | The two shipped clients buffer and parse peer-controlled HTTP responses, then may persist receipts containing task/message data. | Each response is capped at one MiB, decoded with a 64-level nesting guard and 4,096-member cumulative shape ceiling, and reduced to value-free kinds on malformed/wrong-shape failures. Receipt files are written owner-only and atomically. | Use HTTPS for remote peers. These controls do not provide certificate pinning or outbound client-certificate identity. |
 | A2A gRPC client -> bridge | The optional listener can submit messages and read tasks. | `--grpc-port` is absent by default. When enabled, the CLI composes its shared bearer, native TLS/mTLS files, concurrency ceiling, one-MiB message bounds, bounded JSON parser, finite deadline ceiling, and stable errors into gRPC. | Supply the bearer and a deadline from every client. Use native TLS/mTLS or an explicitly configured gRPC-capable TLS proxy for exposure; the shared bearer is not per-client identity. |
 | Bridge -> Synapse hub | Bridge forwards task text/data/file parts into Synapse chat. | Bridge uses the configured hub URI and optional hub token. | Point the bridge only at the intended hub and target. |
-| Bridge -> webhook receiver | A client can configure outbound webhook targets. | Delivery resolves each target once and pins the connection to that validated address (no re-resolve between check and connect), admits only globally routable destinations, and applies the same policy to redirects. Authenticated 301/302/303, cross-origin sensitive 307/308, every HTTPS downgrade, and chains beyond five redirects fail closed before the next request. | Permit only receiver domains that match the deployment policy; use HTTPS for every authenticated initial URL; review redirects. |
+| Bridge -> webhook receiver | A client can configure outbound webhook targets. | Delivery resolves each target once and pins the connection to that validated address (no re-resolve between check and connect), admits only globally routable destinations, and applies the same policy to redirects. Authenticated 301/302/303, cross-origin sensitive 307/308, every HTTPS downgrade, and chains beyond five redirects fail closed before the next request. Expected failures follow a fixed three-attempt 0.25/1-second retry schedule and end in a separate durable dead letter. | Permit only receiver domains that match the deployment policy; use HTTPS for every authenticated initial URL; review redirects and the authenticated delivery-evidence route. |
 | Bridge -> local filesystem | State persistence can leak task metadata if permissions are loose. | A2A state and temp files are owner-only and writes replace atomically. | Place `--state-file` on a trusted local disk, not a shared web root. |
 | Bridge logs -> operators | Logs can leak bearer tokens or task payloads. | The stdlib handler suppresses default access logging. | If a proxy logs requests, redact `Authorization` and avoid body logging. |
 
@@ -181,12 +181,31 @@ Initial authenticated `http://` webhook URLs are not yet refused by the bridge,
 which is a separate residual transport policy. Configure authenticated receiver
 URLs with HTTPS.
 
+## Delivery Outcome Custody
+
+The bridge stores a valid task transition before attempting webhook delivery.
+Expected timeout, URL, and operating-system failures therefore cannot roll the
+task back or convert its A2A status. Delivery uses at most three attempts:
+immediately, after 0.25 seconds, and after one additional second. Each attempt
+retains the transport's separate five-second timeout.
+
+With `--state-file`, each attempt is atomically persisted using only a
+per-update delivery id, task/config ids, attempt number, value-free failure
+class, retry delay/time and the
+1.25-second retry-delay window, followed by `succeeded` or `dead-lettered`.
+Webhook URL, headers, payload, authentication material, and exception text are
+excluded. Protected readers can inspect the local evidence at
+`GET /tasks/{id}/pushNotificationDeliveries` or JSON-RPC
+`tasks/pushNotificationDelivery/list`. This proves bridge-local attempt truth;
+it is not an externally signed receiver acknowledgement, cross-replica outbox,
+or exactly-once guarantee.
+
 ## Route Policy
 
 | Route class | Public without bearer auth | Protected posture |
 | --- | --- | --- |
 | Agent Card discovery | Acceptable when the card contains only intended public metadata. | Keep endpoint URLs and documentation links accurate. |
-| Task, RPC, extended-card, and push-config routes | No. | Require `--bearer-auth --a2a-token-file PATH`; compare bearer values through the bridge path. The argv form is process-visible compatibility only. |
+| Task, RPC, extended-card, push-config, and push-delivery evidence routes | No. | Require `--bearer-auth --a2a-token-file PATH`; compare bearer values through the bridge path. The argv form is process-visible compatibility only. |
 | Streaming and subscription routes | No. | Keep `--subscribe-timeout` bounded so one client cannot hold a worker indefinitely. |
 | Push delivery | No inbound route by itself, but push config creates egress. | Keep webhook SSRF and redirect validation enabled; review receiver domains. |
 
@@ -208,6 +227,7 @@ URLs with HTTPS.
 | Reverse proxy strips the `Authorization` header. | Protected routes fail authentication at the bridge. |
 | A hostile web page in the operator's browser calls the loopback bridge (DNS rebinding / drive-by). | With `--allow-origin` configured, an unlisted or opaque `Origin` is refused `403 Forbidden`; a missing `Origin` still requires the exact advertised Host, so a rebound hostile authority is also refused. |
 | Bridge restarts with open tasks. | Persisted non-terminal tasks recover as failed according to the local state policy. |
+| Webhook stays unavailable through all attempts. | The already-valid task state remains unchanged; the bridge records bounded retry evidence followed by a terminal delivery dead letter with no credential or exception text. |
 
 ## Logging And Receipts
 
@@ -241,5 +261,7 @@ public receipts.
   event stream.
 - Public webhook receiver behavior still needs a real deployment receipt behind
   production TLS and proxy infrastructure.
+- Push evidence is bridge-local at-least-once attempt history. It is not a
+  transactional cross-replica outbox or receiver-signed acknowledgement.
 - Independent A2A clients/servers still need interoperability traces before any
   broader conformance claim.

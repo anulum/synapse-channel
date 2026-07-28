@@ -147,6 +147,13 @@ def profile(
         for events in received
         if any(event["task"]["status"]["state"] == "TASK_STATE_COMPLETED" for event in events)
     )
+    push_evidence = [
+        attempt
+        for task in tasks
+        for attempt in bridge.list_push_notification_deliveries(str(task["id"]))[
+            "pushNotificationDeliveries"
+        ]
+    ]
 
     return {
         "host": host_profile(),
@@ -168,6 +175,10 @@ def profile(
         "push_delivery": {
             "deliveries": len(push_deliveries),
             "deliveries_per_sec": _rate(len(push_deliveries), correlation_seconds),
+            "evidence_records": len(push_evidence),
+            "terminal_successes": sum(
+                attempt.get("state") == "succeeded" for attempt in push_evidence
+            ),
         },
         "subscriber_fanout": {
             "seconds": fanout_seconds,
@@ -214,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"task creation tasks/s: {summary['task_creation']['tasks_per_sec']:.0f}")
     print(f"correlation tasks/s: {summary['correlation']['tasks_per_sec']:.0f}")
     print(f"push deliveries: {summary['push_delivery']['deliveries']}")
+    print(f"push evidence records: {summary['push_delivery']['evidence_records']}")
     print(f"subscriber fanout events: {summary['subscriber_fanout']['events']}")
     return 0
 
