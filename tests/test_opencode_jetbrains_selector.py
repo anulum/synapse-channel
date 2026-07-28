@@ -401,6 +401,7 @@ def test_agent_selector_opens_only_from_the_pinned_project_frame(
 
     assert open_agent_selector("123", deadline=float("inf")) == "selector-for-123"
     assert actions == [
+        ("key", "ctrl+alt+shift+j"),
         ("key", "ctrl+alt+shift+k"),
     ]
     assert focused == [("123", float("inf"))]

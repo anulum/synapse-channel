@@ -166,6 +166,12 @@ def open_agent_selector(
             )
         x11._focus_window_for_input(window, deadline=deadline)
         x11._checked_xdotool(
+            "show the AI Assistant tool window before agent selection",
+            "key",
+            "ctrl+alt+shift+j",
+            deadline=deadline,
+        )
+        x11._checked_xdotool(
             "invoke the pinned JetBrains agent selector action",
             "key",
             "ctrl+alt+shift+k",
