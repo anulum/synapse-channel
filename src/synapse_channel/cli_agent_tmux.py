@@ -104,6 +104,14 @@ def _cmd_agent_tmux(
         _print_status(snapshot)
         return 0 if snapshot.session_exists and snapshot.agent_active else 1
     if args.agent_tmux_command == "wait":
+        start_result = starter(config)
+        if start_result.returncode != 0:
+            _print_wake_result(start_result)
+            return start_result.returncode
+        snapshot = status_runner(config)
+        if not snapshot.session_exists or not snapshot.agent_active:
+            _print_status(snapshot)
+            return 1
         return waiter(config, max_wakes=args.max_wakes, max_wait_failures=args.max_wait_failures)
     print("agent-tmux requires a subcommand")
     return 2
@@ -186,7 +194,9 @@ def register_parsers(
     _common(status_parser)
     status_parser.set_defaults(func=_cmd_agent_tmux)
 
-    wait = nested.add_parser("wait", help="Wait on Synapse, then wake the tmux agent pane.")
+    wait = nested.add_parser(
+        "wait", help="Start and verify the tmux agent pane, then wait on Synapse to wake it."
+    )
     _common(wait)
     wait.add_argument(
         "--max-wakes",
@@ -211,7 +221,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     register_parsers(
         subparsers,
         command_name="agent-tmux",
-        command_help="Wake an existing terminal-agent tmux session from Synapse messages.",
+        command_help="Keep a terminal-agent tmux session wakeable from Synapse messages.",
         command_flag="--agent-command",
         command_default="codex",
         command_flag_help=(

@@ -15,6 +15,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Make `agent-tmux wait` start or verify its configured provider session and
+  require an active agent pane before advertising `pane_bridge`, so a missing
+  downstream tmux target fails closed instead of accepting unwakeable messages.
 - Resolve the arm service's machine identity through a hardened-namespace-safe
   relative XDG data path, so pinned receivers present their existing proof
   instead of degrading to unsigned reconnect loops.

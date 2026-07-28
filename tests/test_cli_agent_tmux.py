@@ -121,12 +121,29 @@ def test_cmd_status_dispatches(capsys: Any, tmp_path: Path) -> None:
     assert "agent pane: active" in out
 
 
-def test_cmd_wait_dispatches(tmp_path: Path) -> None:
+def test_cmd_wait_starts_and_verifies_before_registering(tmp_path: Path) -> None:
     captured: dict[str, Any] = {}
+    calls: list[str] = []
+
+    def starter(config: AgentTmuxConfig) -> AgentTmuxWakeResult:
+        calls.append("start")
+        return AgentTmuxWakeResult(injected=False, started=True, returncode=0, detail="started")
+
+    def status_runner(config: AgentTmuxConfig) -> AgentTmuxStatus:
+        calls.append("status")
+        return AgentTmuxStatus(
+            identity=config.identity,
+            session=config.session,
+            session_exists=True,
+            pane_command="kimi",
+            pane_start_command="kimi",
+            agent_active=True,
+        )
 
     def waiter(
         config: AgentTmuxConfig, *, max_wakes: int | None, max_wait_failures: int | None
     ) -> int:
+        calls.append("wait")
         captured["config"] = config
         captured["max_wakes"] = max_wakes
         captured["max_wait_failures"] = max_wait_failures
@@ -147,10 +164,149 @@ def test_cmd_wait_dispatches(tmp_path: Path) -> None:
         token=None,
     )
 
-    assert cli_agent_tmux._cmd_agent_tmux(ns, waiter=waiter) == 0
+    assert (
+        cli_agent_tmux._cmd_agent_tmux(
+            ns, starter=starter, status_runner=status_runner, waiter=waiter
+        )
+        == 0
+    )
+    assert calls == ["start", "status", "wait"]
     assert captured["config"].agent_command == ("kimi",)
     assert captured["max_wakes"] == 3
     assert captured["max_wait_failures"] == 5
+
+
+def test_cmd_wait_fails_before_registration_when_start_fails(capsys: Any, tmp_path: Path) -> None:
+    def starter(config: AgentTmuxConfig) -> AgentTmuxWakeResult:
+        return AgentTmuxWakeResult(
+            injected=False,
+            started=False,
+            returncode=9,
+            detail=f"could not start {config.session}",
+        )
+
+    def unreachable(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("status and waiter must not run after start failure")
+
+    ns = argparse.Namespace(
+        agent_tmux_command="wait",
+        identity="user/terminal-1135378",
+        session="synapse-user_terminal-1135378",
+        cwd=tmp_path,
+        agent_command="kimi",
+        tmux_bin="tmux",
+        synapse_bin="synapse",
+        uri="ws://localhost:8876",
+        submit_delay=0.4,
+        max_wakes=3,
+        max_wait_failures=5,
+        token=None,
+    )
+
+    assert (
+        cli_agent_tmux._cmd_agent_tmux(
+            ns, starter=starter, status_runner=unreachable, waiter=unreachable
+        )
+        == 9
+    )
+    assert "could not start" in capsys.readouterr().out
+
+
+def test_cmd_wait_fails_before_registration_when_agent_pane_is_inactive(
+    capsys: Any, tmp_path: Path
+) -> None:
+    calls: list[str] = []
+
+    def starter(config: AgentTmuxConfig) -> AgentTmuxWakeResult:
+        calls.append("start")
+        return AgentTmuxWakeResult(
+            injected=False, started=False, returncode=0, detail="already exists"
+        )
+
+    def status_runner(config: AgentTmuxConfig) -> AgentTmuxStatus:
+        calls.append("status")
+        return AgentTmuxStatus(
+            identity=config.identity,
+            session=config.session,
+            session_exists=True,
+            pane_command="bash",
+            pane_start_command="bash",
+            agent_active=False,
+        )
+
+    def waiter(*args: Any, **kwargs: Any) -> int:
+        raise AssertionError("waiter must not register an inactive pane bridge")
+
+    ns = argparse.Namespace(
+        agent_tmux_command="wait",
+        identity="user/terminal-1135378",
+        session="synapse-user_terminal-1135378",
+        cwd=tmp_path,
+        agent_command="kimi",
+        tmux_bin="tmux",
+        synapse_bin="synapse",
+        uri="ws://localhost:8876",
+        submit_delay=0.4,
+        max_wakes=3,
+        max_wait_failures=5,
+        token=None,
+    )
+
+    assert (
+        cli_agent_tmux._cmd_agent_tmux(
+            ns, starter=starter, status_runner=status_runner, waiter=waiter
+        )
+        == 1
+    )
+    assert calls == ["start", "status"]
+    out = capsys.readouterr().out
+    assert "tmux session: online" in out
+    assert "agent pane: inactive" in out
+
+
+def test_cmd_wait_fails_before_registration_when_started_session_disappears(
+    capsys: Any, tmp_path: Path
+) -> None:
+    def starter(config: AgentTmuxConfig) -> AgentTmuxWakeResult:
+        return AgentTmuxWakeResult(injected=False, started=True, returncode=0, detail="started")
+
+    def status_runner(config: AgentTmuxConfig) -> AgentTmuxStatus:
+        return AgentTmuxStatus(
+            identity=config.identity,
+            session=config.session,
+            session_exists=False,
+            pane_command=None,
+            pane_start_command=None,
+            agent_active=False,
+        )
+
+    def waiter(*args: Any, **kwargs: Any) -> int:
+        raise AssertionError("waiter must not register a missing pane bridge")
+
+    ns = argparse.Namespace(
+        agent_tmux_command="wait",
+        identity="user/terminal-1135378",
+        session="synapse-user_terminal-1135378",
+        cwd=tmp_path,
+        agent_command="kimi",
+        tmux_bin="tmux",
+        synapse_bin="synapse",
+        uri="ws://localhost:8876",
+        submit_delay=0.4,
+        max_wakes=3,
+        max_wait_failures=5,
+        token=None,
+    )
+
+    assert (
+        cli_agent_tmux._cmd_agent_tmux(
+            ns, starter=starter, status_runner=status_runner, waiter=waiter
+        )
+        == 1
+    )
+    out = capsys.readouterr().out
+    assert "tmux session: missing" in out
+    assert "agent pane: inactive" in out
 
 
 def test_cmd_wake_dispatches(capsys: Any, tmp_path: Path) -> None:

@@ -8,11 +8,11 @@
 
 ``synapse agent-tmux`` bridges a Synapse wake to a terminal coding agent by typing
 a fixed prompt into the agent's tmux pane. The unit suite exercises the module
-with an injected command runner; this journey instead starts a real throwaway tmux
-session, runs ``start``/``status``/``wake`` as the packaged CLI against it, and
-captures the pane to prove the fixed, payload-free prompt actually lands. ``codex``
-is never launched — a harmless ``cat`` pane stands in — so no provider CLI is
-needed. The whole file skips when ``tmux`` is not installed.
+with an injected command runner; this journey instead starts real throwaway tmux
+sessions, runs ``start``/``status``/``wake`` and the supervised ``wait`` boundary
+as the packaged CLI, and captures the pane to prove the fixed, payload-free prompt
+actually lands. ``codex`` is never launched — a harmless ``cat`` pane stands in —
+so no provider CLI is needed. The whole file skips when ``tmux`` is not installed.
 """
 
 from __future__ import annotations
@@ -136,6 +136,42 @@ def test_agent_tmux_status_reports_a_missing_session() -> None:
         # A missing session is a health failure, so status exits non-zero.
         assert not health.ok(), health.output
         assert "missing" in health.stdout
+
+
+def test_agent_tmux_wait_starts_and_verifies_a_missing_provider(tmp_path: Path) -> None:
+    """``wait`` establishes its provider before it can register with the hub."""
+    with _throwaway_session() as session:
+        waited = run_cli(
+            "agent-tmux",
+            "wait",
+            "--identity",
+            _IDENTITY,
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            _HARMLESS_COMMAND,
+            "--max-wakes",
+            "0",
+        )
+        assert waited.ok(), waited.output
+
+        health = run_cli(
+            "agent-tmux",
+            "status",
+            "--identity",
+            _IDENTITY,
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            _HARMLESS_COMMAND,
+        )
+        assert health.ok(), health.output
+        assert "tmux session: online" in health.stdout
+        assert "agent pane: active" in health.stdout
 
 
 def test_codex_tmux_alias_injects_the_same_fixed_prompt(tmp_path: Path) -> None:
