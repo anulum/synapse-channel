@@ -415,6 +415,7 @@ def test_required_parentage_distinguishes_disappeared_xwininfo_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Treat the exact BadDrawable/No-such-window pair as a retryable race."""
+    monkeypatch.setattr(jetbrains_x11_driver, "_required_tool", lambda name: name)
     monkeypatch.setattr(
         subprocess,
         "run",
