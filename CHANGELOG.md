@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.15] - 2026-07-28
+
 ### Fixed
 
 - Commit journal-backed keyed claim, task-update, release, handoff, checkpoint,
