@@ -21,6 +21,9 @@ All notable changes to this project are documented here.
   activation/deactivation boundaries while preserving the complete CLI surface.
 - Attach a container release manifest, SPDX image SBOM, checksums, and portable
   build-provenance/SBOM attestation bundles to each published release image.
+- Publish and continuously validate one machine-readable effective-policy
+  contract across all nine externally reachable transport families without
+  replacing the immutable hub configuration API.
 
 ### Security
 

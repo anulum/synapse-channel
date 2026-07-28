@@ -293,6 +293,33 @@ worth stating plainly:
   the manifest's `ghcr.io/anulum/synapse-channel@sha256:...` reference wherever
   immutable deployment identity matters.
 
+### External transport effective-policy contract
+
+Every shipped external edge is enumerated by one read-only evidence projection:
+
+```bash
+python tools/audit_external_transport_policy.py --check
+python tools/audit_external_transport_policy.py --json
+```
+
+The versioned JSON contract covers `websocket`, `hub-http`, `a2a-http`,
+`a2a-grpc`, `dashboard`, `metrics`, `webhook`, `mcp`, and `federation`. Every
+row explicitly states activation, identity, auth/ACL, encryption, exposure,
+request size, response size, timeout/concurrency, and sanitized-error posture,
+then cites the exact production symbols that enforce that statement. CI resolves
+every evidence reference and fails when an edge or control dimension becomes
+implicit. Behavioural tests separately bind the declared limits and composition
+paths to the immutable `HubConfig`, real listener constructors, and transport
+constants—including the shared A2A HTTP/gRPC bearer, TLS/mTLS, size,
+concurrency, and deadline selection.
+
+This contract is deliberately not configuration or authority. It cannot start
+a listener, hold a token, grant a role, or weaken a runtime guard, and it does
+not claim that unlike transports have identical controls. An explicit
+transport-specific boundary—such as local MCP stdio framing, dashboard HTTP
+behind a TLS proxy, or the absence of a second WebSocket response cap—remains
+visible in its row instead of being mislabeled as inherited security.
+
 [`synapse hub --team-secure`](docs/team-secure.md) is the multi-seat trust
 preset: it requires a connect token, an identity trust bundle with binding
 enforced, a role-grant store with role-claim enforcement, and private directed
