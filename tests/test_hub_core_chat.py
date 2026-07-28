@@ -344,15 +344,17 @@ async def test_chat_with_a_non_numeric_timestamp_is_stamped_not_crashed_end_to_e
     assert math.isfinite(frame["timestamp"])
 
 
-async def test_chat_with_an_overflowing_numeric_timestamp_is_stamped_finite_end_to_end() -> None:
-    # ``1e400`` is a valid JSON number literal that decodes to ``inf`` (bypassing the
-    # bareword-constant guard in loads_bounded), so the handler must coerce it to a
-    # finite instant rather than broadcasting and journalling a non-finite timestamp.
+async def test_chat_rejects_an_overflowing_numeric_timestamp_and_keeps_the_socket() -> None:
+    """Exponent overflow is malformed JSON and must not poison the bound session."""
     async with running_hub() as (_, uri):
         async with connect(uri) as websocket:
             await read_until_type(websocket, "welcome")
+            await websocket.send(json.dumps({"sender": "A", "type": "heartbeat"}))
             raw_frame = '{"sender": "A", "type": "chat", "payload": "y", "timestamp": 1e400}'
             await websocket.send(raw_frame)
+            error = await read_until_type(websocket, "error")
+            assert error["payload"] == "Malformed JSON."
+            await websocket.send(json.dumps({"sender": "A", "type": "chat", "payload": "y"}))
             frame = await read_until_type(websocket, "chat")
     assert frame["payload"] == "y"
     assert isinstance(frame["timestamp"], (int, float))

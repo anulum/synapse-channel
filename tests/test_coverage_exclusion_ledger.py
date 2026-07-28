@@ -109,6 +109,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/_portable_exec.py": (1, "platform-guard"),
     "tests/fixtures/opencode/process.py": (2, "optional-dep-guard"),
     "tests/test_a2a_grpc.py": (1, "optional-dep-guard"),
+    "tests/test_a2a_grpc_security_profiles.py": (1, "optional-dep-guard"),
+    "tests/test_a2a_outbound_response.py": (2, "platform-guard"),
     "tests/test_a2a_store.py": (3, "platform-guard"),
     "tests/test_read_owner_only_file_bytes.py": (3, "platform-guard"),
     "tests/test_analysis_sqlcipher_readers.py": (1, "optional-dep-guard"),

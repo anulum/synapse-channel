@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Keep strict rejection of exponent-overflow JSON while proving bound hub
+  sessions remain usable after the error; restore the complete A2A HTTP
+  compatibility re-export, ledger the new platform/optional skips, and retry
+  the exact JetBrains X11 `BadDrawable` disappearing-window race.
 - Generate and ship the permanent `synapse arm install` user-service template
   with `Restart=always`, matching the documented contract so systemd re-arms
   the exact-identity mailbox waiter after both clean and non-zero exits.

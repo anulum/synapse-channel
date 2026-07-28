@@ -27,6 +27,9 @@ from synapse_channel.core.http_authority import (
 from synapse_channel.core.http_authority import (
     normalise_origin as normalise_origin,
 )
+from synapse_channel.core.http_authority import (
+    normalise_url_origin as normalise_url_origin,
+)
 
 HTTP_JSON_MEDIA_TYPE: Final = "application/json"
 """Normative response media type for the A2A HTTP+JSON binding."""

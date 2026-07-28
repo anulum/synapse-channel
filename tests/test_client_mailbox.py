@@ -203,8 +203,21 @@ class TestReplayAckAndCursor:
 
             async with connect(uri) as recipient_ws:
                 await read_until_type(recipient_ws, "welcome")
+                await recipient_ws.send(json.dumps({"sender": "RECIPIENT", "type": "heartbeat"}))
                 await recipient_ws.send(
                     '{"sender":"RECIPIENT","type":"heartbeat","mailbox":true,"since_seq":1e400}'
+                )
+                error = await read_until_type(recipient_ws, "error")
+                assert error["payload"] == "Malformed JSON."
+                await recipient_ws.send(
+                    json.dumps(
+                        {
+                            "sender": "RECIPIENT",
+                            "type": "heartbeat",
+                            "mailbox": True,
+                            "since_seq": 0,
+                        }
+                    )
                 )
                 replayed = await read_until_type(recipient_ws, "chat")
 

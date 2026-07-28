@@ -43,6 +43,13 @@ _X11_BAD_WINDOW_METADATA = (
     re.compile(r"  Serial number of failed request:  [0-9]+"),
     re.compile(r"  Current serial number in output stream:  [0-9]+"),
 )
+_XWININFO_BAD_DRAWABLE = re.compile(
+    r"X Error: 9: Bad Drawable\n"
+    r"  Request Major code: 14\n"
+    r"  ResourceID in failed request: 0x[0-9A-Fa-f]+\n"
+    r"  Serial number of failed request: [0-9]+\n"
+    r"(?:.*/)?xwininfo: error: No such window with id 0x[0-9A-Fa-f]+\.\n?\Z"
+)
 
 
 class X11WindowDisappeared(RuntimeError):
@@ -69,6 +76,15 @@ def _is_disappearing_window_result(result: subprocess.CompletedProcess[str]) -> 
             return False
         matched_metadata.update(matches)
     return True
+
+
+def _is_disappearing_xwininfo_result(result: subprocess.CompletedProcess[str]) -> bool:
+    """Recognize the bounded ``BadDrawable`` race from a vanished X11 window."""
+    return (
+        result.returncode == 1
+        and not result.stdout.strip()
+        and _XWININFO_BAD_DRAWABLE.fullmatch(result.stderr) is not None
+    )
 
 
 def _required_xid(token: str, *, diagnostic: str) -> int:
@@ -232,6 +248,8 @@ def _required_window_is_root_child(
         check=False,
         timeout=_command_timeout(deadline),
     )
+    if _is_disappearing_xwininfo_result(completed):
+        raise X11WindowDisappeared(window)
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
         raise RuntimeError(f"xwininfo could not classify X11 window {window}: {detail}")

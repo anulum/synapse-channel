@@ -74,31 +74,33 @@ async def test_history_request_variants_end_to_end() -> None:
             await close_agents(alpha)
 
 
-async def test_history_request_survives_an_overflowing_numeric_limit() -> None:
-    # A JSON ``1e400`` decodes to float('inf') on the hub; ``int(inf)`` raises
-    # OverflowError, which the handler must catch so a malformed limit degrades to the
-    # full history instead of dropping the requester's socket.
+async def test_history_request_rejects_overflow_and_keeps_the_socket() -> None:
+    """Reject exponent overflow, then serve a valid request on the same socket."""
     async with running_hub() as (_hub, uri):
         async with connect(uri) as ws:
             await read_until_type(ws, "welcome")
             await send_json(ws, sender="ALPHA", type="chat", target="all", payload="x")
             await read_until_type(ws, "chat")
             await ws.send('{"sender": "ALPHA", "type": "history_request", "limit": 1e400}')
+            error = await read_until_type(ws, "error")
+            assert error["payload"] == "Malformed JSON."
+            await send_json(ws, sender="ALPHA", type="history_request")
             snap = await read_until_type(ws, "history_snapshot")
     assert snap["requested_limit"] == "all"
     assert len(snap["history"]) == 1
 
 
-async def test_resume_request_survives_an_overflowing_since_cursor() -> None:
-    # The same ``1e400`` → inf hazard on the resume ``since`` cursor: an uncaught
-    # OverflowError would drop the socket; instead ``since`` degrades to ``0`` and every
-    # message after the reset is returned.
+async def test_resume_request_rejects_overflow_and_keeps_the_socket() -> None:
+    """Reject an overflowing cursor, then accept the explicit reset cursor."""
     async with running_hub() as (_hub, uri):
         async with connect(uri) as ws:
             await read_until_type(ws, "welcome")
             await send_json(ws, sender="ALPHA", type="chat", target="all", payload="x")
             await read_until_type(ws, "chat")
             await ws.send('{"sender": "ALPHA", "type": "resume_request", "since": 1e400}')
+            error = await read_until_type(ws, "error")
+            assert error["payload"] == "Malformed JSON."
+            await send_json(ws, sender="ALPHA", type="resume_request", since=0)
             snap = await read_until_type(ws, "resume_snapshot")
     assert snap["since"] == 0
     assert len(snap["messages"]) == 1

@@ -260,9 +260,8 @@ async def test_channel_history_defaults_an_unparsable_limit() -> None:
             assert history["retention"] == {"max_messages": _hub.max_history}
 
 
-async def test_channel_history_defaults_an_overflowing_limit() -> None:
-    """A JSON ``1e400`` limit decodes to inf; ``int(inf)`` raises OverflowError, which the
-    handler must catch so the request degrades to the default rather than dropping the socket."""
+async def test_channel_history_rejects_an_overflowing_limit_and_keeps_the_socket() -> None:
+    """Exponent overflow is malformed JSON; a later valid request must still work."""
     async with running_hub(SynapseHub()) as (_hub, uri):
         async with connect(uri) as alpha:
             await _bind(alpha, "ALPHA")
@@ -272,6 +271,14 @@ async def test_channel_history_defaults_an_overflowing_limit() -> None:
             await alpha.send(
                 '{"sender": "ALPHA", "type": "channel_history_request",'
                 ' "channel": "c", "limit": 1e400}'
+            )
+            error = await read_until_type(alpha, "error")
+            assert error["payload"] == "Malformed JSON."
+            await send_json(
+                alpha,
+                sender="ALPHA",
+                type="channel_history_request",
+                channel="c",
             )
             history = await read_until_type(alpha, "channel_history")
             assert [m.get("payload") for m in history.get("messages", [])] == ["one"]

@@ -411,6 +411,29 @@ def test_required_window_name_distinguishes_disappeared_window(
         jetbrains_x11_driver._required_window_name("4195085")
 
 
+def test_required_parentage_distinguishes_disappeared_xwininfo_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Treat the exact BadDrawable/No-such-window pair as a retryable race."""
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [],
+            1,
+            "",
+            "X Error: 9: Bad Drawable\n"
+            "  Request Major code: 14\n"
+            "  ResourceID in failed request: 0x20030a\n"
+            "  Serial number of failed request: 3\n"
+            "/usr/bin/xwininfo: error: No such window with id 0x20030a.\n",
+        ),
+    )
+
+    with pytest.raises(jetbrains_x11_driver.X11WindowDisappeared):
+        jetbrains_x11_driver._required_window_is_root_child("2097930")
+
+
 @pytest.mark.parametrize(
     "opcode",
     [
