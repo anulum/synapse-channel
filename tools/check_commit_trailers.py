@@ -49,6 +49,15 @@ HISTORY_EXEMPTIONS = {
     "5d3803154a8abe5a335997d5be8e173fb99b22b9": (
         "dependabot squash-merge (#48 fast-uri 3.1.4, CVE-2026-16221), authored by dependabot[bot]"
     ),
+    "46928a4fcc0b3bde92b8fa730ba2ba17de722de0": (
+        "dependabot squash-merge (#50 cockpit-minor-patch), authored by dependabot[bot]"
+    ),
+    "c5ff0ec0d5f471335814e6549e92759a820f7b23": (
+        "dependabot squash-merge (#52 actions-minor-patch), authored by dependabot[bot]"
+    ),
+    "cea5ef2a7ca947471ff5300ef0d1a72686833662": (
+        "dependabot squash-merge (#53 github-app-minor-patch), authored by dependabot[bot]"
+    ),
 }
 SEAT_PREFIX_RE = re.compile(r"^\s*Seat:")
 SEAT_TRAILER_RE = re.compile(r"^Seat:\s+([A-Za-z0-9][A-Za-z0-9_-]{0,63})\s*$")
