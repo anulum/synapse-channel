@@ -192,11 +192,14 @@ def find_owned_window(
     """Return the sole strong Zed frame owned by the launched process group."""
     if process_group <= 1 or not project_name:
         raise ValueError("Zed window ownership requires a valid process group and project name")
+    saw_selector_disagreement = False
     while time.monotonic() < deadline:
         class_windows = _search_window_ids(_CLASS_SELECTOR, deadline=deadline)
         instance_windows = _search_window_ids(_INSTANCE_SELECTOR, deadline=deadline)
         if set(class_windows) != set(instance_windows):
-            raise RuntimeError("Zed class and instance selectors disagreed")
+            saw_selector_disagreement = True
+            bounded_sleep(deadline, _POLL_INTERVAL_SECONDS)
+            continue
         if len(class_windows) > 1:
             raise RuntimeError(f"Zed exposed multiple strong window candidates: {class_windows!r}")
         if class_windows:
@@ -209,4 +212,6 @@ def find_owned_window(
                 raise RuntimeError("Zed window was not owned by the launched process group")
             return window
         bounded_sleep(deadline, _POLL_INTERVAL_SECONDS)
+    if saw_selector_disagreement:
+        raise RuntimeError("Zed class and instance selectors disagreed")
     raise RuntimeError("Zed did not expose an owned visible window")

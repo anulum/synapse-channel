@@ -297,7 +297,6 @@ def test_window_search_uses_the_exact_selector_and_deadline(
 @pytest.mark.parametrize(
     ("class_windows", "instance_windows", "message"),
     [
-        (("123",), (), "selectors disagreed"),
         (("123", "456"), ("123", "456"), "multiple strong window candidates"),
     ],
 )
@@ -316,6 +315,50 @@ def test_owned_window_rejects_selector_ambiguity(
     )
     with pytest.raises(RuntimeError, match=message):
         zed_x11.find_owned_window(1.0, process_group=77, project_name="project")
+
+
+def test_owned_window_retries_transient_selector_disagreement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = iter((("123",), (), ("123",), ("123",)))
+    sleeps: list[tuple[float, float]] = []
+    monkeypatch.setattr(time, "monotonic", lambda: 0.0)
+    monkeypatch.setattr(
+        zed_x11,
+        "_search_window_ids",
+        lambda *_args, **_kwargs: next(outputs),
+    )
+    monkeypatch.setattr(
+        zed_x11,
+        "bounded_sleep",
+        lambda deadline, seconds: sleeps.append((deadline, seconds)),
+    )
+    monkeypatch.setattr(
+        zed_x11,
+        "_required_window_title",
+        lambda *_args, **_kwargs: "project",
+    )
+    monkeypatch.setattr(zed_x11, "_required_window_pid", lambda *_args, **_kwargs: 42)
+    monkeypatch.setattr(zed_x11, "_required_process_group", lambda _pid: 77)
+
+    assert zed_x11.find_owned_window(1.0, process_group=77, project_name="project") == "123"
+    assert sleeps == [(1.0, 0.25)]
+
+
+def test_owned_window_rejects_persistent_selector_disagreement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = iter((0.0, 0.0, 1.0))
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(
+        zed_x11,
+        "_search_window_ids",
+        lambda selector, **_kwargs: ("123",) if selector == zed_x11._CLASS_SELECTOR else (),
+    )
+    monkeypatch.setattr(zed_x11, "bounded_sleep", lambda *_args: None)
+
+    with pytest.raises(RuntimeError, match="selectors disagreed"):
+        zed_x11.find_owned_window(0.5, process_group=77, project_name="project")
 
 
 def test_owned_window_rejects_wrong_title_or_process_group(
