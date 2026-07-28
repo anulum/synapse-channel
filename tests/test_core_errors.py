@@ -331,6 +331,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "semantic_enforcement",
         RuntimeError,
     ),
+    "_SemanticGitReadError": (
+        "synapse_channel.git.semantic_diff",
+        "semantic_git_read",
+        ValueError,
+    ),
     "SetupReceiptIntegrityError": (
         "synapse_channel.dashboard_setup_receipts",
         "setup_receipt_integrity",

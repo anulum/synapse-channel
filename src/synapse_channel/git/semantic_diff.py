@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.git.semantic_scope import semantic_scope_path
 from synapse_channel.git.semantic_tree_sitter import (
     Declaration,
@@ -102,8 +103,10 @@ class SemanticDiffRecord:
     reason: str
 
 
-class _SemanticGitReadError(ValueError):
+class _SemanticGitReadError(SynapseError, ValueError):
     """Git could not provide bounded, trustworthy semantic evidence."""
+
+    code = "semantic_git_read"
 
 
 def _git_environment(git: str) -> dict[str, str]:
