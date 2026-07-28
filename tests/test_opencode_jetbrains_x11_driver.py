@@ -411,6 +411,30 @@ def test_required_window_name_distinguishes_disappeared_window(
         jetbrains_x11_driver._required_window_name("4195085")
 
 
+def test_required_transient_owner_distinguishes_disappeared_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Expose canonical xprop BadWindow separately from transport failure."""
+    monkeypatch.setattr(jetbrains_x11_driver, "_required_tool", lambda name: name)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [],
+            1,
+            "",
+            "X Error of failed request:  BadWindow (invalid Window parameter)\n"
+            "  Major opcode of failed request:  20 (X_GetProperty)\n"
+            "  Resource id in failed request:  0x200357\n"
+            "  Serial number of failed request:  13\n"
+            "  Current serial number in output stream:  13\n",
+        ),
+    )
+
+    with pytest.raises(jetbrains_x11_driver.X11WindowDisappeared):
+        jetbrains_x11_driver._required_window_transient_for("2098007")
+
+
 def test_required_parentage_distinguishes_disappeared_xwininfo_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

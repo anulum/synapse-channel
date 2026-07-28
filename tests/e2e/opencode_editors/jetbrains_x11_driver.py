@@ -330,6 +330,8 @@ def _required_window_transient_for(
         check=False,
         timeout=_command_timeout(deadline),
     )
+    if _is_disappearing_window_result(completed):
+        raise X11WindowDisappeared(window)
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
         raise RuntimeError(f"xprop could not classify X11 window {window}: {detail}")
