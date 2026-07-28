@@ -45,13 +45,14 @@ failure modes appear immediately:
 - **Lost handoffs** — an agent finishes, but the next one never learns it is
   clear to start, or starts against stale state.
 
-SYNAPSE CHANNEL removes these at the source. A **file-scope claim refuses an
-overlap before two agents edit the same file** — mutual exclusion is enforced at
-claim time, not patched up after a conflict. A **shared blackboard** of declared
-tasks with dependencies means an agent can see what is taken and what its work
-unblocks. **Atomic handoff** and a **durable per-agent inbox** mean a finished
-unit of work reaches the next agent even if it was offline when the message was
-sent.
+SYNAPSE CHANNEL addresses these through explicit coordination. A **file-scope
+claim refuses a second overlapping live authority request**; covered provider
+hooks and the staged Git gate separately enforce only their documented mutation
+boundaries, while isolated worktrees remain the physical boundary for direct
+working-tree edits. A **shared blackboard** of declared tasks with dependencies
+means an agent can see what is taken and what its work unblocks. **Atomic
+handoff** and a **durable per-agent inbox** mean a finished unit of work reaches
+the next agent even if it was offline when the message was sent.
 
 ## What you build on it
 
@@ -59,8 +60,9 @@ SYNAPSE CHANNEL is a substrate, so the applications are as broad as "more than
 one agent that must not step on the others." In practice teams reach for it when:
 
 - **A fleet of coding agents works one repository in parallel** — Claude Code,
-  Codex, Cursor, Aider, and headless workers share one plan and stay off each
-  other's files.
+  Codex, Cursor, Aider, and headless workers share one plan, declare disjoint
+  scopes, and use covered hooks or isolated worktrees where edit enforcement is
+  required.
 - **An agent ecosystem spans many repositories** — agents in separate projects
   address each other across process and repository boundaries and coordinate one
   plan, rather than each running blind.

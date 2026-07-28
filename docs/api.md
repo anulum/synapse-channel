@@ -39,7 +39,7 @@ async def main() -> None:
     if not await agent.wait_until_ready():
         raise RuntimeError("could not reach the hub — is `synapse hub` running?")
 
-    # A file-scope claim refuses an overlap before two agents edit the same file.
+    # The hub refuses a request that overlaps another live file-scope claim.
     await agent.claim("refactor-parser", note="splitting the tokenizer", paths=["src/parser"])
     await agent.save_checkpoint("refactor-parser", "step=2")
     await agent.update_task("refactor-parser", status="working")

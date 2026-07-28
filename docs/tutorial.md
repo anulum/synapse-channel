@@ -67,9 +67,10 @@ Claude Desktop) connects through `synapse mcp` with no new code — see the
 
 ## Step 4 — drive it from Python
 
-To coordinate from your own code, the client is a few `async` calls. The one
-guarantee from Step 2 — a claim refuses an overlap before two agents edit the
-same file — is one method:
+To coordinate from your own code, the client is a few `async` calls. The
+claim-time guarantee from Step 2 — a request overlapping another live claim is
+refused — is one method; edit enforcement remains a separate hook, staged-index,
+or worktree boundary:
 
 ```python
 import asyncio

@@ -13,9 +13,10 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # SYNAPSE CHANNEL for VS Code and Cursor
 
-Coordinate people and coding agents before their edits collide. The extension
-connects an editor to a SYNAPSE CHANNEL hub, shows current ownership, and keeps
-claim and release operations beside the code they protect.
+See declared work before editing. The extension connects an editor to a SYNAPSE
+CHANNEL hub, shows current claim ownership, and keeps claim and release
+operations beside the code whose live authority they coordinate. It does not
+turn editor visibility into filesystem isolation.
 
 Version 0.3.0 is an experimental preview. Packaging produces an official
 `vsce` archive for registry submission and a payload-equivalent, deterministic

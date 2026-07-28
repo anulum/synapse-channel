@@ -2,14 +2,16 @@
 
 **The local-first coordination bus for fleets of AI agents.**
 
-*Flagship example: stop parallel AI coding agents from clobbering each other's
-files — a file-scope claim refuses the overlap before two agents edit the same file.*
+*Flagship example: coordinate parallel AI coding agents through declared file
+scopes — the hub refuses a second overlapping live claim, while covered provider
+hooks and the staged Git gate enforce only their documented mutation boundaries.*
 
 A local-first coordination bus for a fleet of AI agents working in parallel —
 within one codebase or across a whole ecosystem of them. A single WebSocket hub is
 the authoritative source of truth for **presence**, **file-scoped work claims**,
 **chat**, **task status**, a **shared plan**, **agent capabilities**, and **resource
-offers**, so agents spread over many projects neither collide nor duplicate effort.
+offers**, so agents spread over many projects can see conflicting or duplicate
+declared work before acting.
 
 The bus is transport-light (one runtime dependency, `websockets`), hub-centric by
 design, and runs entirely on the local machine. Model workers reply on-channel

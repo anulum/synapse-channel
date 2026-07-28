@@ -18,7 +18,7 @@ everything, since they need the whole command table.
 | `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |
 | `synapse demo` | Run the real Claude/Codex claim → conflict refusal → mutation denial → handoff → verified receipt path and write JSON plus a static dashboard (`--output DIR` selects the destination). |
 | `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression; `--trend STORE.db` accumulates runs and renders per-metric sparkline trends (`--ascii` for a printable-ASCII trend block); `--alert` gates the run statistically against its own same-context history, exit `1` on drift. |
-| `synapse quickstart-coding` | Create a coding-fleet workspace, run the no-collision demo, and print a success marker. |
+| `synapse quickstart-coding` | Create a coding-fleet workspace, run the live overlapping-claim refusal demo, and print a success marker. |
 | `synapse fleet-init` | Empty machine to working fleet in one command: doctor (`--fix`), persistent workspace scaffold, provider-seat probe, demo smoke, and a printed next-steps plan. |
 | `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
 | `synapse health` | Probe the hub; exit `0` if reachable, `1` if not (wired as a container healthcheck). |
@@ -195,8 +195,8 @@ successful when it prints:
 success: coding fleet demo completed
 ```
 
-For a generated workspace with editable files and a runnable no-collision coding
-scenario:
+For a generated workspace with editable files and a runnable overlapping-claim
+refusal scenario:
 
 ```bash
 synapse new coding-fleet ./demo-fleet
@@ -218,10 +218,10 @@ synapse fleet-init my-fleet --seat claude --seat codex   # plan exactly these se
 It runs the real `doctor` (a failing report is a printed remedy, not an abort),
 scaffolds a persistent workspace (refused when non-empty unless `--force`),
 probes every registered provider CLI without taking a turn, runs the packaged
-no-collision demo (`--no-smoke` to skip), and prints a next-steps plan — waiter
-arming, per-provider `worker-session` seat commands, `git-init`, dashboard —
-with the workspace's project name filled in. It starts no daemon and adds
-nothing the bundled commands do not already do.
+live overlapping-claim refusal demo (`--no-smoke` to skip), and prints a
+next-steps plan — waiter arming, per-provider `worker-session` seat commands,
+`git-init`, dashboard — with the workspace's project name filled in. It starts
+no daemon and adds nothing the bundled commands do not already do.
 
 ## Fastest safe trial path
 

@@ -43,8 +43,8 @@ Open the HTML file to see the seven steps, conflict refusal, handoff, and
 receipt in the same dashboard projection operators use.
 
 `synapse quickstart-coding` creates a temporary workspace, runs the coding-agent
-no-collision demo, removes that temporary workspace after success, and succeeds
-when it prints:
+live overlapping-claim refusal demo, removes that temporary workspace after
+success, and succeeds when it prints:
 
 ```text
 success: coding fleet demo completed

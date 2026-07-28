@@ -105,25 +105,33 @@ def test_file_scope_docs_describe_literal_prefix_overlap_not_glob() -> None:
 def test_provider_claim_wording_stays_within_enforced_boundaries() -> None:
     """Public guidance must not turn scoped authority into sandbox claims."""
     public_paths = (
+        "ARCHITECTURE.md",
         "CHANGELOG.md",
         "README.md",
         "TEAM_PROTOCOL.md",
+        "clients/vscode/README.md",
         "docs/agent-air-traffic-control.md",
+        "docs/api.md",
         "docs/claim-guard-hooks.md",
+        "docs/cli.md",
+        "docs/comparison.md",
         "docs/coordination-model.md",
         "docs/examples.md",
         "docs/faq.md",
         "docs/glossary.md",
+        "docs/index.md",
         "docs/multi-hub-sync.md",
         "docs/quickstart.md",
         "docs/recipes.md",
         "docs/tutorial.md",
         "docs/use-cases.md",
+        "docs/why-synapse.md",
         "examples/README.md",
         "notebooks/getting-started.ipynb",
+        "src/synapse_channel/coding_fleet_template.py",
         "src/synapse_channel/git/gitinit.py",
     )
-    combined = _single_spaced("\n".join(_read_repo_text(path) for path in public_paths))
+    combined = _single_spaced("\n".join(_read_repo_text(path) for path in public_paths)).casefold()
 
     forbidden = (
         "parallel agents never edit the same files",
@@ -135,8 +143,41 @@ def test_provider_claim_wording_stays_within_enforced_boundaries() -> None:
         "working sets never intersect",
         "file-scope claims never overlap on disk",
         "keep the agents in any one repository off each other's files",
+        "stop parallel ai coding agents from clobbering",
+        "before two agents edit the same file",
+        "neither collide nor duplicate effort",
+        "without colliding",
+        "without editing the same file",
+        "without clobbering each other",
+        "stay off each other's files",
+        "before agents collide",
     )
     assert not any(claim in combined for claim in forbidden)
+
+    readme = _single_spaced(_read_repo_text("README.md"))
+    cli = _single_spaced(_read_repo_text("docs/cli.md"))
+    comparison = _single_spaced(_read_repo_text("docs/comparison.md"))
+    index = _single_spaced(_read_repo_text("docs/index.md"))
+    quickstart = _single_spaced(_read_repo_text("docs/quickstart.md"))
+    current_claim_surfaces = " ".join((readme, cli, comparison, index, quickstart)).casefold()
+    absolute_claims = (
+        "no-collision",
+        "collision-free editing",
+        "before the second agent edits",
+    )
+    assert not any(claim in current_claim_surfaces for claim in absolute_claims)
+
+    generated_demo = _single_spaced(_read_repo_text("src/synapse_channel/coding_fleet_template.py"))
+    generated_guide = _single_spaced(_read_repo_text("src/synapse_channel/git/gitinit.py"))
+    assert "covered provider hooks and the staged Git gate enforce only" in readme
+    assert "Live claim admission" in readme
+    assert "This refusal governs claim admission" in readme
+    assert "live overlapping-claim refusal demo" in cli
+    assert "File-scope work claims (live overlap refusal)" in comparison
+    assert "covered provider hooks and the staged Git gate enforce only" in index
+    assert "live overlapping-claim refusal demo" in quickstart
+    assert "A claim alone does not block direct working-tree edits" in generated_demo
+    assert "a claim alone does not block direct" in generated_guide
 
     guard_contract = _single_spaced(_read_repo_text("docs/claim-guard-hooks.md"))
     assert "provider hooks cover only the native tools and host behaviours" in guard_contract

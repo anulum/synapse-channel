@@ -19,7 +19,7 @@ SYNAPSE CHANNEL — repository overview
 </p>
 
 <p align="center">
-  <em>Flagship example:</em> stop parallel AI coding agents from clobbering each other's files — a file-scope claim refuses the overlap <em>before</em> two agents edit the same file.
+  <em>Flagship example:</em> coordinate parallel AI coding agents through declared file scopes — the hub refuses a second overlapping live claim, while covered provider hooks and the staged Git gate enforce only their documented mutation boundaries.
 </p>
 
 <p align="center">
@@ -102,7 +102,7 @@ python -m pip install synapse-channel && synapse demo
 
 Synapse's daily promise is three explicit loops:
 
-- **Coordinate** before agents collide: `synapse git-init`, `synapse git-claim`,
+- **Coordinate** declared work and surface collisions: `synapse git-init`, `synapse git-claim`,
   `synapse git-claim-check --staged`, `synapse task`, and `syn ack` turn work
   scope, dependencies, and evidence into shared state instead of side-channel
   notes.
@@ -321,8 +321,8 @@ success: coordination demo completed
 ```
 
 `synapse quickstart-coding` creates a temporary coding-fleet workspace, runs the
-same no-collision coding demo used by generated workspaces, removes the temporary
-workspace after success, and prints:
+same live overlapping-claim refusal demo used by generated workspaces, removes
+the temporary workspace after success, and prints:
 
 ```text
 success: coding fleet demo completed
@@ -536,7 +536,7 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   the staged Git gate providing a separate commit-time check.
 
   ```bash
-  synapse quickstart-coding                    # optional: run a temporary no-collision coding demo
+  synapse quickstart-coding                    # optional: run a temporary overlapping-claim refusal demo
   synapse new coding-fleet ./demo-fleet        # optional: keep the generated workspace
   synapse git-init --name aider-1              # one step: install the hooks + write the conventions guide
   synapse git-claim --task-id AUTH --paths src/auth --name aider-1
@@ -1442,10 +1442,11 @@ deferring the collision to merge time. What they do not give you:
 - **Work deduplication** — two agents in two worktrees can happily build the
   same feature twice; a claimed task on the shared board cannot be claimed
   again while its lease is live.
-- **Real-time conflict refusal** — inside one worktree (the common case for a
-  shared checkout), the hub refuses an overlapping file-scope claim *before*
-  the second agent edits, instead of surfacing the damage as a merge conflict
-  hours later.
+- **Live claim admission** — inside one worktree (the common case for a shared
+  checkout), the hub refuses a second overlapping file-scope claim while the
+  first authority is live. This refusal governs claim admission; covered
+  provider hooks, the staged Git gate, and isolated worktrees supply their
+  separately documented mutation boundaries.
 - **Visibility** — presence, live claims, a task board with dependencies, and
   progress you can query, instead of discovering what each agent did from its
   branch diff.

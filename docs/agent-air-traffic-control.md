@@ -10,9 +10,9 @@ Contact: www.anulum.li | protoscience@anulum.li
 # Agent Air Traffic Control architecture
 
 Agent Air Traffic Control (ATC) is the umbrella that names what Synapse's shipped
-parts already do together: keep many autonomous agents working in one repository
-or a whole ecosystem without colliding, and make every coordination decision
-inspectable after the fact. It is an architecture, not a new component — the
+parts already do together: give autonomous agents in one repository or a whole
+ecosystem shared declared-work state, surface possible collisions, and make every
+coordination decision inspectable after the fact. It is an architecture, not a new component — the
 controller is the composition of the hub, claims, evidence, and read-side
 reports, not a separate orchestrator that agents must obey.
 

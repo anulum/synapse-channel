@@ -14,7 +14,7 @@ SYNAPSE CHANNEL is a local-first coordination bus for several agents working in
 parallel on one codebase or one ecosystem of repositories. A single WebSocket
 hub is the authoritative source of truth for presence, work claims, chat, task
 status, the shared plan, agent capabilities, and resource offers, so concurrent
-workers neither collide nor duplicate effort. Around that core the package has
+workers can see conflicting or duplicate declared work. Around that core the package has
 grown deliberate layers — durable messaging, identity and ownership, federation
 between hubs, interop bridges, and operator surfaces — each opt-in where it can
 be, and each degrading with a stated warning when its optional dependency is

@@ -45,8 +45,10 @@ def _scaffold_body(*, name: str, base_branch: str) -> str:
     return (
         f"{SCAFFOLD_MARKER}\n"
         "# Claim-aware git in this repository\n\n"
-        "Several agents can edit this repo at once without clobbering each other by\n"
-        "declaring a file-scope claim before they start and releasing it on merge.\n"
+        "Several agents can coordinate declared work in this repository by\n"
+        "claiming a file scope before they start and releasing it on merge. The hub\n"
+        "refuses overlapping live authority; a claim alone does not block direct\n"
+        "working-tree edits, so use covered hooks or isolated worktrees for that.\n"
         "`synapse git-init` set this up; the conventions below keep it frictionless.\n\n"
         "## Branch naming\n\n"
         f"Branch one claim per unit of work off `{base_branch}`:\n\n"

@@ -35,7 +35,7 @@ agent, SYNAPSE keeps a fleet of them off each other's work.
 | Primary job | define & run one agent / crew's control flow | coordinate many independent agents (and humans) |
 | Boundary | within one process | across processes, terminals, and repositories |
 | Owns agent reasoning / prompts | yes | no — it carries no model logic of its own |
-| File-scope work claims (collision-free editing) | not the focus | core — overlapping claims are refused |
+| File-scope work claims (live overlap refusal) | not the focus | core — overlapping live claims are refused; edit enforcement is separate |
 | Cross-process presence & directory | not the focus | core (`who`, group globs, project identities) |
 | Shared task plan with dependencies | varies | core (the blackboard; done unblocks dependents) |
 | Event-driven wakeups (no polling) | varies | core (`wait`, the directed-only waiter) |
@@ -52,7 +52,7 @@ comparison slogan.
 
 | Difference | What SYNAPSE does | Local verification surface |
 | --- | --- | --- |
-| File-scope claims | Refuses overlapping task claims before two agents edit the same declared files. | `synapse lock TASK --paths src/example.py -- ...` or the claim conflict tests in `tests/test_hub_core_claims.py`. |
+| File-scope claims | Refuses a task-claim request that overlaps another live authority scope; edit enforcement is a separate boundary. | `synapse lock TASK --paths src/example.py -- ...` or the claim conflict tests in `tests/test_hub_core_claims.py`. |
 | Claim-aware Git hooks | Installs client-side hooks that release branch-scoped claims after commit or merge. | `synapse git-init --name AGENT`, then `synapse git-hook test`. |
 | Durable event log | Replays accepted coordination mutations from a SQLite WAL-backed store after hub restart. | `synapse hub --db ./synapse.db`, plus the journal and persistence tests. |
 | Metrics and health endpoints | Exposes opt-in operational metrics and health JSON without enabling HTTP by default. | `synapse hub --metrics --metrics-token TOKEN`, then query `/metrics` or `/health`. |
