@@ -666,6 +666,13 @@ the whole file. `python tools/semantic_diff_claims.py --base main --claim-args`
 exposes the same diff-only planning surface. Add `--semantic-evidence-json
 semantic-evidence.json` to either selector or diff claims to write receipt-ready
 local evidence; no parser download or hub-side Git access occurs.
+The local Git evidence boundary is non-interactive and bounded to ten seconds,
+eight MiB of stdout, and 64 KiB of stderr per command. It disables pagers,
+external diff, and textconv; sanitizes failure text; and terminates an isolated
+child on timeout, overflow, or pipe-reader failure. Repository-configured
+filesystem monitors are explicitly disabled. A known file with unavailable safe
+patch/blob evidence widens to whole-file scope, while unavailable file
+enumeration denies the operation.
 
 Claim paths are coordination scopes, not filesystem reads. Normal relative paths
 such as `src/auth.py` stay narrow. Absolute paths and any path containing `..`

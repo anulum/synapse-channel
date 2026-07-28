@@ -159,6 +159,14 @@ widens to the whole file. Optional `--diff-head`, repeatable `--diff-path`, and
 No parser is downloaded at runtime; the hub still stores only canonical paths
 and branch metadata.
 
+The client obtains that Git evidence through a bounded, non-interactive local
+process: ten-second deadline, eight-MiB stdout and 64-KiB stderr ceilings,
+isolated terminate/kill teardown, restricted environment, and no pager,
+external diff, textconv, or repository-configured filesystem monitor. Error text
+is terminal-safe. A pipe-reader failure or failure before file enumeration
+denies the operation; unsafe evidence for an already known file widens that file
+to whole-file scope.
+
 Those symbol paths participate in the complete local enforcement chain.
 Precise provider edit tools may provisionally use a symbol claim for its source
 only when the exact worktree/branch has no competing semantic owner; full-file

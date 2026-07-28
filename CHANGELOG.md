@@ -25,6 +25,13 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Bound semantic Git evidence commands to a ten-second deadline, eight MiB of
+  stdout, 64 KiB of stderr, isolated child-process teardown, and a minimal
+  non-interactive environment. Diff reads disable external diff and textconv,
+  every read disables repository-configured filesystem monitors, source reads
+  stop after the semantic parser ceiling, diagnostics strip terminal controls,
+  pipe-reader failures deny partial evidence, and unsafe per-file evidence
+  widens to a whole-file claim.
 - Bound file-claim wording to overlapping-grant refusal, documented provider
   hook coverage, and the staged Git index gate; unsupported writers, host
   fail-open behaviour, exfiltration, and external side effects remain explicit

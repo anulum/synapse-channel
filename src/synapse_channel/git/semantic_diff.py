@@ -23,10 +23,14 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import signal
 import subprocess  # nosec B404
+import threading
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO
 
 from synapse_channel.git.semantic_scope import semantic_scope_path
 from synapse_channel.git.semantic_tree_sitter import (
@@ -40,6 +44,19 @@ from synapse_channel.git.semantic_tree_sitter import (
 
 MAX_SEMANTIC_SOURCE_BYTES = 2 * 1024 * 1024
 """Largest source side parsed for narrowing; larger files stay whole-file."""
+
+MAX_GIT_STDOUT_BYTES = 8 * 1024 * 1024
+"""Largest non-source Git evidence stream retained in memory."""
+
+MAX_GIT_STDERR_BYTES = 64 * 1024
+"""Largest Git diagnostic stream retained before the command is stopped."""
+
+GIT_READ_TIMEOUT_SECONDS = 10.0
+"""Hard deadline for one local semantic-evidence Git command."""
+
+_GIT_TERMINATE_GRACE_SECONDS = 0.5
+_GIT_PIPE_CHUNK_BYTES = 64 * 1024
+_MAX_GIT_ERROR_CHARS = 512
 
 _REGULAR_GIT_MODES = frozenset({b"100644", b"100755"})
 """Canonical non-executable and executable regular-file modes stored by Git."""
@@ -67,6 +84,7 @@ class ChangedFile:
     new_path: str
     old_ranges: tuple[LineRange, ...] = ()
     new_ranges: tuple[LineRange, ...] = ()
+    evidence_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -82,6 +100,107 @@ class SemanticDiffRecord:
     claim_paths: tuple[str, ...]
     narrowed: bool
     reason: str
+
+
+class _SemanticGitReadError(ValueError):
+    """Git could not provide bounded, trustworthy semantic evidence."""
+
+
+def _git_environment(git: str) -> dict[str, str]:
+    """Return the minimal deterministic environment for local Git reads."""
+    env = {
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_EXTERNAL_DIFF": "",
+        "GIT_LITERAL_PATHSPECS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_PAGER": "cat",
+        "GIT_TERMINAL_PROMPT": "0",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "NO_COLOR": "1",
+        "PAGER": "cat",
+        "PATH": str(Path(git).parent),
+        "TERM": "dumb",
+    }
+    for key in ("COMSPEC", "PATHEXT", "SYSTEMROOT", "TEMP", "TMP", "TMPDIR", "WINDIR"):
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    return env
+
+
+def _terminal_safe_detail(raw: bytes) -> str:
+    """Return one bounded printable line without terminal control characters."""
+    decoded = raw.decode("utf-8", errors="replace")
+    printable = "".join(character if character.isprintable() else " " for character in decoded)
+    detail = " ".join(printable.split())
+    if len(detail) > _MAX_GIT_ERROR_CHARS:
+        detail = f"{detail[:_MAX_GIT_ERROR_CHARS]}..."
+    return detail
+
+
+def _drain_git_pipe(
+    stream: BinaryIO,
+    output: bytearray,
+    *,
+    limit: int,
+    label: str,
+    overflow: threading.Event,
+    overflow_labels: list[str],
+    reader_errors: list[str],
+    overflow_lock: threading.Lock,
+) -> None:
+    """Drain one child pipe while retaining at most ``limit`` bytes."""
+    try:
+        while chunk := stream.read(_GIT_PIPE_CHUNK_BYTES):
+            room = limit - len(output)
+            if len(chunk) > room:
+                if room > 0:
+                    output.extend(chunk[:room])
+                with overflow_lock:
+                    if not overflow_labels:
+                        overflow_labels.append(label)
+                overflow.set()
+                return
+            output.extend(chunk)
+    except Exception:
+        with overflow_lock:
+            if label not in reader_errors:
+                reader_errors.append(label)
+        overflow.set()
+
+
+def _terminate_git_process(
+    process: subprocess.Popen[bytes],
+    *,
+    posix: bool = os.name != "nt",
+) -> None:
+    """Stop the isolated Git process, escalating once after a short grace."""
+    if process.poll() is not None:
+        return
+    try:
+        if posix:
+            os.killpg(process.pid, signal.SIGTERM)
+        else:
+            process.terminate()
+        process.wait(timeout=_GIT_TERMINATE_GRACE_SECONDS)
+        return
+    except (OSError, subprocess.TimeoutExpired):
+        if process.poll() is not None:
+            return
+    try:
+        if posix:
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+        process.wait(timeout=_GIT_TERMINATE_GRACE_SECONDS)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        if process.poll() is not None:
+            return
+        raise _SemanticGitReadError(
+            "git semantic diff failed: git command could not be terminated"
+        ) from exc
 
 
 def _symbols_for_ranges(
@@ -109,20 +228,113 @@ def _symbols_for_ranges(
     return tuple(dict.fromkeys(selected))
 
 
-def _git(repo_root: Path, args: Sequence[str]) -> bytes:
-    """Run a bounded local Git read and return stdout."""
+def _git(
+    repo_root: Path,
+    args: Sequence[str],
+    *,
+    max_stdout_bytes: int = MAX_GIT_STDOUT_BYTES,
+    allow_stdout_truncation: bool = False,
+) -> bytes:
+    """Run one local Git read with bounded streams, deadline, and teardown."""
     git = shutil.which("git")
     if git is None:
-        raise ValueError("git semantic diff failed: git is not installed or not on PATH")
-    result = subprocess.run(  # nosec B603
-        [git, "-C", str(repo_root), *args],
-        check=False,
-        capture_output=True,
+        raise _SemanticGitReadError("git semantic diff failed: git is not installed or not on PATH")
+    if max_stdout_bytes < 0:
+        raise ValueError("git semantic diff stdout limit must not be negative")
+    try:
+        process = subprocess.Popen(  # nosec B603
+            [
+                git,
+                "-c",
+                "core.fsmonitor=false",
+                "--no-pager",
+                "-C",
+                str(repo_root),
+                *args,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=_git_environment(git),
+            start_new_session=os.name != "nt",
+            creationflags=(
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
+            ),
+        )
+    except OSError as exc:
+        raise _SemanticGitReadError("git semantic diff failed: could not start git") from exc
+    if process.stdout is None or process.stderr is None:
+        _terminate_git_process(process)
+        raise _SemanticGitReadError("git semantic diff failed: git pipes were unavailable")
+    stdout = bytearray()
+    stderr = bytearray()
+    overflow = threading.Event()
+    overflow_labels: list[str] = []
+    reader_errors: list[str] = []
+    overflow_lock = threading.Lock()
+    readers = (
+        threading.Thread(
+            target=_drain_git_pipe,
+            args=(process.stdout, stdout),
+            kwargs={
+                "limit": max_stdout_bytes,
+                "label": "stdout",
+                "overflow": overflow,
+                "overflow_labels": overflow_labels,
+                "reader_errors": reader_errors,
+                "overflow_lock": overflow_lock,
+            },
+            daemon=True,
+        ),
+        threading.Thread(
+            target=_drain_git_pipe,
+            args=(process.stderr, stderr),
+            kwargs={
+                "limit": MAX_GIT_STDERR_BYTES,
+                "label": "stderr",
+                "overflow": overflow,
+                "overflow_labels": overflow_labels,
+                "reader_errors": reader_errors,
+                "overflow_lock": overflow_lock,
+            },
+            daemon=True,
+        ),
     )
-    if result.returncode:
-        detail = result.stderr.decode("utf-8", errors="replace").strip()
-        raise ValueError(f"git semantic diff failed: {detail or 'unknown git error'}")
-    return result.stdout
+    for reader in readers:
+        reader.start()
+    deadline = time.monotonic() + GIT_READ_TIMEOUT_SECONDS
+    timed_out = False
+    while process.poll() is None and not overflow.is_set():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            timed_out = True
+            break
+        overflow.wait(min(0.01, remaining))
+    if timed_out or overflow.is_set():
+        _terminate_git_process(process)
+    else:
+        process.wait(timeout=_GIT_TERMINATE_GRACE_SECONDS)
+    for reader in readers:
+        reader.join(timeout=_GIT_TERMINATE_GRACE_SECONDS)
+    if any(reader.is_alive() for reader in readers):
+        _terminate_git_process(process)
+        raise _SemanticGitReadError("git semantic diff failed: git output streams did not close")
+    if reader_errors:
+        raise _SemanticGitReadError(
+            f"git semantic diff failed: git {reader_errors[0]} stream read failed"
+        )
+    if timed_out:
+        raise _SemanticGitReadError("git semantic diff failed: git command timed out")
+    if overflow_labels:
+        if overflow_labels[0] == "stdout" and allow_stdout_truncation:
+            return bytes(stdout)
+        raise _SemanticGitReadError(
+            f"git semantic diff failed: git {overflow_labels[0]} exceeded its byte limit"
+        )
+    if process.returncode:
+        detail = _terminal_safe_detail(bytes(stderr))
+        raise _SemanticGitReadError(f"git semantic diff failed: {detail or 'unknown git error'}")
+    return bytes(stdout)
 
 
 def _diff_args(base: str, head: str | None, paths: Sequence[str]) -> list[str]:
@@ -147,7 +359,15 @@ def _changed_files(
         revision_args.insert(0, "--cached")
     raw = _git(
         repo_root,
-        ["diff", "--name-status", "-z", "--find-renames", *revision_args],
+        [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--name-status",
+            "-z",
+            "--find-renames",
+            *revision_args,
+        ],
     )
     fields = raw.rstrip(b"\0").split(b"\0") if raw else []
     changed: list[ChangedFile] = []
@@ -168,16 +388,28 @@ def _changed_files(
             patch_args = _diff_args(base, head, (new_path,))
             if cached:
                 patch_args.insert(0, "--cached")
-            patch = _git(
-                repo_root,
-                [
-                    "diff",
-                    "--no-ext-diff",
-                    "--no-color",
-                    "--unified=0",
-                    *patch_args,
-                ],
-            )
+            try:
+                patch = _git(
+                    repo_root,
+                    [
+                        "diff",
+                        "--no-ext-diff",
+                        "--no-textconv",
+                        "--no-color",
+                        "--unified=0",
+                        *patch_args,
+                    ],
+                )
+            except _SemanticGitReadError as exc:
+                changed.append(
+                    ChangedFile(
+                        code,
+                        old_path,
+                        new_path,
+                        evidence_error=str(exc),
+                    )
+                )
+                continue
             hunks = _HUNK.findall(patch)
             old_ranges = tuple(
                 LineRange(int(old), int(old_count or b"1"))
@@ -197,22 +429,33 @@ def _revision_source(repo_root: Path, revision: str, path: str) -> bytes:
     """Read one regular-file source from a Git revision."""
     listing = _git(repo_root, ["ls-tree", "-z", revision, "--", path])
     _require_regular_git_entry(listing, path=path, location=f"revision {revision}")
-    return _git(repo_root, ["show", f"{revision}:{path}"])
+    return _git(
+        repo_root,
+        ["cat-file", "blob", f"{revision}:{path}"],
+        max_stdout_bytes=MAX_SEMANTIC_SOURCE_BYTES + 1,
+        allow_stdout_truncation=True,
+    )
 
 
 def _working_source(repo_root: Path, path: str) -> bytes:
-    """Read one non-symlink regular file from the working tree."""
+    """Read one non-symlink regular file through the parser size ceiling."""
     source_path = repo_root / path
     if source_path.is_symlink() or not source_path.is_file():
         raise OSError(f"working-tree source is not a regular file: {path}")
-    return source_path.read_bytes()
+    with source_path.open("rb") as stream:
+        return stream.read(MAX_SEMANTIC_SOURCE_BYTES + 1)
 
 
 def _index_source(repo_root: Path, path: str) -> bytes:
     """Read one regular-file blob from the Git index."""
     listing = _git(repo_root, ["ls-files", "--stage", "-z", "--", path])
     _require_regular_git_entry(listing, path=path, location="index")
-    return _git(repo_root, ["show", f":{path}"])
+    return _git(
+        repo_root,
+        ["cat-file", "blob", f":{path}"],
+        max_stdout_bytes=MAX_SEMANTIC_SOURCE_BYTES + 1,
+        allow_stdout_truncation=True,
+    )
 
 
 def _require_regular_git_entry(raw: bytes, *, path: str, location: str) -> None:
@@ -266,6 +509,8 @@ def _narrow_modified(
         )
     except OSError:
         return _whole_file(changed, language, "source side is not a regular file")
+    except _SemanticGitReadError:
+        return _whole_file(changed, language, "safe Git source evidence is unavailable")
     if max(len(old_source), len(new_source)) > MAX_SEMANTIC_SOURCE_BYTES:
         return _whole_file(changed, language, "source exceeds semantic parser size ceiling")
     try:
@@ -352,6 +597,10 @@ def resolve_git_diff(
             records.append(_whole_file(changed, language, reason))
         elif language_entry is None:
             records.append(_whole_file(changed, None, "language is not supported for narrowing"))
+        elif changed.evidence_error is not None:
+            records.append(
+                _whole_file(changed, language_entry[0], "safe Git diff evidence is unavailable")
+            )
         elif not changed.old_ranges and not changed.new_ranges:
             records.append(_whole_file(changed, language_entry[0], "diff has no textual hunks"))
         else:

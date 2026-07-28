@@ -172,6 +172,16 @@ produce a whole-file claim. Owning tests and generated outputs also remain
 whole-file companions. This may block more work, but it cannot silently omit a
 known scope or miss a real conflict.
 
+Semantic Git reads are local and fail closed. Each command has a ten-second
+deadline, retains at most eight MiB of stdout and 64 KiB of stderr, runs without
+a pager, prompt, global/system configuration, external diff, or textconv, and
+explicitly disables any repository-configured filesystem monitor. It uses an
+isolated child process with terminate/kill escalation. Git blob and working-tree
+source reads stop after the two-MiB semantic source ceiling. Diagnostics are
+reduced to one bounded printable line. A pipe-reader failure or unavailable file
+enumeration denies the operation; if a known file's patch or blob cannot be
+obtained safely, that file widens to a whole-file claim.
+
 The hub receives only canonical path strings; `.synapse-symbol` is a reserved
 coordination segment, not a filesystem lookup or a new wire field. Evidence JSON
 records each narrowing or widening decision, but tree-sitter output is planning
