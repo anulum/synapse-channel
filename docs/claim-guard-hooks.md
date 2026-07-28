@@ -223,6 +223,15 @@ Do not describe these adapters as complete shell or operating-system isolation.
 For a stricter deployment, combine them with provider sandboxing and deny
 unneeded execution tools.
 
+The complete boundary is narrower than coordination authority: provider hooks
+cover only the native tools and host behaviours in the matrix above, and the
+staged Git check covers only the index at commit time. Unsupported, custom, MCP,
+or direct filesystem writers can alter the working tree outside those hooks;
+some hosts fail open when a hook crashes or times out. Neither layer prevents
+data exfiltration, network or service mutations, or other external side effects.
+Use process sandboxing, network policy, and isolated Git worktrees where those
+risks matter.
+
 ## Commit-time defense in depth
 
 Install the Git gate even when a native edit hook is active:

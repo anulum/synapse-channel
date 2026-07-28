@@ -13,8 +13,8 @@ Synapse today is single-hub authoritative: one hub owns presence, claims, the
 board, and the durable event log, and every agent talks to it. This research lane
 asks whether several hubs — across hosts or domains — could synchronise their
 coordination state while keeping the two invariants that make Synapse worth using:
-**claim safety** (two agents never edit the same file scope) and **local-first**
-(a hub stays correct and usable offline for the work it owns).
+**claim safety** (authoritative hubs do not grant overlapping live file scopes)
+and **local-first** (a hub stays correct and usable offline for the work it owns).
 
 The honest answer drives the whole design: most coordination state can be merged
 conflict-free, but **claims cannot** — granting a lease is mutual exclusion, the

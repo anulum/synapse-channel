@@ -28,7 +28,8 @@ no plan entry at all.
 
 An agent leases a task by id. The claim may declare a **file scope** — a
 `worktree` and a set of `paths`. The hub refuses a claim whose file scope
-overlaps another agent's live claim; agents in different worktrees never contend.
+overlaps another agent's live claim; claims with different canonical worktree
+identities do not contend at the hub.
 
 Git-aware clients retain those fields as human-readable displays and add a
 versioned `path_identity` derived locally from the canonical worktree, Git-index
@@ -234,8 +235,8 @@ manual TTL choices remain authoritative.
   with no release/re-claim window for a third agent to grab it. Scope, status,
   and checkpoint move with it. The move honours the same file-scope mutual
   exclusion as a direct claim: it is refused if the moved scope would collide
-  with a live claim held by an agent other than the recipient, so a handoff can
-  never leave two agents holding the same files.
+  with a live claim held by an agent other than the recipient, so the hub does
+  not grant overlapping ownership through handoff.
 - An **LLM-free supervisor** watches the plan and re-offers tasks that stall (no
   progress while in progress, or blocked with every dependency finished). Its
   in-progress rule keeps the fixed idle threshold as the operator ceiling and

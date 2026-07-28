@@ -32,8 +32,9 @@ can hold a strict lease on its behalf.
     ```
 
 2. **Claim your scope before you edit.** A claim leases a unit of work with a
-   file scope; the hub refuses any claim whose paths overlap a live one, so two
-   agents never edit the same files (`examples/coding_agents_demo.py` shows this):
+   file scope; the hub refuses any claim whose paths overlap a live one. This is
+   grant-time coordination, not a filesystem sandbox
+   (`examples/coding_agents_demo.py` shows the supported path):
 
     ```python
     import asyncio

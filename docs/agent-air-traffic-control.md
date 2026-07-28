@@ -25,10 +25,11 @@ coordination layer rather than a scheduler that owns the agents.
 Air traffic control here means five repeating steps, each backed by a shipped or
 designed Synapse surface:
 
-1. **Separation** — keep two agents off the same work. File-scope claims and
+1. **Separation** — refuse overlapping live work authority. File-scope claims and
    semantic claims lease a unit of work (paths, symbols, APIs, tests, generated
-   artefacts) with an epoch and a checkpoint, so a second agent is refused before
-   it edits. Symbol scopes are synthetic source-file descendants enforced by the
+   artefacts) with an epoch and a checkpoint, so a second conflicting claim is
+   refused. Supported provider hooks can separately deny covered edits before
+   mutation. Symbol scopes are synthetic source-file descendants enforced by the
    existing path ancestry rule; conservative tree-sitter Git-diff inference runs
    only on the client and widens incomplete evidence to the whole file.
    *(Shipped: `synapse git-claim`, semantic selectors and diff scopes, leases.)*

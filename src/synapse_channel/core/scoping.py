@@ -7,10 +7,10 @@
 # SYNAPSE_CHANNEL — file-scope overlap detection for work claims
 """Worktree- and path-scoped overlap detection for task claims.
 
-The bus's core promise is that two agents never silently edit the same files.
-A claim may declare *where* it works: a ``worktree`` label (agents in different
-git worktrees over a shared ``.git`` are isolated and never conflict) and a set
-of ``paths`` it intends to touch. This module decides, purely and
+The bus's scoped-authority promise is that one hub refuses overlapping live
+claims. A claim may declare *where* it works: a ``worktree`` label (isolated Git
+worktrees over a shared ``.git`` do not contend) and a set of ``paths`` it
+intends to touch. This module decides, purely and
 deterministically, whether two such scopes overlap.
 
 The overlap model is the precise file-ownership-decomposition case: each declared

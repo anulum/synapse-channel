@@ -29,7 +29,8 @@ so work does not stick on an idle claim.
 
 A lease an **agent** takes on a unit of work before doing it, carrying a **scope**, a
 **status**, an **epoch**, and an optional **checkpoint**. The **hub** refuses a claim whose
-**scope** overlaps a live one, so two agents never work the same files.
+**scope** overlaps a live one. Provider hooks and the staged Git check separately
+enforce that authority on their documented mutation surfaces.
 
 ### Lease
 

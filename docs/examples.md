@@ -47,8 +47,9 @@ backend otherwise, so it runs anywhere.
 ## `coding_agents_demo.py`
 
 The [parallel coding agents recipe](recipes.md) in code: two agents lease disjoint
-file scopes, the hub refuses the overlapping claim so they never touch the same
-file, and the first messages the second directly when the API is ready.
+file scopes, the hub refuses the overlapping claim, and the configured mutation
+guard denies an unclaimed edit before the first messages the second directly
+when the API is ready.
 
 Each demo exposes a `run_demo(port, ...)` coroutine that the test-suite drives, so
 the examples stay correct as the library evolves.

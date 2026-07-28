@@ -181,10 +181,12 @@ graph LR
     H --> LOG["Event log (SQLite WAL)<br/>durable · optional SQLCipher at rest"]
 ```
 
-A claim leases a unit of work with a file scope, so two agents never edit the
-same files; the plan, handoffs, checkpoints, and a stall supervisor keep the work
-moving; and the durable event log means a hub restart resumes live leases rather
-than losing them.
+A claim leases a declared unit of work with a file scope, so the hub refuses
+overlapping live claims. Provider hooks and the staged Git gate enforce that
+authority on their documented surfaces; they do not sandbox every filesystem or
+external side effect. Plans, handoffs, checkpoints, and a stall supervisor keep
+the work moving, and the durable event log means a hub restart resumes live
+leases rather than losing them.
 
 ## Core and Optional Layers
 
@@ -527,7 +529,9 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   guards, not complete Bash or filesystem isolation.
 
 - **Aider, or any non-MCP tool:** claim a file scope before editing and let a git
-  hook release it on commit, so two sessions never touch the same files.
+  hook release it on commit. The claim prevents conflicting grants; enforcement
+  of the tool's working-tree writes remains the operator's responsibility, with
+  the staged Git gate providing a separate commit-time check.
 
   ```bash
   synapse quickstart-coding                    # optional: run a temporary no-collision coding demo
@@ -1384,8 +1388,10 @@ changes the hub default and explicit manual TTL values still win.
 1. Claim before you work: an agent leases a task by id; a live lease blocks other
    agents from claiming the same task.
 2. Declare a file scope on the claim (a `worktree` and `paths`); the hub refuses a
-   claim whose files overlap another agent's live claim — this is how two agents
-   are kept off the same files. Agents in different worktrees never contend.
+   claim whose files overlap another agent's live claim. This is grant-time
+   mutual exclusion, while documented provider hooks and the staged Git gate
+   enforce supported mutation paths. Different worktree labels do not contend
+   at the hub, so use actual isolated Git worktrees for concurrent edits.
 3. Leases auto-expire, so a crashed agent never holds a claim forever, and each
    lease carries an epoch so a superseded agent cannot act on a dead claim. An
    owner can save a durable checkpoint on the task; if its lease lapses, the next
@@ -1426,8 +1432,9 @@ reference.
 ### Why not just git worktrees?
 
 Worktrees are a good tool and SYNAPSE composes with them rather than competing:
-a claim declares its `worktree`, and agents in different worktrees never contend
-on files. But worktrees alone solve only file *isolation*, and they solve it by
+a claim declares its `worktree`, and claims carrying different canonical
+worktree identities do not contend on files. But worktrees alone solve only file
+*isolation*, and they solve it by
 deferring the collision to merge time. What they do not give you:
 
 - **Work deduplication** — two agents in two worktrees can happily build the
@@ -1474,7 +1481,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | --- | --- |
 | `state` | Presence, scoped task-claim leases, epochs/versions, and resource offers (transport-agnostic). |
 | `ledger` | Shared blackboard: the declared task plan (with dependencies) and a bounded progress stream. |
-| `scoping` | Worktree- and path-overlap detection that keeps two agents off the same files. |
+| `scoping` | Worktree- and path-overlap detection that refuses conflicting live claims. |
 | `lifecycle` | Typed task-status states and the legal transitions the hub enforces. |
 | `deadlock` | Wait-for cycle detection so circular hold-and-wait claims are refused. |
 | `protocol` | The on-wire message envelope and message-type constants. |
@@ -1520,7 +1527,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 764 |
 | Wire message types | 80 |
 | CLI subcommands | 183 |
-| Test functions | 9005 |
+| Test functions | 9006 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 61 |
 | GitHub Actions workflows | 25 |

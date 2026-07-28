@@ -53,12 +53,15 @@ on one machine** (no built-in failover or horizontal scale), connect authenticat
 trusted** (the bus coordinates them, it does not sandbox them). See
 [Known limitations](https://github.com/anulum/synapse-channel/blob/main/README.md#known-limitations).
 
-## How does it keep two agents off the same files?
+## How does it refuse conflicting file authority?
 
-An agent **claims** a unit of work with a file **scope** (a set of path globs) before
-touching it. The hub refuses a claim whose scope overlaps a live claim, so the file scopes
-of two active claims never intersect. Claims are leases — they expire, can be renewed, and
-release on commit via the optional git hooks. See [Git-native claims](git-claims.md).
+An agent **claims** a unit of work with a file **scope** (literal file or directory
+prefixes) before touching it. The hub refuses a claim whose scope overlaps a live
+claim, so the declared scopes of two active claims never intersect. Supported
+provider hooks enforce selected pre-edit paths and the staged Git gate checks the
+index at commit time; neither is a general process or filesystem sandbox. Claims
+are leases — they expire, can be renewed, and release on commit via the optional
+git hooks. See [Git-native claims](git-claims.md).
 
 ## What happens if the hub restarts or crashes?
 

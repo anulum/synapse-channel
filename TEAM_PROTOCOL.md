@@ -40,8 +40,9 @@ SECRET` and present it from each agent (`--token SECRET`).
 ## Mandatory rules
 
 1. Claim a task before working on it; if the claim is denied, do not work on it.
-   Declare a file scope (`worktree` + `paths`) so the hub keeps two agents off
-   the same files.
+   Declare a file scope (`worktree` + `paths`) so the hub refuses overlapping
+   live claims. This coordinates authority; actual mutation enforcement is
+   limited to the documented provider hooks and staged Git gate.
 2. Keep claim notes short but specific (file or module scope).
 3. Update task status as you progress; attach an artefact reference when there is
    a concrete output. Save a `checkpoint` for long work so it can resume if your

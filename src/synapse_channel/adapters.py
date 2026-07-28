@@ -254,12 +254,14 @@ def _contract_body(*, identity: str, hub_uri: str) -> str:
     """Render the format-agnostic claim-safety contract carried by every adapter."""
     return (
         "## Synapse coordination (claim-safety)\n\n"
-        "This workspace uses Synapse so parallel agents never edit the same files.\n\n"
+        "This workspace uses Synapse to refuse overlapping live file claims.\n\n"
         "- **Claim before edit:** run `synapse git-claim <task-id> --paths <path>` (or a\n"
         "  semantic claim) before modifying files, and treat a denied claim as a stop.\n"
         "- **Release on commit:** the git hooks installed by `synapse git-init` auto-release\n"
         "  the branch-scoped claims when you commit.\n"
         f"- **Reach the hub:** identity `{identity}`, hub `{hub_uri}`.\n"
+        "- **Enforcement boundary:** provider hooks cover only their documented tools; the\n"
+        "  staged Git gate is a separate check, not a filesystem or process sandbox.\n"
         "- Coordination safety only — this carries no persona, workflow, or model behaviour.\n"
     )
 

@@ -102,6 +102,38 @@ def test_file_scope_docs_describe_literal_prefix_overlap_not_glob() -> None:
     assert "glob overlap" not in prose
 
 
+def test_provider_claim_wording_stays_within_enforced_boundaries() -> None:
+    """Public guidance must not turn scoped authority into sandbox claims."""
+    public_paths = (
+        "README.md",
+        "TEAM_PROTOCOL.md",
+        "docs/agent-air-traffic-control.md",
+        "docs/claim-guard-hooks.md",
+        "docs/coordination-model.md",
+        "docs/examples.md",
+        "docs/faq.md",
+        "docs/glossary.md",
+        "docs/multi-hub-sync.md",
+        "docs/recipes.md",
+        "docs/tutorial.md",
+    )
+    combined = _single_spaced("\n".join(_read_repo_text(path) for path in public_paths))
+
+    forbidden = (
+        "parallel agents never edit the same files",
+        "two sessions never touch the same files",
+        "two agents never edit the same files",
+        "two agents never edit the same file at once",
+        "two agents never work the same files",
+    )
+    assert not any(claim in combined for claim in forbidden)
+    assert "provider hooks cover only" in combined
+    assert "staged Git check covers only the index at commit time" in combined
+    assert "alter the working tree outside those hooks" in combined
+    assert "data exfiltration" in combined
+    assert "external side effects" in combined
+
+
 def test_metrics_token_docs_keep_query_tokens_opt_in() -> None:
     combined = "\n".join(
         [

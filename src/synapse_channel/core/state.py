@@ -245,8 +245,8 @@ class SynapseState:
         a task whose lease has expired. A live claim held by another agent blocks
         the request. Beyond the task id, a claim may declare a file scope
         (``worktree`` + ``paths``); the request is also refused when that scope
-        contends with another agent's live claim, which is how the bus prevents
-        two agents from editing the same files. Every successful claim or renewal
+        contends with another agent's live claim, which is how the bus refuses
+        overlapping scoped authority. Every successful claim or renewal
         is stamped with a fresh, strictly-increasing :attr:`TaskClaim.epoch`.
 
         Parameters
@@ -265,7 +265,7 @@ class SynapseState:
         now : float or None, optional
             Override for the current wall-clock time, in seconds.
         worktree : str, optional
-            Worktree label; claims in different worktrees never contend.
+            Worktree label; different worktree identities do not contend.
         paths : tuple[str, ...] or list[str], optional
             Declared file/directory paths; empty claims the whole worktree.
         path_identity : ClaimScopeIdentity or None, optional
