@@ -251,6 +251,7 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
 class _SafePinnedRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Apply credential-origin policy before every pinned redirect connect."""
 
+    http_error_308 = urllib.request.HTTPRedirectHandler.http_error_302
     max_redirections = WEBHOOK_MAX_REDIRECTS
     max_repeats = min(urllib.request.HTTPRedirectHandler.max_repeats, WEBHOOK_MAX_REDIRECTS)
 

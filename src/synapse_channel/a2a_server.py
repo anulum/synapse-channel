@@ -20,6 +20,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Coroutine, Sequence
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any, cast
 
 from synapse_channel import a2a_errors
@@ -168,7 +169,7 @@ class SynapseAgentRuntime:
         submitted = asyncio.run_coroutine_threadsafe(coro, self.loop)
         try:
             return submitted.result(timeout=timeout)
-        except TimeoutError:
+        except FutureTimeoutError:
             submitted.cancel()
             raise TimeoutError("A2A operation timed out") from None
 
