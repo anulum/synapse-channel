@@ -87,19 +87,19 @@ def test_keygen_writes_owner_only_private_and_shareable_public(key_path: Path) -
     assert len(bytes.fromhex(document["public_key"])) == 32
 
 
-@pytest.mark.skipif(__import__("os").name != "posix", reason="POSIX mode contract")
 def test_keygen_public_key_mode_ignores_restrictive_umask(tmp_path: Path) -> None:
     import os
 
-    previous_umask = os.umask(0o077)
-    try:
-        path = tmp_path / "restricted-umask.key"
-        generate_receipt_signing_key(path)
-    finally:
-        os.umask(previous_umask)
+    if os.name == "posix":
+        previous_umask = os.umask(0o077)
+        try:
+            path = tmp_path / "restricted-umask.key"
+            generate_receipt_signing_key(path)
+        finally:
+            os.umask(previous_umask)
 
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
-    assert stat.S_IMODE(path.with_name(path.name + ".pub").stat().st_mode) == 0o644
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        assert stat.S_IMODE(path.with_name(path.name + ".pub").stat().st_mode) == 0o644
 
 
 def test_keygen_key_id_is_derived_from_the_key_material(key_path: Path) -> None:
