@@ -150,6 +150,8 @@ def _write_exclusive(path: Path, payload: bytes, *, mode: int) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
     try:
         os.write(fd, payload)
+        if os.name == "posix":
+            os.fchmod(fd, mode)
     finally:
         os.close(fd)
     # Owner-only on every platform: POSIX mode bits and Windows NT DACL.
