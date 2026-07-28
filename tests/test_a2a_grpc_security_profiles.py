@@ -17,6 +17,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -307,6 +308,39 @@ def test_grpc_bind_failure_does_not_leave_a_listener() -> None:
             build_a2a_grpc_server(bridge, host="127.0.0.1", port=port)
     finally:
         occupied.close()
+
+
+def test_grpc_start_failure_stops_constructed_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Server:
+        def __init__(self) -> None:
+            self.stop_calls: list[object] = []
+
+        def add_generic_rpc_handlers(self, _handlers: object) -> None:
+            return None
+
+        def add_insecure_port(self, _bind: str) -> int:
+            return 50051
+
+        def start(self) -> None:
+            raise RuntimeError("injected start failure")
+
+        def stop(self, grace: object) -> None:
+            self.stop_calls.append(grace)
+
+    server = Server()
+    fake_grpc = SimpleNamespace(
+        server=lambda *_args, **_kwargs: server,
+        unary_unary_rpc_method_handler=lambda *_args, **_kwargs: object(),
+        method_handlers_generic_handler=lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr("synapse_channel.a2a_grpc._require_grpc", lambda: fake_grpc)
+
+    with pytest.raises(RuntimeError, match="injected start failure"):
+        build_a2a_grpc_server(cast(Any, object()))
+
+    assert server.stop_calls == [None]
 
 
 def test_grpc_requires_bounded_deadline_and_rejects_oversized_input() -> None:

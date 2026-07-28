@@ -349,10 +349,10 @@ def build_a2a_grpc_server(
             bound_port = server.add_insecure_port(bind)
         if bound_port == 0:
             raise RuntimeError("gRPC listener could not bind")
+        server.start()
     except Exception:
         server.stop(grace=None)
         raise
-    server.start()
     return server
 
 

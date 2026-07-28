@@ -53,7 +53,8 @@ All notable changes to this project are documented here.
   the CLI now composes its selected shared bearer, native TLS/mTLS files,
   concurrency ceiling, one-MiB request/response bounds, bounded JSON parser,
   finite call-deadline ceiling with cancellation of pending hub work, stable
-  value-free errors, and listener cleanup into gRPC. The custom two-method
+  value-free errors, and listener cleanup across bind and start failures into
+  gRPC. The custom two-method
   binding remains `partial` protocol support and the shared bearer is not
   per-client identity or a method-level ACL.
 
