@@ -278,27 +278,22 @@ waiter 무장, 프로바이더별 seat 명령, `git-init`, 대시보드 — 을 
 
 ## 가장 빠른 안전 시험 경로
 
-자체 완결형 데모가 통과하면, 다음 순서로 실제 체크아웃에 대해 Synapse를
-시험해 보세요.
+실제 체크아웃을 변경하기 전에 하나의 자체 완결형 경로를 실행하세요.
 
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
-synapse git-init --name trial-agent
-synapse dashboard --port 8765
-synapse a2a-card --endpoint-url http://127.0.0.1:8877
-synapse a2a-conformance
-synapse a2a-serve --endpoint-url http://127.0.0.1:8877
+synapse demo --output ./synapse-golden-demo
 ```
 
-이것은 일회용이거나 이미 버전 관리되는 저장소에서 실행하세요. `synapse
-git-init --name trial-agent`는 claim 인식 git 훅을 설치하고, 에이전트가
-파일을 편집하기 전에 로컬 `.synapse/` 규약 가이드를 작성합니다. A2A 브리지
-단계는 선택적이며 로컬 전용입니다. 다른 로컬 도구가 Agent Card를 살펴보거나
-HTTP+JSON 브리지와 대화할 수 있게 하지만, 외부 적합성 주장은 아닙니다.
-bearer 인증 없이 루프백 밖에 바인딩하지 마세요.
+데모는 자체 로컬 허브를 시작하고 종료하며, commit된 일회용 Git 저장소에서
+분리된 claim과 중복 거부를 증명합니다. handoff 전의 변경은 거부하고 handoff
+후에는 허용하며, 관측된 검증 receipt와 정적 대시보드를 기록합니다. 영구 허브,
+프로바이더 CLI, Git 훅, MCP 호스트, A2A 브리지는 필요하지 않습니다. 그다음
+`synapse fleet-init --fix`로 영구 로컬 workspace, hub, waiter를 준비하고,
+에이전트가 실제 저장소를 편집하기 전에 `synapse git-init --name trial-agent`를
+실행하세요. 선택적 A2A 상호운용은 [A2A 브리지 가이드](../a2a-conformance.md)의 후속
+단계입니다.
 
 ## 릴리스
 

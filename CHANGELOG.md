@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Replace the divergent fastest-safe-trial sequences with one
+  regression-bound, self-contained `doctor` → golden demo path that proves
+  conflict refusal, handoff, and a verified receipt before any persistent hub,
+  repository hook, MCP host, or optional A2A bridge is introduced.
 - Make `agent-tmux wait` start or verify its configured provider session and
   require an active agent pane before advertising `pane_bridge`, so a missing
   downstream tmux target fails closed instead of accepting unwakeable messages.

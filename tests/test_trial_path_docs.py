@@ -11,6 +11,10 @@ from __future__ import annotations
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+TRANSLATED_READMES = tuple(sorted((REPO_ROOT / "docs" / "readme").glob("README.*.md")))
+GOLDEN_PATH_BLOCK = """python -m pip install synapse-channel
+synapse doctor
+synapse demo --output ./synapse-golden-demo"""
 
 
 def _read_repo_text(relative_path: str) -> str:
@@ -38,14 +42,12 @@ def test_public_docs_foreground_fastest_safe_trial_path() -> None:
     assert "Fastest safe trial path" in combined
     assert "python -m pip install synapse-channel" in combined
     assert "synapse doctor" in combined
-    assert "synapse demo" in combined
-    assert "synapse quickstart-coding" in combined
+    assert "synapse demo --output ./synapse-golden-demo" in combined
     assert "synapse git-init --name trial-agent" in combined
-    assert "synapse a2a-card --endpoint-url http://127.0.0.1:8877" in combined
-    assert "synapse a2a-serve --endpoint-url http://127.0.0.1:8877" in combined
+    assert "Optional A2A interoperability is a follow-on" in combined
 
 
-def test_trial_path_docs_keep_a2a_and_real_repo_claims_bounded() -> None:
+def test_trial_path_docs_keep_first_value_self_contained() -> None:
     combined = _single_spaced(
         "\n".join(
             [
@@ -56,7 +58,15 @@ def test_trial_path_docs_keep_a2a_and_real_repo_claims_bounded() -> None:
         )
     )
 
-    assert "Run this in a disposable or already-versioned repository" in combined
-    assert "The A2A bridge step is optional and local-only" in combined
-    assert "not an external conformance claim" in combined
-    assert "Do not bind it off-loopback without bearer auth" in combined
+    assert "starts and stops its own local hub" in combined
+    assert "uses a disposable committed Git repository" in combined
+    assert "denies a mutation before handoff" in combined
+    assert "writes an observed verification receipt" in combined
+    assert "needs no persistent hub, provider CLI, Git hook, MCP host, or A2A bridge" in combined
+
+
+def test_translated_readmes_share_the_same_executable_trial_block() -> None:
+    for path in TRANSLATED_READMES:
+        text = path.read_text(encoding="utf-8")
+        assert GOLDEN_PATH_BLOCK in text, f"{path} retains a divergent trial sequence"
+        assert "synapse demo\nsynapse quickstart-coding\nsynapse git-init" not in text

@@ -225,23 +225,27 @@ no daemon and adds nothing the bundled commands do not already do.
 
 ## Fastest safe trial path
 
-Use this order when moving from install validation into a real repository:
+Use one self-contained path before changing a real checkout:
 
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
-synapse git-init --name trial-agent
-synapse a2a-card --endpoint-url http://127.0.0.1:8877
-synapse a2a-serve --endpoint-url http://127.0.0.1:8877
+synapse demo --output ./synapse-golden-demo
 ```
 
-Run this in a disposable or already-versioned repository. `synapse git-init
---name trial-agent` installs hooks and writes the local `.synapse/` conventions
-guide before agents edit files. The A2A bridge step is optional and local-only:
-it validates the HTTP+JSON bridge shape for local tools, but it is not an
-external conformance claim. Do not bind it off-loopback without bearer auth.
+The demo starts and stops its own local hub, uses a disposable committed Git
+repository, proves separate claims and overlapping-claim refusal, denies a
+mutation before handoff, permits it after handoff, and writes an observed
+verification receipt plus a static dashboard. It needs no persistent hub,
+provider CLI, Git hook, MCP host, or A2A bridge. The same exact three-command
+block is regression-bound across the README, quick start, and this reference,
+and its `synapse demo` command is exercised as a real subprocess.
+
+After that proof passes, use `synapse fleet-init --fix` to prepare a persistent
+local workspace, hub, and waiter, then run `synapse git-init --name
+trial-agent` inside the real repository before an agent edits it. Optional A2A
+interoperability is a follow-on in the [A2A bridge guide](a2a-conformance.md); it is not a
+prerequisite for first coordination value.
 
 For the strict hub profile, supply every control that paranoid mode enforces:
 

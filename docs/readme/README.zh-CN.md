@@ -258,25 +258,21 @@ codex、kimi、ollama、…），运行演示冒烟测试，并打印下一步�
 
 ## 最快的安全试用路径
 
-在自包含演示通过后，按此顺序在真实检出上试用 Synapse：
+在修改真实检出之前，先运行一条自包含路径：
 
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
-synapse git-init --name trial-agent
-synapse dashboard --port 8765
-synapse a2a-card --endpoint-url http://127.0.0.1:8877
-synapse a2a-conformance
-synapse a2a-serve --endpoint-url http://127.0.0.1:8877
+synapse demo --output ./synapse-golden-demo
 ```
 
-请在一次性的或已被版本控制的仓库中运行。`synapse git-init
---name trial-agent` 会在智能体编辑文件之前安装感知 claim 的 git 钩子并写入
-本地 `.synapse/` 约定指南。A2A 桥步骤是可选且仅限本地的：它让另一个本地
-工具查看 Agent Card 或与 HTTP+JSON 桥对话，但这不是对外的合规主张。没有
-bearer 认证时，不要把它绑定到环回之外。
+演示会启动并停止自己的本地 hub，在一次性且已有 commit 的 Git 仓库中证明
+分离的 claim 与重叠拒绝；它在 handoff 前拒绝变更，在 handoff 后允许变更，
+并写入观测到的验证 receipt 和静态 dashboard。它不需要持久 hub、提供商 CLI、
+Git 钩子、MCP 主机或 A2A 桥。之后用 `synapse fleet-init --fix` 准备持久的本地
+workspace、hub 和 waiter，并在智能体编辑真实仓库之前运行 `synapse git-init
+--name trial-agent`。可选 A2A 互操作只是
+[A2A 桥指南](../a2a-conformance.md)中的后续步骤。
 
 ## 发行
 

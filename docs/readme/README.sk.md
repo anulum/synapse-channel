@@ -275,27 +275,23 @@ a vypíše plán ďalších krokov — armovanie waitera, per-provider seat prí
 
 ## Najrýchlejšia bezpečná skúšobná cesta
 
-Keď samostatné demá prejdú, vyskúšajte Synapse proti skutočnému checkoutu
-v tomto poradí:
+Pred zmenou skutočného checkoutu použite jednu samostatnú cestu:
 
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
-synapse git-init --name trial-agent
-synapse dashboard --port 8765
-synapse a2a-card --endpoint-url http://127.0.0.1:8877
-synapse a2a-conformance
-synapse a2a-serve --endpoint-url http://127.0.0.1:8877
+synapse demo --output ./synapse-golden-demo
 ```
 
-Spúšťajte to v jednorazovom alebo už verzovanom repozitári. `synapse git-init
---name trial-agent` nainštaluje claim-aware git hooky a zapíše lokálnu
-`.synapse/` príručku konvencií skôr, než agenti editujú súbory. A2A bridge krok
-je voliteľný a len lokálny: umožní inému lokálnemu nástroju prezrieť Agent Card
-alebo hovoriť s HTTP+JSON bridgeom, ale nie je to externý conformance claim.
-Nebindujte ho mimo loopback bez bearer auth.
+Demo spustí a ukončí vlastný lokálny hub, použije jednorazový commitnutý Git
+repozitár, preukáže oddelené claimy a odmietnutie prekrytia, odmietne mutáciu
+pred handoffom, po handoffe ju povolí a zapíše pozorovaný verifikačný receipt
+so statickým dashboardom. Nepotrebuje perzistentný hub, provider CLI, Git hook,
+MCP host ani A2A bridge. Potom `synapse fleet-init --fix` pripraví perzistentný
+lokálny workspace, hub a waiter; `synapse git-init --name trial-agent` spustite
+v skutočnom repozitári pred prvou editáciou agentom. Voliteľná A2A
+interoperabilita je až nadväzujúci krok v
+[A2A bridge príručke](../a2a-conformance.md).
 
 ## Releasy
 

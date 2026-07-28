@@ -287,28 +287,22 @@ synapse fleet-init
 
 ## 最速の安全なトライアルパス
 
-自己完結のデモが通ったら、次の順序で実際のチェックアウトに対して Synapse を
-試してください。
+実際のチェックアウトを変更する前に、自己完結した単一の経路を実行します。
 
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
-synapse git-init --name trial-agent
-synapse dashboard --port 8765
-synapse a2a-card --endpoint-url http://127.0.0.1:8877
-synapse a2a-conformance
-synapse a2a-serve --endpoint-url http://127.0.0.1:8877
+synapse demo --output ./synapse-golden-demo
 ```
 
-これは使い捨ての、あるいはすでにバージョン管理されたリポジトリで実行して
-ください。`synapse git-init --name trial-agent` は claim 対応の git フックを
-インストールし、エージェントがファイルを編集する前にローカルの `.synapse/`
-規約ガイドを書き出します。A2A ブリッジのステップはオプションかつローカル
-のみです。別のローカルツールが Agent Card を調べたり HTTP+JSON ブリッジと
-話したりできますが、外部への適合性の主張ではありません。bearer 認証なしで
-ループバックの外にバインドしないでください。
+デモは専用のローカルハブを起動して終了し、commit 済みの使い捨て Git
+リポジトリで個別 claim と重複拒否を証明します。handoff 前の変更を拒否し、
+handoff 後には許可し、観測した検証 receipt と静的ダッシュボードを書き出し
+ます。永続ハブ、プロバイダー CLI、Git フック、MCP ホスト、A2A ブリッジは
+不要です。その後 `synapse fleet-init --fix` で永続ローカル workspace、hub、
+waiter を準備し、実リポジトリを agent が編集する前に `synapse git-init
+--name trial-agent` を実行します。任意の A2A 相互運用は
+[A2A ブリッジガイド](../a2a-conformance.md) の後続手順です。
 
 ## リリース
 

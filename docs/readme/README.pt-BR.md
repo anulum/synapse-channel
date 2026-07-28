@@ -289,28 +289,23 @@ do workspace preenchido.
 
 ## O caminho de teste seguro mais rápido
 
-Depois que as demos autocontidas passarem, experimente o Synapse contra um
-checkout real nesta ordem:
+Use um único caminho autocontido antes de alterar um checkout real:
 
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
-synapse git-init --name trial-agent
-synapse dashboard --port 8765
-synapse a2a-card --endpoint-url http://127.0.0.1:8877
-synapse a2a-conformance
-synapse a2a-serve --endpoint-url http://127.0.0.1:8877
+synapse demo --output ./synapse-golden-demo
 ```
 
-Rode isso em um repositório descartável ou já versionado. `synapse git-init
---name trial-agent` instala os hooks de git cientes de claims e escreve o guia
-local de convenções `.synapse/` antes que os agentes editem arquivos. A etapa
-da ponte A2A é opcional e apenas local: ela permite que outra ferramenta local
-inspecione o Agent Card ou converse com a ponte HTTP+JSON, mas não é uma
-reivindicação de conformidade externa. Não a vincule fora do loopback sem
-autenticação bearer.
+A demo inicia e encerra seu próprio hub local, usa um repositório Git
+descartável com commit, comprova claims separados e a recusa de sobreposição,
+nega uma mutação antes do handoff, permite-a depois e grava um receipt de
+verificação observado junto com um dashboard estático. Ela não precisa de hub
+persistente, CLI de provider, hook Git, host MCP nem ponte A2A. Depois,
+`synapse fleet-init --fix` prepara um workspace, hub e waiter locais
+persistentes; execute `synapse git-init --name trial-agent` no repositório real
+antes de um agente editá-lo. A interoperabilidade A2A opcional vem depois no
+[guia da ponte A2A](../a2a-conformance.md).
 
 ## Releases
 

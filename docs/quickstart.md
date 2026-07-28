@@ -88,25 +88,27 @@ See [MCP server face](mcp.md) for authentication and client-specific paths.
 
 ## Fastest safe trial path
 
-Use this order when moving from the self-contained demos into a real checkout:
+Use one self-contained path before changing a real checkout:
 
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
-synapse git-init --name trial-agent
-synapse a2a-card --endpoint-url http://127.0.0.1:8877
-synapse a2a-serve --endpoint-url http://127.0.0.1:8877
+synapse demo --output ./synapse-golden-demo
 ```
 
-Run this in a disposable or already-versioned repository. `synapse doctor` checks
-the local machine before you install hooks or start bridges. `synapse git-init
---name trial-agent` installs claim-aware git hooks and writes the `.synapse/`
-conventions guide before any coding agent edits files. The A2A bridge step is
-optional and local-only; it exposes an Agent Card and HTTP+JSON bridge for local
-interop experiments, not an external conformance claim. Do not bind it
-off-loopback without bearer auth.
+The demo starts and stops its own local hub, uses a disposable committed Git
+repository, proves separate claims and overlapping-claim refusal, denies a
+mutation before handoff, permits it after handoff, and writes an observed
+verification receipt plus a static dashboard. It needs no persistent hub,
+provider CLI, Git hook, MCP host, or A2A bridge. The same exact three-command
+block is regression-bound across the README, this quick start, and the CLI
+reference, and its `synapse demo` command is exercised as a real subprocess.
+
+After that proof passes, use `synapse fleet-init --fix` to prepare a persistent
+local workspace, hub, and waiter, then run `synapse git-init --name
+trial-agent` inside the real repository before an agent edits it. Optional A2A
+interoperability is a follow-on in the [A2A bridge guide](a2a-conformance.md); it is not a
+prerequisite for first coordination value.
 
 ## Strict exposed-hub profile
 
