@@ -249,8 +249,7 @@ synapse install-shell-hook          # Bash・Zsh・Fish ターミナルを自動
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
+synapse demo --output ./synapse-golden-demo
 ```
 
 `synapse doctor` は、アイデンティティ、ハブの露出、ルートファイルシステムの
@@ -264,7 +263,8 @@ synapse quickstart-coding
 success: coordination demo completed
 ```
 
-`synapse quickstart-coding` は一時的な coding-fleet ワークスペースを作り、
+自己完結型の検証後も、`synapse quickstart-coding` は任意のワークスペースデモ
+として利用できます。一時的な coding-fleet ワークスペースを作り、
 生成されたワークスペースが使うのと同じ無衝突コーディングデモを実行し、成功
 後に一時ワークスペースを削除して、次を出力します。
 

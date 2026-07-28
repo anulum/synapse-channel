@@ -249,8 +249,7 @@ Sie Agenten in ein echtes Repository einbinden:
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
+synapse demo --output ./synapse-golden-demo
 ```
 
 `synapse doctor` meldet lokale Setup-Probleme wie Identität, Hub-Exposition,
@@ -264,7 +263,8 @@ verifiziertem Receipt und ist erfolgreich, wenn es Folgendes ausgibt:
 success: coordination demo completed
 ```
 
-`synapse quickstart-coding` erstellt einen temporären Coding-Fleet-Workspace,
+Nach diesem eigenständigen Nachweis bleibt `synapse quickstart-coding` als
+optionales Workspace-Demo verfügbar. Es erstellt einen temporären Coding-Fleet-Workspace,
 führt dasselbe kollisionsfreie Coding-Demo aus, das generierte Workspaces
 verwenden, entfernt den temporären Workspace nach dem Erfolg und gibt aus:
 

@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add measurable `first-use`, `core`, `adapters`, `governance`, `labs`, and
+  `all` views to `synapse commands`, including a versioned JSON contract for
+  concept count, exact journey, package extras, implicit services, and explicit
+  activation/deactivation boundaries while preserving the complete CLI surface.
+
 ### Fixed
 
 - Replace the divergent fastest-safe-trial sequences with one

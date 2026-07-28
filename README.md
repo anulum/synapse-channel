@@ -208,6 +208,22 @@ and the generated operator view is [Public surface and stability](docs/public-su
 Adapters and lab surfaces can be installed and used from the same package, but
 they do not change the single-dependency local core.
 
+Six measurable discovery profiles keep those layers explicit without hiding or
+removing commands: `first-use`, `core`, `adapters`, `governance`, `labs`, and
+`all`. Inspect any profile without starting a hub or optional process:
+
+```bash
+synapse commands --profile first-use
+synapse commands --profile first-use --json
+```
+
+The JSON contract records three first-use concepts and three shell commands,
+against a hard limit of eight concepts, with zero optional extras and zero
+implicitly started persistent services. Profile inspection is read-only;
+optional capabilities activate only through their documented package extra and
+command or flag, and deactivate by stopping that exact process or omitting the
+opt-in. See [installation profiles](docs/installation.md#usage-profiles-and-activation).
+
 ### Optional Participant memory recall
 
 `participant ask`, `participant exchange`, and `participant convene` can wrap
@@ -293,10 +309,9 @@ who reaches for it.
 
 ## Getting started
 
-> **The one path to follow.** Run `synapse demo` and `synapse quickstart-coding`
-> below for a 60-second taste, then follow the **[multi-seat golden path](docs/quickstart.md#multi-seat-golden-path-5-minutes)**
-> — the single canonical "zero to two coordinated agents" walkthrough. The
-> sections here are that path's first stages, not competing quickstarts.
+> **The one path to follow.** Run the three-command self-contained proof below,
+> then follow the **[multi-seat golden path](docs/quickstart.md#multi-seat-golden-path-5-minutes)**
+> for persistent agents. Optional adapters and generated workspaces come later.
 
 ### First 60 seconds
 
@@ -306,8 +321,7 @@ a real repository:
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
+synapse demo --output ./synapse-golden-demo
 ```
 
 `synapse doctor` reports local setup issues such as identity, hub exposure,
@@ -320,9 +334,10 @@ succeeds when it prints:
 success: coordination demo completed
 ```
 
-`synapse quickstart-coding` creates a temporary coding-fleet workspace, runs the
-same live overlapping-claim refusal demo used by generated workspaces, removes
-the temporary workspace after success, and prints:
+After the self-contained proof, `synapse quickstart-coding` remains available as
+an optional generated-workspace demo. It creates a temporary coding-fleet
+workspace, runs the live overlapping-claim refusal demo, removes the workspace
+after success, and prints:
 
 ```text
 success: coding fleet demo completed
@@ -1527,10 +1542,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Package version | 0.99.15 |
 | Public API exports | 70 |
 | Package modules | 524 |
-| Classes | 771 |
+| Classes | 772 |
 | Wire message types | 80 |
 | CLI subcommands | 183 |
-| Test functions | 9051 |
+| Test functions | 9061 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 61 |
 | GitHub Actions workflows | 25 |

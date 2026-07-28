@@ -44,8 +44,17 @@ only `synapse --help` would not detect an omitted alias module.
 | `dev` | The development toolchain (ruff, mypy, pytest, pre-commit). |
 | `benchmark` | `tiktoken`, for real token counts in the relay benchmark. |
 | `docs` | The documentation-site toolchain (MkDocs Material, mkdocstrings). |
+| `wasm` | Wasmtime for the explicitly invoked capability-limited sandbox. |
 | `otel` | The OpenTelemetry SDK + OTLP/HTTP exporters, for `synapse causality otel --endpoint` and `synapse fleet-scorecard --endpoint`. |
+| `mcp` | MCP stdio server/client dependencies and cryptographic helpers. |
+| `a2a-grpc` | gRPC runtime for the default-off `a2a-serve --grpc-port` sibling. |
 | `semantic` | Local tree-sitter runtime and Python, JavaScript/JSX, TypeScript/TSX, Rust, and Go grammar wheels for function-level Git-diff claims. |
+| `encryption` | Software cryptography for encrypted channels, identities, cards, and envelopes. |
+| `sqlcipher` | SQLCipher wheel for an explicitly keyed live event store. |
+| `pkcs11` | PKCS #11 key-provider adapter. |
+| `tpm2` | TPM2 key-provider adapter; source builds require the platform TSS2 headers. |
+| `cloud-hsm` | Boto3-backed cloud-HSM wrapping adapters. |
+| `all` | Aggregate runtime extras; it excludes contributor-only `dev`, `docs`, and `benchmark`. |
 
 Install one or more with, for example:
 
@@ -62,6 +71,34 @@ python tools/semantic_diff_claims.py --base main --check
 
 The grammar wheels are installed up front. Claim resolution never downloads a
 parser at runtime.
+
+## Usage profiles and activation
+
+The base package is the default. Profiles are measurable discovery and
+installation envelopes, not global switches: every command remains available,
+and no optional process or trust boundary activates merely because its
+dependency is installed.
+
+| Profile | Install boundary | Activate | Deactivate |
+|---|---|---|---|
+| `first-use` | `pip install synapse-channel` | Run install → `doctor` → self-contained `demo` | The demo stops its temporary hub; remove the chosen evidence directory if unwanted. |
+| `core` | `pip install synapse-channel` | Start only the exact hub, waiter, or dashboard selected by the operator | Stop that exact process or user unit; there is no global profile state. |
+| `adapters` | Select only from `mcp`, `a2a-grpc`, `otel`, `semantic`, `wasm` | Launch the selected adapter or pass its explicit endpoint/semantic flag | Stop its process, remove its host launch entry, or omit the opt-in flag. |
+| `governance` | Select only the required software or hardware backend extra | Pass the documented policy, key, trust, or storage option | Remove it only through that feature's migration and custody procedure. |
+| `labs` | Select `benchmark` or `wasm` when required | Invoke the experimental command explicitly | Stop that invocation; no lab runs implicitly in the background. |
+| `all` | `pip install 'synapse-channel[all]'` | Invoke only intended capabilities | Use a clean base-only environment and stop explicitly launched processes. |
+
+Inspect the exact command set, extras, and activation/deactivation text from the
+installed package:
+
+```bash
+synapse commands --profile first-use --json
+synapse commands --profile adapters
+```
+
+The first-use payload is regression-bound to three concepts and three shell
+commands, below the public limit of eight, with no optional extra and no
+implicitly started persistent service.
 
 For a contributor checkout, the local `.venv` should mirror the declared
 development, documentation, and benchmark extras. Verify that before running

@@ -65,8 +65,19 @@ def test_trial_path_docs_keep_first_value_self_contained() -> None:
     assert "needs no persistent hub, provider CLI, Git hook, MCP host, or A2A bridge" in combined
 
 
+def test_english_first_use_and_trial_blocks_are_identical() -> None:
+    for relative_path in ("README.md", "docs/quickstart.md", "docs/cli.md"):
+        text = _read_repo_text(relative_path)
+        assert text.count(GOLDEN_PATH_BLOCK) >= 2, (
+            f"{relative_path} has a divergent first-use block"
+        )
+        assert "synapse demo\nsynapse quickstart-coding" not in text
+
+
 def test_translated_readmes_share_the_same_executable_trial_block() -> None:
     for path in TRANSLATED_READMES:
         text = path.read_text(encoding="utf-8")
         assert GOLDEN_PATH_BLOCK in text, f"{path} retains a divergent trial sequence"
+        assert text.count(GOLDEN_PATH_BLOCK) >= 2, f"{path} has a divergent first-use block"
+        assert "synapse demo\nsynapse quickstart-coding" not in text
         assert "synapse demo\nsynapse quickstart-coding\nsynapse git-init" not in text

@@ -241,8 +241,7 @@ CLI를 검증하세요.
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
+synapse demo --output ./synapse-golden-demo
 ```
 
 `synapse doctor`는 아이덴티티, 허브 노출, 루트 파일시스템 압박, waiter 부재
@@ -256,7 +255,8 @@ synapse quickstart-coding
 success: coordination demo completed
 ```
 
-`synapse quickstart-coding`은 임시 coding-fleet 워크스페이스를 만들고,
+자체 완결형 증명 후에도 `synapse quickstart-coding`은 선택적인 워크스페이스
+데모로 사용할 수 있습니다. 임시 coding-fleet 워크스페이스를 만들고,
 생성된 워크스페이스가 쓰는 것과 같은 무충돌 코딩 데모를 실행한 뒤, 성공
 후 임시 워크스페이스를 제거하고 다음을 출력합니다.
 

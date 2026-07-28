@@ -14,7 +14,7 @@ everything, since they need the whole command table.
 | Command | What it does |
 | --- | --- |
 | `synapse hub` | Run the coordination hub. |
-| `synapse commands` | List every subcommand grouped by stability tier — the quickest map of the surface. |
+| `synapse commands` | List every subcommand by stability tier, or inspect a measured profile with `--profile first-use|core|adapters|governance|labs|all` and optional `--json`. |
 | `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |
 | `synapse demo` | Run the real Claude/Codex claim → conflict refusal → mutation denial → handoff → verified receipt path and write JSON plus a static dashboard (`--output DIR` selects the destination). |
 | `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression; `--trend STORE.db` accumulates runs and renders per-metric sparkline trends (`--ascii` for a printable-ASCII trend block); `--alert` gates the run statistically against its own same-context history, exit `1` on drift. |
@@ -103,15 +103,24 @@ The installed CLI has a source-checkout-free validation path:
 
 ```bash
 python -m pip install synapse-channel
-synapse commands   # a map of every subcommand, grouped by stability tier
 synapse doctor
-synapse demo
-synapse quickstart-coding
+synapse demo --output ./synapse-golden-demo
 ```
 
-`synapse commands` prints the whole surface grouped into its five stability tiers
-(stable core, adapters, read-only analysis, advisory governance, experimental), so
-you can find the daily-safe core without scrolling the flat `synapse --help` list.
+This is the measured `first-use` profile: three concepts, three shell commands,
+no optional extras, and no implicitly started persistent service. Inspect that
+contract, or the complete surface, without activating anything:
+
+```bash
+synapse commands --profile first-use
+synapse commands --profile first-use --json
+synapse commands
+```
+
+The unfiltered command prints all five stability tiers. A profile is a
+machine-readable discovery and package boundary, not a global feature toggle;
+advanced commands stay available and activate only through their documented
+extra plus explicit command or flag.
 
 `synapse doctor` reports local wiring issues, including identity, hub exposure,
 root-filesystem pressure, hub reachability, the current identity's waiter, and

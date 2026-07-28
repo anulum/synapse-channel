@@ -41,6 +41,26 @@ the local bus. They do not pull heavy dependencies into the core, replace the
 hub's event-sourced coordination model, or turn design-preview pages into shipped
 runtime promises.
 
+## Measurable usage profiles
+
+Profiles make the first-use and package boundaries inspectable without hiding
+any of the classified commands. `synapse commands` still lists everything;
+`synapse commands --profile NAME [--json]` selects one measured view.
+
+| Profile | Included surface | Optional dependency groups | Activation and deactivation boundary |
+|---|---|---|---|
+| `first-use` | `doctor` plus the self-contained `demo`; three concepts and three shell commands, hard-limited to eight concepts | None | Run the recorded journey. The demo stops its temporary hub; no persistent service starts implicitly. |
+| `core` | `stable` + `analysis` | None | Base install. Start and stop only the exact hub, waiter, or dashboard process/unit selected by the operator. |
+| `adapters` | `adapter` | `a2a-grpc`, `mcp`, `otel`, `semantic`, `wasm` as individually selected | Install the required extra and launch its command. Stop the process, remove its host launch entry, or omit its opt-in flag to deactivate it. |
+| `governance` | `governance` | `cloud-hsm`, `encryption`, `pkcs11`, `sqlcipher`, `tpm2` as individually selected | Install the selected backend and pass its explicit policy/key option. Remove it only under that backend's migration and custody contract. |
+| `labs` | `experimental` | `benchmark`, `wasm` as selected | Invoke the experimental command explicitly; no lab runs in the background by default. |
+| `all` | Every tier | `all` | Installs aggregate runtime dependencies but activates nothing by itself. Use a clean core-only environment to remove the aggregate dependency boundary. |
+
+The `first-use` JSON is the acceptance surface for the smaller golden path:
+concept count, shell-command count, exact journey, extras, and implicit service
+count are regression-bound to the real CLI. The profiles are additive discovery
+and installation envelopes, not authorization or secure-deployment claims.
+
 ## Tiers
 
 ### Stable core — `stable`

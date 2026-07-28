@@ -238,8 +238,7 @@ do skutočného repozitára:
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
+synapse demo --output ./synapse-golden-demo
 ```
 
 `synapse doctor` reportuje lokálne setup problémy ako identita, expozícia hubu,
@@ -253,7 +252,8 @@ vypíše:
 success: coordination demo completed
 ```
 
-`synapse quickstart-coding` vytvorí dočasný coding-fleet workspace, spustí to
+Po samostatnom dôkaze zostáva `synapse quickstart-coding` dostupný ako voliteľné
+workspace demo. Vytvorí dočasný coding-fleet workspace, spustí to
 isté bezkolízne coding demo používané generovanými workspacemi, po úspechu
 dočasný workspace odstráni a vypíše:
 

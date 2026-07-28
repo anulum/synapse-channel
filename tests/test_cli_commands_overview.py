@@ -8,11 +8,15 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from synapse_channel import cli, cli_commands_overview
 from synapse_channel.surface_taxonomy import (
     CLI_TAXONOMY,
+    PROFILE_ORDER,
+    SURFACE_PROFILES,
     TIER_SUMMARIES,
     TIERS,
     taxonomy_by_tier,
@@ -61,6 +65,59 @@ def test_cli_main_prints_the_overview(capsys: pytest.CaptureFixture[str]) -> Non
     assert "SYNAPSE CHANNEL" in out
     assert "stable — " in out
     assert "experimental — " in out
+
+
+def test_profile_view_prints_measurement_and_activation_boundaries() -> None:
+    text = cli_commands_overview.render_profile("first-use")
+
+    assert "measure: 2 top-level commands / 0 optional extras / 0 implicit" in text
+    assert "first-use: 3 concepts / 3 shell commands / limit 8" in text
+    assert "extras: none (base install)" in text
+    assert "activate:" in text
+    assert "deactivate:" in text
+    for command in SURFACE_PROFILES["first-use"].journey:
+        assert command in text
+
+
+def test_profile_payload_is_machine_readable() -> None:
+    payload = cli_commands_overview.profile_payload("first-use")
+
+    assert payload["schema_version"] == "synapse-surface-profile.v1"
+    assert payload["concept_count"] == 3
+    assert payload["within_concept_limit"] is True
+    assert payload["top_level_commands"] == ["doctor", "demo"]
+    assert payload["top_level_command_count"] == 2
+    assert payload["dependency_extras"] == []
+    assert payload["dependency_extra_count"] == 0
+    assert payload["persistent_services_started_implicitly"] == 0
+    with pytest.raises(ValueError, match="unknown surface profile"):
+        cli_commands_overview.profile_payload("unknown")
+
+
+def test_cli_main_prints_selected_profile_as_json(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["commands", "--profile", "first-use", "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["profile"] == "first-use"
+    assert payload["journey"] == list(SURFACE_PROFILES["first-use"].journey)
+
+
+def test_cli_main_prints_profile_without_a_journey(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["commands", "--profile", "core"]) == 0
+
+    text = capsys.readouterr().out
+    assert "SYNAPSE CHANNEL profile: core" in text
+    assert "journey:" not in text
+    assert "stable — " in text
+    assert "analysis — " in text
+    assert "first-use:" not in text
+    assert "concept_count" not in cli_commands_overview.profile_payload("core")
+
+
+def test_parser_accepts_every_public_profile() -> None:
+    for profile in PROFILE_ORDER:
+        args = cli.build_parser().parse_args(["commands", "--profile", profile])
+        assert args.profile == profile
 
 
 def test_render_overview_skips_a_tier_with_no_commands(

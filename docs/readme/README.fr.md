@@ -255,8 +255,7 @@ des agents dans un vrai dépôt :
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
+synapse demo --output ./synapse-golden-demo
 ```
 
 `synapse doctor` signale les problèmes d'installation locale comme l'identité,
@@ -271,7 +270,8 @@ imprime :
 success: coordination demo completed
 ```
 
-`synapse quickstart-coding` crée un workspace coding-fleet temporaire, exécute
+Après la preuve autonome, `synapse quickstart-coding` reste disponible comme
+démo de workspace facultative. Il crée un workspace coding-fleet temporaire, exécute
 la même démo de codage sans collision utilisée par les workspaces générés,
 supprime le workspace temporaire après le succès et imprime :
 

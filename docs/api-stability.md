@@ -53,6 +53,7 @@ fails CI rather than reaching a release:
 | Wire message vocabulary | every `MessageType` name→value pair, the envelope's reserved keys, and the wire-protocol version | `tests/test_wire_surface_freeze.py` |
 | Federation primitives | the deep `core.*` symbols out-of-tree consumers import — the persisted event shape, the multihub follower and its fetcher, claim forwarding, the federation store and its peer records, the TLS pin helper | `tests/test_federation_consumer_contract.py` |
 | CLI surface | every subcommand is classified into a stability tier | `tests/test_surface_taxonomy.py` |
+| First-use and usage profiles | exact concepts, journey, dependency extras, activation/deactivation boundaries, and full-surface preservation | `tests/test_surface_taxonomy.py`, `tests/test_cli_e2e_journey.py` |
 | Capability counts | class, module, wire-type, subcommand, and test counts | the capability manifest (`tools/capability_manifest.py --check`) |
 | Error taxonomy codes | every domain exception's class→`code` pair | `tests/test_core_errors.py` |
 
@@ -94,6 +95,12 @@ Every CLI subcommand carries a tier (`synapse_channel.surface_taxonomy`):
 
 An `experimental` surface is explicitly outside the stability guarantee until it
 graduates to another tier.
+
+The additive usage-profile contract is exposed by `synapse commands --profile
+NAME --json`. It measures discovery and package boundaries; it does not remove a
+command, grant authority, or silently start an optional process. During `0.x`, a
+profile change follows the same reviewed changelog and migration discipline as
+the classified CLI surface.
 
 ## Deprecation
 

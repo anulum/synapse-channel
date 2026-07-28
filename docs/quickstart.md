@@ -13,8 +13,7 @@ Verify a clean install before connecting real agents:
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
+synapse demo --output ./synapse-golden-demo
 ```
 
 `synapse doctor` checks identity, hub exposure, local disk pressure,
@@ -42,9 +41,20 @@ synapse demo --output ./synapse-golden-demo
 Open the HTML file to see the seven steps, conflict refusal, handoff, and
 receipt in the same dashboard projection operators use.
 
-`synapse quickstart-coding` creates a temporary workspace, runs the coding-agent
-live overlapping-claim refusal demo, removes that temporary workspace after
-success, and succeeds when it prints:
+The first-use contract is machine-readable and starts no persistent service:
+
+```bash
+synapse commands --profile first-use --json
+```
+
+It reports three concepts and three shell commands against an eight-concept
+limit, with no optional dependency extra. This is a measurement of the public
+journey, not a switch that hides advanced commands.
+
+After the self-contained proof, `synapse quickstart-coding` remains an optional
+generated-workspace demo. It creates a temporary workspace, runs the coding-agent
+live overlapping-claim refusal demo, removes that workspace after success, and
+succeeds when it prints:
 
 ```text
 success: coding fleet demo completed

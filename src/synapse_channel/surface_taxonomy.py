@@ -24,6 +24,8 @@ surface.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 STABLE = "stable"
 """Daily-safe coordination core: stable wire and CLI surface."""
 
@@ -157,6 +159,159 @@ DESIGN_PREVIEW_DOCS = frozenset(
     }
 )
 """Documentation pages that describe designs intentionally not yet implemented."""
+
+FIRST_USE_MAX_CONCEPTS = 8
+"""Upper bound for the public first-use journey."""
+
+FIRST_USE_CONCEPTS = ("install", "diagnose", "prove")
+"""Concepts a new operator must understand before receiving first value."""
+
+FIRST_USE_JOURNEY = (
+    "python -m pip install synapse-channel",
+    "synapse doctor",
+    "synapse demo --output ./synapse-golden-demo",
+)
+"""The exact public first-use shell sequence."""
+
+
+@dataclass(frozen=True)
+class SurfaceProfile:
+    """One measurable way to enter or discover the shipped surface.
+
+    Attributes
+    ----------
+    name : str
+        Stable profile identifier accepted by ``synapse commands --profile``.
+    summary : str
+        Operator-facing boundary of the profile.
+    tiers : tuple of str
+        Taxonomy tiers included when the profile does not select explicit commands.
+    commands : tuple of str
+        Explicit command subset; empty means all commands in ``tiers``.
+    dependency_extras : tuple of str
+        Optional dependency groups relevant to modes inside the profile. An empty
+        tuple is the single-dependency base install; command entry points can still
+        expose separately documented optional modes.
+    activation : str
+        The explicit action that enters the profile; inspection never activates it.
+    deactivation : str
+        The explicit boundary for leaving the profile or stopping its optional work.
+    concepts : tuple of str
+        Concepts counted for a first-use journey; empty outside that journey.
+    journey : tuple of str
+        Exact shell sequence for an executable journey; empty for discovery profiles.
+    persistent_services : int
+        Number of services the profile starts implicitly.
+    """
+
+    name: str
+    summary: str
+    tiers: tuple[str, ...]
+    commands: tuple[str, ...]
+    dependency_extras: tuple[str, ...]
+    activation: str
+    deactivation: str
+    concepts: tuple[str, ...] = ()
+    journey: tuple[str, ...] = ()
+    persistent_services: int = 0
+
+
+PROFILE_ORDER = ("first-use", "core", "adapters", "governance", "labs", "all")
+"""Public profile identifiers in the order shown to operators."""
+
+SURFACE_PROFILES = {
+    "first-use": SurfaceProfile(
+        name="first-use",
+        summary="Three concepts prove the complete local loop before persistent setup.",
+        tiers=(STABLE, ANALYSIS),
+        commands=("doctor", "demo"),
+        dependency_extras=(),
+        activation="Run the three recorded journey commands in order.",
+        deactivation=(
+            "The demo stops its temporary hub; remove its chosen output directory if unwanted."
+        ),
+        concepts=FIRST_USE_CONCEPTS,
+        journey=FIRST_USE_JOURNEY,
+    ),
+    "core": SurfaceProfile(
+        name="core",
+        summary="Base-install coordination and read-only operator commands.",
+        tiers=(STABLE, ANALYSIS),
+        commands=(),
+        dependency_extras=(),
+        activation="Install the base package; start only the hub or waiter you explicitly choose.",
+        deactivation=(
+            "Stop the exact process or user unit you started; no global profile state exists."
+        ),
+    ),
+    "adapters": SurfaceProfile(
+        name="adapters",
+        summary="Explicit bridges for agent hosts, protocols, telemetry, and semantic claims.",
+        tiers=(ADAPTER,),
+        commands=(),
+        dependency_extras=("a2a-grpc", "mcp", "otel", "semantic", "wasm"),
+        activation="Install only the required extra, then launch that adapter command explicitly.",
+        deactivation="Stop its process and remove its host launch entry or omit its opt-in flag.",
+    ),
+    "governance": SurfaceProfile(
+        name="governance",
+        summary="Policy, identity, evidence, encryption, and release-integrity commands.",
+        tiers=(GOVERNANCE,),
+        commands=(),
+        dependency_extras=("cloud-hsm", "encryption", "pkcs11", "sqlcipher", "tpm2"),
+        activation="Install the selected backend extra and pass its explicit policy or key option.",
+        deactivation="Remove that option only under its documented migration and custody contract.",
+    ),
+    "labs": SurfaceProfile(
+        name="labs",
+        summary="Experimental and benchmark commands that never activate themselves.",
+        tiers=(EXPERIMENTAL,),
+        commands=(),
+        dependency_extras=("benchmark", "wasm"),
+        activation=(
+            "Invoke the selected experimental command; pin the package version for its shape."
+        ),
+        deactivation=(
+            "Stop the invoked process or omit the command; "
+            "no lab runs in the background by default."
+        ),
+    ),
+    "all": SurfaceProfile(
+        name="all",
+        summary="Every classified command, with the aggregate runtime dependency extra available.",
+        tiers=TIERS,
+        commands=(),
+        dependency_extras=("all",),
+        activation=(
+            "Install 'synapse-channel[all]', then invoke only the capabilities you intend to use."
+        ),
+        deactivation="Use a clean base-only environment and stop explicitly launched processes.",
+    ),
+}
+"""Measured public profiles; they classify discovery and never hide a command."""
+
+
+def commands_in_profile(profile: str) -> list[str]:
+    """Return commands selected by a public surface profile.
+
+    Parameters
+    ----------
+    profile : str
+        One of :data:`PROFILE_ORDER`.
+
+    Returns
+    -------
+    list[str]
+        Commands in stable tier order, or an empty list for an unknown profile.
+    """
+    selected = SURFACE_PROFILES.get(profile)
+    if selected is None:
+        return []
+    if selected.commands:
+        return list(selected.commands)
+    return [
+        command for tier in TIERS if tier in selected.tiers for command in subcommands_in_tier(tier)
+    ]
 
 
 def tier_of(subcommand: str) -> str | None:

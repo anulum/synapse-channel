@@ -14,9 +14,15 @@ from synapse_channel.cli import build_parser
 from synapse_channel.surface_taxonomy import (
     CLI_TAXONOMY,
     DESIGN_PREVIEW_DOCS,
+    FIRST_USE_CONCEPTS,
+    FIRST_USE_JOURNEY,
+    FIRST_USE_MAX_CONCEPTS,
+    PROFILE_ORDER,
     STABLE,
+    SURFACE_PROFILES,
     TIER_SUMMARIES,
     TIERS,
+    commands_in_profile,
     subcommands_in_tier,
     taxonomy_by_tier,
     tier_of,
@@ -63,6 +69,36 @@ def test_subcommands_in_tier_partition_the_taxonomy() -> None:
     assert "send" in subcommands_in_tier(STABLE)
 
 
+def test_first_use_profile_is_bounded_and_self_contained() -> None:
+    profile = SURFACE_PROFILES["first-use"]
+
+    assert len(FIRST_USE_CONCEPTS) <= FIRST_USE_MAX_CONCEPTS
+    assert FIRST_USE_CONCEPTS == ("install", "diagnose", "prove")
+    assert FIRST_USE_JOURNEY == (
+        "python -m pip install synapse-channel",
+        "synapse doctor",
+        "synapse demo --output ./synapse-golden-demo",
+    )
+    assert profile.dependency_extras == ()
+    assert profile.persistent_services == 0
+    assert commands_in_profile("first-use") == ["doctor", "demo"]
+
+
+def test_profiles_preserve_the_complete_command_surface() -> None:
+    assert tuple(SURFACE_PROFILES) == PROFILE_ORDER
+    assert set(commands_in_profile("all")) == set(CLI_TAXONOMY)
+    assert commands_in_profile("not-a-profile") == []
+
+
+def test_profile_dependency_extras_exist_in_the_package_manifest() -> None:
+    manifest = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    profile_extras = {
+        extra for profile in SURFACE_PROFILES.values() for extra in profile.dependency_extras
+    }
+    for extra in profile_extras:
+        assert f"{extra} = [" in manifest
+
+
 def test_design_preview_docs_are_present_and_not_in_the_cli() -> None:
     for doc in DESIGN_PREVIEW_DOCS:
         assert (ROOT / "docs" / doc).exists(), doc
@@ -91,3 +127,5 @@ def test_readme_and_public_surface_map_core_to_optional_layers() -> None:
     for tier in TIERS:
         assert f"`{tier}`" in readme
         assert f"`{tier}`" in public_surface
+    for profile in PROFILE_ORDER:
+        assert f"`{profile}`" in public_surface

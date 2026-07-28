@@ -223,8 +223,7 @@ synapse install-shell-hook          # 自动武装 Bash、Zsh 和 Fish 终端
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
+synapse demo --output ./synapse-golden-demo
 ```
 
 `synapse doctor` 报告本地设置问题，例如身份、hub 暴露、根文件系统压力和
@@ -237,7 +236,8 @@ synapse quickstart-coding
 success: coordination demo completed
 ```
 
-`synapse quickstart-coding` 创建一个临时的 coding-fleet 工作区，运行与生成
+完成自包含验证后，`synapse quickstart-coding` 仍可作为可选工作区演示使用。
+它会创建一个临时的 coding-fleet 工作区，运行与生成
 的工作区相同的无碰撞编码演示，成功后删除临时工作区，并打印：
 
 ```text

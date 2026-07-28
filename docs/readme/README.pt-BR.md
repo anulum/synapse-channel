@@ -251,8 +251,7 @@ a um repositório real:
 ```bash
 python -m pip install synapse-channel
 synapse doctor
-synapse demo
-synapse quickstart-coding
+synapse demo --output ./synapse-golden-demo
 ```
 
 `synapse doctor` relata problemas de configuração local como identidade,
@@ -266,7 +265,8 @@ conflito, handoff e receipt verificado. Ele é bem-sucedido quando imprime:
 success: coordination demo completed
 ```
 
-`synapse quickstart-coding` cria um workspace coding-fleet temporário, executa
+Depois da prova autocontida, `synapse quickstart-coding` continua disponível
+como demo opcional de workspace. Ele cria um workspace coding-fleet temporário, executa
 a mesma demo de codificação sem colisões usada pelos workspaces gerados,
 remove o workspace temporário após o sucesso e imprime:
 

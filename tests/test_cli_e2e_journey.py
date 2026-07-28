@@ -54,6 +54,27 @@ def test_commands_overview_groups_the_surface_by_tier() -> None:
     assert "board" in result.stdout
 
 
+def test_first_use_profile_is_measured_by_the_real_cli() -> None:
+    """``commands --profile first-use --json`` exposes the executable boundary."""
+    result = run_cli("commands", "--profile", "first-use", "--json")
+    assert result.ok(), result.output
+    profile = json.loads(result.stdout)
+    assert profile["schema_version"] == "synapse-surface-profile.v1"
+    assert profile["concept_count"] == 3
+    assert profile["concept_count"] <= profile["concept_limit"] == 8
+    assert profile["shell_command_count"] == 3
+    assert profile["top_level_commands"] == ["doctor", "demo"]
+    assert profile["top_level_command_count"] == 2
+    assert profile["dependency_extras"] == []
+    assert profile["dependency_extra_count"] == 0
+    assert profile["persistent_services_started_implicitly"] == 0
+    assert profile["journey"] == [
+        "python -m pip install synapse-channel",
+        "synapse doctor",
+        "synapse demo --output ./synapse-golden-demo",
+    ]
+
+
 def test_completions_emit_sourceable_scripts_for_each_shell(tmp_path: Path) -> None:
     """``synapse completions <shell>`` prints a script the target shell accepts.
 
