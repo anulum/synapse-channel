@@ -48,3 +48,24 @@ def prerequisite_then_all(
         return False
     completion_start = prerequisite_position + len(prerequisite)
     return all(contents.find(marker, completion_start) >= 0 for marker in completions)
+
+
+def all_then_completion(
+    contents: str,
+    prerequisites: tuple[str, ...],
+    completion: str,
+) -> bool:
+    """Return whether one completion follows every unordered prerequisite."""
+    if not prerequisites or any(not marker for marker in prerequisites):
+        raise ValueError("JetBrains readiness prerequisites must be non-empty")
+    if not completion:
+        raise ValueError("JetBrains readiness completion must be non-empty")
+    if completion in prerequisites or len(set(prerequisites)) != len(prerequisites):
+        raise ValueError("JetBrains readiness events must be distinct")
+    prerequisite_ends = []
+    for marker in prerequisites:
+        position = contents.find(marker)
+        if position < 0:
+            return False
+        prerequisite_ends.append(position + len(marker))
+    return contents.find(completion, max(prerequisite_ends)) >= 0

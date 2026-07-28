@@ -23,7 +23,9 @@ from e2e.opencode_editors import (
 from e2e.opencode_editors.jetbrains_client import (
     _ACP_SESSION_COMPLETIONS,
     _ACP_SESSION_PREREQUISITE,
+    _CHAT_READY_COMPLETION,
     _CHAT_READY_MARKERS,
+    _CHAT_READY_PREREQUISITES,
 )
 from e2e.opencode_editors.jetbrains_evidence import (
     capture_screenshot as _screenshot,
@@ -34,6 +36,7 @@ from e2e.opencode_editors.jetbrains_evidence import (
 from e2e.opencode_editors.jetbrains_evidence import (
     wait_for_trace as _wait_for_trace,
 )
+from e2e.opencode_editors.jetbrains_readiness import all_then_completion
 
 
 def test_idea_log_wait_requires_all_ordered_markers(tmp_path: Path) -> None:
@@ -213,25 +216,39 @@ def test_chat_readiness_uses_stable_lifecycle_events(tmp_path: Path) -> None:
         _CHAT_READY_MARKERS,
         float("inf"),
         lambda: None,
+        matcher=lambda contents: all_then_completion(
+            contents,
+            _CHAT_READY_PREREQUISITES,
+            _CHAT_READY_COMPLETION,
+        ),
     )
 
     assert "AIAssistantInputSendAction#presentation" not in idea_log.read_text(encoding="utf-8")
 
 
-def test_chat_readiness_rejects_project_events_before_agent_registration(
+def test_chat_readiness_accepts_project_open_before_agent_registration(
     tmp_path: Path,
 ) -> None:
     idea_log = tmp_path / "idea.log"
     idea_log.write_text(
         "2026-07-15 BeforeFileOpenLoggerListener - fileOpened README.md\n"
-        "2026-07-15 DumbServiceImpl - exit dumb mode [project]\n"
         "2026-07-15 AcpSessionLifecycleManagerRegistry - "
-        "No session managers found for agent 'SYNAPSE OpenCode E2E'\n",
+        "No session managers found for agent 'SYNAPSE OpenCode E2E'\n"
+        "2026-07-15 DumbServiceImpl - exit dumb mode [project]\n",
         encoding="utf-8",
     )
 
-    with pytest.raises(RuntimeError, match="IDEA log never contained"):
-        _wait_for_idea_log(tmp_path, _CHAT_READY_MARKERS, 0.0, lambda: None)
+    _wait_for_idea_log(
+        tmp_path,
+        _CHAT_READY_MARKERS,
+        float("inf"),
+        lambda: None,
+        matcher=lambda contents: all_then_completion(
+            contents,
+            _CHAT_READY_PREREQUISITES,
+            _CHAT_READY_COMPLETION,
+        ),
+    )
 
 
 def test_selector_screenshot_cannot_cross_its_phase_deadline(
