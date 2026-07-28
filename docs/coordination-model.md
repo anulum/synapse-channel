@@ -301,5 +301,12 @@ memory spine.
 
 With `--db`, the hub records every authoritative mutation to an append-only
 SQLite event log (WAL) and rebuilds its state by replaying it on start-up. A
-reconnecting agent uses an idempotency key (so a retried claim is applied once)
-and a resume cursor (to fetch exactly the messages it missed).
+reconnecting agent uses an idempotency key and a resume cursor (to fetch exactly
+the messages it missed). For keyed claims, task updates, releases, handoffs,
+checkpoints, guard-denial records, and resource offers, one `BEGIN IMMEDIATE`
+transaction commits the authoritative event sequence, canonical request digest,
+exact response, and operation-evidence intent. An identical retry replays that
+response after restart; changed-payload key reuse is refused without exposing
+request values. Unkeyed operations remain at-least-once, and a hub without a
+journal suppresses duplicates only for the life of that process. Operation rows
+are not automatically removed or compacted away in this release.

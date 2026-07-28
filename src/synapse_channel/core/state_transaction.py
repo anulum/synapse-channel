@@ -22,9 +22,16 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from copy import copy, deepcopy
 from dataclasses import dataclass, fields
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
+
+from synapse_channel.core.atomic_operations import (
+    AtomicExecution,
+    OperationDraft,
+    OperationRecord,
+)
 
 if TYPE_CHECKING:
+    from synapse_channel.core.persistence import OperationCommitResult
     from synapse_channel.core.state import SynapseState
     from synapse_channel.core.state_models import TaskClaim
 
@@ -171,3 +178,78 @@ class SerializedStateMutationActor:
             if cancelled:
                 raise asyncio.CancelledError
             return result
+
+    async def run_atomic(
+        self,
+        state: SynapseState,
+        mutate: Callable[[SynapseState], MutationResult],
+        *,
+        request_digest: str,
+        lookup: Callable[[], OperationRecord | None],
+        prepare: Callable[[MutationResult], OperationDraft | None],
+        commit: Callable[[OperationDraft], OperationCommitResult],
+        remember: Callable[[OperationRecord], None],
+        conflict: Callable[[OperationRecord], dict[str, Any]],
+        persist_uncommitted: Callable[[MutationResult], None] | None = None,
+        publish: Callable[[MutationResult], None] | None = None,
+        stage_hook: Callable[[str], None] | None = None,
+    ) -> AtomicExecution:
+        """Apply one keyed mutation with a second lookup inside the actor lock."""
+        hook = stage_hook or (lambda _stage: None)
+        async with self._lock:
+            existing = lookup()
+            if existing is not None:
+                if existing.request_digest is None or existing.request_digest == request_digest:
+                    return AtomicExecution("replayed", None, existing.response)
+                return AtomicExecution("conflict", None, conflict(existing))
+
+            hook("before_candidate_mutation")
+            candidate = deepcopy(state)
+            result = mutate(candidate)
+            draft = prepare(result)
+            hook("after_candidate_response")
+            if draft is None:
+                cancelled = False
+                if persist_uncommitted is not None:
+                    uncommitted_append = asyncio.create_task(
+                        asyncio.to_thread(persist_uncommitted, result)
+                    )
+                    try:
+                        await asyncio.shield(uncommitted_append)
+                    except asyncio.CancelledError:
+                        cancelled = True
+                        await uncommitted_append
+                state.publish_from(candidate)
+                if publish is not None:
+                    publish(result)
+                if cancelled:
+                    raise asyncio.CancelledError
+                return AtomicExecution("uncommitted", result, None)
+
+            operation_append = asyncio.create_task(asyncio.to_thread(commit, draft))
+            cancelled = False
+            try:
+                committed = await asyncio.shield(operation_append)
+            except asyncio.CancelledError:
+                cancelled = True
+                committed = await operation_append
+
+            stored = OperationRecord(
+                key=committed.operation.operation_key,
+                request_digest=committed.operation.request_digest,
+                response=committed.operation.response,
+            )
+            remember(stored)
+            if committed.outcome == "inserted":
+                state.publish_from(candidate)
+                if publish is not None:
+                    publish(result)
+                hook("after_publication")
+                execution = AtomicExecution("inserted", result, stored.response)
+            elif committed.outcome == "replayed":
+                execution = AtomicExecution("replayed", None, stored.response)
+            else:
+                execution = AtomicExecution("conflict", None, conflict(stored))
+            if cancelled:
+                raise asyncio.CancelledError
+            return execution

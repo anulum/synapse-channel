@@ -24,8 +24,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
+from synapse_channel.core.atomic_operations import OperationDraft
 from synapse_channel.core.deadlock import prune_waits, would_create_cycle
 from synapse_channel.core.journal import (
+    EventKind,
     record_checkpoint,
     record_claim,
     record_claim_denial,
@@ -34,6 +36,7 @@ from synapse_channel.core.journal import (
     record_release,
     record_task_update,
 )
+from synapse_channel.core.ledger import ProgressNote
 from synapse_channel.core.numeric_coercion import safe_float
 from synapse_channel.core.path_identity import (
     PathIdentityError,
@@ -355,21 +358,88 @@ def claim_grant_fields(claim: TaskClaim) -> dict[str, Any]:
 
 async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
     """Apply a scoped claim request and broadcast the grant, or deny the sender."""
-    application = await apply_claim_async(
-        hub,
-        sender,
-        data,
-        quota_principal=hub.clients.quota_principal(websocket, fallback_agent=sender),
-    )
-    if application.claim is not None:
-        hub.counters.claims_granted += 1
+    quota_principal = hub.clients.quota_principal(websocket, fallback_agent=sender)
+
+    def mutate(state: SynapseState) -> ClaimApplication:
+        return apply_claim(
+            _CandidateClaimHub(
+                state=state,
+                _waits={waiter: set(tasks) for waiter, tasks in hub._waits.items()},
+            ),
+            sender,
+            data,
+            quota_principal=quota_principal,
+        )
+
+    def prepare(application: ClaimApplication) -> OperationDraft | None:
+        if application.claim is None:
+            return None
         grant = hub._system(
             application.message,
             msg_type=MessageType.CLAIM_GRANTED,
             **claim_grant_fields(application.claim),
         )
-        hub._remember(data, grant)
+        return OperationDraft(
+            response=grant,
+            events=((EventKind.CLAIM, application.claim.as_persisted_dict()),),
+            intent={"family": "claim", "response_type": MessageType.CLAIM_GRANTED},
+        )
+
+    def persist_denial(application: ClaimApplication) -> None:
+        if application.claim is not None or hub.journal is None:
+            return
+        raw_paths = data.get("paths")
+        _record_denial(
+            hub,
+            claimant=sender,
+            task_id=application.task_id,
+            reason_code=application.reason_code,
+            worktree=str(data.get("worktree") or ""),
+            paths=[str(path) for path in raw_paths] if isinstance(raw_paths, list) else [],
+        )
+
+    execution = await hub._run_atomic_operation(
+        data,
+        mutate,
+        prepare,
+        persist_uncommitted=persist_denial,
+        publish=lambda application: (
+            _clear_satisfied_wait(hub._waits, sender, application.task_id)
+            if application.claim is not None
+            else None
+        ),
+    )
+    if execution is not None and execution.outcome in {"replayed", "conflict"}:
+        assert execution.response is not None
+        await hub._send_json(websocket, execution.response)
+        return
+    application = (
+        execution.mutation
+        if execution is not None
+        else await apply_claim_async(
+            hub,
+            sender,
+            data,
+            quota_principal=quota_principal,
+        )
+    )
+    if application.claim is not None:
+        hub.counters.claims_granted += 1
+        grant = (
+            execution.response
+            if execution is not None
+            else hub._system(
+                application.message,
+                msg_type=MessageType.CLAIM_GRANTED,
+                **claim_grant_fields(application.claim),
+            )
+        )
+        assert grant is not None
+        if execution is None:
+            hub._remember(data, grant)
         await hub._broadcast(grant)
+        if execution is not None:
+            await hub._settle_atomic_operation(data)
         return
     hub.counters.claims_denied += 1
     await hub._send_json(
@@ -413,23 +483,59 @@ async def handle_task_update(
         if claim is not None:
             record_task_update(journal, claim)
 
-    ok, message, claim = await hub.state_mutations.run(
-        hub.state,
-        mutate,
-        persist=persist if journal is not None else None,
-    )
-    if claim is not None:
+    def prepare(result: tuple[bool, str, TaskClaim | None]) -> OperationDraft | None:
+        ok, message, claim = result
+        if not ok or claim is None:
+            return None
         updated = hub._system(
             message,
             msg_type=MessageType.TASK_UPDATED,
             task_id=task_id,
-            owner=sender if claim else None,
-            status=claim.status if claim else None,
-            data_ref=claim.data_ref if claim else None,
-            version=claim.version if claim else None,
+            owner=sender,
+            status=claim.status,
+            data_ref=claim.data_ref,
+            version=claim.version,
         )
-        hub._remember(data, updated)
+        return OperationDraft(
+            response=updated,
+            events=((EventKind.TASK_UPDATE, claim.as_persisted_dict()),),
+            intent={"family": "task_update", "response_type": MessageType.TASK_UPDATED},
+        )
+
+    execution = await hub._run_atomic_operation(data, mutate, prepare)
+    if execution is not None and execution.outcome in {"replayed", "conflict"}:
+        assert execution.response is not None
+        await hub._send_json(websocket, execution.response)
+        return
+    ok, message, claim = (
+        execution.mutation
+        if execution is not None
+        else await hub.state_mutations.run(
+            hub.state,
+            mutate,
+            persist=persist if journal is not None else None,
+        )
+    )
+    if claim is not None:
+        updated = (
+            execution.response
+            if execution is not None
+            else hub._system(
+                message,
+                msg_type=MessageType.TASK_UPDATED,
+                task_id=task_id,
+                owner=sender,
+                status=claim.status,
+                data_ref=claim.data_ref,
+                version=claim.version,
+            )
+        )
+        assert updated is not None
+        if execution is None:
+            hub._remember(data, updated)
         await hub._broadcast(updated)
+        if execution is not None:
+            await hub._settle_atomic_operation(data)
     else:
         await hub._send_json(
             websocket, hub._system(message, msg_type=MessageType.ERROR, target=sender)
@@ -458,13 +564,12 @@ async def handle_release(
             # cannot refuse a later legitimate wait as a false positive.
             hub._waits = prune_waits(hub._waits, hub.state.claims)
 
-    ok, message = await hub.state_mutations.run(
-        hub.state,
-        mutate,
-        persist=persist if journal is not None else None,
-        publish=publish,
-    )
-    if ok:
+    prepared_progress: list[ProgressNote] = []
+
+    def prepare(result: tuple[bool, str]) -> OperationDraft | None:
+        ok, message = result
+        if not ok:
+            return None
         receipt = build_release_receipt(
             task_id=task_id,
             owner=sender,
@@ -477,7 +582,6 @@ async def handle_release(
             confidence=data.get("confidence", ""),
             freshness_seconds=data.get("freshness_seconds"),
         )
-        hub.counters.releases_granted += 1
         granted = hub._system(
             message,
             msg_type=MessageType.RELEASE_GRANTED,
@@ -485,10 +589,55 @@ async def handle_release(
             owner=sender,
             receipt=receipt,
         )
-        hub._remember(data, granted)
-        await hub._broadcast(granted)
+        events: list[tuple[str, Mapping[str, Any]]] = [(EventKind.RELEASE, {"task_id": task_id})]
         if release_receipt_has_evidence(receipt):
+            note = ProgressNote(
+                task_id=task_id,
+                author=sender,
+                kind="assessment",
+                text=format_release_receipt_note(receipt),
+            )
+            prepared_progress[:] = [note]
+            events.append((EventKind.LEDGER_PROGRESS, note.as_dict()))
+        return OperationDraft(
+            response=granted,
+            events=tuple(events),
+            intent={"family": "release", "receipt": receipt},
+        )
+
+    execution = await hub._run_atomic_operation(data, mutate, prepare, publish=publish)
+    if execution is not None and execution.outcome in {"replayed", "conflict"}:
+        assert execution.response is not None
+        await hub._send_json(websocket, execution.response)
+        return
+    ok, message = (
+        execution.mutation
+        if execution is not None
+        else await hub.state_mutations.run(
+            hub.state,
+            mutate,
+            persist=persist if journal is not None else None,
+            publish=publish,
+        )
+    )
+    if ok:
+        hub.counters.releases_granted += 1
+        granted = (
+            execution.response if execution is not None else prepare((ok, message)).response  # type: ignore[union-attr]
+        )
+        assert granted is not None
+        receipt = granted["receipt"]
+        if execution is None:
+            hub._remember(data, granted)
+        await hub._broadcast(granted)
+        if execution is not None and prepared_progress:
+            note = prepared_progress[0]
+            hub.blackboard.restore_progress(note)
+            await _broadcast_progress(hub, note, f"Release receipt from {sender}")
+        elif release_receipt_has_evidence(receipt):
             await _record_release_receipt_progress(hub, receipt)
+        if execution is not None:
+            await hub._settle_atomic_operation(data)
         return
     await hub._send_json(
         websocket,
@@ -517,6 +666,17 @@ async def _record_release_receipt_progress(hub: SynapseHub, receipt: ReleaseRece
     await hub._broadcast(
         hub._system(
             f"Release receipt from {receipt['owner']}",
+            msg_type=MessageType.LEDGER_PROGRESS_POSTED,
+            note=note.as_dict(),
+        )
+    )
+
+
+async def _broadcast_progress(hub: SynapseHub, note: ProgressNote, message: str) -> None:
+    """Broadcast a progress note already committed with an atomic operation."""
+    await hub._broadcast(
+        hub._system(
+            message,
             msg_type=MessageType.LEDGER_PROGRESS_POSTED,
             note=note.as_dict(),
         )
@@ -570,11 +730,71 @@ async def handle_handoff(
         if result[2] is not None:
             _clear_satisfied_wait(hub._waits, to_agent, task_id)
 
-    ok, message, claim = await hub.state_mutations.run(
-        hub.state,
-        mutate,
-        persist=persist if journal is not None else None,
-        publish=publish,
+    prepared_progress: list[ProgressNote] = []
+
+    def prepare(result: tuple[bool, str, TaskClaim | None]) -> OperationDraft | None:
+        ok, message, claim = result
+        if not ok or claim is None:
+            return None
+        scope_fields: dict[str, Any] = {"worktree": claim.worktree, "paths": list(claim.paths)}
+        if claim.path_identity is not None:
+            scope_fields["path_identity"] = claim.path_identity.as_dict()
+        granted = hub._system(
+            message,
+            msg_type=MessageType.HANDOFF_GRANTED,
+            task_id=task_id,
+            owner=claim.owner,
+            previous_owner=sender,
+            note=claim.note,
+            status=claim.status,
+            **scope_fields,
+            epoch=claim.epoch,
+            version=claim.version,
+            lease_expires_at=claim.lease_expires_at,
+            checkpoint=claim.checkpoint,
+        )
+        progress = ProgressNote(
+            task_id=task_id,
+            author=sender,
+            kind="note",
+            text=(
+                f"handed off to {to_agent}: {claim.note}"
+                if claim.note
+                else f"handed off to {to_agent}"
+            ),
+        )
+        prepared_progress[:] = [progress]
+        return OperationDraft(
+            response=granted,
+            events=(
+                (EventKind.HANDOFF, claim.as_persisted_dict()),
+                (EventKind.LEDGER_PROGRESS, progress.as_dict()),
+            ),
+            intent={
+                "family": "handoff",
+                "progress": {
+                    "task_id": task_id,
+                    "from_agent": sender,
+                    "to_agent": to_agent,
+                    "context": claim.note,
+                },
+            },
+        )
+
+    execution = await hub._run_atomic_operation(data, mutate, prepare, publish=publish)
+    if execution is not None and execution.outcome in {"replayed", "conflict"}:
+        assert execution.response is not None
+        await hub._send_json(websocket, execution.response)
+        return
+    ok, message, claim = (
+        execution.mutation
+        if execution is not None
+        else await hub.state_mutations.run(
+            hub.state,
+            mutate,
+            persist=persist if journal is not None else None,
+            publish=publish,
+        )
     )
     if claim is None:
         await hub._send_json(
@@ -590,29 +810,21 @@ async def handle_handoff(
 
     # Receiving task X clears only the recipient's wait on X, never a wait on
     # an unrelated task the recipient is still blocked on.
-    await _record_handoff_progress(hub, task_id, sender, to_agent, claim.note)
-    scope_fields: dict[str, Any] = {
-        "worktree": claim.worktree,
-        "paths": list(claim.paths),
-    }
-    if claim.path_identity is not None:
-        scope_fields["path_identity"] = claim.path_identity.as_dict()
-    granted = hub._system(
-        message,
-        msg_type=MessageType.HANDOFF_GRANTED,
-        task_id=task_id,
-        owner=claim.owner,
-        previous_owner=sender,
-        note=claim.note,
-        status=claim.status,
-        **scope_fields,
-        epoch=claim.epoch,
-        version=claim.version,
-        lease_expires_at=claim.lease_expires_at,
-        checkpoint=claim.checkpoint,
+    if execution is not None and prepared_progress:
+        note = prepared_progress[0]
+        hub.blackboard.restore_progress(note)
+        await _broadcast_progress(hub, note, f"Progress from {sender}")
+    else:
+        await _record_handoff_progress(hub, task_id, sender, to_agent, claim.note)
+    granted = (
+        execution.response if execution is not None else prepare((ok, message, claim)).response  # type: ignore[union-attr]
     )
-    hub._remember(data, granted)
+    assert granted is not None
+    if execution is None:
+        hub._remember(data, granted)
     await hub._broadcast(granted)
+    if execution is not None:
+        await hub._settle_atomic_operation(data)
 
 
 async def _record_handoff_progress(
@@ -660,12 +872,10 @@ async def handle_checkpoint(
         if claim is not None:
             record_checkpoint(journal, claim)
 
-    ok, message, claim = await hub.state_mutations.run(
-        hub.state,
-        mutate,
-        persist=persist if journal is not None else None,
-    )
-    if claim is not None:
+    def prepare(result: tuple[bool, str, TaskClaim | None]) -> OperationDraft | None:
+        ok, message, claim = result
+        if not ok or claim is None:
+            return None
         saved = hub._system(
             message,
             msg_type=MessageType.CHECKPOINT_SAVED,
@@ -673,8 +883,36 @@ async def handle_checkpoint(
             task_id=task_id,
             version=claim.version,
         )
-        hub._remember(data, saved)
+        return OperationDraft(
+            response=saved,
+            events=((EventKind.CHECKPOINT, claim.as_persisted_dict()),),
+            intent={"family": "checkpoint", "response_type": MessageType.CHECKPOINT_SAVED},
+        )
+
+    execution = await hub._run_atomic_operation(data, mutate, prepare)
+    if execution is not None and execution.outcome in {"replayed", "conflict"}:
+        assert execution.response is not None
+        await hub._send_json(websocket, execution.response)
+        return
+    ok, message, claim = (
+        execution.mutation
+        if execution is not None
+        else await hub.state_mutations.run(
+            hub.state,
+            mutate,
+            persist=persist if journal is not None else None,
+        )
+    )
+    if claim is not None:
+        saved = (
+            execution.response if execution is not None else prepare((ok, message, claim)).response  # type: ignore[union-attr]
+        )
+        assert saved is not None
+        if execution is None:
+            hub._remember(data, saved)
         await hub._send_json(websocket, saved)
+        if execution is not None:
+            await hub._settle_atomic_operation(data)
         return
     await hub._send_json(
         websocket,

@@ -34,16 +34,18 @@ second writer to use the DB-API connection at the same time.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import os
 import threading
 import time
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 from types import TracebackType
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple
 
+from synapse_channel.core.atomic_operations import OperationRecord
 from synapse_channel.core.event_row_recovery import CorruptEventRow, decode_event_row
 
 BUSY_TIMEOUT_MS = 5000
@@ -70,6 +72,32 @@ class StoredEvent(NamedTuple):
     ts: float
     kind: str
     payload: dict[str, Any]
+
+
+class StoredOperation(NamedTuple):
+    """One durable keyed operation and its exact replay response."""
+
+    operation_key: str
+    request_digest: str
+    response: dict[str, Any]
+    response_sha256: str
+    first_event_seq: int
+    commit_seq: int
+    committed_at: float
+
+
+class OperationCommitResult(NamedTuple):
+    """Final outcome of an atomic operation commit attempt."""
+
+    outcome: Literal["inserted", "replayed", "conflict"]
+    operation: StoredOperation
+
+
+class PendingOperationIntent(NamedTuple):
+    """One committed operation intent awaiting local evidence projection."""
+
+    operation_key: str
+    intent: dict[str, Any]
 
 
 class EventStore:
@@ -120,6 +148,23 @@ class EventStore:
             "ts REAL NOT NULL, "
             "kind TEXT NOT NULL, "
             "payload TEXT NOT NULL)"
+        )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS operations ("
+            "operation_key TEXT PRIMARY KEY, "
+            "request_digest TEXT NOT NULL, "
+            "response_json TEXT NOT NULL, "
+            "response_sha256 TEXT NOT NULL, "
+            "first_event_seq INTEGER NOT NULL, "
+            "commit_seq INTEGER NOT NULL, "
+            "committed_at REAL NOT NULL)"
+        )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS operation_outbox ("
+            "operation_key TEXT PRIMARY KEY, "
+            "intent_json TEXT NOT NULL, "
+            "receipt_id TEXT, "
+            "FOREIGN KEY(operation_key) REFERENCES operations(operation_key))"
         )
         self._aef_outbox_kinds = frozenset(str(kind) for kind in aef_outbox_kinds)
         if self._aef_outbox_kinds:
@@ -274,6 +319,264 @@ class EventStore:
                         # failure observable without inverting journal truth.
                         logger.exception("Could not restore SQLite synchronous=NORMAL")
         return tuple(sequences)
+
+    @staticmethod
+    def _stored_operation(row: tuple[object, ...]) -> StoredOperation:
+        response = json.loads(str(row[2]))
+        if not isinstance(response, dict):
+            raise ValueError("stored operation response must be a JSON object")
+        return StoredOperation(
+            operation_key=str(row[0]),
+            request_digest=str(row[1]),
+            response=response,
+            response_sha256=str(row[3]),
+            first_event_seq=int(str(row[4])),
+            commit_seq=int(str(row[5])),
+            committed_at=float(str(row[6])),
+        )
+
+    def get_operation(self, operation_key: str) -> StoredOperation | None:
+        """Return one completed operation without exposing the key in errors."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT operation_key, request_digest, response_json, response_sha256, "
+                "first_event_seq, commit_seq, committed_at FROM operations "
+                "WHERE operation_key = ?",
+                (operation_key,),
+            ).fetchone()
+        return None if row is None else self._stored_operation(row)
+
+    def read_operations(self) -> tuple[OperationRecord, ...]:
+        """Return durable operation records in commit order for cache seeding."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT operation_key, request_digest, response_json, response_sha256, "
+                "first_event_seq, commit_seq, committed_at FROM operations "
+                "ORDER BY commit_seq"
+            ).fetchall()
+        return tuple(
+            OperationRecord(
+                key=stored.operation_key,
+                request_digest=stored.request_digest,
+                response=stored.response,
+            )
+            for stored in (self._stored_operation(row) for row in rows)
+        )
+
+    def pending_operation_outbox_count(self) -> int:
+        """Return the number of committed operation intents awaiting projection."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM operation_outbox WHERE receipt_id IS NULL"
+            ).fetchone()
+        return int(row[0])
+
+    def pending_operation_intents(self, *, limit: int = 100) -> tuple[PendingOperationIntent, ...]:
+        """Return committed evidence intents awaiting idempotent local projection."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > 10_000:
+            raise ValueError("operation outbox limit must be an integer from 1 through 10000")
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT operation_key, intent_json FROM operation_outbox "
+                "WHERE receipt_id IS NULL ORDER BY rowid LIMIT ?",
+                (limit,),
+            ).fetchall()
+        intents: list[PendingOperationIntent] = []
+        for key, encoded in rows:
+            intent = json.loads(str(encoded))
+            if not isinstance(intent, dict):
+                raise ValueError("stored operation intent must be a JSON object")
+            intents.append(PendingOperationIntent(str(key), intent))
+        return tuple(intents)
+
+    def mark_operation_intent_delivered(self, operation_key: str, receipt_id: str) -> None:
+        """Bind one operation intent to a value-free local projection receipt."""
+        if not operation_key or not receipt_id:
+            raise ValueError("operation outbox identity and receipt must be non-empty")
+        with self._lock:
+            self._conn.execute("PRAGMA synchronous=FULL")
+            try:
+                cursor = self._conn.execute(
+                    "UPDATE operation_outbox SET receipt_id = ? "
+                    "WHERE operation_key = ? AND (receipt_id IS NULL OR receipt_id = ?)",
+                    (receipt_id, operation_key, receipt_id),
+                )
+                if cursor.rowcount != 1:
+                    raise KeyError("operation evidence intent is absent or already settled")
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
+            finally:
+                self._conn.execute("PRAGMA synchronous=NORMAL")
+
+    def commit_operation(
+        self,
+        *,
+        operation_key: str,
+        request_digest: str,
+        response: Mapping[str, Any],
+        events: Iterable[tuple[str, Mapping[str, Any]]],
+        intent: Mapping[str, Any],
+        response_event_seq_field: str | None = None,
+        stage_hook: Callable[[str], None] | None = None,
+    ) -> OperationCommitResult:
+        """Atomically commit a keyed mutation, exact response, and evidence intent."""
+        if not operation_key:
+            raise ValueError("atomic operation key must be non-empty")
+        if len(request_digest) != 64 or any(
+            character not in "0123456789abcdef" for character in request_digest
+        ):
+            raise ValueError("atomic operation request digest must be lowercase SHA-256")
+        stamp = time.time()
+        event_rows = [
+            (
+                stamp,
+                str(kind),
+                json.dumps(
+                    dict(payload),
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ),
+            )
+            for kind, payload in events
+        ]
+        if not event_rows:
+            raise ValueError("atomic operation requires at least one mutation event")
+        response_value = dict(response)
+        response_json = json.dumps(
+            response_value,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        intent_json = json.dumps(
+            dict(intent),
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        hook = stage_hook or (lambda _stage: None)
+
+        with self._lock:
+            self._conn.execute("PRAGMA synchronous=FULL")
+            committed = False
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                existing = self._conn.execute(
+                    "SELECT operation_key, request_digest, response_json, response_sha256, "
+                    "first_event_seq, commit_seq, committed_at FROM operations "
+                    "WHERE operation_key = ?",
+                    (operation_key,),
+                ).fetchone()
+                if existing is not None:
+                    self._conn.rollback()
+                    stored = self._stored_operation(existing)
+                    outcome: Literal["replayed", "conflict"] = (
+                        "replayed" if stored.request_digest == request_digest else "conflict"
+                    )
+                    return OperationCommitResult(outcome, stored)
+
+                sequences: list[int] = []
+                for row in event_rows:
+                    cursor = self._conn.execute(
+                        "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", row
+                    )
+                    sequence = int(cursor.lastrowid or 0)
+                    sequences.append(sequence)
+                    if row[1] in self._aef_outbox_kinds:
+                        self._conn.execute(
+                            "INSERT INTO aef_outbox (legacy_seq, receipt_id) VALUES (?, NULL)",
+                            (sequence,),
+                        )
+                    hook("after_legacy_event_insert")
+
+                if response_event_seq_field is not None:
+                    response_value[response_event_seq_field] = sequences[0]
+                    response_json = json.dumps(
+                        response_value,
+                        ensure_ascii=True,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    )
+                response_sha256 = hashlib.sha256(response_json.encode("ascii")).hexdigest()
+                first_seq = sequences[0]
+                compatibility = {
+                    "key": operation_key,
+                    "request_digest": request_digest,
+                    "response": response_value,
+                    "response_sha256": response_sha256,
+                    "first_event_seq": first_seq,
+                    "commit_seq": sequences[-1] + 1,
+                }
+                cursor = self._conn.execute(
+                    "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)",
+                    (
+                        stamp,
+                        "idempotency",
+                        json.dumps(
+                            compatibility,
+                            ensure_ascii=True,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            allow_nan=False,
+                        ),
+                    ),
+                )
+                commit_seq = int(cursor.lastrowid or 0)
+                self._conn.execute(
+                    "INSERT INTO operations (operation_key, request_digest, response_json, "
+                    "response_sha256, first_event_seq, commit_seq, committed_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        operation_key,
+                        request_digest,
+                        response_json,
+                        response_sha256,
+                        first_seq,
+                        commit_seq,
+                        stamp,
+                    ),
+                )
+                hook("after_operation_insert")
+                self._conn.execute(
+                    "INSERT INTO operation_outbox (operation_key, intent_json, receipt_id) "
+                    "VALUES (?, ?, NULL)",
+                    (operation_key, intent_json),
+                )
+                hook("after_operation_outbox_insert")
+                hook("before_commit")
+                self._conn.commit()
+                committed = True
+                hook("after_commit")
+                return OperationCommitResult(
+                    "inserted",
+                    StoredOperation(
+                        operation_key,
+                        request_digest,
+                        response_value,
+                        response_sha256,
+                        first_seq,
+                        commit_seq,
+                        stamp,
+                    ),
+                )
+            except BaseException:
+                if not committed:
+                    self._conn.rollback()
+                raise
+            finally:
+                try:
+                    self._conn.execute("PRAGMA synchronous=NORMAL")
+                except BaseException:
+                    if not committed:
+                        raise
+                    logger.exception("Could not restore SQLite synchronous=NORMAL")
 
     def pending_aef_events(self, *, limit: int = 100) -> tuple[StoredEvent, ...]:
         """Return queued legacy rows awaiting native AEF reconciliation."""
@@ -608,6 +911,10 @@ class EventStore:
                 " AND NOT EXISTS (SELECT 1 FROM aef_outbox "
                 "WHERE legacy_seq = events.seq AND receipt_id IS NULL)"
             )
+        sql += (
+            " AND NOT EXISTS (SELECT 1 FROM operations "
+            "WHERE events.seq BETWEEN operations.first_event_seq AND operations.commit_seq)"
+        )
         with self._lock:
             cursor = self._conn.executemany(sql, ((seq,) for seq in seq_list))
             self._conn.commit()

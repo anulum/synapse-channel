@@ -83,3 +83,7 @@ class HubCounters:
     forwarded_claim_timeouts: int = 0
     takeovers: int = 0
     takeover_quarantines: int = 0
+    atomic_operations_inserted: int = 0
+    atomic_operations_replayed: int = 0
+    atomic_operations_conflicts: int = 0
+    operation_outbox_pending: int = 0

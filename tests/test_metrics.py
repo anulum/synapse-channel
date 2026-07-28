@@ -112,6 +112,7 @@ def test_health_snapshot_reports_ok_version_uptime_and_counts() -> None:
         "uptime_seconds": 5.0,
         "online_agents": 1,
         "active_claims": 1,
+        "operation_outbox_pending": 0,
     }
 
 

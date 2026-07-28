@@ -318,18 +318,27 @@ kinds; they fall through untouched).
 
 ### INV-CR-1 — a retried mutation applies once
 
-**Normative.** A reconnecting agent that carries an `idem_key` on a claim-family
-verb MUST have the retry applied at most once: a duplicate key replays the first
-response instead of mutating state again. The idempotency key MUST be namespaced
-by sender and message type so it cannot suppress or leak across agents or verbs.
-At-most-once MUST survive a hub restart (the key is journalled at FULL
-durability).
+**Normative.** On a journal-backed hub, a reconnecting agent that carries an
+`idem_key` on a covered mutation MUST have its authoritative events and exact
+response committed in one FULL-durability SQLite transaction. The operation key
+MUST be namespaced by the authenticated sender and normalized message type. An
+identical retry MUST replay the stored response without a second mutation,
+including after restart. Reusing that operation key with a different canonical
+request digest MUST return a stable value-free `idempotency_conflict` and apply
+nothing. Operation rows are retained indefinitely in this release. Unkeyed
+operations remain at-least-once; a hub without a journal provides process-local
+response suppression only. Epoch/version checks coordinate protocol clients but
+do not fence a process that writes repository files directly.
 
-**Implementation.** `core/hub_ledger_guard.py` (`_MUTATING_TYPES`,
-`idempotency_key`, `maybe_replay_duplicate`), `core/idempotency.py`.
+**Implementation.** `core/atomic_operations.py`,
+`core/persistence.py:EventStore.commit_operation`,
+`core/state_transaction.py:SerializedStateMutationActor.run_atomic`, and
+`core/hub_ledger_guard.py`.
 
-**Pinned by.** `tests/test_idempotency.py`, `tests/test_hub_ledger_guard.py`,
-`tests/test_hub_persistence.py`.
+**Pinned by.** `tests/test_atomic_operations.py`,
+`tests/test_atomic_operation_handlers.py`,
+`tests/test_atomic_operation_killpoints.py`, `tests/test_idempotency.py`, and
+`tests/test_hub_ledger_guard.py`.
 
 ### INV-CR-2 — handoff is atomic
 
@@ -394,13 +403,17 @@ authentication.
 
 ### INV-DG-2 — claim-family verbs are apply-once
 
-**Normative.** `claim`, `release`, `task_update`, `handoff`, and `checkpoint`
-carrying an `idem_key` MUST be applied at most once (see INV-CR-1). This is the
-exactly-once-effect complement to chat's at-least-once transport.
+**Normative.** `claim`, `release`, `task_update`, `handoff`, `checkpoint`,
+`guard_denial`, and resource mutations carrying an `idem_key` MUST obey the
+journal-backed atomic apply-once boundary in INV-CR-1. Their transport may still
+be retried; their committed effect and canonical response cannot separate.
+Unkeyed requests remain at-least-once.
 
-**Implementation.** `core/hub_ledger_guard.py:_MUTATING_TYPES`.
+**Implementation.** `core/hub_ledger_guard.py:_MUTATING_TYPES`, the covered
+handlers, and `core/persistence.py:EventStore.commit_operation`.
 
-**Pinned by.** `tests/test_hub_ledger_guard.py`, `tests/test_idempotency.py`.
+**Pinned by.** `tests/test_atomic_operation_handlers.py` and
+`tests/test_atomic_operation_killpoints.py`.
 
 ### INV-DG-3 — a directed message dead-letters rather than vanishing
 

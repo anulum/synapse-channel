@@ -165,13 +165,15 @@ async def test_resource_alias_fields_are_persisted_before_broadcast_and_quota_re
         assert offered["kind"] == "gpu"
         assert offered["name"] == "card-0"
         assert offered["key"] == key
-        assert hub.remembered == [(data, offered)]
+        assert hub.remembered == []
 
         events = store.read_all()
-        assert [event.kind for event in events] == [EventKind.RESOURCE]
+        assert [event.kind for event in events] == [EventKind.RESOURCE, EventKind.IDEMPOTENCY]
         assert events[0].payload["agent"] == "WORKER"
         assert events[0].payload["capacity"] == 3
         assert events[0].payload["meta"] == {"rack": "A"}
+        assert len(store.read_operations()) == 1
+        assert store.pending_operation_outbox_count() == 0
 
         overflow_socket = object()
         await offerings.handle_resource(
@@ -189,8 +191,8 @@ async def test_resource_alias_fields_are_persisted_before_broadcast_and_quota_re
         assert error["payload"] == "resource offer quota exceeded"
         assert set(hub.state.resources) == {key}
         assert hub.broadcasts == [offered]
-        assert hub.remembered == [(data, offered)]
-        assert len(store.read_all()) == 1
+        assert hub.remembered == []
+        assert len(store.read_all()) == 2
     finally:
         store.close()
 

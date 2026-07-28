@@ -12,9 +12,10 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.atomic_operations import OperationDraft
 from synapse_channel.core.durable_ingress import chat_frame_bytes
 from synapse_channel.core.guard_evidence import GuardEvidenceError, parse_guard_denial
-from synapse_channel.core.journal import record_guard_denial
+from synapse_channel.core.journal import EventKind, record_guard_denial
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
@@ -81,6 +82,34 @@ async def handle_guard_denial(
 
     evidence["credential_principal_sha256"] = hashlib.sha256(principal.encode("utf-8")).hexdigest()
     evidence["recorder_sha256"] = hashlib.sha256(sender.encode("utf-8")).hexdigest()
+
+    def mutate(_state: Any) -> dict[str, Any]:
+        return evidence
+
+    def prepare(result: dict[str, Any]) -> OperationDraft:
+        recorded = hub._system(
+            "Guard denial evidence recorded.",
+            msg_type=MessageType.GUARD_DENIAL_RECORDED,
+            target=sender,
+            audit_seq=0,
+            call_sha256=result["call_sha256"],
+            reason_code=result["reason_code"],
+        )
+        return OperationDraft(
+            response=recorded,
+            events=((EventKind.GUARD_DENIAL, result),),
+            intent={"family": "guard_denial", "response_type": MessageType.GUARD_DENIAL_RECORDED},
+            response_event_seq_field="audit_seq",
+        )
+
+    execution = await hub._run_atomic_operation(data, mutate, prepare)
+    if execution is not None:
+        assert execution.response is not None
+        await hub._send_json(websocket, execution.response)
+        if execution.outcome == "inserted":
+            await hub._settle_atomic_operation(data)
+        return
+
     seq = record_guard_denial(hub.journal, evidence)
     recorded = hub._system(
         "Guard denial evidence recorded.",

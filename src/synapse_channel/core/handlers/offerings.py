@@ -18,7 +18,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl_enforcement import project_of
-from synapse_channel.core.journal import record_resource
+from synapse_channel.core.atomic_operations import OperationDraft
+from synapse_channel.core.journal import EventKind, record_resource
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import SynapseState
 from synapse_channel.core.state_models import ResourceOffer
@@ -185,10 +186,49 @@ async def handle_resource(
         if offer is not None:
             record_resource(journal, offer)
 
-    key, _offer = await hub.state_mutations.run(
-        hub.state,
-        mutate,
-        persist=persist if journal is not None else None,
+    def prepare(result: tuple[str | None, ResourceOffer | None]) -> OperationDraft | None:
+        key, offer = result
+        if key is None or offer is None:
+            return None
+        offered = hub._system(
+            f"Resource offered by {sender}",
+            msg_type=MessageType.RESOURCE_OFFERED,
+            agent=sender,
+            kind=kind,
+            name=name,
+            key=key,
+        )
+        return OperationDraft(
+            response=offered,
+            events=(
+                (
+                    EventKind.RESOURCE,
+                    {
+                        "agent": offer.agent,
+                        "kind": offer.kind,
+                        "name": offer.name,
+                        "capacity": offer.capacity,
+                        "meta": offer.meta,
+                        "offered_at": offer.offered_at,
+                    },
+                ),
+            ),
+            intent={"family": "resource", "response_type": MessageType.RESOURCE_OFFERED},
+        )
+
+    execution = await hub._run_atomic_operation(data, mutate, prepare)
+    if execution is not None and execution.outcome in {"replayed", "conflict"}:
+        assert execution.response is not None
+        await hub._send_json(websocket, execution.response)
+        return
+    key, offer = (
+        execution.mutation
+        if execution is not None
+        else await hub.state_mutations.run(
+            hub.state,
+            mutate,
+            persist=persist if journal is not None else None,
+        )
     )
     if key is None:
         await hub._send_json(
@@ -200,13 +240,12 @@ async def handle_resource(
             ),
         )
         return
-    offered = hub._system(
-        f"Resource offered by {sender}",
-        msg_type=MessageType.RESOURCE_OFFERED,
-        agent=sender,
-        kind=kind,
-        name=name,
-        key=key,
+    offered = (
+        execution.response if execution is not None else prepare((key, offer)).response  # type: ignore[union-attr]
     )
-    hub._remember(data, offered)
+    assert offered is not None
+    if execution is None:
+        hub._remember(data, offered)
     await hub._broadcast(offered)
+    if execution is not None:
+        await hub._settle_atomic_operation(data)

@@ -15,6 +15,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Commit journal-backed keyed claim, task-update, release, handoff, checkpoint,
+  guard-denial, and resource mutations atomically with their canonical request
+  digest, exact replay response, event sequence range, and operation-evidence
+  outbox intent. Identical retries now converge after crashes and restarts;
+  changed-payload key reuse fails with a value-free idempotency conflict.
 - Keep strict rejection of exponent-overflow JSON while proving bound hub
   sessions remain usable after the error; restore the complete A2A HTTP
   compatibility re-export, ledger the new platform/optional skips, and retry

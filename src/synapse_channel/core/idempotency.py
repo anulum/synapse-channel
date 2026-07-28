@@ -24,6 +24,8 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Any
 
+from synapse_channel.core.atomic_operations import OperationRecord
+
 DEFAULT_MAX_KEYS = 1024
 
 
@@ -40,7 +42,7 @@ class IdempotencyCache:
 
     def __init__(self, max_keys: int = DEFAULT_MAX_KEYS) -> None:
         self.max_keys = max(int(max_keys), 1)
-        self._store: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._store: OrderedDict[str, OperationRecord] = OrderedDict()
 
     def __contains__(self, key: str) -> bool:
         """Return whether ``key`` has a remembered response."""
@@ -66,9 +68,22 @@ class IdempotencyCache:
         if key not in self._store:
             return None
         self._store.move_to_end(key)
+        return self._store[key].response
+
+    def get_record(self, key: str) -> OperationRecord | None:
+        """Return the digest-aware record for ``key``, marking it most-recent."""
+        if key not in self._store:
+            return None
+        self._store.move_to_end(key)
         return self._store[key]
 
-    def put(self, key: str, response: dict[str, Any]) -> None:
+    def put(
+        self,
+        key: str,
+        response: dict[str, Any],
+        *,
+        request_digest: str | None = None,
+    ) -> None:
         """Remember ``response`` under ``key``, evicting the oldest if full.
 
         Parameters
@@ -80,6 +95,10 @@ class IdempotencyCache:
         """
         if key in self._store:
             self._store.move_to_end(key)
-        self._store[key] = response
+        self._store[key] = OperationRecord(
+            key=key,
+            request_digest=request_digest,
+            response=response,
+        )
         while len(self._store) > self.max_keys:
             self._store.popitem(last=False)

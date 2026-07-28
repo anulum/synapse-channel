@@ -21,9 +21,14 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.atomic_operations import (
+    OperationRecord,
+    canonical_request_digest,
+    idempotency_conflict_response,
+)
 from synapse_channel.core.idempotency import IdempotencyCache
 from synapse_channel.core.journal import record_idempotency
-from synapse_channel.core.protocol import RESOURCE_TYPE_ALIASES, MessageType
+from synapse_channel.core.protocol import RESOURCE_TYPE_ALIASES, SENDER_HUB, MessageType
 
 if TYPE_CHECKING:
     from synapse_channel.core.persistence import EventStore
@@ -70,15 +75,23 @@ class HubLedgerGuard:
         journal: EventStore | None,
         message_seq: int = 0,
         finding_counts: Mapping[str, int] | None = None,
-        idempotency_seed: Iterable[tuple[str, dict[str, Any]]] = (),
+        idempotency_seed: Iterable[tuple[str, dict[str, Any]] | OperationRecord] = (),
     ) -> None:
         self._max_findings_per_agent = max_findings_per_agent
         self._journal = journal
         self._message_seq = message_seq
         self._findings_by_agent: dict[str, int] = dict(finding_counts or {})
         self._cache = IdempotencyCache()
-        for key, response in idempotency_seed:
-            self._cache.put(key, response)
+        for entry in idempotency_seed:
+            if isinstance(entry, OperationRecord):
+                self._cache.put(
+                    entry.key,
+                    entry.response,
+                    request_digest=entry.request_digest,
+                )
+            else:
+                key, response = entry
+                self._cache.put(key, response)
 
     @property
     def idempotency(self) -> IdempotencyCache:
@@ -135,6 +148,32 @@ class HubLedgerGuard:
             if self._journal is not None:
                 record_idempotency(self._journal, key, response)
 
+    def lookup_operation(self, key: str) -> OperationRecord | None:
+        """Return a cached or durable operation record for the actor's second check."""
+        cached = self._cache.get_record(key)
+        if cached is not None:
+            return cached
+        if self._journal is None:
+            return None
+        stored = self._journal.get_operation(key)
+        if stored is None:
+            return None
+        record = OperationRecord(
+            key=stored.operation_key,
+            request_digest=stored.request_digest,
+            response=stored.response,
+        )
+        self.remember_operation(record)
+        return record
+
+    def remember_operation(self, record: OperationRecord) -> None:
+        """Seed one final digest-aware result into the process-local cache."""
+        self._cache.put(
+            record.key,
+            record.response,
+            request_digest=record.request_digest,
+        )
+
     def reserve_finding_slot(self, agent: str) -> tuple[bool, str]:
         """Reserve one durable-finding quota slot for ``agent``.
 
@@ -167,6 +206,7 @@ class HubLedgerGuard:
         data: dict[str, Any],
         websocket: Any,
         send_json: Callable[[Any, dict[str, Any]], Awaitable[None]],
+        record_outcome: Callable[[str], None] | None = None,
     ) -> bool:
         """Replay the cached response for a duplicate mutation, if any.
 
@@ -193,8 +233,35 @@ class HubLedgerGuard:
         key = self.idempotency_key(data)
         if not key:
             return False
-        cached = self._cache.get(key)
+        cached = self.lookup_operation(key)
         if cached is None:
             return False
-        await send_json(websocket, cached)
+        try:
+            digest = canonical_request_digest(data)
+        except (TypeError, ValueError):
+            await send_json(
+                websocket,
+                {
+                    "sender": SENDER_HUB,
+                    "target": str(data.get("sender") or ""),
+                    "type": MessageType.ERROR,
+                    "payload": "Request cannot be represented as strict canonical JSON.",
+                    "error_code": "invalid_idempotency_request",
+                },
+            )
+            return True
+        if cached.request_digest is not None and cached.request_digest != digest:
+            await send_json(
+                websocket,
+                idempotency_conflict_response(
+                    sender=str(data.get("sender") or ""),
+                    reference=cached.response,
+                ),
+            )
+            if record_outcome is not None:
+                record_outcome("conflict")
+            return True
+        await send_json(websocket, cached.response)
+        if record_outcome is not None:
+            record_outcome("replayed")
         return True

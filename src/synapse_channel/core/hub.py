@@ -54,6 +54,12 @@ from synapse_channel.core.agent_liveness import (
     RecipientLiveness,
 )
 from synapse_channel.core.at_rest_guard import guard_at_rest
+from synapse_channel.core.atomic_operations import (
+    AtomicExecution,
+    OperationDraft,
+    canonical_request_digest,
+    idempotency_conflict_response,
+)
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
@@ -652,6 +658,8 @@ class SynapseHub:
         self._clock = clock or time.monotonic
         self._started = self._clock()
         self.counters = HubCounters()
+        if self.journal is not None:
+            self.counters.operation_outbox_pending = self.journal.pending_operation_outbox_count()
         self.clients = HubClientRegistry(
             counters=self.counters,
             max_clients=max_clients,
@@ -880,7 +888,97 @@ class SynapseHub:
         Thin wrapper over :class:`HubLedgerGuard`, injecting the hub's per-socket
         send so the guard re-sends the original response to the duplicate's sender.
         """
-        return await self._ledger.maybe_replay_duplicate(msg_type, data, websocket, self._send_json)
+        outcomes: list[str] = []
+        replayed = await self._ledger.maybe_replay_duplicate(
+            msg_type,
+            data,
+            websocket,
+            self._send_json,
+            outcomes.append,
+        )
+        for outcome in outcomes:
+            self._record_atomic_outcome(outcome)
+        if replayed and outcomes == ["replayed"]:
+            await self._settle_atomic_operation(data)
+        return replayed
+
+    def _record_atomic_outcome(self, outcome: str) -> None:
+        """Increment one bounded, label-free atomic-operation decision counter."""
+        if outcome == "inserted":
+            self.counters.atomic_operations_inserted += 1
+            self.counters.operation_outbox_pending += 1
+        elif outcome == "replayed":
+            self.counters.atomic_operations_replayed += 1
+        elif outcome == "conflict":
+            self.counters.atomic_operations_conflicts += 1
+
+    async def _settle_atomic_operation(self, data: dict[str, Any]) -> None:
+        """Mark a committed evidence intent projected after successful transport."""
+        if self.journal is None:
+            return
+        operation_key = self._ledger.idempotency_key(data)
+        if not operation_key:
+            return
+        stored = self.journal.get_operation(operation_key)
+        if stored is None:
+            return
+        try:
+            await asyncio.to_thread(
+                self.journal.mark_operation_intent_delivered,
+                operation_key,
+                f"local:{stored.response_sha256}",
+            )
+            self.counters.operation_outbox_pending = max(
+                0, self.counters.operation_outbox_pending - 1
+            )
+        except KeyError:
+            return
+
+    async def _run_atomic_operation(
+        self,
+        data: dict[str, Any],
+        mutate: Callable[[Any], Any],
+        prepare: Callable[[Any], OperationDraft | None],
+        *,
+        persist_uncommitted: Callable[[Any], None] | None = None,
+        publish: Callable[[Any], None] | None = None,
+    ) -> AtomicExecution | None:
+        """Run a keyed journal-backed mutation through the atomic operation actor."""
+        if self.journal is None:
+            return None
+        journal = self.journal
+        operation_key = self._ledger.idempotency_key(data)
+        if not operation_key:
+            return None
+        request_digest = canonical_request_digest(data)
+
+        def commit(draft: OperationDraft) -> Any:
+            return journal.commit_operation(
+                operation_key=operation_key,
+                request_digest=request_digest,
+                response=draft.response,
+                events=draft.events,
+                intent=draft.intent,
+                response_event_seq_field=draft.response_event_seq_field,
+            )
+
+        execution = await self.state_mutations.run_atomic(
+            self.state,
+            mutate,
+            request_digest=request_digest,
+            lookup=lambda: self._ledger.lookup_operation(operation_key),
+            prepare=prepare,
+            commit=commit,
+            remember=self._ledger.remember_operation,
+            conflict=lambda existing: idempotency_conflict_response(
+                sender=str(data.get("sender") or ""),
+                reference=existing.response,
+            ),
+            persist_uncommitted=persist_uncommitted,
+            publish=publish,
+        )
+        self._record_atomic_outcome(execution.outcome)
+        return execution
 
     def _system(self, payload: str, **extra: Any) -> dict[str, Any]:
         """Build a hub system message stamped with this hub's id."""
@@ -1434,6 +1532,9 @@ class SynapseHub:
         recognised type is routed through :data:`~synapse_channel.core.handlers.DISPATCH`
         to the matching handler; an unknown type is answered with a private error.
         """
+        data = dict(data)
+        data["sender"] = sender
+        data["type"] = msg_type
         if await self._maybe_replay_duplicate(msg_type, data, websocket):
             return
         handler = DISPATCH.get(msg_type)

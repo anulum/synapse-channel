@@ -270,6 +270,30 @@ def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
             "counter",
             hub.counters.takeover_quarantines,
         ),
+        Metric(
+            "synapse_atomic_operations_inserted_total",
+            "Journal-backed keyed mutations committed since start.",
+            "counter",
+            hub.counters.atomic_operations_inserted,
+        ),
+        Metric(
+            "synapse_atomic_operations_replayed_total",
+            "Journal-backed keyed mutation responses replayed since start.",
+            "counter",
+            hub.counters.atomic_operations_replayed,
+        ),
+        Metric(
+            "synapse_atomic_operations_conflicts_total",
+            "Changed-payload idempotency key reuses refused since start.",
+            "counter",
+            hub.counters.atomic_operations_conflicts,
+        ),
+        Metric(
+            "synapse_operation_outbox_pending",
+            "Committed operation evidence intents awaiting projection.",
+            "gauge",
+            hub.counters.operation_outbox_pending,
+        ),
     ]
 
 
@@ -309,4 +333,5 @@ def health_snapshot(hub: SynapseHub) -> dict[str, Any]:
         "uptime_seconds": round(hub.uptime_seconds(), 3),
         "online_agents": len(hub.agent_sockets),
         "active_claims": len(hub.state.claims),
+        "operation_outbox_pending": (hub.counters.operation_outbox_pending),
     }

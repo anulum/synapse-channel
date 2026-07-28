@@ -29,6 +29,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.core.atomic_operations import OperationRecord
 from synapse_channel.core.delivery_receipts import (
     DELIVERY_RECEIPT_EVENT_KINDS,
     restore_pending_receipts,
@@ -75,7 +76,7 @@ class SeededHubState:
     blackboard: Blackboard
     message_seq: int
     finding_counts: Mapping[str, int]
-    idempotency_seed: tuple[tuple[str, dict[str, Any]], ...]
+    idempotency_seed: tuple[tuple[str, dict[str, Any]] | OperationRecord, ...]
     pending_receipts: tuple[tuple[int, ReceiptEntry], ...]
     corrupt_rows: tuple[CorruptEventRow, ...] = ()
 
@@ -158,7 +159,10 @@ def seed_hub_state(
             blackboard=replayed.blackboard,
             message_seq=replayed.message_seq,
             finding_counts=replayed.finding_counts_by_actor,
-            idempotency_seed=tuple(replayed.idempotency),
+            idempotency_seed=(
+                *tuple(replayed.idempotency),
+                *journal.read_operations(),
+            ),
             pending_receipts=restore_pending_receipts(
                 journal.read_window(kinds=DELIVERY_RECEIPT_EVENT_KINDS)
             ),
