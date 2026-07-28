@@ -50,7 +50,11 @@ _CHAT_READY_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.chat_ready_seconds
 _AGENT_SELECTION_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.agent_selection_seconds
 _ACP_HANDSHAKE_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_handshake_seconds
 _ACP_PROMPT_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_prompt_seconds
-_CHAT_READY_MARKERS = (f"No session managers found for agent '{_AGENT_NAME}'",)
+_CHAT_READY_MARKERS = (
+    f"No session managers found for agent '{_AGENT_NAME}'",
+    "fileOpened README.md",
+    "exit dumb mode [project]",
+)
 _ACP_SESSION_PREREQUISITE = "Required plugins check passed"
 _ACP_SESSION_COMPLETIONS = (
     "Starting ACP client session ",

@@ -202,7 +202,9 @@ def test_chat_readiness_uses_stable_lifecycle_events(tmp_path: Path) -> None:
     idea_log = tmp_path / "idea.log"
     idea_log.write_text(
         "2026-07-15 AcpSessionLifecycleManagerRegistry - "
-        "No session managers found for agent 'SYNAPSE OpenCode E2E'\n",
+        "No session managers found for agent 'SYNAPSE OpenCode E2E'\n"
+        "2026-07-15 BeforeFileOpenLoggerListener - fileOpened README.md\n"
+        "2026-07-15 DumbServiceImpl - exit dumb mode [project]\n",
         encoding="utf-8",
     )
 
@@ -214,6 +216,22 @@ def test_chat_readiness_uses_stable_lifecycle_events(tmp_path: Path) -> None:
     )
 
     assert "AIAssistantInputSendAction#presentation" not in idea_log.read_text(encoding="utf-8")
+
+
+def test_chat_readiness_rejects_project_events_before_agent_registration(
+    tmp_path: Path,
+) -> None:
+    idea_log = tmp_path / "idea.log"
+    idea_log.write_text(
+        "2026-07-15 BeforeFileOpenLoggerListener - fileOpened README.md\n"
+        "2026-07-15 DumbServiceImpl - exit dumb mode [project]\n"
+        "2026-07-15 AcpSessionLifecycleManagerRegistry - "
+        "No session managers found for agent 'SYNAPSE OpenCode E2E'\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="IDEA log never contained"):
+        _wait_for_idea_log(tmp_path, _CHAT_READY_MARKERS, 0.0, lambda: None)
 
 
 def test_selector_screenshot_cannot_cross_its_phase_deadline(
