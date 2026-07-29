@@ -10,9 +10,9 @@
 The honest-peer multi-hub read-side merge layer is a library
 (:mod:`synapse_channel.core.multihub_follower`); this command exposes it so an operator
 can read a peer hub without writing Python. Both subcommands fold a peer's event log
-through the follower and print the *observed* board, progress count, and claim view —
-advisory only, since claims are never granted across hubs — differing only in how they
-reach the peer's log:
+through the follower and print the *observed* board, unresolved payload-free board
+conflicts, progress count, and claim view — advisory only, since claims are never
+granted across hubs — differing only in how they reach the peer's log:
 
 * ``observe`` opens the peer hub's event-store **file** through the same ``read_since``
   seam the follower uses (SQLite WAL allows a concurrent reader beside the live peer hub);
@@ -81,6 +81,16 @@ def _render(state: ObservedState, peer_id: str, *, json_out: bool) -> None:
                 f"{terminal_text(provenance.hub_id)}#{provenance.seq} "
                 f"@ {provenance.timestamp:g}]"
             )
+    if state.board_conflicts:
+        print("board conflicts (unresolved divergence — not causally ordered):")
+        for task_id in sorted(state.board_conflicts):
+            conflict = state.board_conflicts[task_id]
+            contenders = ", ".join(
+                f"{terminal_text(item.hub_id)}#{item.seq}="
+                f"{terminal_text(item.record_fingerprint[:12])}"
+                for item in conflict.contenders
+            )
+            print(f"  {terminal_text(task_id)} — {contenders}")
     if state.observed_claims:
         print("observed claims (advisory — not granted):")
         for task_id in sorted(state.observed_claims):

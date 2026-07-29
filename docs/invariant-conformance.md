@@ -26,7 +26,7 @@ source.
 | Immediate-effect fencing | Partial | Hub-mediated epochs and versions fence stale mutations, but direct external effects are outside that boundary. |
 | Atomic operation truth | Partial | Claim-family operations commit before publication and apply once; this is not yet universal. |
 | Content-bound global event identity | Conformant | A federated identity binds one fingerprint; equivocation quarantines before publication. |
-| Causal conflict handling | Partial | Equivocation fails closed, but the board fold is explicitly non-causal and general conflict objects do not exist. |
+| Causal conflict handling | Partial | Equivocation fails closed and divergent task snapshots produce payload-free unresolved conflict objects, but task events do not carry causal parents. |
 | Evidence completeness | Partial | Defined journal, receipt, AEF, and quarantine evidence exists, but coverage is not universal. |
 
 `python tools/invariant_conformance.py --check` validates the schema, exact six-row
@@ -51,6 +51,15 @@ grants; partition and verified-heal transitions are durable; failed or partial
 poll rounds retain suspicion; restart restores the last proven contest; and an
 observed release heals only after a successful round. These tests prove safe
 partition containment and recovery, not causal ordering of the display fold.
+
+The observed task-board fold also retains the latest snapshot from each authoring
+hub. If those complete records diverge, JSON and text surfaces expose one bounded,
+payload-free conflict object with each contender's hub, sequence, timestamp, and
+record fingerprint. Equal snapshots converge without a conflict, and later equal
+snapshots clear the divergence. This makes disagreement visible without leaking the
+losing task record or choosing an authoritative winner. It is not a claim that the
+snapshots were concurrent: task events do not yet carry a causal parent or vector
+clock, so the boundary remains partial.
 
 The randomized state machine is complemented by
 `python tools/exhaustive_coordination_model.py --depth 4`. That deterministic

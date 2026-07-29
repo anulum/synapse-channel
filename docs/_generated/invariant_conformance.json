@@ -130,18 +130,20 @@
       "evidence_modes": [
         "adversarial",
         "deterministic-fold",
+        "conflict-object",
         "partition",
         "restart",
         "durable-transition"
       ],
-      "guarantee": "Federated identity equivocation fails closed, while the task-board projection exposes deterministic provenance for its explicitly non-causal display winner.",
+      "guarantee": "Federated identity equivocation fails closed, while divergent cross-hub task snapshots produce payload-free unresolved conflict objects and the task-board projection exposes deterministic provenance for its explicitly non-causal display winner.",
       "id": "causal-conflict-handling",
       "limitations": [
         "The display fold is timestamp ordered and does not establish happens-before causality.",
-        "General causal conflict objects and resolution policy are not implemented."
+        "Task events carry no causal-parent or vector-clock metadata, so divergence objects do not prove concurrency or apply an automatic resolution policy."
       ],
       "scope": "Equivocation containment and display-only multi-hub projections.",
       "sources": [
+        "src/synapse_channel/cli_multihub.py",
         "src/synapse_channel/core/multihub_equivocation.py",
         "src/synapse_channel/core/multihub_fold.py",
         "src/synapse_channel/core/multihub_watch.py",
@@ -150,13 +152,16 @@
       "spec_invariants": [
         "INV-MH-1",
         "INV-MH-2",
-        "INV-MH-5"
+        "INV-MH-5",
+        "INV-MH-6"
       ],
       "status": "partial",
       "tests": [
+        "tests/test_cli_multihub.py",
         "tests/test_hub_claim_ownership.py",
         "tests/test_multihub_equivocation.py",
         "tests/test_multihub_fold.py",
+        "tests/test_multihub_follower.py",
         "tests/test_multihub_watch.py",
         "tests/test_namespace_ownership.py"
       ],

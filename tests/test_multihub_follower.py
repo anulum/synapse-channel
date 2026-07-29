@@ -113,7 +113,28 @@ async def test_poll_merges_multiple_peers_into_non_causal_display_order() -> Non
     assert state.board_provenance["T"].hub_id == "west"
     assert state.to_dict()["board_policy"]["authoritative"] is False
     assert state.to_dict()["board_policy"]["causal"] is False
+    assert state.board_conflicts["T"].to_dict()["causal"] is False
+    assert [item.hub_id for item in state.board_conflicts["T"].contenders] == ["east", "west"]
     assert follower.peers() == ("east", "west")
+
+
+async def test_multi_peer_conflict_heals_after_latest_snapshots_converge() -> None:
+    east = _FakePeer([_stored(1, 1.0, EventKind.LEDGER_TASK, task_id="T", title="east")])
+    west = _FakePeer([_stored(1, 2.0, EventKind.LEDGER_TASK, task_id="T", title="west")])
+    follower = MultiHubFollower()
+
+    await follower.poll("east", east.fetch)
+    conflicted = await follower.poll("west", west.fetch)
+    assert "T" in conflicted.board_conflicts
+
+    converged = {"task_id": "T", "title": "resolved", "status": "open"}
+    east.events.append(StoredEvent(2, 3.0, EventKind.LEDGER_TASK, converged))
+    west.events.append(StoredEvent(2, 4.0, EventKind.LEDGER_TASK, converged))
+    await follower.poll("east", east.fetch)
+    healed = await follower.poll("west", west.fetch)
+
+    assert healed.board["T"] == converged
+    assert healed.board_conflicts == {}
 
 
 async def test_partition_assertions_do_not_cross_clear_equal_task_ids() -> None:

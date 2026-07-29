@@ -68,8 +68,12 @@ contested namespace, have shipped:
   **observed claim** view — the latest claim each peer reports, tagged with its hub, marked
   advisory, cleared on release, and **never granted**. The board contract is explicitly
   non-authoritative and non-causal: JSON exposes its policy and each displayed task's
-  winning `(timestamp, hub_id, seq)` provenance. A clock-ahead older declaration can win
-  the display; NTP or observed clock skew does not turn that order into causal proof.
+  winning `(timestamp, hub_id, seq)` provenance. It also retains each hub's latest
+  complete task snapshot and emits a payload-free unresolved conflict object when their
+  canonical record fingerprints diverge. A later equal snapshot from every contender
+  clears that object. The conflict proves disagreement, not concurrency: a clock-ahead
+  older declaration can win the display, and task events carry neither causal parents
+  nor vector clocks. NTP or observed clock skew does not turn that order into causal proof.
   Partition detection uses a stricter sibling fold keyed by `(hub_id, task_id)`, so a
   release from one hub cannot erase another hub's equal-named task from the authority
   signal even though the general display view remains last-writer-wins by task id.

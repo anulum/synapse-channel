@@ -29,6 +29,9 @@ All notable changes to this project are documented here.
 - Bind the conformance registry to existing hostile partition and restart
   evidence: contested namespaces refuse, failed rounds cannot false-heal, and
   only verified recovery clears durable suspicion.
+- Expose payload-free unresolved conflict objects when the latest observed task
+  snapshots from different hubs diverge. Equal snapshots converge without a
+  conflict; the display remains non-authoritative and explicitly non-causal.
 
 ### Changed
 

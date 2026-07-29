@@ -15,14 +15,22 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.cli_multihub import _cmd_follow, _cmd_observe, _cmd_recover, add_parsers
+from synapse_channel.cli_multihub import (
+    _cmd_follow,
+    _cmd_observe,
+    _cmd_recover,
+    _render,
+    add_parsers,
+)
 from synapse_channel.core.journal import (
     EventKind,
     record_multihub_equivocation,
     restore_active_multihub_quarantines,
 )
 from synapse_channel.core.multihub_equivocation import FederationQuarantine
+from synapse_channel.core.multihub_fold import fold_observed_state
 from synapse_channel.core.multihub_follower import EventFetcher
+from synapse_channel.core.multihub_merge import HubEvent
 from synapse_channel.core.multihub_transport import MultiHubFetchError
 from synapse_channel.core.persistence import EventStore, StoredEvent
 
@@ -93,6 +101,45 @@ def test_observe_on_an_empty_peer_omits_the_sections(
     # the section bodies are omitted (the count line still names them)
     assert "board:\n" not in out
     assert "observed claims (advisory" not in out
+
+
+def test_render_reports_payload_free_unresolved_board_conflict(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    hostile_task = "T\x1b]52;c;YQ==\x07\nforged\u202e"
+    state = fold_observed_state(
+        [
+            HubEvent(
+                "west",
+                2,
+                2.0,
+                EventKind.LEDGER_TASK,
+                {"task_id": hostile_task, "title": "private west"},
+            ),
+            HubEvent(
+                "east",
+                1,
+                1.0,
+                EventKind.LEDGER_TASK,
+                {"task_id": hostile_task, "title": "private east"},
+            ),
+        ]
+    )
+
+    _render(state, "observer", json_out=False)
+    rendered = capsys.readouterr().out
+
+    assert "board conflicts (unresolved divergence — not causally ordered):" in rendered
+    assert "east#1=" in rendered
+    assert "west#2=" in rendered
+    assert "private east" in rendered
+    conflict_line = next(line for line in rendered.splitlines() if "east#1=" in line)
+    assert "private east" not in conflict_line
+    assert "private west" not in conflict_line
+    assert "T\\x1b]52;c;YQ==\\x07\\nforged\\u202e" in conflict_line
+    assert "\x1b" not in conflict_line
+    assert "\x07" not in conflict_line
+    assert "\u202e" not in conflict_line
 
 
 def test_observe_reports_a_missing_database(

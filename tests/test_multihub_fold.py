@@ -13,6 +13,10 @@ from typing import Any
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_fold import (
     BOARD_DISPLAY_WARNING,
+    ObservedBoardConflict,
+    ObservedBoardContender,
+    ObservedBoardProvenance,
+    ObservedClaim,
     ObservedState,
     asserting_owners,
     asserting_owners_from_events,
@@ -72,6 +76,103 @@ def test_clock_ahead_older_state_can_win_but_is_never_presented_as_causal_truth(
     assert payload["board_provenance"]["T"]["hub_id"] == "hub-b"
     assert payload["board_provenance"]["T"]["causal"] is False
     assert "NTP" in payload["board_policy"]["warning"]
+
+
+def test_divergent_cross_hub_task_snapshots_emit_payload_free_conflict() -> None:
+    events = [
+        _ev("hub-b", 4, 2.0, EventKind.LEDGER_TASK, task_id="T", title="secret-second"),
+        _ev("hub-a", 1, 1.0, EventKind.LEDGER_TASK, task_id="T", title="secret-first"),
+    ]
+
+    state = fold_observed_state(events)
+    conflict = state.board_conflicts["T"]
+    payload = conflict.to_dict()
+
+    assert conflict.task_id == "T"
+    assert [item.hub_id for item in conflict.contenders] == ["hub-a", "hub-b"]
+    assert payload["status"] == "unresolved"
+    assert payload["kind"] == "cross-hub-snapshot-divergence"
+    assert payload["causal"] is False
+    assert payload["resolution"] == "operator-required"
+    assert {item["record_fingerprint"] for item in payload["contenders"]} == {
+        item.record_fingerprint for item in conflict.contenders
+    }
+    assert "title" not in str(payload)
+    assert "secret" not in str(payload)
+
+
+def test_equal_cross_hub_snapshots_ignore_mapping_insertion_order() -> None:
+    east_task = {"task_id": "T", "title": "same", "status": "open"}
+    west_task = {"status": "open", "title": "same", "task_id": "T"}
+    events = [
+        HubEvent(hub_id="hub-a", seq=1, ts=1.0, kind=EventKind.LEDGER_TASK, payload=east_task),
+        HubEvent(hub_id="hub-b", seq=7, ts=2.0, kind=EventKind.LEDGER_TASK, payload=west_task),
+    ]
+
+    assert fold_observed_state(events).board_conflicts == {}
+
+
+def test_conflict_compares_each_hubs_latest_sequence_not_display_timestamp() -> None:
+    events = [
+        _ev("hub-a", 2, 1.0, EventKind.LEDGER_TASK, task_id="T", title="converged"),
+        _ev("hub-b", 2, 2.0, EventKind.LEDGER_TASK, task_id="T", title="converged"),
+        _ev("hub-a", 1, 100.0, EventKind.LEDGER_TASK, task_id="T", title="old divergent"),
+    ]
+
+    state = fold_observed_state(events)
+
+    assert state.board["T"]["title"] == "old divergent"
+    assert state.board_conflicts == {}
+
+
+def test_conflict_objects_round_trip_with_stable_order() -> None:
+    contender_b = ObservedBoardContender("hub-b", 2, 3.0, "b" * 64)
+    contender_a = ObservedBoardContender("hub-a", 7, 4.0, "a" * 64)
+    state = ObservedState(
+        board_conflicts={
+            "T": ObservedBoardConflict("T", (contender_a, contender_b)),
+        }
+    )
+
+    assert state.to_dict()["board_conflicts"] == {
+        "T": {
+            "task_id": "T",
+            "status": "unresolved",
+            "kind": "cross-hub-snapshot-divergence",
+            "causal": False,
+            "resolution": "operator-required",
+            "contenders": [
+                {
+                    "hub_id": "hub-a",
+                    "seq": 7,
+                    "timestamp": 4.0,
+                    "record_fingerprint": "a" * 64,
+                },
+                {
+                    "hub_id": "hub-b",
+                    "seq": 2,
+                    "timestamp": 3.0,
+                    "record_fingerprint": "b" * 64,
+                },
+            ],
+        }
+    }
+
+
+def test_observed_state_preserves_legacy_positional_constructor_order() -> None:
+    provenance = ObservedBoardProvenance("T", "hub-a", 1, 1.0)
+    claim = ObservedClaim("T", "hub-a", {"task_id": "T", "owner": "alpha"})
+
+    state = ObservedState(
+        {"T": {"task_id": "T"}},
+        {"T": provenance},
+        ({"task_id": "T", "text": "progress"},),
+        {"T": claim},
+    )
+
+    assert state.progress[0]["text"] == "progress"
+    assert state.observed_claims["T"] == claim
+    assert state.board_conflicts == {}
 
 
 def test_progress_is_grow_only_in_order() -> None:
@@ -138,6 +239,7 @@ def test_empty_fold_and_to_dict_round_trip() -> None:
             "warning": BOARD_DISPLAY_WARNING,
         },
         "board_provenance": {},
+        "board_conflicts": {},
         "progress": [],
         "observed_claims": {},
     }

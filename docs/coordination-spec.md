@@ -549,6 +549,25 @@ quarantine, explicit recovery), `core/journal.py` (durable bounded evidence),
 `tests/test_multihub_merge.py`, `tests/test_multihub_follower.py`,
 `tests/test_multihub_watch.py`, `tests/test_journal.py`.
 
+### INV-MH-6 — divergent observed task snapshots stay visibly unresolved
+
+**Normative.** For every observed task id, the display fold MUST retain the
+highest-sequence `ledger_task` snapshot from each authoring hub. When at least
+two hubs' latest complete records have different canonical fingerprints, the
+projection MUST expose one unresolved, payload-free conflict object containing
+each contender's hub, sequence, timestamp, and record fingerprint. Equal latest
+records MUST converge without a conflict, and later equal records from every
+contender MUST clear an earlier divergence. The object MUST NOT expose the
+losing task payload, grant authority, claim that snapshots were concurrent, or
+apply an automatic resolution policy. The separate timestamp-ordered display
+winner remains non-authoritative and non-causal.
+
+**Implementation.** `core/multihub_fold.py` (`ObservedBoardConflict`, latest
+per-hub contender fold), `cli_multihub.py` (bounded text and JSON projection).
+
+**Pinned by.** `tests/test_multihub_fold.py`,
+`tests/test_multihub_follower.py`, `tests/test_cli_multihub.py`.
+
 > **Note — the name-ownership lease is single-hub.** The `--lease-offline-ttl`
 > ownership lease (close code `4016`, "name owned") protects a name across
 > reconnects on **one** hub; it does not span hubs. Cross-hub name continuity is
