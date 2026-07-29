@@ -11,23 +11,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
-from synapse_channel.core.capability_directory import build_capability_directory, directory_to_json
-from synapse_channel.core.protocol import MessageType
 from synapse_channel.mcp.advisory_actions import McpAdvisoryActions
 from synapse_channel.mcp.claim_actions import McpClaimActions
 from synapse_channel.mcp.inbox import DEFAULT_MCP_INBOX_LIMIT, McpFeedInbox
 from synapse_channel.mcp.plan_actions import McpPlanActions
-from synapse_channel.mcp.resource_views import (
-    agent_resource_to_json,
-    resource_kind_resource_to_json,
-    task_resource_to_json,
-)
+from synapse_channel.mcp.snapshot_queries import McpSnapshotQueries
 from synapse_channel.mcp.status import mcp_status
 
 AgentFactory = Callable[..., SynapseAgent]
@@ -115,6 +108,7 @@ class SynapseHubBridge:
         self.claim_actions = McpClaimActions(self.name, self.agent, await_reply)
         self.plan_actions = McpPlanActions(self.agent, await_reply)
         self.advisory_actions = McpAdvisoryActions(self.agent, await_reply)
+        self.snapshot_queries = McpSnapshotQueries(self.agent, await_reply)
 
     async def on_message(self, data: dict[str, Any]) -> None:
         """Resolve the first pending request whose matcher accepts ``data``.
@@ -235,26 +229,9 @@ class SynapseHubBridge:
         """Update a plan task's status or suggested owner."""
         return await self.plan_actions.task_update(task_id, status, suggested_owner)
 
-    @staticmethod
-    def _render(reply: dict[str, Any] | None, key: str, on_timeout: str) -> str:
-        """Return the ``key`` field of ``reply`` as indented JSON, or ``on_timeout``."""
-        if reply is None:
-            return on_timeout
-        return json.dumps(reply.get(key, {}), indent=2, sort_keys=True)
-
     async def board(self) -> str:
-        """Return the shared task/progress blackboard as JSON.
-
-        Returns
-        -------
-        str
-            The board snapshot as indented JSON, or a no-response line.
-        """
-        reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.BOARD_SNAPSHOT,
-            self.agent.request_board,
-        )
-        return self._render(reply, "board", "the hub did not return the board")
+        """Return the shared task/progress blackboard through the query facade."""
+        return await self.snapshot_queries.board()
 
     async def inbox(self, limit: int = DEFAULT_MCP_INBOX_LIMIT) -> str:
         """Return one bounded, cursored page of local durable message bodies."""
@@ -269,144 +246,28 @@ class SynapseHubBridge:
         )
 
     async def state(self) -> str:
-        """Return the live claims/checkpoints snapshot as JSON.
-
-        Returns
-        -------
-        str
-            The state snapshot as indented JSON, or a no-response line.
-        """
-        reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.STATE_SNAPSHOT,
-            self.agent.request_state,
-        )
-        return self._render(reply, "snapshot", "the hub did not return its state")
+        """Return the live claims/checkpoints snapshot through the query facade."""
+        return await self.snapshot_queries.state()
 
     async def manifest(self) -> str:
-        """Return the capability manifest of advertised agents as JSON.
-
-        Returns
-        -------
-        str
-            The manifest as indented JSON, or a no-response line.
-        """
-        reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.MANIFEST_SNAPSHOT,
-            self.agent.request_manifest,
-        )
-        return self._render(reply, "manifest", "the hub did not return the manifest")
+        """Return the advertised-agent manifest through the query facade."""
+        return await self.snapshot_queries.manifest()
 
     async def directory(self) -> str:
-        """Return the capability/resource discovery directory as JSON.
-
-        Returns
-        -------
-        str
-            The directory as indented JSON, or a no-response line when either
-            required snapshot is missing.
-        """
-        manifest_reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.MANIFEST_SNAPSHOT,
-            self.agent.request_manifest,
-        )
-        if manifest_reply is None:
-            return "the hub did not return the capability directory"
-        state_reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.STATE_SNAPSHOT,
-            self.agent.request_state,
-        )
-        if state_reply is None:
-            return "the hub did not return the capability directory"
-        snapshot = state_reply.get("snapshot", {})
-        resources = snapshot.get("resources", []) if isinstance(snapshot, dict) else []
-        manifest = manifest_reply.get("manifest", [])
-        directory = build_capability_directory(
-            manifest=manifest if isinstance(manifest, list) else [],
-            resources=resources if isinstance(resources, list) else [],
-        )
-        return directory_to_json(directory)
+        """Return the discovery-only capability directory through the query facade."""
+        return await self.snapshot_queries.directory()
 
     async def task_resource(self, task_id: str) -> str:
-        """Return one board task through a dynamic MCP resource template.
-
-        Parameters
-        ----------
-        task_id : str
-            Board task id from ``synapse://task/{task_id}``.
-
-        Returns
-        -------
-        str
-            Task resource JSON, or a no-response line.
-        """
-        board_reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.BOARD_SNAPSHOT,
-            self.agent.request_board,
-        )
-        if board_reply is None:
-            return "the hub did not return MCP task resource snapshots"
-        board = board_reply.get("board", {})
-        return task_resource_to_json(board if isinstance(board, dict) else {}, task_id)
+        """Return one board-task resource through the query facade."""
+        return await self.snapshot_queries.task_resource(task_id)
 
     async def agent_resource(self, agent: str) -> str:
-        """Return one agent's card and resources through an MCP resource template.
-
-        Parameters
-        ----------
-        agent : str
-            Agent identity from ``synapse://agent/{agent}``.
-
-        Returns
-        -------
-        str
-            Agent resource JSON, or a no-response line.
-        """
-        manifest_reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.MANIFEST_SNAPSHOT,
-            self.agent.request_manifest,
-        )
-        if manifest_reply is None:
-            return "the hub did not return MCP agent resource snapshots"
-        state_reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.STATE_SNAPSHOT,
-            self.agent.request_state,
-        )
-        if state_reply is None:
-            return "the hub did not return MCP agent resource snapshots"
-        manifest = manifest_reply.get("manifest", [])
-        snapshot = state_reply.get("snapshot", {})
-        resources = snapshot.get("resources", []) if isinstance(snapshot, dict) else []
-        return agent_resource_to_json(
-            manifest if isinstance(manifest, list) else [],
-            resources if isinstance(resources, list) else [],
-            agent,
-        )
+        """Return one agent-card/resource view through the query facade."""
+        return await self.snapshot_queries.agent_resource(agent)
 
     async def resource_kind_resource(self, kind: str) -> str:
-        """Return resources of one kind through an MCP resource template.
-
-        Parameters
-        ----------
-        kind : str
-            Resource kind from ``synapse://resource-kind/{kind}``.
-
-        Returns
-        -------
-        str
-            Resource-kind JSON, or a no-response line.
-        """
-        state_reply = await self._await_reply(
-            lambda data: data.get("type") == MessageType.STATE_SNAPSHOT,
-            self.agent.request_state,
-        )
-        if state_reply is None:
-            return "the hub did not return MCP resource-kind snapshots"
-        snapshot = state_reply.get("snapshot", {})
-        resources = snapshot.get("resources", []) if isinstance(snapshot, dict) else []
-        return resource_kind_resource_to_json(
-            resources if isinstance(resources, list) else [],
-            kind,
-        )
+        """Return one resource-kind view through the query facade."""
+        return await self.snapshot_queries.resource_kind_resource(kind)
 
     async def route_task(
         self,

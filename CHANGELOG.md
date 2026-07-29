@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Extract MCP board, state, manifest, capability-directory, and resource-template
+  snapshot queries into a dedicated facade while preserving the public bridge,
+  tool, resource, timeout, and correlation contracts.
+
 ### Fixed
 
 - Commit receipt-requested directed chat, receipt lifecycle state, and each
