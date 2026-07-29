@@ -41,6 +41,11 @@ restart and concurrency probes, adversarial inputs, and receipt/replay tests whe
 those modes apply. A status changes only when both the normative guarantee and
 its hostile executable evidence change together.
 
+The single-authority race evidence includes two independent Python client
+processes released through an on-disk barrier against one live hub. Concurrent
+takeovers must produce exactly one 4010-superseded process, one surviving
+process, and one final socket-to-identity binding.
+
 The randomized state machine is complemented by
 `python tools/exhaustive_coordination_model.py --depth 4`. That deterministic
 bounded explorer enumerates every trace over thirteen real claim, overlap,

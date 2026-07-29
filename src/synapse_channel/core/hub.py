@@ -1372,19 +1372,40 @@ class SynapseHub:
         if self.authenticator is not None and not was_bound:
             await self._send_welcome(websocket)
 
-        def touch_state(state: Any) -> None:
+        def touch_state(state: Any) -> bool:
+            # The resolver may have awaited while closing a previous owner. A
+            # later takeover can detach this websocket before its serialized
+            # heartbeat reaches the state actor; a superseded socket must not
+            # refresh presence or trigger lease-expiry publication.
+            if self.clients.bound_agent(websocket) != sender:
+                return False
             state.heartbeat(sender)
+            return True
 
-        def publish_heartbeat(_result: None) -> None:
+        def publish_heartbeat(applied: bool) -> None:
+            if not applied:
+                return
             # A heartbeat can expire leases; a wait on a task that just lost
             # its holder is stale and must not refuse a later legitimate wait.
             self._waits = prune_waits(self._waits, self.state.claims)
 
-        await self.state_mutations.run(
+        heartbeat_applied = await self.state_mutations.run(
             self.state,
             touch_state,
             publish=publish_heartbeat,
         )
+        # Sender resolution can suspend while it closes a superseded owner. A
+        # second takeover may win during that close and detach this socket before
+        # the first handler resumes here. Never let the stale continuation put
+        # itself back into agent_sockets after socket_agent has moved to the real
+        # winner; both maps must remain one bijection.
+        if not heartbeat_applied or self.clients.bound_agent(websocket) != sender:
+            logger.info(
+                "superseded sender continuation dropped sender=%s remote_host=%s",
+                sender,
+                self.clients.remote_host(websocket),
+            )
+            return
         is_new_agent = self.clients.set_agent_socket(sender, websocket)
         if not was_bound and self.journal is not None:
             # Receipt notifications are a durable at-least-once outbox. A sender

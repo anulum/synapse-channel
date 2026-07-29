@@ -22,6 +22,10 @@ All notable changes to this project are documented here.
 - Add deterministic bounded exploration over the real claim, scope, epoch,
   version, handoff, and expiry state machine so every trace through depth four
   complements randomized property and fault-injection evidence.
+- Prevent a superseded heartbeat handler from resuming after a second takeover
+  and overwriting the winning `agent_sockets` entry with its stale socket.
+  Exercise the fix with two independent client processes released by one
+  barrier and require a stable one-owner registry bijection.
 
 ### Changed
 
