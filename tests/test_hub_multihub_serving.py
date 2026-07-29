@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import inspect
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from cryptography.hazmat.primitives import serialization
 from websockets.asyncio.client import ClientConnection, connect
 
 from hub_e2e_helpers import read_until_type, running_hub, send_json
+from synapse_channel.core import multihub_serving
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHubServingPolicy
@@ -34,6 +36,17 @@ _KEY = "SYNAPSE-CHANNEL:main:2026-06"
 
 
 _NAMESPACE = "SYNAPSE-CHANNEL"
+
+
+def test_public_api_docs_match_the_fail_closed_default() -> None:
+    hub_docs = inspect.getdoc(SynapseHub) or ""
+    module_docs = inspect.getdoc(multihub_serving) or ""
+    collapsed_module_docs = " ".join(module_docs.split())
+
+    assert "``None`` (the default) refuses every peer" in hub_docs
+    assert "A hub with no policy configured also refuses every peer" in collapsed_module_docs
+    assert "serves every peer" not in hub_docs
+    assert "serves as before" not in collapsed_module_docs
 
 
 def _write_peer_cert(tmp_path: Path) -> tuple[str, bytes]:

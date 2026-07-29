@@ -45,6 +45,9 @@ All notable changes to this project are documented here.
   interval as a liveness checkpoint, unregisters, and re-proves the tmux
   session, exact binding, and agent pane before advertising again; a vanished
   or inactive pane therefore closes the receiver without waiting for a message.
+- Correct the public multi-hub serving API contract: an absent serving policy
+  refuses every peer, matching the handler's existing fail-closed behavior and
+  regression tests; serving requires an explicit trusted peer grant.
 
 ### Security
 

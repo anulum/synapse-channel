@@ -397,8 +397,9 @@ class SynapseHub:
         capability-card advertisements. Verification stays advisory and default-off.
     multihub_serving_policy : MultiHubServingPolicy or None, optional
         Deny-by-default gate for serving the event log to peer hubs over a multi-hub pull.
-        ``None`` (the default) serves every peer; a policy refuses a peer whose live
-        certificate it does not trust, mirroring the following side's pull gate.
+        ``None`` (the default) refuses every peer. An explicit policy serves only a peer
+        whose sender grant and live certificate it trusts, mirroring the following side's
+        fail-closed pull gate.
     namespace_ownership : NamespaceOwnership or None, optional
         Single-authoritative-hub map that routes claims by namespace ownership. ``None`` (the
         default) lets the hub grant claims in every namespace, preserving single-hub behaviour;

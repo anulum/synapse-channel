@@ -20,7 +20,8 @@ certificate file to a pin; this side hashes the certificate read off the live so
 federation policy and mutual-TLS pin verification. The gate is deny-by-default and fail-closed:
 a peer with no operator-configured grant, a connection presenting no client certificate, or a
 certificate whose pin the policy does not accept all refuse the serve. A hub with no policy
-configured serves as before, so the gate is strictly opt-in and changes no default deployment.
+configured also refuses every peer: serving is fail-closed until an operator supplies exact
+sender/domain/namespace/signing-key grants and live-certificate trust.
 
 The module is pure of the wire protocol and of the hub: it reads the live socket only through a
 small, injectable :data:`PeerCertificateSource`, so a test can drive the full decision without a
