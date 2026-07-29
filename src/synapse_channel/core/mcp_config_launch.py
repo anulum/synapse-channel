@@ -16,6 +16,11 @@ only literal policy values plus individually approved parent names.
 
 from __future__ import annotations
 
+try:
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - non-POSIX platform boundary.
+    _fcntl = None  # type: ignore[assignment]
+
 import hashlib
 import hmac
 import os
@@ -99,6 +104,17 @@ def bind_mcp_server_launch(spec: McpServerSpec) -> Iterator[BoundMcpLaunch]:
         or not hasattr(os, "geteuid")
         or not hasattr(os, "memfd_create")
         or not Path("/proc/self/fd").is_dir()
+        or _fcntl is None
+        or not all(
+            hasattr(_fcntl, name)
+            for name in (
+                "F_ADD_SEALS",
+                "F_SEAL_WRITE",
+                "F_SEAL_GROW",
+                "F_SEAL_SHRINK",
+                "F_SEAL_SEAL",
+            )
+        )
     ):
         raise McpConfigError(
             f"MCP server {spec.name!r}: secure executable validation is unavailable "
@@ -206,12 +222,8 @@ def _sealed_executable_snapshot(
             f"MCP server {server!r}: executable exceeds the "
             f"{MCP_EXECUTABLE_SNAPSHOT_LIMIT}-byte snapshot limit"
         )
-    try:
-        import fcntl
-    except ImportError as exc:  # pragma: no cover - guarded Linux boundary
-        raise McpConfigError(
-            f"MCP server {server!r}: sealed executable snapshots are unavailable"
-        ) from exc
+    if _fcntl is None:  # pragma: no cover - guarded by bind_mcp_server_launch.
+        raise McpConfigError(f"MCP server {server!r}: sealed executable snapshots are unavailable")
     snapshot = os.memfd_create(
         "synapse-mcp-executable",
         getattr(os, "MFD_CLOEXEC", 0) | getattr(os, "MFD_ALLOW_SEALING", 0),
@@ -247,8 +259,8 @@ def _sealed_executable_snapshot(
             raise McpConfigError(f"MCP server {server!r}: executable changed while snapshotting")
         os.fchmod(snapshot, 0o500)
         os.lseek(snapshot, 0, os.SEEK_SET)
-        seals = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL
-        fcntl.fcntl(snapshot, fcntl.F_ADD_SEALS, seals)
+        seals = _fcntl.F_SEAL_WRITE | _fcntl.F_SEAL_GROW | _fcntl.F_SEAL_SHRINK | _fcntl.F_SEAL_SEAL
+        _fcntl.fcntl(snapshot, _fcntl.F_ADD_SEALS, seals)
     except BaseException:
         os.close(snapshot)
         raise

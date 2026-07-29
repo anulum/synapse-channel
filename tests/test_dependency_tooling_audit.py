@@ -72,6 +72,7 @@ pytest --cov=synapse_channel
 bandit -q -r src tools
 python -m pip_audit --skip-editable
 mkdocs build --strict
+python tools/check_platform_security_caps.py
 python tools/check_dev_dependency_drift.py --check
 python tools/audit_dependency_tooling.py --check
 """,
@@ -293,6 +294,7 @@ pytest --cov=synapse_channel
 bandit -q -r src tools
 python -m pip_audit --skip-editable
 mkdocs build --strict
+python tools/check_platform_security_caps.py
 python tools/check_dev_dependency_drift.py --check
 python tools/audit_dependency_tooling.py --check
 """,

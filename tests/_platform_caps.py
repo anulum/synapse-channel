@@ -26,12 +26,22 @@ from pathlib import Path
 
 import pytest
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX platform boundary.
+    fcntl = None  # type: ignore[assignment]
+
 SEALED_LAUNCH_AVAILABLE = (
     os.name == "posix"
     and hasattr(os, "O_NOFOLLOW")
     and hasattr(os, "geteuid")
     and hasattr(os, "memfd_create")
     and Path("/proc/self/fd").is_dir()
+    and fcntl is not None
+    and all(
+        hasattr(fcntl, name)
+        for name in ("F_ADD_SEALS", "F_SEAL_WRITE", "F_SEAL_GROW", "F_SEAL_SHRINK", "F_SEAL_SEAL")
+    )
 )
 """Whether the MCP sealed-executable launch (Linux ``memfd`` + procfs) works here."""
 

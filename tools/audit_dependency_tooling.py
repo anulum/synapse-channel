@@ -50,6 +50,7 @@ REQUIRED_PREFLIGHT_GATES = {
     "bandit": ("bandit",),
     "pip-audit": ("pip_audit",),
     "mkdocs": ("mkdocs", "build", "--strict"),
+    "Linux sealed-launch capabilities": ("check_platform_security_caps.py",),
     "dev dependency drift": ("check_dev_dependency_drift.py", "--check"),
     "dependency tooling audit": ("audit_dependency_tooling.py", "--check"),
 }

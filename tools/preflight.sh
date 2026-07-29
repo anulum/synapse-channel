@@ -34,6 +34,7 @@ run() {
 run "ruff format"          "$V/ruff" format --check src tests benchmarks examples
 run "ruff lint"            "$V/ruff" check src tests benchmarks examples
 run "capability manifest"  "$V/python" tools/capability_manifest.py --check
+run "Linux sealed-launch capabilities" "$V/python" tools/check_platform_security_caps.py
 run "dev dependency drift" "$V/python" tools/check_dev_dependency_drift.py --check
 run "dependency/tooling audit" "$V/python" tools/audit_dependency_tooling.py --check
 run "cockpit CI contract"  "$V/python" tools/check_cockpit_ci.py --check

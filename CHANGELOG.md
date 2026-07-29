@@ -51,6 +51,9 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Fail Linux release preflight when its Python cannot exercise memfd/procfd and
+  descriptor-sealing MCP launch protections; the runtime guard now also checks
+  every required `fcntl` seal primitive before entering that path.
 - Prevent terminal wake bridges from approving provider modals. Pane delivery
   now requires provider-specific idle-composer evidence before and after one
   bracketed fixed-prompt paste; busy, modal, unknown, or ambiguous panes receive
