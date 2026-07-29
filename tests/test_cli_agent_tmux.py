@@ -99,6 +99,8 @@ def test_cmd_status_dispatches(capsys: Any, tmp_path: Path) -> None:
             pane_command="fish",
             pane_start_command="kimi",
             agent_active=True,
+            binding_valid=True,
+            binding_detail="verified test binding",
         )
 
     ns = argparse.Namespace(
@@ -138,6 +140,8 @@ def test_cmd_wait_starts_and_verifies_before_registering(tmp_path: Path) -> None
             pane_command="kimi",
             pane_start_command="kimi",
             agent_active=True,
+            binding_valid=True,
+            binding_detail="verified test binding",
         )
 
     def waiter(

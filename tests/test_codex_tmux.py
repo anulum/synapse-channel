@@ -76,6 +76,13 @@ def test_inject_wake_through_codex_surface_still_two_steps(tmp_path: Path) -> No
     ) -> subprocess.CompletedProcess[str]:
         del capture_output, text, check, env
         calls.append(list(args))
+        if len(args) > 1 and args[1] == "show-environment":
+            return subprocess.CompletedProcess(
+                list(args),
+                0,
+                "SYN_PROJECT=SYNAPSE-CHANNEL\nSYN_IDENTITY=SYNAPSE-CHANNEL/codex-main\n",
+                "",
+            )
         return subprocess.CompletedProcess(list(args), 0, "", "")
 
     config = CodexTmuxConfig(
@@ -88,7 +95,8 @@ def test_inject_wake_through_codex_surface_still_two_steps(tmp_path: Path) -> No
     result = inject_wake(config, runner=run, sleeper=lambda _seconds: None)
 
     assert result.injected is True
-    assert len(calls) == 2
-    assert calls[0][:5] == ["tmux", "send-keys", "-t", "synapse-codex-main", "-l"]
-    assert calls[1] == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
+    send_calls = [call for call in calls if call[1] == "send-keys"]
+    assert len(send_calls) == 2
+    assert send_calls[0][:5] == ["tmux", "send-keys", "-t", "synapse-codex-main", "-l"]
+    assert send_calls[1] == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
     assert registry_path(config).exists()

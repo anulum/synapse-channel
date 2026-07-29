@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from synapse_channel.agent_tmux import (
+    BINDING_REFUSAL_EXIT_CODE,
     DEFAULT_AGENT_PANE_COMMANDS,
     AgentTmuxConfig,
     _backoff_delay,
@@ -44,10 +45,18 @@ class RecordingSleeper:
 class RecordingRunner:
     """Record subprocess calls and return queued results."""
 
-    def __init__(self, results: Sequence[subprocess.CompletedProcess[str]] = ()) -> None:
+    def __init__(
+        self,
+        results: Sequence[subprocess.CompletedProcess[str]] = (),
+        *,
+        session_environment: str | None = (
+            "SYN_PROJECT=SYNAPSE-CHANNEL\nSYN_IDENTITY=SYNAPSE-CHANNEL/codex-main\n"
+        ),
+    ) -> None:
         self.calls: list[list[str]] = []
         self.envs: list[Mapping[str, str] | None] = []
         self.results = list(results)
+        self.session_environment = session_environment
 
     def __call__(
         self,
@@ -61,6 +70,10 @@ class RecordingRunner:
         del capture_output, text, check
         self.calls.append(list(args))
         self.envs.append(env)
+        if len(args) > 1 and args[1] == "show-environment":
+            if self.session_environment is None:
+                return subprocess.CompletedProcess(list(args), 1, "", "no environment")
+            return subprocess.CompletedProcess(list(args), 0, self.session_environment, "")
         if self.results:
             return self.results.pop(0)
         return subprocess.CompletedProcess(list(args), 0, "", "")
@@ -150,7 +163,44 @@ def test_start_session_does_not_duplicate_existing_session(tmp_path: Path) -> No
     result = start_session(config, runner=runner)
 
     assert result.started is False
-    assert runner.calls == [["tmux", "has-session", "-t", "synapse-codex-main"]]
+    assert result.returncode == 0
+    assert runner.calls == [
+        ["tmux", "has-session", "-t", "synapse-codex-main"],
+        ["tmux", "show-environment", "-t", "synapse-codex-main"],
+    ]
+
+
+def test_start_session_refuses_an_existing_session_bound_to_another_identity(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [_result(["tmux", "has-session"], 0)],
+        session_environment="SYN_PROJECT=OTHER\nSYN_IDENTITY=OTHER/agent\n",
+    )
+
+    result = start_session(config, runner=runner)
+
+    assert result.returncode == BINDING_REFUSAL_EXIT_CODE
+    assert result.started is False
+    assert "binding mismatch" in result.detail
+    assert not registry_path(config).exists()
+
+
+def test_start_session_refuses_a_new_session_when_tmux_drops_its_binding(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [_result(["tmux", "has-session"], 1), _result(["tmux", "new-session"], 0)],
+        session_environment=None,
+    )
+
+    result = start_session(config, runner=runner)
+
+    assert result.returncode == BINDING_REFUSAL_EXIT_CODE
+    assert result.started is False
+    assert "unverified binding" in result.detail
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["last_start_returncode"] == BINDING_REFUSAL_EXIT_CODE
 
 
 def test_inject_wake_types_then_submits_as_two_calls(tmp_path: Path) -> None:
@@ -166,8 +216,9 @@ def test_inject_wake_types_then_submits_as_two_calls(tmp_path: Path) -> None:
     )
 
     assert result.injected is True
-    assert len(runner.calls) == 2
-    type_call, submit_call = runner.calls
+    send_calls = [call for call in runner.calls if call[1] == "send-keys"]
+    assert len(send_calls) == 2
+    type_call, submit_call = send_calls
     assert type_call[:5] == ["tmux", "send-keys", "-t", "synapse-codex-main", "-l"]
     injected_text = type_call[-1]
     assert "SYNAPSE-CHANNEL/codex-main" in injected_text
@@ -188,10 +239,26 @@ def test_inject_wake_skips_submit_when_typing_fails(tmp_path: Path) -> None:
     assert result.injected is False
     assert result.returncode == 1
     assert result.detail == "no pane"
-    assert len(runner.calls) == 1
+    assert len([call for call in runner.calls if call[1] == "send-keys"]) == 1
     assert sleeper.delays == []
     payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
     assert payload["last_inject_returncode"] == 1
+
+
+def test_inject_wake_refuses_a_session_bound_to_another_identity(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        session_environment=(
+            "SYN_PROJECT=SYNAPSE-CHANNEL-FLEET\nSYN_IDENTITY=SYNAPSE-CHANNEL-FLEET/codex-main\n"
+        )
+    )
+
+    result = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert result.returncode == BINDING_REFUSAL_EXIT_CODE
+    assert result.injected is False
+    assert "binding mismatch" in result.detail
+    assert all(call[1] != "send-keys" for call in runner.calls)
 
 
 def test_inject_wake_reports_failed_submit(tmp_path: Path) -> None:
@@ -205,7 +272,7 @@ def test_inject_wake_reports_failed_submit(tmp_path: Path) -> None:
     assert result.injected is False
     assert result.returncode == 3
     assert result.detail == "lost pane"
-    assert len(runner.calls) == 2
+    assert len([call for call in runner.calls if call[1] == "send-keys"]) == 2
 
 
 def test_status_detects_codex_start_command(tmp_path: Path) -> None:
@@ -296,6 +363,26 @@ def test_status_reports_inactive_when_agent_binary_absent(tmp_path: Path) -> Non
     assert result.agent_active is False
 
 
+def test_status_refuses_a_foreign_session_even_when_the_agent_command_matches(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path, agent_command=("codex",))
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "has-session"], 0),
+            _result(["tmux", "display-message"], 0, "codex\tcodex\n"),
+        ],
+        session_environment="SYN_PROJECT=OTHER\nSYN_IDENTITY=OTHER/codex-main\n",
+    )
+
+    result = status(config, runner=runner)
+
+    assert result.session_exists is True
+    assert result.binding_valid is False
+    assert result.agent_active is False
+    assert "binding mismatch" in result.binding_detail
+
+
 def test_status_reports_missing_session(tmp_path: Path) -> None:
     config = _config(tmp_path)
     runner = RecordingRunner([_result(["tmux", "has-session"], 1)])
@@ -332,8 +419,9 @@ def test_wait_and_wake_injects_after_successful_wait(tmp_path: Path) -> None:
         "--wake-capability",
         "pane_bridge",
     ]
-    assert runner.calls[1][:5] == ["tmux", "send-keys", "-t", "synapse-codex-main", "-l"]
-    assert runner.calls[2] == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
+    send_calls = [call for call in runner.calls if call[1] == "send-keys"]
+    assert send_calls[0][:5] == ["tmux", "send-keys", "-t", "synapse-codex-main", "-l"]
+    assert send_calls[1] == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
 
 
 def test_wait_and_wake_strips_provider_marker_from_wait_child(
@@ -388,8 +476,9 @@ def test_wait_and_wake_does_not_inject_on_provider_yield_stdout(tmp_path: Path) 
     assert sleeper.delays[0] == 1.0
     assert runner.calls[0][:2] == ["synapse", "wait"]
     assert runner.calls[1][:2] == ["synapse", "wait"]
-    assert runner.calls[2][:2] == ["tmux", "send-keys"]
-    assert runner.calls[3] == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
+    send_calls = [call for call in runner.calls if call[1] == "send-keys"]
+    assert send_calls[0][:2] == ["tmux", "send-keys"]
+    assert send_calls[1] == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
 
 
 def test_wait_and_wake_stops_after_bounded_consecutive_failures(tmp_path: Path) -> None:

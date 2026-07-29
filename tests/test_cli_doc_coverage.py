@@ -93,3 +93,11 @@ def test_cli_reference_documents_mailbox_and_pane_receiver_arbitration() -> None
     assert "durable gap replay and live prompt injection coexist" in collapsed
     assert "without one receiver superseding the other" in collapsed
     assert "plain arm without `--mailbox` still yields" in collapsed
+
+
+def test_cli_reference_documents_tmux_identity_binding() -> None:
+    doc = _CLI_DOC.read_text(encoding="utf-8")
+    collapsed = " ".join(doc.split())
+    assert "Every start, status, and wake operation verifies" in collapsed
+    assert "`SYN_PROJECT` and `SYN_IDENTITY`" in collapsed
+    assert "wake returns before `send-keys`" in collapsed

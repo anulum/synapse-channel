@@ -37,6 +37,10 @@ All notable changes to this project are documented here.
   doctor, and ready dispatch recognise both; mailbox arms now coexist with an
   active provider without receiver takeover, while redundant non-mailbox arms
   still yield.
+- Fail closed when an existing tmux session belongs to another Synapse seat.
+  `agent-tmux start`, `status`, and `wake` now verify the live session's stable
+  `SYN_PROJECT` and `SYN_IDENTITY` environment before accepting the pane or
+  injecting a wake, preventing two project identities from sharing one target.
 
 ### Security
 

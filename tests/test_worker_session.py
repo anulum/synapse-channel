@@ -133,9 +133,23 @@ if record.exists():
     entries = json.loads(record.read_text(encoding="utf-8"))
 entries.append(sys.argv[1:])
 record.write_text(json.dumps(entries), encoding="utf-8")
+binding = record.with_name(record.name + ".binding")
 
 if sys.argv[1:2] == ["has-session"]:
     raise SystemExit(1)
+if sys.argv[1:2] == ["new-session"]:
+    values = []
+    args = sys.argv[1:]
+    for index, item in enumerate(args):
+        if item == "-e" and index + 1 < len(args):
+            value = args[index + 1]
+            if value.startswith(("SYN_PROJECT=", "SYN_IDENTITY=")):
+                values.append(value)
+    binding.write_text("\\n".join(values) + "\\n", encoding="utf-8")
+if sys.argv[1:2] == ["show-environment"]:
+    if not binding.exists():
+        raise SystemExit(1)
+    print(binding.read_text(encoding="utf-8"), end="")
 raise SystemExit(0)
 """,
     )

@@ -76,6 +76,8 @@ def _print_status(snapshot: AgentTmuxStatus) -> None:
     """Print a compact status snapshot."""
     print(f"identity: {snapshot.identity}")
     print(f"tmux session: {'online' if snapshot.session_exists else 'missing'}")
+    print(f"session binding: {'verified' if snapshot.binding_valid else 'refused'}")
+    print(f"binding detail: {snapshot.binding_detail}")
     command = snapshot.pane_command or "unknown"
     print(f"pane command: {command}")
     print(f"agent pane: {'active' if snapshot.agent_active else 'inactive'}")
@@ -102,14 +104,16 @@ def _cmd_agent_tmux(
     if args.agent_tmux_command == "status":
         snapshot = status_runner(config)
         _print_status(snapshot)
-        return 0 if snapshot.session_exists and snapshot.agent_active else 1
+        return (
+            0 if snapshot.session_exists and snapshot.binding_valid and snapshot.agent_active else 1
+        )
     if args.agent_tmux_command == "wait":
         start_result = starter(config)
         if start_result.returncode != 0:
             _print_wake_result(start_result)
             return start_result.returncode
         snapshot = status_runner(config)
-        if not snapshot.session_exists or not snapshot.agent_active:
+        if not snapshot.session_exists or not snapshot.binding_valid or not snapshot.agent_active:
             _print_status(snapshot)
             return 1
         return waiter(config, max_wakes=args.max_wakes, max_wait_failures=args.max_wait_failures)

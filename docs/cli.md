@@ -790,6 +790,10 @@ selected with `--agent-command`. It starts or targets a named tmux session and
 injects only a fixed instruction; the Synapse message body stays in the inbox and
 the agent reads it itself. `synapse codex-tmux` is a Codex-defaulted alias kept
 for backward compatibility (`--codex-command` instead of `--agent-command`).
+Every start, status, and wake operation verifies the live tmux session's stable
+`SYN_PROJECT` and `SYN_IDENTITY` environment. Reusing one session name for a
+different project or identity fails closed; wake returns before `send-keys`, so
+a Fleet receiver cannot inject into a Core-owned pane (or vice versa).
 
 ```bash
 # Generic form — choose the agent with --agent-command (defaults to codex):

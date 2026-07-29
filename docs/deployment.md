@@ -177,6 +177,13 @@ provider reads its inbox after the prompt. DIRECTOR-style routing can sit above
 this later, but the local tmux transport remains the only component that writes
 to the terminal.
 
+One tmux session is bound to exactly one Synapse seat. The launcher records
+`SYN_PROJECT` and `SYN_IDENTITY` in the tmux session environment; `start`,
+`status`, and `wake` read that live environment and refuse a missing or
+mismatched binding before accepting the pane or sending keys. Use a unique
+session name per exact identity. Do not point Core and Fleet services at the
+same session.
+
 ## Fresh terminal auto-connect
 
 Install the shell hook once when you want every new terminal to join the local

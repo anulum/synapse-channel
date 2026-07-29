@@ -138,6 +138,47 @@ def test_agent_tmux_status_reports_a_missing_session() -> None:
         assert "missing" in health.stdout
 
 
+def test_agent_tmux_refuses_cross_identity_reuse_of_a_live_session(tmp_path: Path) -> None:
+    """Start, status, and wake all fail closed for a foreign live pane."""
+    with _throwaway_session() as session:
+        owner = [
+            "--identity",
+            "CORE/agent-a",
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            _HARMLESS_COMMAND,
+        ]
+        foreign = [
+            "--identity",
+            "FLEET/agent-b",
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            _HARMLESS_COMMAND,
+        ]
+
+        started = run_cli("agent-tmux", "start", *owner)
+        assert started.ok(), started.output
+
+        second_start = run_cli("agent-tmux", "start", *foreign)
+        foreign_status = run_cli("agent-tmux", "status", *foreign)
+        foreign_wake = run_cli("agent-tmux", "wake", *foreign, "--submit-delay", "0")
+
+        assert not second_start.ok()
+        assert "binding mismatch" in second_start.stdout
+        assert not foreign_status.ok()
+        assert "session binding: refused" in foreign_status.stdout
+        assert not foreign_wake.ok()
+        assert "refusing wake injection" in foreign_wake.stdout
+        pane = _normalise(_capture_pane(session))
+        assert _normalise(build_wake_prompt("FLEET/agent-b")) not in pane
+
+
 def test_agent_tmux_wait_starts_and_verifies_a_missing_provider(tmp_path: Path) -> None:
     """``wait`` establishes its provider before it can register with the hub."""
     with _throwaway_session() as session:

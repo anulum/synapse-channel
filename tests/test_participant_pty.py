@@ -123,6 +123,13 @@ class _Harness:
     ) -> subprocess.CompletedProcess[str]:
         del capture_output, text, check, env
         self.tmux_calls.append(list(args))
+        if len(args) > 1 and args[1] == "show-environment":
+            return subprocess.CompletedProcess(
+                list(args),
+                returncode=0,
+                stdout="SYN_PROJECT=peer\nSYN_IDENTITY=peer/agent\n",
+                stderr="",
+            )
         # returncode 0 to has-session means start_session finds the session and does not
         # create one; send-keys also succeeds so inject reports injected.
         return subprocess.CompletedProcess(list(args), returncode=0, stdout="", stderr="")

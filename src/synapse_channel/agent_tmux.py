@@ -79,6 +79,9 @@ Spreading each delay by a random fraction de-correlates them so the hub does not
 face a thundering herd on recovery.
 """
 
+BINDING_REFUSAL_EXIT_CODE = 4
+"""Stable refusal code when a live tmux session belongs to another identity."""
+
 
 class Sleeper(Protocol):
     """Callable compatible with :func:`time.sleep` for injectable tests."""
@@ -165,6 +168,8 @@ class AgentTmuxStatus:
     pane_command: str | None
     pane_start_command: str | None
     agent_active: bool
+    binding_valid: bool = False
+    binding_detail: str = "session binding was not verified"
 
 
 @dataclass(frozen=True)
@@ -303,6 +308,47 @@ def _has_session(config: AgentTmuxConfig, *, runner: CommandRunner) -> bool:
     return proc.returncode == 0
 
 
+def _session_binding(config: AgentTmuxConfig, *, runner: CommandRunner) -> tuple[bool, str]:
+    """Verify the stable tmux session environment against ``config``.
+
+    Session environment is set when :func:`start_session` creates the target and
+    survives pane command changes. It is therefore the binding anchor for every
+    later start/status/inject operation; pane title, command, cwd, and the local
+    registry are useful observations but cannot prove which Synapse identity owns
+    a live session.
+    """
+    proc = runner(
+        [config.tmux_bin, "show-environment", "-t", config.session],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout).strip() or "tmux session environment unavailable"
+        return False, detail
+    environment: dict[str, str] = {}
+    for line in proc.stdout.splitlines():
+        if not line or line.startswith("-") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key in {"SYN_PROJECT", "SYN_IDENTITY"}:
+            environment[key] = value
+    expected_project = _project_from_identity(config.identity)
+    observed_project = environment.get("SYN_PROJECT")
+    observed_identity = environment.get("SYN_IDENTITY")
+    if observed_project == expected_project and observed_identity == config.identity:
+        return True, (f"verified SYN_PROJECT={expected_project} and SYN_IDENTITY={config.identity}")
+    observed = (
+        f"SYN_PROJECT={observed_project or '<missing>'}, "
+        f"SYN_IDENTITY={observed_identity or '<missing>'}"
+    )
+    expected = f"SYN_PROJECT={expected_project}, SYN_IDENTITY={config.identity}"
+    return (
+        False,
+        f"session {config.session} binding mismatch: observed {observed}; expected {expected}",
+    )
+
+
 def start_session(
     config: AgentTmuxConfig,
     *,
@@ -323,12 +369,20 @@ def start_session(
         ``started`` is true only when a new session was created successfully.
     """
     if _has_session(config, runner=runner):
+        binding_valid, binding_detail = _session_binding(config, runner=runner)
+        if not binding_valid:
+            return AgentTmuxWakeResult(
+                injected=False,
+                started=False,
+                returncode=BINDING_REFUSAL_EXIT_CODE,
+                detail=f"refusing existing tmux session: {binding_detail}",
+            )
         _write_registry(config, last_start_returncode=0)
         return AgentTmuxWakeResult(
             injected=False,
             started=False,
             returncode=0,
-            detail=f"tmux session {config.session} already exists",
+            detail=f"tmux session {config.session} already exists with {binding_detail}",
         )
 
     provider_env = [
@@ -354,12 +408,19 @@ def start_session(
         text=True,
         check=False,
     )
-    _write_registry(config, last_start_returncode=proc.returncode)
+    returncode = proc.returncode
+    detail = "started" if proc.returncode == 0 else (proc.stderr or proc.stdout).strip()
+    if proc.returncode == 0:
+        binding_valid, binding_detail = _session_binding(config, runner=runner)
+        if not binding_valid:
+            returncode = BINDING_REFUSAL_EXIT_CODE
+            detail = f"started tmux session but refusing unverified binding: {binding_detail}"
+    _write_registry(config, last_start_returncode=returncode)
     return AgentTmuxWakeResult(
         injected=False,
-        started=proc.returncode == 0,
-        returncode=proc.returncode,
-        detail="started" if proc.returncode == 0 else (proc.stderr or proc.stdout).strip(),
+        started=returncode == 0,
+        returncode=returncode,
+        detail=detail,
     )
 
 
@@ -397,6 +458,14 @@ def inject_wake(
         ``injected`` is true only when both the type and submit calls succeed.
     """
     del unsafe_payload
+    binding_valid, binding_detail = _session_binding(config, runner=runner)
+    if not binding_valid:
+        return AgentTmuxWakeResult(
+            injected=False,
+            started=False,
+            returncode=BINDING_REFUSAL_EXIT_CODE,
+            detail=f"refusing wake injection: {binding_detail}",
+        )
     type_proc = runner(
         [
             config.tmux_bin,
@@ -464,7 +533,10 @@ def status(
             pane_command=None,
             pane_start_command=None,
             agent_active=False,
+            binding_valid=False,
+            binding_detail=f"tmux session {config.session} is missing",
         )
+    binding_valid, binding_detail = _session_binding(config, runner=runner)
     proc = runner(
         [
             config.tmux_bin,
@@ -495,7 +567,9 @@ def status(
         session_exists=True,
         pane_command=pane_command,
         pane_start_command=pane_start_command,
-        agent_active=pane_command in config.pane_commands or started_with_agent,
+        agent_active=binding_valid and (pane_command in config.pane_commands or started_with_agent),
+        binding_valid=binding_valid,
+        binding_detail=binding_detail,
     )
 
 

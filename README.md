@@ -640,7 +640,10 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   diagnostic/admin surface behind the automatic provider launch path. It keeps a
   provider TUI in a named tmux session and injects a fixed wake prompt when
   Synapse receives a directed message. It does not paste the Synapse payload into
-  the terminal; the provider reads the inbox itself after waking.
+  the terminal; the provider reads the inbox itself after waking. Existing
+  sessions are accepted only when their live tmux environment matches the
+  configured `SYN_PROJECT` and exact `SYN_IDENTITY`; a session already owned by
+  another seat is refused by start, status, and wake before any keys are sent.
 
   ```bash
   synapse codex-tmux start --identity myrepo/codex-main --session myrepo-codex --cwd "$PWD"
@@ -1553,7 +1556,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 777 |
 | Wire message types | 80 |
 | CLI subcommands | 183 |
-| Test functions | 9110 |
+| Test functions | 9116 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 61 |
 | GitHub Actions workflows | 25 |
