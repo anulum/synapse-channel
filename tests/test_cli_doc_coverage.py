@@ -83,3 +83,13 @@ def test_cli_reference_documents_multihub_observe_follow_and_claim_forwarding() 
     assert "requires `--namespace-owner`" in doc
     # The internal config symbol name stays out of the operator-facing doc.
     assert "claim_peers" not in doc
+
+
+def test_cli_reference_documents_mailbox_and_pane_receiver_arbitration() -> None:
+    doc = _CLI_DOC.read_text(encoding="utf-8")
+    collapsed = " ".join(doc.split())
+    assert "`api-dev-rx`" in doc
+    assert "`api-dev-pane-rx`" in doc
+    assert "durable gap replay and live prompt injection coexist" in collapsed
+    assert "without one receiver superseding the other" in collapsed
+    assert "plain arm without `--mailbox` still yields" in collapsed

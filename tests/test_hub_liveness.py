@@ -60,6 +60,13 @@ class TestHasLiveWaiter:
 
         assert view.has_live_waiter("BETA") is True
 
+    def test_a_fresh_pane_bridge_is_a_live_waiter(self) -> None:
+        view, _reactions, sockets, seen = _view(waiter_window=20.0)
+        sockets["BETA-pane-rx"] = object()
+        seen["BETA-pane-rx"] = time.time()
+
+        assert view.has_live_waiter("BETA") is True
+
     def test_a_silent_sidecar_is_not_a_live_waiter(self) -> None:
         view, _reactions, sockets, seen = _view(waiter_window=20.0)
         sockets["BETA-rx"] = object()

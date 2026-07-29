@@ -281,8 +281,11 @@ or a container, see the [deployment guide](docs/deployment.md) (a `systemd` user
 unit and `docker compose` are both included). On Linux, install only a permanent
 exact-identity waiter with
 `synapse arm install --identity myproject/agent --start`; it uses mailbox replay
-and `Restart=always`, without installing a hub. Native Windows service setup is
-not claimed; use WSL with systemd as documented in the deployment guide.
+and `Restart=always`, without installing a hub. Its
+`myproject/agent-rx` receiver can coexist with agent-tmux's distinct
+`myproject/agent-pane-rx` bridge, preserving durable gap recovery and active
+pane injection without name takeover. Native Windows service setup is not
+claimed; use WSL with systemd as documented in the deployment guide.
 
 Two optional shell conveniences ship with the CLI: `synapse completions
 bash|zsh|fish` prints tab completion for every subcommand (generated from the
@@ -711,7 +714,7 @@ are installed too.
 | `syn ask` | Send and wait for replies. | Requires an online recipient — a question never silently addresses nobody. |
 | `syn inbox` | Print messages addressed to you. | Defaults to the exact resolved identity and its own cursor, so another terminal's mail is neither displayed nor consumed; broader project scope requires `--project-wide`. |
 | `syn board` | The shared task/progress board. | One view of the plan every agent sees. |
-| `syn who --me` | Presence of this identity and its waiter. | Reports the identity separately from its `-rx` waiter, because presence is not a wake loop. |
+| `syn who --me` | Presence of this identity and its waiters. | Reports the identity separately from durable `-rx` and active `-pane-rx` sidecars, because receiver sockets are not agents. |
 | `syn locks` | Active leases for the project. | Prints holder, scope, age, remaining TTL, checkpoint/git context, and the exact `synapse release <task> --name <owner>` command. |
 | `syn reap` | Clean up shell-hook waiter sidecars. | Inspects only this identity's pidfile and refuses to signal a PID unless its live command line verifies as that exact waiter — it never pattern-kills. |
 | `syn ack TASK` | Post evidence and close a board task. | Repeatable `--evidence`/`--artifact` land as an assessment note authored by the resolved identity; waits for hub confirmation before marking `done`. |
@@ -721,8 +724,10 @@ Two follow-ons complete that loop. Adding `--mailbox` to `synapse arm` also wake
 the waiter on directed messages that arrived while it was disconnected — the
 reconnect or re-arm gap — by asking the hub to replay them on connect, resuming
 from a per-identity cursor under `~/synapse/mailbox-cursor/` so a re-arm does not
-replay the whole backlog (off by default; needs a wire version `2` hub). And
-`synapse release` can attach a hub-echoed receipt with evidence, artifacts,
+replay the whole backlog (off by default; needs a wire version `2` hub).
+Agent-tmux uses a distinct `<identity>-pane-rx` receiver, so the mailbox arm can
+stay online beside live pane injection without either sidecar taking over the
+other's name. `synapse release` can attach a hub-echoed receipt with evidence, artifacts,
 changed files, approvals, known failures, confidence, and evidence freshness; the
 receipt carries advisory `epistemic_status` metadata (`supported`,
 `needs_freshness`, `stale`, `degraded`, or `unsupported`) with reasons derived
@@ -1548,7 +1553,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 777 |
 | Wire message types | 80 |
 | CLI subcommands | 183 |
-| Test functions | 9100 |
+| Test functions | 9110 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 61 |
 | GitHub Actions workflows | 25 |

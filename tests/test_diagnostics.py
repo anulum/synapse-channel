@@ -165,6 +165,12 @@ def test_check_waiter_passes_when_present() -> None:
     assert check_waiter(["demorepo-rx", "other"], "demorepo-rx").status == "pass"
 
 
+def test_check_waiter_accepts_the_distinct_pane_bridge_sidecar() -> None:
+    diagnosis = check_waiter(["demorepo-pane-rx", "other"], "demorepo-rx")
+    assert diagnosis.status == "pass"
+    assert "demorepo-pane-rx" in diagnosis.detail
+
+
 def test_check_waiter_warns_when_absent() -> None:
     diagnosis = check_waiter(["other"], "demorepo-rx")
     assert diagnosis.status == "warn"
@@ -263,8 +269,14 @@ class TestUnreadAddressees:
             cursor_names=[],
             roster=["ACME/coordinator-rx"],
         )
+        by_pane = check_unread_addressees(
+            feed_lines=[_chat("ACME/coordinator")],
+            cursor_names=[],
+            roster=["ACME/coordinator-pane-rx"],
+        )
         assert by_name.status == "pass"
         assert by_waiter.status == "pass"
+        assert by_pane.status == "pass"
 
     def test_broadcasts_globs_and_noise_are_ignored(self) -> None:
         lines = [
@@ -545,6 +557,11 @@ def test_deaf_agents_passes_when_every_agent_has_rx() -> None:
     diagnosis = check_deaf_agents(["proj/a", "proj/a-rx", "proj/b", "proj/b-rx"])
     assert diagnosis.status == "pass"
     assert "every live agent" in diagnosis.detail
+
+
+def test_deaf_agents_accepts_a_pane_bridge_as_a_live_waiter() -> None:
+    diagnosis = check_deaf_agents(["proj/a", "proj/a-pane-rx"])
+    assert diagnosis.status == "pass"
 
 
 def test_deaf_agents_warns_on_arm_without_waiter() -> None:

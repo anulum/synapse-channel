@@ -32,6 +32,11 @@ All notable changes to this project are documented here.
   winner's `(timestamp, hub_id, seq)` provenance and state that synchronized
   clocks, including NTP, are not causal proof; local claim and namespace
   authority remain separate.
+- Give terminal pane bridges a distinct `<identity>-pane-rx` receiver while
+  retaining `<identity>-rx` for durable mailbox arms. Shared identity parsing,
+  doctor, and ready dispatch recognise both; mailbox arms now coexist with an
+  active provider without receiver takeover, while redundant non-mailbox arms
+  still yield.
 
 ### Security
 

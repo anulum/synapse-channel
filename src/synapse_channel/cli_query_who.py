@@ -56,7 +56,8 @@ async def _who(
     project : str or None, optional
         When set, keep only agents named ``project`` or ``project/...``.
     me : bool, optional
-        Inspect ``name`` and ``name-rx`` instead of printing the full roster.
+        Inspect ``name`` and either of its receiver sidecars instead of printing the
+        full roster.
     all_mailbox_pending : bool, optional
         Show every positive mailbox identity. The default full-roster view is
         bounded to the largest counts; ``--me`` always shows only ``name``.

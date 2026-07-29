@@ -89,9 +89,9 @@ def test_shell_hooks_prefer_private_cache_over_shared_tmp() -> None:
             assert "synapse-shell-$(id -u)" in hook
 
 
-def test_bash_auto_arm_skips_arming_when_a_provider_tmux_waker_is_live(tmp_path: Path) -> None:
-    # Real bash execution: with a live worker-session tmux waker recorded in the
-    # provider-tmux pidfile, __synapse_auto_arm must yield and record no arm.
+def test_bash_auto_arm_coexists_with_a_live_provider_tmux_waker(tmp_path: Path) -> None:
+    # Real bash execution: a live provider owns -pane-rx, so the shell must still
+    # start its durable -rx mailbox arm instead of suppressing gap replay.
     bindir = _write_fake_synapse(tmp_path)
     run_dir = tmp_path / "run"
     record = tmp_path / "record"
@@ -108,9 +108,12 @@ def test_bash_auto_arm_skips_arming_when_a_provider_tmux_waker_is_live(tmp_path:
         f"export SYNAPSE_RECORD={shlex.quote(str(record))}\n"
         f"export SYN_PROJECT=user SYN_IDENTITY={identity}\n"
         "sleep 30 &\n"
-        f"printf '%s' \"$!\" > {shlex.quote(str(provider_dir / (key + '.pid')))}\n"
+        "provider=$!\n"
+        f"printf '%s' \"$provider\" > {shlex.quote(str(provider_dir / (key + '.pid')))}\n"
         f"source {shlex.quote(str(hook_path))}\n"
         "__synapse_auto_arm\n"
+        'kill "$provider" 2>/dev/null || true\n'
+        'wait "$provider" 2>/dev/null || true\n'
     )
     proc = subprocess.run(
         ["bash", "--noprofile", "--norc", "-c", script],
@@ -121,9 +124,10 @@ def test_bash_auto_arm_skips_arming_when_a_provider_tmux_waker_is_live(tmp_path:
     )
 
     assert proc.returncode == 0, proc.stderr
-    # The waker is live, so no passive arm was recorded and no shell pidfile written.
-    assert not record.exists() or record.read_text(encoding="utf-8").strip() == ""
-    assert not (run_dir / "synapse-shell" / f"{key}.pid").exists()
+    assert "arm --name=user/terminal-fixed-rx --for=user/terminal-fixed" in record.read_text(
+        encoding="utf-8"
+    )
+    assert (run_dir / "synapse-shell" / f"{key}.pid").exists()
 
 
 def test_bash_auto_arm_skips_arming_when_provider_auto_connect_is_disabled(
@@ -157,28 +161,22 @@ def test_bash_auto_arm_skips_arming_when_provider_auto_connect_is_disabled(
     assert not (run_dir / "synapse-shell" / "user_terminal-fixed.pid").exists()
 
 
-def test_bash_hook_yields_to_an_active_provider_tmux_waker() -> None:
-    # The prompt auto-arm must not arm a passive waiter on <identity>-rx when a
-    # worker-session tmux waker already owns it, or the injecting waker is locked out.
+def test_bash_hook_keeps_mailbox_arm_beside_provider_tmux_waker() -> None:
+    # The prompt arm owns <identity>-rx while the provider owns <identity>-pane-rx.
+    # Starting a worker session must not release or suppress durable gap replay.
     hook = render_shell_hook(shell="bash")
-    assert "synapse-provider-tmux" in hook
-    assert 'provider_pidfile="$provider_runtime/$key.pid"' in hook
-    assert "__synapse_release_waiter() {" in hook
-    # The provider wrapper releases the passive waiter before worker-session.
-    release_index = hook.index("__synapse_release_waiter || true")
-    worker_index = hook.index('synapse worker-session --project="$SYN_PROJECT"')
-    assert release_index < worker_index
+    assert 'synapse arm --name="$identity-rx"' in hook
+    assert "__synapse_release_waiter" not in hook
+    assert "provider_pidfile" not in hook
+    assert 'synapse worker-session --project="$SYN_PROJECT"' in hook
 
 
-def test_fish_hook_yields_to_an_active_provider_tmux_waker() -> None:
+def test_fish_hook_keeps_mailbox_arm_beside_provider_tmux_waker() -> None:
     hook = render_shell_hook(shell="fish", provider_commands=("kimi",))
-    assert "synapse-provider-tmux" in hook
+    assert 'synapse arm --name="$identity-rx"' in hook
     assert "env SYNAPSE_AUTO_CONNECT=0 synapse worker-session" in hook
-    assert "function __synapse_release_waiter" in hook
-    assert "__synapse_release_waiter >/dev/null 2>&1; or true" in hook
-    release_index = hook.index("__synapse_release_waiter >/dev/null 2>&1; or true")
-    worker_index = hook.index('synapse worker-session --project="$SYN_PROJECT"')
-    assert release_index < worker_index
+    assert "__synapse_release_waiter" not in hook
+    assert "provider_pidfile" not in hook
 
 
 def test_render_shell_hook_zsh_uses_precmd_hook() -> None:
@@ -211,18 +209,6 @@ def test_shell_hook_repairs_and_guards_a_precreated_runtime_dir() -> None:
     fish = render_shell_hook(shell="fish", provider_commands=())
     assert 'chmod 700 "$runtime" 2>/dev/null' in fish
     assert 'not test -d "$runtime"; or test -L "$runtime"; or not test -O "$runtime"' in fish
-
-
-def test_shell_hook_verifies_the_waiter_pid_before_signalling() -> None:
-    """F6b: the release path must confirm the PID is this identity's synapse arm
-    waiter (via its argv) before ``kill`` — never signal a planted stranger PID."""
-    bash = render_shell_hook(shell="bash", provider_commands=())
-    assert "cmdline=\"$(tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null)\"" in bash
-    assert 'cmdline="$(ps -o args= -p "$pid" 2>/dev/null || true)"' in bash
-    assert '*" arm "*"--name=$SYN_IDENTITY-rx"*) kill "$pid" 2>/dev/null ;;' in bash
-    fish = render_shell_hook(shell="fish", provider_commands=())
-    assert "set cmdline (tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null)" in fish
-    assert 'string match -q -- "* arm *--name=$SYN_IDENTITY-rx*" "$cmdline"' in fish
 
 
 def _run_bash(script: str) -> subprocess.CompletedProcess[str]:
@@ -298,79 +284,6 @@ def test_bash_auto_arm_refuses_a_symlinked_runtime(tmp_path: Path) -> None:
     assert proc.returncode == 0, proc.stderr
     assert not record.exists() or record.read_text(encoding="utf-8").strip() == ""
     assert list(target.iterdir()) == []
-
-
-def test_bash_release_waiter_refuses_to_kill_a_non_waiter_pid(tmp_path: Path) -> None:
-    # A pidfile planted with a stranger PID must never turn the release into a blind
-    # kill: the process survives because its argv is not this identity's arm waiter.
-    run_dir = tmp_path / "run"
-    (run_dir / "synapse-shell").mkdir(parents=True)
-    (run_dir / "synapse-shell").chmod(0o700)
-    pidfile = run_dir / "synapse-shell" / "user_terminal-fixed.pid"
-    outcome = tmp_path / "outcome"
-    hook_path = tmp_path / "hook.sh"
-    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
-
-    script = "\n".join(
-        [
-            f"export XDG_RUNTIME_DIR={shlex.quote(str(run_dir))}",
-            "export SYN_PROJECT=user SYN_IDENTITY=user/terminal-fixed",
-            "sleep 30 &",
-            "stranger=$!",
-            f"printf '%s' \"$stranger\" > {shlex.quote(str(pidfile))}",
-            f"source {shlex.quote(str(hook_path))}",
-            "__synapse_release_waiter",
-            "sleep 0.2",
-            f'if kill -0 "$stranger" 2>/dev/null; then echo alive > {shlex.quote(str(outcome))};'
-            f" else echo killed > {shlex.quote(str(outcome))}; fi",
-            'kill "$stranger" 2>/dev/null',
-            'wait "$stranger" 2>/dev/null',
-            "exit 0",
-        ]
-    )
-    proc = _run_bash(script)
-
-    assert proc.returncode == 0, proc.stderr
-    assert outcome.read_text(encoding="utf-8").strip() == "alive"
-
-
-def test_bash_release_waiter_kills_the_verified_waiter(tmp_path: Path) -> None:
-    # The legitimate path is preserved: a process whose argv is this identity's
-    # synapse arm waiter is signalled and stopped when the provider wrapper releases it.
-    run_dir = tmp_path / "run"
-    (run_dir / "synapse-shell").mkdir(parents=True)
-    (run_dir / "synapse-shell").chmod(0o700)
-    pidfile = run_dir / "synapse-shell" / "user_terminal-fixed.pid"
-    outcome = tmp_path / "outcome"
-    hook_path = tmp_path / "hook.sh"
-    hook_path.write_text(render_shell_hook(shell="bash", provider_commands=()), encoding="utf-8")
-
-    waiter_argv = (
-        "synapse arm --name=user/terminal-fixed-rx --for=user/terminal-fixed "
-        "--directed-only --owner-pid 1"
-    )
-    script = "\n".join(
-        [
-            f"export XDG_RUNTIME_DIR={shlex.quote(str(run_dir))}",
-            "export SYN_PROJECT=user SYN_IDENTITY=user/terminal-fixed",
-            f"( exec -a {shlex.quote(waiter_argv)} sleep 30 ) &",
-            "waiter=$!",
-            f"printf '%s' \"$waiter\" > {shlex.quote(str(pidfile))}",
-            "sleep 0.2",
-            f"source {shlex.quote(str(hook_path))}",
-            "__synapse_release_waiter",
-            "sleep 0.3",
-            f'if kill -0 "$waiter" 2>/dev/null; then echo alive > {shlex.quote(str(outcome))};'
-            f" else echo killed > {shlex.quote(str(outcome))}; fi",
-            'kill "$waiter" 2>/dev/null',
-            'wait "$waiter" 2>/dev/null',
-            "exit 0",
-        ]
-    )
-    proc = _run_bash(script)
-
-    assert proc.returncode == 0, proc.stderr
-    assert outcome.read_text(encoding="utf-8").strip() == "killed"
 
 
 def test_bash_shell_hook_uses_neutral_project_without_marker(tmp_path: Path) -> None:

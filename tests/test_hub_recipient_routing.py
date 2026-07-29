@@ -28,8 +28,10 @@ class TestDirectedAudience:
         assert _directed_audience(["A", "B"], ["OPS/mon"]) == [
             "A",
             "A-rx",
+            "A-pane-rx",
             "B",
             "B-rx",
+            "B-pane-rx",
             "OPS/mon",
         ]
 
@@ -65,6 +67,18 @@ async def test_directed_message_reaches_only_its_recipient_under_routing() -> No
                 await gamma.recorder.wait_for(_is_chat("secret"), timeout=0.5)
         finally:
             await close_agents(alpha, beta, gamma)
+
+
+async def test_directed_message_reaches_a_pane_bridge_without_a_bare_socket() -> None:
+    hub = SynapseHub(hub_id="rr-pane", private_directed_messages=True)
+    async with running_hub(hub) as (_hub, uri):
+        alpha = await connect_agent("ALPHA", uri)
+        pane = await connect_agent("BETA-pane-rx", uri)
+        try:
+            await alpha.agent.chat("wake pane", target="BETA")
+            await pane.recorder.wait_for(_is_chat("wake pane"))
+        finally:
+            await close_agents(alpha, pane)
 
 
 async def test_directed_message_reaches_everyone_when_routing_off() -> None:

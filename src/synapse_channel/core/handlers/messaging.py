@@ -29,6 +29,7 @@ from synapse_channel.core.acl import (
     evaluate_access,
 )
 from synapse_channel.core.acl_enforcement import project_of
+from synapse_channel.core.agent_liveness import waiter_owner, waiter_sidecar_names
 from synapse_channel.core.dead_letter_escalation import (
     crosses_escalation_threshold,
     escalation_notice,
@@ -400,15 +401,15 @@ async def _route_channel_chat(
 def _directed_audience(recipients: list[str], observers: Iterable[str]) -> list[str]:
     """Return the live delivery names for a directed message under recipient routing.
 
-    Each recipient is reached on its own socket and on its ``-rx`` waiter sidecar (so a
-    reconnecting waiter is still woken), and any granted observers are appended. The
-    broadcaster deduplicates by socket, so an observer that is also a recipient, or a
-    recipient with no live sidecar, is handled without special-casing here.
+    Each recipient is reached on its own socket, durable mailbox sidecar, and distinct
+    pane bridge, and any granted observers are appended. The broadcaster deduplicates
+    by socket, so an observer that is also a recipient, or a recipient with no live
+    sidecar, is handled without special-casing here.
     """
     names: list[str] = []
     for name in recipients:
         names.append(name)
-        names.append(f"{name}{_WAITER_SUFFIX}")
+        names.extend(waiter_sidecar_names(name))
     names.extend(observers)
     return names
 
@@ -433,8 +434,8 @@ def _matching_online_recipients(
         if name == sender:
             continue
         roles = roles_of(name)
-        if name.endswith(_WAITER_SUFFIX):
-            logical = name[: -len(_WAITER_SUFFIX)]
+        logical = waiter_owner(name)
+        if logical != name:
             logical_roles = tuple(dict.fromkeys((*roles, *roles_of(logical))))
             if logical != sender and is_recipient(target, logical, roles=logical_roles):
                 recipients.add(logical)
@@ -547,13 +548,6 @@ async def _replay_directed_backlog(
         await hub._send_json(websocket, frame)
 
 
-# The kernel cannot import the top-level ``waiter_identity`` module (the package boundary
-# keeps ``core`` from reaching up into the feature layers), so the ``-rx`` wake-listener
-# suffix is matched here directly. It mirrors ``waiter_identity.WAITER_SUFFIX``, the single
-# definition the non-core layers share; the convention is a stable naming contract.
-_WAITER_SUFFIX = "-rx"
-
-
 def _mailbox_acl_allows(hub: SynapseHub, connection: str, requested: str) -> bool:
     """Return whether the ACL policy grants ``connection`` mailbox access to ``requested``.
 
@@ -599,7 +593,7 @@ def _mailbox_recipient(connection: str, declared: Any, hub: SynapseHub | None = 
     requested = declared.strip()
     if not requested or requested == connection:
         return connection
-    if connection == f"{requested}{_WAITER_SUFFIX}":
+    if connection in waiter_sidecar_names(requested):
         return requested
     if hub is not None and _mailbox_acl_allows(hub, connection, requested):
         return requested

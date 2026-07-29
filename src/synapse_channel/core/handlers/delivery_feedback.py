@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.agent_liveness import waiter_sidecar_names
 from synapse_channel.core.delivery_receipts import (
     expired_receipt_payload,
     immediate_receipt_payload,
@@ -43,15 +44,17 @@ from synapse_channel.core.wake_capability import (
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
 
-_WAITER_SUFFIX = "-rx"
-
 
 def _recipient_wake_capability(hub: SynapseHub, recipient: str) -> str:
     """Return the best declared wake capability for one logical recipient."""
     direct = hub.wake_capability_of(recipient)
     if direct != WAKE_UNKNOWN:
         return direct
-    return hub.wake_capability_of(f"{recipient}{_WAITER_SUFFIX}")
+    mailbox, pane = waiter_sidecar_names(recipient)
+    pane_capability = hub.wake_capability_of(pane)
+    if pane_capability != WAKE_UNKNOWN:
+        return pane_capability
+    return hub.wake_capability_of(mailbox)
 
 
 def _recipient_wake_capabilities(hub: SynapseHub, recipients: Iterable[str]) -> dict[str, str]:

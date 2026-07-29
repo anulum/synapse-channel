@@ -323,7 +323,7 @@ def test_wait_and_wake_injects_after_successful_wait(tmp_path: Path) -> None:
         "synapse",
         "wait",
         "--name",
-        "SYNAPSE-CHANNEL/codex-main-rx",
+        "SYNAPSE-CHANNEL/codex-main-pane-rx",
         "--for",
         "SYNAPSE-CHANNEL/codex-main",
         "--timeout",
@@ -500,6 +500,7 @@ def test_wait_command_threads_a_custom_uri_and_token(tmp_path: Path) -> None:
     config = _config(tmp_path)
     custom = replace(config, uri="ws://coordinator:9999", token="secret-token")
     command = _wait_command(custom)
+    assert command[command.index("--name") + 1] == "SYNAPSE-CHANNEL/codex-main-pane-rx"
     assert "--wake-capability" in command
     assert command[command.index("--wake-capability") + 1] == "pane_bridge"
     assert command[-4:] == ["--uri", "ws://coordinator:9999", "--token", "secret-token"]

@@ -11,9 +11,11 @@
 from __future__ import annotations
 
 from synapse_channel.waiter_identity import (
+    PANE_WAITER_SUFFIX,
     WAITER_SUFFIX,
     is_waiter,
     legacy_project_scoped_terminal_sidecar,
+    pane_waiter_name,
     split_roster,
     waiter_name,
     waiter_owner,
@@ -39,6 +41,16 @@ def test_owner_and_name_round_trip() -> None:
     assert waiter_name(owner) == f"{owner}{WAITER_SUFFIX}"
 
 
+def test_pane_bridge_sidecar_has_a_distinct_name_and_the_same_owner() -> None:
+    owner = "quantum/codex-2b40"
+    pane = pane_waiter_name(owner)
+
+    assert pane == f"{owner}{PANE_WAITER_SUFFIX}"
+    assert pane != waiter_name(owner)
+    assert is_waiter(pane)
+    assert waiter_owner(pane) == owner
+
+
 def test_waiter_owner_leaves_a_plain_identity_unchanged() -> None:
     assert waiter_owner("USER") == "USER"
     assert waiter_owner("") == ""
@@ -50,11 +62,12 @@ def test_split_roster_sorts_agents_and_waiters_apart() -> None:
         "a/agent",
         "b/agent-rx",
         "a/agent-rx",
+        "a/agent-pane-rx",
         "USER",
     ]
     agents, waiters = split_roster(roster)
     assert agents == ["USER", "a/agent", "b/agent"]
-    assert waiters == ["a/agent-rx", "b/agent-rx"]
+    assert waiters == ["a/agent-pane-rx", "a/agent-rx", "b/agent-rx"]
 
 
 def test_split_roster_of_nothing_is_two_empty_lists() -> None:

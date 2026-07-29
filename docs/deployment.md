@@ -80,6 +80,15 @@ remain up after every login session closes. To remove it, disable the same
 escaped instance with `systemctl --user disable --now ...`; the shared template
 can remain for other identities.
 
+Receiver roles have distinct names and may coexist for one identity. The
+permanent mailbox arm keeps `<identity>-rx`; `agent-tmux wait` registers
+`<identity>-pane-rx`. Both wait for the bare identity, but one owns durable gap
+replay and the other owns active pane injection, so neither takes over the
+other's socket. A plain non-mailbox arm still yields when an active provider is
+detected because it adds no durable function. Existing installed services pick
+up this arbitration only after an explicitly authorised package update and
+service restart; installation does not restart unrelated live units.
+
 For a remote or secured hub, bake the URI and a protected token-file path into
 the unit:
 
@@ -129,11 +138,12 @@ exact-identity `synapse arm install` service is a durable passive receiver; and
 the tmux bridge supplies active terminal promptness when a provider is running.
 
 > **Presence is not a wake.** The presence holder keeps the project in the roster and
-> the feed durable, but it does **not** wake the agent. Use an active `syn arm` /
-> `synapse arm` listener for passive receiver promptness, or `synapse codex-tmux`
-> when an existing Codex terminal must receive a fixed wake prompt. The presence
-> daemon is a safety net for reachability and durability, not a substitute for
-> either wake path.
+> the feed durable, but it does **not** wake the agent. Use the mailbox-enabled
+> `synapse arm` `<identity>-rx` listener for durable gap recovery and
+> `synapse codex-tmux`'s distinct `<identity>-pane-rx` bridge when an existing
+> Codex terminal must receive a fixed wake prompt. The presence daemon is a
+> safety net for reachability and durability, not a substitute for either wake
+> path.
 
 ## Provider-neutral worker session
 

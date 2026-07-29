@@ -18,7 +18,7 @@ from synapse_channel.core.mailbox_pending import format_pending_line
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN, wake_capability_label
 from synapse_channel.observed_peers import ObservedPeerSnapshot
 from synapse_channel.terminal_text import shell_long_option, terminal_text
-from synapse_channel.waiter_identity import split_roster, waiter_name
+from synapse_channel.waiter_identity import pane_waiter_name, split_roster, waiter_name
 
 
 def _format_reaction_age(seconds: float) -> str:
@@ -135,12 +135,18 @@ def _render_who_me(
         connection name so this report does not create the presence it describes.
     """
     agents = set(roster)
-    waiter = waiter_name(name)
+    mailbox_waiter = waiter_name(name)
+    pane_waiter = pane_waiter_name(name)
+    live_waiter = next(
+        (candidate for candidate in (mailbox_waiter, pane_waiter) if candidate in agents),
+        None,
+    )
     presence = "online" if name in agents else "missing"
-    waiter_state = "online" if waiter in agents else "missing"
+    waiter_state = "online" if live_waiter is not None else "missing"
+    displayed_waiter = live_waiter or mailbox_waiter
     print(f"Me: {terminal_text(name)}")
     print(f"  presence: {presence}")
-    print(f"  waiter: {waiter_state} ({terminal_text(waiter)})")
+    print(f"  waiter: {waiter_state} ({terminal_text(displayed_waiter)})")
     print("  note: presence is not a wake loop; the waiter is what wakes quiet terminals.")
     if show_mailbox_pending:
         if mailbox_pending is None:

@@ -19,9 +19,11 @@ import pytest
 
 from _platform_caps import requires_proc
 from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
-from synapse_channel import cli_arm
+from synapse_channel import cli_arm, cli_messaging
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.wake_capability import WAKE_PASSIVE
+from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
+from synapse_channel.waiter_identity import pane_waiter_name
 
 
 async def _wait_for_presence_count(observer: AgentHandle, name: str, count: int) -> None:
@@ -193,6 +195,98 @@ def test_cmd_arm_yields_when_tmux_provider_is_live(
     assert "Yielding plain passive arm" in out
 
 
+@requires_proc
+def test_cmd_mailbox_arm_coexists_when_tmux_provider_is_live(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Durable mailbox replay remains armed beside the distinct pane bridge."""
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    provider_dir = runtime / "synapse-provider-tmux"
+    provider_dir.mkdir()
+    (provider_dir / "B.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+    captured: dict[str, Any] = {}
+
+    async def arm_once(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="B",
+        for_name=None,
+        directed_only=True,
+        wake_jitter=0.0,
+        reconnect_delay=0.0,
+        max_wakes=None,
+        token=None,
+        owner_pid=None,
+        mailbox=True,
+    )
+
+    assert cli_arm._cmd_arm(ns, arm_runner=arm_once, async_runner=lambda c: asyncio.run(c)) == 0
+    assert captured["name"] == "B-rx"
+    assert captured["for_name"] == "B"
+    assert captured["mailbox"] is True
+    assert "Yielding plain passive arm" not in capsys.readouterr().out
+
+
+async def test_mailbox_arm_and_pane_bridge_coexist_on_a_real_hub(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The arm replays a gap, then both distinct receivers accept a live wake."""
+    store = EventStore(tmp_path / "events.db")
+    try:
+        async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+            observer = await connect_agent("OBSERVER", uri)
+            await _send_chat(uri, "A", "B", "gap wake")
+            arm_task = asyncio.create_task(
+                cli_arm._arm(
+                    uri=uri,
+                    name="B-rx",
+                    for_name="B",
+                    directed_only=True,
+                    max_wakes=2,
+                    reconnect_delay=0.0,
+                    mailbox=True,
+                    mailbox_cursor_path=tmp_path / "mailbox.cursor",
+                )
+            )
+            pane_task = asyncio.create_task(
+                cli_messaging._wait(
+                    uri=uri,
+                    name=pane_waiter_name("B"),
+                    for_name="B",
+                    timeout=0.0,
+                    directed_only=True,
+                    poll_interval=0.01,
+                    wake_capability=WAKE_PANE_BRIDGE,
+                )
+            )
+            try:
+                # The second registration proves the mailbox arm consumed the
+                # offline gap message and re-armed before the live wake.
+                await _wait_for_presence_count(observer, "B-rx", 2)
+                await _wait_for_presence_count(observer, "B-pane-rx", 1)
+                await _send_chat(uri, "A", "B", "wake both layers")
+                assert await asyncio.wait_for(arm_task, timeout=5.0) == 0
+                assert await asyncio.wait_for(pane_task, timeout=5.0) == 0
+            finally:
+                for task in (arm_task, pane_task):
+                    if not task.done():
+                        task.cancel()
+                await close_agents(observer)
+    finally:
+        store.close()
+
+    output = capsys.readouterr().out
+    assert "A: gap wake" in output
+    assert "A: wake both layers" in output
+
+
 def test_cmd_arm_refuses_legacy_project_scoped_terminal_waiter_before_provider_probe(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -308,7 +402,7 @@ def test_cmd_arm_arms_when_no_tmux_provider(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Headless identities arm normally when no tmux provider owns the -rx."""
+    """Headless identities arm normally when no tmux provider owns a pane bridge."""
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
 
     captured: dict[str, Any] = {}

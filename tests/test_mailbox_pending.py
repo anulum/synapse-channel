@@ -125,6 +125,10 @@ def test_logical_identity_and_sidecar_roles_are_combined(tmp_path: Path) -> None
     assert counts is not None and counts["PROJ/BOB"] == 2
 
 
+def test_pane_sidecar_maps_to_its_logical_identity() -> None:
+    assert MailboxPendingTracker._logical_identity("PROJ/BOB-pane-rx") == "PROJ/BOB"
+
+
 def test_cursor_advance_is_monotonic_capped_and_journalled(tmp_path: Path) -> None:
     store = EventStore(tmp_path / "hub.db")
     try:

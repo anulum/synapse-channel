@@ -17,6 +17,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, cast
 
+from synapse_channel.core.agent_liveness import waiter_owner
 from synapse_channel.core.dead_letters import is_directed_target
 from synapse_channel.core.journal import EventKind, record_mailbox_watermark
 from synapse_channel.core.numeric_coercion import safe_int
@@ -26,7 +27,6 @@ from synapse_channel.core.protocol import is_recipient
 DEFAULT_MAX_MAILBOX_IDENTITIES = 512
 """Bounded identities retained in one hub's pending-count projection."""
 
-_WAITER_SUFFIX = "-rx"
 _GLOB_MARKERS = frozenset("*?[")
 
 
@@ -255,9 +255,7 @@ class MailboxPendingTracker:
     @staticmethod
     def _logical_identity(connection: str) -> str:
         """Map a receive-only sidecar name to the identity whose mailbox it serves."""
-        if connection.endswith(_WAITER_SUFFIX):
-            return connection[: -len(_WAITER_SUFFIX)]
-        return connection
+        return waiter_owner(connection)
 
     @staticmethod
     def _target_identities(target: str) -> tuple[str, ...]:

@@ -51,15 +51,29 @@ it — stops counting as a live waiter rather than falsely vouching for its agen
 """
 
 WAITER_SUFFIX = "-rx"
-"""Suffix of the receive-only wake-listener sidecar an armed waiter connects under.
+PANE_WAITER_SUFFIX = "-pane-rx"
+"""Suffixes of the receive-only wake-listener sidecars.
 
-A live ``<identity>-rx`` socket is independent evidence that ``<identity>`` is armed
-to be woken, so a hub treats its presence as liveness even when the identity itself
-has not reacted within the window. The kernel cannot import the feature-layer
-``waiter_identity`` module (the package boundary keeps ``core`` from reaching up), so
-the convention is restated here; it mirrors ``waiter_identity.WAITER_SUFFIX``, the
-single definition the non-core layers share.
+A durable mailbox listener connects as ``<identity>-rx``; a provider pane bridge
+connects as ``<identity>-pane-rx``. Either fresh socket is independent evidence that
+``<identity>`` is armed to be woken, so a hub treats its presence as liveness even
+when the identity itself has not reacted within the window. These constants live in
+``core`` so routing, authorization, and feature-layer roster views share one contract.
 """
+
+
+def waiter_owner(name: str) -> str:
+    """Return the logical owner of either receiver sidecar, else ``name`` unchanged."""
+    if name.endswith(PANE_WAITER_SUFFIX) and len(name) > len(PANE_WAITER_SUFFIX):
+        return name[: -len(PANE_WAITER_SUFFIX)]
+    if name.endswith(WAITER_SUFFIX) and len(name) > len(WAITER_SUFFIX):
+        return name[: -len(WAITER_SUFFIX)]
+    return name
+
+
+def waiter_sidecar_names(owner: str) -> tuple[str, str]:
+    """Return the durable-mailbox and pane-bridge connection names for ``owner``."""
+    return f"{owner}{WAITER_SUFFIX}", f"{owner}{PANE_WAITER_SUFFIX}"
 
 
 class RecipientLiveness:

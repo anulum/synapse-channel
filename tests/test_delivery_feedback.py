@@ -124,6 +124,10 @@ class TestPureHelpers:
         hub = _FakeHub(capabilities={"bob-rx": WAKE_PASSIVE})
         assert df._recipient_wake_capability(_as_hub(hub), "bob") == WAKE_PASSIVE
 
+    def test_wake_capability_prefers_pane_bridge_over_mailbox_sidecar(self) -> None:
+        hub = _FakeHub(capabilities={"bob-rx": WAKE_PASSIVE, "bob-pane-rx": "pane_bridge"})
+        assert df._recipient_wake_capability(_as_hub(hub), "bob") == "pane_bridge"
+
     def test_render_recipient_without_capability_is_bare(self) -> None:
         assert df._render_recipient_with_capability("bob", WAKE_UNKNOWN) == "bob"
 

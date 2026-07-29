@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Protocol
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.waiter_identity import pane_waiter_name
 
 DEFAULT_AGENT_PANE_COMMANDS = frozenset({"codex", "node", "kimi", "claude", "grok", "gemini"})
 """Pane command names that, on their own, indicate a live agent stack.
@@ -504,7 +505,7 @@ def _wait_command(config: AgentTmuxConfig) -> list[str]:
         config.synapse_bin,
         "wait",
         "--name",
-        f"{config.identity}-rx",
+        pane_waiter_name(config.identity),
         "--for",
         config.identity,
         "--timeout",

@@ -22,9 +22,10 @@ Eligibility rules (fail-closed defaults):
   ``suggested_owner`` is absent or stale (no claim observed within
   ``suggestion_ttl``).
 * A candidate is dispatchable only when its card belongs to the project, it
-  has not opted out (``dispatchable: false``), the seat (or its ``-rx``
-  sidecar) is online with a ``direct`` or ``pane_bridge`` wake capability,
-  and it holds fewer active claims than ``capacity``.
+  has not opted out (``dispatchable: false``), the seat, durable ``-rx``
+  sidecar, or distinct ``-pane-rx`` bridge is online with a ``direct`` or
+  ``pane_bridge`` wake capability, and it holds fewer active claims than
+  ``capacity``.
 
 Ranking is a total order, so two dispatchers with the same inputs always
 agree: class-hint match first, then wake rank (pane bridge beats direct),
@@ -40,6 +41,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from synapse_channel.core.wake_capability import WAKE_DIRECT, WAKE_PANE_BRIDGE
+from synapse_channel.waiter_identity import pane_waiter_name, waiter_name
 
 DISPATCH_TRUST_BOUNDARY = (
     "Dispatch assignments are advisory nudges: the dispatcher never claims, "
@@ -200,7 +202,7 @@ def _normalize_cards(
             continue
         wake_identity = ""
         wake_capability = ""
-        for identity in (agent, f"{agent}-rx"):
+        for identity in (agent, waiter_name(agent), pane_waiter_name(agent)):
             capability = wake_capabilities.get(identity, "")
             if identity in online and capability in _WAKE_RANK:
                 wake_identity, wake_capability = identity, capability

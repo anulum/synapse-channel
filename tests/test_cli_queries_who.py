@@ -146,6 +146,21 @@ async def test_who_me_reports_online_presence_and_missing_waiter(
     assert "presence is not a wake loop" in out
 
 
+async def test_who_me_reports_a_pane_bridge_as_the_live_waiter(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub()) as (_, uri):
+        pane = await connect_agent("demo/agent-pane-rx", uri)
+        try:
+            code = await cli_queries._who(uri=uri, name="demo/agent", me=True)
+        finally:
+            await close_agents(pane)
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "waiter: online (demo/agent-pane-rx)" in out
+
+
 async def test_who_reports_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
     code = await cli_queries._who(uri=f"ws://127.0.0.1:{_free_port()}", name="U", ready_timeout=0.1)
     assert code == 1

@@ -161,6 +161,23 @@ async def test_sidecar_registers_card_for_its_seat_end_to_end() -> None:
             await close_agents(waiter)
 
 
+async def test_pane_sidecar_registers_card_for_its_seat_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        waiter = await connect_agent("PROJ/kimi-3dcd-pane-rx", uri)
+        try:
+            await waiter.agent.advertise(
+                agent="PROJ/kimi-3dcd", task_classes=["audit"], persist=True
+            )
+            advertised = await waiter.recorder.wait_for(
+                lambda m: m.get("type") == "capability_advertised"
+            )
+            assert advertised["agent"] == "PROJ/kimi-3dcd"
+            assert hub.capabilities.get_persistent("PROJ/kimi-3dcd") is not None
+            assert hub.capabilities.get_persistent("PROJ/kimi-3dcd-pane-rx") is None
+        finally:
+            await close_agents(waiter)
+
+
 async def test_agent_override_to_foreign_identity_fails_closed() -> None:
     async with running_hub() as (hub, uri):
         poster = await connect_agent("PROJ/codex-23696", uri)
@@ -169,7 +186,7 @@ async def test_agent_override_to_foreign_identity_fails_closed() -> None:
                 agent="PROJ/kimi-3dcd", task_classes=["audit"], persist=True
             )
             error = await poster.recorder.wait_for(lambda m: m.get("type") == "error")
-            assert "-rx sidecar" in error["payload"]
+            assert "recognised receiver sidecar" in error["payload"]
             assert hub.capabilities.get_persistent("PROJ/kimi-3dcd") is None
         finally:
             await close_agents(poster)

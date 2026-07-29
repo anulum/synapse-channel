@@ -770,6 +770,14 @@ off by default; a plain `arm` is unchanged, and against a hub older than wire ve
 synapse arm --name api-dev-rx --for api-dev --mailbox   # also wake on messages missed while offline
 ```
 
+The durable arm and a terminal pane bridge have separate receiver identities:
+the mailbox arm uses `api-dev-rx`, while `agent-tmux wait --identity api-dev`
+uses `api-dev-pane-rx`. Both subscribe to messages for `api-dev`, so durable
+gap replay and live prompt injection coexist without one receiver superseding
+the other. `synapse doctor` and ready-task dispatch recognise either sidecar;
+the shared owner remains `api-dev`. A plain arm without `--mailbox` still yields
+beside an active provider because it contributes no independent durability.
+
 When the shell hook launches an interactive provider command, `worker-session`
 automatically starts or attaches a persistent tmux session and keeps a directed
 wake bridge alive. The user still types the provider command normally, for
@@ -798,6 +806,9 @@ A terminal agent does not wake its own idle pane on a Synapse message: its
 the inbox but the pane never re-engages. `agent-tmux wait` is the external bridge
 that closes that gap — it blocks on `synapse wait` for the identity and, on each
 directed message, types the wake prompt into the pane and presses Enter.
+Its connection name is `<identity>-pane-rx`, deliberately distinct from the
+permanent mailbox arm's `<identity>-rx`; the split is receiver arbitration, not
+a second agent identity.
 
 `wait` types the fixed prompt and presses Enter as two steps separated by
 `--submit-delay` seconds, because the agent UI ignores a submit key that arrives

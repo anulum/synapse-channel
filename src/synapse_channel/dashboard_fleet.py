@@ -26,6 +26,7 @@ from synapse_channel.dashboard_task_graph import (
     render_task_dependency_graph_html,
 )
 from synapse_channel.git.gitconflict import find_conflicts
+from synapse_channel.waiter_identity import is_waiter, pane_waiter_name, waiter_name
 
 if TYPE_CHECKING:
     from synapse_channel.dashboard import DashboardSnapshot
@@ -217,10 +218,14 @@ def _sort_unique(values: Sequence[str]) -> list[str]:
 
 def _fleet_agents(online_agents: Sequence[str]) -> FleetAgents:
     """Derive agent and waiter status from an online roster."""
-    waiters = _sort_unique([agent for agent in online_agents if agent.endswith("-rx")])
-    live = _sort_unique([agent for agent in online_agents if not agent.endswith("-rx")])
+    waiters = _sort_unique([agent for agent in online_agents if is_waiter(agent)])
+    live = _sort_unique([agent for agent in online_agents if not is_waiter(agent)])
     waiter_set = set(waiters)
-    missing = [f"{agent}-rx" for agent in live if f"{agent}-rx" not in waiter_set]
+    missing = [
+        waiter_name(agent)
+        for agent in live
+        if waiter_name(agent) not in waiter_set and pane_waiter_name(agent) not in waiter_set
+    ]
     return FleetAgents(live=live, waiters=waiters, missing_waiters=missing)
 
 

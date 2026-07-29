@@ -1056,6 +1056,7 @@ def test_mailbox_recipient_honours_self_sidecar_or_acl_grant() -> None:
     assert _mailbox_recipient("BOB", "BOB") == "BOB"
     # BOB's -rx sidecar may replay BOB's backlog (the documented wake-listener contract).
     assert _mailbox_recipient("BOB-rx", "BOB") == "BOB"
+    assert _mailbox_recipient("BOB-pane-rx", "BOB") == "BOB"
     # An unrelated socket naming another identity is refused: the declaration is dropped
     # and the replay falls back to the connection's own (here different) backlog.
     assert _mailbox_recipient("EVE", "BOB") == "EVE"

@@ -15,7 +15,7 @@ from typing import Any, Protocol
 
 from synapse_channel.core.mailbox_pending import parse_pending_counts
 from synapse_channel.core.protocol import MessageType
-from synapse_channel.waiter_identity import split_roster
+from synapse_channel.waiter_identity import pane_waiter_name, split_roster, waiter_name
 
 Matcher = Callable[[dict[str, Any]], bool]
 Sender = Callable[[], Awaitable[None]]
@@ -81,7 +81,9 @@ async def mcp_status(
         "mailbox_pending_available": counts is not None,
         "online_agents": len(agents),
         "resources": _length(snapshot.get("resources")),
-        "waiter_online": f"{identity}-rx" in roster,
+        "waiter_online": any(
+            candidate in roster for candidate in (waiter_name(identity), pane_waiter_name(identity))
+        ),
         "waiters": len(waiters),
     }
     return json.dumps(payload, indent=2, sort_keys=True)

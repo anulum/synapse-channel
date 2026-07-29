@@ -432,9 +432,11 @@ def _cmd_wait(
     # Provider-aware early yield for stable session identity inheritance.
     # When a tmux provider (worker-session + agent-tmux wait) is active for the
     # identity (or SYN_TMUX_PROVIDER=1 explicitly set for the session), that
-    # provider owns the long-lived -rx with pane_bridge. Plain passive arms
-    # cause supersession churn and are not needed (the provider injects wake
-    # prompt; inner agent does inbox on prompt). Yield immediately.
+    # provider owns the long-lived ``-pane-rx`` bridge. Plain passive waits add
+    # no independent durability and are not needed (the provider injects the
+    # wake prompt; the inner agent reads its inbox). Yield immediately. The
+    # permanent mailbox arm follows its separate ``-rx`` path through cli_arm
+    # and is deliberately allowed to coexist.
     #
     # Critical exception: the pane_bridge wait *is* that provider. worker-session
     # writes the provider pidfile for agent-tmux, then agent-tmux runs

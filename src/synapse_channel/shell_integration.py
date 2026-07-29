@@ -65,11 +65,10 @@ def pid_is_live_process(pid: int) -> bool:
 def has_active_tmux_provider(identity: str) -> bool:
     """Return True if an active tmux provider holds this identity's live waker.
 
-    Used by passive arm/wait logic and harnesses to yield early and avoid name
-    collisions on the *-rx sidecar. The provider owns the name for pane injection
-    (WAKE_PANE_BRIDGE / receiver wake capability). Mirrors the pidfile check in the
-    generated shell hooks (XDG_RUNTIME_DIR/synapse-provider-tmux/*.pid, or a
-    private cache fallback when XDG runtime is unset).
+    Used by plain passive-wait logic and harnesses to yield when a provider already
+    injects the wake prompt. The provider owns the distinct ``-pane-rx`` connection;
+    a durable mailbox arm may coexist on ``-rx``. The pidfile lives under
+    ``XDG_RUNTIME_DIR/synapse-provider-tmux`` or a private cache fallback.
 
     ``SYN_TMUX_PROVIDER=1`` (running as the inner agent of a provider session)
     counts only for the SESSION'S OWN identity (``$SYN_IDENTITY``): the provider
@@ -163,7 +162,6 @@ def _provider_function(command: str) -> str:
         f"{name}() {{\n"
         "  __synapse_auto_arm || true\n"
         f"  if command -v synapse >/dev/null 2>&1; then\n"
-        "    __synapse_release_waiter || true\n"
         '    SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project="$SYN_PROJECT" '
         f'--identity="$SYN_IDENTITY" -- {quoted} "$@"\n'
         "  else\n"
@@ -181,7 +179,6 @@ def _fish_provider_function(command: str) -> str:
         f"function {name} --wraps {quoted}\n"
         "  __synapse_auto_arm >/dev/null 2>&1; or true\n"
         "  if command -q synapse\n"
-        "    __synapse_release_waiter >/dev/null 2>&1; or true\n"
         '    env SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project="$SYN_PROJECT" '
         f'--identity="$SYN_IDENTITY" -- {quoted} $argv\n'
         "  else\n"
@@ -377,77 +374,12 @@ function __synapse_auto_arm --on-event fish_prompt
       return 0
     end
   end
-  # Yield to an active worker-session tmux waker (or explicit provider session):
-  # it owns "$identity-rx" for the session lifetime and injects wake prompts.
-  # A second passive waiter would collide. SYN_TMUX_PROVIDER=1 marks inner agent.
-  if test "$SYN_TMUX_PROVIDER" = "1"
-    return 0
-  end
-  set -l provider_runtime
-  if test -n "$XDG_RUNTIME_DIR"
-    set provider_runtime "$XDG_RUNTIME_DIR/synapse-provider-tmux"
-  else
-    set -l cache_home "$XDG_CACHE_HOME"
-    if test -z "$cache_home"
-      set cache_home "$HOME/.cache"
-    end
-    if test -n "$cache_home"
-      set provider_runtime "$cache_home/synapse-provider-tmux"
-    else
-      set provider_runtime "/tmp/synapse-provider-tmux-"(id -u)
-    end
-  end
-  set -l provider_pidfile "$provider_runtime/$key.pid"
-  if test -r "$provider_pidfile"
-    set -l ppid (cat "$provider_pidfile" 2>/dev/null)
-    if test -n "$ppid"; and kill -0 "$ppid" 2>/dev/null
-      return 0
-    end
-  end
+  # The durable mailbox arm owns ``$identity-rx``. A worker-session pane bridge
+  # owns the distinct ``$identity-pane-rx``, so both must remain live together.
   nohup synapse arm --name="$identity-rx" --for="$identity" --directed-only \
     --owner-pid $fish_pid >"$logfile" 2>&1 &
   echo $last_pid >"$pidfile"
   disown $last_pid 2>/dev/null
-end
-
-function __synapse_release_waiter
-  # Stop the passive prompt-armed waiter (by its pidfile) so an interactive
-  # provider's own tmux waker can own "$identity-rx" without a name collision.
-  # The waiter is killed, not merely superseded, so it does not re-arm and fight.
-  test -n "$SYN_IDENTITY"; or return 0
-  set -l runtime
-  if test -n "$XDG_RUNTIME_DIR"
-    set runtime "$XDG_RUNTIME_DIR/synapse-shell"
-  else
-    set -l cache_home "$XDG_CACHE_HOME"
-    if test -z "$cache_home"
-      set cache_home "$HOME/.cache"
-    end
-    if test -n "$cache_home"
-      set runtime "$cache_home/synapse-shell"
-    else
-      set runtime "/tmp/synapse-shell-"(id -u)
-    end
-  end
-  set -l key (__synapse_safe_key "$SYN_IDENTITY")
-  set -l pidfile "$runtime/$key.pid"
-  test -r "$pidfile"; or return 0
-  set -l pid (cat "$pidfile" 2>/dev/null)
-  if test -n "$pid"
-    # Verify the PID is THIS identity's synapse arm waiter before signalling it, so
-    # a planted pidfile cannot turn this release into a blind kill of an unrelated
-    # process (mirrors reap.py's argv check; fail closed when the argv is unreadable).
-    set -l cmdline
-    if test -r "/proc/$pid/cmdline"
-      set cmdline (tr '\\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
-    else
-      set cmdline (ps -o args= -p "$pid" 2>/dev/null)
-    end
-    if string match -q -- "* arm *--name=$SYN_IDENTITY-rx*" "$cmdline"
-      kill "$pid" 2>/dev/null
-    end
-  end
-  rm -f "$pidfile" 2>/dev/null
 end
 
 function __synapse_run_provider
@@ -455,7 +387,6 @@ function __synapse_run_provider
   set -e argv[1]
   __synapse_auto_arm >/dev/null 2>&1; or true
   if command -q synapse
-    __synapse_release_waiter >/dev/null 2>&1; or true
     env SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project="$SYN_PROJECT" \
       --identity="$SYN_IDENTITY" -- "$command_name" $argv
   else
@@ -581,8 +512,7 @@ __synapse_identity_is_foreign_auto() {{
 __synapse_auto_arm() {{
   [ "${{SYNAPSE_AUTO_CONNECT:-1}}" = "0" ] && return 0
   command -v synapse >/dev/null 2>&1 || return 0
-  local project identity terminal_id runtime key pidfile logfile pid provider_pidfile
-  local cache provider_runtime
+  local project identity terminal_id runtime key pidfile logfile pid cache
 
   if [ -n "${{SYN_PROJECT:-}}" ] && [ "${{__SYNAPSE_AUTO_PROJECT:-}}" != "$SYN_PROJECT" ]; then
     project="$SYN_PROJECT"
@@ -647,69 +577,11 @@ __synapse_auto_arm() {{
       return 0
     fi
   fi
-  # Yield to an active worker-session tmux waker (or SYN_TMUX_PROVIDER=1 session):
-  # it owns "$identity-rx" for the session lifetime. Plain passive would collide.
-  if [ "${{SYN_TMUX_PROVIDER:-}}" = "1" ]; then
-    return 0
-  fi
-  if [ -n "${{XDG_RUNTIME_DIR:-}}" ]; then
-    provider_runtime="$XDG_RUNTIME_DIR/synapse-provider-tmux"
-  else
-    cache="${{XDG_CACHE_HOME:-${{HOME:-}}/.cache}}"
-    if [ -n "$cache" ] && [ "$cache" != "/.cache" ]; then
-      provider_runtime="$cache/synapse-provider-tmux"
-    else
-      provider_runtime="${{TMPDIR:-/tmp}}/synapse-provider-tmux-$(id -u)"
-    fi
-  fi
-  provider_pidfile="$provider_runtime/$key.pid"
-  if [ -r "$provider_pidfile" ]; then
-    pid="$(cat "$provider_pidfile" 2>/dev/null || true)"
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-      return 0
-    fi
-  fi
+  # The durable mailbox arm owns ``$identity-rx``. A worker-session pane bridge
+  # owns the distinct ``$identity-pane-rx``, so both must remain live together.
   nohup synapse arm --name="$identity-rx" --for="$identity" --directed-only \
     --owner-pid $$ >"$logfile" 2>&1 &
   printf '%s\n' "$!" >"$pidfile"
-}}
-
-__synapse_release_waiter() {{
-  # Stop the passive prompt-armed waiter (by its pidfile) so an interactive
-  # provider's own tmux waker can own "$identity-rx" without a name collision.
-  # The waiter is killed, not merely superseded, so it does not re-arm and fight.
-  local runtime key pidfile pid cache cmdline
-  [ -n "${{SYN_IDENTITY:-}}" ] || return 0
-  if [ -n "${{XDG_RUNTIME_DIR:-}}" ]; then
-    runtime="$XDG_RUNTIME_DIR/synapse-shell"
-  else
-    cache="${{XDG_CACHE_HOME:-${{HOME:-}}/.cache}}"
-    if [ -n "$cache" ] && [ "$cache" != "/.cache" ]; then
-      runtime="$cache/synapse-shell"
-    else
-      runtime="${{TMPDIR:-/tmp}}/synapse-shell-$(id -u)"
-    fi
-  fi
-  key="$(__synapse_safe_key "$SYN_IDENTITY")"
-  pidfile="$runtime/$key.pid"
-  [ -r "$pidfile" ] || return 0
-  pid="$(cat "$pidfile" 2>/dev/null || true)"
-  if [ -n "$pid" ]; then
-    # Verify the PID is THIS identity's synapse arm waiter before signalling it, so
-    # a planted pidfile cannot turn this release into a blind kill of an unrelated
-    # process (mirrors reap.py's argv check; fail closed when the argv is unreadable).
-    cmdline=""
-    if [ -r "/proc/$pid/cmdline" ]; then
-      cmdline="$(tr '\\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)"
-    else
-      cmdline="$(ps -o args= -p "$pid" 2>/dev/null || true)"
-    fi
-    case "$cmdline" in
-      *" arm "*"--name=$SYN_IDENTITY-rx"*) kill "$pid" 2>/dev/null ;;
-    esac
-  fi
-  rm -f "$pidfile" 2>/dev/null
-  return 0
 }}
 
 __synapse_run_provider() {{
@@ -717,7 +589,6 @@ __synapse_run_provider() {{
   shift
   __synapse_auto_arm || true
   if command -v synapse >/dev/null 2>&1; then
-    __synapse_release_waiter || true
     SYNAPSE_AUTO_CONNECT=0 synapse worker-session --project="$SYN_PROJECT" \
       --identity="$SYN_IDENTITY" -- "$command_name" "$@"
   else

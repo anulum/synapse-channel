@@ -130,6 +130,15 @@ def test_sidecar_rx_identity_wakes_the_seat() -> None:
     assert plan.assignments[0].wake_identity == f"{PROJECT}/kimi-3dcd-rx"
 
 
+def test_distinct_pane_bridge_sidecar_wakes_the_seat() -> None:
+    pane = f"{PROJECT}/kimi-3dcd-pane-rx"
+    plan = _plan(
+        online=frozenset({pane}),
+        wake_capabilities={pane: "pane_bridge"},
+    )
+    assert plan.assignments[0].wake_identity == pane
+
+
 def test_pane_bridge_outranks_direct() -> None:
     cards = [_card(f"{PROJECT}/direct-1"), _card(f"{PROJECT}/bridge-1")]
     plan = _plan(

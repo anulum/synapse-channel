@@ -63,7 +63,7 @@ def test_fleet_visibility_derives_snapshot_counts(tmp_path: Path) -> None:
     snapshot = DashboardSnapshot(
         online_agents=[
             "SYNAPSE-CHANNEL/codex-main",
-            "SYNAPSE-CHANNEL/codex-main-rx",
+            "SYNAPSE-CHANNEL/codex-main-pane-rx",
             "SYNAPSE-CHANNEL/reviewer",
         ],
         state={
@@ -133,7 +133,7 @@ def test_fleet_visibility_derives_snapshot_counts(tmp_path: Path) -> None:
         "SYNAPSE-CHANNEL/codex-main",
         "SYNAPSE-CHANNEL/reviewer",
     ]
-    assert fleet["agents"]["waiters"] == ["SYNAPSE-CHANNEL/codex-main-rx"]
+    assert fleet["agents"]["waiters"] == ["SYNAPSE-CHANNEL/codex-main-pane-rx"]
     assert fleet["agents"]["missing_waiters"] == ["SYNAPSE-CHANNEL/reviewer-rx"]
     assert fleet["claims"]["active"] == 2
     assert fleet["claims"]["stale"] == 1

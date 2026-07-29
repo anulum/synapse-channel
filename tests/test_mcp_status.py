@@ -48,7 +48,7 @@ async def test_status_projects_presence_work_and_mailbox_count() -> None:
         [
             {
                 "type": "who_snapshot",
-                "online_agents": ["PROJ/client", "PROJ/client-rx", "OTHER"],
+                "online_agents": ["PROJ/client", "PROJ/client-pane-rx", "OTHER"],
                 "mailbox_pending": {"PROJ/client": 3},
             },
             {

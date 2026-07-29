@@ -27,7 +27,12 @@ from urllib.parse import urlparse
 
 from synapse_channel.core.hub import is_loopback_host
 from synapse_channel.terminal_text import shell_long_option, terminal_text
-from synapse_channel.waiter_identity import split_roster, waiter_name, waiter_owner
+from synapse_channel.waiter_identity import (
+    pane_waiter_name,
+    split_roster,
+    waiter_name,
+    waiter_owner,
+)
 
 if TYPE_CHECKING:
     # Import-time-only: keeps the ``Identity`` type annotation without importing
@@ -237,13 +242,17 @@ def check_waiter(roster: list[str] | None, waiter_name: str) -> Diagnosis:
             detail="could not check the waiter — the hub is unreachable",
             remedy="bring the hub up, then re-run",
         )
-    if waiter_name in roster:
+    owner = waiter_owner(waiter_name)
+    live_waiter = next(
+        (candidate for candidate in (waiter_name, pane_waiter_name(owner)) if candidate in roster),
+        None,
+    )
+    if live_waiter is not None:
         return Diagnosis(
             check="waiter",
             status="pass",
-            detail=f"waiter {terminal_text(waiter_name)!r} is live on the bus",
+            detail=f"waiter {terminal_text(live_waiter)!r} is live on the bus",
         )
-    owner = waiter_owner(waiter_name)
     return Diagnosis(
         check="waiter",
         status="warn",
@@ -705,7 +714,11 @@ def check_deaf_agents(roster: list[str] | None) -> Diagnosis:
         )
     agents, _waiters = split_roster(roster)
     live = set(roster)
-    deaf = [agent for agent in agents if waiter_name(agent) not in live]
+    deaf = [
+        agent
+        for agent in agents
+        if waiter_name(agent) not in live and pane_waiter_name(agent) not in live
+    ]
     if not deaf:
         return Diagnosis(
             check="deaf-agents",
@@ -767,7 +780,7 @@ def check_unread_addressees(
         project = target.split("/", 1)[0]
         if project in cursors or target.replace("/", "__") in cursors:
             continue
-        if target in live or f"{target}-rx" in live:
+        if target in live or waiter_name(target) in live or pane_waiter_name(target) in live:
             continue
         unread[target] = count
     if not unread:

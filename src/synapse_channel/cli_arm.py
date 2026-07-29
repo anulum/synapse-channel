@@ -260,16 +260,17 @@ def _cmd_arm(
         )
         return NO_RESTART_EXIT_CODE
     provider_identities = (for_name, waiter_owner(connect_name))
+    mailbox = bool(getattr(args, "mailbox", False))
 
-    # Provider-aware early yield: an active tmux provider (worker-session +
-    # agent-tmux) already owns the -rx pane bridge for this identity. A passive
-    # arm would be superseded every few seconds and churn the hub roster. Leave
-    # waking to the pane bridge; passive arms are for headless/non-tmux cases.
+    # Provider-aware early yield for redundant plain-passive arms. A mailbox arm
+    # keeps the conventional ``-rx`` name while agent-tmux now uses the distinct
+    # ``-pane-rx`` sidecar, so those two documented layers can coexist: the arm
+    # owns durable gap replay and the bridge owns active pane injection.
     live_provider_identity = next(
         (identity for identity in provider_identities if has_active_tmux_provider(identity)),
         None,
     )
-    if live_provider_identity is not None:
+    if live_provider_identity is not None and not mailbox:
         print(
             f"[{connect_name}] active tmux provider detected for {live_provider_identity}; "
             "pane_bridge / agent-tmux is the live waker. "
@@ -294,7 +295,6 @@ def _cmd_arm(
         )
     # In mailbox mode the cursor is keyed by the identity the waiter waits on (for_name),
     # not the -rx connection name, so every re-arm of the same identity shares one cursor.
-    mailbox = bool(getattr(args, "mailbox", False))
     mailbox_cursor_path = cursor_path(for_name) if mailbox else None
     machine = machine_identity_agent_kwargs()
     try:

@@ -23,6 +23,7 @@ from synapse_channel.core.journal import EventKind, record_resource
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import SynapseState
 from synapse_channel.core.state_models import ResourceOffer
+from synapse_channel.waiter_identity import waiter_owner
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
@@ -84,15 +85,15 @@ async def handle_advertise(
     if declared_agent is not None:
         requested = str(declared_agent).strip()
         # Mirror the mailbox structural gate: a connection may register a card
-        # for itself or for the identity whose ``-rx`` sidecar it is (a wake
-        # listener registers its seat, not its receive-only name). Anything
+        # for itself or for the identity whose recognised receiver sidecar it
+        # is (a wake listener registers its seat, not its receive-only name). Anything
         # else is an impersonation attempt and fails closed.
-        if not requested or (requested != sender and sender != f"{requested}-rx"):
+        if not requested or (requested != sender and waiter_owner(sender) != requested):
             await hub._send_json(
                 websocket,
                 hub._system(
                     "Capability registration for another identity requires the "
-                    "connection to be that identity or its -rx sidecar.",
+                    "connection to be that identity or a recognised receiver sidecar.",
                     msg_type=MessageType.ERROR,
                     target=sender,
                 ),

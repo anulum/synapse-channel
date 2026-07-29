@@ -29,7 +29,11 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
-from synapse_channel.core.agent_liveness import WAITER_SUFFIX, RecipientLiveness
+from synapse_channel.core.agent_liveness import (
+    WAITER_SUFFIX,
+    RecipientLiveness,
+    waiter_sidecar_names,
+)
 
 
 class HubLivenessView:
@@ -89,11 +93,13 @@ class HubLivenessView:
         read against ``time.time()`` — a separate axis from the monotonic reaction
         clock.
         """
-        rx = f"{name}{WAITER_SUFFIX}"
-        if rx not in self._agent_sockets:
-            return False
-        seen = self._last_seen.get(rx)
-        return seen is not None and time.time() - seen <= self._waiter_window
+        now = time.time()
+        return any(
+            sidecar in self._agent_sockets
+            and (seen := self._last_seen.get(sidecar)) is not None
+            and now - seen <= self._waiter_window
+            for sidecar in waiter_sidecar_names(name)
+        )
 
     def recipients_without_live_waiter(self, recipients: Iterable[str]) -> tuple[str, ...]:
         """Return present recipients that are neither waiter-armed nor recently reacting.
