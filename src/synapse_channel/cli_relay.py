@@ -191,8 +191,7 @@ def add_relay_parser(group: argparse._SubParsersAction[argparse.ArgumentParser])
         "--idem-key",
         default=None,
         metavar="KEY",
-        help="Stable retry key for a single-person relay; authorised retries replay the "
-        "committed result.",
+        help="Stable retry key for a single-person or quorum-completing relay release.",
     )
     relay.add_argument(
         "--timeout",

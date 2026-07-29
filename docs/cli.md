@@ -2409,15 +2409,17 @@ peer recorded the relay pending a second operator's approval (see two-person
 approval below). Only registered actions relay: an unknown action is refused,
 never smuggled through the wire.
 
-For a retryable single-person relay, pass `--idem-key KEY`. The key is scoped by the
-authenticated sender and request type, preserved when an origin hub forwards the relay,
-and bound to the canonical request content. The owning hub commits the release, inbound
-relay provenance, exact verdict, and evidence intent in one transaction. An identical
-retry re-runs the live certificate, scope, and namespace-ownership gates before replaying
-that exact verdict; changed content under the same key receives `idempotency_conflict`
-without revealing the prior result or mutating state. The two-person pending/approval
-ledger and the forwarding hub's outbound audit are not yet within this keyed transaction
-boundary, so `--idem-key` does not claim apply-once quorum semantics in that mode.
+For a retryable release, pass `--idem-key KEY`. The key is scoped by the verified
+federation principal, resolved sender, and request type; an origin hub preserves it when
+forwarding, and the owner binds it to canonical request content. The owner commits the
+release, inbound relay provenance, exact verdict, and evidence intent in one transaction.
+An identical retry re-runs the live certificate, scope, and namespace-ownership gates
+before replaying that exact verdict; a different principal or changed content cannot reuse
+the stored operation. This applies to a single-person release and to the second request
+that completes a two-person quorum. The first/pending approval and its audit publish
+together, but pending state is deliberately in-memory and restart-cleared, so a pending
+verdict is not exact-replayed. Give each operator request its own retained key. The
+forwarding hub's outbound audit is also outside the owner's local transaction.
 
 `--reason` records why the action was relayed, in the audit on both hubs; `--break-glass`
 tags it a distinct emergency override. A hub started with reason-required receipts refuses
@@ -2435,6 +2437,13 @@ same verified principal stays pending; a distinct principal completes the quorum
 applies it. Both opaque principal fingerprints and human-readable labels are audited. The
 policy is a hub setting (`require_two_person_relay`), off by default; break-glass does not bypass
 it — an emergency still needs a second verified principal.
+
+With `--idem-key`, the pending approval ledger and its audit event publish through the
+same serialized candidate boundary, so an audit failure cannot leave an invisible live
+approval and an in-flight keyed write cannot overwrite an unkeyed approval. The request
+that completes quorum atomically removes the pending approval, releases the lease, commits
+the final audit row and exact response, and publishes both live projections before
+post-commit cancellation propagates. The earlier pending audit remains its own durable row.
 
 The relay can also go **through** the operator's own hub instead of straight to the
 peer: point `--peer` at your local hub, and if that hub is configured with a relay

@@ -24,7 +24,7 @@ from synapse_channel.core.handlers import (
     planning,
 )
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind, record_claim_denial
+from synapse_channel.core.journal import EventKind, record_claim_denial, record_operator_relay
 from synapse_channel.core.operator_relay_wire import RelayActionRequest
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
@@ -403,6 +403,166 @@ async def test_operator_relay_cancellation_after_commit_publishes_release(
     assert "T1" not in hub.state.claims
     assert len(store.read_operations()) == 1
     assert store.pending_operation_outbox_count() == 1
+    store.close()
+
+
+async def test_two_person_relay_cancellation_publishes_quorum_and_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = EventStore(tmp_path / "two-person-relay-cancel.db")
+    hub = _RecordingHub(store)
+    assert hub.state.claim("holder", "T1")[0]
+    first = RelayActionRequest(
+        action="release",
+        namespace="SYNAPSE-CHANNEL",
+        task_id="T1",
+        operator="alice",
+        origin_hub_id="origin",
+        idem_key="relay-requester-1",
+    )
+    first_frame = _frame(
+        "peer",
+        MessageType.OPERATOR_RELAY_REQUEST,
+        first.idem_key,
+        action=first.action,
+        namespace=first.namespace,
+        task_id=first.task_id,
+        operator=first.operator,
+        origin_hub_id=first.origin_hub_id,
+    )
+    await operator_relay._apply_with_two_person_atomic_async(
+        hub,
+        "peer",
+        first,
+        "federation-peer:first",
+        first_frame,
+    )
+    assert hub.relay_approvals.pending_count == 1
+
+    started = threading.Event()
+    finish = threading.Event()
+    original = store.commit_operation
+
+    def delayed(**kwargs: Any) -> Any:
+        started.set()
+        assert finish.wait(timeout=2)
+        return original(**kwargs)
+
+    monkeypatch.setattr(store, "commit_operation", delayed)
+    second = RelayActionRequest(
+        action="release",
+        namespace="SYNAPSE-CHANNEL",
+        task_id="T1",
+        operator="bob",
+        origin_hub_id="origin",
+        idem_key="relay-approver-1",
+    )
+    second_frame = _frame(
+        "peer-approver",
+        MessageType.OPERATOR_RELAY_REQUEST,
+        second.idem_key,
+        action=second.action,
+        namespace=second.namespace,
+        task_id=second.task_id,
+        operator=second.operator,
+        origin_hub_id=second.origin_hub_id,
+    )
+    task = asyncio.create_task(
+        operator_relay._apply_with_two_person_atomic_async(
+            hub,
+            "peer-approver",
+            second,
+            "federation-peer:second",
+            second_frame,
+        )
+    )
+    assert await asyncio.to_thread(started.wait, 1)
+    task.cancel()
+    finish.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert "T1" not in hub.state.claims
+    assert hub.relay_approvals.pending_count == 0
+    assert len(store.read_operations()) == 1
+    assert store.pending_operation_outbox_count() == 1
+    store.close()
+
+
+async def test_two_person_actor_serializes_unkeyed_approval_behind_keyed_pending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = EventStore(tmp_path / "two-person-relay-serialization.db")
+    hub = _RecordingHub(store)
+    assert hub.state.claim("holder", "T1")[0]
+    started = threading.Event()
+    finish = threading.Event()
+    original = record_operator_relay
+
+    def delayed(*args: Any, **kwargs: Any) -> Any:
+        started.set()
+        assert finish.wait(timeout=2)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(operator_relay, "record_operator_relay", delayed)
+    first = RelayActionRequest(
+        action="release",
+        namespace="SYNAPSE-CHANNEL",
+        task_id="T1",
+        operator="alice",
+        origin_hub_id="origin",
+        idem_key="relay-requester-1",
+    )
+    first_frame = _frame(
+        "peer",
+        MessageType.OPERATOR_RELAY_REQUEST,
+        first.idem_key,
+        action=first.action,
+        namespace=first.namespace,
+        task_id=first.task_id,
+        operator=first.operator,
+        origin_hub_id=first.origin_hub_id,
+    )
+    keyed = asyncio.create_task(
+        operator_relay._apply_with_two_person_atomic_async(
+            hub,
+            "peer",
+            first,
+            "federation-peer:first",
+            first_frame,
+        )
+    )
+    assert await asyncio.to_thread(started.wait, 1)
+
+    second = RelayActionRequest(
+        action="release",
+        namespace="SYNAPSE-CHANNEL",
+        task_id="T1",
+        operator="bob",
+        origin_hub_id="origin",
+    )
+    unkeyed = asyncio.create_task(
+        operator_relay._apply_with_two_person_async(
+            hub,
+            "peer-approver",
+            second,
+            "federation-peer:second",
+        )
+    )
+    await asyncio.sleep(0)
+    assert not unkeyed.done()
+    finish.set()
+    first_result, second_result = await asyncio.gather(keyed, unkeyed)
+
+    assert first_result is not None and first_result.outcome == "uncommitted"
+    assert second_result.applied is True
+    assert "T1" not in hub.state.claims
+    assert hub.relay_approvals.pending_count == 0
+    assert [event.kind for event in store.read_all()] == [
+        EventKind.OPERATOR_RELAY,
+        EventKind.RELEASE,
+        EventKind.OPERATOR_RELAY,
+    ]
     store.close()
 
 

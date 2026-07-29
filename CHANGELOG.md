@@ -35,12 +35,20 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Extend the keyed operator-relay boundary to two-person mode. Pending approval
+  and its audit now publish together through the shared mutation actor; a
+  quorum-completing request atomically clears approval state, releases the
+  lease, commits exact response/evidence, and publishes both live projections.
+  Keys are bound to the verified federation principal so a serving-grant
+  reassignment under the same sender label cannot replay the prior principal's
+  verdict. Pending approvals remain intentionally restart-cleared and the
+  origin hub's outbound audit remains a separate cross-hub effect.
 - Make a single-person governed operator relay apply once when it carries
   `--idem-key`: the owning hub commits the release, inbound provenance, exact
   verdict, and evidence intent together; identical retries replay only after
   fresh peer/scope/ownership authorization, while changed-payload reuse fails
-  value-free. Forwarding preserves the key. Two-person approval and the origin
-  hub's outbound audit remain explicitly outside this transaction slice.
+  value-free. Forwarding preserves the key. The origin hub's outbound audit
+  remains explicitly outside the owning hub's local transaction.
 - Extend the journal-backed apply-once transaction to task-board declare,
   update, and progress writes. Identical keyed retries replay the exact response,
   changed payloads fail without mutation, keyed and unkeyed board writes share

@@ -211,3 +211,13 @@ def test_blank_verified_principal_is_rejected_fail_closed() -> None:
 
     with pytest.raises(ValueError, match="verified relay principal is required"):
         ledger.submit(_request("alice"), principal="")
+
+
+def test_publish_from_preserves_live_ledger_identity() -> None:
+    live = RelayApprovalLedger()
+    candidate = RelayApprovalLedger()
+    candidate.submit(_request("alice"), principal=_principal("peer-a"))
+    identity = id(live)
+    live.publish_from(candidate)
+    assert id(live) == identity
+    assert live.pending() == candidate.pending()

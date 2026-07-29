@@ -79,34 +79,40 @@ def _write_peer_cert(tmp_path: Path) -> tuple[str, bytes]:
 
 
 def _serving_policy(
-    pin: str, der: bytes, *, sender: str = "peer", aliases: tuple[str, ...] = ()
+    pin: str,
+    der: bytes,
+    *,
+    sender: str = "peer",
+    aliases: tuple[str, ...] = (),
+    domain: str = _DOMAIN,
+    signing_key: str = _KEY,
 ) -> MultiHubServingPolicy:
     """Build a serving policy trusting ``sender`` to relay a *release* into the namespace."""
     return MultiHubServingPolicy(
         federation=FederationBundle(
             [
                 FederationPeer(
-                    domain_id=_DOMAIN,
+                    domain_id=domain,
                     namespaces=frozenset({_NAMESPACE}),
                     certificate_pins=frozenset({pin}),
-                    signing_key_ids=frozenset({_KEY}),
+                    signing_key_ids=frozenset({signing_key}),
                     scope_grants=(ScopeGrant(verb="release", namespace=_NAMESPACE),),
                 )
             ]
         ),
         mtls=MTLSPeerTrustBundle(
             peers={
-                _DOMAIN: MTLSTrustedPeer(
-                    peer_id=_DOMAIN,
+                domain: MTLSTrustedPeer(
+                    peer_id=domain,
                     certificate_pins=frozenset({pin}),
-                    signing_key_ids=frozenset({_KEY}),
+                    signing_key_ids=frozenset({signing_key}),
                     projects=frozenset({_NAMESPACE}),
                 )
             }
         ),
         grants={
             alias: MultiHubServingGrant(
-                domain_id=_DOMAIN, namespace=_NAMESPACE, signing_key_id=_KEY
+                domain_id=domain, namespace=_NAMESPACE, signing_key_id=signing_key
             )
             for alias in (sender, *aliases)
         },
@@ -205,6 +211,11 @@ def _request(
         break_glass=break_glass,
         idem_key=idem_key,
     )
+
+
+def _request_frame(request: RelayActionRequest, *, sender: str) -> dict[str, object]:
+    """Return the handler frame used by the keyed-operation digest."""
+    return {"sender": sender, "type": _REQUEST, **encode_relay_request(request)}
 
 
 async def _connect(uri: str, name: str) -> ClientConnection:
@@ -331,7 +342,41 @@ async def test_keyed_relay_reauthorises_before_replaying_a_committed_verdict(
     reopened.close()
 
 
-def test_relay_journal_failure_restores_claim_and_commits_no_partial_row(
+async def test_keyed_relay_does_not_cross_an_authorized_principal_change(
+    tmp_path: Path,
+) -> None:
+    pin, der = _write_peer_cert(tmp_path)
+    db = tmp_path / "principal-change.db"
+    journal = EventStore(db)
+    hub = _acting_hub(policy=_serving_policy(pin, der), ownership=_owns(), journal=journal)
+    hub.state.claim(_HOLDER, "t1")
+    request = _request(reason="lease wedged", idem_key="relay-attempt-7")
+    async with running_hub(hub) as (_, uri):
+        applied = await _relay(uri, request)
+    assert applied.applied is True
+    journal.close()
+
+    reopened = EventStore(db)
+    restarted = _acting_hub(
+        policy=_serving_policy(
+            pin,
+            der,
+            domain="domain-c",
+            signing_key="SYNAPSE-CHANNEL:principal-c:2026-07",
+        ),
+        ownership=_owns(),
+        journal=reopened,
+    )
+    async with running_hub(restarted) as (_, uri):
+        not_replayed = await _relay(uri, request)
+    assert not_replayed.applied is False
+    assert "not currently claimed" in not_replayed.detail
+    assert len(reopened.read_operations()) == 1
+    assert len(reopened.read_all()) == 3
+    reopened.close()
+
+
+async def test_relay_journal_failure_restores_claim_and_commits_no_partial_row(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     journal = EventStore(tmp_path / "events.db")
@@ -345,7 +390,7 @@ def test_relay_journal_failure_restores_claim_and_commits_no_partial_row(
 
     monkeypatch.setattr(relay_handlers, "record_operator_release", fail_batch)
     with pytest.raises(OSError, match="relay journal unavailable"):
-        relay_handlers._apply_release(hub, "peer", _request())
+        await relay_handlers._apply_release_async(hub, "peer", _request())
 
     assert hub.state.claims["t1"] is before
     assert hub.state.claims["t1"].as_persisted_dict() == before_snapshot
@@ -380,30 +425,31 @@ async def test_notifies_the_hubs_own_agents_that_the_lease_was_revoked(tmp_path:
     assert "released by operator relay" in revoked["payload"]
 
 
-async def test_an_authorised_release_of_an_unclaimed_task_is_a_no_op(tmp_path: Path) -> None:
+@pytest.mark.parametrize("idem_key", ["", "no-op-relay-attempt"])
+async def test_an_authorised_release_of_an_unclaimed_task_is_a_no_op(
+    tmp_path: Path, idem_key: str
+) -> None:
     pin, der = _write_peer_cert(tmp_path)
     journal = EventStore(tmp_path / "events.db")
     hub = _acting_hub(policy=_serving_policy(pin, der), ownership=_owns(), journal=journal)
     async with running_hub(hub) as (_, uri):
-        result = await _relay(
-            uri, _request(task_id="never-claimed", idem_key="no-op-relay-attempt")
-        )
+        result = await _relay(uri, _request(task_id="never-claimed", idem_key=idem_key))
     assert result.applied is False
     assert "not currently claimed" in result.detail
     # A no-op mutates nothing, so it journals nothing.
     assert [e.kind for e in journal.read_all()] == []
 
 
-def test_synchronous_two_person_path_records_then_applies_without_a_journal() -> None:
+async def test_two_person_path_records_then_applies_without_a_journal() -> None:
     hub = _acting_hub(policy=None, ownership=None)
     assert hub.state.claim(_HOLDER, "t1")[0]
-    first = relay_handlers._apply_with_two_person(
+    first = await relay_handlers._apply_with_two_person_async(
         hub,
         "peer",
         _request(operator="alice"),
         "federation-peer:first",
     )
-    second = relay_handlers._apply_with_two_person(
+    second = await relay_handlers._apply_with_two_person_async(
         hub,
         "peer-approver",
         _request(operator="bob"),
@@ -526,6 +572,166 @@ async def test_two_person_relay_records_pending_then_applies_on_a_second_operato
     assert applied["approver_principal"] != applied["requester_principal"]
 
 
+async def test_keyed_two_person_release_commits_once_and_replays_after_restart(
+    tmp_path: Path,
+) -> None:
+    pin, der = _write_peer_cert(tmp_path)
+    db = tmp_path / "keyed-two-person.db"
+    journal = EventStore(db)
+    hub = _acting_hub(
+        policy=_serving_policy_with_distinct_approver(pin, der),
+        ownership=_owns(),
+        journal=journal,
+        require_two_person_relay=True,
+    )
+    hub.state.claim(_HOLDER, "t1")
+    first_request = _request(reason="wedged", operator="alice", idem_key="relay-requester-1")
+    second_request = _request(reason="confirmed", operator="bob", idem_key="relay-approver-1")
+    async with running_hub(hub) as (_, uri):
+        first = await _relay_frame(uri, first_request)
+        second = await _relay_frame(uri, second_request, sender="peer-approver")
+    assert first["pending"] is True
+    assert second["applied"] is True
+    assert "t1" not in hub.state.claims
+    assert hub.relay_approvals.pending_count == 0
+    assert [event.kind for event in journal.read_all()] == [
+        EventKind.OPERATOR_RELAY,
+        EventKind.RELEASE,
+        EventKind.OPERATOR_RELAY,
+        EventKind.IDEMPOTENCY,
+    ]
+    assert len(journal.read_operations()) == 1
+    assert journal.pending_operation_outbox_count() == 0
+    journal.close()
+
+    reopened = EventStore(db)
+    restarted = _acting_hub(
+        policy=_serving_policy_with_distinct_approver(pin, der),
+        ownership=_owns(),
+        journal=reopened,
+        require_two_person_relay=True,
+    )
+    async with running_hub(restarted) as (_, uri):
+        replayed = await _relay_frame(uri, second_request, sender="peer-approver")
+    assert replayed == second
+    assert restarted.relay_approvals.pending_count == 0
+    assert len(reopened.read_all()) == 4
+    reopened.close()
+
+
+async def test_keyed_pending_audit_failure_does_not_publish_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = EventStore(tmp_path / "pending-failure.db")
+    hub = _acting_hub(policy=None, ownership=None, journal=journal)
+    request = _request(operator="alice", idem_key="relay-requester-1")
+
+    def fail_audit(_store: EventStore, _payload: object) -> None:
+        raise OSError("pending audit unavailable")
+
+    monkeypatch.setattr(relay_handlers, "record_operator_relay", fail_audit)
+    with pytest.raises(OSError, match="pending audit unavailable"):
+        await relay_handlers._apply_with_two_person_atomic_async(
+            hub,
+            "peer",
+            request,
+            "federation-peer:first",
+            _request_frame(request, sender="peer"),
+        )
+    assert hub.relay_approvals.pending_count == 0
+    assert journal.read_all() == []
+    journal.close()
+
+
+async def test_unkeyed_pending_audit_failure_does_not_publish_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = EventStore(tmp_path / "unkeyed-pending-failure.db")
+    hub = _acting_hub(policy=None, ownership=None, journal=journal)
+    request = _request(operator="alice")
+
+    def fail_audit(_store: EventStore, _payload: object) -> None:
+        raise OSError("pending audit unavailable")
+
+    monkeypatch.setattr(relay_handlers, "record_operator_relay", fail_audit)
+    with pytest.raises(OSError, match="pending audit unavailable"):
+        await relay_handlers._apply_with_two_person_async(
+            hub,
+            "peer",
+            request,
+            "federation-peer:first",
+        )
+    assert hub.relay_approvals.pending_count == 0
+    assert journal.read_all() == []
+    journal.close()
+
+
+async def test_keyed_approval_commit_failure_retains_pending_lease_and_quorum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = EventStore(tmp_path / "approval-failure.db")
+    hub = _acting_hub(policy=None, ownership=None, journal=journal)
+    assert hub.state.claim(_HOLDER, "t1")[0]
+    first = _request(operator="alice", idem_key="relay-requester-1")
+    first_execution = await relay_handlers._apply_with_two_person_atomic_async(
+        hub,
+        "peer",
+        first,
+        "federation-peer:first",
+        _request_frame(first, sender="peer"),
+    )
+    assert first_execution is not None and first_execution.outcome == "uncommitted"
+    assert hub.relay_approvals.pending_count == 1
+
+    def fail_commit(**_kwargs: object) -> object:
+        raise OSError("approval commit unavailable")
+
+    monkeypatch.setattr(journal, "commit_operation", fail_commit)
+    second = _request(operator="bob", idem_key="relay-approver-1")
+    with pytest.raises(OSError, match="approval commit unavailable"):
+        await relay_handlers._apply_with_two_person_atomic_async(
+            hub,
+            "peer-approver",
+            second,
+            "federation-peer:second",
+            _request_frame(second, sender="peer-approver"),
+        )
+    assert hub.relay_approvals.pending_count == 1
+    assert hub.state.claims["t1"].owner == _HOLDER
+    assert [event.kind for event in journal.read_all()] == [EventKind.OPERATOR_RELAY]
+    journal.close()
+
+
+async def test_keyed_completed_quorum_audits_an_unclaimed_noop(tmp_path: Path) -> None:
+    journal = EventStore(tmp_path / "approved-noop.db")
+    hub = _acting_hub(policy=None, ownership=None, journal=journal)
+    first = _request(task_id="absent", operator="alice", idem_key="relay-requester-1")
+    second = _request(task_id="absent", operator="bob", idem_key="relay-approver-1")
+    await relay_handlers._apply_with_two_person_atomic_async(
+        hub,
+        "peer",
+        first,
+        "federation-peer:first",
+        _request_frame(first, sender="peer"),
+    )
+    execution = await relay_handlers._apply_with_two_person_atomic_async(
+        hub,
+        "peer-approver",
+        second,
+        "federation-peer:second",
+        _request_frame(second, sender="peer-approver"),
+    )
+    assert execution is not None and execution.outcome == "uncommitted"
+    assert execution.mutation.result.applied is False
+    assert execution.mutation.result.pending is False
+    assert hub.relay_approvals.pending_count == 0
+    audits = [event.payload for event in journal.read_all()]
+    assert [audit["status"] for audit in audits] == ["pending", "not_applied"]
+    assert audits[-1]["detail"] == execution.mutation.result.detail
+    assert journal.read_operations() == ()
+    journal.close()
+
+
 async def test_two_person_relay_pending_without_a_journal_does_not_audit(tmp_path: Path) -> None:
     # A hub with no journal still records the pending request in memory and answers pending,
     # it simply writes no audit event (there is nowhere to write it).
@@ -570,4 +776,6 @@ async def test_two_person_relay_refuses_alias_approval_from_the_same_principal(
     assert "awaiting a distinct principal" in repeat.detail
     assert hub.state.claims["t1"].owner == _HOLDER
     # Nothing was released, so no release event was journalled.
-    assert EventKind.RELEASE not in [e.kind for e in journal.read_all()]
+    events = journal.read_all()
+    assert EventKind.RELEASE not in [event.kind for event in events]
+    assert [event.payload["detail"] for event in events] == [first.detail, repeat.detail]

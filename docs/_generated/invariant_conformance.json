@@ -83,9 +83,9 @@
       "id": "atomic-operation-truth",
       "limitations": [
         "Atomic truth is not yet a universal transaction boundary for every command and external side effect.",
-        "Two-person relay approval and the origin hub's outbound relay audit are not yet part of the keyed transaction boundary."
+        "Two-person pending decisions remain restart-cleared and do not exact-replay; the origin hub's outbound relay audit is not part of the owning hub's keyed transaction."
       ],
-      "scope": "Journal-backed claim, task update, release, handoff, checkpoint, guard-denial, resource, task-board declare/update/progress, and single-person governed operator-relay operation families.",
+      "scope": "Journal-backed claim, task update, release, handoff, checkpoint, guard-denial, resource, task-board declare/update/progress, and single-person or quorum-completing two-person governed operator-relay operation families.",
       "sources": [
         "src/synapse_channel/cli_tasks.py",
         "src/synapse_channel/client/agent_outbound_ledger.py",
@@ -93,6 +93,7 @@
         "src/synapse_channel/core/handlers/leasing.py",
         "src/synapse_channel/core/handlers/planning.py",
         "src/synapse_channel/core/handlers/operator_relay.py",
+        "src/synapse_channel/core/operator_relay_approval.py",
         "src/synapse_channel/core/hub_ledger_guard.py",
         "src/synapse_channel/core/ledger.py",
         "src/synapse_channel/core/state_transaction.py"
@@ -112,7 +113,8 @@
         "tests/test_client_ledger_envelopes.py",
         "tests/test_coordination_spec_model.py",
         "tests/test_planning_handlers.py",
-        "tests/test_hub_operator_relay.py"
+        "tests/test_hub_operator_relay.py",
+        "tests/test_operator_relay_approval.py"
       ],
       "title": "Atomic operation truth"
     },

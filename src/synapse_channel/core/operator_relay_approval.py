@@ -164,6 +164,10 @@ class RelayApprovalLedger:
             for key, record in self._pending.items()
         ]
 
+    def publish_from(self, candidate: RelayApprovalLedger) -> None:
+        """Publish a committed candidate while preserving this ledger's object identity."""
+        self._pending = OrderedDict(candidate._pending)
+
     def submit(self, request: RelayActionRequest, *, principal: str) -> ApprovalOutcome:
         """Record or approve ``request`` and return the resulting verdict.
 

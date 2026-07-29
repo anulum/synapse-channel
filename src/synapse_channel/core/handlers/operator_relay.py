@@ -32,11 +32,11 @@ the cross-hub provenance — the verified peer, the asserted operator and origin
 previous holder — that a plain release never carries. The hub's own agents are then told the
 lease was revoked, so a former holder does not keep acting on a dropped lease.
 
-A single-person relay carrying ``idem_key`` uses the canonical keyed transaction: release,
-relay provenance, exact result, and evidence intent commit together. An identical retry is
-reauthorised against the live peer certificate, scope, and namespace ownership before the stored
-result is replayed; changed content under the same key fails closed. Two-person approval remains
-on its separately documented quorum path.
+A single-person or quorum-completing two-person relay carrying ``idem_key`` uses the canonical
+keyed transaction: release, relay provenance, exact result, and evidence intent commit together.
+The operation identity includes the live verified federation principal. An identical retry is
+reauthorised against the current peer certificate, scope, and namespace ownership before the
+stored result is replayed; a different principal or changed content cannot reuse it.
 
 A hub configured for two-person approval adds one more gate *after* the authorisation gate: an
 authorised relay is not applied on its own, but recorded pending in the hub's
@@ -44,13 +44,17 @@ authorised relay is not applied on its own, but recorded pending in the hub's
 only a second, distinct verified federation principal submitting the same action carries it out.
 Both opaque principal fingerprints and descriptive operator labels are audited, so aliases from
 one mutually authenticated peer cannot manufacture a quorum.
+Pending approval and its audit publish together through the same serialized actor, but pending
+state remains intentionally in-memory and restart-cleared; only the quorum-completing release is
+an exact-response apply-once operation.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
@@ -61,7 +65,11 @@ from synapse_channel.core.journal import (
     record_operator_release,
 )
 from synapse_channel.core.operator_relay import RelayDecision, authorise_relay
-from synapse_channel.core.operator_relay_approval import ApprovalOutcome, ApprovalStatus
+from synapse_channel.core.operator_relay_approval import (
+    ApprovalOutcome,
+    ApprovalStatus,
+    RelayApprovalLedger,
+)
 from synapse_channel.core.operator_relay_wire import (
     RelayActionRequest,
     RelayActionResult,
@@ -71,10 +79,10 @@ from synapse_channel.core.operator_relay_wire import (
 )
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import SynapseState
-from synapse_channel.core.state_transaction import durable_state_transaction
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
+    from synapse_channel.core.persistence import EventStore
 
 logger = logging.getLogger(__name__)
 
@@ -155,16 +163,50 @@ async def handle_operator_relay_request(
 
     # An allow decision guarantees the action is registered; the sole registered action is a
     # force-release, so applying it here is exhaustive for this slice.
+    operation_data = _relay_operation_data(data, authorisation.principal)
     if hub.require_two_person_relay:
-        result = await _apply_with_two_person_async(hub, sender, request, authorisation.principal)
-        await _send_result(hub, websocket, sender, result)
+        execution = await _apply_with_two_person_atomic_async(
+            hub,
+            sender,
+            request,
+            authorisation.principal,
+            operation_data,
+        )
+        if execution is None:
+            result = await _apply_with_two_person_async(
+                hub, sender, request, authorisation.principal
+            )
+            await _send_result(hub, websocket, sender, result)
+        else:
+            await _send_atomic_execution(hub, websocket, sender, operation_data, execution)
         return
 
-    execution = await _apply_release_atomic_async(hub, sender, request, data)
+    execution = await _apply_release_atomic_async(hub, sender, request, operation_data)
     if execution is None:
         result = await _apply_release_async(hub, sender, request)
         await _send_result(hub, websocket, sender, result)
         return
+    await _send_atomic_execution(hub, websocket, sender, operation_data, execution)
+
+
+def _relay_operation_data(data: dict[str, Any], principal: str) -> dict[str, Any]:
+    """Scope a caller key to the live verified federation principal without exposing it."""
+    raw_key = str(data.get("idem_key") or "")
+    if not raw_key:
+        return data
+    scoped = dict(data)
+    scoped["idem_key"] = f"{principal}\x00{raw_key}"
+    return scoped
+
+
+async def _send_atomic_execution(
+    hub: SynapseHub,
+    websocket: Any,
+    sender: str,
+    data: dict[str, Any],
+    execution: AtomicExecution,
+) -> None:
+    """Deliver one keyed relay outcome and settle evidence only after successful transport."""
     if execution.outcome in {"replayed", "conflict"}:
         if execution.response is None:
             raise RuntimeError("atomic operator relay returned no replay response")
@@ -173,7 +215,7 @@ async def handle_operator_relay_request(
             await hub._settle_atomic_operation(data)
         return
     application = execution.mutation
-    if not isinstance(application, _ReleaseApplication):
+    if not isinstance(application, (_ReleaseApplication, _TwoPersonApplication)):
         raise RuntimeError("atomic operator relay returned an invalid mutation result")
     await _send_result(
         hub,
@@ -224,66 +266,33 @@ def _authorise(
     )
 
 
-def _apply_with_two_person(
-    hub: SynapseHub, sender: str, request: RelayActionRequest, principal: str
-) -> RelayActionResult:
-    """Apply a relay only once a second, distinct verified principal has approved it.
-
-    The already-authorised request and its verified peer principal are submitted to the hub's
-    approval ledger. A second, different principal completing the quorum applies the release; a
-    first request or an alias from the same principal remains pending and is audited as such.
-    """
-    outcome = hub.relay_approvals.submit(request, principal=principal)
-    if outcome.status is ApprovalStatus.APPROVED:
-        return _apply_release(
-            hub,
-            sender,
-            request,
-            requester=outcome.requester,
-            approver=outcome.approver,
-            requester_principal=outcome.requester_principal,
-            approver_principal=outcome.approver_principal,
-        )
-    _audit_pending(hub, sender, request, outcome)
-    detail = _PENDING_DETAIL if outcome.status is ApprovalStatus.RECORDED else _AWAITING_DETAIL
-    return RelayActionResult(
-        applied=False,
-        action=request.action,
-        namespace=request.namespace,
-        task_id=request.task_id,
-        owner_hub_id=hub.hub_id,
-        detail=detail,
-        pending=True,
-    )
-
-
 async def _apply_with_two_person_async(
     hub: SynapseHub, sender: str, request: RelayActionRequest, principal: str
 ) -> RelayActionResult:
-    """Async production path for the two-person relay gate."""
-    outcome = hub.relay_approvals.submit(request, principal=principal)
-    if outcome.status is ApprovalStatus.APPROVED:
-        return await _apply_release_async(
-            hub,
-            sender,
-            request,
-            requester=outcome.requester,
-            approver=outcome.approver,
-            requester_principal=outcome.requester_principal,
-            approver_principal=outcome.approver_principal,
+    """Serialize unkeyed approval and lease state with their durable audit."""
+    journal = hub.journal
+    subject = _TwoPersonSubject(hub.state, hub.relay_approvals)
+
+    def mutate(candidate: _TwoPersonSubject) -> _TwoPersonApplication:
+        return _prepare_two_person_application(
+            candidate,
+            hub_id=hub.hub_id,
+            sender=sender,
+            request=request,
+            principal=principal,
         )
-    if hub.journal is not None:
-        await asyncio.to_thread(_audit_pending, hub, sender, request, outcome)
-    detail = _PENDING_DETAIL if outcome.status is ApprovalStatus.RECORDED else _AWAITING_DETAIL
-    return RelayActionResult(
-        applied=False,
-        action=request.action,
-        namespace=request.namespace,
-        task_id=request.task_id,
-        owner_hub_id=hub.hub_id,
-        detail=detail,
-        pending=True,
+
+    persist: Callable[[_TwoPersonApplication], None] | None = None
+    if journal is not None:
+        persist = partial(_persist_two_person_application, journal, request)
+
+    application = await hub.state_mutations.run_subject(
+        subject,
+        mutate,
+        persist=persist,
+        publish_candidate=lambda candidate: _publish_two_person(hub, candidate),
     )
+    return application.result
 
 
 @dataclass(frozen=True)
@@ -292,6 +301,22 @@ class _ReleaseApplication:
 
     result: RelayActionResult
     audit_payload: dict[str, Any] | None
+
+
+@dataclass
+class _TwoPersonSubject:
+    """Copy-on-write subject joining authoritative lease and approval-ledger state."""
+
+    state: SynapseState
+    approvals: RelayApprovalLedger
+
+
+@dataclass(frozen=True)
+class _TwoPersonApplication:
+    """Approval result whose durable relay provenance is complete by construction."""
+
+    result: RelayActionResult
+    audit_payload: dict[str, Any]
 
 
 def _prepare_release(
@@ -344,41 +369,72 @@ def _prepare_release(
     )
 
 
-def _apply_release(
-    hub: SynapseHub,
+def _prepare_two_person_application(
+    candidate: _TwoPersonSubject,
+    *,
+    hub_id: str,
     sender: str,
     request: RelayActionRequest,
-    *,
-    requester: str = "",
-    approver: str = "",
-    requester_principal: str = "",
-    approver_principal: str = "",
-) -> RelayActionResult:
-    """Force-release the targeted lease, audit the relay, and notify this hub's agents.
-
-    The previous holder is read before the release so it can be named in the audit and the
-    notice. On success the release is journalled twice — a standard ``release`` for state
-    reconstruction and an ``operator_relay`` for cross-hub provenance — and this hub's agents
-    are told the lease was revoked. A task that is not claimed is a no-op: the relay was
-    authorised but there was nothing to release, so it is reported unapplied and not journalled.
-    Under two-person approval ``approver`` names the second operator whose approval carried it out,
-    empty for a single-operator relay.
-    """
-    task_id = request.task_id.strip()
-    with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
+    principal: str,
+) -> _TwoPersonApplication:
+    """Apply one approval submission to a private composite candidate."""
+    outcome = candidate.approvals.submit(request, principal=principal)
+    if outcome.status is ApprovalStatus.APPROVED:
         application = _prepare_release(
-            hub.state,
-            hub_id=hub.hub_id,
+            candidate.state,
+            hub_id=hub_id,
             sender=sender,
             request=request,
-            requester=requester,
-            approver=approver,
-            requester_principal=requester_principal,
-            approver_principal=approver_principal,
+            requester=outcome.requester,
+            approver=outcome.approver,
+            requester_principal=outcome.requester_principal,
+            approver_principal=outcome.approver_principal,
         )
-        if application.audit_payload is not None and hub.journal is not None:
-            record_operator_release(hub.journal, task_id, application.audit_payload)
-    return application.result
+        if application.audit_payload is not None:
+            return _TwoPersonApplication(
+                result=application.result,
+                audit_payload=application.audit_payload,
+            )
+        return _TwoPersonApplication(
+            result=application.result,
+            audit_payload=_approved_noop_audit_payload(
+                hub_id,
+                sender,
+                request,
+                outcome,
+                detail=application.result.detail,
+            ),
+        )
+    detail = _PENDING_DETAIL if outcome.status is ApprovalStatus.RECORDED else _AWAITING_DETAIL
+    return _TwoPersonApplication(
+        result=RelayActionResult(
+            applied=False,
+            action=request.action,
+            namespace=request.namespace,
+            task_id=request.task_id,
+            owner_hub_id=hub_id,
+            detail=detail,
+            pending=True,
+        ),
+        audit_payload=_pending_audit_payload(sender, request, outcome),
+    )
+
+
+def _persist_two_person_application(
+    journal: EventStore, request: RelayActionRequest, application: _TwoPersonApplication
+) -> None:
+    """Persist one unkeyed or non-final approval candidate before publication."""
+    payload = application.audit_payload
+    if application.result.applied:
+        record_operator_release(journal, request.task_id.strip(), payload)
+    else:
+        record_operator_relay(journal, payload)
+
+
+def _publish_two_person(hub: SynapseHub, candidate: _TwoPersonSubject) -> None:
+    """Publish committed lease and approval-ledger candidates without yielding."""
+    hub.state.publish_from(candidate.state)
+    hub.relay_approvals.publish_from(candidate.approvals)
 
 
 async def _apply_release_async(
@@ -407,16 +463,14 @@ async def _apply_release_async(
             approver_principal=approver_principal,
         )
 
-    def persist(application: _ReleaseApplication) -> None:
-        if journal is None:
-            raise RuntimeError("operator-release persistence requested without a journal")
-        if application.audit_payload is not None:
-            record_operator_release(journal, task_id, application.audit_payload)
+    persist: Callable[[_ReleaseApplication], None] | None = None
+    if journal is not None:
+        persist = partial(_persist_release_application, journal, task_id)
 
     application = await hub.state_mutations.run(
         hub.state,
         mutate,
-        persist=persist if journal is not None else None,
+        persist=persist,
     )
     return application.result
 
@@ -454,37 +508,123 @@ async def _apply_release_atomic_async(
     return await hub._run_atomic_operation(data, mutate, prepare)
 
 
-def _audit_pending(
-    hub: SynapseHub, sender: str, request: RelayActionRequest, outcome: ApprovalOutcome
+def _persist_release_application(
+    journal: EventStore, task_id: str, application: _ReleaseApplication
 ) -> None:
-    """Record an audit event for a relay recorded pending a second operator's approval.
+    """Persist an applied unkeyed release while leaving an authorised no-op silent."""
+    if application.audit_payload is not None:
+        record_operator_release(journal, task_id, application.audit_payload)
 
-    The pending request is journalled as an audit-only ``operator_relay`` event with a
-    ``pending`` status and ``applied`` false — so the durable log shows who asked for a governed
-    action before a second operator carried it out, completing the two-person trail. Nothing is
-    released, so no ``release`` event is written.
-    """
-    if hub.journal is None:
-        return
-    record_operator_relay(
-        hub.journal,
-        {
-            "action": request.action,
-            "namespace": request.namespace,
-            "task_id": request.task_id.strip(),
-            "direction": RELAY_DIRECTION_IN,
-            "status": RELAY_STATUS_PENDING,
-            "peer": sender,
-            "operator": request.operator,
-            "requester": outcome.requester,
-            "requester_principal": outcome.requester_principal,
-            "origin_hub_id": request.origin_hub_id,
-            "reason": request.reason,
-            "break_glass": request.break_glass,
-            "applied": False,
-            "detail": _PENDING_DETAIL,
-        },
+
+async def _apply_with_two_person_atomic_async(
+    hub: SynapseHub,
+    sender: str,
+    request: RelayActionRequest,
+    principal: str,
+    data: dict[str, Any],
+) -> AtomicExecution | None:
+    """Publish approval-ledger and lease state only after their durable audit commits."""
+    journal = hub.journal
+    if journal is None:
+        return None
+    subject = _TwoPersonSubject(hub.state, hub.relay_approvals)
+
+    def mutate(candidate: _TwoPersonSubject) -> _TwoPersonApplication:
+        return _prepare_two_person_application(
+            candidate,
+            hub_id=hub.hub_id,
+            sender=sender,
+            request=request,
+            principal=principal,
+        )
+
+    def prepare(application: _TwoPersonApplication) -> OperationDraft | None:
+        if not application.result.applied:
+            return None
+        payload = application.audit_payload
+        task_id = request.task_id.strip()
+        return OperationDraft(
+            response=_result_message(hub, sender, application.result),
+            events=(
+                (EventKind.RELEASE, {"task_id": task_id}),
+                (EventKind.OPERATOR_RELAY, payload),
+            ),
+            intent={
+                "family": "operator_relay_two_person",
+                "action": request.action,
+                "namespace": request.namespace,
+                "task_id": task_id,
+            },
+        )
+
+    def persist_uncommitted(application: _TwoPersonApplication) -> None:
+        _persist_two_person_application(journal, request, application)
+
+    def publish_candidate(candidate: _TwoPersonSubject) -> None:
+        _publish_two_person(hub, candidate)
+
+    return await hub._run_atomic_operation(
+        data,
+        mutate,
+        subject=subject,
+        publish_candidate=publish_candidate,
+        prepare=prepare,
+        persist_uncommitted=persist_uncommitted,
     )
+
+
+def _pending_audit_payload(
+    sender: str, request: RelayActionRequest, outcome: ApprovalOutcome
+) -> dict[str, Any]:
+    """Return durable provenance for a relay awaiting a distinct principal."""
+    detail = _PENDING_DETAIL if outcome.status is ApprovalStatus.RECORDED else _AWAITING_DETAIL
+    return {
+        "action": request.action,
+        "namespace": request.namespace,
+        "task_id": request.task_id.strip(),
+        "direction": RELAY_DIRECTION_IN,
+        "status": RELAY_STATUS_PENDING,
+        "peer": sender,
+        "operator": request.operator,
+        "requester": outcome.requester,
+        "requester_principal": outcome.requester_principal,
+        "origin_hub_id": request.origin_hub_id,
+        "reason": request.reason,
+        "break_glass": request.break_glass,
+        "applied": False,
+        "detail": detail,
+    }
+
+
+def _approved_noop_audit_payload(
+    hub_id: str,
+    sender: str,
+    request: RelayActionRequest,
+    outcome: ApprovalOutcome,
+    *,
+    detail: str,
+) -> dict[str, Any]:
+    """Return evidence that a completed quorum found no live lease to release."""
+    return {
+        "action": request.action,
+        "namespace": request.namespace,
+        "task_id": request.task_id.strip(),
+        "direction": RELAY_DIRECTION_IN,
+        "status": "not_applied",
+        "peer": sender,
+        "operator": request.operator,
+        "requester": outcome.requester,
+        "approver": outcome.approver,
+        "requester_principal": outcome.requester_principal,
+        "approver_principal": outcome.approver_principal,
+        "origin_hub_id": request.origin_hub_id,
+        "reason": request.reason,
+        "break_glass": request.break_glass,
+        "previous_owner": "",
+        "owner_hub_id": hub_id,
+        "applied": False,
+        "detail": detail,
+    }
 
 
 async def _send_result(
