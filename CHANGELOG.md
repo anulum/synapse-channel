@@ -15,6 +15,12 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Close a universal-receipt read-side omission for four existing durable audit
+  families: content-minimized claim and guard denials, dead-letter escalation,
+  and identity-pin reclaim decisions now retain their real log anchors in event
+  query, dashboard, and cockpit feeds. Every declared durable `EventKind` is
+  exhaustively classified as receipt-bearing or intentionally non-receipt so a new kind
+  cannot silently disappear from evidence queries.
 - Publish a machine-checked registry for six hostile coordination-invariant
   boundaries. It links normative guarantees to executable evidence, labels
   residual gaps as partial, and keeps both commit and release freshness gates

@@ -43,7 +43,11 @@ RECEIPT_PROGRESS_KINDS = frozenset(
 """Structured progress-note kinds that project as universal receipts."""
 
 UNIVERSAL_RECEIPT_EVENT_KINDS = DELIVERY_RECEIPT_EVENT_KINDS | {
+    EventKind.CLAIM_DENIAL,
     EventKind.DEAD_LETTER_FORWARDING,
+    EventKind.DEAD_LETTER_ESCALATION,
+    EventKind.GUARD_DENIAL,
+    EventKind.IDENTITY_PIN_RECLAIM,
     EventKind.LEDGER_PROGRESS,
     EventKind.OPERATOR_RELAY,
     EventKind.SANDBOX_RUN,
@@ -53,6 +57,25 @@ UNIVERSAL_RECEIPT_EVENT_KINDS = DELIVERY_RECEIPT_EVENT_KINDS | {
     EventKind.MULTIHUB_EQUIVOCATION_RECOVERY,
 }
 """Event kinds worth loading when building the universal receipt view."""
+
+NON_RECEIPT_EVENT_KINDS = frozenset(
+    {
+        EventKind.CLAIM,
+        EventKind.RELEASE,
+        EventKind.TASK_UPDATE,
+        EventKind.CHECKPOINT,
+        EventKind.HANDOFF,
+        EventKind.RESOURCE,
+        EventKind.CHAT,
+        EventKind.LEDGER_TASK,
+        EventKind.RECALL,
+        EventKind.FINDING,
+        EventKind.IDEMPOTENCY,
+        EventKind.MAILBOX_WATERMARK,
+        EventKind.CORRUPT,
+    }
+)
+"""Explicitly classified event kinds that do not themselves carry receipt semantics."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,12 +150,18 @@ def universal_receipt_from_event(event: StoredEvent) -> UniversalReceipt | None:
     """
     if event.kind in DELIVERY_RECEIPT_EVENT_KINDS:
         return _delivery_receipt(event)
+    if event.kind in {EventKind.CLAIM_DENIAL, EventKind.GUARD_DENIAL}:
+        return _denial_receipt(event)
     if event.kind == EventKind.SANDBOX_RUN:
         return _sandbox_receipt(event)
     if event.kind == EventKind.OPERATOR_RELAY:
         return _operator_relay_receipt(event)
     if event.kind == EventKind.DEAD_LETTER_FORWARDING:
         return _cross_hub_receipt(event)
+    if event.kind == EventKind.DEAD_LETTER_ESCALATION:
+        return _dead_letter_escalation_receipt(event)
+    if event.kind == EventKind.IDENTITY_PIN_RECLAIM:
+        return _identity_pin_reclaim_receipt(event)
     if event.kind in {EventKind.MULTIHUB_PARTITION, EventKind.MULTIHUB_HEAL}:
         return _multihub_ownership_receipt(event)
     if event.kind in {
@@ -232,6 +261,30 @@ def _sandbox_receipt(event: StoredEvent) -> UniversalReceipt:
     )
 
 
+def _denial_receipt(event: StoredEvent) -> UniversalReceipt:
+    """Project one content-minimized claim or guard denial audit."""
+    payload = _object_payload(event.payload)
+    if event.kind == EventKind.CLAIM_DENIAL:
+        kind = "claim-denial"
+        subject = _text(payload, "task_id_sha256")
+        actor = _text(payload, "claimant")
+    else:
+        kind = "guard-denial"
+        subject = _text(payload, "call_sha256")
+        actor = _text(payload, "provider")
+    reason = _text(payload, "reason_code")
+    summary = f"{kind.replace('-', ' ')}: {reason or 'denied'}"
+    return _receipt(
+        event,
+        kind=kind,
+        subject=subject,
+        actor=actor,
+        status="denied",
+        summary=summary,
+        payload=payload,
+    )
+
+
 def _operator_relay_receipt(event: StoredEvent) -> UniversalReceipt:
     """Project one governed operator relay audit event."""
     payload = _object_payload(event.payload)
@@ -267,6 +320,44 @@ def _cross_hub_receipt(event: StoredEvent) -> UniversalReceipt:
         kind="cross-hub",
         subject=target,
         actor=origin_hub,
+        status=status,
+        summary=summary,
+        payload=payload,
+    )
+
+
+def _dead_letter_escalation_receipt(event: StoredEvent) -> UniversalReceipt:
+    """Project one durable dead-letter threshold escalation."""
+    payload = _object_payload(event.payload)
+    target = _text(payload, "target")
+    count = _text(payload, "count")
+    summary = f"dead-letter target {target or '<unknown>'} escalated"
+    if count:
+        summary += f" at count {count}"
+    return _receipt(
+        event,
+        kind="dead-letter-escalation",
+        subject=target,
+        actor=_text(payload, "last_sender"),
+        status="escalated",
+        summary=summary,
+        payload=payload,
+    )
+
+
+def _identity_pin_reclaim_receipt(event: StoredEvent) -> UniversalReceipt:
+    """Project one durable identity-pin reclaim decision or outcome."""
+    payload = _object_payload(event.payload)
+    status = _text(payload, "status")
+    if not status:
+        status = "applied" if bool(payload.get("applied", False)) else "recorded"
+    pin_name = _text(payload, "pin_name")
+    summary = f"identity pin {pin_name or '<unknown>'} {status}"
+    return _receipt(
+        event,
+        kind="identity-pin-reclaim",
+        subject=pin_name,
+        actor=_text(payload, "operator"),
         status=status,
         summary=summary,
         payload=payload,

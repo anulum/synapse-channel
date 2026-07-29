@@ -369,10 +369,11 @@ def build_receipts_feed(
 
     The feed reads the log's receipt-bearing event families and normalises them
     into one shape for dashboards and cockpit clients: claim release evidence,
-    delivery receipts, sandbox runs, approval/policy/verification progress,
-    operator relays, cross-hub pointers, A2A validation notes, and postmortem
-    notes. It preserves the real ``seq``/``ts`` anchors and never infers a
-    receipt from an ordinary event that did not carry receipt semantics.
+    minimized claim/guard denials, delivery receipts, dead-letter escalations,
+    identity-pin reclaim decisions, sandbox runs, approval/policy/verification
+    progress, operator relays, cross-hub pointers, A2A validation notes, and
+    postmortem notes. It preserves the real ``seq``/``ts`` anchors and never
+    infers a receipt from an ordinary event that did not carry receipt semantics.
 
     Parameters
     ----------

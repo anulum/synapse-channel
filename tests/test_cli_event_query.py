@@ -166,6 +166,15 @@ def test_cli_event_query_universal_receipts_json(
         store,
         {"action": "release", "task_id": "REMOTE", "operator": "ops", "applied": True},
     )
+    store.append(
+        EventKind.GUARD_DENIAL,
+        {
+            "provider": "codex",
+            "call_sha256": "a" * 64,
+            "reason_code": "GUARD_NO_CLAIM",
+            "decision": "deny",
+        },
+    )
     store.close()
 
     exit_code = cli.main(["event-query", str(db), "universal-receipts all", "--json"])
@@ -173,8 +182,13 @@ def test_cli_event_query_universal_receipts_json(
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["kind"] == "universal_receipts"
-    assert [receipt["kind"] for receipt in payload["receipts"]] == ["claim", "operator-relay"]
+    assert [receipt["kind"] for receipt in payload["receipts"]] == [
+        "claim",
+        "operator-relay",
+        "guard-denial",
+    ]
     assert payload["receipts"][0]["status"] == "supported"
+    assert payload["receipts"][2]["subject"] == "a" * 64
 
 
 def test_cli_event_query_universal_receipts_human_output(

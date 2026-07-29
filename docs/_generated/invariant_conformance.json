@@ -207,29 +207,34 @@
         "kill-point",
         "partition",
         "receipt",
-        "replay"
+        "replay",
+        "taxonomy-drift"
       ],
-      "guarantee": "Durable journal and receipt surfaces expose bounded evidence for defined coordination and delivery outcomes without treating transport acknowledgement as model action.",
+      "guarantee": "Durable journal and receipt surfaces expose bounded evidence for defined coordination, denial, escalation, identity-reclaim, and delivery outcomes without treating transport acknowledgement as model action.",
       "id": "evidence-completeness",
       "limitations": [
         "Not every command or external side effect emits a universal receipt.",
         "Evidence completeness across all adapters and deployment effects is not yet proven."
       ],
-      "scope": "Journal-backed coordination operations, defined delivery receipts, AEF records, and federation quarantine evidence.",
+      "scope": "Journal-backed coordination operations, defined delivery receipts and audit decisions, AEF records, and federation quarantine evidence.",
       "sources": [
         "src/synapse_channel/core/journal.py",
-        "src/synapse_channel/core/universal_receipts.py"
+        "src/synapse_channel/core/universal_receipts.py",
+        "src/synapse_channel/dashboard_store_feeds.py"
       ],
       "spec_invariants": [
         "INV-JA-1",
         "INV-JA-2",
         "INV-DG-1",
         "INV-DG-3",
+        "INV-DG-4",
         "INV-MH-5"
       ],
       "status": "partial",
       "tests": [
         "tests/test_atomic_operation_killpoints.py",
+        "tests/test_cli_event_query.py",
+        "tests/test_dashboard_store_feeds_activity.py",
         "tests/test_delivery_receipts.py",
         "tests/test_multihub_watch.py",
         "tests/test_universal_receipts.py"

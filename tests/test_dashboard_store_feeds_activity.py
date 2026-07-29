@@ -431,18 +431,27 @@ class TestReceiptsFeed:
             store,
             {"action": "release", "task_id": "REMOTE", "operator": "ops", "applied": True},
         )
+        store.append(
+            EventKind.DEAD_LETTER_ESCALATION,
+            {"target": "MISSING", "count": 5, "last_sender": "alice", "threshold": 5},
+        )
         store.close()
 
         document = build_receipts_feed(db)
 
         assert document["present"] is True
-        assert document["receipt_count"] == 2
-        assert document["log_end_seq"] == 3
+        assert document["receipt_count"] == 3
+        assert document["log_end_seq"] == 4
         receipts = document["receipts"]
         assert isinstance(receipts, list)
-        assert [receipt["kind"] for receipt in receipts] == ["claim", "operator-relay"]
+        assert [receipt["kind"] for receipt in receipts] == [
+            "claim",
+            "operator-relay",
+            "dead-letter-escalation",
+        ]
         assert receipts[0]["status"] == "supported"
         assert receipts[1]["actor"] == "ops"
+        assert receipts[2]["status"] == "escalated"
         assert "ordinary events" in str(document["note"])
 
     def test_cursor_and_limit_select_recent_receipts(self, tmp_path: Path) -> None:

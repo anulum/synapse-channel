@@ -613,7 +613,10 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   strict outcome and grants no authority beyond the hub's validation, ACL, rate
   limit, and audit decision. With `--feeds-db`, the cockpit's Audit tab incrementally renders the
   universal receipt ledger and governed operator-relay history as two distinct,
-  bounded store-attested feeds; absence and stale last-good data remain visible.
+  bounded store-attested feeds. The receipt ledger includes minimized claim and
+  guard denials, dead-letter escalations, and identity-pin reclaim outcomes;
+  every declared durable `EventKind` is explicitly classified as receipt-bearing or
+  intentionally omitted. Absence and stale last-good data remain visible.
   Add
   `--observed-peer HUB=URI` to include advisory peer-hub rows in the browser and
   `/snapshot.json`; those rows are labelled `observed@HUB` and never grant local
@@ -1582,7 +1585,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 795 |
 | Wire message types | 80 |
 | CLI subcommands | 184 |
-| Test functions | 9288 |
+| Test functions | 9290 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 62 |
 | GitHub Actions workflows | 25 |

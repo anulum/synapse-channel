@@ -19,6 +19,8 @@ from synapse_channel.core.journal import EventKind
 from synapse_channel.core.pending_receipts import ReceiptEntry
 from synapse_channel.core.persistence import StoredEvent
 from synapse_channel.core.universal_receipts import (
+    NON_RECEIPT_EVENT_KINDS,
+    UNIVERSAL_RECEIPT_EVENT_KINDS,
     UniversalReceipt,
     format_universal_receipt,
     universal_receipt_from_event,
@@ -138,6 +140,76 @@ def test_sandbox_operator_and_cross_hub_events_project_to_the_shared_shape() -> 
     assert rows[1]["status"] == "applied"
     assert rows[2]["kind"] == "cross-hub"
     assert rows[2]["status"] == "recorded"
+
+
+def test_durable_denial_escalation_and_pin_reclaim_audits_project() -> None:
+    events = (
+        _event(
+            40,
+            EventKind.CLAIM_DENIAL,
+            {
+                "claimant": "alice",
+                "task_id_sha256": "a" * 64,
+                "reason_code": "overlap",
+                "decision": "deny",
+            },
+        ),
+        _event(
+            41,
+            EventKind.GUARD_DENIAL,
+            {
+                "provider": "codex",
+                "call_sha256": "b" * 64,
+                "reason_code": "GUARD_NO_CLAIM",
+                "decision": "deny",
+            },
+        ),
+        _event(
+            42,
+            EventKind.DEAD_LETTER_ESCALATION,
+            {"target": "MISSING", "count": 5, "last_sender": "alice", "threshold": 5},
+        ),
+        _event(
+            43,
+            EventKind.IDENTITY_PIN_RECLAIM,
+            {
+                "pin_name": "worker-a",
+                "operator": "ops",
+                "status": "applied",
+                "applied": True,
+            },
+        ),
+        _event(44, EventKind.DEAD_LETTER_ESCALATION, {"target": "", "last_sender": ""}),
+        _event(45, EventKind.IDENTITY_PIN_RECLAIM, {"pin_name": "", "applied": False}),
+    )
+
+    receipts = universal_receipts_from_events(events)
+
+    assert [(receipt.kind, receipt.status) for receipt in receipts] == [
+        ("claim-denial", "denied"),
+        ("guard-denial", "denied"),
+        ("dead-letter-escalation", "escalated"),
+        ("identity-pin-reclaim", "applied"),
+        ("dead-letter-escalation", "escalated"),
+        ("identity-pin-reclaim", "recorded"),
+    ]
+    assert receipts[0].subject == "a" * 64
+    assert receipts[1].actor == "codex"
+    assert receipts[2].summary == "dead-letter target MISSING escalated at count 5"
+    assert receipts[3].subject == "worker-a"
+    assert receipts[4].summary == "dead-letter target <unknown> escalated"
+    assert receipts[5].summary == "identity pin <unknown> recorded"
+
+
+def test_every_durable_event_kind_has_an_explicit_receipt_disposition() -> None:
+    event_kinds = {
+        value
+        for name, value in vars(EventKind).items()
+        if name.isupper() and isinstance(value, str)
+    }
+
+    assert UNIVERSAL_RECEIPT_EVENT_KINDS.isdisjoint(NON_RECEIPT_EVENT_KINDS)
+    assert UNIVERSAL_RECEIPT_EVENT_KINDS | NON_RECEIPT_EVENT_KINDS == event_kinds
 
 
 def test_multihub_partition_and_heal_project_as_federation_receipts() -> None:

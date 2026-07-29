@@ -458,6 +458,25 @@ restart projection).
 
 **Pinned by.** `tests/test_hub_mailbox_pending.py`, `tests/test_hub_core_chat.py`.
 
+### INV-DG-4 — durable audit kinds have an explicit receipt disposition
+
+**Normative.** Every declared durable `EventKind` MUST be classified as either
+receipt-bearing or intentionally non-receipt, and the two sets MUST be disjoint. A
+claim denial, guard denial, dead-letter escalation, or identity-pin reclaim
+MUST project its existing bounded audit payload through the universal receipt
+read side with the original sequence and timestamp. Projection MUST NOT invent
+success, model action, or an undisclosed raw task/path value. Ordinary state,
+chat, memory, and idempotency events remain explicitly non-receipt rather than
+silently falling out of the feed.
+
+**Implementation.** `core/universal_receipts.py` defines the exhaustive
+`UNIVERSAL_RECEIPT_EVENT_KINDS` / `NON_RECEIPT_EVENT_KINDS` disposition and the
+four audit projections; `dashboard_store_feeds.py:build_receipts_feed` and
+`core/event_query.py` consume the shared receipt-bearing set.
+
+**Pinned by.** `tests/test_universal_receipts.py`,
+`tests/test_cli_event_query.py`, `tests/test_dashboard_store_feeds_activity.py`.
+
 ## 8. Hub and federation clock model
 
 ### INV-CK-1 — the hub clock is authoritative for ordering
