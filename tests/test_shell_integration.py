@@ -112,6 +112,7 @@ def test_bash_auto_arm_coexists_with_a_live_provider_tmux_waker(tmp_path: Path) 
         f"printf '%s' \"$provider\" > {shlex.quote(str(provider_dir / (key + '.pid')))}\n"
         f"source {shlex.quote(str(hook_path))}\n"
         "__synapse_auto_arm\n"
+        f"for _ in {{1..100}}; do [ -s {shlex.quote(str(record))} ] && break; sleep 0.02; done\n"
         'kill "$provider" 2>/dev/null || true\n'
         'wait "$provider" 2>/dev/null || true\n'
     )
