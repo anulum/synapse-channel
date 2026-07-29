@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.17] - 2026-07-29
+
+### Fixed
+
+- Materialize all cold durable-mailbox pending counts from one shared history
+  read with indexed exact-recipient routing. The first WHO/doctor request after
+  a hub restart no longer repeats a full CHAT replay for every retained identity
+  or starves the WebSocket listener; watermark, role, channel, sender, and glob
+  semantics remain unchanged.
+
 ## [0.99.16] - 2026-07-29
 
 ### Added
