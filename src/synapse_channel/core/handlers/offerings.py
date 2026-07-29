@@ -23,7 +23,7 @@ from synapse_channel.core.journal import EventKind, record_resource
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import SynapseState
 from synapse_channel.core.state_models import ResourceOffer
-from synapse_channel.waiter_identity import waiter_owner
+from synapse_channel.core.waiter_identity import waiter_owner
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub

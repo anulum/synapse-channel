@@ -40,8 +40,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from synapse_channel.core.waiter_identity import pane_waiter_name, waiter_name
 from synapse_channel.core.wake_capability import WAKE_DIRECT, WAKE_PANE_BRIDGE
-from synapse_channel.waiter_identity import pane_waiter_name, waiter_name
 
 DISPATCH_TRUST_BOUNDARY = (
     "Dispatch assignments are advisory nudges: the dispatcher never claims, "

@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import synapse_channel.core.waiter_identity as canonical
+import synapse_channel.waiter_identity as compatibility
 from synapse_channel.waiter_identity import (
     PANE_WAITER_SUFFIX,
     WAITER_SUFFIX,
@@ -20,6 +22,12 @@ from synapse_channel.waiter_identity import (
     waiter_name,
     waiter_owner,
 )
+
+
+def test_top_level_module_reexports_the_canonical_kernel_objects() -> None:
+    assert compatibility.__all__ == canonical.__all__
+    for name in canonical.__all__:
+        assert getattr(compatibility, name) is getattr(canonical, name)
 
 
 def test_is_waiter_recognises_the_sidecar_suffix() -> None:
