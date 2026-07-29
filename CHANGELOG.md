@@ -57,6 +57,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Refuse commits and release builds whose generated capability inventory is
+  stale, while retaining the lightweight pre-push drift check as a final
+  operator guard.
 - Replace the divergent fastest-safe-trial sequences with one
   regression-bound, self-contained `doctor` → golden demo path that proves
   conflict refusal, handoff, and a verified receipt before any persistent hub,

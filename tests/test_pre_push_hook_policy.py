@@ -31,6 +31,7 @@ _PRE_COMMIT_ONLY_HOOKS = (
     "typos",
     "gitleaks",
     "mypy-whole-tree",
+    "capability-manifest",
     "version-sync",
 )
 
@@ -55,6 +56,11 @@ def test_pre_push_hooks_are_installed_and_fixed_scope() -> None:
     assert text.count("stages: [pre-push]") == len(_EXPECTED_HOOKS)
     for hook_id in _PRE_COMMIT_ONLY_HOOKS:
         assert "stages: [pre-commit]" in _hook_block(text, hook_id)
+
+    capability = _hook_block(text, "capability-manifest")
+    assert "entry: python tools/capability_manifest.py --check" in capability
+    assert "always_run: true" in capability
+    assert "pass_filenames: false" in capability
 
 
 def test_pre_push_hooks_cannot_smuggle_in_exhaustive_checks() -> None:

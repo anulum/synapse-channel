@@ -28,8 +28,10 @@ def test_publish_and_release_reuse_one_digest_verified_artifact() -> None:
     attest, publish_job = after_integrity.split("\n  publish:", maxsplit=1)
 
     assert (release + publish).count("python -m build") == 1
+    assert "python tools/capability_manifest.py --check" in build
     assert "umask 0022" in build
     assert "python -m build --outdir build/raw-dist" in build
+    assert build.index("tools/capability_manifest.py --check") < build.index("python -m build")
     assert build.index("umask 0022") < build.index("python -m build")
     assert "python tools/repack_sdist.py" in build
     assert 'mv "${raw_wheels[0]}" release-artifact/' in build

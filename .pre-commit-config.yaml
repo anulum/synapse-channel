@@ -64,6 +64,13 @@ repos:
         stages: [pre-commit]
         pass_filenames: false
         files: ^(pyproject\.toml|(src|tests|benchmarks|tools|examples)/.*\.py)$
+      - id: capability-manifest
+        name: capability snapshot is current before commit
+        entry: python tools/capability_manifest.py --check
+        language: system
+        stages: [pre-commit]
+        always_run: true
+        pass_filenames: false
       - id: pre-push-capability-manifest
         name: capability snapshot is current before push
         entry: python tools/capability_manifest.py --check
