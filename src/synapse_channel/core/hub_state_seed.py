@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from synapse_channel.core.atomic_operations import OperationRecord
@@ -37,6 +37,7 @@ from synapse_channel.core.delivery_receipts import (
 from synapse_channel.core.event_row_recovery import CorruptEventRow
 from synapse_channel.core.journal import replay
 from synapse_channel.core.ledger import Blackboard
+from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.pending_receipts import ReceiptEntry
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import SynapseState
@@ -69,6 +70,9 @@ class SeededHubState:
     corrupt_rows : tuple[CorruptEventRow, ...]
         Quarantined journal rows. A non-empty tuple means replayed state is
         incomplete and the live hub must refuse every mutation.
+    relay_approvals : RelayApprovalLedger
+        Validated pending two-person relay approvals reconstructed from inbound
+        durable audit transitions.
     """
 
     state: SynapseState
@@ -79,6 +83,7 @@ class SeededHubState:
     idempotency_seed: tuple[tuple[str, dict[str, Any]] | OperationRecord, ...]
     pending_receipts: tuple[tuple[int, ReceiptEntry], ...]
     corrupt_rows: tuple[CorruptEventRow, ...] = ()
+    relay_approvals: RelayApprovalLedger = field(default_factory=RelayApprovalLedger)
 
 
 def seed_hub_state(
@@ -166,6 +171,7 @@ def seed_hub_state(
             pending_receipts=restore_pending_receipts(
                 journal.read_window(kinds=DELIVERY_RECEIPT_EVENT_KINDS)
             ),
+            relay_approvals=replayed.relay_approvals,
             corrupt_rows=replayed.corrupt_rows,
         )
     return SeededHubState(
@@ -185,5 +191,6 @@ def seed_hub_state(
         finding_counts={},
         idempotency_seed=(),
         pending_receipts=(),
+        relay_approvals=RelayApprovalLedger(),
         corrupt_rows=(),
     )

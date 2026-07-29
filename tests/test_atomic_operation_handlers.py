@@ -25,7 +25,7 @@ from synapse_channel.core.handlers import (
     planning,
 )
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind, record_claim_denial, record_operator_relay
+from synapse_channel.core.journal import EventKind, record_claim_denial
 from synapse_channel.core.operator_relay_wire import RelayActionRequest
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
@@ -669,8 +669,8 @@ async def test_two_person_relay_cancellation_publishes_quorum_and_release(
 
     assert "T1" not in hub.state.claims
     assert hub.relay_approvals.pending_count == 0
-    assert len(store.read_operations()) == 1
-    assert store.pending_operation_outbox_count() == 1
+    assert len(store.read_operations()) == 2
+    assert store.pending_operation_outbox_count() == 2
     store.close()
 
 
@@ -682,14 +682,14 @@ async def test_two_person_actor_serializes_unkeyed_approval_behind_keyed_pending
     assert hub.state.claim("holder", "T1")[0]
     started = threading.Event()
     finish = threading.Event()
-    original = record_operator_relay
+    original = store.commit_operation
 
-    def delayed(*args: Any, **kwargs: Any) -> Any:
+    def delayed(**kwargs: Any) -> Any:
         started.set()
         assert finish.wait(timeout=2)
-        return original(*args, **kwargs)
+        return original(**kwargs)
 
-    monkeypatch.setattr(operator_relay, "record_operator_relay", delayed)
+    monkeypatch.setattr(store, "commit_operation", delayed)
     first = RelayActionRequest(
         action="release",
         namespace="SYNAPSE-CHANNEL",
@@ -739,12 +739,13 @@ async def test_two_person_actor_serializes_unkeyed_approval_behind_keyed_pending
     finish.set()
     first_result, second_result = await asyncio.gather(keyed, unkeyed)
 
-    assert first_result is not None and first_result.outcome == "uncommitted"
+    assert first_result is not None and first_result.outcome == "inserted"
     assert second_result.applied is True
     assert "T1" not in hub.state.claims
     assert hub.relay_approvals.pending_count == 0
     assert [event.kind for event in store.read_all()] == [
         EventKind.OPERATOR_RELAY,
+        EventKind.IDEMPOTENCY,
         EventKind.RELEASE,
         EventKind.OPERATOR_RELAY,
     ]

@@ -182,7 +182,12 @@ content-free dead-letter escalation pointer. Captured client material is loaded
 at process startup; rotate it by restarting the Core hub.
 Use `--require-relay-reason` to make every governed action explain itself and
 `--require-two-person-relay` to hold it for a distinct trust-domain principal;
-these policies apply equally to direct and routed relays.
+these policies apply equally to direct and routed relays. On a journal-backed
+hub, a validated inbound pending audit restores only the first-principal quorum
+after restart. A later terminal audit removes it, and malformed or contradictory
+evidence restores no quorum. Keyed pending, applied, and completed-quorum no-op
+verdicts exact-replay only after the current peer certificate, relay scope, and
+namespace ownership are authorised again.
 
 - `core/multihub_watch.py` — the hub's own standing follower: polls each operator-named
   peer over that same pull, folds the observed claims with the gate's namespace

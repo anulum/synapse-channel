@@ -123,7 +123,6 @@ from synapse_channel.core.multihub_serving import (
 from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
-from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.operator_relay_forwarding import OperatorRelayForwarding
 from synapse_channel.core.operator_relay_transport import (
     OperatorRelayPeer,
@@ -639,7 +638,6 @@ class SynapseHub:
         self.relay_forwarder = relay_forwarder
         self.require_relay_reason = bool(require_relay_reason)
         self.require_two_person_relay = bool(require_two_person_relay)
-        self.relay_approvals = RelayApprovalLedger()
         self.observed_asserting_hubs = observed_asserting_hubs
         self.federation_bundle = federation_bundle
         self.federation_cert_source = federation_cert_source
@@ -799,6 +797,7 @@ class SynapseHub:
             compact_hint_threshold=self.compact_hint_threshold,
         )
         self.state = seeded.state
+        self.relay_approvals = seeded.relay_approvals
         self.state_mutations = SerializedStateMutationActor()
         self.journal_corrupt_rows = seeded.corrupt_rows
         self._journal_recovery_gate = HubJournalRecoveryGate(

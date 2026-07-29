@@ -16,6 +16,7 @@ import pytest
 from synapse_channel.core.journal import (
     MEMORY_KINDS,
     EventKind,
+    ReplayResult,
     record_chat,
     record_checkpoint,
     record_claim,
@@ -34,16 +35,23 @@ from synapse_channel.core.journal import (
     replay,
     restore_active_multihub_quarantines,
 )
-from synapse_channel.core.ledger import LedgerTask, ProgressNote
+from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
 from synapse_channel.core.multihub_equivocation import FederationQuarantine
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.persistence import EventStore
-from synapse_channel.core.state import GitContext, ResourceOffer, TaskClaim
+from synapse_channel.core.state import GitContext, ResourceOffer, SynapseState, TaskClaim
 from synapse_channel.core.task_causality import TASK_CAUSAL_PARENT_FIELD, TaskCausalParent
 
 
 def _store(tmp_path: Path) -> EventStore:
     return EventStore(tmp_path / "events.db")
+
+
+def test_replay_result_preserves_the_legacy_positional_constructor() -> None:
+    result = ReplayResult(SynapseState(), [], 0, Blackboard(), [], {}, ())
+
+    assert result.corrupt_rows == ()
+    assert result.relay_approvals.pending_count == 0
 
 
 def _claim(**overrides: object) -> TaskClaim:

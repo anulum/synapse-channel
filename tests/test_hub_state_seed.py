@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from synapse_channel.core.hub_state_seed import SeededHubState, seed_hub_state
+from synapse_channel.core.journal import EventKind
 from synapse_channel.core.ledger import Blackboard
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import SynapseState
@@ -54,7 +55,15 @@ def test_seed_starts_fresh_without_a_journal() -> None:
     assert seeded.message_seq == 0
     assert seeded.finding_counts == {}
     assert seeded.idempotency_seed == ()
+    assert seeded.relay_approvals.pending_count == 0
     assert seeded.corrupt_rows == ()
+
+
+def test_seeded_state_preserves_the_legacy_positional_constructor() -> None:
+    seeded = SeededHubState(SynapseState(), [], Blackboard(), 0, {}, (), (), ())
+
+    assert seeded.corrupt_rows == ()
+    assert seeded.relay_approvals.pending_count == 0
 
 
 def test_seed_resumes_from_an_empty_journal(
@@ -124,4 +133,40 @@ def test_seed_reports_safe_degraded_recovery_guidance(
     assert "--drop-corrupt" in caplog.text
     assert "--archive-report" in caplog.text
     assert secret not in caplog.text
+    store.close()
+
+
+def test_seed_restores_only_unsettled_valid_inbound_relay_approvals(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+
+    def audit(task_id: str, *, status: str = "pending", direction: str = "in") -> None:
+        store.append(
+            EventKind.OPERATOR_RELAY,
+            {
+                "action": "release",
+                "namespace": "SYNAPSE-CHANNEL",
+                "task_id": task_id,
+                "requester": "alice",
+                "requester_principal": "federation-peer:first",
+                "status": status,
+                "direction": direction,
+                "applied": status == "applied",
+            },
+        )
+
+    audit("pending")
+    audit("settled")
+    audit("ignored", direction="out")
+    audit("settled", status="applied")
+
+    seeded = _seed(store)
+
+    assert seeded.relay_approvals.pending() == [
+        {
+            "action": "release",
+            "namespace": "SYNAPSE-CHANNEL",
+            "task_id": "pending",
+            "requester": "alice",
+        }
+    ]
     store.close()

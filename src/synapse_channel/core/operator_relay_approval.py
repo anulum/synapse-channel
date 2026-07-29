@@ -17,9 +17,11 @@ verified principals have now asked for the same action to carry it out.
 The rule is deliberately narrow. Two relays match when they target the same action, namespace, and
 task; the ledger records the first as *pending* and applies the pair only when a *second, distinct*
 principal submits the same target. A principal cannot approve its own request — a repeat or alias
-from the same principal leaves the request pending, never self-approved. The ledger is in-memory: a
-restart drops pending requests (they must be re-submitted, never auto-applied), and its capacity is
-bounded so a flood of distinct pending requests evicts the oldest rather than growing without limit.
+from the same principal leaves the request pending, never self-approved. A durable hub restores
+validated pending audits after restart (never an approval verdict), and the ledger's capacity is
+bounded so a flood of distinct pending requests evicts the oldest rather than growing without
+limit. A malformed or contradictory inbound audit clears pending state instead of manufacturing or
+retaining a quorum.
 
 Distinctness is evaluated with the opaque principal derived from the peer's federation trust domain
 after live mutual-TLS authentication. The asserted ``operator`` string remains human-readable audit
@@ -29,6 +31,7 @@ metadata only: aliases and key or certificate rotations within one domain cannot
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 
@@ -117,7 +120,7 @@ class _Pending:
 
 
 class RelayApprovalLedger:
-    """An in-memory quorum of two distinct verified principals per relayed action.
+    """A bounded quorum of two distinct verified principals per relayed action.
 
     Deny-by-default in spirit: a request never applies on its own submission. The first submission
     for an (action, namespace, task) is recorded pending; a submission from a *different* verified
@@ -167,6 +170,38 @@ class RelayApprovalLedger:
     def publish_from(self, candidate: RelayApprovalLedger) -> None:
         """Publish a committed candidate while preserving this ledger's object identity."""
         self._pending = OrderedDict(candidate._pending)
+
+    def restore_audit(self, payload: Mapping[str, object]) -> None:
+        """Fold one durable inbound relay audit into pending quorum state.
+
+        Only a fully formed inbound ``pending`` record can restore a first
+        principal. Any later terminal record removes that key. Malformed or
+        contradictory evidence fails closed by discarding pending state; it can
+        never restore an approval or count as a second principal.
+        """
+        if payload.get("direction") != "in":
+            return
+        key = _key_from_audit(payload)
+        if key is None:
+            self._pending.clear()
+            return
+        if payload.get("status") != "pending" or payload.get("applied") is not False:
+            self._pending.pop(key, None)
+            return
+        requester = payload.get("requester")
+        principal = payload.get("requester_principal")
+        if not isinstance(requester, str) or not requester.strip():
+            self._pending.pop(key, None)
+            return
+        if not isinstance(principal, str) or not principal.strip():
+            self._pending.pop(key, None)
+            return
+        restored = _Pending(requester=requester.strip(), principal=principal.strip())
+        existing = self._pending.get(key)
+        if existing is None:
+            self._record(key, restored.requester, restored.principal)
+        elif existing != restored:
+            self._pending.pop(key, None)
 
     def submit(self, request: RelayActionRequest, *, principal: str) -> ApprovalOutcome:
         """Record or approve ``request`` and return the resulting verdict.
@@ -225,3 +260,21 @@ class RelayApprovalLedger:
         if len(self._pending) >= self._capacity:
             self._pending.popitem(last=False)
         self._pending[key] = _Pending(requester=operator, principal=principal)
+
+
+def _key_from_audit(payload: Mapping[str, object]) -> RelayApprovalKey | None:
+    """Return a strict non-empty approval key from one durable audit payload."""
+    action = payload.get("action")
+    namespace = payload.get("namespace")
+    task_id = payload.get("task_id")
+    if not isinstance(action, str) or not action.strip():
+        return None
+    if not isinstance(namespace, str) or not namespace.strip():
+        return None
+    if not isinstance(task_id, str) or not task_id.strip():
+        return None
+    return RelayApprovalKey(
+        action=action.strip(),
+        namespace=namespace.strip(),
+        task_id=task_id.strip(),
+    )

@@ -53,8 +53,12 @@ All notable changes to this project are documented here.
   lease, commits exact response/evidence, and publishes both live projections.
   Keys are bound to the verified federation principal so a serving-grant
   reassignment under the same sender label cannot replay the prior principal's
-  verdict. Pending approvals remain intentionally restart-cleared and the
-  origin hub's outbound audit remains a separate cross-hub effect.
+  verdict. Validated pending inbound audits now restore the bounded first-
+  principal quorum after restart; malformed or contradictory evidence restores
+  nothing. Keyed pending and completed-quorum no-op verdicts also commit their
+  exact response and evidence intent, while every retry is reauthorised against
+  live peer, scope, and ownership policy. The origin hub's outbound audit
+  remains a separate cross-hub effect.
 - Make a single-person governed operator relay apply once when it carries
   `--idem-key`: the owning hub commits the release, inbound provenance, exact
   verdict, and evidence intent together; identical retries replay only after

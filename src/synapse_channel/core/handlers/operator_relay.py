@@ -45,8 +45,9 @@ only a second, distinct verified federation principal submitting the same action
 Both opaque principal fingerprints and descriptive operator labels are audited, so aliases from
 one mutually authenticated peer cannot manufacture a quorum.
 Pending approval and its audit publish together through the same serialized actor, but pending
-state remains intentionally in-memory and restart-cleared; only the quorum-completing release is
-an exact-response apply-once operation.
+state is reconstructed from validated inbound audits after restart. A keyed pending verdict,
+quorum-completing release, or completed-quorum no-op commits its exact response and evidence intent
+with the corresponding audit transition, while every retry is still reauthorised first.
 """
 
 from __future__ import annotations
@@ -538,27 +539,28 @@ async def _apply_with_two_person_atomic_async(
             principal=principal,
         )
 
-    def prepare(application: _TwoPersonApplication) -> OperationDraft | None:
-        if not application.result.applied:
-            return None
+    def prepare(application: _TwoPersonApplication) -> OperationDraft:
         payload = application.audit_payload
         task_id = request.task_id.strip()
-        return OperationDraft(
-            response=_result_message(hub, sender, application.result),
-            events=(
+        events: tuple[tuple[str, dict[str, Any]], ...]
+        if application.result.applied:
+            events = (
                 (EventKind.RELEASE, {"task_id": task_id}),
                 (EventKind.OPERATOR_RELAY, payload),
-            ),
+            )
+        else:
+            events = ((EventKind.OPERATOR_RELAY, payload),)
+        return OperationDraft(
+            response=_result_message(hub, sender, application.result),
+            events=events,
             intent={
                 "family": "operator_relay_two_person",
                 "action": request.action,
                 "namespace": request.namespace,
                 "task_id": task_id,
+                "phase": "applied" if application.result.applied else "verdict",
             },
         )
-
-    def persist_uncommitted(application: _TwoPersonApplication) -> None:
-        _persist_two_person_application(journal, request, application)
 
     def publish_candidate(candidate: _TwoPersonSubject) -> None:
         _publish_two_person(hub, candidate)
@@ -569,7 +571,6 @@ async def _apply_with_two_person_atomic_async(
         subject=subject,
         publish_candidate=publish_candidate,
         prepare=prepare,
-        persist_uncommitted=persist_uncommitted,
     )
 
 

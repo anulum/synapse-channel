@@ -35,6 +35,27 @@ def _principal(name: str) -> str:
     return f"federation-peer:{name}"
 
 
+def _audit(
+    *,
+    task: str = "MY-NS/build",
+    requester: str = "alice",
+    principal: str = "federation-peer:peer-a",
+    status: str = "pending",
+    direction: str = "in",
+    applied: bool = False,
+) -> dict[str, object]:
+    return {
+        "action": RELAY_RELEASE,
+        "namespace": "MY-NS",
+        "task_id": task,
+        "requester": requester,
+        "requester_principal": principal,
+        "status": status,
+        "direction": direction,
+        "applied": applied,
+    }
+
+
 def test_first_request_is_recorded_pending() -> None:
     ledger = RelayApprovalLedger()
 
@@ -221,3 +242,74 @@ def test_publish_from_preserves_live_ledger_identity() -> None:
     live.publish_from(candidate)
     assert id(live) == identity
     assert live.pending() == candidate.pending()
+
+
+def test_restore_pending_audit_requires_a_distinct_live_principal_to_approve() -> None:
+    ledger = RelayApprovalLedger()
+    ledger.restore_audit(_audit())
+    ledger.restore_audit(_audit())
+
+    same = ledger.submit(_request("alias"), principal=_principal("peer-a"))
+    approved = ledger.submit(_request("bob"), principal=_principal("peer-b"))
+
+    assert same.status is ApprovalStatus.AWAITING
+    assert approved.status is ApprovalStatus.APPROVED
+    assert approved.requester == "alice"
+    assert ledger.pending_count == 0
+
+
+def test_restore_terminal_audit_clears_matching_pending() -> None:
+    ledger = RelayApprovalLedger()
+    ledger.restore_audit(_audit())
+    ledger.restore_audit(_audit(status="applied", applied=True))
+
+    assert ledger.pending_count == 0
+
+
+def test_restore_ignores_outbound_audit_and_bounds_capacity() -> None:
+    ledger = RelayApprovalLedger(capacity=2)
+    ledger.restore_audit(_audit(task="MY-NS/ignored", direction="out"))
+    ledger.restore_audit(_audit(task="MY-NS/a"))
+    ledger.restore_audit(_audit(task="MY-NS/b"))
+    ledger.restore_audit(_audit(task="MY-NS/c"))
+
+    assert [item["task_id"] for item in ledger.pending()] == ["MY-NS/b", "MY-NS/c"]
+
+
+def test_restore_contradictory_or_malformed_audit_fails_closed() -> None:
+    ledger = RelayApprovalLedger()
+    ledger.restore_audit(_audit())
+    ledger.restore_audit(_audit(requester="mallory", principal=_principal("peer-z")))
+    assert ledger.pending_count == 0
+
+    ledger.restore_audit(_audit())
+    malformed = _audit()
+    malformed.pop("task_id")
+    ledger.restore_audit(malformed)
+    assert ledger.pending_count == 0
+
+
+@pytest.mark.parametrize("field", ["action", "namespace", "task_id"])
+def test_restore_malformed_key_clears_all_pending(field: str) -> None:
+    ledger = RelayApprovalLedger()
+    ledger.restore_audit(_audit(task="MY-NS/a"))
+    ledger.restore_audit(_audit(task="MY-NS/b"))
+    malformed = _audit()
+    malformed[field] = ""
+
+    ledger.restore_audit(malformed)
+
+    assert ledger.pending_count == 0
+
+
+@pytest.mark.parametrize("field", ["requester", "requester_principal"])
+def test_restore_malformed_pending_identity_drops_only_its_key(field: str) -> None:
+    ledger = RelayApprovalLedger()
+    ledger.restore_audit(_audit(task="MY-NS/a"))
+    ledger.restore_audit(_audit(task="MY-NS/b"))
+    malformed = _audit(task="MY-NS/a")
+    malformed[field] = ""
+
+    ledger.restore_audit(malformed)
+
+    assert [item["task_id"] for item in ledger.pending()] == ["MY-NS/b"]

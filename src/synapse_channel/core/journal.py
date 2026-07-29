@@ -29,7 +29,7 @@ import math
 import time
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from synapse_channel.core.event_row_recovery import CORRUPT_EVENT_KIND, CorruptEventRow
@@ -42,6 +42,7 @@ from synapse_channel.core.ledger import (
     ProgressNote,
 )
 from synapse_channel.core.multihub_equivocation import FederationQuarantine, valid_fingerprint
+from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.path_identity import parse_optional_claim_scope_identity
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
@@ -137,6 +138,9 @@ class ReplayResult:
     corrupt_rows : tuple[CorruptEventRow, ...]
         Quarantined rows skipped during reconstruction. Any member means the
         projected state is incomplete and must not admit further mutations.
+    relay_approvals : RelayApprovalLedger
+        Validated pending two-person relay approvals reconstructed from inbound
+        audit transitions. Terminal audits remove their matching pending key.
     """
 
     state: SynapseState
@@ -146,6 +150,7 @@ class ReplayResult:
     idempotency: list[tuple[str, dict[str, Any]]]
     finding_counts_by_actor: dict[str, int]
     corrupt_rows: tuple[CorruptEventRow, ...] = ()
+    relay_approvals: RelayApprovalLedger = field(default_factory=RelayApprovalLedger)
 
 
 def record_claim(store: EventStore, claim: TaskClaim) -> None:
@@ -821,6 +826,7 @@ def replay(
     )
     idempotency: OrderedDict[str, dict[str, Any]] = OrderedDict()
     finding_counts_by_actor: dict[str, int] = {}
+    relay_approvals = RelayApprovalLedger()
     corrupt_rows: list[CorruptEventRow] = []
     message_seq = 0
     epoch_seq = 0
@@ -875,6 +881,8 @@ def replay(
                 actor = str(provenance.get("actor") or "").strip()
                 if actor:
                     finding_counts_by_actor[actor] = finding_counts_by_actor.get(actor, 0) + 1
+        elif event.kind == EventKind.OPERATOR_RELAY:
+            relay_approvals.restore_audit(payload)
         # RECALL is telemetry and FINDING is the durable memory spine. Neither is
         # coordination state, so replay never inserts them into the registry; findings
         # only seed live quota counters for the same actor after a restart.
@@ -893,5 +901,6 @@ def replay(
         blackboard=blackboard,
         idempotency=list(idempotency.items()),
         finding_counts_by_actor=dict(finding_counts_by_actor),
+        relay_approvals=relay_approvals,
         corrupt_rows=tuple(corrupt_rows),
     )

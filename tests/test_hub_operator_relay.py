@@ -19,7 +19,7 @@ from hub_e2e_helpers import read_until_type, running_hub, send_json
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 from synapse_channel.core.handlers import operator_relay as relay_handlers
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal import EventKind, record_claim
 from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHubServingPolicy
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.operator_relay_wire import (
@@ -596,11 +596,12 @@ async def test_keyed_two_person_release_commits_once_and_replays_after_restart(
     assert hub.relay_approvals.pending_count == 0
     assert [event.kind for event in journal.read_all()] == [
         EventKind.OPERATOR_RELAY,
+        EventKind.IDEMPOTENCY,
         EventKind.RELEASE,
         EventKind.OPERATOR_RELAY,
         EventKind.IDEMPOTENCY,
     ]
-    assert len(journal.read_operations()) == 1
+    assert len(journal.read_operations()) == 2
     assert journal.pending_operation_outbox_count() == 0
     journal.close()
 
@@ -615,7 +616,48 @@ async def test_keyed_two_person_release_commits_once_and_replays_after_restart(
         replayed = await _relay_frame(uri, second_request, sender="peer-approver")
     assert replayed == second
     assert restarted.relay_approvals.pending_count == 0
-    assert len(reopened.read_all()) == 4
+    assert len(reopened.read_all()) == 5
+    reopened.close()
+
+
+async def test_keyed_pending_replays_exactly_and_can_complete_after_restart(
+    tmp_path: Path,
+) -> None:
+    pin, der = _write_peer_cert(tmp_path)
+    db = tmp_path / "pending-restart.db"
+    journal = EventStore(db)
+    hub = _acting_hub(
+        policy=_serving_policy_with_distinct_approver(pin, der),
+        ownership=_owns(),
+        journal=journal,
+        require_two_person_relay=True,
+    )
+    assert hub.state.claim(_HOLDER, "t1")[0]
+    record_claim(journal, hub.state.claims["t1"])
+    first_request = _request(reason="wedged", operator="alice", idem_key="requester-1")
+    second_request = _request(reason="confirmed", operator="bob", idem_key="approver-1")
+    async with running_hub(hub) as (_, uri):
+        first = await _relay_frame(uri, first_request)
+    assert first["pending"] is True
+    journal.close()
+
+    reopened = EventStore(db)
+    restarted = _acting_hub(
+        policy=_serving_policy_with_distinct_approver(pin, der),
+        ownership=_owns(),
+        journal=reopened,
+        require_two_person_relay=True,
+    )
+    assert restarted.relay_approvals.pending_count == 1
+    before_retry = len(reopened.read_all())
+    async with running_hub(restarted) as (_, uri):
+        replayed = await _relay_frame(uri, first_request)
+        applied = await _relay_frame(uri, second_request, sender="peer-approver")
+    assert replayed == first
+    assert applied["applied"] is True
+    assert "t1" not in restarted.state.claims
+    assert restarted.relay_approvals.pending_count == 0
+    assert len(reopened.read_all()) == before_retry + 3
     reopened.close()
 
 
@@ -626,10 +668,10 @@ async def test_keyed_pending_audit_failure_does_not_publish_approval(
     hub = _acting_hub(policy=None, ownership=None, journal=journal)
     request = _request(operator="alice", idem_key="relay-requester-1")
 
-    def fail_audit(_store: EventStore, _payload: object) -> None:
+    def fail_audit(**_kwargs: object) -> object:
         raise OSError("pending audit unavailable")
 
-    monkeypatch.setattr(relay_handlers, "record_operator_relay", fail_audit)
+    monkeypatch.setattr(journal, "commit_operation", fail_audit)
     with pytest.raises(OSError, match="pending audit unavailable"):
         await relay_handlers._apply_with_two_person_atomic_async(
             hub,
@@ -680,7 +722,7 @@ async def test_keyed_approval_commit_failure_retains_pending_lease_and_quorum(
         "federation-peer:first",
         _request_frame(first, sender="peer"),
     )
-    assert first_execution is not None and first_execution.outcome == "uncommitted"
+    assert first_execution is not None and first_execution.outcome == "inserted"
     assert hub.relay_approvals.pending_count == 1
 
     def fail_commit(**_kwargs: object) -> object:
@@ -698,7 +740,10 @@ async def test_keyed_approval_commit_failure_retains_pending_lease_and_quorum(
         )
     assert hub.relay_approvals.pending_count == 1
     assert hub.state.claims["t1"].owner == _HOLDER
-    assert [event.kind for event in journal.read_all()] == [EventKind.OPERATOR_RELAY]
+    assert [event.kind for event in journal.read_all()] == [
+        EventKind.OPERATOR_RELAY,
+        EventKind.IDEMPOTENCY,
+    ]
     journal.close()
 
 
@@ -721,14 +766,16 @@ async def test_keyed_completed_quorum_audits_an_unclaimed_noop(tmp_path: Path) -
         "federation-peer:second",
         _request_frame(second, sender="peer-approver"),
     )
-    assert execution is not None and execution.outcome == "uncommitted"
+    assert execution is not None and execution.outcome == "inserted"
     assert execution.mutation.result.applied is False
     assert execution.mutation.result.pending is False
     assert hub.relay_approvals.pending_count == 0
-    audits = [event.payload for event in journal.read_all()]
+    audits = [
+        event.payload for event in journal.read_all() if event.kind == EventKind.OPERATOR_RELAY
+    ]
     assert [audit["status"] for audit in audits] == ["pending", "not_applied"]
     assert audits[-1]["detail"] == execution.mutation.result.detail
-    assert journal.read_operations() == ()
+    assert len(journal.read_operations()) == 2
     journal.close()
 
 

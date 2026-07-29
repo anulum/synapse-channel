@@ -306,13 +306,31 @@ reconstruct an unbounded in-memory view from an append-only log.
 
 **Normative.** `claim_denial` and `guard_denial` events are durable audit
 records only. During replay they MUST NOT create or alter any lease; they survive
-restart as evidence and nothing more. The same holds for operator-relay and
-identity-pin-reclaim audit events.
+restart as evidence and nothing more. Operator-relay and identity-pin-reclaim
+audits likewise MUST NOT create or alter a lease. A validated pending inbound
+operator-relay audit MAY restore only the separate two-person approval ledger as
+specified by INV-RR-4.
 
 **Implementation.** `core/journal.py:replay` (no registry branch for the denial
 kinds; they fall through untouched).
 
 **Pinned by.** `tests/test_claim_denial_evidence.py`, `tests/test_journal.py`.
+
+### INV-RR-4 — pending relay quorum restores without restoring approval
+
+**Normative.** A journal-backed two-person relay ledger MUST restore a pending
+first principal only from a complete inbound `pending` audit. A terminal audit
+for the same action/namespace/task MUST clear it. Outbound, malformed, or
+contradictory evidence MUST NOT create or retain a quorum, and replay MUST NOT
+restore an approved verdict. A second principal still MUST pass current peer,
+scope, and namespace-ownership authorization before the action applies.
+
+**Implementation.** `core/journal.py:replay` folds operator-relay audit rows
+through `core/operator_relay_approval.py:RelayApprovalLedger.restore_audit`;
+`core/hub_state_seed.py` publishes the bounded reconstructed ledger.
+
+**Pinned by.** `tests/test_operator_relay_approval.py`,
+`tests/test_hub_state_seed.py`, `tests/test_hub_operator_relay.py`.
 
 ## 6. Crash, reconnect, and partition semantics
 
@@ -322,8 +340,9 @@ kinds; they fall through untouched).
 `idem_key` on a covered mutation MUST have its authoritative events and exact
 response committed in one FULL-durability SQLite transaction. Covered mutations
 include the claim family, resource offers, guard-denial evidence, and task-board
-declare, update, and progress writes. The operation key MUST be namespaced by the
-authenticated sender and normalized message type. An identical retry MUST replay
+declare, update, and progress writes, accepted memory writes, and authorized
+single-person or two-person operator-relay verdicts. The operation key MUST be
+namespaced by the authenticated sender and normalized message type. An identical retry MUST replay
 the stored response without a second mutation, including after restart. Reusing
 that operation key with a different canonical request digest MUST return a stable
 value-free `idempotency_conflict` and apply nothing. Operation rows are retained
@@ -339,13 +358,14 @@ files directly.
 **Implementation.** `core/atomic_operations.py`,
 `core/persistence.py:EventStore.commit_operation`,
 `core/state_transaction.py:SerializedStateMutationActor.run_atomic`, and
-`core/hub_ledger_guard.py`; the typed ledger client and `synapse task` commands
-expose the stable key without generating a replacement across manual retries.
+`core/hub_ledger_guard.py`; the operator-relay handler re-runs current transport
+authorization before replay, and the typed ledger client plus `synapse task`
+commands expose stable keys without generating replacements across manual retries.
 
 **Pinned by.** `tests/test_atomic_operations.py`,
 `tests/test_atomic_operation_handlers.py`,
 `tests/test_atomic_operation_killpoints.py`, `tests/test_idempotency.py`, and
-`tests/test_hub_ledger_guard.py`.
+`tests/test_hub_ledger_guard.py`, `tests/test_hub_operator_relay.py`.
 
 ### INV-CR-2 — handoff is atomic
 
