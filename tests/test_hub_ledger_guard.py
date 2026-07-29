@@ -156,3 +156,42 @@ async def test_maybe_replay_duplicate_passes_through_non_duplicates() -> None:
         await guard.maybe_replay_duplicate(MessageType.CLAIM, {"idem_key": "miss"}, socket, _send)
         is False
     )
+
+
+async def test_durable_lookup_rejects_noncanonical_and_changed_retries(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "durable-lookup.db")
+    data = {
+        "sender": "alice",
+        "type": MessageType.LEDGER_TASK,
+        "idem_key": "k1",
+        "task_id": "T1",
+    }
+    key = HubLedgerGuard.idempotency_key(data)
+    store.commit_operation(
+        operation_key=key,
+        request_digest="a" * 64,
+        response={"type": MessageType.LEDGER_TASK_POSTED, "task": {"task_id": "T1"}},
+        events=((MessageType.LEDGER_TASK, {"task_id": "T1"}),),
+        intent={"family": "ledger_task"},
+    )
+    guard = _guard(journal=store)
+    sent: list[dict[str, Any]] = []
+
+    async def _send(_websocket: Any, response: dict[str, Any]) -> None:
+        sent.append(response)
+
+    assert await guard.maybe_replay_duplicate(
+        MessageType.LEDGER_TASK,
+        {**data, "invalid": float("nan")},
+        object(),
+        _send,
+    )
+    assert sent[-1]["error_code"] == "invalid_idempotency_request"
+    assert await guard.maybe_replay_duplicate(
+        MessageType.LEDGER_TASK,
+        {**data, "title": "changed"},
+        object(),
+        _send,
+    )
+    assert sent[-1]["error_code"] == "idempotency_conflict"
+    store.close()

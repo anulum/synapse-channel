@@ -8,6 +8,10 @@
 
 from __future__ import annotations
 
+from typing import cast
+
+import pytest
+
 from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
 
 # --- LedgerTask / ProgressNote -----------------------------------------------
@@ -49,6 +53,20 @@ def test_progress_note_as_dict() -> None:
         "text": "started",
         "posted_at": 3.0,
     }
+
+
+def test_publish_from_replaces_contents_but_preserves_board_identity() -> None:
+    board = Blackboard()
+    candidate = Blackboard()
+    candidate.post_task(task_id="T1", title="candidate", author="A")
+    original_identity = id(board)
+
+    board.publish_from(candidate)
+
+    assert id(board) == original_identity
+    assert board.tasks["T1"].title == "candidate"
+    with pytest.raises(TypeError, match="must be a Blackboard"):
+        board.publish_from(cast("Blackboard", object()))
 
 
 # --- post_task ---------------------------------------------------------------

@@ -8,11 +8,13 @@
 
 from __future__ import annotations
 
+import copy
 import sqlite3
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
+from synapse_channel.core.atomic_operations import AtomicExecution
 from synapse_channel.core.handlers import planning
 from synapse_channel.core.ledger import ProgressNote
 from synapse_channel.core.protocol import MessageType
@@ -63,13 +65,36 @@ class _FakeBlackboard:
         self.calls["post_progress"] = kwargs
         return self._progress_result
 
+    def publish_from(self, candidate: _FakeBlackboard) -> None:
+        self.__dict__.update(candidate.__dict__)
+
+
+class _FakeMutationActor:
+    async def run_subject(
+        self,
+        subject: Any,
+        mutate: Any,
+        *,
+        persist: Any = None,
+        publish_candidate: Any,
+    ) -> Any:
+        if persist is None:
+            return mutate(subject)
+        candidate = copy.deepcopy(subject)
+        result = mutate(candidate)
+        persist(result)
+        publish_candidate(candidate)
+        return result
+
 
 class _FakeHub:
     def __init__(self, blackboard: _FakeBlackboard, *, journal: Any = None) -> None:
         self.blackboard = blackboard
         self.journal = journal
+        self.state_mutations = _FakeMutationActor()
         self.broadcasts: list[dict[str, Any]] = []
         self.sent: list[dict[str, Any]] = []
+        self.remembered: list[tuple[dict[str, Any], dict[str, Any]]] = []
 
     def _system(self, text: str, **fields: Any) -> dict[str, Any]:
         return {"text": text, **fields}
@@ -79,6 +104,9 @@ class _FakeHub:
 
     async def _send_json(self, websocket: Any, payload: dict[str, Any]) -> None:
         self.sent.append(payload)
+
+    def _remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
+        self.remembered.append((data, response))
 
 
 def _as_hub(hub: _FakeHub) -> SynapseHub:
@@ -245,6 +273,8 @@ class TestHandleLedgerProgress:
         assert hub.broadcasts == []
         assert hub.sent[0]["msg_type"] == MessageType.ERROR
         assert hub.sent[0]["text"] == "not-a-note"
+        with pytest.raises(RuntimeError, match="missing its response"):
+            planning._required_atomic_response(AtomicExecution("replayed", None, None))
 
 
 class TestJournalFailureRollback:
@@ -303,5 +333,23 @@ class TestJournalFailureRollback:
         )
         restored = board.tasks["t1"]
         assert getattr(restored, "marker", None) == "pre-mutation"
+        assert hub.broadcasts == []
+        assert "rolled back" in hub.sent[-1]["text"]
+
+    async def test_progress_is_not_published_on_journal_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _raise(_journal: Any, _payload: Any) -> None:
+            raise sqlite3.OperationalError("disk full")
+
+        monkeypatch.setattr(planning, "record_ledger_progress", _raise)
+        note = ProgressNote(
+            task_id="t1", author="alice", kind="note", text="progress", posted_at=1.0
+        )
+        board = _FakeBlackboard(progress_result=(True, note))
+        hub = _FakeHub(board, journal=object())
+        await planning.handle_ledger_progress(
+            _as_hub(hub), "alice", {"task_id": "t1", "text": "progress"}, object()
+        )
         assert hub.broadcasts == []
         assert "rolled back" in hub.sent[-1]["text"]

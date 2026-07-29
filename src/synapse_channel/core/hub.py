@@ -941,6 +941,8 @@ class SynapseHub:
         mutate: Callable[[Any], Any],
         prepare: Callable[[Any], OperationDraft | None],
         *,
+        subject: Any | None = None,
+        publish_candidate: Callable[[Any], None] | None = None,
         persist_uncommitted: Callable[[Any], None] | None = None,
         publish: Callable[[Any], None] | None = None,
     ) -> AtomicExecution | None:
@@ -963,8 +965,17 @@ class SynapseHub:
                 response_event_seq_field=draft.response_event_seq_field,
             )
 
+        mutation_subject = self.state if subject is None else subject
+        candidate_publisher: Callable[[Any], None]
+        if subject is None:
+            candidate_publisher = self.state.publish_from
+        elif publish_candidate is not None:
+            candidate_publisher = publish_candidate
+        else:
+            raise ValueError("a non-state atomic subject requires a candidate publisher")
+
         execution = await self.state_mutations.run_atomic(
-            self.state,
+            mutation_subject,
             mutate,
             request_digest=request_digest,
             lookup=lambda: self._ledger.lookup_operation(operation_key),
@@ -975,6 +986,7 @@ class SynapseHub:
                 sender=str(data.get("sender") or ""),
                 reference=existing.response,
             ),
+            publish_candidate=candidate_publisher,
             persist_uncommitted=persist_uncommitted,
             publish=publish,
         )

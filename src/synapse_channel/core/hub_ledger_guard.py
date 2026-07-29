@@ -43,6 +43,9 @@ _MUTATING_TYPES = (
             MessageType.HANDOFF,
             MessageType.CHECKPOINT,
             MessageType.GUARD_DENIAL,
+            MessageType.LEDGER_TASK,
+            MessageType.LEDGER_TASK_UPDATE,
+            MessageType.LEDGER_PROGRESS,
         }
     )
     | RESOURCE_TYPE_ALIASES

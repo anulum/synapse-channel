@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +19,7 @@ from synapse_channel import cli, cli_tasks
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 
 # --- parser ------------------------------------------------------------------
@@ -25,11 +27,22 @@ from synapse_channel.core.protocol import MessageType
 
 def test_parser_task_declare() -> None:
     args = cli.build_parser().parse_args(
-        ["task", "declare", "BUILD", "--title", "Compile", "--depends-on", "X"]
+        [
+            "task",
+            "declare",
+            "BUILD",
+            "--title",
+            "Compile",
+            "--depends-on",
+            "X",
+            "--idem-key",
+            "declare-1",
+        ]
     )
     assert args.task_id == "BUILD"
     assert args.title == "Compile"
     assert args.depends_on == ["X"]
+    assert args.idem_key == "declare-1"
     assert args.func is cli_tasks._cmd_task_declare
 
 
@@ -87,6 +100,32 @@ async def test_cmd_task_declare_uses_token(capsys: pytest.CaptureFixture[str]) -
 
     assert code == 0
     assert "declared BUILD" in capsys.readouterr().out
+
+
+async def test_cmd_task_declare_reuses_stable_key_without_changed_payload(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = EventStore(tmp_path / "task-cli.db")
+    async with running_hub(SynapseHub(journal=store)) as (hub, uri):
+        first = argparse.Namespace(
+            task_id="BUILD",
+            title="Compile",
+            depends_on=[],
+            idem_key="declare-stable",
+            uri=uri,
+            name="P",
+            token=None,
+        )
+        changed = argparse.Namespace(**{**vars(first), "title": "Changed"})
+        assert await asyncio.to_thread(cli_tasks._cmd_task_declare, first) == 0
+        capsys.readouterr()
+        code = await asyncio.to_thread(cli_tasks._cmd_task_declare, changed)
+
+        assert code == 1
+        assert hub.blackboard.tasks["BUILD"].title == "Compile"
+        assert len(store.read_operations()) == 1
+    assert "different request" in capsys.readouterr().out
+    store.close()
 
 
 async def test_cmd_task_update_prints_confirmation(capsys: pytest.CaptureFixture[str]) -> None:

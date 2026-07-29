@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from synapse_channel.core.auth import TokenAuthenticator
-from synapse_channel.core.handlers import guard_evidence, leasing, offerings
+from synapse_channel.core.handlers import guard_evidence, leasing, offerings, planning
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind, record_claim_denial
 from synapse_channel.core.persistence import EventStore
@@ -163,6 +163,114 @@ async def test_guard_denial_response_sequence_is_exact_across_restart(tmp_path: 
     reopened.close()
 
 
+async def test_board_families_commit_once_conflict_and_resume(tmp_path: Path) -> None:
+    db = tmp_path / "board-families.db"
+    store = EventStore(db)
+    hub = _RecordingHub(store)
+    socket = object()
+    declare = _frame(
+        "A",
+        MessageType.LEDGER_TASK,
+        "board-declare-1",
+        task_id="PLAN-1",
+        title="Atomic board",
+        project="SYNAPSE-CHANNEL",
+    )
+    update = _frame(
+        "A",
+        MessageType.LEDGER_TASK_UPDATE,
+        "board-update-1",
+        task_id="PLAN-1",
+        status="in_progress",
+        expected_version=1,
+    )
+    progress = _frame(
+        "A",
+        MessageType.LEDGER_PROGRESS,
+        "board-progress-1",
+        task_id="PLAN-1",
+        kind="assessment",
+        text="atomic boundary active",
+    )
+
+    await planning.handle_ledger_task(hub, "A", declare, socket)
+    await planning.handle_ledger_task_update(hub, "A", update, socket)
+    await planning.handle_ledger_progress(hub, "A", progress, socket)
+
+    assert hub.blackboard.tasks["PLAN-1"].status == "in_progress"
+    assert hub.blackboard.tasks["PLAN-1"].version == 2
+    assert [note.text for note in hub.blackboard.progress] == ["atomic boundary active"]
+    assert len(store.read_operations()) == 3
+    kinds = [event.kind for event in store.read_all()]
+    assert kinds.count(EventKind.LEDGER_TASK) == 2
+    assert kinds.count(EventKind.LEDGER_PROGRESS) == 1
+    assert kinds.count(EventKind.IDEMPOTENCY) == 3
+
+    event_count = len(store.read_all())
+    broadcasts = tuple(hub.broadcasts)
+    await planning.handle_ledger_task(hub, "A", declare, socket)
+    await planning.handle_ledger_task_update(hub, "A", update, socket)
+    await planning.handle_ledger_progress(hub, "A", progress, socket)
+    assert len(store.read_all()) == event_count
+    assert tuple(hub.broadcasts) == broadcasts
+    assert [message["type"] for message in hub.sent[-3:]] == [
+        MessageType.LEDGER_TASK_POSTED,
+        MessageType.LEDGER_TASK_UPDATED,
+        MessageType.LEDGER_PROGRESS_POSTED,
+    ]
+
+    await planning.handle_ledger_task(
+        hub,
+        "A",
+        {**declare, "title": "Changed payload"},
+        socket,
+    )
+    assert hub.sent[-1]["error_code"] == "idempotency_conflict"
+    assert "board-declare-1" not in str(hub.sent[-1])
+    assert hub.blackboard.tasks["PLAN-1"].title == "Atomic board"
+    assert len(store.read_all()) == event_count
+
+    store.close()
+    reopened = EventStore(db)
+    restarted = _RecordingHub(reopened)
+    assert restarted.blackboard.tasks["PLAN-1"].status == "in_progress"
+    assert [note.text for note in restarted.blackboard.progress] == ["atomic boundary active"]
+    await planning.handle_ledger_task_update(restarted, "A", update, socket)
+    assert restarted.sent[-1]["type"] == MessageType.LEDGER_TASK_UPDATED
+    assert len(reopened.read_all()) == event_count
+    reopened.close()
+
+
+async def test_board_actor_serializes_unkeyed_write_behind_atomic_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = EventStore(tmp_path / "board-serialization.db")
+    hub = _RecordingHub(store)
+    started = threading.Event()
+    finish = threading.Event()
+    original = store.commit_operation
+
+    def delayed(**kwargs: Any) -> Any:
+        started.set()
+        assert finish.wait(timeout=2)
+        return original(**kwargs)
+
+    monkeypatch.setattr(store, "commit_operation", delayed)
+    keyed = _frame("A", MessageType.LEDGER_TASK, "board-keyed", task_id="KEYED", title="Keyed")
+    unkeyed = {"sender": "B", "type": MessageType.LEDGER_TASK, "task_id": "PLAIN", "title": "Plain"}
+    keyed_task = asyncio.create_task(planning.handle_ledger_task(hub, "A", keyed, object()))
+    assert await asyncio.to_thread(started.wait, 1)
+    unkeyed_task = asyncio.create_task(planning.handle_ledger_task(hub, "B", unkeyed, object()))
+    await asyncio.sleep(0)
+    assert not unkeyed_task.done()
+
+    finish.set()
+    await asyncio.gather(keyed_task, unkeyed_task)
+    assert set(hub.blackboard.tasks) == {"KEYED", "PLAIN"}
+    assert [event.kind for event in store.read_all()].count(EventKind.LEDGER_TASK) == 2
+    store.close()
+
+
 async def test_cancellation_after_atomic_commit_publishes_the_winner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -189,6 +297,64 @@ async def test_cancellation_after_atomic_commit_publishes_the_winner(
     assert "T1" in hub.state.claims
     assert len(store.read_operations()) == 1
     assert store.pending_operation_outbox_count() == 1
+    store.close()
+
+
+@pytest.mark.parametrize("family", ["release", "handoff"])
+async def test_cancellation_after_commit_publishes_cross_subject_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    family: str,
+) -> None:
+    store = EventStore(tmp_path / f"{family}-cross-subject.db")
+    hub = _RecordingHub(store)
+    assert hub.state.claim("A", "T1")[0]
+    started = threading.Event()
+    finish = threading.Event()
+    original = store.commit_operation
+
+    def delayed(**kwargs: Any) -> Any:
+        started.set()
+        assert finish.wait(timeout=2)
+        return original(**kwargs)
+
+    monkeypatch.setattr(store, "commit_operation", delayed)
+    if family == "release":
+        frame = _frame(
+            "A",
+            MessageType.RELEASE,
+            "cancel-cross-subject",
+            task_id="T1",
+            evidence=["focused cancellation proof passed"],
+        )
+        task = asyncio.create_task(leasing.handle_release(hub, "A", frame, object()))
+    else:
+        hub.agent_sockets["B"] = object()
+        frame = _frame(
+            "A",
+            MessageType.HANDOFF,
+            "cancel-cross-subject",
+            task_id="T1",
+            to_agent="B",
+            note="continue",
+        )
+        task = asyncio.create_task(leasing.handle_handoff(hub, "A", frame, object()))
+
+    assert await asyncio.to_thread(started.wait, 1)
+    task.cancel()
+    finish.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    if family == "release":
+        assert "T1" not in hub.state.claims
+    else:
+        assert hub.state.claims["T1"].owner == "B"
+    assert len(hub.blackboard.progress) == 1
+    assert hub.blackboard.progress[0].task_id == "T1"
+    kinds = [event.kind for event in store.read_all()]
+    assert EventKind.LEDGER_PROGRESS in kinds
+    assert EventKind.IDEMPOTENCY in kinds
     store.close()
 
 

@@ -558,13 +558,15 @@ async def handle_release(
         if result[0]:
             record_release(journal, task_id)
 
+    prepared_progress: list[ProgressNote] = []
+
     def publish(result: tuple[bool, str]) -> None:
         if result[0]:
             # A released task has no holder: prune its wait edges so they
             # cannot refuse a later legitimate wait as a false positive.
             hub._waits = prune_waits(hub._waits, hub.state.claims)
-
-    prepared_progress: list[ProgressNote] = []
+            if prepared_progress:
+                hub.blackboard.restore_progress(prepared_progress[0])
 
     def prepare(result: tuple[bool, str]) -> OperationDraft | None:
         ok, message = result
@@ -632,7 +634,6 @@ async def handle_release(
         await hub._broadcast(granted)
         if execution is not None and prepared_progress:
             note = prepared_progress[0]
-            hub.blackboard.restore_progress(note)
             await _broadcast_progress(hub, note, f"Release receipt from {sender}")
         elif release_receipt_has_evidence(receipt):
             await _record_release_receipt_progress(hub, receipt)
@@ -726,11 +727,13 @@ async def handle_handoff(
         if claim is not None:
             record_handoff(journal, claim)
 
+    prepared_progress: list[ProgressNote] = []
+
     def publish(result: tuple[bool, str, TaskClaim | None]) -> None:
         if result[2] is not None:
             _clear_satisfied_wait(hub._waits, to_agent, task_id)
-
-    prepared_progress: list[ProgressNote] = []
+            if prepared_progress:
+                hub.blackboard.restore_progress(prepared_progress[0])
 
     def prepare(result: tuple[bool, str, TaskClaim | None]) -> OperationDraft | None:
         ok, message, claim = result
@@ -812,7 +815,6 @@ async def handle_handoff(
     # an unrelated task the recipient is still blocked on.
     if execution is not None and prepared_progress:
         note = prepared_progress[0]
-        hub.blackboard.restore_progress(note)
         await _broadcast_progress(hub, note, f"Progress from {sender}")
     else:
         await _record_handoff_progress(hub, task_id, sender, to_agent, claim.note)

@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import threading
@@ -277,6 +278,55 @@ async def test_actor_discards_candidate_when_database_has_a_winner(
         assert execution.response == response
     else:
         assert execution.response == {"error_code": "idempotency_conflict"}
+
+
+async def test_actor_cancellation_publishes_uncommitted_persisted_candidate() -> None:
+    actor = SerializedStateMutationActor()
+    state = SynapseState()
+    started = threading.Event()
+    finish = threading.Event()
+    published: list[bool] = []
+
+    def persist_uncommitted(_result: tuple[bool, str]) -> None:
+        started.set()
+        assert finish.wait(timeout=2)
+
+    task = asyncio.create_task(
+        actor.run_atomic(
+            state,
+            lambda candidate: candidate.claim("seat", "T1")[:2],
+            request_digest="a" * 64,
+            lookup=lambda: None,
+            prepare=lambda _result: None,
+            commit=lambda _draft: (_ for _ in ()).throw(AssertionError("no draft to commit")),
+            remember=lambda _record: None,
+            conflict=lambda _record: {"error_code": "idempotency_conflict"},
+            persist_uncommitted=persist_uncommitted,
+            publish=lambda _result: published.append(True),
+        )
+    )
+    assert await asyncio.to_thread(started.wait, 1)
+    task.cancel()
+    finish.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert "T1" in state.claims
+    assert published == [True]
+
+    plain_state = SynapseState()
+    plain = await actor.run_atomic(
+        plain_state,
+        lambda candidate: candidate.claim("seat", "T2")[:2],
+        request_digest="b" * 64,
+        lookup=lambda: None,
+        prepare=lambda _result: None,
+        commit=lambda _draft: (_ for _ in ()).throw(AssertionError("no draft to commit")),
+        remember=lambda _record: None,
+        conflict=lambda _record: {"error_code": "idempotency_conflict"},
+    )
+    assert plain.outcome == "uncommitted"
+    assert "T2" in plain_state.claims
 
 
 @pytest.mark.parametrize("limit", [0, True, 10_001])

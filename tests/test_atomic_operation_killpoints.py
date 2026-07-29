@@ -25,6 +25,9 @@ _FAMILIES = (
     "checkpoint",
     "guard_denial",
     "resource",
+    "ledger_task",
+    "ledger_task_update",
+    "ledger_progress",
 )
 
 _CHILD = r"""

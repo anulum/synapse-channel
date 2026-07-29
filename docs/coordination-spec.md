@@ -320,20 +320,27 @@ kinds; they fall through untouched).
 
 **Normative.** On a journal-backed hub, a reconnecting agent that carries an
 `idem_key` on a covered mutation MUST have its authoritative events and exact
-response committed in one FULL-durability SQLite transaction. The operation key
-MUST be namespaced by the authenticated sender and normalized message type. An
-identical retry MUST replay the stored response without a second mutation,
-including after restart. Reusing that operation key with a different canonical
-request digest MUST return a stable value-free `idempotency_conflict` and apply
-nothing. Operation rows are retained indefinitely in this release. Unkeyed
-operations remain at-least-once; a hub without a journal provides process-local
-response suppression only. Epoch/version checks coordinate protocol clients but
-do not fence a process that writes repository files directly.
+response committed in one FULL-durability SQLite transaction. Covered mutations
+include the claim family, resource offers, guard-denial evidence, and task-board
+declare, update, and progress writes. The operation key MUST be namespaced by the
+authenticated sender and normalized message type. An identical retry MUST replay
+the stored response without a second mutation, including after restart. Reusing
+that operation key with a different canonical request digest MUST return a stable
+value-free `idempotency_conflict` and apply nothing. Operation rows are retained
+indefinitely in this release. Keyed and unkeyed writes to the same in-memory
+subject MUST share one serialized candidate-publication boundary, so a write
+cannot be lost behind an in-flight durable commit. If cancellation arrives after
+commit, every live in-memory projection covered by that commit MUST publish before
+cancellation propagates. Unkeyed operations remain at-least-once; a hub without a
+journal provides process-local response suppression only. Epoch/version checks
+coordinate protocol clients but do not fence a process that writes repository
+files directly.
 
 **Implementation.** `core/atomic_operations.py`,
 `core/persistence.py:EventStore.commit_operation`,
 `core/state_transaction.py:SerializedStateMutationActor.run_atomic`, and
-`core/hub_ledger_guard.py`.
+`core/hub_ledger_guard.py`; the typed ledger client and `synapse task` commands
+expose the stable key without generating a replacement across manual retries.
 
 **Pinned by.** `tests/test_atomic_operations.py`,
 `tests/test_atomic_operation_handlers.py`,
@@ -401,13 +408,14 @@ authentication.
 
 **Pinned by.** `tests/test_hub_core_chat.py`.
 
-### INV-DG-2 — claim-family verbs are apply-once
+### INV-DG-2 — keyed coordination verbs are apply-once
 
 **Normative.** `claim`, `release`, `task_update`, `handoff`, `checkpoint`,
-`guard_denial`, and resource mutations carrying an `idem_key` MUST obey the
-journal-backed atomic apply-once boundary in INV-CR-1. Their transport may still
-be retried; their committed effect and canonical response cannot separate.
-Unkeyed requests remain at-least-once.
+`guard_denial`, resource mutations, `ledger_task`, `ledger_task_update`, and
+`ledger_progress` carrying an `idem_key` MUST obey the journal-backed atomic
+apply-once boundary in INV-CR-1. Their transport may still be retried; their
+committed effect and canonical response cannot separate. Unkeyed requests remain
+at-least-once.
 
 **Implementation.** `core/hub_ledger_guard.py:_MUTATING_TYPES`, the covered
 handlers, and `core/persistence.py:EventStore.commit_operation`.

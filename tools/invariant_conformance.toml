@@ -66,22 +66,31 @@ evidence_modes = ["state-machine", "bounded-exhaustive", "property"]
 id = "atomic-operation-truth"
 title = "Atomic operation truth"
 status = "partial"
-guarantee = "Claim-family operations publish success only after durable commit and are apply-once for a stable operation identifier."
-scope = "Journal-backed claim, renew, release, handoff, checkpoint, and cancel operation families."
+guarantee = "Covered coordination operations publish success only after durable commit, are apply-once for a stable operation identifier, and publish every committed live projection before post-commit cancellation propagates."
+scope = "Journal-backed claim, task update, release, handoff, checkpoint, guard-denial, resource, and task-board declare/update/progress operation families."
 limitations = [
   "Atomic truth is not yet a universal transaction boundary for every command and external side effect.",
 ]
 spec_invariants = ["INV-JA-1", "INV-JA-2", "INV-JA-3", "INV-CR-1", "INV-DG-2"]
 sources = [
+  "src/synapse_channel/cli_tasks.py",
+  "src/synapse_channel/client/agent_outbound_ledger.py",
   "src/synapse_channel/core/atomic_operations.py",
+  "src/synapse_channel/core/handlers/leasing.py",
+  "src/synapse_channel/core/handlers/planning.py",
+  "src/synapse_channel/core/hub_ledger_guard.py",
+  "src/synapse_channel/core/ledger.py",
   "src/synapse_channel/core/state_transaction.py",
 ]
 tests = [
   "tests/test_atomic_operation_killpoints.py",
   "tests/test_atomic_operation_handlers.py",
+  "tests/test_cli_tasks.py",
+  "tests/test_client_ledger_envelopes.py",
   "tests/test_coordination_spec_model.py",
+  "tests/test_planning_handlers.py",
 ]
-evidence_modes = ["kill-point", "state-machine", "unit"]
+evidence_modes = ["kill-point", "state-machine", "restart", "concurrency", "cancellation", "unit"]
 
 [[boundary]]
 id = "content-bound-global-event-identity"

@@ -102,6 +102,7 @@ def _cmd_task_declare(
             depends_on=deps,
             project=getattr(args, "project", ""),
             expected_version=getattr(args, "expected_version", None),
+            idem_key=getattr(args, "idem_key", None),
         )
 
     def render(msg: dict[str, Any]) -> str:
@@ -134,6 +135,7 @@ def _cmd_task_update(
             suggested_owner=args.suggested_owner,
             project=getattr(args, "project", None),
             expected_version=getattr(args, "expected_version", None),
+            idem_key=getattr(args, "idem_key", None),
         )
 
     def render(msg: dict[str, Any]) -> str:
@@ -159,7 +161,12 @@ def _cmd_task_progress(
     """Post a progress note against a task on the blackboard."""
 
     async def send(agent: SynapseAgent) -> None:
-        await agent.post_progress(args.task_id, args.text, kind=args.kind)
+        await agent.post_progress(
+            args.task_id,
+            args.text,
+            kind=args.kind,
+            idem_key=getattr(args, "idem_key", None),
+        )
 
     def render(msg: dict[str, Any]) -> str:
         note = msg.get("note", {})
@@ -196,6 +203,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         parser_.add_argument("--uri", default=default_hub_uri())
         parser_.add_argument("--name", default="USER")
         parser_.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+        parser_.add_argument(
+            "--idem-key",
+            default=None,
+            help="Stable retry key; changed-payload reuse is refused on a durable hub.",
+        )
 
     declare = task_sub.add_parser("declare", help="Declare a task on the blackboard.")
     declare.add_argument("task_id")

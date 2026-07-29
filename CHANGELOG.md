@@ -35,6 +35,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Extend the journal-backed apply-once transaction to task-board declare,
+  update, and progress writes. Identical keyed retries replay the exact response,
+  changed payloads fail without mutation, keyed and unkeyed board writes share
+  one serialized publication boundary, and committed release/handoff progress
+  now reaches live memory even if the request task is cancelled after commit.
+  The typed client and all three `synapse task` commands expose the stable retry
+  key explicitly.
 - Extract MCP board, state, manifest, capability-directory, and resource-template
   snapshot queries into a dedicated facade while preserving the public bridge,
   tool, resource, timeout, and correlation contracts.

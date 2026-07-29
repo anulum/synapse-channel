@@ -30,6 +30,7 @@ class AgentLedgerMixin:
         suggested_owner: str = "",
         project: str = "",
         expected_version: int | None = None,
+        idem_key: str | None = None,
     ) -> None:
         """Declare or re-declare a task on the shared plan."""
         extra: dict[str, Any] = {"task_id": task_id.strip(), "title": title}
@@ -43,6 +44,8 @@ class AgentLedgerMixin:
             extra["project"] = project
         if expected_version is not None:
             extra["expected_version"] = expected_version
+        if idem_key:
+            extra["idem_key"] = idem_key
         await self.send_message(MessageType.LEDGER_TASK, target="System", **extra)
 
     async def update_ledger_task(
@@ -53,6 +56,7 @@ class AgentLedgerMixin:
         suggested_owner: str | None = None,
         project: str | None = None,
         expected_version: int | None = None,
+        idem_key: str | None = None,
     ) -> None:
         """Change a plan task's planning status, suggested owner, or scope."""
         extra: dict[str, Any] = {"task_id": task_id.strip()}
@@ -64,16 +68,25 @@ class AgentLedgerMixin:
             extra["project"] = project
         if expected_version is not None:
             extra["expected_version"] = expected_version
+        if idem_key:
+            extra["idem_key"] = idem_key
         await self.send_message(MessageType.LEDGER_TASK_UPDATE, target="System", **extra)
 
     async def post_progress(
-        self: _OutboundAgent, task_id: str, text: str, *, kind: str = "note"
+        self: _OutboundAgent,
+        task_id: str,
+        text: str,
+        *,
+        kind: str = "note",
+        idem_key: str | None = None,
     ) -> None:
         """Append a structured progress note to the progress ledger."""
+        extra = {"task_id": task_id.strip(), "kind": kind}
+        if idem_key:
+            extra["idem_key"] = idem_key
         await self.send_message(
             MessageType.LEDGER_PROGRESS,
             target="System",
             payload=text,
-            task_id=task_id.strip(),
-            kind=kind,
+            **extra,
         )

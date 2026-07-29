@@ -14,7 +14,12 @@ from client_helpers import connected_recording_agent, wait_for_recorded_count
 async def test_post_task_sends_full_and_minimal_envelopes() -> None:
     async with connected_recording_agent("A") as (agent, messages):
         await agent.post_task(
-            "  T1 ", "Parser", description="d", depends_on=["T0"], suggested_owner="FAST"
+            "  T1 ",
+            "Parser",
+            description="d",
+            depends_on=["T0"],
+            suggested_owner="FAST",
+            idem_key="declare-1",
         )
         await wait_for_recorded_count(messages, 2)
         full = messages[-1]
@@ -27,14 +32,16 @@ async def test_post_task_sends_full_and_minimal_envelopes() -> None:
     assert full["title"] == "Parser"
     assert full["depends_on"] == ["T0"]
     assert full["suggested_owner"] == "FAST"
+    assert full["idem_key"] == "declare-1"
     assert "description" not in minimal
     assert "depends_on" not in minimal
     assert "suggested_owner" not in minimal
+    assert "idem_key" not in minimal
 
 
 async def test_update_ledger_task_sends_status_and_owner() -> None:
     async with connected_recording_agent("A") as (agent, messages):
-        await agent.update_ledger_task("T1", status="done", suggested_owner="")
+        await agent.update_ledger_task("T1", status="done", suggested_owner="", idem_key="update-1")
         await wait_for_recorded_count(messages, 2)
         sent = messages[-1]
         await agent.update_ledger_task("T1")
@@ -44,13 +51,17 @@ async def test_update_ledger_task_sends_status_and_owner() -> None:
     assert sent["type"] == "ledger_task_update"
     assert sent["status"] == "done"
     assert sent["suggested_owner"] == ""
+    assert sent["idem_key"] == "update-1"
     assert "status" not in bare
     assert "suggested_owner" not in bare
+    assert "idem_key" not in bare
 
 
 async def test_post_progress_sends_kind_and_text() -> None:
     async with connected_recording_agent("A") as (agent, messages):
-        await agent.post_progress("  T1 ", "blocked on review", kind="blocked")
+        await agent.post_progress(
+            "  T1 ", "blocked on review", kind="blocked", idem_key="progress-1"
+        )
         await wait_for_recorded_count(messages, 2)
         sent = messages[-1]
 
@@ -58,6 +69,7 @@ async def test_post_progress_sends_kind_and_text() -> None:
     assert sent["task_id"] == "T1"
     assert sent["kind"] == "blocked"
     assert sent["payload"] == "blocked on review"
+    assert sent["idem_key"] == "progress-1"
 
 
 async def test_request_board_sends_board_request() -> None:

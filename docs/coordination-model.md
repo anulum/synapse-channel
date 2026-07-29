@@ -303,10 +303,18 @@ With `--db`, the hub records every authoritative mutation to an append-only
 SQLite event log (WAL) and rebuilds its state by replaying it on start-up. A
 reconnecting agent uses an idempotency key and a resume cursor (to fetch exactly
 the messages it missed). For keyed claims, task updates, releases, handoffs,
-checkpoints, guard-denial records, and resource offers, one `BEGIN IMMEDIATE`
-transaction commits the authoritative event sequence, canonical request digest,
-exact response, and operation-evidence intent. An identical retry replays that
-response after restart; changed-payload key reuse is refused without exposing
-request values. Unkeyed operations remain at-least-once, and a hub without a
-journal suppresses duplicates only for the life of that process. Operation rows
-are not automatically removed or compacted away in this release.
+checkpoints, guard-denial records, resource offers, and task-board declarations,
+updates, and progress notes, one `BEGIN IMMEDIATE` transaction commits the
+authoritative event sequence, canonical request digest, exact response, and
+operation-evidence intent. An identical retry replays that response after restart;
+changed-payload key reuse is refused without exposing request values. Board writes
+with and without a key share the same serialized candidate-publication actor, so
+an unkeyed write cannot be overwritten by an earlier in-flight keyed commit.
+Release and handoff progress already included in their transaction is published to
+the live board before post-commit cancellation can propagate. Unkeyed operations
+remain at-least-once, and a hub without a journal suppresses duplicates only for
+the life of that process. Operation rows are not automatically removed or
+compacted away in this release.
+The typed ledger client accepts `idem_key` on declare, update, and progress, and
+the CLI exposes the same value as `--idem-key`; callers, rather than the hub,
+choose and retain that stable retry identity.

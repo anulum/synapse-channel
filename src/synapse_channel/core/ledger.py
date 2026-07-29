@@ -206,6 +206,13 @@ class Blackboard:
         self.max_progress_per_author = max(int(max_progress_per_author), 1)
         self.max_progress_per_task = max(int(max_progress_per_task), 1)
 
+    def publish_from(self, candidate: Blackboard) -> None:
+        """Publish one fully prepared board candidate without changing this identity."""
+        if not isinstance(candidate, Blackboard):
+            raise TypeError("blackboard candidate must be a Blackboard")
+        self.tasks = candidate.tasks
+        self.progress = candidate.progress
+
     def post_task(
         self,
         *,

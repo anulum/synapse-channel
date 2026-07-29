@@ -479,7 +479,7 @@ synapse ingest ./synapse.db --memory --cursor ./mem.cursor  # stream durable mem
 synapse memory-recall ./synapse.db "transport handoff"       # local recall over durable memory records
 synapse compact ./synapse.db --all --max-checkpoints-per-task 3 --archive-report ./compact-report.html
 synapse board                                        # print the shared task/progress blackboard
-synapse task declare BUILD --title "compile"         # declare/update the shared plan from the CLI
+synapse task declare BUILD --title "compile" --idem-key build-v1  # retry-safe durable write
 synapse task update BUILD --status done              # mark a plan task done so dependents unblock
 syn ack BUILD --evidence "pytest -q"                 # post evidence and mark a board task done
 synapse supervisor --idle-seconds 300 --history-multiplier 3  # re-offer stalled plan tasks
@@ -772,12 +772,14 @@ disable the hook for a terminal.
 ### Durability
 
 Passing `--db` backs the hub with an append-only SQLite event log (standard
-library, WAL mode). Every claim, release, task update, resource offer, and chat
-message is recorded, and the hub rebuilds its state by replaying the log on
-start-up. The guarantee is split honestly by workload: the lease/claim path
-commits at `synchronous=FULL` (durable across an OS crash); the high-volume
-chat/history path commits at `synchronous=NORMAL` (durable across an application
-crash, may lose the last commit on power loss).
+library, WAL mode). Claims, releases, task updates, resource offers, task-board
+writes, and chat messages are recorded, and the hub rebuilds its state by
+replaying the log on start-up. The guarantee is split honestly by workload:
+keyed covered coordination mutations commit their event, canonical request
+digest, exact response, and evidence intent together at `synchronous=FULL`
+(durable across an OS crash); the high-volume chat/history path commits at
+`synchronous=NORMAL` (durable across an application crash, may lose the last
+commit on power loss).
 
 Native Agent Evidence Format (AEF) v0.1 emission is an explicit opt-in on top
 of that durable log. Generate an owner-only Ed25519 receipt key, give the hub a
@@ -1565,7 +1567,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 790 |
 | Wire message types | 80 |
 | CLI subcommands | 184 |
-| Test functions | 9224 |
+| Test functions | 9232 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 62 |
 | GitHub Actions workflows | 25 |

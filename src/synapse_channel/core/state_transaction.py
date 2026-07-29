@@ -22,7 +22,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from copy import copy, deepcopy
 from dataclasses import dataclass, fields
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from synapse_channel.core.atomic_operations import (
     AtomicExecution,
@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from synapse_channel.core.state_models import TaskClaim
 
 MutationResult = TypeVar("MutationResult")
+MutationSubject = TypeVar("MutationSubject")
 
 
 @dataclass(frozen=True)
@@ -151,14 +152,32 @@ class SerializedStateMutationActor:
         publish: Callable[[MutationResult], None] | None = None,
     ) -> MutationResult:
         """Apply one serialized mutation and publish it only after persistence."""
+        return await self.run_subject(
+            state,
+            mutate,
+            persist=persist,
+            publish_candidate=state.publish_from,
+            publish=publish,
+        )
+
+    async def run_subject(
+        self,
+        subject: MutationSubject,
+        mutate: Callable[[MutationSubject], MutationResult],
+        *,
+        persist: Callable[[MutationResult], None] | None = None,
+        publish_candidate: Callable[[MutationSubject], None],
+        publish: Callable[[MutationResult], None] | None = None,
+    ) -> MutationResult:
+        """Serialize and durably publish a mutation of any copyable state subject."""
         async with self._lock:
             if persist is None:
-                result = mutate(state)
+                result = mutate(subject)
                 if publish is not None:
                     publish(result)
                 return result
 
-            candidate = deepcopy(state)
+            candidate = deepcopy(subject)
             result = mutate(candidate)
             append = asyncio.create_task(asyncio.to_thread(persist, result))
             cancelled = False
@@ -172,7 +191,7 @@ class SerializedStateMutationActor:
                 # durable event whose live state was discarded.
                 cancelled = True
                 await append
-            state.publish_from(candidate)
+            publish_candidate(candidate)
             if publish is not None:
                 publish(result)
             if cancelled:
@@ -181,8 +200,8 @@ class SerializedStateMutationActor:
 
     async def run_atomic(
         self,
-        state: SynapseState,
-        mutate: Callable[[SynapseState], MutationResult],
+        subject: MutationSubject,
+        mutate: Callable[[MutationSubject], MutationResult],
         *,
         request_digest: str,
         lookup: Callable[[], OperationRecord | None],
@@ -190,12 +209,18 @@ class SerializedStateMutationActor:
         commit: Callable[[OperationDraft], OperationCommitResult],
         remember: Callable[[OperationRecord], None],
         conflict: Callable[[OperationRecord], dict[str, Any]],
+        publish_candidate: Callable[[MutationSubject], None] | None = None,
         persist_uncommitted: Callable[[MutationResult], None] | None = None,
         publish: Callable[[MutationResult], None] | None = None,
         stage_hook: Callable[[str], None] | None = None,
     ) -> AtomicExecution:
         """Apply one keyed mutation with a second lookup inside the actor lock."""
         hook = stage_hook or (lambda _stage: None)
+        candidate_publisher: Callable[[MutationSubject], None]
+        if publish_candidate is None:
+            candidate_publisher = cast("Any", subject).publish_from
+        else:
+            candidate_publisher = publish_candidate
         async with self._lock:
             existing = lookup()
             if existing is not None:
@@ -204,7 +229,7 @@ class SerializedStateMutationActor:
                 return AtomicExecution("conflict", None, conflict(existing))
 
             hook("before_candidate_mutation")
-            candidate = deepcopy(state)
+            candidate = deepcopy(subject)
             result = mutate(candidate)
             draft = prepare(result)
             hook("after_candidate_response")
@@ -219,7 +244,7 @@ class SerializedStateMutationActor:
                     except asyncio.CancelledError:
                         cancelled = True
                         await uncommitted_append
-                state.publish_from(candidate)
+                candidate_publisher(candidate)
                 if publish is not None:
                     publish(result)
                 if cancelled:
@@ -241,7 +266,7 @@ class SerializedStateMutationActor:
             )
             remember(stored)
             if committed.outcome == "inserted":
-                state.publish_from(candidate)
+                candidate_publisher(candidate)
                 if publish is not None:
                     publish(result)
                 hook("after_publication")

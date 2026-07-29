@@ -2225,6 +2225,14 @@ synapse task progress TEST "started" --kind note
 syn ack TEST --evidence "pytest tests/test_feature.py -q" --artifact coverage.xml
 ```
 
+All three task writes accept `--idem-key KEY`. On a journal-backed hub, repeating
+the same command with the same key replays its exact committed response without a
+second board mutation, including after restart. Reusing the key for changed
+request content fails with `idempotency_conflict`; the response does not expose
+the key or either request payload. The key is scoped by authenticated sender and
+message type, so declare, update, and progress keys do not collide. Omitting the
+flag retains the documented at-least-once behavior.
+
 Tasks carry an optional project scope and a monotonic version for
 compare-and-set updates:
 
