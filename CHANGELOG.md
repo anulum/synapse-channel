@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.18] - 2026-07-29
+
 ### Added
 
 - Close a universal-receipt read-side omission for four existing durable audit
