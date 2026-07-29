@@ -268,8 +268,8 @@ mcp>=1.28.0` runtime hint. The `synapse-channel` console entry starts this MCP
 face directly for package launchers; humans can keep using `synapse mcp`.
 
 The official MCP Registry is still a preview and its published versions are
-immutable. SYNAPSE CHANNEL is active there: version `0.99.14` was the latest
-public record when last re-verified; `0.99.15` is the in-tree preparation tip
+immutable. SYNAPSE CHANNEL is active there: version `0.99.15` was the latest
+public record when last re-verified; `0.99.16` is the in-tree preparation tip
 until the attested tag and registry query both return that exact version.
 Registry metadata does not automatically follow PyPI or this repository, so
 every release remains incomplete until the registry query returns the cut
@@ -283,13 +283,13 @@ published version immutable.
 Release operators use the following fail-closed order. Publishing is an owner
 action: preparation and validation do not authorise it.
 
-1. Release `synapse-channel==0.99.15` to PyPI through the normal attested tag
+1. Release `synapse-channel==0.99.16` to PyPI through the normal attested tag
    workflow. Wait until both the wheel and source archive are publicly visible,
    then verify the package and ownership marker:
 
    ```bash
    PYTHONPATH=. .venv/bin/python tools/verify_mcp_registry_release.py \
-     --phase package --expect-version 0.99.15 --json
+     --phase package --expect-version 0.99.16 --json
    ```
 
 2. Download the audited official Linux publisher release and verify it before
@@ -313,7 +313,7 @@ action: preparation and validation do not authorise it.
 
    ```bash
    gh workflow run mcp-registry.yml --ref main \
-     --field release_tag=v0.99.15
+     --field release_tag=v0.99.16
    ```
 
    Future successful release workflows dispatch this publication automatically.
@@ -324,7 +324,7 @@ action: preparation and validation do not authorise it.
 
    ```bash
    PYTHONPATH=. .venv/bin/python tools/verify_mcp_registry_release.py \
-     --phase registry --expect-version 0.99.15 --json
+     --phase registry --expect-version 0.99.16 --json
    ```
 
 The verifier exits `0` only when the requested boundary matches, `1` for public

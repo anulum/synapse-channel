@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.16] - 2026-07-29
+
 ### Added
 
 - Add measurable `first-use`, `core`, `adapters`, `governance`, `labs`, and
