@@ -151,41 +151,51 @@
     {
       "evidence_modes": [
         "adversarial",
+        "content-bound-parent",
         "deterministic-fold",
         "conflict-object",
         "partition",
         "restart",
         "durable-transition"
       ],
-      "guarantee": "Federated identity equivocation fails closed, while divergent cross-hub task snapshots produce payload-free unresolved conflict objects and the task-board projection exposes deterministic provenance for its explicitly non-causal display winner.",
+      "guarantee": "Federated identity equivocation fails closed; task writes can bind one observed content-bound parent, proven ancestors are removed, and divergent remaining heads produce payload-free unresolved conflict objects with deterministic non-authoritative display provenance.",
       "id": "causal-conflict-handling",
       "limitations": [
-        "The display fold is timestamp ordered and does not establish happens-before causality.",
-        "Task events carry no causal-parent or vector-clock metadata, so divergence objects do not prove concurrency or apply an automatic resolution policy."
+        "Timestamp order remains display-only among unresolved causal heads and does not establish happens-before causality.",
+        "One optional parent is not a vector clock; missing edges do not prove concurrency and no automatic resolution policy is applied."
       ],
-      "scope": "Equivocation containment and display-only multi-hub projections.",
+      "scope": "Equivocation containment plus content-bound single-parent task ancestry and unresolved-head multi-hub projections.",
       "sources": [
+        "src/synapse_channel/client/agent_outbound_ledger.py",
+        "src/synapse_channel/cli_tasks.py",
         "src/synapse_channel/cli_multihub.py",
+        "src/synapse_channel/core/handlers/planning.py",
         "src/synapse_channel/core/multihub_equivocation.py",
         "src/synapse_channel/core/multihub_fold.py",
         "src/synapse_channel/core/multihub_watch.py",
-        "src/synapse_channel/core/namespace_ownership.py"
+        "src/synapse_channel/core/namespace_ownership.py",
+        "src/synapse_channel/core/task_causality.py"
       ],
       "spec_invariants": [
         "INV-MH-1",
         "INV-MH-2",
         "INV-MH-5",
-        "INV-MH-6"
+        "INV-MH-6",
+        "INV-MH-7"
       ],
       "status": "partial",
       "tests": [
         "tests/test_cli_multihub.py",
+        "tests/test_cli_tasks.py",
+        "tests/test_client_ledger_envelopes.py",
         "tests/test_hub_claim_ownership.py",
+        "tests/test_atomic_operation_handlers.py",
         "tests/test_multihub_equivocation.py",
         "tests/test_multihub_fold.py",
         "tests/test_multihub_follower.py",
         "tests/test_multihub_watch.py",
-        "tests/test_namespace_ownership.py"
+        "tests/test_namespace_ownership.py",
+        "tests/test_task_causality.py"
       ],
       "title": "Causal conflict handling"
     },

@@ -21,6 +21,7 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.task_causality import TaskCausalParent
 
 # --- parser ------------------------------------------------------------------
 
@@ -37,12 +38,15 @@ def test_parser_task_declare() -> None:
             "X",
             "--idem-key",
             "declare-1",
+            "--causal-parent",
+            f"hub:west:7:{'a' * 64}",
         ]
     )
     assert args.task_id == "BUILD"
     assert args.title == "Compile"
     assert args.depends_on == ["X"]
     assert args.idem_key == "declare-1"
+    assert args.causal_parent == TaskCausalParent("hub:west", 7, "a" * 64)
     assert args.func is cli_tasks._cmd_task_declare
 
 
@@ -55,6 +59,13 @@ def test_parser_task_update_and_progress() -> None:
     assert prog.text == "running"
     assert prog.kind == "blocker"
     assert prog.func is cli_tasks._cmd_task_progress
+
+
+def test_parser_refuses_malformed_causal_parent() -> None:
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(
+            ["task", "update", "BUILD", "--causal-parent", "hub:not-a-seq:digest"]
+        )
 
 
 def test_task_bare_prints_usage(capsys: pytest.CaptureFixture[str]) -> None:

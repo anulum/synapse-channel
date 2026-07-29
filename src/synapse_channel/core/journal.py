@@ -53,6 +53,7 @@ from synapse_channel.core.state import (
     SynapseState,
     TaskClaim,
 )
+from synapse_channel.core.task_causality import TaskCausalParent, task_event_payload
 
 
 class EventKind:
@@ -609,9 +610,18 @@ def record_chat(store: EventStore, message: dict[str, Any]) -> int:
     return store.append(EventKind.CHAT, message)
 
 
-def record_ledger_task(store: EventStore, task: LedgerTask) -> None:
-    """Append a durable event with a declared/updated ledger task snapshot."""
-    store.append(EventKind.LEDGER_TASK, task.as_dict(), durable=True)
+def record_ledger_task(
+    store: EventStore,
+    task: LedgerTask,
+    *,
+    causal_parent: TaskCausalParent | None = None,
+) -> None:
+    """Append a durable task snapshot with optional content-bound parent metadata."""
+    store.append(
+        EventKind.LEDGER_TASK,
+        task_event_payload(task.as_dict(), causal_parent),
+        durable=True,
+    )
 
 
 def record_ledger_progress(store: EventStore, note: ProgressNote) -> None:

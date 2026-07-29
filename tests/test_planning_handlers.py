@@ -18,6 +18,7 @@ from synapse_channel.core.atomic_operations import AtomicExecution
 from synapse_channel.core.handlers import planning
 from synapse_channel.core.ledger import ProgressNote
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.task_causality import TaskCausalParent
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
@@ -129,6 +130,46 @@ def _capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Any]]:
 
 
 class TestHandleLedgerTask:
+    async def test_causal_parent_is_validated_and_persisted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        parent = TaskCausalParent("hub-a", 9, "a" * 64)
+        captured: list[TaskCausalParent | None] = []
+
+        def record(_journal: Any, _task: Any, *, causal_parent: TaskCausalParent) -> None:
+            captured.append(causal_parent)
+
+        monkeypatch.setattr(planning, "record_ledger_task", record)
+        board = _FakeBlackboard()
+        hub = _FakeHub(board, journal=object())
+
+        await planning.handle_ledger_task(
+            _as_hub(hub),
+            "alice",
+            {"task_id": "t1", "title": "Do", "causal_parent": parent.to_dict()},
+            object(),
+        )
+
+        assert captured == [parent]
+        assert hub.broadcasts[0]["task"] == {"id": "t1"}
+
+    async def test_malformed_causal_parent_is_private_and_inert(self) -> None:
+        board = _FakeBlackboard()
+        hub = _FakeHub(board, journal=object())
+
+        await planning.handle_ledger_task(
+            _as_hub(hub),
+            "alice",
+            {"task_id": "t1", "title": "Do", "causal_parent": {"hub_id": "bad"}},
+            object(),
+        )
+
+        assert board.calls == {}
+        assert hub.broadcasts == []
+        assert hub.sent[0]["msg_type"] == MessageType.ERROR
+        assert hub.sent[0]["target"] == "alice"
+        assert "causal_parent" in hub.sent[0]["text"]
+
     async def test_accepted_task_is_journalled_and_broadcast(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

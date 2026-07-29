@@ -64,16 +64,19 @@ contested namespace, have shipped:
   Exact duplicates collapse; different content at one identity raises a typed
   equivocation error and no arrival-order or timestamp winner is selected.
 - `core/multihub_fold.py` — folds that merged order into the observed mergeable view: the
-  board (display-only last-write-wins per task), the grow-only progress ledger, and the
+  board (verified causal heads, then display-only last-write-wins among unresolved heads),
+  the grow-only progress ledger, and the
   **observed claim** view — the latest claim each peer reports, tagged with its hub, marked
   advisory, cleared on release, and **never granted**. The board contract is explicitly
-  non-authoritative and non-causal: JSON exposes its policy and each displayed task's
-  winning `(timestamp, hub_id, seq)` provenance. It also retains each hub's latest
-  complete task snapshot and emits a payload-free unresolved conflict object when their
-  canonical record fingerprints diverge. A later equal snapshot from every contender
-  clears that object. The conflict proves disagreement, not concurrency: a clock-ahead
-  older declaration can win the display, and task events carry neither causal parents
-  nor vector clocks. NTP or observed clock skew does not turn that order into causal proof.
+  non-authoritative: JSON exposes its policy, complete event fingerprint, and each
+  displayed task's winning `(timestamp, hub_id, seq)` provenance. Task writes may name
+  one content-bound parent. The fold verifies the parent event identity, complete-event
+  fingerprint, and task id before removing that proven ancestor from the candidate heads;
+  a unique causal head wins even when its clock is behind. It emits a payload-free
+  unresolved conflict when remaining heads have different task-record fingerprints.
+  Missing, malformed, or mismatched parents suppress nothing. The conflict proves
+  disagreement, not concurrency: absent edges and NTP/clock-skew metadata are not vector
+  clocks or causal proof.
   Partition detection uses a stricter sibling fold keyed by `(hub_id, task_id)`, so a
   release from one hub cannot erase another hub's equal-named task from the authority
   signal even though the general display view remains last-writer-wins by task id.
@@ -229,7 +232,7 @@ synapse multihub observe --peer-db ./west.db --peer-id west
 
 ```text
 observing peer 'west' — 1 tasks, 0 progress notes, 0 observed claims
-board (display-only LWW — non-authoritative, non-causal):
+board (verified causal heads; display LWW among unresolved heads — non-authoritative):
   [open] docs — Write the docs [display source west#1 @ 1]
 ```
 
@@ -242,7 +245,7 @@ synapse multihub observe --peer-db ./east.db --peer-id east
 
 ```text
 observing peer 'east' — 1 tasks, 0 progress notes, 1 observed claims
-board (display-only LWW — non-authoritative, non-causal):
+board (verified causal heads; display LWW among unresolved heads — non-authoritative):
   [open] build — Build the wheel [display source east#1 @ 1]
 observed claims (advisory — not granted):
   build -> <agent> @ east
@@ -252,8 +255,11 @@ observed claims (advisory — not granted):
 uses — SQLite WAL lets it read alongside the live peer hub — and prints the folded state.
 It grants nothing: a peer's claim is advisory here, and a real claim is still made on the
 owning hub. Add `--json` for a machine-readable `ObservedState`. The JSON retains the
-existing `board` records and adds `board_policy` plus per-task `board_provenance`; consumers
-must not use that display winner as authoritative task truth or a causal version.
+existing `board` records and adds `board_policy` plus per-task `board_provenance`, including
+the complete `event_fingerprint` needed by `task declare|update --causal-parent`. Consumers
+must not use the display winner as authoritative task truth. A `causal: true` provenance
+means a verified parent chain selected a unique head, not that the observed board grants
+local authority.
 
 ### 4. Follow a peer over the network
 
@@ -267,7 +273,7 @@ synapse multihub follow --peer-uri wss://west.example:8876/ --peer-id west
 
 ```text
 observing peer 'west' — 1 tasks, 0 progress notes, 0 observed claims
-board (display-only LWW — non-authoritative, non-causal):
+board (verified causal heads; display LWW among unresolved heads — non-authoritative):
   [open] docs — Write the docs [display source west#1 @ 1]
 ```
 
@@ -377,10 +383,13 @@ Coordination state is not one thing; each kind has a different merge story.
 - **Presence** — last-writer-wins per agent, keyed by hub id; an agent is present
   on the hub it connected to, and a peer view is advisory.
 - **Progress notes and the board plan** — notes are grow-only. The observed board
-  is a display-only whole-record LWW projection ordered by
-  `(timestamp, hub_id, seq)`, with visible winner provenance. It is useful for a
-  convergent operator view but is neither authoritative task state nor a causal
-  merge; a clock-ahead older record can overwrite the display.
+  verifies optional content-bound, same-task parent references and removes proven
+  ancestors. It uses whole-record LWW ordered by `(timestamp, hub_id, seq)` only
+  among the remaining unresolved heads, with visible winner provenance. It is
+  useful for a convergent operator view but is not authoritative task state;
+  unrelated or incompletely linked heads remain unresolved and are not called
+  concurrent. Their fallback LWW display selection remains non-causal. A
+  clock-ahead older ancestor cannot override its verified causal descendant.
 - **Capability cards** — LWW per agent id, mergeable.
 - **Claims** — **not mergeable.** A claim is a lease that must be unique per file
   scope; two hubs independently granting the same scope is precisely the collision
@@ -469,11 +478,13 @@ deliberately conservative.
   or payload is durable equivocation evidence: the candidate view and cursor stay
   unpublished and the peer is quarantined. mTLS, pins, and frame signatures authenticate
   the presenter but do not choose a winning history.
-- **The observed board is not causal or authoritative.** Its deterministic LWW
-  winner is only an operator display selection. The machine and text surfaces say
-  so and expose the winner's event provenance; synchronized clocks, including NTP,
-  do not establish a parent/version relation. Local board truth, claim authority,
-  and the separate fail-closed namespace ownership resolver do not consume this
+- **The observed board is not authoritative.** A valid task parent is a bounded
+  causal assertion: it is accepted only when the named complete event is present,
+  content-bound, and for the same task. That edge can suppress its proven ancestor;
+  it cannot grant a claim. Remaining heads still use deterministic LWW only for
+  display. Missing edges do not prove concurrency, and synchronized clocks,
+  including NTP, do not establish a parent relation. Local board truth, claim
+  authority, and the fail-closed namespace ownership resolver do not consume this
   display choice.
 - It does **not** add a new always-on wire surface casually — the pull is a request/snapshot
   message pair on the existing hub server, reusing the event log, `read_since` seam, and

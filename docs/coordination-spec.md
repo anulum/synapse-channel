@@ -557,24 +557,45 @@ quarantine, explicit recovery), `core/journal.py` (durable bounded evidence),
 `tests/test_multihub_merge.py`, `tests/test_multihub_follower.py`,
 `tests/test_multihub_watch.py`, `tests/test_journal.py`.
 
-### INV-MH-6 — divergent observed task snapshots stay visibly unresolved
+### INV-MH-6 — divergent observed task heads stay visibly unresolved
 
-**Normative.** For every observed task id, the display fold MUST retain the
-highest-sequence `ledger_task` snapshot from each authoring hub. When at least
-two hubs' latest complete records have different canonical fingerprints, the
-projection MUST expose one unresolved, payload-free conflict object containing
-each contender's hub, sequence, timestamp, and record fingerprint. Equal latest
-records MUST converge without a conflict, and later equal records from every
-contender MUST clear an earlier divergence. The object MUST NOT expose the
-losing task payload, grant authority, claim that snapshots were concurrent, or
-apply an automatic resolution policy. The separate timestamp-ordered display
-winner remains non-authoritative and non-causal.
+**Normative.** For every observed task id, later same-hub sequence records and
+valid content-bound cross-hub parent edges MUST remove only their proven
+ancestors from the candidate heads. When at least two remaining heads have
+different canonical task-record fingerprints, the projection MUST expose one
+unresolved, payload-free conflict object containing each contender's hub,
+sequence, timestamp, record fingerprint, event fingerprint, and bounded parent
+status. Equal heads MUST converge without a conflict. The object MUST NOT expose
+the losing task payload, grant authority, infer concurrency from a missing edge,
+or apply an automatic resolution policy. Timestamp order chooses only the
+display among unresolved heads.
 
-**Implementation.** `core/multihub_fold.py` (`ObservedBoardConflict`, latest
-per-hub contender fold), `cli_multihub.py` (bounded text and JSON projection).
+**Implementation.** `core/multihub_fold.py` (`ObservedBoardConflict`, verified
+head fold), `cli_multihub.py` (bounded text and JSON projection).
 
 **Pinned by.** `tests/test_multihub_fold.py`,
 `tests/test_multihub_follower.py`, `tests/test_cli_multihub.py`.
+
+### INV-MH-7 — task parent edges are content-bound and same-task
+
+**Normative.** An additive task `causal_parent` MUST contain exactly a non-empty
+bounded hub id, positive sequence, and lowercase SHA-256 fingerprint of the
+complete parent event. The hub MUST reject malformed references before changing
+the local board or journal. The observed fold MUST accept the edge only when the
+named `(hub_id, seq)` event exists, its canonical complete-event fingerprint
+matches, and both events name the same task. A missing, mismatched, wrong-task,
+or self-parent reference MUST suppress no contender. Parent metadata MUST remain
+outside the compatible projected task record. One accepted edge proves only the
+recorded observation relation it names; absence of an edge MUST NOT be called
+concurrency.
+
+**Implementation.** `core/task_causality.py` (bounded wire value and task/event
+separation), `core/handlers/planning.py` (ingress and atomic journal binding),
+`core/multihub_fold.py` (content verification and ancestry).
+
+**Pinned by.** `tests/test_task_causality.py`,
+`tests/test_atomic_operation_handlers.py`, `tests/test_multihub_fold.py`,
+`tests/test_client_ledger_envelopes.py`, `tests/test_cli_tasks.py`.
 
 > **Note — the name-ownership lease is single-hub.** The `--lease-offline-ttl`
 > ownership lease (close code `4016`, "name owned") protects a name across

@@ -24,6 +24,11 @@ from synapse_channel.core.atomic_operations import AtomicExecution, OperationDra
 from synapse_channel.core.journal import EventKind, record_ledger_progress, record_ledger_task
 from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.task_causality import (
+    TaskCausalParent,
+    parse_task_causal_parent,
+    task_event_payload,
+)
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
@@ -105,6 +110,24 @@ def _expected_version(data: dict[str, Any]) -> tuple[int | None, str | None]:
     return raw, None
 
 
+async def _causal_parent(
+    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+) -> tuple[TaskCausalParent | None, bool]:
+    """Parse additive task causality metadata and privately reject malformed input."""
+    try:
+        return parse_task_causal_parent(data.get("causal_parent")), True
+    except ValueError as exc:
+        await hub._send_json(
+            websocket,
+            hub._system(
+                f"Malformed frame: {exc}",
+                msg_type=MessageType.ERROR,
+                target=sender,
+            ),
+        )
+        return None, False
+
+
 async def handle_ledger_task(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
@@ -118,6 +141,9 @@ async def handle_ledger_task(
             websocket,
             hub._system(version_error, msg_type=MessageType.ERROR, target=sender),
         )
+        return
+    causal_parent, parent_valid = await _causal_parent(hub, sender, data, websocket)
+    if not parent_valid:
         return
 
     def mutate(board: Blackboard) -> tuple[bool, str, LedgerTask | None]:
@@ -136,7 +162,10 @@ async def handle_ledger_task(
     def persist(result: tuple[bool, str, LedgerTask | None]) -> None:
         task = result[2]
         if task is not None and hub.journal is not None:
-            record_ledger_task(hub.journal, task)
+            if causal_parent is None:
+                record_ledger_task(hub.journal, task)
+            else:
+                record_ledger_task(hub.journal, task, causal_parent=causal_parent)
 
     def prepare(result: tuple[bool, str, LedgerTask | None]) -> OperationDraft | None:
         ok, message, task = result
@@ -147,9 +176,10 @@ async def handle_ledger_task(
             msg_type=MessageType.LEDGER_TASK_POSTED,
             task=task.as_dict(),
         )
+        event_payload = task_event_payload(task.as_dict(), causal_parent)
         return OperationDraft(
             response=posted,
-            events=((EventKind.LEDGER_TASK, task.as_dict()),),
+            events=((EventKind.LEDGER_TASK, event_payload),),
             intent={"family": "ledger_task", "response_type": MessageType.LEDGER_TASK_POSTED},
         )
 
@@ -193,6 +223,9 @@ async def handle_ledger_task_update(
             hub._system(version_error, msg_type=MessageType.ERROR, target=sender),
         )
         return
+    causal_parent, parent_valid = await _causal_parent(hub, sender, data, websocket)
+    if not parent_valid:
+        return
 
     def mutate(board: Blackboard) -> tuple[bool, str, LedgerTask | None]:
         ok, message = board.update_task(
@@ -207,7 +240,10 @@ async def handle_ledger_task_update(
     def persist(result: tuple[bool, str, LedgerTask | None]) -> None:
         task = result[2]
         if task is not None and hub.journal is not None:
-            record_ledger_task(hub.journal, task)
+            if causal_parent is None:
+                record_ledger_task(hub.journal, task)
+            else:
+                record_ledger_task(hub.journal, task, causal_parent=causal_parent)
 
     def prepare(result: tuple[bool, str, LedgerTask | None]) -> OperationDraft | None:
         ok, message, task = result
@@ -218,9 +254,10 @@ async def handle_ledger_task_update(
             msg_type=MessageType.LEDGER_TASK_UPDATED,
             task=task.as_dict(),
         )
+        event_payload = task_event_payload(task.as_dict(), causal_parent)
         return OperationDraft(
             response=updated,
-            events=((EventKind.LEDGER_TASK, task.as_dict()),),
+            events=((EventKind.LEDGER_TASK, event_payload),),
             intent={
                 "family": "ledger_task_update",
                 "response_type": MessageType.LEDGER_TASK_UPDATED,

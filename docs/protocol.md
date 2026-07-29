@@ -237,6 +237,16 @@ task projections in `ledger_task_posted`, `ledger_task_updated`, and
 `board_snapshot` carry `project` and `version`. A non-integer
 `expected_version` (booleans included) is refused as malformed.
 
+Both task write verbs may also carry additive `causal_parent` metadata with
+exactly `hub_id` (non-empty, at most 512 UTF-8 bytes), positive integer `seq`,
+and lowercase SHA-256 `event_fingerprint`. The hub validates and journals this
+reference outside the task snapshot, so `ledger_task_posted`,
+`ledger_task_updated`, and the local board retain their compatible task shape.
+The observed multi-hub fold accepts the parent edge only when the named complete
+event exists, its content-bound fingerprint matches, and it concerns the same
+task. Missing or mismatched references suppress nothing. A parent proves one
+recorded observation edge; absence of an edge does not prove concurrency.
+
 ## Hub → agent
 
 - **Session:** `welcome`, `presence_update`, `name_conflict`, `auth_denied`,

@@ -32,6 +32,12 @@ All notable changes to this project are documented here.
 - Expose payload-free unresolved conflict objects when the latest observed task
   snapshots from different hubs diverge. Equal snapshots converge without a
   conflict; the display remains non-authoritative and explicitly non-causal.
+- Add optional content-bound causal parents to task declarations and updates.
+  The observed multi-hub fold verifies the named parent event's identity,
+  fingerprint, and task id, removes only proven ancestors from the conflict
+  heads, and prefers a unique causal head over a clock-ahead ancestor. Missing,
+  malformed, or mismatched parents remain visible and cannot suppress a
+  divergent contender; unresolved heads are not mislabeled as concurrent.
 
 ### Changed
 

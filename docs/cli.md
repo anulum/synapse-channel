@@ -2248,6 +2248,20 @@ the board's current `version` matches, so two planners cannot silently
 overwrite each other's assignment. A refusal (stale version, scope conflict)
 prints the hub's reason and exits non-zero.
 
+When a write follows a task event observed from another hub, bind that fact to
+the complete event rather than relying on wall-clock order:
+
+```bash
+synapse task update FIX --status done \
+  --causal-parent 'west:42:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+```
+
+The reference is `HUB_ID:SEQ:SHA256` (hub ids may themselves contain colons).
+Use the `event_fingerprint` in multi-hub board provenance. The fold verifies the
+parent identity, complete-event fingerprint, and task id before suppressing the
+ancestor. A missing or invalid parent remains an unresolved head and is not
+treated as proof that the updates were concurrent.
+
 ## synapse dispatch
 
 `synapse dispatch --project P` is the opt-in autonomous lane between the

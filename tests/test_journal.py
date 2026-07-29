@@ -39,6 +39,7 @@ from synapse_channel.core.multihub_equivocation import FederationQuarantine
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import GitContext, ResourceOffer, TaskClaim
+from synapse_channel.core.task_causality import TASK_CAUSAL_PARENT_FIELD, TaskCausalParent
 
 
 def _store(tmp_path: Path) -> EventStore:
@@ -418,6 +419,23 @@ def test_record_ledger_task_replays_blackboard_task(tmp_path: Path) -> None:
     assert task.title == "Plan"
     assert task.depends_on == ("READY",)
     assert task.status == "blocked"
+
+
+def test_record_ledger_task_preserves_parent_outside_replayed_task(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    parent = TaskCausalParent("hub-a", 3, "a" * 64)
+    record_ledger_task(
+        store,
+        LedgerTask(task_id="PLAN", title="Plan", created_at=1.0, updated_at=2.0),
+        causal_parent=parent,
+    )
+
+    event = store.read_all()[0]
+    result = replay(store, now=3.0)
+    store.close()
+
+    assert event.payload[TASK_CAUSAL_PARENT_FIELD] == parent.to_dict()
+    assert TASK_CAUSAL_PARENT_FIELD not in result.blackboard.tasks["PLAN"].as_dict()
 
 
 def test_record_ledger_progress_replays_blackboard_note(tmp_path: Path) -> None:

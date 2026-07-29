@@ -32,6 +32,10 @@ from typing import Any
 from synapse_channel.cli_queries import _query_hub
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.task_causality import (
+    TaskCausalParent,
+    parse_task_causal_parent_ref,
+)
 
 AgentFactory = Callable[..., SynapseAgent]
 
@@ -102,6 +106,7 @@ def _cmd_task_declare(
             depends_on=deps,
             project=getattr(args, "project", ""),
             expected_version=getattr(args, "expected_version", None),
+            causal_parent=getattr(args, "causal_parent", None),
             idem_key=getattr(args, "idem_key", None),
         )
 
@@ -135,6 +140,7 @@ def _cmd_task_update(
             suggested_owner=args.suggested_owner,
             project=getattr(args, "project", None),
             expected_version=getattr(args, "expected_version", None),
+            causal_parent=getattr(args, "causal_parent", None),
             idem_key=getattr(args, "idem_key", None),
         )
 
@@ -209,6 +215,21 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             help="Stable retry key; changed-payload reuse is refused on a durable hub.",
         )
 
+    def _add_causal_parent(parser_: argparse.ArgumentParser) -> None:
+        def parse(value: str) -> TaskCausalParent:
+            try:
+                return parse_task_causal_parent_ref(value)
+            except ValueError as exc:
+                raise argparse.ArgumentTypeError(str(exc)) from exc
+
+        parser_.add_argument(
+            "--causal-parent",
+            type=parse,
+            default=None,
+            metavar="HUB_ID:SEQ:SHA256",
+            help="Content-bound observed task event this write follows.",
+        )
+
     declare = task_sub.add_parser("declare", help="Declare a task on the blackboard.")
     declare.add_argument("task_id")
     declare.add_argument("--title", default="")
@@ -229,6 +250,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         help="Compare-and-set guard: refuse unless the board version matches.",
     )
+    _add_causal_parent(declare)
     _add_task_common(declare)
     declare.set_defaults(func=_cmd_task_declare)
 
@@ -243,6 +265,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         help="Compare-and-set guard: refuse unless the board version matches.",
     )
+    _add_causal_parent(update)
     _add_task_common(update)
     update.set_defaults(func=_cmd_task_update)
 

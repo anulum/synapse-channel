@@ -13,6 +13,7 @@ from typing import Any
 
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.task_causality import TaskCausalParent
 
 __all__ = ["AgentLedgerMixin"]
 
@@ -30,6 +31,7 @@ class AgentLedgerMixin:
         suggested_owner: str = "",
         project: str = "",
         expected_version: int | None = None,
+        causal_parent: TaskCausalParent | None = None,
         idem_key: str | None = None,
     ) -> None:
         """Declare or re-declare a task on the shared plan."""
@@ -44,6 +46,8 @@ class AgentLedgerMixin:
             extra["project"] = project
         if expected_version is not None:
             extra["expected_version"] = expected_version
+        if causal_parent is not None:
+            extra["causal_parent"] = causal_parent.to_dict()
         if idem_key:
             extra["idem_key"] = idem_key
         await self.send_message(MessageType.LEDGER_TASK, target="System", **extra)
@@ -56,6 +60,7 @@ class AgentLedgerMixin:
         suggested_owner: str | None = None,
         project: str | None = None,
         expected_version: int | None = None,
+        causal_parent: TaskCausalParent | None = None,
         idem_key: str | None = None,
     ) -> None:
         """Change a plan task's planning status, suggested owner, or scope."""
@@ -68,6 +73,8 @@ class AgentLedgerMixin:
             extra["project"] = project
         if expected_version is not None:
             extra["expected_version"] = expected_version
+        if causal_parent is not None:
+            extra["causal_parent"] = causal_parent.to_dict()
         if idem_key:
             extra["idem_key"] = idem_key
         await self.send_message(MessageType.LEDGER_TASK_UPDATE, target="System", **extra)

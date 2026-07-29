@@ -69,20 +69,28 @@ def _render(state: ObservedState, peer_id: str, *, json_out: bool) -> None:
         f"{len(state.progress)} progress notes, {len(state.observed_claims)} observed claims"
     )
     if state.board:
-        print("board (display-only LWW — non-authoritative, non-causal):")
+        print(
+            "board (verified causal heads; display LWW among unresolved heads — non-authoritative):"
+        )
         for task_id in sorted(state.board):
             task = state.board[task_id]
             status = task.get("status", "?")
             title = task.get("title", "")
             provenance = state.board_provenance[task_id]
+            source_kind = "causal head" if provenance.causal else "display source"
+            parent_note = (
+                ""
+                if provenance.causal_parent_status in {"none", "verified"}
+                else f"; parent {terminal_text(provenance.causal_parent_status)}"
+            )
             print(
                 f"  [{terminal_text(status)}] {terminal_text(task_id)} — "
-                f"{terminal_text(title)} [display source "
+                f"{terminal_text(title)} [{source_kind} "
                 f"{terminal_text(provenance.hub_id)}#{provenance.seq} "
-                f"@ {provenance.timestamp:g}]"
+                f"@ {provenance.timestamp:g}{parent_note}]"
             )
     if state.board_conflicts:
-        print("board conflicts (unresolved divergence — not causally ordered):")
+        print("board conflicts (unresolved causal heads — not proof of concurrency):")
         for task_id in sorted(state.board_conflicts):
             conflict = state.board_conflicts[task_id]
             contenders = ", ".join(

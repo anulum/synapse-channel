@@ -29,6 +29,7 @@ from synapse_channel.core.journal import EventKind, record_claim_denial, record_
 from synapse_channel.core.operator_relay_wire import RelayActionRequest
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.task_causality import TASK_CAUSAL_PARENT_FIELD, TaskCausalParent
 from synapse_channel.guard_evidence import guard_denial_digests
 
 
@@ -193,6 +194,52 @@ async def test_keyed_finding_quota_refusal_creates_no_operation(tmp_path: Path) 
     assert "quota" in hub.sent[-1]["payload"]
     assert [message["finding"]["statement"] for message in hub.broadcasts] == ["first"]
     store.close()
+
+
+async def test_keyed_task_parent_commits_and_replays_exactly(tmp_path: Path) -> None:
+    db = tmp_path / "task-parent.db"
+    store = EventStore(db)
+    hub = _RecordingHub(store)
+    socket = object()
+    parent = TaskCausalParent("peer-hub", 12, "a" * 64)
+    frame = _frame(
+        "A",
+        MessageType.LEDGER_TASK,
+        "task-parent-1",
+        task_id="T",
+        title="causal child",
+        causal_parent=parent.to_dict(),
+    )
+
+    await planning.handle_ledger_task(hub, "A", frame, socket)
+
+    first = hub.broadcasts[-1]
+    event = store.read_all()[0]
+    assert event.kind == EventKind.LEDGER_TASK
+    assert event.payload[TASK_CAUSAL_PARENT_FIELD] == parent.to_dict()
+    assert TASK_CAUSAL_PARENT_FIELD not in first["task"]
+    assert len(store.read_operations()) == 1
+
+    await planning.handle_ledger_task(hub, "A", frame, socket)
+    assert hub.sent[-1] == first
+    assert len(store.read_all()) == 2
+
+    changed = {
+        **frame,
+        "causal_parent": TaskCausalParent("peer-hub", 13, "b" * 64).to_dict(),
+    }
+    await planning.handle_ledger_task(hub, "A", changed, socket)
+    assert hub.sent[-1]["error_code"] == "idempotency_conflict"
+    assert "peer-hub" not in str(hub.sent[-1])
+    assert "task-parent-1" not in str(hub.sent[-1])
+
+    store.close()
+    reopened = EventStore(db)
+    restarted = _RecordingHub(reopened)
+    await planning.handle_ledger_task(restarted, "A", frame, socket)
+    assert restarted.sent == [first]
+    assert restarted.broadcasts == []
+    reopened.close()
 
 
 async def test_all_state_families_commit_once_replay_and_resume(tmp_path: Path) -> None:

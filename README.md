@@ -500,6 +500,13 @@ synapse hub --max-connections-per-host 4             # cap simultaneous sockets 
 synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
 ```
 
+For an observed cross-hub task revision, `task declare` and `task update` also
+accept `--causal-parent HUB_ID:SEQ:SHA256`. The SHA-256 is the complete event
+fingerprint exposed in multi-hub board provenance. A verified same-task parent
+lets the observed fold discard only that proven ancestor; a missing or
+mismatched reference remains unresolved and never becomes a concurrency claim.
+This metadata changes the advisory observed board, not local claim authority.
+
 ### Use it with your coding agent
 
 Synapse coordinates the agents you already run; it does not replace them.
@@ -1571,11 +1578,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.17 |
 | Public API exports | 70 |
-| Package modules | 528 |
-| Classes | 794 |
+| Package modules | 529 |
+| Classes | 795 |
 | Wire message types | 80 |
 | CLI subcommands | 184 |
-| Test functions | 9260 |
+| Test functions | 9278 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 62 |
 | GitHub Actions workflows | 25 |

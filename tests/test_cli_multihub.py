@@ -67,7 +67,10 @@ def test_observe_prints_board_claims_and_progress(
     assert _cmd_observe(args) == 0
     out = capsys.readouterr().out
     assert "observing peer 'peer-east' — 2 tasks, 1 progress notes, 1 observed claims" in out
-    assert "board (display-only LWW — non-authoritative, non-causal):" in out
+    assert (
+        "board (verified causal heads; display LWW among unresolved heads — "
+        "non-authoritative):" in out
+    )
     assert "[open] T1 — build [display source peer-east#1 @ 1]" in out
     assert "[done] T2 — test [display source peer-east#2 @ 2]" in out
     assert "observed claims (advisory — not granted):" in out
@@ -82,7 +85,7 @@ def test_observe_json_with_peer_id_override(
     payload = json.loads(capsys.readouterr().out)
     assert payload["peer_id"] == "east"
     assert payload["board"]["T2"]["status"] == "done"
-    assert payload["board_policy"]["mode"] == "display-only-lww"
+    assert payload["board_policy"]["mode"] == "causal-head-then-display-lww"
     assert payload["board_policy"]["causal"] is False
     assert payload["board_provenance"]["T2"]["order_key"] == [2.0, "east", 2]
     assert payload["observed_claims"]["T1"]["hub_id"] == "east"  # tagged with the override id
@@ -129,10 +132,10 @@ def test_render_reports_payload_free_unresolved_board_conflict(
     _render(state, "observer", json_out=False)
     rendered = capsys.readouterr().out
 
-    assert "board conflicts (unresolved divergence — not causally ordered):" in rendered
+    assert "board conflicts (unresolved causal heads — not proof of concurrency):" in rendered
     assert "east#1=" in rendered
     assert "west#2=" in rendered
-    assert "private east" in rendered
+    assert "private west" in rendered
     conflict_line = next(line for line in rendered.splitlines() if "east#1=" in line)
     assert "private east" not in conflict_line
     assert "private west" not in conflict_line
