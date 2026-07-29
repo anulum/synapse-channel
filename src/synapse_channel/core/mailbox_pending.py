@@ -188,15 +188,49 @@ class MailboxPendingTracker:
                 combined.extend(roles_of(logical))
         for identity, roles in online_roles.items():
             self._set_roles(identity, roles)
-        for identity in tuple(self._known):
-            if identity not in self._counts:
-                self._counts[identity] = self._count_window(
-                    identity,
-                    self._roles.get(identity, ()),
-                    min_seq=self._watermarks.get(identity, 0) + 1,
-                    max_seq=None,
-                )
+        self._materialise_missing_counts()
         return {identity: self._counts[identity] for identity in sorted(self._known)}
+
+    def _materialise_missing_counts(self) -> None:
+        """Project every cold count from one shared chat-history read."""
+        missing = tuple(identity for identity in self._known if identity not in self._counts)
+        if not missing:
+            return
+        starts = {identity: self._watermarks.get(identity, 0) + 1 for identity in missing}
+        store = cast(EventStore, self.store)
+        events = store.read_window(
+            min_seq=min(starts.values()),
+            max_seq=None,
+            kinds=(EventKind.CHAT,),
+        )
+        counts = dict.fromkeys(missing, 0)
+        exact_recipients: dict[str, set[str]] = {}
+        for identity in missing:
+            addresses = (identity, identity.split("/", 1)[0], *self._roles.get(identity, ()))
+            for address in addresses:
+                exact_recipients.setdefault(address, set()).add(identity)
+        for event in events:
+            payload = event.payload
+            if payload.get("channel"):
+                continue
+            target = str(payload.get("target") or "all")
+            if not is_directed_target(target):
+                continue
+            sender = str(payload.get("sender") or "")
+            recipients: set[str] = set()
+            for part in (raw.strip() for raw in target.split(",") if raw.strip()):
+                if any(marker in part for marker in _GLOB_MARKERS):
+                    recipients.update(
+                        identity
+                        for identity in missing
+                        if is_recipient(part, identity, self._roles.get(identity, ()))
+                    )
+                else:
+                    recipients.update(exact_recipients.get(part, ()))
+            for identity in recipients:
+                if event.seq >= starts[identity] and sender != identity:
+                    counts[identity] += 1
+        self._counts.update(counts)
 
     def _restore(self) -> None:
         """Restore known targets and the highest valid watermark per identity."""

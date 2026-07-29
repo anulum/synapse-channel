@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.mailbox_pending import (
@@ -103,6 +104,34 @@ def test_role_change_recomputes_only_that_identity(tmp_path: Path) -> None:
 
     assert without_role is not None and without_role["PROJ/BOB"] == 0
     assert with_role is not None and with_role["PROJ/BOB"] == 1
+
+
+def test_cold_snapshot_reads_chat_history_once_for_all_identities(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "hub.db")
+    try:
+        first, _ = _chat(store, target="PROJ/ALICE")
+        _chat(store, target="PROJ/BOB")
+        _chat(store, target="PROJ/reviewer")
+        _chat(store, target="PROJ/BO?")
+        tracker = MailboxPendingTracker(store)
+        assert tracker.advance("PROJ/ALICE", first, source="cursor") is True
+
+        restored = MailboxPendingTracker(store)
+        with patch.object(store, "read_window", wraps=store.read_window) as read_window:
+            counts = restored.snapshot(
+                ("PROJ/ALICE", "PROJ/BOB", "PROJ/CAROL"),
+                lambda name: ("PROJ/reviewer",) if name == "PROJ/CAROL" else (),
+            )
+    finally:
+        store.close()
+
+    assert read_window.call_count == 1
+    assert counts == {
+        "PROJ/ALICE": 0,
+        "PROJ/BOB": 2,
+        "PROJ/CAROL": 1,
+        "PROJ/reviewer": 1,
+    }
 
 
 def test_logical_identity_and_sidecar_roles_are_combined(tmp_path: Path) -> None:
