@@ -86,6 +86,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Finish the WebSocket close handshake for one-shot CLI query and task
+  commands before cancelling their listener. Immediate successive commands
+  under the same identity no longer race a stale hub name binding or
+  transiently consume connection capacity during teardown.
 - Bind each federated `(hub_id, seq)` identity to a canonical full-event
   fingerprint. Conflicting content now freezes the candidate view and cursor,
   durably quarantines a watched peer with payload-free evidence, blocks automatic
