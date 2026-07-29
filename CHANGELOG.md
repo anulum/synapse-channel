@@ -15,6 +15,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Clarify three operator-facing timing and identity contracts: dead WebSocket
+  names can persist for the 15-second ping interval plus the 15-second pong
+  timeout, bare `synapse who` connects as literal `USER` while `syn who`
+  resolves the project/session identity, and multi-host signed-frame deployments
+  require monitored clock synchronization inside the asymmetric skew budget.
 - Withhold every service-restart command from the default release-redeploy
   checklist. Rendering a disruptive step now requires an explicitly authorised
   exact hub PID; the command rechecks that PID while holding a fail-fast

@@ -544,6 +544,19 @@ syn commit <paths> -m <message>   # hold the project git lease and commit only t
 synapse send --target quantum/* "rebasing main now"   # the whole project team
 ```
 
+Bare `synapse who` opens its short-lived query connection under the literal
+default name `USER`; it does not infer a name from `$USER`, `$SYN_PROJECT`,
+`$SYN_IDENTITY`, or the working directory. If another live socket or a machine-
+identity pin already owns `USER`, choose a fresh, project-scoped query name with
+`synapse who --name <project>/<query-name>`. The `syn who` ergonomic wrapper is
+different: it resolves the project from an explicit `--project`, then
+`$SYN_PROJECT`, then the repository/working-directory name; an agreeing
+`$SYN_PROJECT` and `$SYN_IDENTITY` pair supplies the exact session identity. It
+passes that result to `synapse who --name ...`, which avoids the shared `USER`
+name. For `--me`, pass the identity whose presence and waiter you intend to
+inspect; the command itself connects as `<name>-who`, so it does not create the
+subject presence it reports.
+
 `synapse who --me` queries as `<name>-who`, then reports `<name>` and
 `<name>-rx`, so the check does not create the presence it describes. It keeps the
 output honest: presence is not a wake loop, and a missing `-rx` waiter means

@@ -499,12 +499,17 @@ later. If `--db` is enabled, a claim accepted before the stop event replays from
 the event log on the next start.
 
 When a waiter re-arms right after its process was killed, its old name can still
-linger on the hub for a few seconds (until the keepalive reaps it). A 0.29.0+ client
+linger on the hub until the WebSocket keepalive reaps it. By default the hub
+sends a ping every `15` seconds and, after sending one, waits another `15`
+seconds for its pong. A failure just before the next ping is noticed in about
+15 seconds; one just after the previous ping can therefore retain its name for
+almost 30 seconds (ping interval plus pong timeout). A 0.29.0+ client
 re-arms with **takeover**: the hub evicts the stale holder (closing it with code
 `4010` *superseded*) and rebinds the name, so the re-arm succeeds instead of failing
 with a `4009` name conflict. Takeover needs **both ends on 0.29.0+** — the client to
-ask for it, the hub to perform the eviction — and a 15-second keepalive reaps a
-genuine ghost quickly as the backstop. The swap is atomic from every other
+ask for it and the hub to perform the eviction. The keepalive's bounded
+15-to-30-second detection window is the backstop for a genuine ghost. The swap
+is atomic from every other
 session's point of view: the hub rebinds the name to the new socket *before* the
 eviction close handshake runs, so a directed message racing the takeover is
 delivered to the new owner, never to the evicted socket, and two takeovers

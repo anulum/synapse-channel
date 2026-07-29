@@ -303,6 +303,20 @@ def test_who_parser_accepts_observed_peer_flags() -> None:
     assert args.observed_timeout == 3.5
 
 
+def test_who_default_identity_and_collision_override_are_documented() -> None:
+    """The raw CLI default and the identity-resolving wrapper must stay distinct."""
+    default_args = cli.build_parser(command="who").parse_args(["who"])
+    override_args = cli.build_parser(command="who").parse_args(["who", "--name", "quantum/query-1"])
+    docs = _single_spaced(_read_repo_text("docs/cli.md"))
+
+    assert default_args.name == "USER"
+    assert override_args.name == "quantum/query-1"
+    assert "literal default name `USER`" in docs
+    assert "does not infer a name from `$USER`, `$SYN_PROJECT`, `$SYN_IDENTITY`" in docs
+    assert "choose a fresh, project-scoped query name" in docs
+    assert "The `syn who` ergonomic wrapper is different" in docs
+
+
 def test_render_who_formats_the_silence_age_in_seconds_minutes_and_hours(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

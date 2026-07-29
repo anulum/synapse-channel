@@ -505,6 +505,17 @@ This is the `-10 s / +1 s` budget: a generous allowance for a slow producer and 
 tight allowance for a fast one, since a future-dated frame is the more
 suspicious.
 
+**Operations.** Every host that produces or verifies signed frames MUST run and
+monitor a clock-synchronization service (for example chrony,
+`systemd-timesyncd`, or another NTP implementation). The operational target MUST
+be tighter than the asymmetric `-10 s / +1 s` acceptance window, especially the
+one-second future allowance; the protocol budget is a rejection boundary, not a
+substitute for synchronized clocks. An operator that cannot prove a host's
+clock is synchronized SHOULD stop signed traffic from that host until the
+offset is corrected. Apply the same discipline to every hub in a multi-host or
+federated deployment because verification is relative to the receiving hub's
+clock.
+
 **Implementation.** `core/message_auth.py` (window constants; the past/future
 comparison returning `VerificationResult.EXPIRED` on both the frame-auth and
 event-signature paths).

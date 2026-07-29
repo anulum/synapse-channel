@@ -29,7 +29,12 @@ from hub_e2e_helpers import (
     send_json,
 )
 from synapse_channel.core.auth import TokenAuthenticator
-from synapse_channel.core.hub import InsecureBindError, SynapseHub
+from synapse_channel.core.hub import (
+    DEFAULT_PING_INTERVAL,
+    DEFAULT_PING_TIMEOUT,
+    InsecureBindError,
+    SynapseHub,
+)
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.persistence import EventStore
 
@@ -49,6 +54,15 @@ def test_hub_caps_clamped() -> None:
     assert hub.max_clients == 1
     assert hub.max_msg_bytes == 1
     assert hub.takeover_cooldown == 0.0
+
+
+def test_deployment_docs_bind_the_ghost_name_window_to_keepalive_defaults() -> None:
+    """Operator timing must track both halves of WebSocket failure detection."""
+    deployment = " ".join(Path("docs/deployment.md").read_text(encoding="utf-8").split())
+
+    assert f"ping every `{DEFAULT_PING_INTERVAL:g}` seconds" in deployment
+    assert f"waits another `{DEFAULT_PING_TIMEOUT:g}` seconds" in deployment
+    assert "ping interval plus pong timeout" in deployment
 
 
 def test_hub_client_registry_keeps_compatibility_references() -> None:

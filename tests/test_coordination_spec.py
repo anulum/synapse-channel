@@ -120,3 +120,15 @@ def test_normative_constants_match_the_implementation() -> None:
         assert value in normalised[label], (
             f"spec row {label!r} does not carry the implementation value {value!r}"
         )
+
+
+def test_signed_frame_clock_operations_match_the_asymmetric_budget() -> None:
+    """Multi-host clock guidance must remain beside the enforced skew limits."""
+    text = " ".join(_spec_text().split())
+    clock_section = text.split("### INV-CK-2", 1)[1].split("## 9.", 1)[0]
+
+    assert "MUST run and monitor a clock-synchronization service" in clock_section
+    assert f"-{DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS:g} s / " in clock_section
+    assert f"+{DEFAULT_MESSAGE_AUTH_FUTURE_SKEW_SECONDS:g} s" in clock_section
+    assert "protocol budget is a rejection boundary, not a substitute" in clock_section
+    assert "verification is relative to the receiving hub's clock" in clock_section
