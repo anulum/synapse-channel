@@ -40,3 +40,11 @@ links state-machine exploration, kill-point fault injection, multi-process races
 restart and concurrency probes, adversarial inputs, and receipt/replay tests where
 those modes apply. A status changes only when both the normative guarantee and
 its hostile executable evidence change together.
+
+The randomized state machine is complemented by
+`python tools/exhaustive_coordination_model.py --depth 4`. That deterministic
+bounded explorer enumerates every trace over thirteen real claim, overlap,
+cross-worktree, renewal, handoff, release, stale-fence, update, and expiry
+actions. It drives `SynapseState` directly and checks the named mutual-exclusion,
+epoch, lease, version, and handoff invariants after every transition. Its result
+is bounded evidence, not a claim about unbounded state space.

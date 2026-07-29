@@ -22,10 +22,11 @@ sources = [
 ]
 tests = [
   "tests/test_coordination_spec_model.py",
+  "tests/test_exhaustive_coordination_model.py",
   "tests/test_hub_takeover_race.py",
   "tests/test_invariant_properties.py",
 ]
-evidence_modes = ["state-machine", "multi-process-race", "property"]
+evidence_modes = ["state-machine", "bounded-exhaustive", "multi-process-race", "property"]
 
 [[boundary]]
 id = "immediate-effect-fencing"
@@ -44,9 +45,10 @@ sources = [
 ]
 tests = [
   "tests/test_coordination_spec_model.py",
+  "tests/test_exhaustive_coordination_model.py",
   "tests/test_state_properties.py",
 ]
-evidence_modes = ["state-machine", "property"]
+evidence_modes = ["state-machine", "bounded-exhaustive", "property"]
 
 [[boundary]]
 id = "atomic-operation-truth"

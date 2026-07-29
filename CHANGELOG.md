@@ -19,6 +19,9 @@ All notable changes to this project are documented here.
   boundaries. It links normative guarantees to executable evidence, labels
   residual gaps as partial, and keeps both commit and release freshness gates
   red on stale generated evidence without treating ordinary coverage as proof.
+- Add deterministic bounded exploration over the real claim, scope, epoch,
+  version, handoff, and expiry state machine so every trace through depth four
+  complements randomized property and fault-injection evidence.
 
 ### Changed
 
