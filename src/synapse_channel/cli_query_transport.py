@@ -94,7 +94,17 @@ async def _query_attempt(
         return 0, False
     finally:
         agent.running = False
-        conn_task.cancel()
+        # Finish the WebSocket close handshake before cancelling the listener.
+        # Cancelling ``connect`` directly can return to a one-shot CLI caller
+        # while the hub still owns ``connect_name``.  An immediate follow-up
+        # command under the same identity is then spuriously refused as a live
+        # duplicate (and repeated calls can transiently consume hub capacity).
+        connection = agent.connection
+        if connection is not None:
+            with contextlib.suppress(Exception):
+                await connection.close()
+        if not conn_task.done():
+            conn_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await conn_task
 

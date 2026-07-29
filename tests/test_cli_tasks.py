@@ -129,6 +129,7 @@ async def test_cmd_task_declare_reuses_stable_key_without_changed_payload(
         )
         changed = argparse.Namespace(**{**vars(first), "title": "Changed"})
         assert await asyncio.to_thread(cli_tasks._cmd_task_declare, first) == 0
+        assert "P" not in hub.clients.agent_sockets
         capsys.readouterr()
         code = await asyncio.to_thread(cli_tasks._cmd_task_declare, changed)
 
