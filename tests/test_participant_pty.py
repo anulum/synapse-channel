@@ -102,6 +102,8 @@ class _Harness:
     def __init__(self) -> None:
         self.agent: _FakeAgent | None = None
         self.tmux_calls: list[list[str]] = []
+        self.buffer_text = ""
+        self.buffer_pasted = False
 
     def factory(
         self,
@@ -130,8 +132,17 @@ class _Harness:
                 stdout="SYN_PROJECT=peer\nSYN_IDENTITY=peer/agent\n",
                 stderr="",
             )
+        if len(args) > 1 and args[1] == "capture-pane":
+            screen = "• Turn completed\n\n› \n"
+            if self.buffer_pasted:
+                screen += self.buffer_text
+            return subprocess.CompletedProcess(list(args), 0, screen, "")
+        if len(args) > 1 and args[1] == "set-buffer":
+            self.buffer_text = args[-1]
+        if len(args) > 1 and args[1] == "paste-buffer":
+            self.buffer_pasted = True
         # returncode 0 to has-session means start_session finds the session and does not
-        # create one; send-keys also succeeds so inject reports injected.
+        # create one; the bracketed paste and final Enter also succeed.
         return subprocess.CompletedProcess(list(args), returncode=0, stdout="", stderr="")
 
 
@@ -157,7 +168,7 @@ def _config(tmp_path: Path) -> AgentTmuxConfig:
 
 def _injected_prompt(harness: _Harness) -> bool:
     wanted = agent_tmux.build_wake_prompt(_PEER)
-    return any("-l" in call and wanted in call for call in harness.tmux_calls)
+    return any(call[1:2] == ["set-buffer"] and wanted in call for call in harness.tmux_calls)
 
 
 async def test_turn_is_relayed_and_woken_through_the_pane(tmp_path: Path) -> None:
@@ -200,7 +211,7 @@ async def test_ensure_session_false_skips_session_start(tmp_path: Path) -> None:
     )
     task = asyncio.create_task(seat.take_turn(TurnRequest(topic_id=_TOPIC, prompt="hi")))
     await _wait_until(lambda: _injected_prompt(h))
-    # No session probe or creation — only the two inject send-keys calls.
+    # No session probe or creation — only the modal-safe bracketed delivery.
     assert not any("has-session" in call for call in h.tmux_calls)
     assert not any("new-session" in call for call in h.tmux_calls)
     assert h.agent is not None

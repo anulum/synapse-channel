@@ -63,8 +63,10 @@ def test_codex_config_defaults_to_the_codex_launch_command(tmp_path: Path) -> No
     assert agent_tmux.agent_binary(config) == "codex"
 
 
-def test_inject_wake_through_codex_surface_still_two_steps(tmp_path: Path) -> None:
+def test_inject_wake_through_codex_surface_uses_safe_bracketed_delivery(tmp_path: Path) -> None:
     calls: list[list[str]] = []
+    buffer_text = ""
+    buffer_pasted = False
 
     def run(
         args: Sequence[str],
@@ -74,6 +76,7 @@ def test_inject_wake_through_codex_surface_still_two_steps(tmp_path: Path) -> No
         check: bool = False,
         env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        nonlocal buffer_pasted, buffer_text
         del capture_output, text, check, env
         calls.append(list(args))
         if len(args) > 1 and args[1] == "show-environment":
@@ -83,6 +86,15 @@ def test_inject_wake_through_codex_surface_still_two_steps(tmp_path: Path) -> No
                 "SYN_PROJECT=SYNAPSE-CHANNEL\nSYN_IDENTITY=SYNAPSE-CHANNEL/codex-main\n",
                 "",
             )
+        if len(args) > 1 and args[1] == "capture-pane":
+            screen = "• Turn completed\n\n› \n"
+            if buffer_pasted:
+                screen += buffer_text
+            return subprocess.CompletedProcess(list(args), 0, screen, "")
+        if len(args) > 1 and args[1] == "set-buffer":
+            buffer_text = args[-1]
+        if len(args) > 1 and args[1] == "paste-buffer":
+            buffer_pasted = True
         return subprocess.CompletedProcess(list(args), 0, "", "")
 
     config = CodexTmuxConfig(
@@ -95,8 +107,11 @@ def test_inject_wake_through_codex_surface_still_two_steps(tmp_path: Path) -> No
     result = inject_wake(config, runner=run, sleeper=lambda _seconds: None)
 
     assert result.injected is True
+    assert len([call for call in calls if call[1] == "capture-pane"]) == 2
+    set_buffer = next(call for call in calls if call[1] == "set-buffer")
+    paste_buffer = next(call for call in calls if call[1] == "paste-buffer")
+    assert set_buffer[-1] == agent_tmux.build_wake_prompt(config.identity)
+    assert paste_buffer[-3:] == ["-p", "-t", "synapse-codex-main"]
     send_calls = [call for call in calls if call[1] == "send-keys"]
-    assert len(send_calls) == 2
-    assert send_calls[0][:5] == ["tmux", "send-keys", "-t", "synapse-codex-main", "-l"]
-    assert send_calls[1] == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
+    assert send_calls == [["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]]
     assert registry_path(config).exists()
