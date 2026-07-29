@@ -61,6 +61,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Load the latest tpm2-pytss against cryptography's canonical moved Camellia
+  and CFB classes, removing the impending legacy-import failure and collection
+  warnings without suppressing diagnostics or pinning an obsolete crypto stack.
 - Refuse commits and release builds whose generated capability inventory is
   stale, while retaining the lightweight pre-push drift check as a final
   operator guard.

@@ -12,6 +12,7 @@ import json
 import shutil
 import socket
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -28,14 +29,15 @@ from synapse_channel.core.at_rest_tpm2 import (
     TPM2_BACKEND,
     cipher_from_wrapped_key_file_tpm2,
     generate_wrapped_key_file_tpm2,
+    require_tpm2,
 )
 
 
 def _tpm2_available() -> bool:
     """Return whether tpm2-pytss and a swtpm software-TPM rig are all present."""
     try:
-        import tpm2_pytss  # noqa: F401
-    except ImportError:
+        require_tpm2()
+    except RuntimeError:
         return False
     return shutil.which("swtpm") is not None and shutil.which("swtpm_setup") is not None
 
@@ -46,6 +48,29 @@ pytestmark = pytest.mark.skipif(
     not _tpm2_available(),
     reason="requires tpm2-pytss + swtpm (installed in CI)",
 )
+
+
+def test_tpm2_import_is_clean_under_cryptography_deprecation_error() -> None:
+    """A clean interpreter proves compatibility without a warning filter."""
+    script = (
+        "from synapse_channel.core.at_rest_tpm2 import require_tpm2; "
+        "require_tpm2(); print('tpm2 import clean')"
+    )
+    proc = subprocess.run(  # noqa: S603 - current interpreter and fixed test script.
+        [
+            sys.executable,
+            "-W",
+            "error::cryptography.utils.CryptographyDeprecationWarning",
+            "-c",
+            script,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "tpm2 import clean"
 
 
 def _free_adjacent_tcp_ports() -> tuple[int, int]:
