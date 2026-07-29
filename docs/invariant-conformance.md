@@ -46,6 +46,12 @@ processes released through an on-disk barrier against one live hub. Concurrent
 takeovers must produce exactly one 4010-superseded process, one surviving
 process, and one final socket-to-identity binding.
 
+Partition evidence is similarly explicit. A contested namespace refuses local
+grants; partition and verified-heal transitions are durable; failed or partial
+poll rounds retain suspicion; restart restores the last proven contest; and an
+observed release heals only after a successful round. These tests prove safe
+partition containment and recovery, not causal ordering of the display fold.
+
 The randomized state machine is complemented by
 `python tools/exhaustive_coordination_model.py --depth 4`. That deterministic
 bounded explorer enumerates every trace over thirteen real claim, overlap,

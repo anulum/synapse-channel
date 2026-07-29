@@ -5,6 +5,8 @@
         "state-machine",
         "bounded-exhaustive",
         "multi-process-race",
+        "partition",
+        "restart",
         "property"
       ],
       "guarantee": "Within one hub authority domain, live task ownership and overlapping file scopes have at most one owner; federated views never merge authority.",
@@ -13,7 +15,9 @@
       "scope": "One authoritative hub and its journal per coordination domain. Multi-hub claims remain advisory.",
       "sources": [
         "src/synapse_channel/core/state.py",
-        "src/synapse_channel/core/multihub_federation.py"
+        "src/synapse_channel/core/multihub_federation.py",
+        "src/synapse_channel/core/multihub_watch.py",
+        "src/synapse_channel/core/namespace_ownership.py"
       ],
       "spec_invariants": [
         "INV-ME-1",
@@ -26,8 +30,11 @@
       "tests": [
         "tests/test_coordination_spec_model.py",
         "tests/test_exhaustive_coordination_model.py",
+        "tests/test_hub_claim_ownership.py",
         "tests/test_hub_takeover_race.py",
-        "tests/test_invariant_properties.py"
+        "tests/test_invariant_properties.py",
+        "tests/test_multihub_watch.py",
+        "tests/test_namespace_ownership.py"
       ],
       "title": "Single authority"
     },
@@ -122,7 +129,10 @@
     {
       "evidence_modes": [
         "adversarial",
-        "deterministic-fold"
+        "deterministic-fold",
+        "partition",
+        "restart",
+        "durable-transition"
       ],
       "guarantee": "Federated identity equivocation fails closed, while the task-board projection exposes deterministic provenance for its explicitly non-causal display winner.",
       "id": "causal-conflict-handling",
@@ -133,7 +143,9 @@
       "scope": "Equivocation containment and display-only multi-hub projections.",
       "sources": [
         "src/synapse_channel/core/multihub_equivocation.py",
-        "src/synapse_channel/core/multihub_fold.py"
+        "src/synapse_channel/core/multihub_fold.py",
+        "src/synapse_channel/core/multihub_watch.py",
+        "src/synapse_channel/core/namespace_ownership.py"
       ],
       "spec_invariants": [
         "INV-MH-1",
@@ -142,14 +154,18 @@
       ],
       "status": "partial",
       "tests": [
+        "tests/test_hub_claim_ownership.py",
         "tests/test_multihub_equivocation.py",
-        "tests/test_multihub_fold.py"
+        "tests/test_multihub_fold.py",
+        "tests/test_multihub_watch.py",
+        "tests/test_namespace_ownership.py"
       ],
       "title": "Causal conflict handling"
     },
     {
       "evidence_modes": [
         "kill-point",
+        "partition",
         "receipt",
         "replay"
       ],
@@ -175,6 +191,7 @@
       "tests": [
         "tests/test_atomic_operation_killpoints.py",
         "tests/test_delivery_receipts.py",
+        "tests/test_multihub_watch.py",
         "tests/test_universal_receipts.py"
       ],
       "title": "Evidence completeness"

@@ -19,14 +19,26 @@ spec_invariants = ["INV-ME-1", "INV-ME-2", "INV-MH-1", "INV-MH-2", "INV-MH-4"]
 sources = [
   "src/synapse_channel/core/state.py",
   "src/synapse_channel/core/multihub_federation.py",
+  "src/synapse_channel/core/multihub_watch.py",
+  "src/synapse_channel/core/namespace_ownership.py",
 ]
 tests = [
   "tests/test_coordination_spec_model.py",
   "tests/test_exhaustive_coordination_model.py",
+  "tests/test_hub_claim_ownership.py",
   "tests/test_hub_takeover_race.py",
   "tests/test_invariant_properties.py",
+  "tests/test_multihub_watch.py",
+  "tests/test_namespace_ownership.py",
 ]
-evidence_modes = ["state-machine", "bounded-exhaustive", "multi-process-race", "property"]
+evidence_modes = [
+  "state-machine",
+  "bounded-exhaustive",
+  "multi-process-race",
+  "partition",
+  "restart",
+  "property",
+]
 
 [[boundary]]
 id = "immediate-effect-fencing"
@@ -104,12 +116,23 @@ spec_invariants = ["INV-MH-1", "INV-MH-2", "INV-MH-5"]
 sources = [
   "src/synapse_channel/core/multihub_equivocation.py",
   "src/synapse_channel/core/multihub_fold.py",
+  "src/synapse_channel/core/multihub_watch.py",
+  "src/synapse_channel/core/namespace_ownership.py",
 ]
 tests = [
+  "tests/test_hub_claim_ownership.py",
   "tests/test_multihub_equivocation.py",
   "tests/test_multihub_fold.py",
+  "tests/test_multihub_watch.py",
+  "tests/test_namespace_ownership.py",
 ]
-evidence_modes = ["adversarial", "deterministic-fold"]
+evidence_modes = [
+  "adversarial",
+  "deterministic-fold",
+  "partition",
+  "restart",
+  "durable-transition",
+]
 
 [[boundary]]
 id = "evidence-completeness"
@@ -129,6 +152,7 @@ sources = [
 tests = [
   "tests/test_atomic_operation_killpoints.py",
   "tests/test_delivery_receipts.py",
+  "tests/test_multihub_watch.py",
   "tests/test_universal_receipts.py",
 ]
-evidence_modes = ["kill-point", "receipt", "replay"]
+evidence_modes = ["kill-point", "partition", "receipt", "replay"]

@@ -26,6 +26,9 @@ All notable changes to this project are documented here.
   and overwriting the winning `agent_sockets` entry with its stale socket.
   Exercise the fix with two independent client processes released by one
   barrier and require a stable one-owner registry bijection.
+- Bind the conformance registry to existing hostile partition and restart
+  evidence: contested namespaces refuse, failed rounds cannot false-heal, and
+  only verified recovery clears durable suspicion.
 
 ### Changed
 
