@@ -24,6 +24,7 @@ from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.file_claim_guard import GuardVerdict
 
 HookEvaluator = Callable[..., Awaitable[GuardVerdict]]
+HookConfigRenderer = Callable[..., dict[str, object]]
 _MIN_READY_TIMEOUT = 0.1
 _MAX_HOOK_READY_TIMEOUT = min(MAX_CLAIM_STATE_PHASE_TIMEOUT, 299.0)
 
@@ -120,6 +121,46 @@ def render_hook_command(
     return shlex.join(args)
 
 
+def render_json_hook_config(
+    *,
+    command: str,
+    event: str,
+    matcher: str,
+    identity: str,
+    uri: str,
+    ready_timeout: float,
+    token_file: str | None,
+    synapse_bin: str | None,
+    timeout_multiplier: int = 1,
+    status_message: str | None = None,
+) -> dict[str, object]:
+    """Build the shell-command JSON envelope shared by provider hook stores."""
+    hook: dict[str, object] = {
+        "type": "command",
+        "command": render_hook_command(
+            command=command,
+            identity=identity,
+            uri=uri,
+            ready_timeout=ready_timeout,
+            token_file=token_file,
+            synapse_bin=synapse_bin,
+        ),
+        "timeout": hook_timeout(ready_timeout) * timeout_multiplier,
+    }
+    if status_message is not None:
+        hook["statusMessage"] = status_message
+    return {
+        "hooks": {
+            event: [
+                {
+                    "matcher": matcher,
+                    "hooks": [hook],
+                }
+            ]
+        }
+    }
+
+
 def recipe_inputs_are_safe(args: argparse.Namespace, *, provider: str) -> bool:
     """Reject a raw token that a persistent provider recipe cannot safely carry."""
     if args.token and not args.token_file:
@@ -139,6 +180,7 @@ def run_claim_hook(
     failure_reason: str,
     async_runner: Callable[[Awaitable[GuardVerdict]], GuardVerdict] = _run_awaitable,
     payload_renderer: Callable[[str], dict[str, object]] | None = None,
+    timeout_normalizer: Callable[[float], float] = normalise_ready_timeout,
 ) -> int:
     """Evaluate stdin and convert every handled failure to deny JSON on exit zero.
 
@@ -154,7 +196,7 @@ def run_claim_hook(
                 identity=args.identity,
                 uri=args.uri,
                 token=args.token,
-                timeout=normalise_ready_timeout(float(args.ready_timeout)),
+                timeout=timeout_normalizer(float(args.ready_timeout)),
             )
         )
     except Exception:
@@ -167,6 +209,46 @@ def run_claim_hook(
         payload_renderer = denial_payload
     print(json.dumps(payload_renderer(verdict.reason), ensure_ascii=False))
     return 0
+
+
+def run_json_claim_hook_command(
+    args: argparse.Namespace,
+    *,
+    provider: str,
+    config_renderer: HookConfigRenderer,
+    evaluator: HookEvaluator,
+    failure_reason: str,
+    async_runner: Callable[[Awaitable[GuardVerdict]], GuardVerdict] = _run_awaitable,
+    payload_renderer: Callable[[str], dict[str, object]] | None = None,
+    reject_raw_token: bool = True,
+    timeout_normalizer: Callable[[float], float] = normalise_ready_timeout,
+) -> int:
+    """Run the common JSON recipe/runtime shell around one provider protocol."""
+    if args.print_config:
+        if reject_raw_token and not recipe_inputs_are_safe(args, provider=provider):
+            return 2
+        try:
+            config = config_renderer(
+                identity=args.identity,
+                uri=args.uri,
+                ready_timeout=args.ready_timeout,
+                token_file=args.token_file,
+                synapse_bin=args.synapse_bin,
+            )
+        except (OSError, ValueError) as exc:
+            print(f"cannot render {provider} claim-hook config: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(config, indent=2, ensure_ascii=False))
+        return 0
+
+    return run_claim_hook(
+        args,
+        evaluator=evaluator,
+        failure_reason=failure_reason,
+        async_runner=async_runner,
+        payload_renderer=payload_renderer,
+        timeout_normalizer=timeout_normalizer,
+    )
 
 
 def add_claim_hook_arguments(

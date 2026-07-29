@@ -7,11 +7,12 @@
 # SYNAPSE_CHANNEL — client-side git integration for branch-scoped claims
 """Client-side git integration for branch-scoped claims.
 
-All git execution lives here, on the client side of the bus. The hub never runs
-git or reads a filesystem: a git-aware agent resolves its current branch locally
-and attaches the result as opaque metadata on an ordinary claim, so the hub can
-display and group claims by branch without ever touching a repository. This
-module resolves the branch and drives a git-scoped claim through a
+Git execution stays on the client side of the bus, with its dependency-neutral
+subprocess boundary in :mod:`synapse_channel.git.git_runtime`. The hub never
+runs git or reads a filesystem: a git-aware agent resolves its current branch
+locally and attaches the result as opaque metadata on an ordinary claim, so the
+hub can display and group claims by branch without ever touching a repository.
+This module resolves the branch and drives a git-scoped claim through a
 :class:`~synapse_channel.client.agent.SynapseAgent`.
 
 The git subprocess is injectable (``runner``) so the flow is unit-testable
@@ -21,79 +22,36 @@ without a real repository.
 from __future__ import annotations
 
 import asyncio
-import shutil
-import subprocess  # nosec B404
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.connect_failures import describe_connect_failure, explain_silent_outcome
-from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import GitContext
+from synapse_channel.git.git_runtime import (
+    GitError as GitError,
+)
+from synapse_channel.git.git_runtime import (
+    GitRunner as GitRunner,
+)
+from synapse_channel.git.git_runtime import (
+    _default_git_runner as _default_git_runner,
+)
 from synapse_channel.git.semantic_claim_request import (
     resolve_semantic_request,
     write_semantic_evidence,
 )
 from synapse_channel.terminal_text import shell_command_arg, shell_long_option
 
-GitRunner = Callable[[list[str]], str]
-"""Runs a git subcommand and returns stdout without terminal CR/LF characters."""
-
 AgentFactory = Callable[..., SynapseAgent]
 """Factory that builds the hub client; injectable for testing."""
-
-
-class GitError(SynapseError, RuntimeError):
-    """A git command failed, or git is not available on the host."""
-
-    code = "git"
 
 
 def _unique_ordered(values: list[str]) -> list[str]:
     """Return values without duplicates while preserving first-seen order."""
     return list(dict.fromkeys(values))
-
-
-def _default_git_runner(args: list[str]) -> str:
-    """Run ``git <args>`` and return stdout without terminal CR/LF characters.
-
-    Parameters
-    ----------
-    args : list[str]
-        The git subcommand and its arguments (everything after ``git``).
-
-    Returns
-    -------
-    str
-        The command's standard output with terminal CR/LF characters removed.
-
-    Raises
-    ------
-    GitError
-        When git is not installed or the command exits non-zero.
-    """
-    git = shutil.which("git")
-    if git is None:
-        raise GitError("git is not installed or not on PATH")
-    try:
-        # Fixed git binary, no shell, bounded argv from internal git operations.
-        result = subprocess.run(  # nosec B603
-            [git, *args],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="surrogateescape",
-            check=True,
-        )
-    except FileNotFoundError as exc:
-        raise GitError("git is not installed or not on PATH") from exc
-    except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or "").strip() or f"git {' '.join(args)} exited non-zero"
-        raise GitError(detail) from exc
-    stdout = result.stdout if result.stdout is not None else ""
-    return stdout.rstrip("\r\n")
 
 
 def resolve_branch(*, runner: GitRunner = _default_git_runner) -> str:

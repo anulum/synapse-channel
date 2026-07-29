@@ -16,11 +16,8 @@ existing permissions or hooks.
 from __future__ import annotations
 
 import argparse
-import asyncio
-import json
 import math
 import shutil
-import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -31,6 +28,10 @@ from synapse_channel.claude_claim_guard import (
     evaluate_hook_event,
 )
 from synapse_channel.claude_claim_state import MAX_CLAUDE_CLAIM_PHASE_TIMEOUT
+from synapse_channel.cli_claim_hook_common import (
+    _run_awaitable,
+    run_json_claim_hook_command,
+)
 from synapse_channel.client.agent import default_hub_uri
 
 HookEvaluator = Callable[..., Awaitable[GuardVerdict]]
@@ -53,16 +54,6 @@ def _parse_ready_timeout(value: str) -> float:
         return _normalise_ready_timeout(float(value))
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
-
-
-async def _await_verdict(awaitable: Awaitable[GuardVerdict]) -> GuardVerdict:
-    """Turn a general awaitable into the coroutine required by :func:`asyncio.run`."""
-    return await awaitable
-
-
-def _run_awaitable(awaitable: Awaitable[GuardVerdict]) -> GuardVerdict:
-    """Run one hook verdict awaitable to completion."""
-    return asyncio.run(_await_verdict(awaitable))
 
 
 def _resolve_synapse_binary(explicit: str | None) -> str:
@@ -130,40 +121,17 @@ def _cmd_claude_claim_hook(
     async_runner: Callable[[Awaitable[GuardVerdict]], GuardVerdict] = _run_awaitable,
 ) -> int:
     """Print a recipe or evaluate stdin, returning only safe hook outcomes."""
-    if args.print_config:
-        try:
-            config = render_hook_config(
-                identity=args.identity,
-                uri=args.uri,
-                ready_timeout=args.ready_timeout,
-                token_file=args.token_file,
-                synapse_bin=args.synapse_bin,
-            )
-        except (OSError, ValueError) as exc:
-            print(f"cannot render Claude claim-hook config: {exc}", file=sys.stderr)
-            return 2
-        print(json.dumps(config, indent=2, ensure_ascii=False))
-        return 0
-
-    raw = sys.stdin.read()
-    try:
-        verdict = async_runner(
-            evaluator(
-                raw,
-                identity=args.identity,
-                uri=args.uri,
-                token=args.token,
-                timeout=_normalise_ready_timeout(float(args.ready_timeout)),
-            )
-        )
-    except Exception:
-        # Claude treats exit 1 as non-blocking. Convert every unexpected runtime
-        # exception into valid deny JSON on exit 0 so a bug cannot authorise a write.
-        verdict = GuardVerdict(False, "Synapse claim verification failed; mutation denied.")
-    if verdict.allowed:
-        return 0
-    print(json.dumps(denial_payload(verdict.reason), ensure_ascii=False))
-    return 0
+    return run_json_claim_hook_command(
+        args,
+        provider="Claude",
+        config_renderer=render_hook_config,
+        evaluator=evaluator,
+        failure_reason="Synapse claim verification failed; mutation denied.",
+        async_runner=async_runner,
+        payload_renderer=denial_payload,
+        reject_raw_token=False,
+        timeout_normalizer=_normalise_ready_timeout,
+    )
 
 
 def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

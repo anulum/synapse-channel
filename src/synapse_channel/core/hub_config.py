@@ -55,7 +55,7 @@ from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
 from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_letter
 from synapse_channel.core.durable_ingress import DurableIngressQuota
 from synapse_channel.core.federation import FederationBundle
-from synapse_channel.core.hub import (
+from synapse_channel.core.hub_defaults import (
     DEFAULT_AUTH_TIMEOUT,
     DEFAULT_COMPACT_HINT_THRESHOLD,
     DEFAULT_MAX_CLIENTS,

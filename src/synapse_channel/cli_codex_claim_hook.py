@@ -10,17 +10,13 @@
 from __future__ import annotations
 
 import argparse
-import json
-import sys
 from typing import Any
 
 from synapse_channel.claim_state import fetch_state_snapshot
 from synapse_channel.cli_claim_hook_common import (
     add_claim_hook_arguments,
-    hook_timeout,
-    recipe_inputs_are_safe,
-    render_hook_command,
-    run_claim_hook,
+    render_json_hook_config,
+    run_json_claim_hook_command,
 )
 from synapse_channel.codex_claim_guard import evaluate_hook_event
 from synapse_channel.file_claim_guard import GuardVerdict
@@ -35,31 +31,17 @@ def render_hook_config(
     synapse_bin: str | None,
 ) -> dict[str, Any]:
     """Return a token-safe Codex ``hooks.json`` fragment for file edits and Bash."""
-    command = render_hook_command(
+    return render_json_hook_config(
         command="codex-claim-hook",
+        event="PreToolUse",
+        matcher="Edit|Write|Bash",
         identity=identity,
         uri=uri,
         ready_timeout=ready_timeout,
         token_file=token_file,
         synapse_bin=synapse_bin,
+        status_message="Verifying Synapse file claims",
     )
-    return {
-        "hooks": {
-            "PreToolUse": [
-                {
-                    "matcher": "Edit|Write|Bash",
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": command,
-                            "timeout": hook_timeout(ready_timeout),
-                            "statusMessage": "Verifying Synapse file claims",
-                        }
-                    ],
-                }
-            ]
-        }
-    }
 
 
 async def _evaluate(
@@ -81,24 +63,10 @@ async def _evaluate(
 
 
 def _cmd_codex_claim_hook(args: argparse.Namespace) -> int:
-    if args.print_config:
-        if not recipe_inputs_are_safe(args, provider="Codex"):
-            return 2
-        try:
-            config = render_hook_config(
-                identity=args.identity,
-                uri=args.uri,
-                ready_timeout=args.ready_timeout,
-                token_file=args.token_file,
-                synapse_bin=args.synapse_bin,
-            )
-        except (OSError, ValueError) as exc:
-            print(f"cannot render Codex claim-hook config: {exc}", file=sys.stderr)
-            return 2
-        print(json.dumps(config, indent=2, ensure_ascii=False))
-        return 0
-    return run_claim_hook(
+    return run_json_claim_hook_command(
         args,
+        provider="Codex",
+        config_renderer=render_hook_config,
         evaluator=_evaluate,
         failure_reason="Synapse claim verification failed; Codex mutation denied.",
     )

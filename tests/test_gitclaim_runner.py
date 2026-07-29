@@ -85,7 +85,7 @@ def test_default_git_runner_reports_git_absent_from_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A missing git binary is a named GitError, not a FileNotFoundError."""
-    monkeypatch.setattr("synapse_channel.git.gitclaim.shutil.which", lambda _name: None)
+    monkeypatch.setattr("synapse_channel.git.git_runtime.shutil.which", lambda _name: None)
     with pytest.raises(GitError, match="not installed or not on PATH"):
         _default_git_runner(["status"])
 
@@ -94,11 +94,13 @@ def test_default_git_runner_wraps_a_vanishing_binary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """git disappearing between the which() check and the run is still a GitError."""
-    monkeypatch.setattr("synapse_channel.git.gitclaim.shutil.which", lambda _name: "/usr/bin/git")
+    monkeypatch.setattr(
+        "synapse_channel.git.git_runtime.shutil.which", lambda _name: "/usr/bin/git"
+    )
 
     def vanish(*_args: object, **_kwargs: object) -> object:
         raise FileNotFoundError("/usr/bin/git")
 
-    monkeypatch.setattr("synapse_channel.git.gitclaim.subprocess.run", vanish)
+    monkeypatch.setattr("synapse_channel.git.git_runtime.subprocess.run", vanish)
     with pytest.raises(GitError, match="not installed or not on PATH"):
         _default_git_runner(["status"])

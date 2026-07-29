@@ -18,17 +18,13 @@ untrusted folders.
 from __future__ import annotations
 
 import argparse
-import json
-import sys
 from typing import Any
 
 from synapse_channel.claim_state import fetch_state_snapshot
 from synapse_channel.cli_claim_hook_common import (
     add_claim_hook_arguments,
-    hook_timeout,
-    recipe_inputs_are_safe,
-    render_hook_command,
-    run_claim_hook,
+    render_json_hook_config,
+    run_json_claim_hook_command,
 )
 from synapse_channel.file_claim_guard import GuardVerdict
 from synapse_channel.gemini_claim_guard import evaluate_hook_event, gemini_denial_payload
@@ -46,30 +42,17 @@ def render_hook_config(
     synapse_bin: str | None,
 ) -> dict[str, Any]:
     """Return a token-safe ``settings.json`` ``hooks`` fragment for ``BeforeTool``."""
-    command = render_hook_command(
+    return render_json_hook_config(
         command="gemini-claim-hook",
+        event="BeforeTool",
+        matcher=GEMINI_TOOL_MATCHER,
         identity=identity,
         uri=uri,
         ready_timeout=ready_timeout,
         token_file=token_file,
         synapse_bin=synapse_bin,
+        timeout_multiplier=1000,
     )
-    return {
-        "hooks": {
-            "BeforeTool": [
-                {
-                    "matcher": GEMINI_TOOL_MATCHER,
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": command,
-                            "timeout": hook_timeout(ready_timeout) * 1000,
-                        }
-                    ],
-                }
-            ]
-        }
-    }
 
 
 async def _evaluate(
@@ -91,24 +74,10 @@ async def _evaluate(
 
 
 def _cmd_gemini_claim_hook(args: argparse.Namespace) -> int:
-    if args.print_config:
-        if not recipe_inputs_are_safe(args, provider="Gemini"):
-            return 2
-        try:
-            config = render_hook_config(
-                identity=args.identity,
-                uri=args.uri,
-                ready_timeout=args.ready_timeout,
-                token_file=args.token_file,
-                synapse_bin=args.synapse_bin,
-            )
-        except (OSError, ValueError) as exc:
-            print(f"cannot render Gemini claim-hook config: {exc}", file=sys.stderr)
-            return 2
-        print(json.dumps(config, indent=2, ensure_ascii=False))
-        return 0
-    return run_claim_hook(
+    return run_json_claim_hook_command(
         args,
+        provider="Gemini",
+        config_renderer=render_hook_config,
         evaluator=_evaluate,
         failure_reason="Synapse claim verification failed; Gemini mutation denied.",
         payload_renderer=gemini_denial_payload,

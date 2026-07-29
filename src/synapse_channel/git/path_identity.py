@@ -34,7 +34,7 @@ from synapse_channel.core.path_identity import (
     comparison_worktree,
 )
 from synapse_channel.core.scoping import normalize_path, normalize_paths
-from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
+from synapse_channel.git.git_runtime import GitError, GitRunner, _default_git_runner
 from synapse_channel.git.semantic_scope import parse_semantic_scope, semantic_scope_path
 
 _CASE_PROBE_LIMIT = 64

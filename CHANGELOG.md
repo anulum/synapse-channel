@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Remove the deferred `gitclaim`/`path_identity` and `hub`/`hub_config` import
+  inversions through dependency-neutral runtime/default modules. Consolidate
+  the shared Claude, Codex, Gemini, and Grok claim-hook command shell and the
+  repeated JSON recipe envelope while preserving every provider's matcher,
+  timeout unit, denial payload, executable form, and rendered output. Kimi's
+  provider-specific TOML install lifecycle remains independent.
+
 ### Fixed
 
 - Clarify three operator-facing timing and identity contracts: dead WebSocket
