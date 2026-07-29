@@ -88,7 +88,7 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/core/federation_fetch.py": (4, "protocol-body"),
     "src/synapse_channel/core/fleet_scorecard_metrics.py": (6, "protocol-body"),
     "src/synapse_channel/core/http_response.py": (1, "protocol-body"),
-    "src/synapse_channel/core/mcp_config_launch.py": (2, "optional-import + env-defensive"),
+    "src/synapse_channel/core/mcp_config_launch.py": (3, "optional-import + env-defensive"),
     "src/synapse_channel/core/multihub_claim_transport.py": (4, "protocol-body"),
     "src/synapse_channel/core/multihub_transport.py": (4, "protocol-body"),
     "src/synapse_channel/core/operator_relay_transport.py": (4, "protocol-body"),
