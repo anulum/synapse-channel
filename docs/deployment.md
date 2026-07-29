@@ -219,10 +219,43 @@ synapse doctor --project myproject --id worker --redeploy-checklist
 
 The checklist prints package, service, roster, durable-state, and git-hook checks
 for the installed executable, hub service, presence daemon, wake listener, SQLite
-event log, and claim-aware hooks. It does not restart services by itself; run the
-printed commands when you are ready to bounce the hub and reconnect the fleet.
-Use `--db-path` if your hub service stores the event log somewhere other than
-`~/synapse/hub.db`.
+event log, and claim-aware hooks. It does not restart services by itself, and
+restart commands are withheld by default. Inspect the reported exact hub PID,
+active claims, and waiters before seeking disruption authority.
+
+Only with fresh owner authority for that exact running hub may you render the
+disruptive step:
+
+```bash
+synapse doctor --project myproject --id worker --redeploy-checklist \
+  --redeploy-authorize-restart-pid CURRENT_MAIN_PID
+```
+
+Replace `CURRENT_MAIN_PID` with the explicitly reviewed positive PID; do not use
+a stale value or command substitution. The generated command rechecks that PID
+inside a fail-fast
+`${XDG_RUNTIME_DIR}/synapse-channel-redeploy.lock` host-local custody lock and
+restarts the hub, presence, and wake-listener units as one operator-held action.
+That lock remains held while the hub itself is unavailable. Doctor only prints
+the command. Use `--db-path` if your hub service stores the event log somewhere
+other than `~/synapse/hub.db`.
+
+### Mandatory post-tag local dogfooding
+
+Every new release tag must be adopted by the local hub immediately after the
+exact public artifact is available. Release closeout is incomplete until the
+following bounded sequence is recorded:
+
+1. Install the exact tagged public artifact and verify its version and digest.
+2. Inspect the current hub PID and live claims/waiters.
+3. Render the disruptive checklist for that explicitly reviewed PID and run its
+   single host-locked hub/presence/waiter restart transaction.
+4. Verify the installed version, active service, fresh PID, zero unexpected
+   restart loop, roster/waiter reconnect, durable replay, and hook wiring.
+
+This standing dogfooding requirement authorises the release-specific local hub
+adoption after a new tag. It does not authorise closing ONLYOFFICE or any other
+unrelated running application, and it is not a reason to restart between tags.
 
 For multi-seat fleets on one machine, start the hub with
 [`--team-secure`](team-secure.md) (token + identity trust + role grants + private

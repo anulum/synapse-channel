@@ -87,6 +87,17 @@ _LOCAL_DEFAULT_URIS = frozenset({"ws://localhost:8876", "ws://127.0.0.1:8876"})
 """The default local hub addresses the generated user services manage."""
 
 
+def _positive_process_id(value: str) -> int:
+    """Parse one positive non-init process id for a disruption guard."""
+    try:
+        pid = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("PID must be an integer") from exc
+    if pid <= 1:
+        raise argparse.ArgumentTypeError("PID must be greater than one")
+    return pid
+
+
 def finding_lines(diagnoses: list[Diagnosis]) -> list[str]:
     """Render each non-pass verdict as one stable line for a notify sink.
 
@@ -484,6 +495,13 @@ def _cmd_doctor(
     if mcp_argument_error:
         print(f"doctor error: {mcp_argument_error}", file=sys.stderr)
         return 2
+    authorized_hub_pid = getattr(args, "redeploy_authorize_restart_pid", None)
+    if authorized_hub_pid is not None and not getattr(args, "redeploy_checklist", False):
+        print(
+            "doctor error: --redeploy-authorize-restart-pid requires --redeploy-checklist",
+            file=sys.stderr,
+        )
+        return 2
     mcp_config = getattr(args, "mcp_config", None)
 
     def diagnose() -> tuple[int, list[str], list[Diagnosis]]:
@@ -542,6 +560,10 @@ def _cmd_doctor(
             for flag, present in (
                 ("--fix", getattr(args, "fix", False)),
                 ("--redeploy-checklist", getattr(args, "redeploy_checklist", False)),
+                (
+                    "--redeploy-authorize-restart-pid",
+                    authorized_hub_pid is not None,
+                ),
                 ("--install-user-services", getattr(args, "install_user_services", False)),
                 ("--start-user-services", getattr(args, "start_user_services", False)),
             )
@@ -587,6 +609,7 @@ def _cmd_doctor(
                 hub_uri=args.uri,
                 db_path=getattr(args, "db_path", "~/synapse/hub.db"),
                 synapse_bin=getattr(args, "synapse_bin", None),
+                authorized_hub_pid=authorized_hub_pid,
             )
         ):
             print(line)
@@ -811,7 +834,21 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     doctor.add_argument(
         "--redeploy-checklist",
         action="store_true",
-        help="Print post-release package, service, roster, replay, and git-hook checks.",
+        help=(
+            "Print post-release package, live-session, roster, replay, and git-hook "
+            "checks; restart commands are withheld by default."
+        ),
+    )
+    doctor.add_argument(
+        "--redeploy-authorize-restart-pid",
+        type=_positive_process_id,
+        default=None,
+        metavar="PID",
+        help=(
+            "With --redeploy-checklist, render the disruptive service-restart command "
+            "for this freshly authorised exact hub PID. The command rechecks PID and "
+            "holds a fail-fast host-local lock; doctor never executes it."
+        ),
     )
     doctor.add_argument(
         "--db-path",

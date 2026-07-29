@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Withhold every service-restart command from the default release-redeploy
+  checklist. Rendering a disruptive step now requires an explicitly authorised
+  exact hub PID; the command rechecks that PID while holding a fail-fast
+  host-local custody lock before one combined hub, presence, and waiter restart.
+  Release operations now state the mandatory dogfooding gate: every new tag is
+  adopted by the local hub immediately and verified through that bounded path.
+
 ## [0.99.18] - 2026-07-29
 
 ### Added

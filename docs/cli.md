@@ -192,9 +192,22 @@ without it, the command creates a temporary directory and prints both paths.
 
 For post-release local fleet restarts, `synapse doctor --redeploy-checklist`
 prints package, service, roster, durable-state, and git-hook checks. It does not
-restart services by itself; it gives operators copyable verification commands
-for the installed executable, `systemd --user` units, live roster, SQLite event
-log, and claim-aware hooks.
+restart services by itself, and restart commands are withheld by default. The
+default checklist shows the installed executable, exact live hub PID, live
+roster, SQLite event log, and claim-aware hooks. Only after fresh owner
+disruption authority may an operator add
+`--redeploy-authorize-restart-pid PID`. That opt-in renders, but does not run, a
+command that rechecks the exact PID inside the fail-fast
+`${XDG_RUNTIME_DIR}/synapse-channel-redeploy.lock` host-local custody lock before
+restarting the hub, presence, and wake-listener units together. The lock remains
+held while the hub itself is unavailable. Never reuse a PID authorization from
+an earlier process or session.
+
+The local-hub dogfooding gate is mandatory after every new release tag: install
+the exact published artifact immediately, run the one authorised locked restart,
+and verify version, service health, roster/waiter reconnect, durable replay, and
+hook wiring. This release-specific hub adoption does not grant authority to
+close unrelated running applications.
 
 `synapse quickstart-coding` creates a temporary workspace, runs the packaged
 two-agent coding demo, removes the temporary workspace after success, and is

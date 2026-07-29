@@ -624,9 +624,13 @@ repeatable paths and the unsupported behavior that remains outside each demo.
 
 - **Verify a release redeploy:** `synapse doctor --redeploy-checklist` prints
   package, service, roster, durable-state, and git-hook checks for a post-release
-  local fleet restart. It does not restart services by itself; it gives the
-  operator copyable commands for the installed executable, hub service, presence
-  daemon, wake listener, event log, and git hook path.
+  local fleet restart. It does not restart services by itself, and restart
+  commands are withheld by default. After inspecting the exact live hub PID and
+  roster, an operator with fresh disruption authority can add
+  `--redeploy-authorize-restart-pid PID`; the rendered command rechecks that PID
+  while holding a fail-fast host-local custody lock. Dogfooding requires every
+  new release tag to be adopted by the local hub immediately after publication,
+  using that bounded authorised path and post-restart health verification.
 
 - **Install the always-on local services:** `synapse init` prints or installs the
   hub, project presence, and non-LLM wake listener units. `doctor --fix` prints
@@ -1585,7 +1589,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 795 |
 | Wire message types | 80 |
 | CLI subcommands | 184 |
-| Test functions | 9291 |
+| Test functions | 9300 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 62 |
 | GitHub Actions workflows | 25 |
