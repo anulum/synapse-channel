@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -497,8 +498,6 @@ def test_cmd_git_init_installs_services(
         assert "Traceback" not in captured_io.out + captured_io.err
         assert_no_git_init_mutation()
 
-    import os
-
     hostile_bin = tmp_path / "hostile bin"
     hostile_bin.mkdir()
     # Windows PATH uses ';' and which() looks for PATHEXT entries (``.exe``).
@@ -515,12 +514,6 @@ def test_cmd_git_init_installs_services(
     assert "Traceback" not in captured_io.out + captured_io.err
     assert_no_git_init_mutation()
 
-    relative_bin = repo / "relative-bin"
-    relative_bin.mkdir()
-    relative_executable = relative_bin / synapse_name
-    relative_executable.write_text("#!/bin/sh\n", encoding="utf-8")
-    relative_executable.chmod(0o755)
-    monkeypatch.setenv("PATH", f"relative-bin{path_sep}/usr/bin{path_sep}/bin")
     injected_invalid_executables = (
         "relative-bin/synapse",
         ".",
@@ -550,11 +543,23 @@ def test_cmd_git_init_installs_services(
         assert "Traceback" not in captured_io.out + captured_io.err
         assert_no_git_init_mutation()
 
-    # systemd unit install requires a POSIX absolute token without backslashes.
-    # Windows PATH resolution always yields drive-letter paths the validator
-    # correctly refuses; the happy path is Linux-only.
-    if os.name != "posix":
-        return
+
+@pytest.mark.skipif(os.name != "posix", reason="systemd service installation requires POSIX paths")
+def test_cmd_git_init_installs_services_with_resolved_posix_executable(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    home = tmp_path / "home"
+    relative_bin = repo / "relative-bin"
+    relative_bin.mkdir()
+    relative_executable = relative_bin / "synapse"
+    relative_executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    relative_executable.chmod(0o755)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PATH", f"relative-bin{os.pathsep}/usr/bin{os.pathsep}/bin")
 
     code = cli.main(["git-init", "--install-user-services"])
     captured_io = capsys.readouterr()
