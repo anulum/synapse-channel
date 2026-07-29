@@ -40,8 +40,7 @@ def _harmless_provider(tmp_path: Path) -> Path:
     """Create a task-owned Codex-shaped idle composer without provider access."""
     provider = tmp_path / "codex-fixture"
     provider.write_text(
-        "#!/bin/sh\nprintf '\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n"
-        "\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n› \\n'\nwhile IFS= read -r line; do\n"
+        "#!/bin/sh\nprintf '\\033[999B› \\n'\nwhile IFS= read -r line; do\n"
         "  printf '%s\\n› \\n' \"$line\"\ndone\n",
         encoding="utf-8",
     )
