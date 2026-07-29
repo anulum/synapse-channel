@@ -90,6 +90,7 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/core/http_response.py": (1, "protocol-body"),
     "src/synapse_channel/core/mcp_config_launch.py": (3, "optional-import + env-defensive"),
     "src/synapse_channel/core/multihub_claim_transport.py": (4, "protocol-body"),
+    "src/synapse_channel/core/multihub_equivocation.py": (5, "protocol-body"),
     "src/synapse_channel/core/multihub_transport.py": (4, "protocol-body"),
     "src/synapse_channel/core/operator_relay_transport.py": (4, "protocol-body"),
     "src/synapse_channel/core/payload_crypto.py": (1, "optional-import"),

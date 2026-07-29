@@ -1947,7 +1947,8 @@ still fires nothing — an armed action fires at runtime only when its signal is
 raised and a handler was supplied. Add `--json` to `show` or the bare command for
 the machine-readable form.
 
-`synapse multihub observe` and `follow` read a *peer* hub's event log rather than the local one.
+Observe or follow a peer hub's event log with `synapse multihub observe` or
+`synapse multihub follow`; both read the peer log rather than the local one.
 `multihub observe --peer-db ./peer.db` folds a peer's log file offline into its
 board and claims; `multihub follow --peer-uri ws://peer:8876` pulls the same
 snapshot from a live peer over a connection (`--pin sha256:<hex>` accepts a

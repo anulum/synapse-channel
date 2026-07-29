@@ -266,10 +266,30 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "memory_recall_input",
         ValueError,
     ),
+    "MultiHubEquivocationError": (
+        "synapse_channel.core.multihub_equivocation",
+        "multihub_equivocation",
+        Exception,
+    ),
     "MultiHubFetchError": (
         "synapse_channel.core.multihub_transport",
         "multihub_fetch",
         RuntimeError,
+    ),
+    "MultiHubIntegrityError": (
+        "synapse_channel.core.multihub_equivocation",
+        "multihub_integrity",
+        Exception,
+    ),
+    "MultiHubPeerQuarantinedError": (
+        "synapse_channel.core.multihub_equivocation",
+        "multihub_peer_quarantined",
+        Exception,
+    ),
+    "MultiHubSequenceError": (
+        "synapse_channel.core.multihub_equivocation",
+        "multihub_sequence",
+        Exception,
     ),
     "MultiHubServingConfigError": (
         "synapse_channel.core.multihub_serving_config",
@@ -385,6 +405,13 @@ def _load(name: str) -> type[SynapseError]:
     return loaded
 
 
+def _uninitialised_exception(cls: type[SynapseError]) -> SynapseError:
+    """Create a taxonomy instance without assuming a domain constructor shape."""
+    instance = cls.__new__(cls)
+    BaseException.__init__(instance, "probe")
+    return instance
+
+
 # ---------------------------------------------------------------------------
 # Base contract
 # ---------------------------------------------------------------------------
@@ -457,7 +484,7 @@ def test_frozen_class_matches_registry(name: str) -> None:
         f"{name} lost its historical {legacy_base.__name__} base; pre-existing "
         "except clauses would stop catching it"
     )
-    instance = cls("probe")
+    instance = _uninitialised_exception(cls)
     assert error_code(instance) == code
     assert isinstance(instance, legacy_base)
 
