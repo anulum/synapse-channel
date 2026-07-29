@@ -175,6 +175,44 @@ def test_multihub_partition_and_heal_project_as_federation_receipts() -> None:
     assert universal_receipt_matches(receipts[1], "hub-b")
 
 
+def test_multihub_equivocation_and_recovery_project_without_event_bodies() -> None:
+    quarantine = _event(
+        32,
+        EventKind.MULTIHUB_EQUIVOCATION,
+        {
+            "peer_id": "hub-b",
+            "observer_id": "hub-local",
+            "seq": 7,
+            "accepted_fingerprint": "a" * 64,
+            "conflicting_fingerprint": "b" * 64,
+            "status": "quarantined",
+        },
+    )
+    recovery = _event(
+        33,
+        EventKind.MULTIHUB_EQUIVOCATION_RECOVERY,
+        {
+            "peer_id": "hub-b",
+            "recovered_by": "operator",
+            "new_log_generation": "generation-2",
+            "explicit_recovery": True,
+            "status": "recovered",
+        },
+    )
+
+    receipts = universal_receipts_from_events((quarantine, recovery))
+
+    assert [(receipt.kind, receipt.status) for receipt in receipts] == [
+        ("federation", "quarantined"),
+        ("federation", "recovered"),
+    ]
+    assert receipts[0].subject == "hub-b"
+    assert receipts[0].actor == "hub-local"
+    assert receipts[0].summary == "peer hub-b quarantined at sequence 7"
+    assert receipts[1].actor == "operator"
+    assert receipts[1].summary == "peer hub-b recovered"
+
+
 def test_sandbox_operator_and_selector_fallbacks_are_stable() -> None:
     sandbox = _event(
         16,

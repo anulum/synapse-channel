@@ -51,16 +51,18 @@ and an entirely failed poll cannot manufacture a heal. Both events project throu
 the universal-receipt view as `federation` evidence without changing coordination
 replay. An operator can still wire the feed by hand (`asserting_owners` over a
 follower's view) in library deployments. The
-read-side CRDT layer, the cross-host event-log pull that lets one hub *observe* another over
+honest-peer read-side merge layer, the cross-host event-log pull that lets one hub *observe* another over
 a real connection, the **serving-side** gate that lets a hub refuse to serve its log to an
 untrusted peer from the live connection, the **claim-forwarding** path that routes a claim to
 its owning hub and relays the verdict, and **runtime partition detection** that refuses a
 contested namespace, have shipped:
 
-- `core/multihub_merge.py` — the conflict-free event-log union: it tags each event with
-  its authoring hub, merges several hubs' logs into a grow-only set keyed by
-  `(hub_id, seq)`, replays them in the deterministic `(ts, hub_id, seq)` order, and
-  reports the per-hub resume cursor.
+- `core/multihub_merge.py` — the content-bound event-log union: it tags each event with
+  its authoring hub, binds `(hub_id, seq)` to a canonical fingerprint of the complete
+  event, merges honest append-only logs into a grow-only set, replays them in the
+  deterministic `(ts, hub_id, seq)` order, and reports the per-hub resume cursor.
+  Exact duplicates collapse; different content at one identity raises a typed
+  equivocation error and no arrival-order or timestamp winner is selected.
 - `core/multihub_fold.py` — folds that merged order into the observed mergeable view: the
   board (display-only last-write-wins per task), the grow-only progress ledger, and the
   **observed claim** view — the latest claim each peer reports, tagged with its hub, marked
@@ -78,8 +80,13 @@ contested namespace, have shipped:
   wire-version negotiation and welcome-frame clock skew, so a follower can report
   whether timestamp-ordered evidence is being read across materially skewed hubs.
   Observe-only by construction: it grants no claim and, losing a peer, simply stops
-  advancing that peer's cursor — the fail-closed posture. It is exposed to operators
-  as `synapse multihub observe` (the walkthrough below).
+  advancing that peer's cursor — the fail-closed posture. The complete fetched batch is
+  validated before publication: an equivocation freezes the prior view and cursor,
+  quarantines the peer, and, when a journal is configured, records bounded digest-only
+  evidence. Quarantine survives restart and only an explicit operator recovery naming a
+  new log generation or accepted checkpoint clears it. Gaps and unseen rollback sequences
+  also fail before publication. It is exposed to operators as `synapse multihub observe`
+  (the walkthrough below).
 - `core/multihub_wire.py`, `core/handlers/multihub.py`, and `core/multihub_transport.py` —
   the cross-host pull: a request/snapshot message pair on the hub server lets a peer ask for
   the events past a cursor, and `network_fetcher` drops a network reader into the same
@@ -105,6 +112,44 @@ The policy, federation store, and client-CA file must each be owned by the
 effective hub service user and use mode `0400` or `0600`. Core captures all
 three through full-component no-follow descriptor reads; OpenSSL receives the
 captured CA bytes and never reopens the configured path.
+
+### Content identity, quarantine, and recovery
+
+The honest-peer convergence contract requires one immutable value for every
+`(hub_id, seq)`. Core fingerprints the authoring hub, sequence, exact timestamp,
+event kind, and recursively type-tagged payload. Mapping insertion order does not
+change the digest; payload type changes do. Wall-clock time remains display metadata
+and never resolves a collision.
+
+If an authenticated, pinned, or signed peer presents a second fingerprint for an
+accepted identity, authentication does not excuse the conflict. The follower validates
+the whole candidate batch before replacing its event union, cursor, protocol metadata,
+or clock-skew metadata. It then refuses the batch, retains the prior observed state,
+and blocks subsequent automatic polls for that peer. A durable watcher appends one
+`multihub_equivocation` record with the peer, sequence, both SHA-256 fingerprints,
+local detection time, and observer identity; it never stores the event payload. These
+rows and explicit recoveries project through `universal-receipts` as `federation`
+evidence.
+
+Recovery is a ceremony, not a reconnect. The operator must identify who accepted the
+recovery, provide a reason (stored only as a digest), and name the log generation or
+checkpoint the operator accepted. Core commits `multihub_equivocation_recovery` before
+discarding that peer's old observed history and cursor. The next poll begins from zero
+after that recorded ceremony; the current wire does not independently attest the
+generation label. A stronger signed hash chain with previous-event digests and checkpoint
+verification remains future work; this containment detects collisions and cursor-shape
+violations but does not claim Byzantine consensus.
+
+For the built-in durable watcher, stop the local hub and run:
+
+```bash
+synapse multihub recover --journal ./hub.db --peer-id west \
+  --operator incident-commander --reason "checkpoint verified" \
+  --new-log-generation west-generation-2
+```
+
+Restart only after that command succeeds. It refuses an unknown or already recovered
+peer and cannot silently clear a live process's in-memory quarantine.
 
 ```json
 {
@@ -382,8 +427,9 @@ follower configured by repeatable `--multihub-watch PEER=URI` flags.
 Sync rides the existing seams rather than inventing a new protocol surface: a peer
 replays another hub's event log from a cursor (the `ingest`/relay seam),
 authenticated by the mTLS peer trust bundle, and folds the mergeable state in.
-Because the log is the CRDT-shaped unit, "sync" is mostly "replay the peer's log
-since my cursor and apply the conflict-free folds"; only namespace-ownership
+Because an honest append-only log is the CRDT-shaped unit, "sync" is mostly "replay
+the peer's log since my cursor, verify its content bindings, and apply the folds";
+conflicting identities fail closed instead of merging, and only namespace-ownership
 changes need an explicit, operator-confirmed step.
 
 ## Local-first guarantee
@@ -414,6 +460,11 @@ deliberately conservative.
   forwarding of a remote-owned claim to its owner, refusing a contested namespace on
   observed assertions, the hub's own standing follower feeding those assertions
   (`--multihub-watch`), and durable partition/heal transition evidence all ship.
+- **The merge assumes honest append-only history, not Byzantine consensus.** Exact
+  duplicates are idempotent. A reused `(hub_id, seq)` with different timestamp, kind,
+  or payload is durable equivocation evidence: the candidate view and cursor stay
+  unpublished and the peer is quarantined. mTLS, pins, and frame signatures authenticate
+  the presenter but do not choose a winning history.
 - **The observed board is not causal or authoritative.** Its deterministic LWW
   winner is only an operator display selection. The machine and text surfaces say
   so and expose the winner's event provenance; synchronized clocks, including NTP,

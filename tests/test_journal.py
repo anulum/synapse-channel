@@ -9,6 +9,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from synapse_channel.core.journal import (
     MEMORY_KINDS,
@@ -22,13 +25,17 @@ from synapse_channel.core.journal import (
     record_identity_pin_reclaim,
     record_ledger_progress,
     record_ledger_task,
+    record_multihub_equivocation,
+    record_multihub_equivocation_recovery,
     record_operator_relay,
     record_release,
     record_resource,
     record_task_update,
     replay,
+    restore_active_multihub_quarantines,
 )
 from synapse_channel.core.ledger import LedgerTask, ProgressNote
+from synapse_channel.core.multihub_equivocation import FederationQuarantine
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.state import GitContext, ResourceOffer, TaskClaim
@@ -104,6 +111,71 @@ def test_record_identity_pin_reclaim_is_a_durable_audit_only_event(tmp_path: Pat
     assert events[0].payload["operator"] == "OPS/operator"
     assert result.chat_history == []
     assert result.state.claims == {}
+
+
+def test_multihub_equivocation_quarantine_and_recovery_are_durable(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    quarantine = FederationQuarantine(
+        peer_id="peer-east",
+        seq=9,
+        accepted_fingerprint="a" * 64,
+        conflicting_fingerprint="b" * 64,
+        detected_at=123.0,
+        observer_id="hub-local",
+    )
+    record_multihub_equivocation(store, quarantine)
+
+    assert restore_active_multihub_quarantines(store) == {"peer-east": quarantine}
+    first = store.read_all()[0]
+    assert first.kind == EventKind.MULTIHUB_EQUIVOCATION
+    assert first.payload["peer_id_sha256"]
+    assert "payload" not in first.payload
+
+    record_multihub_equivocation_recovery(
+        store,
+        peer_id="peer-east",
+        recovered_at=124.0,
+        recovered_by="operator",
+        reason="verified generation reset",
+        new_log_generation="generation-2",
+    )
+    assert restore_active_multihub_quarantines(store) == {}
+    recovery = store.read_all()[1]
+    assert recovery.kind == EventKind.MULTIHUB_EQUIVOCATION_RECOVERY
+    assert recovery.payload["explicit_recovery"] is True
+    assert recovery.payload["reason_sha256"]
+    assert "verified generation reset" not in str(recovery.payload)
+    store.close()
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"peer_id": ""}, "peer_id"),
+        ({"recovered_by": ""}, "recovered_by"),
+        ({"reason": ""}, "reason"),
+        ({"new_log_generation": ""}, "new_log_generation"),
+        ({"recovered_at": float("nan")}, "time must be finite"),
+        ({"recovered_at": "soon"}, "time must be finite"),
+        ({"reason": "\ud800"}, "reason must be valid UTF-8"),
+    ],
+)
+def test_multihub_recovery_record_rejects_incomplete_evidence(
+    tmp_path: Path, changes: dict[str, object], message: str
+) -> None:
+    values: dict[str, Any] = {
+        "peer_id": "east",
+        "recovered_at": 10.0,
+        "recovered_by": "operator",
+        "reason": "verified",
+        "new_log_generation": "east-g2",
+    }
+    values.update(changes)
+    store = _store(tmp_path)
+    with pytest.raises(ValueError, match=message):
+        record_multihub_equivocation_recovery(store, **values)
+    assert store.read_all() == []
+    store.close()
 
 
 def test_replay_skips_the_audit_only_operator_relay_event(tmp_path: Path) -> None:

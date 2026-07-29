@@ -1383,13 +1383,16 @@ no new coordination primitive.
 
 The [multi-hub sync (CRDT) research](docs/multi-hub-sync.md) asks whether several
 hubs could synchronise state while keeping claim safety and local-first. Its
-honest core: most state (the append-only event log, presence, progress) merges
-conflict-free, but claims are mutual exclusion and **not** a CRDT — they are
+honest core: an honest append-only event log with unique `(hub_id, seq)` identities
+converges, but conflicting content for one identity fails closed before state or cursor
+publication and quarantines the peer. Claims are mutual exclusion and **not** a CRDT — they are
 routed by single-owner-per-namespace and fail closed on a partition. The shipped
 surface is operator-managed peering: `synapse multihub follow` and
 `--observed-peer HUB=URI` views observe peer logs as advisory `observed@HUB`
 state; local claim authority remains local or explicitly routed to the owning
-hub. Network observed-peer pulls also carry cursor lag and peer welcome-frame
+hub. A stopped durable watcher can record explicit recovery with
+`synapse multihub recover` only after an operator accepts a new log generation or
+checkpoint; reconnect alone never clears quarantine. Network observed-peer pulls also carry cursor lag and peer welcome-frame
 clock skew, so operators can see when timestamp-ordered cross-hub evidence
 depends on clocks outside their configured agreement.
 
@@ -1558,11 +1561,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.17 |
 | Public API exports | 70 |
-| Package modules | 527 |
-| Classes | 782 |
+| Package modules | 528 |
+| Classes | 788 |
 | Wire message types | 80 |
-| CLI subcommands | 183 |
-| Test functions | 9162 |
+| CLI subcommands | 184 |
+| Test functions | 9198 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 61 |
 | GitHub Actions workflows | 25 |

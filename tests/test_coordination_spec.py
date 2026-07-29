@@ -74,6 +74,18 @@ def test_spec_documents_the_model_and_guard() -> None:
     assert "tests/test_coordination_spec.py" in text
 
 
+def test_spec_binds_federated_identity_to_content_and_quarantine() -> None:
+    """The public invariant must name both collision refusal and recovery."""
+    text = _spec_text()
+    section = " ".join(
+        text.split("### INV-MH-5", 1)[1].split("## Normative constants", 1)[0].split()
+    )
+    assert "SHA-256 fingerprint" in section
+    assert "before any event, observed view" in section
+    assert "explicit, audited recovery" in section
+    assert "never the event payload" in section
+
+
 def test_normative_constants_match_the_implementation() -> None:
     """Each published normative constant must equal the value the code uses.
 

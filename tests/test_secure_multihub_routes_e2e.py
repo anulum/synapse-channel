@@ -13,9 +13,11 @@ import asyncio
 import contextlib
 import datetime as dt
 import ipaddress
+import json
+import sqlite3
 import ssl
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -35,6 +37,7 @@ from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_claim_transport import forward_claim
 from synapse_channel.core.multihub_claim_wire import ClaimForwardRequest
+from synapse_channel.core.multihub_equivocation import MultiHubEquivocationError
 from synapse_channel.core.multihub_follower import MultiHubFollower
 from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHubServingPolicy
 from synapse_channel.core.multihub_transport import (
@@ -46,7 +49,7 @@ from synapse_channel.core.multihub_watch import MultiHubWatch
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.operator_relay_transport import relay_operator_action
 from synapse_channel.core.operator_relay_wire import RelayActionRequest
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.tls import (
     MTLSPeerTrustBundle,
     MTLSTrustedPeer,
@@ -330,6 +333,42 @@ async def test_follower_and_watch_share_the_live_mtls_allow_deny_boundary(
 
         hub.multihub_serving_policy = _serving_policy(material, revoked=True)
         assert await allowed(0) == ()
+
+
+async def test_authenticated_mtls_peer_equivocation_still_fails_closed(
+    tmp_path: Path,
+) -> None:
+    async with _running_secure_hub(tmp_path) as (_hub, _store, material, uri):
+        await _seed_chat(uri, material.ca)
+        authenticated = network_fetcher(
+            uri,
+            local_id=_ORIGIN,
+            connector=_secure_connector(material, material.authorised),
+        )
+        evidence = EventStore(tmp_path / "observer.db")
+        follower = MultiHubFollower(journal=evidence, observer_id=_ORIGIN, clock=lambda: 70.0)
+        await follower.poll(_OWNER, authenticated)
+        before = follower.observed().to_dict()
+
+        # Model a compromised or rolled-back authenticated peer by rewriting its
+        # temporary test journal, then pull the hostile old identity through the
+        # same real mTLS serving path. Production code performs no such mutation.
+        with sqlite3.connect(tmp_path / "events.db") as connection:
+            connection.execute(
+                "UPDATE events SET payload = ? WHERE seq = 1",
+                (json.dumps({"sender": "local-writer", "payload": "equivocated"}),),
+            )
+
+        async def hostile_replay(_after_seq: int) -> Sequence[StoredEvent]:
+            return await authenticated(0)
+
+        with pytest.raises(MultiHubEquivocationError):
+            await follower.poll(_OWNER, hostile_replay)
+
+        assert follower.cursor(_OWNER) == 1
+        assert follower.observed().to_dict() == before
+        assert [event.kind for event in evidence.read_all()] == [EventKind.MULTIHUB_EQUIVOCATION]
+        evidence.close()
 
 
 async def test_claim_and_operator_relay_apply_only_for_the_authorised_live_identity(

@@ -42,6 +42,7 @@ from synapse_channel.core.journal import (
     record_multihub_ownership_transitions,
     restore_active_multihub_partitions,
 )
+from synapse_channel.core.multihub_equivocation import MultiHubIntegrityError
 from synapse_channel.core.multihub_follower import EventFetcher, MultiHubFollower
 from synapse_channel.core.multihub_transport import (
     MultiHubFetchError,
@@ -200,7 +201,11 @@ class MultiHubWatch:
     ) -> None:
         self.interval = max(float(interval), MIN_WATCH_INTERVAL)
         self._namespace_of = namespace_of
-        self._follower = follower if follower is not None else MultiHubFollower()
+        self._follower = (
+            follower
+            if follower is not None
+            else MultiHubFollower(journal=journal, observer_id=local_id)
+        )
         self._namespace_ownership = namespace_ownership
         self._journal = journal
         self._fetchers: dict[str, EventFetcher] = {}
@@ -268,7 +273,7 @@ class MultiHubWatch:
         for peer, fetch in self._fetchers.items():
             try:
                 await self._follower.poll(peer, fetch)
-            except MultiHubFetchError as exc:
+            except (MultiHubFetchError, MultiHubIntegrityError) as exc:
                 outcomes[peer] = str(exc)
                 failed.add(peer)
                 logger.warning("multihub watch: poll of peer %r failed: %s", peer, exc)

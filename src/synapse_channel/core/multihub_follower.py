@@ -28,10 +28,23 @@ which is the fail-closed posture the design requires.
 
 from __future__ import annotations
 
+import asyncio
+import time
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol
 
 from synapse_channel.core.clock_skew import ClockSkew
+from synapse_channel.core.journal import (
+    record_multihub_equivocation,
+    record_multihub_equivocation_recovery,
+    restore_active_multihub_quarantines,
+)
+from synapse_channel.core.multihub_equivocation import (
+    FederationQuarantine,
+    MultiHubEquivocationError,
+    MultiHubPeerQuarantinedError,
+    validate_content_bound_batch,
+)
 from synapse_channel.core.multihub_fold import (
     ObservedState,
     asserting_owners_from_events,
@@ -72,11 +85,24 @@ class MultiHubFollower:
     from the full union on each poll (deterministic regardless of arrival order).
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        journal: EventStore | None = None,
+        observer_id: str = "",
+        clock: Callable[[], float] = time.time,
+    ) -> None:
         self._events: dict[tuple[str, int], HubEvent] = {}
         self._cursors: dict[str, int] = {}
         self._protocol_negotiations: dict[str, ProtocolNegotiation] = {}
         self._clock_skews: dict[str, ClockSkew] = {}
+        self._journal = journal
+        self._observer_id = observer_id
+        self._clock = clock
+        self._quarantines = (
+            restore_active_multihub_quarantines(journal) if journal is not None else {}
+        )
+        self._peer_locks: dict[str, asyncio.Lock] = {}
 
     async def poll(self, peer_id: str, fetch: EventFetcher) -> ObservedState:
         """Fetch a peer's new events past its cursor, fold the union, and return the view.
@@ -93,17 +119,41 @@ class MultiHubFollower:
         ObservedState
             The merged observed view across every peer polled so far.
         """
-        fetched = await fetch(self._cursors.get(peer_id, 0))
-        negotiation = _fetcher_protocol_negotiation(fetch)
-        if negotiation is not None:
-            self._protocol_negotiations[peer_id] = negotiation
-        skew = _fetcher_clock_skew(fetch)
-        if skew is not None:
-            self._clock_skews[peer_id] = skew
-        for event in tag_events(peer_id, fetched):
-            self._events.setdefault(event.identity, event)
-        self._cursors.update(hub_cursors(self._events.values()))
-        return self.observed()
+        lock = self._peer_locks.setdefault(peer_id, asyncio.Lock())
+        async with lock:
+            quarantine = self._quarantines.get(peer_id)
+            if quarantine is not None:
+                raise MultiHubPeerQuarantinedError(quarantine)
+            cursor = self._cursors.get(peer_id, 0)
+            fetched = await fetch(cursor)
+            candidate = dict(self._events)
+            try:
+                validate_content_bound_batch(
+                    candidate,
+                    tag_events(peer_id, fetched),
+                    peer_id=peer_id,
+                    after_seq=cursor,
+                )
+            except MultiHubEquivocationError as exc:
+                try:
+                    self._quarantine(exc)
+                except Exception as evidence_error:
+                    # Evidence failure must not downgrade the stable integrity
+                    # result or allow another automatic poll in this process.
+                    raise exc from evidence_error
+                raise
+
+            observed = fold_observed_state(merge_event_logs(candidate.values()))
+            cursors = hub_cursors(candidate.values())
+            negotiation = _fetcher_protocol_negotiation(fetch)
+            if negotiation is not None:
+                self._protocol_negotiations[peer_id] = negotiation
+            skew = _fetcher_clock_skew(fetch)
+            if skew is not None:
+                self._clock_skews[peer_id] = skew
+            self._events = candidate
+            self._cursors = cursors
+            return observed
 
     def observed(self) -> ObservedState:
         """Return the observed state folded from the full accumulated union."""
@@ -128,6 +178,65 @@ class MultiHubFollower:
     def clock_skew(self, peer_id: str) -> ClockSkew | None:
         """Return the last local-minus-peer clock skew observed for ``peer_id``."""
         return self._clock_skews.get(peer_id)
+
+    def quarantines(self) -> tuple[FederationQuarantine, ...]:
+        """Return active peer quarantines in peer-id order."""
+        return tuple(self._quarantines[peer] for peer in sorted(self._quarantines))
+
+    def recover_peer(
+        self,
+        peer_id: str,
+        *,
+        recovered_by: str,
+        reason: str,
+        new_log_generation: str,
+    ) -> None:
+        """Explicitly clear one quarantine and reset that peer's observed history.
+
+        Recovery requires a named operator, a reason, and a new log-generation or
+        checkpoint identity. In durable mode the recovery record commits before
+        in-memory state is cleared; reconnecting or restarting alone never heals it.
+        """
+        if peer_id not in self._quarantines:
+            raise ValueError(f"peer {peer_id!r} is not quarantined")
+        for label, value in (
+            ("recovered_by", recovered_by),
+            ("reason", reason),
+            ("new_log_generation", new_log_generation),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"multi-hub recovery requires a non-empty {label}")
+        recovered_at = self._clock()
+        if self._journal is not None:
+            record_multihub_equivocation_recovery(
+                self._journal,
+                peer_id=peer_id,
+                recovered_at=recovered_at,
+                recovered_by=recovered_by,
+                reason=reason,
+                new_log_generation=new_log_generation,
+            )
+        self._events = {
+            identity: event for identity, event in self._events.items() if event.hub_id != peer_id
+        }
+        self._cursors.pop(peer_id, None)
+        self._protocol_negotiations.pop(peer_id, None)
+        self._clock_skews.pop(peer_id, None)
+        self._quarantines.pop(peer_id, None)
+
+    def _quarantine(self, conflict: MultiHubEquivocationError) -> None:
+        """Freeze one peer and durably record bounded digest-only evidence."""
+        quarantine = FederationQuarantine(
+            peer_id=conflict.peer_id,
+            seq=conflict.seq,
+            accepted_fingerprint=conflict.accepted_fingerprint,
+            conflicting_fingerprint=conflict.conflicting_fingerprint,
+            detected_at=self._clock(),
+            observer_id=self._observer_id,
+        )
+        self._quarantines[conflict.peer_id] = quarantine
+        if self._journal is not None:
+            record_multihub_equivocation(self._journal, quarantine)
 
 
 def _fetcher_protocol_negotiation(fetch: EventFetcher) -> ProtocolNegotiation | None:

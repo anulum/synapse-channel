@@ -15,8 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.cli_multihub import _cmd_follow, _cmd_observe, add_parsers
-from synapse_channel.core.journal import EventKind
+from synapse_channel.cli_multihub import _cmd_follow, _cmd_observe, _cmd_recover, add_parsers
+from synapse_channel.core.journal import (
+    EventKind,
+    record_multihub_equivocation,
+    restore_active_multihub_quarantines,
+)
+from synapse_channel.core.multihub_equivocation import FederationQuarantine
 from synapse_channel.core.multihub_follower import EventFetcher
 from synapse_channel.core.multihub_transport import MultiHubFetchError
 from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -249,9 +254,89 @@ def test_follow_reports_a_failed_pull(capsys: pytest.CaptureFixture[str]) -> Non
     assert "could not follow peer hub: connection refused" in capsys.readouterr().err
 
 
+def test_follow_reports_equivocation_without_printing_payloads(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    events = [
+        StoredEvent(1, 1.0, EventKind.LEDGER_TASK, {"task_id": "T", "secret": "first"}),
+        StoredEvent(1, 1.0, EventKind.LEDGER_TASK, {"task_id": "T", "secret": "second"}),
+    ]
+    args = _args("follow", "--peer-uri", "wss://east/")
+
+    assert _cmd_follow(args, fetcher_factory=_fetcher_factory(events=events)) == 2
+
+    error = capsys.readouterr().err
+    assert "peer 'east' equivocated at sequence 1" in error
+    assert "first" not in error
+    assert "second" not in error
+
+
 def test_follow_peer_id_defaults_to_the_host() -> None:
     args = _args("follow", "--peer-uri", "wss://east.example:8876/path")
     assert args.peer_id is None  # the command fills the default from the URI host
+
+
+def test_recover_records_explicit_durable_ceremony(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "hub.db"
+    store = EventStore(path)
+    record_multihub_equivocation(
+        store,
+        FederationQuarantine(
+            peer_id="east",
+            seq=7,
+            accepted_fingerprint="a" * 64,
+            conflicting_fingerprint="b" * 64,
+            detected_at=50.0,
+            observer_id="local",
+        ),
+    )
+    store.close()
+    args = _args(
+        "recover",
+        "--journal",
+        str(path),
+        "--peer-id",
+        "east",
+        "--operator",
+        "incident-commander",
+        "--reason",
+        "verified checkpoint",
+        "--new-log-generation",
+        "east-g2",
+    )
+
+    assert _cmd_recover(args) == 0
+    assert "recorded recovery for peer 'east'" in capsys.readouterr().out
+    reopened = EventStore(path)
+    assert restore_active_multihub_quarantines(reopened) == {}
+    assert reopened.read_all()[-1].payload["reason_sha256"]
+    assert "verified checkpoint" not in str(reopened.read_all()[-1].payload)
+    reopened.close()
+
+    assert _cmd_recover(args) == 2
+    assert "is not quarantined" in capsys.readouterr().err
+
+
+def test_recover_refuses_a_missing_journal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _args(
+        "recover",
+        "--journal",
+        str(tmp_path / "missing.db"),
+        "--peer-id",
+        "east",
+        "--operator",
+        "operator",
+        "--reason",
+        "verified",
+        "--new-log-generation",
+        "east-g2",
+    )
+    assert _cmd_recover(args) == 2
+    assert "hub journal not found" in capsys.readouterr().err
 
 
 def test_follow_pin_forwards_a_pinned_connector(capsys: pytest.CaptureFixture[str]) -> None:

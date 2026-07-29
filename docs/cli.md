@@ -50,7 +50,7 @@ everything, since they need the whole command table.
 | `synapse relay` | Decode and print a lite relay log a hub mirrored to a file. |
 | `synapse ingest` | Stream durable event-store records since a sequence cursor. |
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
-| `synapse multihub` | Observe or follow a peer hub's event log and print its board and claims (see [Multi-hub sync](multi-hub-sync.md)). |
+| `synapse multihub` | Observe/follow a peer log read-only, or explicitly recover a stopped local watcher's durable quarantine (see [Multi-hub sync](multi-hub-sync.md)). |
 | `synapse participant` | Probe or drive Participant Fabric providers: `list` reports each driver's readiness, `ask` runs one turn, `exchange` and `convene` run multi-party deliberations, `costs` reports per-session spend and telemetry from a hub event store. |
 | `synapse deliberate` | Conclude a council into a sealed, verifiable export package (`conclude`/`verify`). |
 | `synapse federation` | Exchange, import, list, and revoke operator-confirmed peer-domain bundles (`offer`/`fetch`/`import`/`list`/`revoke`); fetch displays fingerprints and never imports. |
@@ -1252,6 +1252,10 @@ event store. It supports `task <id> timeline`, `task <id> at seq <n>`,
 `universal-receipts <selector|all>` for the first-class receipt view across
 claim/release evidence, delivery, sandbox-run, policy, approval, operator-relay,
 cross-hub, A2A-validation, and postmortem receipt families.
+Federation receipts also include durable multi-hub equivocation quarantines and
+explicit recoveries. The quarantine record exposes peer id, sequence, both event
+fingerprints, detection metadata, and status, but never the conflicting payload;
+`synapse event-query DB "universal-receipts PEER" --json` is the forensic read.
 Channel queries return metadata-only records so private-channel bodies are not
 printed by this forensic path. Receipt queries return the requested, immediate,
 deferred, and expired delivery-receipt audit events that involve the selected
@@ -1943,12 +1947,33 @@ still fires nothing — an armed action fires at runtime only when its signal is
 raised and a handler was supplied. Add `--json` to `show` or the bare command for
 the machine-readable form.
 
-`synapse multihub` reads a *peer* hub's event log rather than the local one.
+`synapse multihub observe` and `follow` read a *peer* hub's event log rather than the local one.
 `multihub observe --peer-db ./peer.db` folds a peer's log file offline into its
 board and claims; `multihub follow --peer-uri ws://peer:8876` pulls the same
 snapshot from a live peer over a connection (`--pin sha256:<hex>` accepts a
 self-signed `wss://` peer by certificate pin). Both are read-only observations
-tagged with a peer id and neither mutates the local hub. See
+tagged with a peer id and neither mutates the local hub.
+
+If a standing watcher durably quarantines an equivocating peer, stop the local hub,
+verify the replacement peer log or checkpoint out of band, and record the accepted
+generation before restarting:
+
+```bash
+synapse multihub recover \
+  --journal ./hub.db \
+  --peer-id west \
+  --operator incident-commander \
+  --reason "accepted replacement after checkpoint verification" \
+  --new-log-generation west-2026-07-29-g2
+```
+
+The command refuses a peer with no active durable quarantine. It commits the recovery
+at full durability, stores only a SHA-256 digest of the free-text reason, and leaves the
+peer's event log untouched. It must run while the hub is stopped because a live watcher
+also holds quarantine state in memory. The generation/checkpoint label records the
+operator's acceptance; the current wire does not independently attest it. On restart,
+the follower reloads the recovery, drops the prior peer view, and begins again at cursor
+zero. See
 [Multi-hub sync](multi-hub-sync.md) for the federation and trust model.
 
 The hub itself can run that follower standing, feeding partition detection:

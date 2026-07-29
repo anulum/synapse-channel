@@ -49,6 +49,8 @@ UNIVERSAL_RECEIPT_EVENT_KINDS = DELIVERY_RECEIPT_EVENT_KINDS | {
     EventKind.SANDBOX_RUN,
     EventKind.MULTIHUB_PARTITION,
     EventKind.MULTIHUB_HEAL,
+    EventKind.MULTIHUB_EQUIVOCATION,
+    EventKind.MULTIHUB_EQUIVOCATION_RECOVERY,
 }
 """Event kinds worth loading when building the universal receipt view."""
 
@@ -133,6 +135,11 @@ def universal_receipt_from_event(event: StoredEvent) -> UniversalReceipt | None:
         return _cross_hub_receipt(event)
     if event.kind in {EventKind.MULTIHUB_PARTITION, EventKind.MULTIHUB_HEAL}:
         return _multihub_ownership_receipt(event)
+    if event.kind in {
+        EventKind.MULTIHUB_EQUIVOCATION,
+        EventKind.MULTIHUB_EQUIVOCATION_RECOVERY,
+    }:
+        return _multihub_equivocation_receipt(event)
     if event.kind == EventKind.LEDGER_PROGRESS:
         return _progress_receipt(event)
     return None
@@ -279,6 +286,27 @@ def _multihub_ownership_receipt(event: StoredEvent) -> UniversalReceipt:
         kind="federation",
         subject=namespace,
         actor=local_hub,
+        status=status,
+        summary=summary,
+        payload=payload,
+    )
+
+
+def _multihub_equivocation_receipt(event: StoredEvent) -> UniversalReceipt:
+    """Project a durable peer quarantine or explicit recovery."""
+    payload = _object_payload(event.payload)
+    peer_id = _text(payload, "peer_id")
+    observer_id = _text(payload, "observer_id")
+    recovered = event.kind == EventKind.MULTIHUB_EQUIVOCATION_RECOVERY
+    status = "recovered" if recovered else "quarantined"
+    sequence = payload.get("seq")
+    suffix = "" if recovered else f" at sequence {sequence}"
+    summary = f"peer {peer_id or '<unknown>'} {status}{suffix}"
+    return _receipt(
+        event,
+        kind="federation",
+        subject=peer_id,
+        actor=observer_id or _text(payload, "recovered_by"),
         status=status,
         summary=summary,
         payload=payload,

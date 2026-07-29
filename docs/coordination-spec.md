@@ -526,6 +526,29 @@ of §1 span an unconfigured federation.
 
 **Pinned by.** `tests/test_hub_claim_forwarding.py`, `tests/test_name_ownership.py`.
 
+### INV-MH-5 — one federated event identity binds one content fingerprint
+
+**Normative.** For an observed peer log, `(hub_id, seq)` MUST bind the authoring
+hub, sequence, exact timestamp, event kind, and complete payload to one canonical
+SHA-256 fingerprint. An exact duplicate MUST be idempotent. Different content at
+one identity MUST raise a typed integrity failure before any event, observed view,
+cursor, protocol metadata, or clock metadata from that batch becomes live. The peer
+MUST remain quarantined across reconnect and durable restart until an explicit,
+audited recovery names a new log generation or accepted checkpoint. Evidence MUST
+contain bounded metadata and both fingerprints, never the event payload. Timestamp,
+arrival order, authentication, or lexical digest order MUST NOT select a winner.
+New events in an exclusive cursor response MUST be contiguous; an unseen sequence at
+or below the cursor, a gap, or rollback MUST fail before publication.
+
+**Implementation.** `core/multihub_equivocation.py` (canonical fingerprint,
+typed failures, batch validation), `core/multihub_follower.py` (candidate publish,
+quarantine, explicit recovery), `core/journal.py` (durable bounded evidence),
+`core/multihub_watch.py` (standing-watch refusal).
+
+**Pinned by.** `tests/test_multihub_equivocation.py`,
+`tests/test_multihub_merge.py`, `tests/test_multihub_follower.py`,
+`tests/test_multihub_watch.py`, `tests/test_journal.py`.
+
 > **Note — the name-ownership lease is single-hub.** The `--lease-offline-ttl`
 > ownership lease (close code `4016`, "name owned") protects a name across
 > reconnects on **one** hub; it does not span hubs. Cross-hub name continuity is

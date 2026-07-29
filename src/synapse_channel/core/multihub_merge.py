@@ -5,13 +5,14 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — the CRDT-shaped event-log union for multi-hub sync
-"""The conflict-free event-log union at the heart of multi-hub sync.
+"""The content-bound event-log union at the heart of multi-hub sync.
 
 A single hub's durable log is append-only with a local monotonic ``seq``. Across
 hubs the design (`docs/multi-hub-sync.md`) makes the log the one genuinely
-CRDT-shaped piece of coordination state: tag every event with the id of the hub that
-authored it, and the union of several hubs' logs is a **grow-only set** keyed by
-``(hub_id, seq)``. Merging is set union with that key, and replaying the merged log
+CRDT-shaped piece of coordination state for honest append-only peers: tag every event
+with the id of the hub that authored it, and bind ``(hub_id, seq)`` to one canonical
+content fingerprint. Merging is set union only after that binding is verified, and
+replaying the merged log
 in a deterministic total order — ``(ts, hub_id, seq)`` — reproduces the same folded
 state on every peer, regardless of the order logs arrived in.
 
@@ -24,10 +25,12 @@ exclusion, not a merge, and are never granted from a peer's log). It performs no
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from synapse_channel.core.multihub_equivocation import remember_content_bound_event
 from synapse_channel.core.persistence import StoredEvent
 
 
@@ -57,7 +60,7 @@ class HubEvent:
 
     @property
     def identity(self) -> tuple[str, int]:
-        """Return the global identity ``(hub_id, seq)`` that dedupes the union."""
+        """Return the global key whose content binding deduplicates the union."""
         return (self.hub_id, self.seq)
 
     @property
@@ -73,7 +76,9 @@ class HubEvent:
             seq=int(event.seq),
             ts=float(event.ts),
             kind=str(event.kind),
-            payload=event.payload,
+            # A fetcher owns its StoredEvent objects. Snapshot nested content so
+            # later caller mutation cannot rewrite an already accepted identity.
+            payload=copy.deepcopy(event.payload),
         )
 
 
@@ -85,21 +90,19 @@ def tag_events(hub_id: str, events: Iterable[StoredEvent]) -> tuple[HubEvent, ..
 def merge_event_logs(*logs: Iterable[HubEvent]) -> tuple[HubEvent, ...]:
     """Return the deterministic union of several hub-tagged logs.
 
-    The union is a grow-only set keyed by ``(hub_id, seq)`` — duplicates (the same
-    event seen from two peers) collapse to one — returned in the total order
+    The union is a grow-only set keyed by ``(hub_id, seq)`` and its canonical
+    content fingerprint. Exact duplicates collapse to one and the result uses the total order
     ``(ts, hub_id, seq)``. Because the key is the event's global identity and the
     order is total and content-derived, every peer that merges the same set of logs
     obtains the identical sequence, so a downstream fold is deterministic.
 
-    On the rare ``(hub_id, seq)`` collision with *differing* content (a hub that
-    reused a sequence — a misbehaving or rolled-back peer), the first occurrence in
-    argument order wins and the conflicting duplicate is dropped, so the merge stays
-    a function of its inputs rather than raising.
+    A ``(hub_id, seq)`` collision with differing content is equivocation. It raises
+    instead of choosing an arrival-order, timestamp, or lexical winner.
     """
     seen: dict[tuple[str, int], HubEvent] = {}
     for log in logs:
         for event in log:
-            seen.setdefault(event.identity, event)
+            remember_content_bound_event(seen, event)
     return tuple(sorted(seen.values(), key=lambda event: event.order_key))
 
 

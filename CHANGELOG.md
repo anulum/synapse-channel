@@ -21,6 +21,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Bind each federated `(hub_id, seq)` identity to a canonical full-event
+  fingerprint. Conflicting content now freezes the candidate view and cursor,
+  durably quarantines a watched peer with payload-free evidence, blocks automatic
+  reconnects, and requires an audited new-generation recovery; exact duplicates
+  remain idempotent and malformed cursor batches fail before publication.
 - Commit receipt-requested directed chat, receipt lifecycle state, and each
   sender notification through one durable delivery aggregate with a stable
   at-least-once outbox. Deferred receipts now survive an offline sender and

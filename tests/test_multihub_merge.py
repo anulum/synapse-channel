@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from synapse_channel.core.multihub_equivocation import MultiHubEquivocationError
 from synapse_channel.core.multihub_merge import (
     HubEvent,
     hub_cursors,
@@ -42,6 +45,15 @@ def test_tag_events_tags_a_whole_log() -> None:
     assert [event.identity for event in tagged] == [("hub-a", 1), ("hub-a", 2)]
 
 
+def test_tag_events_snapshots_nested_payload_content() -> None:
+    payload = {"nested": {"title": "accepted"}}
+    tagged = tag_events("hub-a", [StoredEvent(seq=1, ts=1.0, kind="claim", payload=payload)])
+
+    payload["nested"]["title"] = "mutated"
+
+    assert tagged[0].payload == {"nested": {"title": "accepted"}}
+
+
 def test_merge_unions_dedupes_and_orders_deterministically() -> None:
     a = [_ev("hub-a", 1, 1.0), _ev("hub-a", 2, 3.0)]
     b = [_ev("hub-b", 1, 2.0), _ev("hub-a", 2, 3.0)]  # last duplicates a's (hub-a, 2)
@@ -56,12 +68,18 @@ def test_merge_unions_dedupes_and_orders_deterministically() -> None:
     assert merge_event_logs(b, a) == merged
 
 
-def test_merge_keeps_the_first_on_a_conflicting_identity() -> None:
+def test_merge_rejects_a_conflicting_identity_without_choosing_a_winner() -> None:
     first = _ev("hub-a", 5, 1.0, payload_marker="first")
     second = _ev("hub-a", 5, 9.0, payload_marker="second")  # same (hub_id, seq), different content
-    merged = merge_event_logs([first], [second])
-    assert merged == (first,)
-    assert merged[0].payload["payload_marker"] == "first"
+
+    with pytest.raises(MultiHubEquivocationError) as forward:
+        merge_event_logs([first], [second])
+    with pytest.raises(MultiHubEquivocationError) as reverse:
+        merge_event_logs([second], [first])
+
+    assert forward.value.seq == reverse.value.seq == 5
+    assert forward.value.accepted_fingerprint == reverse.value.conflicting_fingerprint
+    assert forward.value.conflicting_fingerprint == reverse.value.accepted_fingerprint
 
 
 def test_ties_in_timestamp_break_by_hub_then_seq() -> None:

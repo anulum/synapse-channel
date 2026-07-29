@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping
@@ -40,6 +41,7 @@ from synapse_channel.core.ledger import (
     LedgerTask,
     ProgressNote,
 )
+from synapse_channel.core.multihub_equivocation import FederationQuarantine, valid_fingerprint
 from synapse_channel.core.path_identity import parse_optional_claim_scope_identity
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
@@ -82,6 +84,8 @@ class EventKind:
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
     MULTIHUB_PARTITION = "multihub_partition"
     MULTIHUB_HEAL = "multihub_heal"
+    MULTIHUB_EQUIVOCATION = "multihub_equivocation"
+    MULTIHUB_EQUIVOCATION_RECOVERY = "multihub_equivocation_recovery"
     CORRUPT = CORRUPT_EVENT_KIND
 
 
@@ -311,6 +315,143 @@ def restore_active_multihub_partitions(store: EventStore) -> dict[str, tuple[str
         contesting = tuple(sorted({str(hub).strip() for hub in raw_contesting if str(hub).strip()}))
         active[namespace] = contesting or (_UNVERIFIED_PARTITION_CONTESTER,)
     return active
+
+
+def record_multihub_equivocation(store: EventStore, quarantine: FederationQuarantine) -> int:
+    """Append bounded digest-only evidence and an active peer quarantine."""
+    return store.append(
+        EventKind.MULTIHUB_EQUIVOCATION,
+        _bounded_multihub_quarantine_payload(quarantine),
+        ts=quarantine.detected_at,
+        durable=True,
+    )
+
+
+def record_multihub_equivocation_recovery(
+    store: EventStore,
+    *,
+    peer_id: str,
+    recovered_at: float,
+    recovered_by: str,
+    reason: str,
+    new_log_generation: str,
+) -> int:
+    """Append an explicit operator recovery without retaining its free-text reason."""
+    for label, value in (
+        ("peer_id", peer_id),
+        ("recovered_by", recovered_by),
+        ("reason", reason),
+        ("new_log_generation", new_log_generation),
+    ):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"multi-hub recovery requires a non-empty {label}")
+    if (
+        isinstance(recovered_at, bool)
+        or not isinstance(recovered_at, (int, float))
+        or not math.isfinite(recovered_at)
+    ):
+        raise ValueError("multi-hub recovery time must be finite")
+    reason_text = str(reason)
+    try:
+        reason_bytes = reason_text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("multi-hub recovery reason must be valid UTF-8") from exc
+    generation = str(new_log_generation)
+    payload = {
+        **_bounded_identity("peer_id", peer_id),
+        **_bounded_identity("recovered_by", recovered_by),
+        **_bounded_identity("new_log_generation", generation),
+        "reason_sha256": hashlib.sha256(reason_bytes).hexdigest(),
+        "recovered_at": float(recovered_at),
+        "explicit_recovery": True,
+        "status": "recovered",
+    }
+    return store.append(
+        EventKind.MULTIHUB_EQUIVOCATION_RECOVERY,
+        payload,
+        ts=float(recovered_at),
+        durable=True,
+    )
+
+
+def restore_active_multihub_quarantines(
+    store: EventStore,
+) -> dict[str, FederationQuarantine]:
+    """Fold durable equivocation/recovery rows into active peer quarantines."""
+    active: dict[str, FederationQuarantine] = {}
+    kinds = (EventKind.MULTIHUB_EQUIVOCATION, EventKind.MULTIHUB_EQUIVOCATION_RECOVERY)
+    for event in store.iter_events(kinds=kinds):
+        peer_id = str(event.payload.get("peer_id") or "").strip()
+        if not peer_id:
+            continue
+        if event.kind == EventKind.MULTIHUB_EQUIVOCATION_RECOVERY:
+            if (
+                event.payload.get("explicit_recovery") is True
+                and str(event.payload.get("new_log_generation") or "").strip()
+            ):
+                active.pop(peer_id, None)
+            continue
+        seq_raw = event.payload.get("seq")
+        seq = seq_raw if isinstance(seq_raw, int) and not isinstance(seq_raw, bool) else 0
+        accepted = event.payload.get("accepted_fingerprint")
+        conflicting = event.payload.get("conflicting_fingerprint")
+        active[peer_id] = FederationQuarantine(
+            peer_id=peer_id,
+            seq=seq,
+            accepted_fingerprint=(accepted if valid_fingerprint(accepted) else "0" * 64),
+            conflicting_fingerprint=(conflicting if valid_fingerprint(conflicting) else "0" * 64),
+            detected_at=float(event.ts),
+            observer_id=str(event.payload.get("observer_id") or ""),
+        )
+    return active
+
+
+def _bounded_multihub_quarantine_payload(
+    quarantine: FederationQuarantine,
+) -> dict[str, object]:
+    """Return the persisted quarantine shape without raw event content."""
+    if not valid_fingerprint(quarantine.accepted_fingerprint) or not valid_fingerprint(
+        quarantine.conflicting_fingerprint
+    ):
+        raise ValueError("multi-hub quarantine fingerprints must be lowercase SHA-256")
+    if not quarantine.peer_id.strip():
+        raise ValueError("multi-hub quarantine requires a peer id")
+    if (
+        isinstance(quarantine.seq, bool)
+        or not isinstance(quarantine.seq, int)
+        or quarantine.seq < 1
+    ):
+        raise ValueError("multi-hub quarantine sequence must be a positive integer")
+    if (
+        isinstance(quarantine.detected_at, bool)
+        or not isinstance(quarantine.detected_at, (int, float))
+        or not math.isfinite(quarantine.detected_at)
+    ):
+        raise ValueError("multi-hub quarantine detection time must be finite")
+    return {
+        **_bounded_identity("peer_id", quarantine.peer_id),
+        **_bounded_identity("observer_id", quarantine.observer_id),
+        "seq": quarantine.seq,
+        "accepted_fingerprint": quarantine.accepted_fingerprint,
+        "conflicting_fingerprint": quarantine.conflicting_fingerprint,
+        "detected_at": quarantine.detected_at,
+        "status": "quarantined",
+    }
+
+
+def _bounded_identity(field: str, value: str) -> dict[str, object]:
+    """Keep an operator label bounded while retaining its exact digest."""
+    text = str(value)
+    try:
+        encoded = text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"multi-hub {field} must be valid UTF-8") from exc
+    bounded = encoded[:256].decode("utf-8", errors="ignore")
+    return {
+        field: bounded,
+        f"{field}_sha256": hashlib.sha256(encoded).hexdigest(),
+        f"{field}_truncated": bounded != text,
+    }
 
 
 def record_dead_letter_escalation(store: EventStore, provenance: Mapping[str, Any]) -> None:

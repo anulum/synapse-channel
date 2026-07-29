@@ -109,7 +109,7 @@ class TestWatchPolling:
     async def test_assertions_union_across_peers_sorted(self) -> None:
         watch = _watch(
             {
-                "hub-c": _ScriptedPeer([[_claim(2, "OWNED/bob")]]),
+                "hub-c": _ScriptedPeer([[_claim(1, "OWNED/bob")]]),
                 "hub-b": _ScriptedPeer([[_claim(1, "OWNED/alice")]]),
             }
         )
@@ -141,6 +141,31 @@ class TestWatchPolling:
         await watch.poll_once()
         assert peer.calls == [0, 1]
         assert watch.observed_asserting_hubs("OWNED") == ("hub-b",)
+
+    async def test_equivocation_quarantines_peer_and_preserves_prior_assertions(
+        self, tmp_path: Path
+    ) -> None:
+        store = EventStore(tmp_path / "hub.db")
+        accepted = _claim(1, "OWNED/alice")
+        conflict = StoredEvent(
+            seq=1,
+            ts=1.0,
+            kind=EventKind.CLAIM,
+            payload={"task_id": "T1", "owner": "OTHER/mallory"},
+        )
+        peer = _ScriptedPeer([[accepted], [conflict], [_claim(2, "OTHER/mallory")]])
+        watch = _watch({"hub-b": peer}, journal=store)
+
+        assert await watch.poll_once() == {"hub-b": None}
+        assert watch.observed_asserting_hubs("OWNED") == ("hub-b",)
+        conflict_outcome = await watch.poll_once()
+        assert "equivocated at sequence 1" in str(conflict_outcome["hub-b"])
+        assert watch.observed_asserting_hubs("OWNED") == ("hub-b",)
+        blocked_outcome = await watch.poll_once()
+        assert "is quarantined" in str(blocked_outcome["hub-b"])
+        assert peer.calls == [0, 1]
+        assert [event.kind for event in store.read_all()] == [EventKind.MULTIHUB_EQUIVOCATION]
+        store.close()
 
     async def test_the_default_namespace_derivation_matches_the_gate(self) -> None:
         peer = _ScriptedPeer([[_claim(1, "SYNAPSE-CHANNEL/claude-e57b")]])
