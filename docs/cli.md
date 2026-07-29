@@ -809,14 +809,20 @@ A terminal agent does not wake its own idle pane on a Synapse message: its
 `synapse wait` is a foreground tool call whose turn ends, so the message lands in
 the inbox but the pane never re-engages. `agent-tmux wait` is the external bridge
 that closes that gap — it blocks on `synapse wait` for the identity and, on each
-directed message, types the wake prompt into the pane and presses Enter.
+directed message, delivers the fixed prompt only to a verified idle provider
+composer.
 Its connection name is `<identity>-pane-rx`, deliberately distinct from the
 permanent mailbox arm's `<identity>-rx`; the split is receiver arbitration, not
 a second agent identity.
 
-`wait` types the fixed prompt and presses Enter as two steps separated by
-`--submit-delay` seconds, because the agent UI ignores a submit key that arrives
-in the same keystroke batch as the pasted line. It retries a failed
+Before emitting a key, the bridge captures a bounded pane tail and requires the
+known idle-composer profile for Codex, Claude Code, Kimi, Grok, or Gemini, with
+no modal, approval, or busy marker. Unknown or ambiguous panes receive no key:
+the consumed wake is persisted in the owner-only registry and retried after the
+bounded pane-probe interval, including after a bridge restart. For a safe pane,
+the fixed prompt is delivered as one bracketed paste rather than shortcut-capable
+individual characters. After `--submit-delay`, a second capture must still show
+the exact prompt in the safe composer before Enter is sent. It retries a failed
 `synapse wait` with backoff instead of exiting, giving up only after
 `--max-wait-failures` consecutive failures (unbounded by default), so a hub
 restart does not permanently stop the waker.

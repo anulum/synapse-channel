@@ -110,7 +110,9 @@ This service is a permanent, model-token-free passive receiver: it keeps the exa
 identity's mailbox reachable and writes wakes to the user journal, but does not
 paste untrusted message bodies into a model terminal or spend provider tokens.
 Use `agent-tmux`/`codex-tmux` when a running terminal provider also needs a fixed
-safe prompt injected.
+safe prompt. The bridge submits only after two provider-specific idle-composer
+probes; modal, busy, unknown, or ambiguous panes receive no key and retain a
+durable local pending wake for a later safe retry.
 
 Native Windows Task Scheduler installation is not implemented or claimed.
 `synapse arm install` exits `2` outside Linux; on Windows, use WSL with systemd

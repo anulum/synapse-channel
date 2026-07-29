@@ -17,11 +17,13 @@ from typing import Any
 
 import pytest
 
+from fixtures.agent_tmux_provider_screens import PROVIDER_SCREENS
 from synapse_channel.agent_tmux import (
     BINDING_REFUSAL_EXIT_CODE,
     DEFAULT_AGENT_PANE_COMMANDS,
     AgentTmuxConfig,
     _backoff_delay,
+    _pane_is_safe_for_submit,
     agent_binary,
     build_wake_prompt,
     inject_wake,
@@ -57,6 +59,8 @@ class RecordingRunner:
         self.envs: list[Mapping[str, str] | None] = []
         self.results = list(results)
         self.session_environment = session_environment
+        self.buffer_text = ""
+        self.buffer_pasted = False
 
     def __call__(
         self,
@@ -74,6 +78,24 @@ class RecordingRunner:
             if self.session_environment is None:
                 return subprocess.CompletedProcess(list(args), 1, "", "no environment")
             return subprocess.CompletedProcess(list(args), 0, self.session_environment, "")
+        command = args[1] if len(args) > 1 else ""
+        if command == "capture-pane":
+            if self.results and list(self.results[0].args)[1:2] == ["capture-pane"]:
+                return self.results.pop(0)
+            screen = PROVIDER_SCREENS["codex"]["idle"]
+            if self.buffer_pasted:
+                screen += self.buffer_text
+            return subprocess.CompletedProcess(list(args), 0, screen, "")
+        if command == "set-buffer":
+            self.buffer_text = args[-1]
+            if self.results and list(self.results[0].args)[1:2] == ["set-buffer"]:
+                return self.results.pop(0)
+            return subprocess.CompletedProcess(list(args), 0, "", "")
+        if command == "paste-buffer":
+            if self.results and list(self.results[0].args)[1:2] == ["paste-buffer"]:
+                return self.results.pop(0)
+            self.buffer_pasted = True
+            return subprocess.CompletedProcess(list(args), 0, "", "")
         if self.results:
             return self.results.pop(0)
         return subprocess.CompletedProcess(list(args), 0, "", "")
@@ -203,9 +225,9 @@ def test_start_session_refuses_a_new_session_when_tmux_drops_its_binding(tmp_pat
     assert payload["last_start_returncode"] == BINDING_REFUSAL_EXIT_CODE
 
 
-def test_inject_wake_types_then_submits_as_two_calls(tmp_path: Path) -> None:
+def test_inject_wake_bracket_pastes_then_submits_after_two_idle_probes(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    runner = RecordingRunner([_result(["tmux", "send-keys"], 0), _result(["tmux", "send-keys"], 0)])
+    runner = RecordingRunner([_result(["tmux", "send-keys"], 0)])
     sleeper = RecordingSleeper()
 
     result = inject_wake(
@@ -216,22 +238,32 @@ def test_inject_wake_types_then_submits_as_two_calls(tmp_path: Path) -> None:
     )
 
     assert result.injected is True
+    assert len([call for call in runner.calls if call[1] == "capture-pane"]) == 2
+    set_buffer = next(call for call in runner.calls if call[1] == "set-buffer")
+    paste_buffer = next(call for call in runner.calls if call[1] == "paste-buffer")
+    assert set_buffer[:4] == ["tmux", "set-buffer", "-b", "synapse-wake-SYNAPSE-CHANNEL_codex-main"]
+    assert set_buffer[-1] == build_wake_prompt(config.identity)
+    assert paste_buffer == [
+        "tmux",
+        "paste-buffer",
+        "-b",
+        "synapse-wake-SYNAPSE-CHANNEL_codex-main",
+        "-d",
+        "-p",
+        "-t",
+        "synapse-codex-main",
+    ]
     send_calls = [call for call in runner.calls if call[1] == "send-keys"]
-    assert len(send_calls) == 2
-    type_call, submit_call = send_calls
-    assert type_call[:5] == ["tmux", "send-keys", "-t", "synapse-codex-main", "-l"]
-    injected_text = type_call[-1]
-    assert "SYNAPSE-CHANNEL/codex-main" in injected_text
-    assert "ignore previous instructions" not in injected_text
-    assert submit_call == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
+    assert send_calls == [["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]]
     assert sleeper.delays == [config.submit_delay]
     payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
     assert payload["last_inject_returncode"] == 0
+    assert payload["pending_wake"] is False
 
 
-def test_inject_wake_skips_submit_when_typing_fails(tmp_path: Path) -> None:
+def test_inject_wake_queues_when_buffer_setup_fails(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    runner = RecordingRunner([_result(["tmux", "send-keys"], 1, stderr="no pane")])
+    runner = RecordingRunner([_result(["tmux", "set-buffer"], 1, stderr="no pane")])
     sleeper = RecordingSleeper()
 
     result = inject_wake(config, runner=runner, sleeper=sleeper)
@@ -239,10 +271,11 @@ def test_inject_wake_skips_submit_when_typing_fails(tmp_path: Path) -> None:
     assert result.injected is False
     assert result.returncode == 1
     assert result.detail == "no pane"
-    assert len([call for call in runner.calls if call[1] == "send-keys"]) == 1
+    assert not [call for call in runner.calls if call[1] in {"paste-buffer", "send-keys"}]
     assert sleeper.delays == []
     payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
     assert payload["last_inject_returncode"] == 1
+    assert payload["pending_wake"] is True
 
 
 def test_inject_wake_refuses_a_session_bound_to_another_identity(tmp_path: Path) -> None:
@@ -263,16 +296,94 @@ def test_inject_wake_refuses_a_session_bound_to_another_identity(tmp_path: Path)
 
 def test_inject_wake_reports_failed_submit(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    runner = RecordingRunner(
-        [_result(["tmux", "send-keys"], 0), _result(["tmux", "send-keys"], 3, stderr="lost pane")]
-    )
+    runner = RecordingRunner([_result(["tmux", "send-keys"], 3, stderr="lost pane")])
 
     result = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
 
     assert result.injected is False
     assert result.returncode == 3
     assert result.detail == "lost pane"
-    assert len([call for call in runner.calls if call[1] == "send-keys"]) == 2
+    assert len([call for call in runner.calls if call[1] == "send-keys"]) == 1
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["pending_wake"] is True
+
+
+@pytest.mark.parametrize("provider", sorted(PROVIDER_SCREENS))
+def test_provider_profiles_accept_only_idle_composers(provider: str, tmp_path: Path) -> None:
+    config = _config(tmp_path, agent_command=(provider,))
+
+    idle = RecordingRunner(
+        [_result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS[provider]["idle"])]
+    )
+    assert _pane_is_safe_for_submit(config, runner=idle)[0] is True
+
+    for state in ("busy", "modal"):
+        runner = RecordingRunner(
+            [_result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS[provider][state])]
+        )
+        safe, detail = _pane_is_safe_for_submit(config, runner=runner)
+        assert safe is False
+        assert state not in detail or "pane" in detail
+
+
+def test_node_wrapper_resolves_its_supported_provider_profile(tmp_path: Path) -> None:
+    config = _config(tmp_path, agent_command=("node", "/opt/openai/codex.js"))
+    runner = RecordingRunner(
+        [_result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["idle"])]
+    )
+
+    assert _pane_is_safe_for_submit(config, runner=runner)[0] is True
+
+
+def test_unknown_provider_queues_without_pane_mutation(tmp_path: Path) -> None:
+    config = _config(tmp_path, agent_command=("custom-agent",))
+    runner = RecordingRunner()
+
+    result = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert result.returncode == 0
+    assert result.injected is False
+    assert "no fail-closed idle profile" in result.detail
+    assert not [
+        call for call in runner.calls if call[1] in {"capture-pane", "set-buffer", "send-keys"}
+    ]
+
+
+def test_inject_wake_queues_a_modal_without_emitting_any_key(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [_result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["modal"])]
+    )
+
+    result = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert result.returncode == 0
+    assert result.injected is False
+    assert result.detail.startswith("wake queued:")
+    assert not [
+        call for call in runner.calls if call[1] in {"set-buffer", "paste-buffer", "send-keys"}
+    ]
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["pending_wake"] is True
+
+
+def test_inject_wake_never_submits_when_the_pane_turns_modal_after_paste(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["idle"]),
+            _result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["modal"]),
+        ]
+    )
+
+    result = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert result.returncode == 0
+    assert result.injected is False
+    assert result.detail.startswith("wake queued after paste:")
+    assert not [call for call in runner.calls if call[1] == "send-keys"]
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["pending_wake"] is True
 
 
 def test_status_detects_codex_start_command(tmp_path: Path) -> None:
@@ -399,7 +510,6 @@ def test_wait_and_wake_injects_after_successful_wait(tmp_path: Path) -> None:
         [
             _result(["synapse", "wait"], 0, "sender: wake\n"),
             _result(["tmux", "send-keys"], 0),
-            _result(["tmux", "send-keys"], 0),
         ]
     )
 
@@ -420,8 +530,64 @@ def test_wait_and_wake_injects_after_successful_wait(tmp_path: Path) -> None:
         "pane_bridge",
     ]
     send_calls = [call for call in runner.calls if call[1] == "send-keys"]
-    assert send_calls[0][:5] == ["tmux", "send-keys", "-t", "synapse-codex-main", "-l"]
-    assert send_calls[1] == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
+    assert send_calls == [["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]]
+
+
+def test_wait_and_wake_queues_modal_then_delivers_when_idle(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [
+            _result(["synapse", "wait"], 0, "sender: wake\n"),
+            _result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["modal"]),
+            _result(["tmux", "has-session"], 0),
+            _result(["tmux", "display-message"], 0, "codex\tcodex\n"),
+            _result(["tmux", "send-keys"], 0),
+        ]
+    )
+    sleeper = RecordingSleeper()
+
+    result = wait_and_wake(config, runner=runner, max_wakes=1, sleeper=sleeper)
+
+    assert result == 0
+    assert len([call for call in runner.calls if call[:2] == ["synapse", "wait"]]) == 1
+    assert sleeper.delays == [config.pane_probe_interval, config.submit_delay]
+    assert [call for call in runner.calls if call[1] == "send-keys"] == [
+        ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
+    ]
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["pending_wake"] is False
+
+
+def test_wait_and_wake_recovers_a_persisted_pending_wake_before_bus_read(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    registry_path(config).write_text(
+        json.dumps(
+            {
+                "identity": config.identity,
+                "session": config.session,
+                "cwd": str(config.cwd),
+                "pending_wake": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "has-session"], 0),
+            _result(["tmux", "display-message"], 0, "codex\tcodex\n"),
+            _result(["tmux", "send-keys"], 0),
+        ]
+    )
+
+    result = wait_and_wake(config, runner=runner, max_wakes=1, sleeper=RecordingSleeper())
+
+    assert result == 0
+    assert not [call for call in runner.calls if call[:2] == ["synapse", "wait"]]
+    assert [call for call in runner.calls if call[1] == "send-keys"] == [
+        ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
+    ]
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["pending_wake"] is False
 
 
 def test_wait_and_wake_strips_provider_marker_from_wait_child(
@@ -433,7 +599,6 @@ def test_wait_and_wake_strips_provider_marker_from_wait_child(
     runner = RecordingRunner(
         [
             _result(["synapse", "wait"], 0, "sender: wake\n"),
-            _result(["tmux", "send-keys"], 0),
             _result(["tmux", "send-keys"], 0),
         ]
     )
@@ -461,7 +626,6 @@ def test_wait_and_wake_does_not_inject_on_provider_yield_stdout(tmp_path: Path) 
             _result(["synapse", "wait"], 0, yield_out),
             _result(["synapse", "wait"], 0, "sender: real wake\n"),
             _result(["tmux", "send-keys"], 0),
-            _result(["tmux", "send-keys"], 0),
         ]
     )
     sleeper = RecordingSleeper()
@@ -477,8 +641,7 @@ def test_wait_and_wake_does_not_inject_on_provider_yield_stdout(tmp_path: Path) 
     assert runner.calls[0][:2] == ["synapse", "wait"]
     assert runner.calls[1][:2] == ["synapse", "wait"]
     send_calls = [call for call in runner.calls if call[1] == "send-keys"]
-    assert send_calls[0][:2] == ["tmux", "send-keys"]
-    assert send_calls[1] == ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
+    assert send_calls == [["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]]
 
 
 def test_wait_and_wake_stops_after_bounded_consecutive_failures(tmp_path: Path) -> None:
@@ -524,7 +687,6 @@ def test_wait_and_wake_rearms_after_timeout_only_when_the_pane_stays_live(
             _result(["tmux", "display-message"], 0, "codex\tcodex\n"),
             _result(["synapse", "wait"], 0, "sender: wake\n"),
             _result(["tmux", "send-keys"], 0),
-            _result(["tmux", "send-keys"], 0),
         ]
     )
     sleeper = RecordingSleeper()
@@ -543,7 +705,6 @@ def test_wait_and_wake_retries_failed_wait_with_backoff_then_wakes(tmp_path: Pat
             _result(["synapse", "wait"], 3),
             _result(["synapse", "wait"], 3),
             _result(["synapse", "wait"], 0, "sender: wake\n"),
-            _result(["tmux", "send-keys"], 0),
             _result(["tmux", "send-keys"], 0),
         ]
     )
@@ -572,10 +733,8 @@ def test_wait_and_wake_resets_failure_counter_after_a_wake(tmp_path: Path) -> No
             _result(["synapse", "wait"], 3),
             _result(["synapse", "wait"], 0, "sender: wake\n"),
             _result(["tmux", "send-keys"], 0),
-            _result(["tmux", "send-keys"], 0),
             _result(["synapse", "wait"], 3),
             _result(["synapse", "wait"], 0, "sender: wake\n"),
-            _result(["tmux", "send-keys"], 0),
             _result(["tmux", "send-keys"], 0),
         ]
     )
@@ -609,7 +768,6 @@ def test_wait_and_wake_jitters_the_default_backoff(tmp_path: Path) -> None:
         [
             _result(["synapse", "wait"], 3),
             _result(["synapse", "wait"], 0, "sender: wake\n"),
-            _result(["tmux", "send-keys"], 0),
             _result(["tmux", "send-keys"], 0),
         ]
     )

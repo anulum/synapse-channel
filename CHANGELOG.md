@@ -51,6 +51,10 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Prevent terminal wake bridges from approving provider modals. Pane delivery
+  now requires provider-specific idle-composer evidence before and after one
+  bracketed fixed-prompt paste; busy, modal, unknown, or ambiguous panes receive
+  no submit key and retain a restart-safe pending wake for later delivery.
 - Build the container from hash-locked build frontend, backend, and runtime
   inputs; disable build isolation and live wheel dependency resolution; and
   attest the exact immutable GHCR digest plus its generated image SBOM.

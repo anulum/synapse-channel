@@ -6,12 +6,12 @@
 # Contact: www.anulum.li | protoscience@anulum.li
 """End-to-end journey: the tmux wake transport drives a real tmux pane.
 
-``synapse agent-tmux`` bridges a Synapse wake to a terminal coding agent by typing
-a fixed prompt into the agent's tmux pane. The unit suite exercises the module
+``synapse agent-tmux`` bridges a Synapse wake to a terminal coding agent by safely
+pasting a fixed prompt into a verified idle composer. The unit suite exercises the module
 with an injected command runner; this journey instead starts real throwaway tmux
 sessions, runs ``start``/``status``/``wake`` and the supervised ``wait`` boundary
 as the packaged CLI, and captures the pane to prove the fixed, payload-free prompt
-actually lands. ``codex`` is never launched — a harmless ``cat`` pane stands in —
+actually lands. ``codex`` is never launched — a harmless local fixture stands in —
 so no provider CLI is needed. The whole file skips when ``tmux`` is not installed.
 """
 
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -33,9 +34,32 @@ _TMUX = shutil.which("tmux")
 pytestmark = pytest.mark.skipif(_TMUX is None, reason="tmux is not installed")
 
 _IDENTITY = "E2EAGENT"
-# A shell-echoing pane command that keeps the session alive without launching a
-# real coding agent; the injected keystrokes echo so capture-pane can read them.
-_HARMLESS_COMMAND = "cat"
+
+
+def _harmless_provider(tmp_path: Path) -> Path:
+    """Create a task-owned Codex-shaped idle composer without provider access."""
+    provider = tmp_path / "codex-fixture"
+    provider.write_text(
+        "#!/bin/sh\nprintf '\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n"
+        "\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n› \\n'\nwhile IFS= read -r line; do\n"
+        "  printf '%s\\n› \\n' \"$line\"\ndone\n",
+        encoding="utf-8",
+    )
+    provider.chmod(0o700)
+    return provider
+
+
+def _modal_provider(tmp_path: Path) -> Path:
+    """Create a task-owned approval chooser that records any submitted key."""
+    provider = tmp_path / "codex-fixture-modal"
+    provider.write_text(
+        "#!/bin/sh\nprintf '\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n"
+        "\\n\\n\\n\\n\\n\\nAllow Codex to run this command?\\n› 1. Yes\\n  2. No\\n'\n"
+        "if IFS= read -r selection; then printf 'SELECTED=%s\\n' \"$selection\"; fi\n",
+        encoding="utf-8",
+    )
+    provider.chmod(0o700)
+    return provider
 
 
 def _capture_pane(session: str) -> str:
@@ -53,6 +77,16 @@ def _capture_pane(session: str) -> str:
         check=False,
     )
     return proc.stdout
+
+
+def _wait_for_idle_fixture(session: str) -> str:
+    """Wait briefly for the task-owned provider to render its idle marker."""
+    for _ in range(40):
+        pane = _capture_pane(session)
+        if "›" in pane:
+            return pane
+        time.sleep(0.025)
+    return _capture_pane(session)
 
 
 def _kill_session(session: str) -> None:
@@ -83,6 +117,7 @@ def _normalise(text: str) -> str:
 
 def test_agent_tmux_starts_reports_and_injects_the_fixed_prompt(tmp_path: Path) -> None:
     """``agent-tmux`` stands up a pane, reports it live, and wakes it for real."""
+    harmless_command = str(_harmless_provider(tmp_path))
     with _throwaway_session() as session:
         common = [
             "--identity",
@@ -92,7 +127,7 @@ def test_agent_tmux_starts_reports_and_injects_the_fixed_prompt(tmp_path: Path) 
             "--cwd",
             str(tmp_path),
             "--agent-command",
-            _HARMLESS_COMMAND,
+            harmless_command,
         ]
 
         started = run_cli("agent-tmux", "start", *common)
@@ -103,6 +138,8 @@ def test_agent_tmux_starts_reports_and_injects_the_fixed_prompt(tmp_path: Path) 
         assert health.ok(), health.output
         assert "online" in health.stdout
         assert "active" in health.stdout
+        pane_before = _wait_for_idle_fixture(session)
+        assert "›" in pane_before, repr(pane_before)
 
         woken = run_cli("agent-tmux", "wake", *common, "--submit-delay", "0.1")
         assert woken.ok(), woken.output
@@ -131,15 +168,44 @@ def test_agent_tmux_status_reports_a_missing_session() -> None:
             "--cwd",
             ".",
             "--agent-command",
-            _HARMLESS_COMMAND,
+            "codex-fixture",
         )
         # A missing session is a health failure, so status exits non-zero.
         assert not health.ok(), health.output
         assert "missing" in health.stdout
 
 
+def test_agent_tmux_wake_queues_without_selecting_a_real_tmux_modal(tmp_path: Path) -> None:
+    """A deterministic approval chooser receives no paste and no submit key."""
+    modal_command = str(_modal_provider(tmp_path))
+    with _throwaway_session() as session:
+        common = [
+            "--identity",
+            _IDENTITY,
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            modal_command,
+        ]
+        started = run_cli("agent-tmux", "start", *common)
+        assert started.ok(), started.output
+        pane = _wait_for_idle_fixture(session)
+        assert "Allow Codex" in pane
+
+        woken = run_cli("agent-tmux", "wake", *common, "--submit-delay", "0")
+
+        assert woken.ok(), woken.output
+        assert "wake queued:" in woken.stdout
+        pane = _capture_pane(session)
+        assert "SELECTED=" not in pane
+        assert _normalise(build_wake_prompt(_IDENTITY)) not in _normalise(pane)
+
+
 def test_agent_tmux_refuses_cross_identity_reuse_of_a_live_session(tmp_path: Path) -> None:
     """Start, status, and wake all fail closed for a foreign live pane."""
+    harmless_command = str(_harmless_provider(tmp_path))
     with _throwaway_session() as session:
         owner = [
             "--identity",
@@ -149,7 +215,7 @@ def test_agent_tmux_refuses_cross_identity_reuse_of_a_live_session(tmp_path: Pat
             "--cwd",
             str(tmp_path),
             "--agent-command",
-            _HARMLESS_COMMAND,
+            harmless_command,
         ]
         foreign = [
             "--identity",
@@ -159,7 +225,7 @@ def test_agent_tmux_refuses_cross_identity_reuse_of_a_live_session(tmp_path: Pat
             "--cwd",
             str(tmp_path),
             "--agent-command",
-            _HARMLESS_COMMAND,
+            harmless_command,
         ]
 
         started = run_cli("agent-tmux", "start", *owner)
@@ -181,6 +247,7 @@ def test_agent_tmux_refuses_cross_identity_reuse_of_a_live_session(tmp_path: Pat
 
 def test_agent_tmux_wait_starts_and_verifies_a_missing_provider(tmp_path: Path) -> None:
     """``wait`` establishes its provider before it can register with the hub."""
+    harmless_command = str(_harmless_provider(tmp_path))
     with _throwaway_session() as session:
         waited = run_cli(
             "agent-tmux",
@@ -192,7 +259,7 @@ def test_agent_tmux_wait_starts_and_verifies_a_missing_provider(tmp_path: Path) 
             "--cwd",
             str(tmp_path),
             "--agent-command",
-            _HARMLESS_COMMAND,
+            harmless_command,
             "--max-wakes",
             "0",
         )
@@ -208,7 +275,7 @@ def test_agent_tmux_wait_starts_and_verifies_a_missing_provider(tmp_path: Path) 
             "--cwd",
             str(tmp_path),
             "--agent-command",
-            _HARMLESS_COMMAND,
+            harmless_command,
         )
         assert health.ok(), health.output
         assert "tmux session: online" in health.stdout
@@ -221,6 +288,7 @@ def test_codex_tmux_alias_injects_the_same_fixed_prompt(tmp_path: Path) -> None:
     The Codex-named surface spells the launch override ``--codex-command`` rather
     than ``--agent-command``, but the fixed wake prompt it injects is identical.
     """
+    harmless_command = str(_harmless_provider(tmp_path))
     with _throwaway_session() as session:
         common = [
             "--identity",
@@ -230,11 +298,13 @@ def test_codex_tmux_alias_injects_the_same_fixed_prompt(tmp_path: Path) -> None:
             "--cwd",
             str(tmp_path),
             "--codex-command",
-            _HARMLESS_COMMAND,
+            harmless_command,
         ]
 
         started = run_cli("codex-tmux", "start", *common)
         assert started.ok(), started.output
+        pane_before = _wait_for_idle_fixture(session)
+        assert "›" in pane_before, repr(pane_before)
 
         woken = run_cli("codex-tmux", "wake", *common, "--submit-delay", "0.1")
         assert woken.ok(), woken.output

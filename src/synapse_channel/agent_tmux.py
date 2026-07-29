@@ -12,8 +12,9 @@ reads its input from a tmux pane — does not re-engage on a Synapse message by
 itself: its own ``synapse wait`` is a foreground tool call whose turn ends, so a
 later wake never reaches the idle pane. This module is the external bridge that
 closes that gap. It blocks on ``synapse wait`` for the target identity and, on
-each directed message, types a fixed wake prompt into the agent's pane and
-presses Enter so the agent reads its inbox and acts.
+each directed message, safely pastes a fixed wake prompt only into a verified
+idle provider composer. Busy, modal, unknown, and ambiguous panes queue the wake
+without emitting a key and retry it after a bounded probe interval.
 
 The transport is deliberately agent-agnostic: the only agent-specific input is
 the launch command (:attr:`AgentTmuxConfig.agent_command`) and, for the status
@@ -29,6 +30,7 @@ import os
 
 # Jitter spreads fleet-wide retry timing; it is not used for any security purpose.
 import random  # nosec B311
+import re
 import shlex
 
 # Tmux and synapse subprocesses are this module's controlled process boundary.
@@ -55,13 +57,11 @@ binary is always detected too.
 """
 
 DEFAULT_SUBMIT_DELAY = 0.4
-"""Seconds to wait between typing the wake prompt and pressing Enter.
+"""Seconds between the bracketed wake paste and its second safety probe.
 
-A terminal agent UI ignores a submit key that arrives in the same
-``tmux send-keys`` invocation as the prompt text: the Enter is processed before
-the pasted line is committed to the input buffer, so the prompt is left sitting
-unsent. Typing the text and pressing Enter as two calls separated by this delay
-lets the UI settle and submit. See :func:`inject_wake`.
+The bridge never batches prompt text with Enter. It lets the provider composer
+settle, re-captures the pane, and submits only if the exact prompt remains in a
+known idle composer with no modal or busy marker. See :func:`inject_wake`.
 """
 
 DEFAULT_WAIT_RETRY_BASE = 1.0
@@ -84,6 +84,32 @@ DEFAULT_PANE_PROBE_INTERVAL = 5.0
 
 BINDING_REFUSAL_EXIT_CODE = 4
 """Stable refusal code when a live tmux session belongs to another identity."""
+
+PANE_CAPTURE_HISTORY_LINES = 80
+"""Bounded visible history used for the provider-state safety probe."""
+
+PANE_CAPTURE_MAX_CHARS = 64 * 1024
+"""Maximum pane text retained by the safety classifier."""
+
+_PROVIDER_IDLE_PATTERNS = {
+    "codex": re.compile(r"(?m)^\s*›(?:\s|$)"),
+    "claude": re.compile(r"(?m)^\s*❯(?:\s|$)"),
+    "kimi": re.compile(r"(?m)^\s*(?:›|❯|>)\s*(?:$|Ask\b|Type\b)"),
+    "grok": re.compile(r"(?m)^\s*(?:›|❯|>)\s*(?:$|Ask\b|Type\b)"),
+    "gemini": re.compile(
+        r"(?im)^\s*(?:›|❯|>)?\s*(?:Type your message|Type a message|Ask Gemini)\b"
+    ),
+}
+"""Provider-specific idle composer markers; unknown providers fail closed."""
+
+_UNSAFE_PANE_PATTERN = re.compile(
+    r"(?im)(?:"
+    r"^\s*(?:›|❯|>|→)?\s*\d+[.)]\s+"
+    r"|\b(?:approve|approval|allow|deny|permission|confirm|confirmation|trust)\b"
+    r"|\b(?:working|thinking|generating|running tool|press .*? to cancel|esc to interrupt)\b"
+    r")"
+)
+"""Conservative modal/busy markers that override every idle marker."""
 
 
 class Sleeper(Protocol):
@@ -135,7 +161,7 @@ class AgentTmuxConfig:
     registry_dir : Path or None, optional
         Override for the local wake-target registry directory.
     submit_delay : float, optional
-        Seconds between typing the prompt and pressing Enter.
+        Seconds between the bracketed paste and the second pane-safety probe.
     pane_probe_interval : float, optional
         Maximum seconds between live pane and identity-binding probes.
     """
@@ -188,6 +214,7 @@ class RegistryRecord:
     updated_at: float = field(default_factory=time.time)
     last_start_returncode: int | None = None
     last_inject_returncode: int | None = None
+    pending_wake: bool = False
 
 
 def agent_binary(config: AgentTmuxConfig) -> str:
@@ -258,20 +285,53 @@ def _write_registry(
     *,
     last_start_returncode: int | None = None,
     last_inject_returncode: int | None = None,
+    pending_wake: bool | None = None,
 ) -> None:
-    """Write the local wake-target registry atomically."""
+    """Write the local wake-target registry atomically, preserving prior state."""
     # Parent is already an owner-only directory via :func:`_registry_dir`.
     path = registry_path(config)
+    existing: dict[str, object] = {}
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            existing = loaded
+    except (OSError, json.JSONDecodeError):
+        pass
     record = RegistryRecord(
         identity=config.identity,
         session=config.session,
         cwd=str(config.cwd),
-        last_start_returncode=last_start_returncode,
-        last_inject_returncode=last_inject_returncode,
+        last_start_returncode=(
+            last_start_returncode
+            if last_start_returncode is not None
+            else _optional_int(existing.get("last_start_returncode"))
+        ),
+        last_inject_returncode=(
+            last_inject_returncode
+            if last_inject_returncode is not None
+            else _optional_int(existing.get("last_inject_returncode"))
+        ),
+        pending_wake=(
+            pending_wake if pending_wake is not None else existing.get("pending_wake") is True
+        ),
     )
     temp = path.with_suffix(".tmp")
     temp.write_text(json.dumps(record.__dict__, sort_keys=True) + "\n", encoding="utf-8")
     temp.replace(path)
+
+
+def _optional_int(value: object) -> int | None:
+    """Return a stored integer without accepting booleans or loose coercion."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _pending_wake(config: AgentTmuxConfig) -> bool:
+    """Return whether a consumed wake remains queued for safe pane delivery."""
+    try:
+        payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and payload.get("pending_wake") is True
 
 
 def build_wake_prompt(identity: str) -> str:
@@ -301,6 +361,75 @@ def build_wake_prompt(identity: str) -> str:
         "require no status reply; continue any active user-directed task and wait "
         "only when otherwise idle."
     )
+
+
+def _provider_family(config: AgentTmuxConfig) -> str | None:
+    """Return the supported terminal provider named by the launch command."""
+    for token in config.agent_command:
+        if token.startswith("-"):
+            continue
+        binary = Path(token).name.lower()
+        for suffix in (".js", ".mjs", ".cjs", ".py"):
+            if binary.endswith(suffix):
+                binary = binary[: -len(suffix)]
+        for provider in _PROVIDER_IDLE_PATTERNS:
+            if binary == provider or binary.startswith(f"{provider}-"):
+                return provider
+    return None
+
+
+def _capture_pane(config: AgentTmuxConfig, *, runner: CommandRunner) -> tuple[str | None, str]:
+    """Capture a bounded pane tail without returning terminal contents in errors."""
+    proc = runner(
+        [
+            config.tmux_bin,
+            "capture-pane",
+            "-t",
+            config.session,
+            "-p",
+            "-J",
+            "-S",
+            f"-{PANE_CAPTURE_HISTORY_LINES}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return None, "pane capture failed"
+    if len(proc.stdout) > PANE_CAPTURE_MAX_CHARS:
+        return None, "pane capture exceeded the safety bound"
+    return proc.stdout, "pane captured"
+
+
+def _pane_is_safe_for_submit(
+    config: AgentTmuxConfig,
+    *,
+    runner: CommandRunner,
+    required_text: str | None = None,
+) -> tuple[bool, str]:
+    """Require a known idle composer and reject modal or busy provider state.
+
+    Pane text is used only as a local classification input and is never included
+    in diagnostics or registry records. Unknown providers and ambiguous screens
+    queue the wake instead of emitting any key.
+    """
+    provider = _provider_family(config)
+    if provider is None:
+        return False, "provider has no fail-closed idle profile"
+    screen, detail = _capture_pane(config, runner=runner)
+    if screen is None:
+        return False, detail
+    lines = screen.splitlines()
+    state_window = "\n".join(lines[-24:])
+    idle_window = "\n".join(lines[-8:])
+    if _UNSAFE_PANE_PATTERN.search(state_window):
+        return False, f"{provider} pane is busy, modal, or ambiguous"
+    if not _PROVIDER_IDLE_PATTERNS[provider].search(idle_window):
+        return False, f"{provider} idle composer marker is absent"
+    if required_text is not None and required_text not in screen:
+        return False, "wake prompt was not accepted by the idle composer"
+    return True, f"{provider} idle composer verified"
 
 
 def _has_session(config: AgentTmuxConfig, *, runner: CommandRunner) -> bool:
@@ -437,14 +566,15 @@ def inject_wake(
     sleeper: Sleeper = time.sleep,
     unsafe_payload: str | None = None,
 ) -> AgentTmuxWakeResult:
-    """Inject the fixed wake prompt into the configured tmux pane.
+    """Inject the fixed wake prompt only into a verified idle provider composer.
 
-    The prompt text and the submit key are sent as two separate
-    ``tmux send-keys`` invocations with a :attr:`AgentTmuxConfig.submit_delay`
-    pause between them. A single invocation that appends the Enter key leaves the
-    prompt unsent in the agent's input buffer, because the terminal UI commits
-    the pasted line only after the Enter has already been consumed. The prompt is
-    typed literally (``-l``) so no word in it is mistaken for a tmux key name.
+    The pane is captured before any mutation and must match a provider-specific
+    idle profile with no modal/busy marker. The fixed prompt is then delivered as
+    one bracketed paste, not as individual shortcut-capable keys. After the
+    submit delay a second capture must still show both the idle composer and the
+    exact fixed prompt before Enter is sent. Any unknown or ambiguous state is a
+    successful queue operation: the consumed wake remains in the private local
+    registry for :func:`wait_and_wake` to retry after a bounded quiet interval.
 
     Parameters
     ----------
@@ -461,46 +591,107 @@ def inject_wake(
     Returns
     -------
     AgentTmuxWakeResult
-        ``injected`` is true only when both the type and submit calls succeed.
+        ``injected`` is true only when both safety probes, the paste, and submit
+        succeed. A queued wake returns zero with ``injected`` false.
     """
     del unsafe_payload
     binding_valid, binding_detail = _session_binding(config, runner=runner)
     if not binding_valid:
+        _write_registry(config, pending_wake=True)
         return AgentTmuxWakeResult(
             injected=False,
             started=False,
             returncode=BINDING_REFUSAL_EXIT_CODE,
             detail=f"refusing wake injection: {binding_detail}",
         )
-    type_proc = runner(
+    safe, safety_detail = _pane_is_safe_for_submit(config, runner=runner)
+    if not safe:
+        _write_registry(config, last_inject_returncode=0, pending_wake=True)
+        return AgentTmuxWakeResult(
+            injected=False,
+            started=False,
+            returncode=0,
+            detail=f"wake queued: {safety_detail}",
+        )
+    prompt = build_wake_prompt(config.identity)
+    buffer_name = f"synapse-wake-{_safe_key(config.identity)}"
+    buffer_proc = runner(
         [
             config.tmux_bin,
-            "send-keys",
-            "-t",
-            config.session,
-            "-l",
-            build_wake_prompt(config.identity),
+            "set-buffer",
+            "-b",
+            buffer_name,
+            "--",
+            prompt,
         ],
         capture_output=True,
         text=True,
         check=False,
     )
-    if type_proc.returncode != 0:
-        _write_registry(config, last_inject_returncode=type_proc.returncode)
+    if buffer_proc.returncode != 0:
+        _write_registry(
+            config,
+            last_inject_returncode=buffer_proc.returncode,
+            pending_wake=True,
+        )
         return AgentTmuxWakeResult(
             injected=False,
             started=False,
-            returncode=type_proc.returncode,
-            detail=(type_proc.stderr or type_proc.stdout).strip() or "type failed",
+            returncode=buffer_proc.returncode,
+            detail=(buffer_proc.stderr or buffer_proc.stdout).strip() or "buffer setup failed",
+        )
+    paste_proc = runner(
+        [
+            config.tmux_bin,
+            "paste-buffer",
+            "-b",
+            buffer_name,
+            "-d",
+            "-p",
+            "-t",
+            config.session,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if paste_proc.returncode != 0:
+        _write_registry(
+            config,
+            last_inject_returncode=paste_proc.returncode,
+            pending_wake=True,
+        )
+        return AgentTmuxWakeResult(
+            injected=False,
+            started=False,
+            returncode=paste_proc.returncode,
+            detail=(paste_proc.stderr or paste_proc.stdout).strip() or "paste failed",
         )
     sleeper(max(config.submit_delay, 0.0))
+    safe, safety_detail = _pane_is_safe_for_submit(
+        config,
+        runner=runner,
+        required_text=prompt,
+    )
+    if not safe:
+        _write_registry(config, last_inject_returncode=0, pending_wake=True)
+        return AgentTmuxWakeResult(
+            injected=False,
+            started=False,
+            returncode=0,
+            detail=f"wake queued after paste: {safety_detail}",
+        )
     submit_proc = runner(
         [config.tmux_bin, "send-keys", "-t", config.session, "Enter"],
         capture_output=True,
         text=True,
         check=False,
     )
-    _write_registry(config, last_inject_returncode=submit_proc.returncode)
+    _write_registry(
+        config,
+        last_inject_returncode=submit_proc.returncode,
+        pending_wake=submit_proc.returncode != 0,
+    )
     return AgentTmuxWakeResult(
         injected=submit_proc.returncode == 0,
         started=False,
@@ -707,8 +898,24 @@ def wait_and_wake(
         inject return code when a tmux send fails.
     """
     wakes = 0
+    pending = _pending_wake(config)
     consecutive_failures = 0
     while max_wakes is None or wakes < max_wakes:
+        if pending:
+            snapshot = status(config, runner=runner)
+            if not snapshot.session_exists or not snapshot.agent_active:
+                return 1
+            if not snapshot.binding_valid:
+                return BINDING_REFUSAL_EXIT_CODE
+            wake = inject_wake(config, runner=runner, sleeper=sleeper)
+            if wake.returncode != 0:
+                return wake.returncode
+            if wake.injected:
+                pending = False
+                wakes += 1
+            else:
+                sleeper(max(config.pane_probe_interval, 0.1))
+            continue
         wait_proc = runner(
             _wait_command(config),
             capture_output=True,
@@ -751,5 +958,9 @@ def wait_and_wake(
         wake = inject_wake(config, runner=runner, sleeper=sleeper, unsafe_payload=wait_proc.stdout)
         if wake.returncode != 0:
             return wake.returncode
+        if not wake.injected:
+            pending = True
+            sleeper(max(config.pane_probe_interval, 0.1))
+            continue
         wakes += 1
     return 0

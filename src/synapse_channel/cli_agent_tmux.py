@@ -154,8 +154,8 @@ def _add_common_args(
         type=float,
         default=DEFAULT_SUBMIT_DELAY,
         help=(
-            "Seconds to pause between typing the wake prompt and pressing Enter "
-            "so the agent UI commits the line before it is submitted."
+            "Seconds between the bracketed wake paste and the second idle-pane "
+            "safety probe before Enter may be submitted."
         ),
     )
 

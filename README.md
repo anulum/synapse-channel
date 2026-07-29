@@ -284,7 +284,10 @@ exact-identity waiter with
 and `Restart=always`, without installing a hub. Its
 `myproject/agent-rx` receiver can coexist with agent-tmux's distinct
 `myproject/agent-pane-rx` bridge, preserving durable gap recovery and active
-pane injection without name takeover. Native Windows service setup is not
+pane delivery without name takeover. The pane bridge fails closed on busy,
+modal, unknown, or ambiguous provider screens: it persists the pending wake and
+submits its fixed prompt only after two provider-specific idle-composer probes.
+Native Windows service setup is not
 claimed; use WSL with systemd as documented in the deployment guide.
 
 Two optional shell conveniences ship with the CLI: `synapse completions
@@ -1559,7 +1562,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 777 |
 | Wire message types | 80 |
 | CLI subcommands | 183 |
-| Test functions | 9120 |
+| Test functions | 9128 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 61 |
 | GitHub Actions workflows | 25 |
