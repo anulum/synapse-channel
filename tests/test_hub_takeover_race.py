@@ -64,7 +64,7 @@ async def main():
         try:
             while True:
                 await asyncio.wait_for(websocket.recv(), timeout=1.5)
-        except TimeoutError:
+        except (TimeoutError, asyncio.TimeoutError):
             ready.with_suffix(".survivor").touch()
             while not done.exists():
                 await asyncio.sleep(0.005)
@@ -165,11 +165,18 @@ async def _await_process_race(
     loop = asyncio.get_event_loop()
     deadline = loop.time() + timeout
     stable_since: float | None = None
+    last_observation = "race not observed"
     while loop.time() < deadline:
         superseded = sum(process.returncode == 10 for process in processes)
-        survivors = sum(path.is_file() for path in survivor_paths)
+        survivor_markers = tuple(path.is_file() for path in survivor_paths)
+        survivors = sum(survivor_markers)
         bound = [socket for socket, name in hub.clients.socket_agent.items() if name == NAME]
         bijective = len(bound) == 1 and hub.clients.agent_sockets.get(NAME) is bound[0]
+        last_observation = (
+            f"returncodes={tuple(process.returncode for process in processes)!r}, "
+            f"survivor_markers={survivor_markers!r}, bound={len(bound)}, "
+            f"bijective={bijective}"
+        )
         if superseded == 1 and survivors == 1 and bijective:
             if stable_since is None:
                 stable_since = loop.time()
@@ -178,7 +185,9 @@ async def _await_process_race(
         else:
             stable_since = None
         await asyncio.sleep(0.01)
-    raise TimeoutError("takeover processes did not settle a stable one-owner bijection")
+    raise TimeoutError(
+        f"takeover processes did not settle a stable one-owner bijection: {last_observation}"
+    )
 
 
 async def _drain_until_closed_or_quiet(websocket: Any, *, window: float = 0.8) -> str:
@@ -401,7 +410,11 @@ async def test_two_os_processes_racing_one_name_leave_one_live_owner(tmp_path: P
                     stderr=asyncio.subprocess.PIPE,
                 )
                 processes.append(process)
-            await _await_files(ready_paths)
+            # Importing the full client stack in two fresh Python 3.10
+            # interpreters can exceed the generic three-second in-process
+            # polling window on a loaded runner.  This allowance ends before
+            # the shared race gate opens; it doesn't relax takeover settling.
+            await _await_files(ready_paths, timeout=8.0)
             gate.touch()
             process_pair = (processes[0], processes[1])
             await _await_process_race(hub, process_pair, survivor_paths)
