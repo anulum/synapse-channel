@@ -62,9 +62,12 @@ contested namespace, have shipped:
   `(hub_id, seq)`, replays them in the deterministic `(ts, hub_id, seq)` order, and
   reports the per-hub resume cursor.
 - `core/multihub_fold.py` — folds that merged order into the observed mergeable view: the
-  board (last-writer-wins per task), the grow-only progress ledger, and the **observed
-  claim** view — the latest claim each peer reports, tagged with its hub, marked advisory,
-  cleared on release, and **never granted**.
+  board (display-only last-write-wins per task), the grow-only progress ledger, and the
+  **observed claim** view — the latest claim each peer reports, tagged with its hub, marked
+  advisory, cleared on release, and **never granted**. The board contract is explicitly
+  non-authoritative and non-causal: JSON exposes its policy and each displayed task's
+  winning `(timestamp, hub_id, seq)` provenance. A clock-ahead older declaration can win
+  the display; NTP or observed clock skew does not turn that order into causal proof.
   Partition detection uses a stricter sibling fold keyed by `(hub_id, task_id)`, so a
   release from one hub cannot erase another hub's equal-named task from the authority
   signal even though the general display view remains last-writer-wins by task id.
@@ -177,8 +180,8 @@ synapse multihub observe --peer-db ./west.db --peer-id west
 
 ```text
 observing peer 'west' — 1 tasks, 0 progress notes, 0 observed claims
-board:
-  [open] docs — Write the docs
+board (display-only LWW — non-authoritative, non-causal):
+  [open] docs — Write the docs [display source west#1 @ 1]
 ```
 
 And west's operator observes east — including east's claim, which appears as an
@@ -190,8 +193,8 @@ synapse multihub observe --peer-db ./east.db --peer-id east
 
 ```text
 observing peer 'east' — 1 tasks, 0 progress notes, 1 observed claims
-board:
-  [open] build — Build the wheel
+board (display-only LWW — non-authoritative, non-causal):
+  [open] build — Build the wheel [display source east#1 @ 1]
 observed claims (advisory — not granted):
   build -> <agent> @ east
 ```
@@ -199,7 +202,9 @@ observed claims (advisory — not granted):
 `observe` reads the peer's event store through the same `read_since` seam the follower
 uses — SQLite WAL lets it read alongside the live peer hub — and prints the folded state.
 It grants nothing: a peer's claim is advisory here, and a real claim is still made on the
-owning hub. Add `--json` for a machine-readable `ObservedState`.
+owning hub. Add `--json` for a machine-readable `ObservedState`. The JSON retains the
+existing `board` records and adds `board_policy` plus per-task `board_provenance`; consumers
+must not use that display winner as authoritative task truth or a causal version.
 
 ### 4. Follow a peer over the network
 
@@ -213,8 +218,8 @@ synapse multihub follow --peer-uri wss://west.example:8876/ --peer-id west
 
 ```text
 observing peer 'west' — 1 tasks, 0 progress notes, 0 observed claims
-board:
-  [open] docs — Write the docs
+board (display-only LWW — non-authoritative, non-causal):
+  [open] docs — Write the docs [display source west#1 @ 1]
 ```
 
 `follow` is the network counterpart of `observe`: it drops a network fetcher into the same
@@ -316,13 +321,17 @@ Coordination state is not one thing; each kind has a different merge story.
 
 - **Durable event log** — append-only and the natural sync unit. Each hub's events
   carry a hub id and a per-hub monotonic sequence, so the union of two logs is a
-  grow-only set ordered by `(hub_id, seq)` with vector-clock causality. Replaying
-  the merged log is deterministic. This is the one piece that is genuinely
-  CRDT-shaped.
+  grow-only set keyed by `(hub_id, seq)`. Replaying the union in
+  `(timestamp, hub_id, seq)` order is deterministic, but that total order is not a
+  vector clock and does not establish cross-hub causality. The grow-only union is
+  the one piece that is genuinely CRDT-shaped.
 - **Presence** — last-writer-wins per agent, keyed by hub id; an agent is present
   on the hub it connected to, and a peer view is advisory.
-- **Progress notes and the board plan** — grow-only (notes) and LWW-per-field
-  (task status), both mergeable with explicit tie-breaks by `(ts, hub_id)`.
+- **Progress notes and the board plan** — notes are grow-only. The observed board
+  is a display-only whole-record LWW projection ordered by
+  `(timestamp, hub_id, seq)`, with visible winner provenance. It is useful for a
+  convergent operator view but is neither authoritative task state nor a causal
+  merge; a clock-ahead older record can overwrite the display.
 - **Capability cards** — LWW per agent id, mergeable.
 - **Claims** — **not mergeable.** A claim is a lease that must be unique per file
   scope; two hubs independently granting the same scope is precisely the collision
@@ -405,6 +414,12 @@ deliberately conservative.
   forwarding of a remote-owned claim to its owner, refusing a contested namespace on
   observed assertions, the hub's own standing follower feeding those assertions
   (`--multihub-watch`), and durable partition/heal transition evidence all ship.
+- **The observed board is not causal or authoritative.** Its deterministic LWW
+  winner is only an operator display selection. The machine and text surfaces say
+  so and expose the winner's event provenance; synchronized clocks, including NTP,
+  do not establish a parent/version relation. Local board truth, claim authority,
+  and the separate fail-closed namespace ownership resolver do not consume this
+  display choice.
 - It does **not** add a new always-on wire surface casually — the pull is a request/snapshot
   message pair on the existing hub server, reusing the event log, `read_since` seam, and
   mTLS peer bundles; it adds no always-on cross-hub service to the local core.

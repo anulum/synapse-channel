@@ -66,12 +66,18 @@ def _render(state: ObservedState, peer_id: str, *, json_out: bool) -> None:
         f"{len(state.progress)} progress notes, {len(state.observed_claims)} observed claims"
     )
     if state.board:
-        print("board:")
+        print("board (display-only LWW — non-authoritative, non-causal):")
         for task_id in sorted(state.board):
             task = state.board[task_id]
             status = task.get("status", "?")
             title = task.get("title", "")
-            print(f"  [{terminal_text(status)}] {terminal_text(task_id)} — {terminal_text(title)}")
+            provenance = state.board_provenance[task_id]
+            print(
+                f"  [{terminal_text(status)}] {terminal_text(task_id)} — "
+                f"{terminal_text(title)} [display source "
+                f"{terminal_text(provenance.hub_id)}#{provenance.seq} "
+                f"@ {provenance.timestamp:g}]"
+            )
     if state.observed_claims:
         print("observed claims (advisory — not granted):")
         for task_id in sorted(state.observed_claims):

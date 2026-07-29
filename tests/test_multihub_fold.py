@@ -12,6 +12,7 @@ from typing import Any
 
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_fold import (
+    BOARD_DISPLAY_WARNING,
     ObservedState,
     asserting_owners,
     asserting_owners_from_events,
@@ -29,7 +30,7 @@ def _project_of(agent: str) -> str:
     return agent.split("/", 1)[0] if "/" in agent else ""
 
 
-def test_board_is_last_writer_wins_per_task() -> None:
+def test_board_is_explicitly_non_authoritative_display_lww_with_provenance() -> None:
     events = [
         _ev("hub-a", 1, 1.0, EventKind.LEDGER_TASK, task_id="T", title="first", status="open"),
         _ev("hub-b", 1, 2.0, EventKind.LEDGER_TASK, task_id="T", title="second", status="done"),
@@ -37,6 +38,40 @@ def test_board_is_last_writer_wins_per_task() -> None:
     state = fold_observed_state(events)
     assert state.board["T"]["title"] == "second"
     assert state.board["T"]["status"] == "done"
+    provenance = state.board_provenance["T"]
+    assert provenance.order_key == (2.0, "hub-b", 1)
+    assert provenance.to_dict() == {
+        "task_id": "T",
+        "hub_id": "hub-b",
+        "seq": 1,
+        "timestamp": 2.0,
+        "order_key": [2.0, "hub-b", 1],
+        "display_winner": True,
+        "authoritative": False,
+        "causal": False,
+    }
+
+
+def test_clock_ahead_older_state_can_win_but_is_never_presented_as_causal_truth() -> None:
+    real_newer = _ev("hub-a", 2, 10.0, EventKind.LEDGER_TASK, task_id="T", title="real newer")
+    clock_ahead_older = _ev(
+        "hub-b", 1, 1000.0, EventKind.LEDGER_TASK, task_id="T", title="older but ahead"
+    )
+
+    state = fold_observed_state(merge_event_logs([real_newer], [clock_ahead_older]))
+    payload = state.to_dict()
+
+    assert state.board["T"]["title"] == "older but ahead"
+    assert payload["board_policy"] == {
+        "mode": "display-only-lww",
+        "order": ["timestamp", "hub_id", "seq"],
+        "authoritative": False,
+        "causal": False,
+        "warning": BOARD_DISPLAY_WARNING,
+    }
+    assert payload["board_provenance"]["T"]["hub_id"] == "hub-b"
+    assert payload["board_provenance"]["T"]["causal"] is False
+    assert "NTP" in payload["board_policy"]["warning"]
 
 
 def test_progress_is_grow_only_in_order() -> None:
@@ -93,7 +128,19 @@ def test_fold_consumes_the_merged_order_from_two_logs() -> None:
 def test_empty_fold_and_to_dict_round_trip() -> None:
     empty = fold_observed_state([])
     assert empty == ObservedState()
-    assert empty.to_dict() == {"board": {}, "progress": [], "observed_claims": {}}
+    assert empty.to_dict() == {
+        "board": {},
+        "board_policy": {
+            "mode": "display-only-lww",
+            "order": ["timestamp", "hub_id", "seq"],
+            "authoritative": False,
+            "causal": False,
+            "warning": BOARD_DISPLAY_WARNING,
+        },
+        "board_provenance": {},
+        "progress": [],
+        "observed_claims": {},
+    }
 
     populated = fold_observed_state(
         [
@@ -104,6 +151,7 @@ def test_empty_fold_and_to_dict_round_trip() -> None:
     )
     payload = populated.to_dict()
     assert payload["board"]["T"]["title"] == "t"
+    assert payload["board_provenance"]["T"]["order_key"] == [1.0, "hub-a", 1]
     assert payload["progress"][0]["text"] == "p"
     assert payload["observed_claims"]["T"]["observed"] is True
 

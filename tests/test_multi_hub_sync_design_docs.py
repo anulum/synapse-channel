@@ -45,6 +45,19 @@ def test_multi_hub_sync_splits_state_by_mergeability() -> None:
     assert "vector-clock" in text or "vector clock" in text
 
 
+def test_observed_board_lww_is_documented_as_display_only_not_causality() -> None:
+    """A convergent timestamp display must never be presented as task truth."""
+    text = _collapsed(DOC)
+    assert "display-only" in text
+    assert "non-authoritative" in text
+    assert "non-causal" in text
+    assert "board_policy" in text
+    assert "board_provenance" in text
+    assert "clock-ahead older" in text
+    assert "ntp" in text and "causal proof" in text
+    assert "local board truth, claim authority" in text
+
+
 def test_multi_hub_sync_refuses_to_treat_claims_as_a_crdt() -> None:
     """The core honest result: claims are mutual exclusion, not a CRDT."""
     text = _collapsed(DOC)

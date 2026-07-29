@@ -54,7 +54,9 @@ def test_observe_prints_board_claims_and_progress(
     assert _cmd_observe(args) == 0
     out = capsys.readouterr().out
     assert "observing peer 'peer-east' — 2 tasks, 1 progress notes, 1 observed claims" in out
-    assert "[open] T1 — build" in out and "[done] T2 — test" in out
+    assert "board (display-only LWW — non-authoritative, non-causal):" in out
+    assert "[open] T1 — build [display source peer-east#1 @ 1]" in out
+    assert "[done] T2 — test [display source peer-east#2 @ 2]" in out
     assert "observed claims (advisory — not granted):" in out
     assert "T1 -> alpha @ peer-east" in out
 
@@ -67,6 +69,9 @@ def test_observe_json_with_peer_id_override(
     payload = json.loads(capsys.readouterr().out)
     assert payload["peer_id"] == "east"
     assert payload["board"]["T2"]["status"] == "done"
+    assert payload["board_policy"]["mode"] == "display-only-lww"
+    assert payload["board_policy"]["causal"] is False
+    assert payload["board_provenance"]["T2"]["order_key"] == [2.0, "east", 2]
     assert payload["observed_claims"]["T1"]["hub_id"] == "east"  # tagged with the override id
     assert payload["observed_claims"]["T1"]["observed"] is True
 

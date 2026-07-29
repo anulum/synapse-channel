@@ -56,6 +56,7 @@ async def test_poll_folds_a_peer_log_into_the_observed_view() -> None:
     state = await follower.poll("east", peer.fetch)
 
     assert state.board["T"]["title"] == "build"
+    assert state.board_provenance["T"].order_key == (1.0, "east", 1)
     assert state.observed_claims["T"].hub_id == "east"
     assert state.observed_claims["T"].claim["owner"] == "alpha"
     assert peer.cursors == [0]  # first poll starts from the beginning
@@ -92,7 +93,7 @@ async def test_poll_is_incremental_and_idempotent() -> None:
     assert follower.cursor("east") == 2
 
 
-async def test_poll_merges_multiple_peers_by_timestamp() -> None:
+async def test_poll_merges_multiple_peers_into_non_causal_display_order() -> None:
     west = _FakePeer([_stored(1, 5.0, EventKind.LEDGER_TASK, task_id="T", title="late")])
     east = _FakePeer([_stored(1, 1.0, EventKind.LEDGER_TASK, task_id="T", title="early")])
     follower = MultiHubFollower()
@@ -100,6 +101,9 @@ async def test_poll_merges_multiple_peers_by_timestamp() -> None:
     state = await follower.poll("west", west.fetch)
     # the later-timestamped declaration wins across the merged union
     assert state.board["T"]["title"] == "late"
+    assert state.board_provenance["T"].hub_id == "west"
+    assert state.to_dict()["board_policy"]["authoritative"] is False
+    assert state.to_dict()["board_policy"]["causal"] is False
     assert follower.peers() == ("east", "west")
 
 

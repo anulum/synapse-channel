@@ -27,6 +27,11 @@ All notable changes to this project are documented here.
 - Persist credential-free A2A push-delivery attempt evidence, expose it through
   authenticated task-scoped HTTP and JSON-RPC reads, and return typed success or
   terminal dead-letter results after a bounded 0.25/1-second retry schedule.
+- Narrow the multi-hub task board to an explicitly non-authoritative, non-causal
+  display-only LWW contract. Text and JSON surfaces expose each displayed
+  winner's `(timestamp, hub_id, seq)` provenance and state that synchronized
+  clocks, including NTP, are not causal proof; local claim and namespace
+  authority remain separate.
 
 ### Security
 
