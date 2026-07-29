@@ -67,7 +67,7 @@ id = "atomic-operation-truth"
 title = "Atomic operation truth"
 status = "partial"
 guarantee = "Covered coordination operations publish success only after durable commit, are apply-once for a stable operation identifier, and publish every committed live projection before post-commit cancellation propagates."
-scope = "Journal-backed claim, task update, release, handoff, checkpoint, guard-denial, resource, task-board declare/update/progress, and single-person or quorum-completing two-person governed operator-relay operation families."
+scope = "Journal-backed claim, task update, release, handoff, checkpoint, guard-denial, resource, task-board declare/update/progress, accepted recall/finding memory writes, and single-person or quorum-completing two-person governed operator-relay operation families."
 limitations = [
   "Atomic truth is not yet a universal transaction boundary for every command and external side effect.",
   "Two-person pending decisions remain restart-cleared and do not exact-replay; the origin hub's outbound relay audit is not part of the owning hub's keyed transaction.",
@@ -76,7 +76,9 @@ spec_invariants = ["INV-JA-1", "INV-JA-2", "INV-JA-3", "INV-CR-1", "INV-DG-2"]
 sources = [
   "src/synapse_channel/cli_tasks.py",
   "src/synapse_channel/client/agent_outbound_ledger.py",
+  "src/synapse_channel/client/agent_outbound_memory.py",
   "src/synapse_channel/core/atomic_operations.py",
+  "src/synapse_channel/core/handlers/memory.py",
   "src/synapse_channel/core/handlers/leasing.py",
   "src/synapse_channel/core/handlers/planning.py",
   "src/synapse_channel/core/handlers/operator_relay.py",
@@ -90,9 +92,11 @@ tests = [
   "tests/test_atomic_operation_handlers.py",
   "tests/test_cli_tasks.py",
   "tests/test_client_ledger_envelopes.py",
+  "tests/test_client_send_envelopes.py",
   "tests/test_coordination_spec_model.py",
   "tests/test_planning_handlers.py",
   "tests/test_hub_operator_relay.py",
+  "tests/test_memory.py",
   "tests/test_operator_relay_approval.py",
 ]
 evidence_modes = ["kill-point", "state-machine", "restart", "concurrency", "cancellation", "authorized-transport", "unit"]

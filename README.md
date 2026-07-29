@@ -1509,6 +1509,14 @@ async def main() -> None:
     # ... drive the agent: claim, chat, request state ...
 ```
 
+The typed `log_recall(..., idem_key=...)` and
+`record_finding(..., idem_key=...)` helpers accept caller-retained retry keys.
+With `SynapseHub(journal=...)`, each admitted memory write and its exact response
+commit together: an identical retry replays after restart, while reusing the key
+for changed content is refused without exposing the key or prior values. The key
+does not make a non-journalled hub durable, and rejected findings remain
+non-events rather than durable successful operations.
+
 Two self-contained, runnable demos live in [`examples/`](examples/):
 `coordination_demo.py` narrates a full task through the bus (declare, block,
 claim, refuse an overlap, unblock, hand off), and `llm_team_demo.py` asks an
@@ -1564,10 +1572,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Package version | 0.99.17 |
 | Public API exports | 70 |
 | Package modules | 528 |
-| Classes | 792 |
+| Classes | 794 |
 | Wire message types | 80 |
 | CLI subcommands | 184 |
-| Test functions | 9253 |
+| Test functions | 9260 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 62 |
 | GitHub Actions workflows | 25 |

@@ -35,6 +35,12 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Make accepted recall-log and finding writes apply once when the typed client
+  supplies `idem_key`. A journal-backed hub commits the memory event, exact
+  acknowledgement or recorded verdict, request digest, and evidence intent in
+  one FULL-synchronous transaction; identical retries replay after restart and
+  changed payloads fail value-free. Finding quota now publishes only after the
+  event commit, so a failed append cannot consume live admission capacity.
 - Extend the keyed operator-relay boundary to two-person mode. Pending approval
   and its audit now publish together through the shared mutation actor; a
   quorum-completing request atomically clears approval state, releases the

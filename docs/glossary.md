@@ -125,7 +125,8 @@ Streaming durable events from the **hub**'s **event log** since a sequence curso
 The durable, append-only SQLite-WAL record of everything authoritative (claims, releases, plan
 writes, findings), enabled with `synapse hub --db …`. It is replayed on restart to resume state,
 applies the same blackboard retention and finding-quota counters, and is the spine for
-**ingest**.
+**ingest**. Accepted recall and finding writes carrying a caller-retained idempotency key commit
+their event and exact response together; a failed finding append does not consume live quota.
 
 ### Temporal event-log query
 

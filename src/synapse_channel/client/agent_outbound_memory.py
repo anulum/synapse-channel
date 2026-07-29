@@ -27,6 +27,7 @@ class AgentMemoryMixin:
         returned_claim_ids: tuple[str, ...] | list[str] = (),
         was_used: bool = False,
         abstained: bool = False,
+        idem_key: str | None = None,
     ) -> None:
         """Log one recall query-stream event to the hub.
 
@@ -40,6 +41,9 @@ class AgentMemoryMixin:
             Whether the returned answer was actually used.
         abstained : bool, optional
             Whether the memory layer abstained.
+        idem_key : str or None, optional
+            Caller-retained retry key. A journal-backed hub applies one accepted
+            recall event once and replays its exact acknowledgement after restart.
         """
         await self.send_message(
             MessageType.RECALL_LOG,
@@ -47,6 +51,7 @@ class AgentMemoryMixin:
             returned_claim_ids=list(returned_claim_ids),
             was_used=was_used,
             abstained=abstained,
+            **({"idem_key": idem_key} if idem_key is not None else {}),
         )
 
     async def record_finding(
@@ -54,6 +59,7 @@ class AgentMemoryMixin:
         statement: str,
         *,
         subkind: str,
+        idem_key: str | None = None,
         evidence_kind: str | None = None,
         claim_status: str | None = None,
         freshness: str | None = None,
@@ -80,6 +86,9 @@ class AgentMemoryMixin:
             The assertion being remembered.
         subkind : str
             Episodic category for the authored memory atom.
+        idem_key : str or None, optional
+            Caller-retained retry key. A journal-backed hub applies one admitted
+            finding once and replays its exact recorded verdict after restart.
         evidence_kind, claim_status, freshness, evidence_ref : str or None, optional
             Evidence and epistemic metadata carried to the hub emit gate.
         project, session, source_ref : str, optional
@@ -113,6 +122,8 @@ class AgentMemoryMixin:
                 "source_ref": source_ref,
             },
         }
+        if idem_key is not None:
+            extra["idem_key"] = idem_key
         if evidence_kind is not None:
             extra["evidence_kind"] = evidence_kind
         if claim_status is not None:

@@ -56,6 +56,7 @@ async def test_log_recall_emits_envelope() -> None:
             returned_claim_ids=["c1", "c2"],
             was_used=True,
             abstained=False,
+            idem_key="recall-session-1",
         )
         await wait_for_recorded_count(messages, 2)
         msg = messages[-1]
@@ -66,6 +67,7 @@ async def test_log_recall_emits_envelope() -> None:
     assert msg["returned_claim_ids"] == ["c1", "c2"]
     assert msg["was_used"] is True
     assert msg["abstained"] is False
+    assert msg["idem_key"] == "recall-session-1"
 
 
 async def test_log_recall_defaults_to_empty_outcome() -> None:
@@ -77,6 +79,7 @@ async def test_log_recall_defaults_to_empty_outcome() -> None:
     assert msg["returned_claim_ids"] == []
     assert msg["was_used"] is False
     assert msg["abstained"] is False
+    assert "idem_key" not in msg
 
 
 async def test_chat_memory_tag_rides_the_envelope_only_when_set() -> None:
@@ -106,6 +109,7 @@ async def test_record_finding_emits_envelope() -> None:
         await agent.record_finding(
             "K_nm correlates with directed coupling at r=0.951",
             subkind="codebase-fact",
+            idem_key="finding-k-nm-1",
             evidence_kind="measured",
             claim_status="reference-validated",
             evidence_ref="experiments/k_nm.py:88",
@@ -131,6 +135,7 @@ async def test_record_finding_emits_envelope() -> None:
     assert msg["sender"] == "SCPN-CONTROL/agent-1"
     assert msg["statement"] == "K_nm correlates with directed coupling at r=0.951"
     assert msg["subkind"] == "codebase-fact"
+    assert msg["idem_key"] == "finding-k-nm-1"
     assert msg["evidence_kind"] == "measured"
     assert msg["claim_status"] == "reference-validated"
     assert msg["evidence_ref"] == "experiments/k_nm.py:88"
@@ -158,6 +163,7 @@ async def test_record_finding_omits_unset_optionals_but_always_sends_envelopes()
     assert "freshness" not in msg
     assert "lifecycle" not in msg
     assert "entities" not in msg
+    assert "idem_key" not in msg
     # ...but the structural envelopes the gate checks for are always present.
     assert msg["provenance"] == {"project": "", "session": "", "source_event_seq": None}
     assert msg["validity"] == {"valid_from": None, "valid_to": None}

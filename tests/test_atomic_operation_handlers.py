@@ -19,6 +19,7 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.handlers import (
     guard_evidence,
     leasing,
+    memory,
     offerings,
     operator_relay,
     planning,
@@ -32,12 +33,19 @@ from synapse_channel.guard_evidence import guard_denial_digests
 
 
 class _RecordingHub(SynapseHub):
-    def __init__(self, store: EventStore, *, authenticated: bool = False) -> None:
+    def __init__(
+        self,
+        store: EventStore,
+        *,
+        authenticated: bool = False,
+        max_findings_per_agent: int = 200,
+    ) -> None:
         super().__init__(
             hub_id="atomic-test",
             journal=store,
             authenticator=TokenAuthenticator(["token"]) if authenticated else None,
             anti_rollback_checkpoint=False,
+            max_findings_per_agent=max_findings_per_agent,
         )
         self.sent: list[dict[str, Any]] = []
         self.broadcasts: list[dict[str, Any]] = []
@@ -55,6 +63,136 @@ class _RecordingHub(SynapseHub):
 
 def _frame(sender: str, msg_type: str, key: str, **extra: Any) -> dict[str, Any]:
     return {"sender": sender, "type": msg_type, "idem_key": key, **extra}
+
+
+def _finding_frame(key: str, statement: str) -> dict[str, Any]:
+    """Return one emit-gate-admissible keyed finding frame."""
+    return _frame(
+        "A",
+        MessageType.FINDING,
+        key,
+        statement=statement,
+        subkind="codebase-fact",
+        evidence_kind="measured",
+        claim_status="bounded-support",
+        provenance={"project": "SYNAPSE-CHANNEL"},
+        validity={"valid_from": None, "valid_to": None},
+        verified_at_source={
+            "checked_this_session": True,
+            "source_ref": "tests/test_atomic_operation_handlers.py",
+        },
+    )
+
+
+async def test_memory_families_commit_once_conflict_and_resume(tmp_path: Path) -> None:
+    db = tmp_path / "memory-families.db"
+    store = EventStore(db)
+    hub = _RecordingHub(store, max_findings_per_agent=1)
+    socket = object()
+    recall = _frame(
+        "A",
+        MessageType.RECALL_LOG,
+        "recall-1",
+        query_text="what changed?",
+        returned_claim_ids=["finding-1"],
+        was_used=True,
+        abstained=False,
+    )
+    finding = _finding_frame("finding-1", "atomic finding")
+
+    await memory.handle_recall_log(hub, "A", recall, socket)
+    await memory.handle_finding(hub, "A", finding, socket)
+    first_recall = hub.sent[-1]
+    first_finding = hub.broadcasts[-1]
+    assert len(store.read_operations()) == 2
+    assert [event.kind for event in store.read_all()] == [
+        EventKind.RECALL,
+        EventKind.IDEMPOTENCY,
+        EventKind.FINDING,
+        EventKind.IDEMPOTENCY,
+    ]
+    assert first_recall["seq"] == 1
+    assert first_finding["seq"] == 3
+    assert hub.legacy_remembered == []
+
+    await memory.handle_recall_log(hub, "A", recall, socket)
+    await memory.handle_finding(hub, "A", finding, socket)
+    assert hub.sent[-2:] == [first_recall, first_finding]
+    assert len(hub.broadcasts) == 1
+    assert len(store.read_all()) == 4
+
+    await memory.handle_recall_log(hub, "A", {**recall, "query_text": "changed"}, socket)
+    await memory.handle_finding(hub, "A", {**finding, "statement": "changed"}, socket)
+    assert [message["error_code"] for message in hub.sent[-2:]] == [
+        "idempotency_conflict",
+        "idempotency_conflict",
+    ]
+    assert "recall-1" not in str(hub.sent[-2])
+    assert "finding-1" not in str(hub.sent[-1])
+
+    store.close()
+    reopened = EventStore(db)
+    restarted = _RecordingHub(reopened)
+    await memory.handle_recall_log(restarted, "A", recall, socket)
+    await memory.handle_finding(restarted, "A", finding, socket)
+    assert restarted.sent == [first_recall, first_finding]
+    assert restarted.broadcasts == []
+    assert len(reopened.read_all()) == 4
+    reopened.close()
+
+
+async def test_finding_cancellation_after_commit_publishes_quota(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = EventStore(tmp_path / "finding-cancel.db")
+    hub = _RecordingHub(store, max_findings_per_agent=1)
+    started = threading.Event()
+    finish = threading.Event()
+    original = store.commit_operation
+
+    def delayed(**kwargs: Any) -> Any:
+        started.set()
+        assert finish.wait(timeout=2)
+        return original(**kwargs)
+
+    monkeypatch.setattr(store, "commit_operation", delayed)
+    frame = _finding_frame("finding-cancel-1", "committed before cancellation")
+    task = asyncio.create_task(memory.handle_finding(hub, "A", frame, object()))
+    assert await asyncio.to_thread(started.wait, 1)
+    task.cancel()
+    finish.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    admitted, reason = hub.reserve_finding_slot("A")
+    assert admitted is False
+    assert "quota" in reason
+    assert len(store.read_operations()) == 1
+    assert [event.kind for event in store.read_all()] == [
+        EventKind.FINDING,
+        EventKind.IDEMPOTENCY,
+    ]
+    assert store.pending_operation_outbox_count() == 1
+    assert hub.broadcasts == []
+    store.close()
+
+
+async def test_keyed_finding_quota_refusal_creates_no_operation(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "finding-quota.db")
+    hub = _RecordingHub(store, max_findings_per_agent=1)
+    socket = object()
+    await memory.handle_finding(hub, "A", _finding_frame("finding-1", "first"), socket)
+    await memory.handle_finding(hub, "A", _finding_frame("finding-2", "second"), socket)
+
+    assert len(store.read_operations()) == 1
+    assert [event.kind for event in store.read_all()] == [
+        EventKind.FINDING,
+        EventKind.IDEMPOTENCY,
+    ]
+    assert hub.sent[-1]["type"] == MessageType.FINDING_REJECTED
+    assert "quota" in hub.sent[-1]["payload"]
+    assert [message["finding"]["statement"] for message in hub.broadcasts] == ["first"]
+    store.close()
 
 
 async def test_all_state_families_commit_once_replay_and_resume(tmp_path: Path) -> None:

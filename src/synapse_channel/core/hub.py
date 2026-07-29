@@ -88,7 +88,7 @@ from synapse_channel.core.hub_http import http_endpoint_response
 from synapse_channel.core.hub_identity_gate import HubIdentityGate
 from synapse_channel.core.hub_ingress import HubIngress
 from synapse_channel.core.hub_journal_recovery_gate import HubJournalRecoveryGate
-from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
+from synapse_channel.core.hub_ledger_guard import FindingQuota, HubLedgerGuard
 from synapse_channel.core.hub_liveness import HubLivenessView
 from synapse_channel.core.hub_relay import RelayMirror
 from synapse_channel.core.hub_state_seed import seed_hub_state
@@ -880,6 +880,11 @@ class SynapseHub:
     def reserve_finding_slot(self, agent: str) -> tuple[bool, str]:
         """Reserve one durable-finding quota slot for ``agent`` (handler surface)."""
         return self._ledger.reserve_finding_slot(agent)
+
+    @property
+    def finding_quota(self) -> FindingQuota:
+        """Return the copyable finding quota used by transactional memory writes."""
+        return self._ledger.finding_quota
 
     async def _maybe_replay_duplicate(
         self, msg_type: str, data: dict[str, Any], websocket: Any

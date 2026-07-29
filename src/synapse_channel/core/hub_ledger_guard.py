@@ -19,6 +19,7 @@ thin wrappers over the handler-facing names.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable, Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.atomic_operations import (
@@ -46,11 +47,37 @@ _MUTATING_TYPES = (
             MessageType.LEDGER_TASK,
             MessageType.LEDGER_TASK_UPDATE,
             MessageType.LEDGER_PROGRESS,
+            MessageType.RECALL_LOG,
+            MessageType.FINDING,
         }
     )
     | RESOURCE_TYPE_ALIASES
 )
 """Inbound message types eligible for idempotent replay protection."""
+
+
+@dataclass
+class FindingQuota:
+    """Copyable per-agent admission state for durable findings."""
+
+    max_per_agent: int
+    counts: dict[str, int]
+
+    def reserve(self, agent: str) -> tuple[bool, str]:
+        """Reserve one slot for ``agent`` without exceeding the configured cap."""
+        owner = agent.strip()
+        admitted = self.counts.get(owner, 0)
+        if admitted >= self.max_per_agent:
+            return (
+                False,
+                f"Agent '{owner}' has reached the {self.max_per_agent} durable-finding quota.",
+            )
+        self.counts[owner] = admitted + 1
+        return True, f"Agent '{owner}' finding admitted."
+
+    def publish_from(self, other: FindingQuota) -> None:
+        """Replace live counts from a durably committed private candidate."""
+        self.counts = dict(other.counts)
 
 
 class HubLedgerGuard:
@@ -80,10 +107,12 @@ class HubLedgerGuard:
         finding_counts: Mapping[str, int] | None = None,
         idempotency_seed: Iterable[tuple[str, dict[str, Any]] | OperationRecord] = (),
     ) -> None:
-        self._max_findings_per_agent = max_findings_per_agent
         self._journal = journal
         self._message_seq = message_seq
-        self._findings_by_agent: dict[str, int] = dict(finding_counts or {})
+        self._finding_quota = FindingQuota(
+            max_per_agent=max_findings_per_agent,
+            counts=dict(finding_counts or {}),
+        )
         self._cache = IdempotencyCache()
         for entry in idempotency_seed:
             if isinstance(entry, OperationRecord):
@@ -100,6 +129,11 @@ class HubLedgerGuard:
     def idempotency(self) -> IdempotencyCache:
         """Return the live at-most-once cache (so the hub can alias it)."""
         return self._cache
+
+    @property
+    def finding_quota(self) -> FindingQuota:
+        """Return the copyable finding-quota subject used by memory handlers."""
+        return self._finding_quota
 
     @property
     def message_seq(self) -> int:
@@ -192,16 +226,7 @@ class HubLedgerGuard:
             ``(False, reason)`` when the agent already reached the configured
             durable-finding quota.
         """
-        owner = agent.strip()
-        admitted = self._findings_by_agent.get(owner, 0)
-        if admitted >= self._max_findings_per_agent:
-            return (
-                False,
-                f"Agent '{owner}' has reached the {self._max_findings_per_agent} "
-                "durable-finding quota.",
-            )
-        self._findings_by_agent[owner] = admitted + 1
-        return True, f"Agent '{owner}' finding admitted."
+        return self._finding_quota.reserve(agent)
 
     async def maybe_replay_duplicate(
         self,
