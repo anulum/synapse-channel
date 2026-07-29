@@ -193,6 +193,7 @@ def _request(
     reason: str = "",
     break_glass: bool = False,
     operator: str = "ops-admin",
+    idem_key: str = "",
 ) -> RelayActionRequest:
     return RelayActionRequest(
         action=action,
@@ -202,6 +203,7 @@ def _request(
         origin_hub_id=_DOMAIN,
         reason=reason,
         break_glass=break_glass,
+        idem_key=idem_key,
     )
 
 
@@ -217,10 +219,20 @@ async def _relay(
     uri: str, request: RelayActionRequest, *, sender: str = "peer"
 ) -> RelayActionResult:
     """Relay one action as a peer hub and decode the result reply."""
+    return decode_relay_result(await _relay_frame(uri, request, sender=sender))
+
+
+async def _relay_frame(
+    uri: str,
+    request: RelayActionRequest,
+    *,
+    sender: str = "peer",
+    reply_type: str = _REPLY,
+) -> dict[str, object]:
+    """Relay one action and return the exact response frame."""
     async with await _connect(uri, sender) as ws:
         await send_json(ws, sender=sender, type=_REQUEST, **encode_relay_request(request))
-        message = await read_until_type(ws, _REPLY)
-    return decode_relay_result(message)
+        return await read_until_type(ws, reply_type)
 
 
 async def test_applies_a_relayed_release_and_audits_it(tmp_path: Path) -> None:
@@ -251,6 +263,72 @@ async def test_applies_a_relayed_release_and_audits_it(tmp_path: Path) -> None:
     assert audit["break_glass"] is True
     assert audit["previous_owner"] == _HOLDER
     assert audit["applied"] is True
+
+
+async def test_keyed_relay_replays_exact_verdict_after_restart_and_conflicts_fail_closed(
+    tmp_path: Path,
+) -> None:
+    pin, der = _write_peer_cert(tmp_path)
+    db = tmp_path / "keyed-events.db"
+    journal = EventStore(db)
+    hub = _acting_hub(policy=_serving_policy(pin, der), ownership=_owns(), journal=journal)
+    hub.state.claim(_HOLDER, "t1")
+    request = _request(reason="lease wedged", idem_key="relay-attempt-7")
+    async with running_hub(hub) as (_, uri):
+        first = await _relay_frame(uri, request)
+    assert "t1" not in hub.state.claims
+    assert [event.kind for event in journal.read_all()] == [
+        EventKind.RELEASE,
+        EventKind.OPERATOR_RELAY,
+        EventKind.IDEMPOTENCY,
+    ]
+    assert len(journal.read_operations()) == 1
+    assert journal.pending_operation_outbox_count() == 0
+    journal.close()
+
+    reopened = EventStore(db)
+    restarted = _acting_hub(policy=_serving_policy(pin, der), ownership=_owns(), journal=reopened)
+    async with running_hub(restarted) as (_, uri):
+        replayed = await _relay_frame(uri, request)
+        conflict = await _relay_frame(
+            uri,
+            _request(reason="changed payload", idem_key="relay-attempt-7"),
+            reply_type=MessageType.ERROR,
+        )
+    assert replayed == first
+    assert conflict["error_code"] == "idempotency_conflict"
+    assert "relay-attempt-7" not in str(conflict)
+    assert len(reopened.read_all()) == 3
+    reopened.close()
+
+
+async def test_keyed_relay_reauthorises_before_replaying_a_committed_verdict(
+    tmp_path: Path,
+) -> None:
+    pin, der = _write_peer_cert(tmp_path)
+    db = tmp_path / "reauthorise.db"
+    journal = EventStore(db)
+    hub = _acting_hub(policy=_serving_policy(pin, der), ownership=_owns(), journal=journal)
+    hub.state.claim(_HOLDER, "t1")
+    request = _request(reason="lease wedged", idem_key="relay-attempt-7")
+    async with running_hub(hub) as (_, uri):
+        applied = await _relay(uri, request)
+    assert applied.applied is True
+    journal.close()
+
+    _stranger_pin, stranger_der = _write_peer_cert(tmp_path / "stranger")
+    reopened = EventStore(db)
+    restarted = _acting_hub(
+        policy=_serving_policy(pin, stranger_der),
+        ownership=_owns(),
+        journal=reopened,
+    )
+    async with running_hub(restarted) as (_, uri):
+        refused = await _relay(uri, request)
+    assert refused.applied is False
+    assert refused.detail == "peer_not_authorised"
+    assert len(reopened.read_all()) == 3
+    reopened.close()
 
 
 def test_relay_journal_failure_restores_claim_and_commits_no_partial_row(
@@ -307,11 +385,33 @@ async def test_an_authorised_release_of_an_unclaimed_task_is_a_no_op(tmp_path: P
     journal = EventStore(tmp_path / "events.db")
     hub = _acting_hub(policy=_serving_policy(pin, der), ownership=_owns(), journal=journal)
     async with running_hub(hub) as (_, uri):
-        result = await _relay(uri, _request(task_id="never-claimed"))
+        result = await _relay(
+            uri, _request(task_id="never-claimed", idem_key="no-op-relay-attempt")
+        )
     assert result.applied is False
     assert "not currently claimed" in result.detail
     # A no-op mutates nothing, so it journals nothing.
     assert [e.kind for e in journal.read_all()] == []
+
+
+def test_synchronous_two_person_path_records_then_applies_without_a_journal() -> None:
+    hub = _acting_hub(policy=None, ownership=None)
+    assert hub.state.claim(_HOLDER, "t1")[0]
+    first = relay_handlers._apply_with_two_person(
+        hub,
+        "peer",
+        _request(operator="alice"),
+        "federation-peer:first",
+    )
+    second = relay_handlers._apply_with_two_person(
+        hub,
+        "peer-approver",
+        _request(operator="bob"),
+        "federation-peer:second",
+    )
+    assert first.pending is True
+    assert second.applied is True
+    assert "t1" not in hub.state.claims
 
 
 async def test_refuses_a_relay_when_no_serving_policy_is_configured() -> None:

@@ -28,6 +28,7 @@ _FAMILIES = (
     "ledger_task",
     "ledger_task_update",
     "ledger_progress",
+    "operator_relay",
 )
 
 _CHILD = r"""

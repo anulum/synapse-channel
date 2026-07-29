@@ -74,6 +74,7 @@ def _cmd_relay(args: argparse.Namespace, *, relayer: Relayer = relay_operator_ac
         origin_hub_id=args.local_id,
         reason=args.reason or "",
         break_glass=args.break_glass,
+        idem_key=args.idem_key or "",
     )
     try:
         relay_kwargs: dict[str, Any] = {
@@ -185,6 +186,13 @@ def add_relay_parser(group: argparse._SubParsersAction[argparse.ArgumentParser])
         "--break-glass",
         action="store_true",
         help="Tag the relay a break-glass emergency override, marked distinctly in the audit.",
+    )
+    relay.add_argument(
+        "--idem-key",
+        default=None,
+        metavar="KEY",
+        help="Stable retry key for a single-person relay; authorised retries replay the "
+        "committed result.",
     )
     relay.add_argument(
         "--timeout",

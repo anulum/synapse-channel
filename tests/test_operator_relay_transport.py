@@ -38,13 +38,14 @@ _RESULT = MessageType.OPERATOR_RELAY_RESULT
 _NAMESPACE = "SYNAPSE-CHANNEL"
 
 
-def _request(task_id: str = "t1") -> RelayActionRequest:
+def _request(task_id: str = "t1", *, idem_key: str = "") -> RelayActionRequest:
     return RelayActionRequest(
         action="release",
         namespace=_NAMESPACE,
         task_id=task_id,
         operator="ops-admin",
         origin_hub_id="syn-a",
+        idem_key=idem_key,
     )
 
 
@@ -84,6 +85,15 @@ def test_secure_relay_routes_require_complete_pinned_client_identity(
         )
     with pytest.raises(ValueError, match="not configured"):
         parse_relay_peers(["syn-owner=wss://owner/"], pins={"syn-other": "sha256:" + "2" * 64})
+
+
+def test_relay_route_parser_rejects_incomplete_and_duplicate_routes() -> None:
+    with pytest.raises(ValueError, match="configured together"):
+        parse_relay_peers(["syn-owner=wss://owner/"], client_certificate_file="client.pem")
+    with pytest.raises(ValueError, match="must use HUB_ID=URI"):
+        parse_relay_peers(["missing-uri"])
+    with pytest.raises(ValueError, match="names hub 'syn-owner' twice"):
+        parse_relay_peers(["syn-owner=ws://one/", "syn-owner=ws://two/"])
 
 
 def _wire(frame: dict[str, Any]) -> str:
@@ -174,6 +184,17 @@ async def test_relay_returns_the_verdict_and_sends_the_request() -> None:
     assert request["action"] == "release"
     assert request["operator"] == "ops-admin"
     assert "token" not in request
+
+
+async def test_relay_sends_the_stable_idempotency_key() -> None:
+    socket = _FakeSocket([_result_frame(_applied())])
+    await relay_operator_action(
+        _request(idem_key="relay-attempt-7"),
+        uri="ws://peer/",
+        local_id="op",
+        connector=_connector(socket),
+    )
+    assert json.loads(socket.sent[0])["idem_key"] == "relay-attempt-7"
 
 
 async def test_relay_skips_a_broadcast_then_decodes_a_bytes_result() -> None:

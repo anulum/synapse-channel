@@ -212,6 +212,7 @@ class OperatorRelayForwarding:
             origin_hub_id=self._hub_id,
             reason=request.reason,
             break_glass=request.break_glass,
+            idem_key=request.idem_key,
         )
         try:
             kwargs: dict[str, Any] = {

@@ -40,6 +40,7 @@ _REQUEST = RelayActionRequest(
     origin_hub_id="",
     reason="stuck",
     break_glass=False,
+    idem_key="relay-attempt-7",
 )
 
 
@@ -204,11 +205,29 @@ class TestHandledPaths:
         assert proceed is False
         # The forwarded request carries this hub's id as its origin.
         assert forwarded["request"].origin_hub_id == "syn-origin"
+        assert forwarded["request"].idem_key == "relay-attempt-7"
         assert forwarded["kwargs"]["uri"] == "wss://owner.test"
         assert forwarded["kwargs"]["token"] == "tok"
         assert rec.sent[0]["msg_type"] == MessageType.OPERATOR_RELAY_RESULT
         assert audits[0]["direction"] == RELAY_DIRECTION_OUT
         assert audits[0]["applied"] is True
+
+    async def test_invalid_forward_route_without_a_peer_fails_closed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            orf,
+            "route_operator_relay",
+            lambda d, *, relay_peers: RelayRoute(RelayRouteKind.FORWARD),
+        )
+        monkeypatch.setattr(orf, "decode_relay_request", lambda data: _REQUEST)
+        rec = _Recorder()
+        gate = _build(ownership=_Ownership(), forwarder=_noop_forwarder, recorder=rec)
+        proceed = await gate.route(
+            "alice", MessageType.OPERATOR_RELAY_REQUEST, {"namespace": "lab-a/shared"}, object()
+        )
+        assert proceed is False
+        assert rec.sent[0]["detail"] == "relay route has no configured peer"
 
     async def test_forward_passes_a_configured_secure_connector(
         self, monkeypatch: pytest.MonkeyPatch

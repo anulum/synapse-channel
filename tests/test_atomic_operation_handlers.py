@@ -16,9 +16,16 @@ from typing import Any
 import pytest
 
 from synapse_channel.core.auth import TokenAuthenticator
-from synapse_channel.core.handlers import guard_evidence, leasing, offerings, planning
+from synapse_channel.core.handlers import (
+    guard_evidence,
+    leasing,
+    offerings,
+    operator_relay,
+    planning,
+)
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind, record_claim_denial
+from synapse_channel.core.operator_relay_wire import RelayActionRequest
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.guard_evidence import guard_denial_digests
@@ -271,6 +278,56 @@ async def test_board_actor_serializes_unkeyed_write_behind_atomic_commit(
     store.close()
 
 
+async def test_operator_relay_commits_once_and_replays_exact_verdict(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "operator-relay.db")
+    hub = _RecordingHub(store)
+    assert hub.state.claim("holder", "T1")[0]
+    request = RelayActionRequest(
+        action="release",
+        namespace="SYNAPSE-CHANNEL",
+        task_id="T1",
+        operator="ops",
+        origin_hub_id="origin",
+        reason="wedged",
+        idem_key="relay-1",
+    )
+    frame = _frame(
+        "peer",
+        MessageType.OPERATOR_RELAY_REQUEST,
+        "relay-1",
+        action=request.action,
+        namespace=request.namespace,
+        task_id=request.task_id,
+        operator=request.operator,
+        origin_hub_id=request.origin_hub_id,
+        reason=request.reason,
+        break_glass=request.break_glass,
+    )
+
+    inserted = await operator_relay._apply_release_atomic_async(hub, "peer", request, frame)
+    replayed = await operator_relay._apply_release_atomic_async(hub, "peer", request, frame)
+
+    assert inserted is not None and inserted.outcome == "inserted"
+    assert replayed is not None and replayed.outcome == "replayed"
+    assert replayed.response == inserted.response
+    assert "T1" not in hub.state.claims
+    assert len(store.read_operations()) == 1
+    assert [event.kind for event in store.read_all()] == [
+        EventKind.RELEASE,
+        EventKind.OPERATOR_RELAY,
+        EventKind.IDEMPOTENCY,
+    ]
+
+    changed = {**frame, "reason": "changed"}
+    conflict = await operator_relay._apply_release_atomic_async(hub, "peer", request, changed)
+    assert conflict is not None and conflict.outcome == "conflict"
+    assert conflict.response is not None
+    assert conflict.response["error_code"] == "idempotency_conflict"
+    assert "relay-1" not in str(conflict.response)
+    assert len(store.read_all()) == 3
+    store.close()
+
+
 async def test_cancellation_after_atomic_commit_publishes_the_winner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -295,6 +352,55 @@ async def test_cancellation_after_atomic_commit_publishes_the_winner(
         await task
 
     assert "T1" in hub.state.claims
+    assert len(store.read_operations()) == 1
+    assert store.pending_operation_outbox_count() == 1
+    store.close()
+
+
+async def test_operator_relay_cancellation_after_commit_publishes_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = EventStore(tmp_path / "operator-relay-cancel.db")
+    hub = _RecordingHub(store)
+    assert hub.state.claim("holder", "T1")[0]
+    started = threading.Event()
+    finish = threading.Event()
+    original = store.commit_operation
+
+    def delayed(**kwargs: Any) -> Any:
+        started.set()
+        assert finish.wait(timeout=2)
+        return original(**kwargs)
+
+    monkeypatch.setattr(store, "commit_operation", delayed)
+    request = RelayActionRequest(
+        action="release",
+        namespace="SYNAPSE-CHANNEL",
+        task_id="T1",
+        operator="ops",
+        origin_hub_id="origin",
+        idem_key="relay-cancel-1",
+    )
+    frame = _frame(
+        "peer",
+        MessageType.OPERATOR_RELAY_REQUEST,
+        request.idem_key,
+        action=request.action,
+        namespace=request.namespace,
+        task_id=request.task_id,
+        operator=request.operator,
+        origin_hub_id=request.origin_hub_id,
+    )
+    task = asyncio.create_task(
+        operator_relay._apply_release_atomic_async(hub, "peer", request, frame)
+    )
+    assert await asyncio.to_thread(started.wait, 1)
+    task.cancel()
+    finish.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert "T1" not in hub.state.claims
     assert len(store.read_operations()) == 1
     assert store.pending_operation_outbox_count() == 1
     store.close()

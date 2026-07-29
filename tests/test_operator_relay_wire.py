@@ -63,6 +63,13 @@ def test_request_carries_reason_and_break_glass() -> None:
     assert decoded.break_glass is True
 
 
+def test_request_carries_a_stable_idempotency_key() -> None:
+    request = _request(idem_key="relay-attempt-7")
+    decoded = decode_relay_request(encode_relay_request(request))
+    assert decoded == request
+    assert decoded.idem_key == "relay-attempt-7"
+
+
 def test_decode_request_defaults_absent_reason_and_break_glass() -> None:
     # An older initiator that never sends the fields decodes to the safe defaults.
     body = encode_relay_request(_request())
@@ -71,6 +78,15 @@ def test_decode_request_defaults_absent_reason_and_break_glass() -> None:
     decoded = decode_relay_request(body)
     assert decoded.reason == ""
     assert decoded.break_glass is False
+    assert decoded.idem_key == ""
+
+
+@pytest.mark.parametrize("idem_key", ["  ", 7])
+def test_decode_request_rejects_an_invalid_idempotency_key(idem_key: object) -> None:
+    body = encode_relay_request(_request())
+    body["idem_key"] = idem_key
+    with pytest.raises(RelayWireError, match="idem_key"):
+        decode_relay_request(body)
 
 
 def test_decode_request_rejects_a_non_string_reason() -> None:

@@ -2409,6 +2409,16 @@ peer recorded the relay pending a second operator's approval (see two-person
 approval below). Only registered actions relay: an unknown action is refused,
 never smuggled through the wire.
 
+For a retryable single-person relay, pass `--idem-key KEY`. The key is scoped by the
+authenticated sender and request type, preserved when an origin hub forwards the relay,
+and bound to the canonical request content. The owning hub commits the release, inbound
+relay provenance, exact verdict, and evidence intent in one transaction. An identical
+retry re-runs the live certificate, scope, and namespace-ownership gates before replaying
+that exact verdict; changed content under the same key receives `idempotency_conflict`
+without revealing the prior result or mutating state. The two-person pending/approval
+ledger and the forwarding hub's outbound audit are not yet within this keyed transaction
+boundary, so `--idem-key` does not claim apply-once quorum semantics in that mode.
+
 `--reason` records why the action was relayed, in the audit on both hubs; `--break-glass`
 tags it a distinct emergency override. A hub started with reason-required receipts refuses
 a relay that carries no reason, so a team or production deployment can hold every governed
@@ -2457,6 +2467,7 @@ synapse federation relay release --peer wss://peer-hub:8876 --pin sha256:HEX \
   --client-certfile client.pem --client-keyfile client.key \
   --namespace TEAM-X --task build-7
 synapse federation relay release --peer ws://peer-hub:8876 --namespace TEAM-X --task build-7 --reason "wedged by a crashed agent" --break-glass  # with an auditable reason, tagged break-glass
+synapse federation relay release --peer ws://peer-hub:8876 --namespace TEAM-X --task build-7 --reason "wedged" --idem-key incident-2026-07-29-build-7  # safe single-person retry identity
 synapse encrypt-key generate ./synapse.key                     # write a fresh owner-only 32-byte key file
 synapse encrypt-key generate --from-passphrase ./synapse.key   # derive the key from a prompted passphrase (scrypt) instead of random bytes
 synapse encrypt-key generate --from-passphrase --scrypt-n 65536 ./synapse.key  # tune the scrypt cost (n a power of two; also --scrypt-r/--scrypt-p)

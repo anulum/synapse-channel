@@ -67,9 +67,10 @@ id = "atomic-operation-truth"
 title = "Atomic operation truth"
 status = "partial"
 guarantee = "Covered coordination operations publish success only after durable commit, are apply-once for a stable operation identifier, and publish every committed live projection before post-commit cancellation propagates."
-scope = "Journal-backed claim, task update, release, handoff, checkpoint, guard-denial, resource, and task-board declare/update/progress operation families."
+scope = "Journal-backed claim, task update, release, handoff, checkpoint, guard-denial, resource, task-board declare/update/progress, and single-person governed operator-relay operation families."
 limitations = [
   "Atomic truth is not yet a universal transaction boundary for every command and external side effect.",
+  "Two-person relay approval and the origin hub's outbound relay audit are not yet part of the keyed transaction boundary.",
 ]
 spec_invariants = ["INV-JA-1", "INV-JA-2", "INV-JA-3", "INV-CR-1", "INV-DG-2"]
 sources = [
@@ -78,6 +79,7 @@ sources = [
   "src/synapse_channel/core/atomic_operations.py",
   "src/synapse_channel/core/handlers/leasing.py",
   "src/synapse_channel/core/handlers/planning.py",
+  "src/synapse_channel/core/handlers/operator_relay.py",
   "src/synapse_channel/core/hub_ledger_guard.py",
   "src/synapse_channel/core/ledger.py",
   "src/synapse_channel/core/state_transaction.py",
@@ -89,8 +91,9 @@ tests = [
   "tests/test_client_ledger_envelopes.py",
   "tests/test_coordination_spec_model.py",
   "tests/test_planning_handlers.py",
+  "tests/test_hub_operator_relay.py",
 ]
-evidence_modes = ["kill-point", "state-machine", "restart", "concurrency", "cancellation", "unit"]
+evidence_modes = ["kill-point", "state-machine", "restart", "concurrency", "cancellation", "authorized-transport", "unit"]
 
 [[boundary]]
 id = "content-bound-global-event-identity"

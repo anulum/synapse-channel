@@ -114,6 +114,17 @@ def test_relay_transport_error_exits_two(capsys: pytest.CaptureFixture[str]) -> 
     assert "could not relay the action: peer unreachable" in capsys.readouterr().err
 
 
+def test_relay_refuses_client_identity_without_a_pin(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rc = cli_relay._cmd_relay(
+        _args("--client-certfile", "client.pem", "--client-keyfile", "client.key"),
+        relayer=_relayer(_applied()),
+    )
+    assert rc == 2
+    assert "require --pin" in capsys.readouterr().err
+
+
 def test_relay_builds_pinned_client_authenticated_connector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -210,11 +221,22 @@ def test_relay_forwards_the_reason_and_break_glass_tag() -> None:
     assert request.break_glass is True
 
 
+def test_relay_forwards_a_stable_idempotency_key() -> None:
+    captured: dict[str, Any] = {}
+    rc = cli_relay._cmd_relay(
+        _args("--idem-key", "relay-attempt-7"),
+        relayer=_relayer(_applied(), captured=captured),
+    )
+    assert rc == 0
+    assert captured["request"].idem_key == "relay-attempt-7"
+
+
 def test_relay_defaults_the_reason_empty_and_break_glass_off() -> None:
     captured: dict[str, Any] = {}
     cli_relay._cmd_relay(_args(), relayer=_relayer(_applied(), captured=captured))
     assert captured["request"].reason == ""
     assert captured["request"].break_glass is False
+    assert captured["request"].idem_key == ""
 
 
 def test_relay_defaults_the_operator_to_the_os_user(monkeypatch: pytest.MonkeyPatch) -> None:

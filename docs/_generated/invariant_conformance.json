@@ -76,20 +76,23 @@
         "restart",
         "concurrency",
         "cancellation",
+        "authorized-transport",
         "unit"
       ],
       "guarantee": "Covered coordination operations publish success only after durable commit, are apply-once for a stable operation identifier, and publish every committed live projection before post-commit cancellation propagates.",
       "id": "atomic-operation-truth",
       "limitations": [
-        "Atomic truth is not yet a universal transaction boundary for every command and external side effect."
+        "Atomic truth is not yet a universal transaction boundary for every command and external side effect.",
+        "Two-person relay approval and the origin hub's outbound relay audit are not yet part of the keyed transaction boundary."
       ],
-      "scope": "Journal-backed claim, task update, release, handoff, checkpoint, guard-denial, resource, and task-board declare/update/progress operation families.",
+      "scope": "Journal-backed claim, task update, release, handoff, checkpoint, guard-denial, resource, task-board declare/update/progress, and single-person governed operator-relay operation families.",
       "sources": [
         "src/synapse_channel/cli_tasks.py",
         "src/synapse_channel/client/agent_outbound_ledger.py",
         "src/synapse_channel/core/atomic_operations.py",
         "src/synapse_channel/core/handlers/leasing.py",
         "src/synapse_channel/core/handlers/planning.py",
+        "src/synapse_channel/core/handlers/operator_relay.py",
         "src/synapse_channel/core/hub_ledger_guard.py",
         "src/synapse_channel/core/ledger.py",
         "src/synapse_channel/core/state_transaction.py"
@@ -108,7 +111,8 @@
         "tests/test_cli_tasks.py",
         "tests/test_client_ledger_envelopes.py",
         "tests/test_coordination_spec_model.py",
-        "tests/test_planning_handlers.py"
+        "tests/test_planning_handlers.py",
+        "tests/test_hub_operator_relay.py"
       ],
       "title": "Atomic operation truth"
     },

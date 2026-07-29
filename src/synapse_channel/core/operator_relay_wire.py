@@ -17,7 +17,8 @@ other, exactly as :mod:`synapse_channel.core.multihub_claim_wire` does for claim
 Two shapes ride the exchange:
 
 * a :class:`RelayActionRequest` — which action to perform, the namespace and task it acts
-  on, and the asserted operator and origin-hub provenance the acting hub audits;
+  on, the asserted operator and origin-hub provenance the acting hub audits, and an optional
+  stable idempotency key for an apply-once single-person release;
 * a :class:`RelayActionResult` — whether the acting hub applied the action, the id of the
   hub that answered, and a human-readable detail.
 
@@ -58,6 +59,9 @@ REASON_FIELD = "reason"
 
 BREAK_GLASS_FIELD = "break_glass"
 """Request field: whether the relay is tagged as a break-glass emergency override."""
+
+IDEM_KEY_FIELD = "idem_key"
+"""Optional stable operation id used to replay an applied relay without reapplying it."""
 
 APPLIED_FIELD = "applied"
 """Result field: whether the acting hub applied the action."""
@@ -109,6 +113,8 @@ class RelayActionRequest:
     break_glass : bool, optional
         Whether the relay is tagged a break-glass emergency override, recorded distinctly in the
         audit so an out-of-band, urgent action stands apart from routine governance in the log.
+    idem_key : str, optional
+        Stable caller-chosen operation identity. Empty preserves legacy unkeyed behaviour.
     """
 
     action: str
@@ -118,6 +124,7 @@ class RelayActionRequest:
     origin_hub_id: str
     reason: str = ""
     break_glass: bool = False
+    idem_key: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,7 +169,7 @@ def encode_relay_request(request: RelayActionRequest) -> dict[str, Any]:
     RelayWireError
         If any identifier field is empty.
     """
-    return {
+    body = {
         ACTION_FIELD: _require_nonempty(request.action, ACTION_FIELD),
         NAMESPACE_FIELD: _require_nonempty(request.namespace, NAMESPACE_FIELD),
         TASK_ID_FIELD: _require_nonempty(request.task_id, TASK_ID_FIELD),
@@ -171,6 +178,9 @@ def encode_relay_request(request: RelayActionRequest) -> dict[str, Any]:
         REASON_FIELD: str(request.reason),
         BREAK_GLASS_FIELD: bool(request.break_glass),
     }
+    if request.idem_key:
+        body[IDEM_KEY_FIELD] = _require_nonempty(request.idem_key, IDEM_KEY_FIELD)
+    return body
 
 
 def decode_relay_request(raw: object) -> RelayActionRequest:
@@ -184,6 +194,7 @@ def decode_relay_request(raw: object) -> RelayActionRequest:
     body = _require_mapping(raw, "request")
     raw_reason = body.get(REASON_FIELD)
     raw_break_glass = body.get(BREAK_GLASS_FIELD)
+    raw_idem_key = body.get(IDEM_KEY_FIELD)
     return RelayActionRequest(
         action=_require_nonempty(body.get(ACTION_FIELD), ACTION_FIELD),
         namespace=_require_nonempty(body.get(NAMESPACE_FIELD), NAMESPACE_FIELD),
@@ -194,6 +205,7 @@ def decode_relay_request(raw: object) -> RelayActionRequest:
         break_glass=(
             False if raw_break_glass is None else _require_bool(raw_break_glass, BREAK_GLASS_FIELD)
         ),
+        idem_key=("" if raw_idem_key is None else _require_nonempty(raw_idem_key, IDEM_KEY_FIELD)),
     )
 
 

@@ -32,6 +32,12 @@ the cross-hub provenance — the verified peer, the asserted operator and origin
 previous holder — that a plain release never carries. The hub's own agents are then told the
 lease was revoked, so a former holder does not keep acting on a dropped lease.
 
+A single-person relay carrying ``idem_key`` uses the canonical keyed transaction: release,
+relay provenance, exact result, and evidence intent commit together. An identical retry is
+reauthorised against the live peer certificate, scope, and namespace ownership before the stored
+result is replayed; changed content under the same key fails closed. Two-person approval remains
+on its separately documented quorum path.
+
 A hub configured for two-person approval adds one more gate *after* the authorisation gate: an
 authorised relay is not applied on its own, but recorded pending in the hub's
 :class:`~synapse_channel.core.operator_relay_approval.RelayApprovalLedger` and answered ``pending``;
@@ -47,8 +53,10 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
 from synapse_channel.core.journal import (
     RELAY_DIRECTION_IN,
+    EventKind,
     record_operator_relay,
     record_operator_release,
 )
@@ -149,9 +157,33 @@ async def handle_operator_relay_request(
     # force-release, so applying it here is exhaustive for this slice.
     if hub.require_two_person_relay:
         result = await _apply_with_two_person_async(hub, sender, request, authorisation.principal)
-    else:
+        await _send_result(hub, websocket, sender, result)
+        return
+
+    execution = await _apply_release_atomic_async(hub, sender, request, data)
+    if execution is None:
         result = await _apply_release_async(hub, sender, request)
-    await _send_result(hub, websocket, sender, result)
+        await _send_result(hub, websocket, sender, result)
+        return
+    if execution.outcome in {"replayed", "conflict"}:
+        if execution.response is None:
+            raise RuntimeError("atomic operator relay returned no replay response")
+        await hub._send_json(websocket, execution.response)
+        if execution.outcome == "replayed":
+            await hub._settle_atomic_operation(data)
+        return
+    application = execution.mutation
+    if not isinstance(application, _ReleaseApplication):
+        raise RuntimeError("atomic operator relay returned an invalid mutation result")
+    await _send_result(
+        hub,
+        websocket,
+        sender,
+        application.result,
+        response=execution.response,
+    )
+    if execution.outcome == "inserted":
+        await hub._settle_atomic_operation(data)
 
 
 def _authorise(
@@ -389,6 +421,39 @@ async def _apply_release_async(
     return application.result
 
 
+async def _apply_release_atomic_async(
+    hub: SynapseHub,
+    sender: str,
+    request: RelayActionRequest,
+    data: dict[str, Any],
+) -> AtomicExecution | None:
+    """Commit a keyed single-person release, exact verdict, and evidence intent together."""
+
+    def mutate(state: SynapseState) -> _ReleaseApplication:
+        return _prepare_release(state, hub_id=hub.hub_id, sender=sender, request=request)
+
+    def prepare(application: _ReleaseApplication) -> OperationDraft | None:
+        payload = application.audit_payload
+        if payload is None:
+            return None
+        task_id = request.task_id.strip()
+        return OperationDraft(
+            response=_result_message(hub, sender, application.result),
+            events=(
+                (EventKind.RELEASE, {"task_id": task_id}),
+                (EventKind.OPERATOR_RELAY, payload),
+            ),
+            intent={
+                "family": "operator_relay",
+                "action": request.action,
+                "namespace": request.namespace,
+                "task_id": task_id,
+            },
+        )
+
+    return await hub._run_atomic_operation(data, mutate, prepare)
+
+
 def _audit_pending(
     hub: SynapseHub, sender: str, request: RelayActionRequest, outcome: ApprovalOutcome
 ) -> None:
@@ -423,7 +488,12 @@ def _audit_pending(
 
 
 async def _send_result(
-    hub: SynapseHub, websocket: Any, sender: str, result: RelayActionResult
+    hub: SynapseHub,
+    websocket: Any,
+    sender: str,
+    result: RelayActionResult,
+    *,
+    response: dict[str, Any] | None = None,
 ) -> None:
     """Send one private operator-relay result back to the relaying peer.
 
@@ -442,10 +512,15 @@ async def _send_result(
         )
     await hub._send_json(
         websocket,
-        hub._system(
-            "Operator relay result",
-            msg_type=MessageType.OPERATOR_RELAY_RESULT,
-            target=sender,
-            **encode_relay_result(result),
-        ),
+        response if response is not None else _result_message(hub, sender, result),
+    )
+
+
+def _result_message(hub: SynapseHub, sender: str, result: RelayActionResult) -> dict[str, Any]:
+    """Build the exact private verdict committed for a keyed operator relay."""
+    return hub._system(
+        "Operator relay result",
+        msg_type=MessageType.OPERATOR_RELAY_RESULT,
+        target=sender,
+        **encode_relay_result(result),
     )

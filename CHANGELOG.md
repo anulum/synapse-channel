@@ -35,6 +35,12 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Make a single-person governed operator relay apply once when it carries
+  `--idem-key`: the owning hub commits the release, inbound provenance, exact
+  verdict, and evidence intent together; identical retries replay only after
+  fresh peer/scope/ownership authorization, while changed-payload reuse fails
+  value-free. Forwarding preserves the key. Two-person approval and the origin
+  hub's outbound audit remain explicitly outside this transaction slice.
 - Extend the journal-backed apply-once transaction to task-board declare,
   update, and progress writes. Identical keyed retries replay the exact response,
   changed payloads fail without mutation, keyed and unkeyed board writes share

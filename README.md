@@ -1567,7 +1567,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 790 |
 | Wire message types | 80 |
 | CLI subcommands | 184 |
-| Test functions | 9232 |
+| Test functions | 9244 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 62 |
 | GitHub Actions workflows | 25 |
@@ -1647,7 +1647,8 @@ opt-in and documented:
   [WASM sandbox](https://anulum.github.io/synapse-channel/wasm-sandbox-getting-started/).
 - **Governed cross-hub relay** — a cross-hub force-release requires a reason, is tagged
   when it is break-glass, and can require two distinct operators (opt-in two-person
-  approval) before it applies.
+  approval) before it applies. A single-person relay can carry a stable `--idem-key` so
+  an authorised retry replays the exact committed verdict without releasing twice.
 - **Durable auto-action arming** — which automatic actions a hub may take is an explicit,
   operator-managed policy persisted across restarts, not a per-session default.
 
