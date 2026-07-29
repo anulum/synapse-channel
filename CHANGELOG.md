@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Publish a machine-checked registry for six hostile coordination-invariant
+  boundaries. It links normative guarantees to executable evidence, labels
+  residual gaps as partial, and keeps both commit and release freshness gates
+  red on stale generated evidence without treating ordinary coverage as proof.
+
 ### Changed
 
 - Extract MCP board, state, manifest, capability-directory, and resource-template

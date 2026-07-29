@@ -71,9 +71,23 @@ repos:
         stages: [pre-commit]
         always_run: true
         pass_filenames: false
+      - id: invariant-conformance
+        name: invariant conformance registry is current before commit
+        entry: python tools/invariant_conformance.py --check
+        language: system
+        stages: [pre-commit]
+        always_run: true
+        pass_filenames: false
       - id: pre-push-capability-manifest
         name: capability snapshot is current before push
         entry: python tools/capability_manifest.py --check
+        language: system
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+      - id: pre-push-invariant-conformance
+        name: invariant conformance registry is current before push
+        entry: python tools/invariant_conformance.py --check
         language: system
         stages: [pre-push]
         always_run: true

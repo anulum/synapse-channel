@@ -80,6 +80,7 @@ nav:
   - Provider file-edit claim hooks: claim-guard-hooks.md
   - Coordination model: coordination-model.md
   - Coordination specification: coordination-spec.md
+  - Invariant conformance: invariant-conformance.md
   - Agent Air Traffic Control: agent-air-traffic-control.md
   - Wire protocol: protocol.md
   - API and wire stability: api-stability.md

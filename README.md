@@ -1565,9 +1565,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 788 |
 | Wire message types | 80 |
 | CLI subcommands | 184 |
-| Test functions | 9198 |
+| Test functions | 9210 |
 | Benchmark harnesses | 6 |
-| Documentation pages | 61 |
+| Documentation pages | 62 |
 | GitHub Actions workflows | 25 |
 | Optional-dependency groups | 14 |
 
@@ -1586,6 +1586,12 @@ This snapshot is a static inventory generated from the source tree. Performance 
 - Full documentation site: <https://anulum.github.io/synapse-channel>
 
 ## Security posture
+
+Coordination guarantees are tracked in the
+[invariant-conformance programme](docs/invariant-conformance.md). Its generated
+six-boundary registry is machine checked and currently reports **partial** overall
+conformance; incomplete boundaries remain explicit rather than inheriting a green
+status from ordinary test coverage.
 
 Local-first by default: the hub binds to loopback, and it refuses a non-loopback bind
 unless a token is configured (or the operator explicitly accepts the exposure with

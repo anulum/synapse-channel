@@ -1,0 +1,187 @@
+{
+  "boundaries": [
+    {
+      "evidence_modes": [
+        "state-machine",
+        "multi-process-race",
+        "property"
+      ],
+      "guarantee": "Within one hub authority domain, live task ownership and overlapping file scopes have at most one owner; federated views never merge authority.",
+      "id": "single-authority",
+      "limitations": [],
+      "scope": "One authoritative hub and its journal per coordination domain. Multi-hub claims remain advisory.",
+      "sources": [
+        "src/synapse_channel/core/state.py",
+        "src/synapse_channel/core/multihub_federation.py"
+      ],
+      "spec_invariants": [
+        "INV-ME-1",
+        "INV-ME-2",
+        "INV-MH-1",
+        "INV-MH-2",
+        "INV-MH-4"
+      ],
+      "status": "conformant",
+      "tests": [
+        "tests/test_coordination_spec_model.py",
+        "tests/test_hub_takeover_race.py",
+        "tests/test_invariant_properties.py"
+      ],
+      "title": "Single authority"
+    },
+    {
+      "evidence_modes": [
+        "state-machine",
+        "property"
+      ],
+      "guarantee": "Hub-mediated mutations reject stale epochs and stale optimistic-concurrency versions.",
+      "id": "immediate-effect-fencing",
+      "limitations": [
+        "Repository or external side effects performed outside hub mediation cannot be fenced immediately.",
+        "Universal write mediation is not implemented."
+      ],
+      "scope": "State mutations submitted through the authoritative hub protocol.",
+      "sources": [
+        "src/synapse_channel/core/state.py",
+        "src/synapse_channel/core/state_transaction.py"
+      ],
+      "spec_invariants": [
+        "INV-EF-1",
+        "INV-EF-2",
+        "INV-EF-3",
+        "INV-CR-1"
+      ],
+      "status": "partial",
+      "tests": [
+        "tests/test_coordination_spec_model.py",
+        "tests/test_state_properties.py"
+      ],
+      "title": "Immediate-effect fencing"
+    },
+    {
+      "evidence_modes": [
+        "kill-point",
+        "state-machine",
+        "unit"
+      ],
+      "guarantee": "Claim-family operations publish success only after durable commit and are apply-once for a stable operation identifier.",
+      "id": "atomic-operation-truth",
+      "limitations": [
+        "Atomic truth is not yet a universal transaction boundary for every command and external side effect."
+      ],
+      "scope": "Journal-backed claim, renew, release, handoff, checkpoint, and cancel operation families.",
+      "sources": [
+        "src/synapse_channel/core/atomic_operations.py",
+        "src/synapse_channel/core/state_transaction.py"
+      ],
+      "spec_invariants": [
+        "INV-JA-1",
+        "INV-JA-2",
+        "INV-JA-3",
+        "INV-CR-1",
+        "INV-DG-2"
+      ],
+      "status": "partial",
+      "tests": [
+        "tests/test_atomic_operation_killpoints.py",
+        "tests/test_atomic_operation_handlers.py",
+        "tests/test_coordination_spec_model.py"
+      ],
+      "title": "Atomic operation truth"
+    },
+    {
+      "evidence_modes": [
+        "adversarial",
+        "restart",
+        "concurrency",
+        "authorized-transport"
+      ],
+      "guarantee": "Each observed federated (hub_id, sequence) identity is bound to one canonical full-event fingerprint; conflicting content quarantines the peer before publication.",
+      "id": "content-bound-global-event-identity",
+      "limitations": [],
+      "scope": "Authorized multi-hub event observation, including persisted quarantine and explicit new-generation recovery.",
+      "sources": [
+        "src/synapse_channel/core/multihub_equivocation.py",
+        "src/synapse_channel/core/multihub_follower.py"
+      ],
+      "spec_invariants": [
+        "INV-MH-5"
+      ],
+      "status": "conformant",
+      "tests": [
+        "tests/test_multihub_equivocation.py",
+        "tests/test_multihub_follower.py",
+        "tests/test_secure_multihub_routes_e2e.py"
+      ],
+      "title": "Content-bound global event identity"
+    },
+    {
+      "evidence_modes": [
+        "adversarial",
+        "deterministic-fold"
+      ],
+      "guarantee": "Federated identity equivocation fails closed, while the task-board projection exposes deterministic provenance for its explicitly non-causal display winner.",
+      "id": "causal-conflict-handling",
+      "limitations": [
+        "The display fold is timestamp ordered and does not establish happens-before causality.",
+        "General causal conflict objects and resolution policy are not implemented."
+      ],
+      "scope": "Equivocation containment and display-only multi-hub projections.",
+      "sources": [
+        "src/synapse_channel/core/multihub_equivocation.py",
+        "src/synapse_channel/core/multihub_fold.py"
+      ],
+      "spec_invariants": [
+        "INV-MH-1",
+        "INV-MH-2",
+        "INV-MH-5"
+      ],
+      "status": "partial",
+      "tests": [
+        "tests/test_multihub_equivocation.py",
+        "tests/test_multihub_fold.py"
+      ],
+      "title": "Causal conflict handling"
+    },
+    {
+      "evidence_modes": [
+        "kill-point",
+        "receipt",
+        "replay"
+      ],
+      "guarantee": "Durable journal and receipt surfaces expose bounded evidence for defined coordination and delivery outcomes without treating transport acknowledgement as model action.",
+      "id": "evidence-completeness",
+      "limitations": [
+        "Not every command or external side effect emits a universal receipt.",
+        "Evidence completeness across all adapters and deployment effects is not yet proven."
+      ],
+      "scope": "Journal-backed coordination operations, defined delivery receipts, AEF records, and federation quarantine evidence.",
+      "sources": [
+        "src/synapse_channel/core/journal.py",
+        "src/synapse_channel/core/universal_receipts.py"
+      ],
+      "spec_invariants": [
+        "INV-JA-1",
+        "INV-JA-2",
+        "INV-DG-1",
+        "INV-DG-3",
+        "INV-MH-5"
+      ],
+      "status": "partial",
+      "tests": [
+        "tests/test_atomic_operation_killpoints.py",
+        "tests/test_delivery_receipts.py",
+        "tests/test_universal_receipts.py"
+      ],
+      "title": "Evidence completeness"
+    }
+  ],
+  "overall_status": "partial",
+  "schema_version": "synapse-invariant-conformance.v1",
+  "summary": {
+    "conformant": 2,
+    "not-implemented": 0,
+    "partial": 4,
+    "total": 6
+  }
+}
