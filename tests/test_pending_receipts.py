@@ -99,6 +99,26 @@ class TestBounded:
         assert store.peek(2) is not None
         assert store.peek(3) is not None
 
+    def test_eviction_preview_is_non_mutating_and_matches_remember(self) -> None:
+        store = PendingReceipts(max_entries=2)
+        store.remember(1, sender="A", target="B", message_id=1)
+        store.remember(2, sender="A", target="C", message_id=2)
+
+        expected = (1, ReceiptEntry(sender="A", target="B", message_id=1))
+        assert store.eviction_for(3) == expected
+        assert store.entries() == (
+            (1, ReceiptEntry(sender="A", target="B", message_id=1)),
+            (2, ReceiptEntry(sender="A", target="C", message_id=2)),
+        )
+        assert store.remember(3, sender="A", target="D", message_id=3) == expected
+
+    def test_eviction_preview_skips_capacity_and_existing_refresh(self) -> None:
+        store = PendingReceipts(max_entries=2)
+        store.remember(1, sender="A", target="B", message_id=1)
+        assert store.eviction_for(2) is None
+        store.remember(2, sender="A", target="C", message_id=2)
+        assert store.eviction_for(1) is None
+
     def test_max_entries_is_floored_at_one(self) -> None:
         store = PendingReceipts(max_entries=0)
         store.remember(1, sender="A", target="B", message_id=1)

@@ -43,7 +43,7 @@ def requested_receipt_payload(
     sender: str,
     target: str,
     message_id: int,
-    message_seq: int,
+    message_seq: int | None,
     client_msg_id: str = "",
 ) -> dict[str, Any]:
     """Return the audit payload for a sender requesting a delivery receipt."""
@@ -51,8 +51,9 @@ def requested_receipt_payload(
         "sender": sender,
         "target": target,
         "message_id": int(message_id),
-        "message_seq": int(message_seq),
     }
+    if message_seq is not None:
+        payload["message_seq"] = int(message_seq)
     if client_msg_id:
         payload["client_msg_id"] = client_msg_id
     return payload

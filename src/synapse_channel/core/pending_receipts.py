@@ -134,6 +134,19 @@ class PendingReceipts:
             return oldest, evicted
         return None
 
+    def eviction_for(self, seq: int) -> tuple[int, ReceiptEntry] | None:
+        """Preview the entry a new ``seq`` would evict without mutating the store.
+
+        The durable receipt path uses this before its SQLite commit so the new
+        pending transition and the bounded-window expiry can share one
+        transaction. Re-remembering an existing sequence only refreshes its
+        recency and therefore does not evict another entry.
+        """
+        if seq in self._entries or len(self._entries) < self.max_entries:
+            return None
+        oldest = next(iter(self._entries))
+        return oldest, self._entries[oldest]
+
     def restore(self, entries: Iterable[tuple[int, ReceiptEntry]]) -> None:
         """Restore pending receipts from an oldest-first durable projection.
 

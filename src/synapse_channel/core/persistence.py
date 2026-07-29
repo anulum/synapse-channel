@@ -100,6 +100,44 @@ class PendingOperationIntent(NamedTuple):
     intent: dict[str, Any]
 
 
+class DeliveryReceiptAggregate(NamedTuple):
+    """Current durable state for one receipt-requested directed chat."""
+
+    message_seq: int
+    sender: str
+    target: str
+    message_id: int
+    client_msg_id: str
+    state: str
+    delivered: bool | None
+    deferred: bool
+    acked_by: str
+    updated_event_seq: int
+
+
+class PendingDeliveryNotification(NamedTuple):
+    """One stable receipt frame awaiting at-least-once sender delivery."""
+
+    notification_id: str
+    message_seq: int
+    phase: str
+    sender: str
+    frame: dict[str, Any]
+    attempts: int
+
+
+DeliveryReceiptState = Literal["immediate_delivered", "pending", "deferred", "expired"]
+
+
+class DeliveryReceiptTransition(NamedTuple):
+    """One aggregate transition paired with its sender-notification frame."""
+
+    kind: str
+    payload: Mapping[str, Any]
+    notification: Mapping[str, Any]
+    state: DeliveryReceiptState
+
+
 class EventStore:
     """Append-only SQLite event log in WAL mode.
 
@@ -166,6 +204,37 @@ class EventStore:
             "receipt_id TEXT, "
             "FOREIGN KEY(operation_key) REFERENCES operations(operation_key))"
         )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS delivery_receipts ("
+            "message_seq INTEGER PRIMARY KEY, "
+            "sender TEXT NOT NULL, "
+            "target TEXT NOT NULL, "
+            "message_id INTEGER NOT NULL, "
+            "client_msg_id TEXT NOT NULL, "
+            "state TEXT NOT NULL, "
+            "delivered INTEGER, "
+            "deferred INTEGER NOT NULL, "
+            "acked_by TEXT NOT NULL, "
+            "updated_event_seq INTEGER NOT NULL, "
+            "FOREIGN KEY(message_seq) REFERENCES events(seq), "
+            "FOREIGN KEY(updated_event_seq) REFERENCES events(seq))"
+        )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS delivery_receipt_outbox ("
+            "notification_id TEXT PRIMARY KEY, "
+            "message_seq INTEGER NOT NULL, "
+            "phase TEXT NOT NULL, "
+            "sender TEXT NOT NULL, "
+            "frame_json TEXT NOT NULL, "
+            "attempts INTEGER NOT NULL DEFAULT 0, "
+            "delivered_at REAL, "
+            "FOREIGN KEY(message_seq) REFERENCES delivery_receipts(message_seq))"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS delivery_receipt_outbox_pending_idx "
+            "ON delivery_receipt_outbox(sender, delivered_at)"
+        )
+        self._backfill_delivery_receipt_aggregates()
         self._aef_outbox_kinds = frozenset(str(kind) for kind in aef_outbox_kinds)
         if self._aef_outbox_kinds:
             self._conn.execute(
@@ -409,6 +478,372 @@ class EventStore:
                 raise
             finally:
                 self._conn.execute("PRAGMA synchronous=NORMAL")
+
+    def commit_delivery_receipt_request(
+        self,
+        *,
+        chat: Mapping[str, Any],
+        requested: Mapping[str, Any],
+        stage_hook: Callable[[str], None] | None = None,
+    ) -> int:
+        """Atomically commit a directed chat and its requested-receipt aggregate.
+
+        The chat sequence is assigned inside the transaction and injected into
+        the requested event and aggregate. A crash therefore leaves either both
+        facts or neither; it can never retain a directed body without the fact
+        that its sender requested a receipt.
+        """
+        stamp = time.time()
+        chat_payload = dict(chat)
+        request_payload = dict(requested)
+        sender = str(request_payload.get("sender") or "")
+        target = str(request_payload.get("target") or "")
+        message_id = request_payload.get("message_id")
+        if (
+            not sender
+            or not target
+            or isinstance(message_id, bool)
+            or not isinstance(message_id, int)
+        ):
+            raise ValueError(
+                "delivery receipt request requires sender, target, and integer message id"
+            )
+        client_msg_id = str(request_payload.get("client_msg_id") or "")
+        hook = stage_hook or (lambda _stage: None)
+        with self._lock:
+            self._conn.execute("PRAGMA synchronous=FULL")
+            committed = False
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                cursor = self._conn.execute(
+                    "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)",
+                    (stamp, "chat", self._json_object(chat_payload)),
+                )
+                message_seq = int(cursor.lastrowid or 0)
+                hook("after_chat_insert")
+                request_payload["message_seq"] = message_seq
+                cursor = self._conn.execute(
+                    "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)",
+                    (stamp, "delivery_receipt_requested", self._json_object(request_payload)),
+                )
+                request_seq = int(cursor.lastrowid or 0)
+                self._conn.execute(
+                    "INSERT INTO delivery_receipts ("
+                    "message_seq, sender, target, message_id, client_msg_id, state, delivered, "
+                    "deferred, acked_by, updated_event_seq) "
+                    "VALUES (?, ?, ?, ?, ?, ?, NULL, 0, '', ?)",
+                    (
+                        message_seq,
+                        sender,
+                        target,
+                        message_id,
+                        client_msg_id,
+                        "requested",
+                        request_seq,
+                    ),
+                )
+                hook("after_aggregate_insert")
+                self._conn.commit()
+                committed = True
+                hook("after_commit")
+                return message_seq
+            except BaseException:
+                if not committed:
+                    self._conn.rollback()
+                raise
+            finally:
+                self._restore_normal_after_transaction(committed)
+
+    def _backfill_delivery_receipt_aggregates(self) -> None:
+        """Project legacy receipt events into the additive aggregate table once."""
+        rows = self._conn.execute(
+            "SELECT seq, kind, payload FROM events WHERE kind IN ("
+            "'delivery_receipt_requested', 'delivery_receipt_immediate', "
+            "'delivery_receipt_deferred', 'delivery_receipt_expired') ORDER BY seq"
+        ).fetchall()
+        for event_seq, kind, encoded in rows:
+            try:
+                payload = json.loads(str(encoded))
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            message_seq = payload.get("message_seq")
+            message_id = payload.get("message_id")
+            sender = str(payload.get("sender") or "")
+            target = str(payload.get("target") or "")
+            if (
+                isinstance(message_seq, bool)
+                or not isinstance(message_seq, int)
+                or message_seq < 1
+                or isinstance(message_id, bool)
+                or not isinstance(message_id, int)
+                or not sender
+                or not target
+            ):
+                continue
+            if kind == "delivery_receipt_requested":
+                state, delivered, deferred = "requested", None, 0
+            elif kind == "delivery_receipt_immediate":
+                delivered = int(bool(payload.get("delivered")))
+                state = "immediate_delivered" if delivered else "pending"
+                deferred = 0
+            elif kind == "delivery_receipt_deferred":
+                state, delivered, deferred = "deferred", 1, 1
+            else:
+                state, delivered, deferred = "expired", 0, 1
+            self._conn.execute(
+                "INSERT INTO delivery_receipts ("
+                "message_seq, sender, target, message_id, client_msg_id, state, delivered, "
+                "deferred, acked_by, updated_event_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(message_seq) DO UPDATE SET state = excluded.state, "
+                "delivered = excluded.delivered, deferred = excluded.deferred, "
+                "acked_by = excluded.acked_by, updated_event_seq = excluded.updated_event_seq",
+                (
+                    message_seq,
+                    sender,
+                    target,
+                    message_id,
+                    str(payload.get("client_msg_id") or ""),
+                    state,
+                    delivered,
+                    deferred,
+                    str(payload.get("acked_by") or ""),
+                    int(event_seq),
+                ),
+            )
+
+    def commit_delivery_receipt_transition(
+        self,
+        *,
+        kind: str,
+        payload: Mapping[str, Any],
+        notification: Mapping[str, Any],
+        state: DeliveryReceiptState,
+        companion: DeliveryReceiptTransition | None = None,
+        stage_hook: Callable[[str], None] | None = None,
+    ) -> str:
+        """Commit one receipt transition and its stable notification outbox row.
+
+        The outbox identity is deterministic for ``(message_seq, state)``. A
+        process crash after WebSocket acceptance but before acknowledgement may
+        therefore replay the same frame, and the sender can deduplicate it
+        without the hub pretending to know whether a model consumed it.
+        """
+        transitions = [DeliveryReceiptTransition(kind, payload, notification, state)]
+        if companion is not None:
+            transitions.append(companion)
+        prepared = [self._prepare_delivery_receipt_transition(item) for item in transitions]
+        notification_id = prepared[0][0]
+        hook = stage_hook or (lambda _stage: None)
+        stamp = time.time()
+        with self._lock:
+            self._conn.execute("PRAGMA synchronous=FULL")
+            committed = False
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                for transition in prepared:
+                    self._insert_delivery_receipt_transition(transition, stamp=stamp)
+                    hook("after_transition_insert")
+                hook("after_outbox_insert")
+                self._conn.commit()
+                committed = True
+                hook("after_commit")
+                return notification_id
+            except BaseException:
+                if not committed:
+                    self._conn.rollback()
+                raise
+            finally:
+                self._restore_normal_after_transaction(committed)
+
+    @staticmethod
+    def _prepare_delivery_receipt_transition(
+        transition: DeliveryReceiptTransition,
+    ) -> tuple[str, int, str, dict[str, Any], dict[str, Any], DeliveryReceiptState]:
+        """Validate and normalize one transition before opening the transaction."""
+        receipt = dict(transition.payload)
+        message_seq = receipt.get("message_seq")
+        if isinstance(message_seq, bool) or not isinstance(message_seq, int) or message_seq < 1:
+            raise ValueError("delivery receipt transition requires a positive message sequence")
+        if not isinstance(receipt.get("delivered"), bool):
+            raise ValueError("delivery receipt transition requires a boolean delivered verdict")
+        expected_kind = {
+            "immediate_delivered": "delivery_receipt_immediate",
+            "pending": "delivery_receipt_immediate",
+            "deferred": "delivery_receipt_deferred",
+            "expired": "delivery_receipt_expired",
+        }[transition.state]
+        if transition.kind != expected_kind:
+            raise ValueError("delivery receipt transition kind does not match its state")
+        notification_id = f"delivery-receipt:{message_seq}:{transition.state}"
+        frame = dict(transition.notification)
+        frame["receipt_notification_id"] = notification_id
+        return (
+            notification_id,
+            message_seq,
+            transition.kind,
+            receipt,
+            frame,
+            transition.state,
+        )
+
+    def _insert_delivery_receipt_transition(
+        self,
+        transition: tuple[str, int, str, dict[str, Any], dict[str, Any], DeliveryReceiptState],
+        *,
+        stamp: float,
+    ) -> None:
+        """Insert one validated aggregate/event/outbox transition in the open transaction."""
+        notification_id, message_seq, kind, receipt, frame, state = transition
+        current = self._conn.execute(
+            "SELECT sender, target, message_id, state FROM delivery_receipts WHERE message_seq = ?",
+            (message_seq,),
+        ).fetchone()
+        if current is None:
+            raise KeyError("delivery receipt aggregate is absent")
+        sender = str(current[0])
+        allowed_from = {
+            "immediate_delivered": {"requested"},
+            "pending": {"requested"},
+            "deferred": {"pending"},
+            "expired": {"pending"},
+        }[state]
+        if str(current[3]) not in allowed_from:
+            raise ValueError("delivery receipt transition is invalid from current state")
+        if (
+            str(receipt.get("sender") or "") != sender
+            or str(receipt.get("target") or "") != str(current[1])
+            or receipt.get("message_id") != int(current[2])
+            or str(frame.get("target") or "") != sender
+        ):
+            raise ValueError("delivery receipt transition does not match its aggregate")
+        cursor = self._conn.execute(
+            "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)",
+            (stamp, kind, self._json_object(receipt)),
+        )
+        event_seq = int(cursor.lastrowid or 0)
+        self._conn.execute(
+            "UPDATE delivery_receipts SET state = ?, delivered = ?, deferred = ?, "
+            "acked_by = ?, updated_event_seq = ? WHERE message_seq = ?",
+            (
+                state,
+                int(receipt["delivered"]),
+                int(bool(receipt.get("deferred", False))),
+                str(receipt.get("acked_by") or ""),
+                event_seq,
+                message_seq,
+            ),
+        )
+        self._conn.execute(
+            "INSERT INTO delivery_receipt_outbox ("
+            "notification_id, message_seq, phase, sender, frame_json, attempts, delivered_at) "
+            "VALUES (?, ?, ?, ?, ?, 0, NULL)",
+            (
+                notification_id,
+                message_seq,
+                kind.removeprefix("delivery_receipt_"),
+                sender,
+                self._json_object(frame),
+            ),
+        )
+
+    def delivery_receipt_aggregate(self, message_seq: int) -> DeliveryReceiptAggregate | None:
+        """Return the current durable receipt aggregate for one chat sequence."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT message_seq, sender, target, message_id, client_msg_id, state, "
+                "delivered, deferred, acked_by, updated_event_seq FROM delivery_receipts "
+                "WHERE message_seq = ?",
+                (message_seq,),
+            ).fetchone()
+        if row is None:
+            return None
+        delivered = None if row[6] is None else bool(row[6])
+        return DeliveryReceiptAggregate(
+            int(row[0]),
+            str(row[1]),
+            str(row[2]),
+            int(row[3]),
+            str(row[4]),
+            str(row[5]),
+            delivered,
+            bool(row[7]),
+            str(row[8]),
+            int(row[9]),
+        )
+
+    def pending_delivery_notifications(
+        self, *, sender: str | None = None, limit: int = 100
+    ) -> tuple[PendingDeliveryNotification, ...]:
+        """Return undelivered receipt frames in stable insertion order."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > 10_000:
+            raise ValueError("delivery notification limit must be an integer from 1 through 10000")
+        query = (
+            "SELECT notification_id, message_seq, phase, sender, frame_json, attempts "
+            "FROM delivery_receipt_outbox WHERE delivered_at IS NULL"
+        )
+        parameters: tuple[object, ...]
+        if sender is None:
+            query += " ORDER BY rowid LIMIT ?"
+            parameters = (limit,)
+        else:
+            query += " AND sender = ? ORDER BY rowid LIMIT ?"
+            parameters = (sender, limit)
+        with self._lock:
+            rows = self._conn.execute(query, parameters).fetchall()
+        result: list[PendingDeliveryNotification] = []
+        for row in rows:
+            frame = json.loads(str(row[4]))
+            if not isinstance(frame, dict):
+                raise ValueError("stored delivery notification must be a JSON object")
+            result.append(
+                PendingDeliveryNotification(
+                    str(row[0]), int(row[1]), str(row[2]), str(row[3]), frame, int(row[5])
+                )
+            )
+        return tuple(result)
+
+    def mark_delivery_notification_attempt(self, notification_id: str, *, delivered: bool) -> None:
+        """Record one sender-delivery attempt and settle it only on transport success."""
+        if not notification_id:
+            raise ValueError("delivery notification identity must be non-empty")
+        with self._lock:
+            self._conn.execute("PRAGMA synchronous=FULL")
+            committed = False
+            try:
+                cursor = self._conn.execute(
+                    "UPDATE delivery_receipt_outbox SET attempts = attempts + 1, "
+                    "delivered_at = CASE WHEN ? THEN COALESCE(delivered_at, ?) "
+                    "ELSE delivered_at END "
+                    "WHERE notification_id = ? AND delivered_at IS NULL",
+                    (int(delivered), time.time(), notification_id),
+                )
+                if cursor.rowcount != 1:
+                    raise KeyError("delivery notification is absent or already settled")
+                self._conn.commit()
+                committed = True
+            except BaseException:
+                self._conn.rollback()
+                raise
+            finally:
+                self._restore_normal_after_transaction(committed)
+
+    @staticmethod
+    def _json_object(value: Mapping[str, Any]) -> str:
+        """Encode one bounded JSON object deterministically and reject non-finite data."""
+        return json.dumps(
+            dict(value), ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
+
+    def _restore_normal_after_transaction(self, committed: bool) -> None:
+        """Restore NORMAL sync without contradicting an already committed outcome."""
+        try:
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+        except BaseException:
+            if not committed:
+                raise
+            logger.exception("Could not restore SQLite synchronous=NORMAL")
 
     def commit_operation(
         self,

@@ -17,7 +17,8 @@ from synapse_channel.core.directed_delivery_liveness import (
     DeliveryLiveness,
 )
 from synapse_channel.core.handlers import delivery_feedback as df
-from synapse_channel.core.pending_receipts import ReceiptEntry
+from synapse_channel.core.pending_receipts import PendingReceipts, ReceiptEntry
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.wake_capability import (
     WAKE_DIRECT,
     WAKE_PASSIVE,
@@ -62,7 +63,7 @@ class _FakeHub:
         self._caps = capabilities or {}
         self.journal = journal
         self.sent: list[dict[str, Any]] = []
-        self.pending_receipts = _FakePending(evicted)
+        self.pending_receipts: Any = _FakePending(evicted)
 
     def wake_capability_of(self, name: str) -> str:
         return self._caps.get(name, WAKE_UNKNOWN)
@@ -261,6 +262,197 @@ class TestSendAndTrackDeliveryReceipt:
         assert len(log["requested"]) == 1
         assert hub.pending_receipts.calls == [(5, "S", "T", 1)]
         assert len(log["expired"]) == 1
+
+    async def test_bounded_expiry_commits_with_new_pending_verdict(self, tmp_path: Any) -> None:
+        store = EventStore(tmp_path / "events.db")
+        hub = _FakeHub(journal=store)
+        hub.pending_receipts = PendingReceipts(max_entries=1)
+        decision = _decision(matched=("BOB",), stale=("BOB",), reason=NO_LIVE_RECIPIENT)
+
+        first = df.commit_delivery_receipt_request(
+            _as_hub(hub),
+            chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+            sender="ALICE",
+            target="BOB",
+            msg_id=1,
+        )
+        await df.commit_delivery_receipt_verdict(
+            _as_hub(hub),
+            object(),
+            sender="ALICE",
+            target="BOB",
+            msg_id=1,
+            message_seq=first,
+            decision=decision,
+            directed=True,
+        )
+        second = df.commit_delivery_receipt_request(
+            _as_hub(hub),
+            chat={"sender": "ALICE", "target": "BOB", "msg_id": 2},
+            sender="ALICE",
+            target="BOB",
+            msg_id=2,
+        )
+        await df.commit_delivery_receipt_verdict(
+            _as_hub(hub),
+            object(),
+            sender="ALICE",
+            target="BOB",
+            msg_id=2,
+            message_seq=second,
+            decision=decision,
+            directed=True,
+        )
+
+        old = store.delivery_receipt_aggregate(first)
+        new = store.delivery_receipt_aggregate(second)
+        assert old is not None and old.state == "expired"
+        assert new is not None and new.state == "pending"
+        assert hub.pending_receipts.entries() == (
+            (second, ReceiptEntry(sender="ALICE", target="BOB", message_id=2)),
+        )
+        assert store.pending_delivery_notifications() == ()
+        assert {frame["receipt_notification_id"] for frame in hub.sent} == {
+            f"delivery-receipt:{first}:pending",
+            f"delivery-receipt:{first}:expired",
+            f"delivery-receipt:{second}:pending",
+        }
+        store.close()
+
+    async def test_failed_sender_send_retries_same_notification_identity(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        store = EventStore(tmp_path / "events.db")
+        hub = _FakeHub(journal=store)
+        hub.pending_receipts = PendingReceipts()
+        message_seq = df.commit_delivery_receipt_request(
+            _as_hub(hub),
+            chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+            sender="ALICE",
+            target="BOB",
+            msg_id=1,
+        )
+        attempted: list[dict[str, Any]] = []
+
+        async def fail_send(websocket: Any, payload: dict[str, Any]) -> None:
+            attempted.append(payload)
+            raise ConnectionError("sender offline")
+
+        monkeypatch.setattr(hub, "_send_json", fail_send)
+        await df.commit_delivery_receipt_verdict(
+            _as_hub(hub),
+            object(),
+            sender="ALICE",
+            target="BOB",
+            msg_id=1,
+            message_seq=message_seq,
+            decision=_decision(matched=("BOB",), stale=("BOB",), reason=NO_LIVE_RECIPIENT),
+            directed=True,
+        )
+        pending = store.pending_delivery_notifications(sender="ALICE")
+        assert len(pending) == 1 and pending[0].attempts == 1
+
+        async def succeed_send(websocket: Any, payload: dict[str, Any]) -> None:
+            attempted.append(payload)
+
+        monkeypatch.setattr(hub, "_send_json", succeed_send)
+        await df.deliver_pending_receipt_notifications(
+            _as_hub(hub), sender="ALICE", websocket=object()
+        )
+
+        assert store.pending_delivery_notifications(sender="ALICE") == ()
+        assert attempted[0]["receipt_notification_id"] == attempted[1]["receipt_notification_id"]
+        store.close()
+
+    async def test_durable_helpers_fail_closed_without_a_journal(self) -> None:
+        hub = _FakeHub(journal=None)
+        hub.pending_receipts = PendingReceipts()
+        hub.pending_receipts.remember(3, sender="ALICE", target="BOB", message_id=1)
+        entry = hub.pending_receipts.peek(3)
+        assert entry is not None
+
+        with pytest.raises(RuntimeError, match="request requires a journal"):
+            df.commit_delivery_receipt_request(
+                _as_hub(hub),
+                chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+                sender="ALICE",
+                target="BOB",
+                msg_id=1,
+            )
+        with pytest.raises(RuntimeError, match="verdict requires a journal"):
+            await df.commit_delivery_receipt_verdict(
+                _as_hub(hub),
+                object(),
+                sender="ALICE",
+                target="BOB",
+                msg_id=1,
+                message_seq=3,
+                decision=_decision(reason="no_online_recipient"),
+                directed=True,
+            )
+        await df.settle_delivery_receipt(_as_hub(hub), message_seq=3, entry=entry, recipient="BOB")
+        assert hub.pending_receipts.peek(3) is None
+        await df.deliver_pending_receipt_notifications(_as_hub(hub), sender="ALICE")
+
+    async def test_memory_eviction_must_match_the_atomic_companion(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        store = EventStore(tmp_path / "events.db")
+        hub = _FakeHub(journal=store)
+        pending = PendingReceipts(max_entries=1)
+        hub.pending_receipts = pending
+        old_seq = df.commit_delivery_receipt_request(
+            _as_hub(hub),
+            chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+            sender="ALICE",
+            target="BOB",
+            msg_id=1,
+        )
+        await df.commit_delivery_receipt_verdict(
+            _as_hub(hub),
+            object(),
+            sender="ALICE",
+            target="BOB",
+            msg_id=1,
+            message_seq=old_seq,
+            decision=_decision(reason="no_online_recipient"),
+            directed=True,
+        )
+        new_seq = df.commit_delivery_receipt_request(
+            _as_hub(hub),
+            chat={"sender": "ALICE", "target": "CAROL", "msg_id": 2},
+            sender="ALICE",
+            target="CAROL",
+            msg_id=2,
+        )
+
+        def changed_remember(
+            seq: int,
+            *,
+            sender: str,
+            target: str,
+            message_id: int,
+            client_msg_id: str = "",
+        ) -> None:
+            del seq, sender, target, message_id, client_msg_id
+
+        monkeypatch.setattr(pending, "remember", changed_remember)
+        with pytest.raises(RuntimeError, match="eviction changed"):
+            await df.commit_delivery_receipt_verdict(
+                _as_hub(hub),
+                object(),
+                sender="ALICE",
+                target="CAROL",
+                msg_id=2,
+                message_seq=new_seq,
+                decision=_decision(reason="no_online_recipient"),
+                directed=True,
+            )
+        old = store.delivery_receipt_aggregate(old_seq)
+        new = store.delivery_receipt_aggregate(new_seq)
+        assert old is not None and old.state == "expired"
+        assert new is not None and new.state == "pending"
+        store.close()
 
     async def test_no_eviction_skips_expired_record(self, monkeypatch: pytest.MonkeyPatch) -> None:
         log = _capture_journal(monkeypatch)

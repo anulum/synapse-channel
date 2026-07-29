@@ -1386,6 +1386,15 @@ class SynapseHub:
             publish=publish_heartbeat,
         )
         is_new_agent = self.clients.set_agent_socket(sender, websocket)
+        if not was_bound and self.journal is not None:
+            # Receipt notifications are a durable at-least-once outbox. A sender
+            # that was offline for an ACK or a prior transport failure receives
+            # the same stable notification ids when it next proves this identity.
+            from synapse_channel.core.handlers.delivery_feedback import (
+                deliver_pending_receipt_notifications,
+            )
+
+            await deliver_pending_receipt_notifications(self, sender=sender, websocket=websocket)
         if not was_bound or msg_type != MessageType.HEARTBEAT:
             self.dead_letters.clear(sender)
         if is_new_agent:

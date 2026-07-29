@@ -17,10 +17,11 @@ becoming a receipt, audit-projection, and wake-capability module.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from synapse_channel.core.agent_liveness import waiter_sidecar_names
 from synapse_channel.core.delivery_receipts import (
+    deferred_receipt_payload,
     expired_receipt_payload,
     immediate_receipt_payload,
     requested_receipt_payload,
@@ -30,10 +31,13 @@ from synapse_channel.core.directed_delivery_liveness import (
     DeliveryLiveness,
 )
 from synapse_channel.core.journal import (
+    EventKind,
     record_delivery_receipt_expired,
     record_delivery_receipt_immediate,
     record_delivery_receipt_requested,
 )
+from synapse_channel.core.pending_receipts import ReceiptEntry
+from synapse_channel.core.persistence import DeliveryReceiptTransition
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.wake_capability import (
     WAKE_PASSIVE,
@@ -75,6 +79,63 @@ def _failure_payload(target: str, decision: DeliveryLiveness) -> str:
         stale = ", ".join(decision.stale_recipients)
         return f"delivery failed: no live recipient matched {target}; stale sockets: {stale}"
     return f"delivery failed: no online recipient matched {target}"
+
+
+def _delivery_receipt_frame(
+    hub: SynapseHub,
+    *,
+    sender: str,
+    target: str,
+    msg_id: int,
+    decision: DeliveryLiveness,
+    message_seq: int | None = None,
+    dead_lettered: bool = False,
+    client_msg_id: str = "",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return the exact wire frame and durable payload for an immediate verdict."""
+    capabilities = _recipient_wake_capabilities(hub, decision.matched_recipients)
+    if decision.delivered:
+        rendered = (
+            _render_recipient_with_capability(recipient, capabilities[recipient])
+            for recipient in decision.live_recipients
+        )
+        text = f"delivered to {', '.join(rendered)}"
+    else:
+        text = _failure_payload(target, decision)
+    recorded_dead_letter = bool(dead_lettered and not decision.delivered)
+    audit = immediate_receipt_payload(
+        sender=sender,
+        target=target,
+        message_id=msg_id,
+        message_seq=message_seq or 0,
+        delivered=decision.delivered,
+        recipients=decision.live_recipients,
+        matched_recipients=decision.matched_recipients,
+        stale_recipients=decision.stale_recipients,
+        reason=decision.reason,
+        dead_lettered=recorded_dead_letter,
+        recipient_wake_capabilities=capabilities,
+        client_msg_id=client_msg_id,
+    )
+    correlation = {"client_msg_id": client_msg_id} if client_msg_id else {}
+    frame = hub._system(
+        text,
+        msg_type=MessageType.DELIVERY_RECEIPT,
+        target=sender,
+        message_target=target,
+        message_id=msg_id,
+        **({"message_seq": message_seq} if message_seq is not None else {}),
+        delivered=decision.delivered,
+        deferred=False,
+        recipients=list(decision.live_recipients),
+        matched_recipients=list(decision.matched_recipients),
+        stale_recipients=list(decision.stale_recipients),
+        reason=decision.reason,
+        dead_lettered=recorded_dead_letter,
+        recipient_wake_capabilities=capabilities,
+        **correlation,
+    )
+    return frame, audit
 
 
 async def warn_stale_recipients(
@@ -172,53 +233,186 @@ async def send_delivery_receipt(
     client_msg_id : str, optional
         Sender-chosen identity echoed so retries can be correlated downstream.
     """
-    capabilities = _recipient_wake_capabilities(hub, decision.matched_recipients)
-    if decision.delivered:
-        rendered = (
-            _render_recipient_with_capability(recipient, capabilities[recipient])
-            for recipient in decision.live_recipients
-        )
-        payload = f"delivered to {', '.join(rendered)}"
-    else:
-        payload = _failure_payload(target, decision)
-    recorded_dead_letter = bool(dead_lettered and not decision.delivered)
+    frame, audit = _delivery_receipt_frame(
+        hub,
+        sender=sender,
+        target=target,
+        msg_id=msg_id,
+        message_seq=message_seq,
+        decision=decision,
+        dead_lettered=dead_lettered,
+        client_msg_id=client_msg_id,
+    )
     if hub.journal is not None and message_seq is not None:
-        record_delivery_receipt_immediate(
-            hub.journal,
-            immediate_receipt_payload(
-                sender=sender,
-                target=target,
-                message_id=msg_id,
-                message_seq=message_seq,
-                delivered=decision.delivered,
-                recipients=decision.live_recipients,
-                matched_recipients=decision.matched_recipients,
-                stale_recipients=decision.stale_recipients,
-                reason=decision.reason,
-                dead_lettered=recorded_dead_letter,
-                recipient_wake_capabilities=capabilities,
-                client_msg_id=client_msg_id,
-            ),
-        )
-    correlation = {"client_msg_id": client_msg_id} if client_msg_id else {}
-    await hub._send_json(
-        websocket,
-        hub._system(
-            payload,
-            msg_type=MessageType.DELIVERY_RECEIPT,
-            target=sender,
-            message_target=target,
+        record_delivery_receipt_immediate(hub.journal, audit)
+    await hub._send_json(websocket, frame)
+
+
+def commit_delivery_receipt_request(
+    hub: SynapseHub,
+    *,
+    chat: dict[str, Any],
+    sender: str,
+    target: str,
+    msg_id: int,
+    client_msg_id: str = "",
+) -> int:
+    """Atomically journal a directed chat and its receipt-requested aggregate."""
+    if hub.journal is None:
+        raise RuntimeError("durable receipt request requires a journal")
+    return hub.journal.commit_delivery_receipt_request(
+        chat=chat,
+        requested=requested_receipt_payload(
+            sender=sender,
+            target=target,
             message_id=msg_id,
-            delivered=decision.delivered,
-            recipients=list(decision.live_recipients),
-            matched_recipients=list(decision.matched_recipients),
-            stale_recipients=list(decision.stale_recipients),
-            reason=decision.reason,
-            dead_lettered=recorded_dead_letter,
-            recipient_wake_capabilities=capabilities,
-            **correlation,
+            message_seq=None,
+            client_msg_id=client_msg_id,
         ),
     )
+
+
+async def commit_delivery_receipt_verdict(
+    hub: SynapseHub,
+    websocket: Any,
+    *,
+    sender: str,
+    target: str,
+    msg_id: int,
+    message_seq: int,
+    decision: DeliveryLiveness,
+    directed: bool,
+    client_msg_id: str = "",
+) -> None:
+    """Commit an immediate verdict with its outbox, then attempt sender delivery."""
+    if hub.journal is None:
+        raise RuntimeError("durable receipt verdict requires a journal")
+    frame, audit = _delivery_receipt_frame(
+        hub,
+        sender=sender,
+        target=target,
+        msg_id=msg_id,
+        message_seq=message_seq,
+        decision=decision,
+        dead_lettered=directed and not decision.delivered,
+        client_msg_id=client_msg_id,
+    )
+    state: Literal["immediate_delivered", "pending"] = (
+        "immediate_delivered" if decision.delivered else "pending"
+    )
+    evicted = (
+        hub.pending_receipts.eviction_for(message_seq)
+        if not decision.delivered and directed
+        else None
+    )
+    companion = None
+    if evicted is not None:
+        evicted_seq, evicted_entry = evicted
+        expired_audit, expired_frame = _expired_receipt_transition(hub, evicted_seq, evicted_entry)
+        companion = DeliveryReceiptTransition(
+            EventKind.DELIVERY_RECEIPT_EXPIRED,
+            expired_audit,
+            expired_frame,
+            "expired",
+        )
+    hub.journal.commit_delivery_receipt_transition(
+        kind=EventKind.DELIVERY_RECEIPT_IMMEDIATE,
+        payload=audit,
+        notification=frame,
+        state=state,
+        companion=companion,
+    )
+    if not decision.delivered and directed:
+        remembered_eviction = hub.pending_receipts.remember(
+            message_seq,
+            sender=sender,
+            target=target,
+            message_id=msg_id,
+            client_msg_id=client_msg_id,
+        )
+        if remembered_eviction != evicted:
+            raise RuntimeError("pending receipt eviction changed during its durable commit")
+    await deliver_pending_receipt_notifications(hub, sender=sender, websocket=websocket)
+
+
+def _expired_receipt_transition(
+    hub: SynapseHub, message_seq: int, entry: ReceiptEntry
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build a bounded-window expiry event and deduplicable sender notification."""
+    audit = expired_receipt_payload(
+        entry=entry, message_seq=message_seq, reason="pending_window_evicted"
+    )
+    frame = hub._system(
+        "delivery receipt expired before acknowledgement",
+        msg_type=MessageType.DELIVERY_RECEIPT,
+        target=entry.sender,
+        message_target=entry.target,
+        message_id=entry.message_id,
+        message_seq=message_seq,
+        delivered=False,
+        deferred=True,
+        expired=True,
+        reason="pending_window_evicted",
+        recipients=[],
+        **({"client_msg_id": entry.client_msg_id} if entry.client_msg_id else {}),
+    )
+    return audit, frame
+
+
+async def settle_delivery_receipt(
+    hub: SynapseHub,
+    *,
+    message_seq: int,
+    entry: ReceiptEntry,
+    recipient: str,
+) -> None:
+    """Atomically settle a pending receipt and enqueue its deferred notification."""
+    if hub.journal is None:
+        hub.pending_receipts.claim(message_seq)
+        return
+    audit = deferred_receipt_payload(entry=entry, message_seq=message_seq, recipient=recipient)
+    frame = hub._system(
+        f"delivered to {recipient} on reconnect",
+        msg_type=MessageType.DELIVERY_RECEIPT,
+        target=entry.sender,
+        message_target=entry.target,
+        message_id=entry.message_id,
+        message_seq=message_seq,
+        delivered=True,
+        deferred=True,
+        recipients=[recipient],
+        **({"client_msg_id": entry.client_msg_id} if entry.client_msg_id else {}),
+    )
+    hub.journal.commit_delivery_receipt_transition(
+        kind=EventKind.DELIVERY_RECEIPT_DEFERRED,
+        payload=audit,
+        notification=frame,
+        state="deferred",
+    )
+    hub.pending_receipts.claim(message_seq)
+    await deliver_pending_receipt_notifications(hub, sender=entry.sender)
+
+
+async def deliver_pending_receipt_notifications(
+    hub: SynapseHub,
+    *,
+    sender: str,
+    websocket: Any | None = None,
+) -> None:
+    """Attempt stable outbox frames for ``sender`` and retain failures for retry."""
+    if hub.journal is None:
+        return
+    for pending in hub.journal.pending_delivery_notifications(sender=sender):
+        delivered = False
+        if websocket is not None:
+            try:
+                await hub._send_json(websocket, pending.frame)
+                delivered = True
+            except Exception:
+                delivered = False
+        else:
+            delivered = await hub._send_to_agent(sender, pending.frame)
+        hub.journal.mark_delivery_notification_attempt(pending.notification_id, delivered=delivered)
 
 
 async def send_and_track_delivery_receipt(

@@ -329,7 +329,9 @@ the message for audit and replay.
 `delivery_receipt` back: `delivered: true` with the matched `recipients` when a live
 connection matched the target, or `delivered: false` when none did. A directed
 message that matched no live connection is a *dead letter* — durable in the journal
-and feed, but woken by nobody at send time.
+and feed, but woken by nobody at send time. Journal-backed hubs also include a
+stable `receipt_notification_id`. A transport retry may repeat the same id; senders
+deduplicate on it rather than interpreting duplicate frames as new outcomes.
 
 **Reconnect replay (the mailbox).** A client that missed directed messages while
 offline can ask for them on reconnect. On its *registration* heartbeat it sets:
@@ -411,24 +413,32 @@ recipient reconnects, drains the replayed message, and sends
 `ack: {seq, mailbox_for?}`, the hub re-checks that the logical mailbox identity is
 a genuine recipient of the original target and then
 sends the *original* sender a second `delivery_receipt` marked
-`delivered: true, deferred: true` when that sender is still live. This notification
-is deliberately online-only: if the original sender is offline at ack time, the hub
-does not mailbox-replay receipt frames on a later reconnect. The durable receipt
-ledger below is the authoritative recovery path, queryable by sender identity after
-restart. A spoofed ack from a client the message was not addressed to neither
+`delivered: true, deferred: true`. A journal-backed hub commits that transition and
+its stable sender-notification outbox row together. If the sender is offline, or the
+process dies after WebSocket acceptance but before durable acknowledgement, the hub
+retries the same `receipt_notification_id` after the sender next authenticates.
+This is at-least-once transport notification, not chat-mailbox replay and not proof
+that a model read or acted. A spoofed ack from a client the message was not addressed to neither
 fabricates a receipt nor drops the pending one.
 The `ack` verb arrived at wire version `2`; a client emits it only when the hub
 advertises that version or newer.
 
-**Durable receipt ledger.** A hub with a SQLite journal records the delivery-receipt
-lifecycle as audit-only events:
+**Durable receipt aggregate and outbox.** A hub with a SQLite journal atomically
+commits each receipt-requested directed chat with its requested-receipt aggregate,
+then commits each immediate, pending, deferred, or expired transition with the
+corresponding stable sender-notification outbox row. When the bounded pending window
+evicts its oldest entry, that expiry and the incoming pending transition share one
+transaction before the in-memory projection changes. The append-only audit events are:
 `delivery_receipt_requested`, `delivery_receipt_immediate`,
 `delivery_receipt_deferred`, and `delivery_receipt_expired`. On restart, unsettled
 immediate failures re-seed the bounded pending-receipt store, so a later mailbox
 `ack` can still journal the deferred verdict even if the original sender is offline.
 Operators can query the ledger with `synapse event-query <db> "receipts <agent>"`.
 When supplied, `client_msg_id` is included in every receipt phase so a sender can
-correlate the durable final verdict with its original retry identity.
+correlate the durable final verdict with its original retry identity. A crash before
+an immediate verdict leaves the aggregate honestly at `requested`; it never invents
+a positive delivery. Outbox WebSocket acceptance settles only the notification row
+and never represents human or model consumption.
 Mailbox watermarks are separate `mailbox_watermark` events: losing the newest
 normal-durability watermark in a power failure can cause safe replay/recount, not
 loss of an unseen message body.

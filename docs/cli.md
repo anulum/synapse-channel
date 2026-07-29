@@ -897,10 +897,13 @@ only when the recipient reacted within the configured liveness window or has a
 fresh `-rx` waiter; otherwise the CLI prints `delivery failed: no live recipient
 matched ...` and exits `1`, the same as an offline target. The message is still
 journalled and best-effort routed to the stale socket, so a later mailbox replay
-can settle its deferred receipt. The follow-up receipt frame is online-only for the
-original sender; when that sender is offline at acknowledgement time, inspect the
-durable verdict with `synapse event-query <db> "receipts <sender>"` instead. Receipt
-frames are not replayed through the chat mailbox. `--require-recipient` additionally
+can settle its deferred receipt. On a journal-backed hub, receipt frames carry a
+stable `receipt_notification_id`; an offline sender receives the pending outbox frame
+after its next authenticated connection and deduplicates any at-least-once retry by
+that id. Receipt frames are not replayed through the chat mailbox, and WebSocket
+acceptance never proves that a model read or acted. The durable verdict remains
+queryable with `synapse event-query <db> "receipts <sender>"`.
+`--require-recipient` additionally
 prints a positive `delivered to ...` receipt and fails if an older hub returns no
 receipt; without the flag, receiptless older hubs retain their historical success
 result.

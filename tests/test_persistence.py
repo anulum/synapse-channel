@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 
 from synapse_channel.core.event_row_recovery import CORRUPT_EVENT_KIND, CorruptEventReason
-from synapse_channel.core.persistence import EventStore, StoredEvent
+from synapse_channel.core.persistence import DeliveryReceiptTransition, EventStore, StoredEvent
 
 
 class _PostCommitResetFailure:
@@ -167,6 +167,505 @@ def test_stored_event_is_named_tuple() -> None:
     event = StoredEvent(seq=1, ts=2.0, kind="chat", payload={"x": 1})
     assert event.seq == 1
     assert event.payload["x"] == 1
+
+
+def test_delivery_receipt_request_transition_and_outbox_are_atomic(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    message_seq = store.commit_delivery_receipt_request(
+        chat={"sender": "ALICE", "target": "BOB", "msg_id": 7, "payload": "hello"},
+        requested={"sender": "ALICE", "target": "BOB", "message_id": 7},
+    )
+
+    aggregate = store.delivery_receipt_aggregate(message_seq)
+    assert aggregate is not None
+    assert aggregate.state == "requested"
+    assert [event.kind for event in store.read_all()] == [
+        "chat",
+        "delivery_receipt_requested",
+    ]
+
+    notification_id = store.commit_delivery_receipt_transition(
+        kind="delivery_receipt_immediate",
+        payload={
+            "sender": "ALICE",
+            "target": "BOB",
+            "message_id": 7,
+            "message_seq": message_seq,
+            "delivered": False,
+            "deferred": False,
+        },
+        notification={"type": "delivery_receipt", "target": "ALICE", "delivered": False},
+        state="pending",
+    )
+    pending = store.pending_delivery_notifications(sender="ALICE")
+    assert len(pending) == 1
+    assert pending[0].notification_id == notification_id
+    assert pending[0].frame["receipt_notification_id"] == notification_id
+    updated = store.delivery_receipt_aggregate(message_seq)
+    assert updated is not None and updated.state == "pending"
+
+    store.mark_delivery_notification_attempt(notification_id, delivered=False)
+    assert store.pending_delivery_notifications(sender="ALICE")[0].attempts == 1
+    store.mark_delivery_notification_attempt(notification_id, delivered=True)
+    assert store.pending_delivery_notifications(sender="ALICE") == ()
+    store.close()
+
+
+def test_delivery_receipt_request_rolls_back_chat_and_aggregate_together(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+
+    def fail_after_aggregate(stage: str) -> None:
+        if stage == "after_aggregate_insert":
+            raise RuntimeError("kill point")
+
+    with pytest.raises(RuntimeError, match="kill point"):
+        store.commit_delivery_receipt_request(
+            chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+            requested={"sender": "ALICE", "target": "BOB", "message_id": 1},
+            stage_hook=fail_after_aggregate,
+        )
+
+    assert store.read_all() == []
+    assert store.delivery_receipt_aggregate(1) is None
+    store.close()
+
+
+@pytest.mark.parametrize(
+    "requested",
+    (
+        {"target": "BOB", "message_id": 1},
+        {"sender": "ALICE", "message_id": 1},
+        {"sender": "ALICE", "target": "BOB", "message_id": True},
+        {"sender": "ALICE", "target": "BOB", "message_id": "1"},
+    ),
+)
+def test_delivery_receipt_request_rejects_incomplete_identity(
+    tmp_path: Path, requested: dict[str, Any]
+) -> None:
+    store = EventStore(tmp_path / "events.db")
+    with pytest.raises(ValueError, match="requires sender, target"):
+        store.commit_delivery_receipt_request(chat={"payload": "x"}, requested=requested)
+    assert store.read_all() == []
+    store.close()
+
+
+def test_delivery_receipt_request_postcommit_hook_cannot_roll_back_fact(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+
+    def fail_after_commit(stage: str) -> None:
+        if stage == "after_commit":
+            raise RuntimeError("observer failed")
+
+    with pytest.raises(RuntimeError, match="observer failed"):
+        store.commit_delivery_receipt_request(
+            chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+            requested={"sender": "ALICE", "target": "BOB", "message_id": 1},
+            stage_hook=fail_after_commit,
+        )
+    assert store.delivery_receipt_aggregate(1) is not None
+    assert len(store.read_all()) == 2
+    store.close()
+
+
+def test_delivery_receipt_transition_rolls_back_event_state_and_outbox(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    message_seq = store.commit_delivery_receipt_request(
+        chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+        requested={"sender": "ALICE", "target": "BOB", "message_id": 1},
+    )
+
+    def fail_after_outbox(stage: str) -> None:
+        if stage == "after_outbox_insert":
+            raise RuntimeError("kill point")
+
+    with pytest.raises(RuntimeError, match="kill point"):
+        store.commit_delivery_receipt_transition(
+            kind="delivery_receipt_immediate",
+            payload={
+                "sender": "ALICE",
+                "target": "BOB",
+                "message_id": 1,
+                "message_seq": message_seq,
+                "delivered": False,
+            },
+            notification={"type": "delivery_receipt", "target": "ALICE"},
+            state="pending",
+            stage_hook=fail_after_outbox,
+        )
+
+    aggregate = store.delivery_receipt_aggregate(message_seq)
+    assert aggregate is not None and aggregate.state == "requested"
+    assert store.pending_delivery_notifications() == ()
+    assert [event.kind for event in store.read_all()] == [
+        "chat",
+        "delivery_receipt_requested",
+    ]
+    store.close()
+
+
+def test_delivery_receipt_transition_postcommit_hook_cannot_roll_back_fact(
+    tmp_path: Path,
+) -> None:
+    store = EventStore(tmp_path / "events.db")
+    message_seq = store.commit_delivery_receipt_request(
+        chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+        requested={"sender": "ALICE", "target": "BOB", "message_id": 1},
+    )
+
+    def fail_after_commit(stage: str) -> None:
+        if stage == "after_commit":
+            raise RuntimeError("observer failed")
+
+    with pytest.raises(RuntimeError, match="observer failed"):
+        store.commit_delivery_receipt_transition(
+            kind="delivery_receipt_immediate",
+            payload={
+                "sender": "ALICE",
+                "target": "BOB",
+                "message_id": 1,
+                "message_seq": message_seq,
+                "delivered": False,
+            },
+            notification={"target": "ALICE"},
+            state="pending",
+            stage_hook=fail_after_commit,
+        )
+    aggregate = store.delivery_receipt_aggregate(message_seq)
+    assert aggregate is not None and aggregate.state == "pending"
+    assert len(store.pending_delivery_notifications()) == 1
+    store.close()
+
+
+def test_delivery_receipt_pending_and_bounded_expiry_commit_together(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    old_seq = store.commit_delivery_receipt_request(
+        chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+        requested={"sender": "ALICE", "target": "BOB", "message_id": 1},
+    )
+    store.commit_delivery_receipt_transition(
+        kind="delivery_receipt_immediate",
+        payload={
+            "sender": "ALICE",
+            "target": "BOB",
+            "message_id": 1,
+            "message_seq": old_seq,
+            "delivered": False,
+        },
+        notification={"type": "delivery_receipt", "target": "ALICE"},
+        state="pending",
+    )
+    new_seq = store.commit_delivery_receipt_request(
+        chat={"sender": "ALICE", "target": "CAROL", "msg_id": 2},
+        requested={"sender": "ALICE", "target": "CAROL", "message_id": 2},
+    )
+
+    store.commit_delivery_receipt_transition(
+        kind="delivery_receipt_immediate",
+        payload={
+            "sender": "ALICE",
+            "target": "CAROL",
+            "message_id": 2,
+            "message_seq": new_seq,
+            "delivered": False,
+        },
+        notification={"type": "delivery_receipt", "target": "ALICE"},
+        state="pending",
+        companion=DeliveryReceiptTransition(
+            "delivery_receipt_expired",
+            {
+                "sender": "ALICE",
+                "target": "BOB",
+                "message_id": 1,
+                "message_seq": old_seq,
+                "delivered": False,
+                "deferred": True,
+            },
+            {"type": "delivery_receipt", "target": "ALICE", "expired": True},
+            "expired",
+        ),
+    )
+
+    old = store.delivery_receipt_aggregate(old_seq)
+    new = store.delivery_receipt_aggregate(new_seq)
+    assert old is not None and old.state == "expired"
+    assert new is not None and new.state == "pending"
+    assert {item.notification_id for item in store.pending_delivery_notifications()} == {
+        f"delivery-receipt:{old_seq}:pending",
+        f"delivery-receipt:{old_seq}:expired",
+        f"delivery-receipt:{new_seq}:pending",
+    }
+    store.close()
+
+
+def test_delivery_receipt_companion_rolls_back_with_primary(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    old_seq = store.commit_delivery_receipt_request(
+        chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+        requested={"sender": "ALICE", "target": "BOB", "message_id": 1},
+    )
+    store.commit_delivery_receipt_transition(
+        kind="delivery_receipt_immediate",
+        payload={
+            "sender": "ALICE",
+            "target": "BOB",
+            "message_id": 1,
+            "message_seq": old_seq,
+            "delivered": False,
+        },
+        notification={"type": "delivery_receipt", "target": "ALICE"},
+        state="pending",
+    )
+    for pending in store.pending_delivery_notifications():
+        store.mark_delivery_notification_attempt(pending.notification_id, delivered=True)
+    new_seq = store.commit_delivery_receipt_request(
+        chat={"sender": "ALICE", "target": "CAROL", "msg_id": 2},
+        requested={"sender": "ALICE", "target": "CAROL", "message_id": 2},
+    )
+
+    def fail_after_outbox(stage: str) -> None:
+        if stage == "after_outbox_insert":
+            raise RuntimeError("companion kill point")
+
+    with pytest.raises(RuntimeError, match="companion kill point"):
+        store.commit_delivery_receipt_transition(
+            kind="delivery_receipt_immediate",
+            payload={
+                "sender": "ALICE",
+                "target": "CAROL",
+                "message_id": 2,
+                "message_seq": new_seq,
+                "delivered": False,
+            },
+            notification={"type": "delivery_receipt", "target": "ALICE"},
+            state="pending",
+            companion=DeliveryReceiptTransition(
+                "delivery_receipt_expired",
+                {
+                    "sender": "ALICE",
+                    "target": "BOB",
+                    "message_id": 1,
+                    "message_seq": old_seq,
+                    "delivered": False,
+                },
+                {"type": "delivery_receipt", "target": "ALICE"},
+                "expired",
+            ),
+            stage_hook=fail_after_outbox,
+        )
+
+    old = store.delivery_receipt_aggregate(old_seq)
+    new = store.delivery_receipt_aggregate(new_seq)
+    assert old is not None and old.state == "pending"
+    assert new is not None and new.state == "requested"
+    assert store.pending_delivery_notifications() == ()
+    store.close()
+
+
+def test_delivery_receipt_transition_rejects_invalid_inputs_and_state(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    message_seq = store.commit_delivery_receipt_request(
+        chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+        requested={"sender": "ALICE", "target": "BOB", "message_id": 1},
+    )
+
+    base = {
+        "sender": "ALICE",
+        "target": "BOB",
+        "message_id": 1,
+        "message_seq": message_seq,
+        "delivered": False,
+    }
+    invalid_cases = (
+        ({**base, "message_seq": 0}, "delivery_receipt_immediate"),
+        ({**base, "delivered": 0}, "delivery_receipt_immediate"),
+        (base, "delivery_receipt_deferred"),
+    )
+    for payload, kind in invalid_cases:
+        with pytest.raises(ValueError):
+            store.commit_delivery_receipt_transition(
+                kind=kind,
+                payload=payload,
+                notification={"target": "ALICE"},
+                state="pending",
+            )
+
+    with pytest.raises(KeyError, match="aggregate is absent"):
+        store.commit_delivery_receipt_transition(
+            kind="delivery_receipt_immediate",
+            payload={**base, "message_seq": 999},
+            notification={"target": "ALICE"},
+            state="pending",
+        )
+    with pytest.raises(ValueError, match="does not match"):
+        store.commit_delivery_receipt_transition(
+            kind="delivery_receipt_immediate",
+            payload={**base, "target": "MALLORY"},
+            notification={"target": "ALICE"},
+            state="pending",
+        )
+    store.commit_delivery_receipt_transition(
+        kind="delivery_receipt_immediate",
+        payload=base,
+        notification={"target": "ALICE"},
+        state="pending",
+    )
+    with pytest.raises(ValueError, match="invalid from current state"):
+        store.commit_delivery_receipt_transition(
+            kind="delivery_receipt_immediate",
+            payload=base,
+            notification={"target": "ALICE"},
+            state="pending",
+        )
+    store.close()
+
+
+def test_delivery_notification_query_and_settlement_reject_invalid_rows(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    with pytest.raises(ValueError, match="limit"):
+        store.pending_delivery_notifications(limit=0)
+    with pytest.raises(ValueError, match="identity"):
+        store.mark_delivery_notification_attempt("", delivered=False)
+    with pytest.raises(KeyError, match="absent"):
+        store.mark_delivery_notification_attempt("missing", delivered=False)
+
+    message_seq = store.commit_delivery_receipt_request(
+        chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+        requested={"sender": "ALICE", "target": "BOB", "message_id": 1},
+    )
+    notification_id = store.commit_delivery_receipt_transition(
+        kind="delivery_receipt_immediate",
+        payload={
+            "sender": "ALICE",
+            "target": "BOB",
+            "message_id": 1,
+            "message_seq": message_seq,
+            "delivered": True,
+        },
+        notification={"target": "ALICE"},
+        state="immediate_delivered",
+    )
+    store._conn.execute(
+        "UPDATE delivery_receipt_outbox SET frame_json = '[]' WHERE notification_id = ?",
+        (notification_id,),
+    )
+    store._conn.commit()
+    with pytest.raises(ValueError, match="JSON object"):
+        store.pending_delivery_notifications()
+    store._conn.execute(
+        "UPDATE delivery_receipt_outbox SET frame_json = '{}' WHERE notification_id = ?",
+        (notification_id,),
+    )
+    store._conn.commit()
+    store.mark_delivery_notification_attempt(notification_id, delivered=True)
+    with pytest.raises(KeyError, match="settled"):
+        store.mark_delivery_notification_attempt(notification_id, delivered=True)
+    store.close()
+
+
+def test_delivery_receipt_cleanup_failure_preserves_committed_outbox_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = EventStore(tmp_path / "events.db")
+    message_seq = store.commit_delivery_receipt_request(
+        chat={"sender": "ALICE", "target": "BOB", "msg_id": 1},
+        requested={"sender": "ALICE", "target": "BOB", "message_id": 1},
+    )
+    notification_id = store.commit_delivery_receipt_transition(
+        kind="delivery_receipt_immediate",
+        payload={
+            "sender": "ALICE",
+            "target": "BOB",
+            "message_id": 1,
+            "message_seq": message_seq,
+            "delivered": False,
+        },
+        notification={"target": "ALICE"},
+        state="pending",
+    )
+    monkeypatch.setattr(store, "_conn", _PostCommitResetFailure(store._conn))
+    store.mark_delivery_notification_attempt(notification_id, delivered=False)
+    assert store.pending_delivery_notifications()[0].attempts == 1
+    assert "Could not restore SQLite synchronous=NORMAL" in caplog.text
+    store.close()
+
+
+def test_restore_normal_failure_before_commit_propagates(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "events.db")
+    store._conn = _PostCommitResetFailure(store._conn)
+    with pytest.raises(sqlite3.OperationalError, match="post-commit reset failed"):
+        store._restore_normal_after_transaction(False)
+    store.close()
+
+
+def test_legacy_receipt_events_backfill_the_additive_aggregate(tmp_path: Path) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    message_seq = store.append(
+        "chat", {"sender": "ALICE", "target": "BOB", "msg_id": 4, "payload": "old"}
+    )
+    store.append(
+        "delivery_receipt_requested",
+        {
+            "sender": "ALICE",
+            "target": "BOB",
+            "message_id": 4,
+            "message_seq": message_seq,
+        },
+    )
+    store.append(
+        "delivery_receipt_immediate",
+        {
+            "sender": "ALICE",
+            "target": "BOB",
+            "message_id": 4,
+            "message_seq": message_seq,
+            "delivered": False,
+        },
+    )
+    store.close()
+
+    reopened = EventStore(db)
+    aggregate = reopened.delivery_receipt_aggregate(message_seq)
+    assert aggregate is not None
+    assert aggregate.state == "pending"
+    assert aggregate.delivered is False
+    assert reopened.pending_delivery_notifications() == ()
+    reopened.close()
+
+
+def test_legacy_receipt_backfill_skips_malformed_and_projects_final_states(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "events.db"
+    store = EventStore(db)
+    store._conn.executemany(
+        "INSERT INTO events (ts, kind, payload) VALUES (1, ?, ?)",
+        (
+            ("delivery_receipt_requested", "{"),
+            ("delivery_receipt_requested", "[]"),
+            ("delivery_receipt_requested", "{}"),
+        ),
+    )
+    message_seq = store.append(
+        "chat", {"sender": "ALICE", "target": "BOB", "msg_id": 9, "payload": "old"}
+    )
+    common = {
+        "sender": "ALICE",
+        "target": "BOB",
+        "message_id": 9,
+        "message_seq": message_seq,
+    }
+    store.append("delivery_receipt_requested", common)
+    store.append("delivery_receipt_immediate", {**common, "delivered": True})
+    store.append("delivery_receipt_deferred", {**common, "delivered": True, "deferred": True})
+    store.append("delivery_receipt_expired", {**common, "delivered": False, "deferred": True})
+    store.close()
+
+    reopened = EventStore(db)
+    aggregate = reopened.delivery_receipt_aggregate(message_seq)
+    assert aggregate is not None and aggregate.state == "expired"
+    assert aggregate.delivered is False
+    reopened.close()
 
 
 def test_count_tracks_appends(tmp_path: Path) -> None:

@@ -36,11 +36,13 @@ from synapse_channel.core.dead_letter_escalation import (
 )
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwardError, forwarding_notice
 from synapse_channel.core.dead_letters import is_directed_target
-from synapse_channel.core.delivery_receipts import deferred_receipt_payload
 from synapse_channel.core.directed_delivery_liveness import classify_delivery_liveness
 from synapse_channel.core.handlers.delivery_feedback import (
+    commit_delivery_receipt_request,
+    commit_delivery_receipt_verdict,
     send_and_track_delivery_receipt,
     send_delivery_receipt,
+    settle_delivery_receipt,
     warn_stale_recipients,
 )
 from synapse_channel.core.journal import (
@@ -49,7 +51,6 @@ from synapse_channel.core.journal import (
     record_chat,
     record_dead_letter_escalation,
     record_dead_letter_forwarding,
-    record_delivery_receipt_deferred,
 )
 from synapse_channel.core.message_response import validate_semantic_response
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
@@ -214,28 +215,51 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
     hub.chat_history.append(data.copy())
     if len(hub.chat_history) > hub.max_history:
         del hub.chat_history[0]
-    if hub.journal is not None:
+    receipt_requested = bool(data.get("receipt_requested"))
+    if hub.journal is not None and receipt_requested and directed:
+        data["seq"] = commit_delivery_receipt_request(
+            hub,
+            chat=data,
+            sender=sender,
+            target=target,
+            msg_id=int(data["msg_id"]),
+            client_msg_id=client_msg_id,
+        )
+        hub.mailbox_pending.observe_chat(int(data["seq"]), data)
+    elif hub.journal is not None:
         # Stamp the durable journal seq on the outgoing frame so a client can track
         # it as the cursor it resumes a missed directed backlog from on reconnect.
         data["seq"] = record_chat(hub.journal, data)
         hub.mailbox_pending.observe_chat(int(data["seq"]), data)
-    receipt_requested = bool(data.get("receipt_requested"))
     message_seq = int(data["seq"]) if "seq" in data else None
     receipt_before_fanout = (
         receipt_requested and directed and not delivery.delivered and bool(recipients)
     )
     if receipt_before_fanout:
-        await send_and_track_delivery_receipt(
-            hub,
-            websocket,
-            sender=sender,
-            target=target,
-            msg_id=int(data["msg_id"]),
-            message_seq=message_seq,
-            decision=delivery,
-            directed=directed,
-            client_msg_id=client_msg_id,
-        )
+        if hub.journal is not None and message_seq is not None:
+            await commit_delivery_receipt_verdict(
+                hub,
+                websocket,
+                sender=sender,
+                target=target,
+                msg_id=int(data["msg_id"]),
+                message_seq=message_seq,
+                decision=delivery,
+                directed=directed,
+                client_msg_id=client_msg_id,
+            )
+        else:
+            await send_and_track_delivery_receipt(
+                hub,
+                websocket,
+                sender=sender,
+                target=target,
+                msg_id=int(data["msg_id"]),
+                message_seq=message_seq,
+                decision=delivery,
+                directed=directed,
+                client_msg_id=client_msg_id,
+            )
     if hub.private_directed_messages and directed:
         # Recipient routing: a directed message reaches only its recipients (and their
         # -rx waiter sidecars) plus any granted observers — never every socket. It is
@@ -260,17 +284,30 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
             decision=delivery,
         )
     if receipt_requested and not receipt_before_fanout:
-        await send_and_track_delivery_receipt(
-            hub,
-            websocket,
-            sender=sender,
-            target=target,
-            msg_id=int(data["msg_id"]),
-            message_seq=message_seq,
-            decision=delivery,
-            directed=directed,
-            client_msg_id=client_msg_id,
-        )
+        if hub.journal is not None and directed and message_seq is not None:
+            await commit_delivery_receipt_verdict(
+                hub,
+                websocket,
+                sender=sender,
+                target=target,
+                msg_id=int(data["msg_id"]),
+                message_seq=message_seq,
+                decision=delivery,
+                directed=directed,
+                client_msg_id=client_msg_id,
+            )
+        else:
+            await send_and_track_delivery_receipt(
+                hub,
+                websocket,
+                sender=sender,
+                target=target,
+                msg_id=int(data["msg_id"]),
+                message_seq=message_seq,
+                decision=delivery,
+                directed=directed,
+                client_msg_id=client_msg_id,
+            )
 
 
 async def _escalate_dead_letter(hub: SynapseHub, *, target: str, count: int, sender: str) -> None:
@@ -473,26 +510,11 @@ async def handle_ack(hub: SynapseHub, sender: str, data: dict[str, Any], websock
         return
     if not is_recipient(entry.target, recipient, roles=roles):
         return
-    hub.pending_receipts.claim(raw_seq)
-    if hub.journal is not None:
-        record_delivery_receipt_deferred(
-            hub.journal,
-            deferred_receipt_payload(entry=entry, message_seq=raw_seq, recipient=recipient),
-        )
-    await hub._send_to_agent(
-        entry.sender,
-        hub._system(
-            f"delivered to {recipient} on reconnect",
-            msg_type=MessageType.DELIVERY_RECEIPT,
-            target=entry.sender,
-            message_target=entry.target,
-            message_id=entry.message_id,
-            message_seq=raw_seq,
-            delivered=True,
-            deferred=True,
-            recipients=[recipient],
-            **({"client_msg_id": entry.client_msg_id} if entry.client_msg_id else {}),
-        ),
+    await settle_delivery_receipt(
+        hub,
+        message_seq=raw_seq,
+        entry=entry,
+        recipient=recipient,
     )
 
 

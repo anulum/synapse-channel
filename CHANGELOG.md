@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Commit receipt-requested directed chat, receipt lifecycle state, and each
+  sender notification through one durable delivery aggregate with a stable
+  at-least-once outbox. Deferred receipts now survive an offline sender and
+  retry on its next authenticated connection without claiming model action.
+
 ## [0.99.17] - 2026-07-29
 
 ### Fixed
