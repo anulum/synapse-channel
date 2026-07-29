@@ -79,6 +79,9 @@ Spreading each delay by a random fraction de-correlates them so the hub does not
 face a thundering herd on recovery.
 """
 
+DEFAULT_PANE_PROBE_INTERVAL = 5.0
+"""Seconds a pane bridge may advertise before re-proving its live target."""
+
 BINDING_REFUSAL_EXIT_CODE = 4
 """Stable refusal code when a live tmux session belongs to another identity."""
 
@@ -133,6 +136,8 @@ class AgentTmuxConfig:
         Override for the local wake-target registry directory.
     submit_delay : float, optional
         Seconds between typing the prompt and pressing Enter.
+    pane_probe_interval : float, optional
+        Maximum seconds between live pane and identity-binding probes.
     """
 
     identity: str
@@ -146,6 +151,7 @@ class AgentTmuxConfig:
     token: str | None = None
     registry_dir: Path | None = None
     submit_delay: float = DEFAULT_SUBMIT_DELAY
+    pane_probe_interval: float = DEFAULT_PANE_PROBE_INTERVAL
 
 
 @dataclass(frozen=True)
@@ -583,7 +589,7 @@ def _wait_command(config: AgentTmuxConfig) -> list[str]:
         "--for",
         config.identity,
         "--timeout",
-        "0",
+        f"{max(config.pane_probe_interval, 0.1):g}",
         "--directed-only",
         "--wake-capability",
         "pane_bridge",
@@ -714,6 +720,19 @@ def wait_and_wake(
         # that as a wake re-injects forever (false-wake loop). Count it as a
         # failed wait so backoff applies and the pane stays quiet.
         false_wake = wait_proc.returncode == 0 and _is_provider_yield_stdout(wait_proc.stdout)
+        if wait_proc.returncode == 2 and not false_wake:
+            # A bounded wait timeout is the bridge's liveness checkpoint. The
+            # child has already disconnected, so prove the session, exact binding,
+            # and agent pane again before advertising a fresh pane receiver.
+            snapshot = status(config, runner=runner)
+            if not snapshot.session_exists:
+                return 1
+            if not snapshot.binding_valid:
+                return BINDING_REFUSAL_EXIT_CODE
+            if not snapshot.agent_active:
+                return 1
+            consecutive_failures = 0
+            continue
         if wait_proc.returncode != 0 or false_wake:
             consecutive_failures += 1
             if max_wait_failures is not None and consecutive_failures >= max_wait_failures:

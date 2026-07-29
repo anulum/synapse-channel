@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Protocol
 
 from synapse_channel.agent_tmux import (
+    DEFAULT_PANE_PROBE_INTERVAL,
     DEFAULT_SUBMIT_DELAY,
     AgentTmuxConfig,
     AgentTmuxStatus,
@@ -64,6 +65,7 @@ def _config_from_args(args: argparse.Namespace) -> AgentTmuxConfig:
         uri=args.uri,
         token=args.token,
         submit_delay=args.submit_delay,
+        pane_probe_interval=getattr(args, "pane_probe_interval", DEFAULT_PANE_PROBE_INTERVAL),
     )
 
 
@@ -133,6 +135,15 @@ def _add_common_args(
         dest="agent_command",
         default=command_default,
         help=command_help,
+    )
+    parser.add_argument(
+        "--pane-probe-interval",
+        type=float,
+        default=DEFAULT_PANE_PROBE_INTERVAL,
+        help=(
+            "Maximum seconds the pane bridge stays registered before rechecking "
+            "the tmux session, exact identity binding, and agent pane."
+        ),
     )
     parser.add_argument("--tmux-bin", default="tmux", help="tmux executable.")
     parser.add_argument("--synapse-bin", default="synapse", help="synapse executable.")

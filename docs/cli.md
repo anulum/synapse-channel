@@ -820,6 +820,12 @@ in the same keystroke batch as the pasted line. It retries a failed
 `synapse wait` with backoff instead of exiting, giving up only after
 `--max-wait-failures` consecutive failures (unbounded by default), so a hub
 restart does not permanently stop the waker.
+The default `--pane-probe-interval 5` bounds stale pane-bridge presence: after
+each quiet interval the wait socket closes, then the bridge rechecks the tmux
+session, exact identity binding, and active agent pane before registering
+again. If the pane disappeared or became inactive, the bridge exits without
+injecting or starting an owner application; supervision may then report and
+repair it through the ordinary service path.
 
 When a broadcast (`--target all`, or a `--priority`/`CEO` message that reaches a
 `--directed-only` waiter) wakes *every* terminal at the same instant, their agents

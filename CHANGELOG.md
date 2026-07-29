@@ -41,6 +41,10 @@ All notable changes to this project are documented here.
   `agent-tmux start`, `status`, and `wake` now verify the live session's stable
   `SYN_PROJECT` and `SYN_IDENTITY` environment before accepting the pane or
   injecting a wake, preventing two project identities from sharing one target.
+- Bound pane-bridge truth to a live target. The bridge now uses a short wait
+  interval as a liveness checkpoint, unregisters, and re-proves the tmux
+  session, exact binding, and agent pane before advertising again; a vanished
+  or inactive pane therefore closes the receiver without waiting for a message.
 
 ### Security
 

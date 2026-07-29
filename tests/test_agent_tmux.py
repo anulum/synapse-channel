@@ -414,7 +414,7 @@ def test_wait_and_wake_injects_after_successful_wait(tmp_path: Path) -> None:
         "--for",
         "SYNAPSE-CHANNEL/codex-main",
         "--timeout",
-        "0",
+        "5",
         "--directed-only",
         "--wake-capability",
         "pane_bridge",
@@ -483,22 +483,65 @@ def test_wait_and_wake_does_not_inject_on_provider_yield_stdout(tmp_path: Path) 
 
 def test_wait_and_wake_stops_after_bounded_consecutive_failures(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    runner = RecordingRunner([_result(["synapse", "wait"], 2)])
+    runner = RecordingRunner([_result(["synapse", "wait"], 3)])
     sleeper = RecordingSleeper()
 
     result = wait_and_wake(config, runner=runner, max_wakes=1, sleeper=sleeper, max_wait_failures=1)
 
-    assert result == 2
+    assert result == 3
     assert len(runner.calls) == 1
     assert sleeper.delays == []
+
+
+def test_wait_and_wake_unregisters_after_timeout_when_the_session_disappears(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [
+            _result(["synapse", "wait"], 2),
+            _result(["tmux", "has-session"], 1),
+        ]
+    )
+
+    result = wait_and_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert result == 1
+    assert [call[:2] for call in runner.calls] == [
+        ["synapse", "wait"],
+        ["tmux", "has-session"],
+    ]
+
+
+def test_wait_and_wake_rearms_after_timeout_only_when_the_pane_stays_live(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [
+            _result(["synapse", "wait"], 2),
+            _result(["tmux", "has-session"], 0),
+            _result(["tmux", "display-message"], 0, "codex\tcodex\n"),
+            _result(["synapse", "wait"], 0, "sender: wake\n"),
+            _result(["tmux", "send-keys"], 0),
+            _result(["tmux", "send-keys"], 0),
+        ]
+    )
+    sleeper = RecordingSleeper()
+
+    result = wait_and_wake(config, runner=runner, max_wakes=1, sleeper=sleeper)
+
+    assert result == 0
+    assert len([call for call in runner.calls if call[:2] == ["synapse", "wait"]]) == 2
+    assert sleeper.delays == [config.submit_delay]
 
 
 def test_wait_and_wake_retries_failed_wait_with_backoff_then_wakes(tmp_path: Path) -> None:
     config = _config(tmp_path)
     runner = RecordingRunner(
         [
-            _result(["synapse", "wait"], 2),
-            _result(["synapse", "wait"], 2),
+            _result(["synapse", "wait"], 3),
+            _result(["synapse", "wait"], 3),
             _result(["synapse", "wait"], 0, "sender: wake\n"),
             _result(["tmux", "send-keys"], 0),
             _result(["tmux", "send-keys"], 0),
@@ -526,11 +569,11 @@ def test_wait_and_wake_resets_failure_counter_after_a_wake(tmp_path: Path) -> No
     config = _config(tmp_path)
     runner = RecordingRunner(
         [
-            _result(["synapse", "wait"], 2),
+            _result(["synapse", "wait"], 3),
             _result(["synapse", "wait"], 0, "sender: wake\n"),
             _result(["tmux", "send-keys"], 0),
             _result(["tmux", "send-keys"], 0),
-            _result(["synapse", "wait"], 2),
+            _result(["synapse", "wait"], 3),
             _result(["synapse", "wait"], 0, "sender: wake\n"),
             _result(["tmux", "send-keys"], 0),
             _result(["tmux", "send-keys"], 0),
@@ -564,7 +607,7 @@ def test_wait_and_wake_jitters_the_default_backoff(tmp_path: Path) -> None:
     config = _config(tmp_path)
     runner = RecordingRunner(
         [
-            _result(["synapse", "wait"], 2),
+            _result(["synapse", "wait"], 3),
             _result(["synapse", "wait"], 0, "sender: wake\n"),
             _result(["tmux", "send-keys"], 0),
             _result(["tmux", "send-keys"], 0),

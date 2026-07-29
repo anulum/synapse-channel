@@ -644,6 +644,9 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   sessions are accepted only when their live tmux environment matches the
   configured `SYN_PROJECT` and exact `SYN_IDENTITY`; a session already owned by
   another seat is refused by start, status, and wake before any keys are sent.
+  While waiting, the bridge disconnects at a bounded interval and re-proves the
+  session, binding, and live agent pane before registering again, so a vanished
+  pane cannot remain advertised indefinitely.
 
   ```bash
   synapse codex-tmux start --identity myrepo/codex-main --session myrepo-codex --cwd "$PWD"
@@ -1556,7 +1559,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 777 |
 | Wire message types | 80 |
 | CLI subcommands | 183 |
-| Test functions | 9116 |
+| Test functions | 9119 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 61 |
 | GitHub Actions workflows | 25 |

@@ -184,6 +184,12 @@ mismatched binding before accepting the pane or sending keys. Use a unique
 session name per exact identity. Do not point Core and Fleet services at the
 same session.
 
+Pane-bridge presence is continuously bounded rather than assumed forever.
+`--pane-probe-interval` defaults to five seconds: each quiet wait interval
+disconnects the receiver and re-proves the session, exact binding, and active
+agent pane before reconnecting. A missing pane makes the bridge exit without
+sending keys or starting/stopping an owner application.
+
 ## Fresh terminal auto-connect
 
 Install the shell hook once when you want every new terminal to join the local
