@@ -137,7 +137,7 @@ jobs:
             <(find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort)
       - name: Sign SLSA provenance for the canonical payload
         id: provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-checksums: release-artifact/SHA256SUMS
       - name: Preserve the portable Sigstore bundle
@@ -177,6 +177,6 @@ jobs:
         run: |
           mkdir publish-dist
           cp release-artifact/*.whl release-artifact/*.tar.gz publish-dist/
-      - uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: publish-dist/
