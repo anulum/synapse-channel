@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.anulum%2Fsynapse-channel.svg)](https://mcptoplist.com/server/io.github.anulum%2Fsynapse-channel)
+
 <!--
 SPDX-License-Identifier: AGPL-3.0-or-later
 Commercial license available
