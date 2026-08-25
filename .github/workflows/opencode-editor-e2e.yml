@@ -298,6 +298,9 @@ jobs:
               grep -Fq \
                 '<registryKey key="llm.chat.new.chat.and.agent.selector.enabled" defaultValue="false" restartRequired="true"' \
                 <<< "$ai_assistant_xml"
+              grep -Fq \
+                '<registryKey key="llm.chat.default.agent.cdn.config.override.path" defaultValue="" restartRequired="false"' \
+                <<< "$ai_assistant_xml"
               grep -Fq '<action id="NewChatAgentSelectorAction"' \
                 <<< "$ai_assistant_xml"
               grep -Fq '<action id="AIAssistant.Chat.SendActions.Send"' \

@@ -33,11 +33,18 @@ def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
 ) -> None:
     _write_idea_profile(tmp_path)
 
+    default_agent_config = tmp_path / "synapse-default-agent.json"
+    assert default_agent_config.stat().st_mode & 0o777 == 0o600
+    assert default_agent_config.read_text(encoding="utf-8") == (
+        '{"enabled": false, "version": 1, "agents": []}\n'
+    )
     assert (tmp_path / "options" / "ide.general.xml").read_text(encoding="utf-8") == (
         "<application>\n"
         '  <component name="Registry">\n'
         '    <entry key="llm.chat.new.chat.and.agent.selector.enabled" '
         'value="true" />\n'
+        '    <entry key="llm.chat.default.agent.cdn.config.override.path" '
+        f'value="{default_agent_config}" />\n'
         "  </component>\n"
         "</application>\n"
     )

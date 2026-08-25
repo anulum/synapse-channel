@@ -13,6 +13,7 @@ import json
 import os
 import time
 from pathlib import Path
+from xml.sax.saxutils import quoteattr
 
 from e2e.opencode_editors.jetbrains_x11_driver import (
     _bounded_poll_sleep,
@@ -29,6 +30,8 @@ _USER_AGREEMENT_VERSION = "2.0"
 _USER_AGREEMENT_ENV = "SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION"
 _DATA_SHARING_TITLE = "Data Sharing"
 _AGENT_SELECTOR_REGISTRY_KEY = "llm.chat.new.chat.and.agent.selector.enabled"
+_DEFAULT_AGENT_CONFIG_REGISTRY_KEY = "llm.chat.default.agent.cdn.config.override.path"
+_DEFAULT_AGENT_CONFIG_FILENAME = "synapse-default-agent.json"
 
 
 def find_first_run_dialog(deadline: float) -> tuple[str, str]:
@@ -235,7 +238,7 @@ def write_acp_config(home: Path, proxy_argv: list[str], *, agent_name: str) -> N
 
 
 def write_idea_profile(config_root: Path) -> None:
-    """Write the isolated IDEA keymap and selector-registry profile."""
+    """Write the isolated IDEA keymap and provider-safe selector profile."""
     keymaps = config_root / "keymaps"
     options = config_root / "options"
     keymaps.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -261,15 +264,22 @@ def write_idea_profile(config_root: Path) -> None:
 """,
         encoding="utf-8",
     )
-    (options / "ide.general.xml").write_text(
-        f"""<application>
-  <component name="Registry">
-    <entry key="{_AGENT_SELECTOR_REGISTRY_KEY}" value="true" />
-  </component>
-</application>
-""",
+    default_agent_config = config_root / _DEFAULT_AGENT_CONFIG_FILENAME
+    default_agent_config.write_text(
+        json.dumps({"enabled": False, "version": 1, "agents": []}) + "\n",
         encoding="utf-8",
     )
+    default_agent_config.chmod(0o600)
+    registry = (
+        "<application>\n"
+        '  <component name="Registry">\n'
+        f'    <entry key="{_AGENT_SELECTOR_REGISTRY_KEY}" value="true" />\n'
+        f'    <entry key="{_DEFAULT_AGENT_CONFIG_REGISTRY_KEY}" '
+        f"value={quoteattr(str(default_agent_config))} />\n"
+        "  </component>\n"
+        "</application>\n"
+    )
+    (options / "ide.general.xml").write_text(registry, encoding="utf-8")
 
 
 def idea_command(
