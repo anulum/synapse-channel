@@ -46,17 +46,16 @@ from e2e.opencode_editors.jetbrains_timing import DEFAULT_JETBRAINS_TIMING
 
 _AGENT_ID = "acp.synapse-opencode-e2e"
 _STARTUP_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.startup_seconds
-_CHAT_READY_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.chat_ready_seconds
+_PROJECT_READY_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.chat_ready_seconds
 _AGENT_SELECTION_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.agent_selection_seconds
 _ACP_HANDSHAKE_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_handshake_seconds
 _ACP_PROMPT_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_prompt_seconds
-_CHAT_READY_MARKERS = (
-    f"No session managers found for agent '{_AGENT_NAME}'",
+_PROJECT_READY_MARKERS = (
     "fileOpened README.md",
     "exit dumb mode [project]",
 )
-_CHAT_READY_PREREQUISITES = _CHAT_READY_MARKERS[:2]
-_CHAT_READY_COMPLETION = _CHAT_READY_MARKERS[2]
+_PROJECT_READY_PREREQUISITES = _PROJECT_READY_MARKERS[:1]
+_PROJECT_READY_COMPLETION = _PROJECT_READY_MARKERS[1]
 _ACP_SESSION_PREREQUISITE = "Required plugins check passed"
 _ACP_SESSION_COMPLETIONS = (
     "Starting ACP client session ",
@@ -70,17 +69,6 @@ def _required_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"{name} is required")
     return value
-
-
-def _show_ai_chat(window: str, *, deadline: float | None = None) -> None:
-    """Focus the pinned IDEA frame and invoke its idempotent chat action."""
-    x11._focus_window_for_input(window, deadline=deadline)
-    x11._checked_xdotool(
-        "open the AI Assistant tool window",
-        "key",
-        "ctrl+alt+shift+j",
-        deadline=deadline,
-    )
 
 
 def main() -> int:
@@ -143,17 +131,16 @@ def main() -> int:
                 startup_deadline,
                 process.poll,
             )
-            chat_deadline = time.monotonic() + _CHAT_READY_TIMEOUT_SECONDS
+            project_deadline = time.monotonic() + _PROJECT_READY_TIMEOUT_SECONDS
             wait_for_idea_log(
                 log_root,
-                _CHAT_READY_MARKERS,
-                chat_deadline,
+                _PROJECT_READY_MARKERS,
+                project_deadline,
                 process.poll,
-                retry=lambda: _show_ai_chat(window, deadline=chat_deadline),
                 matcher=lambda contents: all_then_completion(
                     contents,
-                    _CHAT_READY_PREREQUISITES,
-                    _CHAT_READY_COMPLETION,
+                    _PROJECT_READY_PREREQUISITES,
+                    _PROJECT_READY_COMPLETION,
                 ),
             )
             lifecycle = JetBrainsLifecycleGuard.capture(

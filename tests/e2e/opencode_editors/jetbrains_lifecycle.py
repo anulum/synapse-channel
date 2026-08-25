@@ -122,6 +122,20 @@ class JetBrainsLifecycleGuard:
         acp_log = log_root / "acp" / "acp.log"
         idea_offset, idea_identity = _safe_baseline(idea_log)
         acp_offset, acp_identity = _safe_baseline(acp_log)
+        baseline_guard = cls(
+            idea_log=idea_log,
+            acp_log=acp_log,
+            trace=trace,
+            idea_offset=0,
+            acp_offset=0,
+            agent_id=agent_id,
+            agent_name=agent_name,
+            idea_identity=idea_identity,
+            acp_identity=acp_identity,
+        )
+        baseline = baseline_guard.observe()
+        if baseline.chat_ids or baseline.process_ids:
+            raise RuntimeError("JetBrains ACP lifecycle exists before agent selection")
         return cls(
             idea_log=idea_log,
             acp_log=acp_log,

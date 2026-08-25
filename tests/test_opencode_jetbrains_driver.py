@@ -49,28 +49,6 @@ def test_selector_lifecycle_is_not_owned_by_the_client_orchestrator() -> None:
     assert len(selector_windows.splitlines()) < 500
 
 
-def test_show_ai_chat_uses_only_proven_current_focus(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    focused: list[tuple[str, float]] = []
-    actions: list[tuple[str, ...]] = []
-    monkeypatch.setattr(
-        jetbrains_x11_driver,
-        "_focus_window_for_input",
-        lambda window, *, deadline: focused.append((window, deadline)),
-    )
-    monkeypatch.setattr(
-        jetbrains_x11_driver,
-        "_checked_xdotool",
-        lambda _action, *args, **_kwargs: actions.append(args),
-    )
-
-    jetbrains_client._show_ai_chat("123", deadline=7.0)
-
-    assert focused == [("123", 7.0)]
-    assert actions == [("key", "ctrl+alt+shift+j")]
-
-
 def test_required_environment_fails_closed_on_missing_or_blank_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -188,10 +166,15 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
         "capture",
         lambda *_args, **_kwargs: lifecycle,
     )
+
+    def open_selector(*_args: object, **_kwargs: object) -> str:
+        events.append("selector-open")
+        return "selector"
+
     monkeypatch.setattr(
         jetbrains_client,
         "_open_agent_selector",
-        lambda *_args, **_kwargs: "selector",
+        open_selector,
     )
 
     def select_agent(
@@ -273,6 +256,8 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
     assert (artifacts / "intellij-agent-selector.png").read_bytes() == b"png"
     assert (artifacts / "intellij.png").read_bytes() == b"png"
     assert (artifacts / "intellij-idea-tail.log").is_file()
+    assert events.index("selector-open") < events.index("selected")
+    assert "chat" not in events
     assert "selected" in events
     assert "prompt" in events
     assert events[-1] == "cleanup"

@@ -62,6 +62,27 @@ def test_lifecycle_guard_accepts_one_real_log_lifecycle_and_base_trace(tmp_path:
     assert observation.trace_segments == (guard.trace,)
 
 
+def test_lifecycle_guard_rejects_a_backend_started_before_capture(tmp_path: Path) -> None:
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    idea_log = log_root / "idea.log"
+    idea_log.write_text(
+        "2026 INFO - Creating AcpSessionLifecycleManager for agent "
+        f"'{_AGENT_ID}' in chat {_CHAT_ID}\n"
+        f"2026 INFO - [{_AGENT_NAME}] Process started with PID: "
+        "LocalPid(value=284153)\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="exists before agent selection"):
+        JetBrainsLifecycleGuard.capture(
+            log_root,
+            tmp_path / "trace.jsonl",
+            agent_id=_AGENT_ID,
+            agent_name=_AGENT_NAME,
+        )
+
+
 def test_lifecycle_guard_reconciles_mirrored_logs_without_double_counting(
     tmp_path: Path,
 ) -> None:

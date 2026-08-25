@@ -23,9 +23,9 @@ from e2e.opencode_editors import (
 from e2e.opencode_editors.jetbrains_client import (
     _ACP_SESSION_COMPLETIONS,
     _ACP_SESSION_PREREQUISITE,
-    _CHAT_READY_COMPLETION,
-    _CHAT_READY_MARKERS,
-    _CHAT_READY_PREREQUISITES,
+    _PROJECT_READY_COMPLETION,
+    _PROJECT_READY_MARKERS,
+    _PROJECT_READY_PREREQUISITES,
 )
 from e2e.opencode_editors.jetbrains_evidence import (
     capture_screenshot as _screenshot,
@@ -201,11 +201,9 @@ def test_trace_wait_rejects_duplicate_lifecycle_before_matching_marker(
         process.wait(timeout=5)
 
 
-def test_chat_readiness_uses_stable_lifecycle_events(tmp_path: Path) -> None:
+def test_project_readiness_uses_stable_project_events(tmp_path: Path) -> None:
     idea_log = tmp_path / "idea.log"
     idea_log.write_text(
-        "2026-07-15 AcpSessionLifecycleManagerRegistry - "
-        "No session managers found for agent 'SYNAPSE OpenCode E2E'\n"
         "2026-07-15 BeforeFileOpenLoggerListener - fileOpened README.md\n"
         "2026-07-15 DumbServiceImpl - exit dumb mode [project]\n",
         encoding="utf-8",
@@ -213,42 +211,17 @@ def test_chat_readiness_uses_stable_lifecycle_events(tmp_path: Path) -> None:
 
     _wait_for_idea_log(
         tmp_path,
-        _CHAT_READY_MARKERS,
+        _PROJECT_READY_MARKERS,
         float("inf"),
         lambda: None,
         matcher=lambda contents: all_then_completion(
             contents,
-            _CHAT_READY_PREREQUISITES,
-            _CHAT_READY_COMPLETION,
+            _PROJECT_READY_PREREQUISITES,
+            _PROJECT_READY_COMPLETION,
         ),
     )
 
     assert "AIAssistantInputSendAction#presentation" not in idea_log.read_text(encoding="utf-8")
-
-
-def test_chat_readiness_accepts_project_open_before_agent_registration(
-    tmp_path: Path,
-) -> None:
-    idea_log = tmp_path / "idea.log"
-    idea_log.write_text(
-        "2026-07-15 BeforeFileOpenLoggerListener - fileOpened README.md\n"
-        "2026-07-15 AcpSessionLifecycleManagerRegistry - "
-        "No session managers found for agent 'SYNAPSE OpenCode E2E'\n"
-        "2026-07-15 DumbServiceImpl - exit dumb mode [project]\n",
-        encoding="utf-8",
-    )
-
-    _wait_for_idea_log(
-        tmp_path,
-        _CHAT_READY_MARKERS,
-        float("inf"),
-        lambda: None,
-        matcher=lambda contents: all_then_completion(
-            contents,
-            _CHAT_READY_PREREQUISITES,
-            _CHAT_READY_COMPLETION,
-        ),
-    )
 
 
 def test_selector_screenshot_cannot_cross_its_phase_deadline(
