@@ -216,7 +216,7 @@ def test_release_image_is_attested_and_bound_to_release_assets() -> None:
     }
     assert "anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610" in source
     assert "syft-version: v1.50.0" in source
-    assert source.count("actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6") == 2
+    assert source.count("actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6") == 2
     assert source.count("push-to-registry: true") == 2
     assert "tools/container_release_manifest.py" in source
     assert "subject-digest: ${{ steps.build.outputs.digest }}" in source
