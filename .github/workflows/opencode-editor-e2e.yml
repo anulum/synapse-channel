@@ -318,7 +318,11 @@ jobs:
                 | strings > "$RUNNER_TEMP/llm-settings-manager.contract"
               grep -Fxq 'LLMSettings' "$RUNNER_TEMP/llm-settings-manager.contract"
               grep -Fxq 'llm.for.code.xml' "$RUNNER_TEMP/llm-settings-manager.contract"
-              grep -Fxq 'chat_mode' "$RUNNER_TEMP/llm-settings-manager.contract"
+              unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.core.jar" \
+                com/intellij/ml/llm/core/settings/LLMSettings.class \
+                | strings > "$RUNNER_TEMP/llm-settings.contract"
+              grep -Fxq 'chat_mode' "$RUNNER_TEMP/llm-settings.contract"
               echo "SYNAPSE_JETBRAINS_BIN=$idea_bin" >> "$GITHUB_ENV"
               echo "SYNAPSE_JETBRAINS_PLUGINS=$RUNNER_TEMP/jetbrains-plugins" >> "$GITHUB_ENV"
               ;;
