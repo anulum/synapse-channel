@@ -33,6 +33,13 @@ def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
 ) -> None:
     _write_idea_profile(tmp_path)
 
+    assert (tmp_path / "options" / "llm.for.code.xml").read_text(encoding="utf-8") == (
+        "<application>\n"
+        '  <component name="LLMSettings">\n'
+        '    <option name="chat_mode" value="CHAT" />\n'
+        "  </component>\n"
+        "</application>\n"
+    )
     default_agent_config = tmp_path / "synapse-default-agent.json"
     assert default_agent_config.stat().st_mode & 0o777 == 0o600
     assert default_agent_config.read_text(encoding="utf-8") == (

@@ -32,6 +32,7 @@ _DATA_SHARING_TITLE = "Data Sharing"
 _AGENT_SELECTOR_REGISTRY_KEY = "llm.chat.new.chat.and.agent.selector.enabled"
 _DEFAULT_AGENT_CONFIG_REGISTRY_KEY = "llm.chat.default.agent.cdn.config.override.path"
 _DEFAULT_AGENT_CONFIG_FILENAME = "synapse-default-agent.json"
+_LLM_SETTINGS_FILENAME = "llm.for.code.xml"
 
 
 def find_first_run_dialog(deadline: float) -> tuple[str, str]:
@@ -259,6 +260,15 @@ def write_idea_profile(config_root: Path) -> None:
         """<application>
   <component name="KeymapManager">
     <active_keymap name="Synapse E2E" />
+  </component>
+</application>
+""",
+        encoding="utf-8",
+    )
+    (options / _LLM_SETTINGS_FILENAME).write_text(
+        """<application>
+  <component name="LLMSettings">
+    <option name="chat_mode" value="CHAT" />
   </component>
 </application>
 """,
