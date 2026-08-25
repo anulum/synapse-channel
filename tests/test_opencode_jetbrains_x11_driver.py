@@ -785,7 +785,6 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
 ) -> None:
     focused: list[str] = []
     actions: list[tuple[str, tuple[str, ...]]] = []
-    clicks: list[tuple[str, int, int, str]] = []
     sleeps: list[float] = []
     monkeypatch.setattr(
         f"{jetbrains_x11_driver.__name__}.time.monotonic",
@@ -816,12 +815,6 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
         "_window_is_root_child",
         lambda _window, **_kwargs: True,
     )
-    monkeypatch.setattr(
-        jetbrains_x11_driver,
-        "_pointer_click",
-        lambda window, x, y, action, **_kwargs: clicks.append((window, x, y, action)),
-    )
-
     jetbrains_x11_driver._submit_chat_prompt(
         "project",
         "governed prompt",
@@ -837,8 +830,11 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
             "type the ACP prompt",
             ("type", "--delay", "1", "--", "governed prompt"),
         ),
+        (
+            "submit the JetBrains ACP prompt from the focused composer",
+            ("key", "Return"),
+        ),
     ]
-    assert clicks == [("project", 1336, 924, "submit the JetBrains ACP prompt")]
 
 
 @pytest.mark.parametrize(

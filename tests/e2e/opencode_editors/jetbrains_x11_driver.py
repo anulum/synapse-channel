@@ -25,8 +25,6 @@ _PROJECT_MINIMUM_GEOMETRY = (1000, 700)
 _PROJECT_SELECTOR_GEOMETRY = (1400, 1000)
 _CHAT_COMPOSER_RIGHT_INSET = 240
 _CHAT_COMPOSER_BOTTOM_INSET = 130
-_CHAT_SEND_RIGHT_INSET = 64
-_CHAT_SEND_BOTTOM_INSET = 76
 _CHAT_INPUT_SETTLE_SECONDS = 0.25
 _CANONICAL_XID = re.compile(r"0x[0-9A-Fa-f]+\Z")
 _X11_BAD_WINDOW_LINE = "X Error of failed request:  BadWindow (invalid Window parameter)"
@@ -474,11 +472,10 @@ def _submit_chat_prompt(
             "refusing JetBrains prompt submission outside the pinned project frame: "
             f"geometry={rendered}, root_child={root_child}"
         )
-    _pointer_click(
-        window,
-        geometry[0] - _CHAT_SEND_RIGHT_INSET,
-        geometry[1] - _CHAT_SEND_BOTTOM_INSET,
-        "submit the JetBrains ACP prompt",
+    _checked_xdotool(
+        "submit the JetBrains ACP prompt from the focused composer",
+        "key",
+        "Return",
         deadline=deadline,
     )
 
