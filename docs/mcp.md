@@ -264,8 +264,9 @@ work, or change the hub protocol.
 The repository ships [`server.json`](https://github.com/anulum/synapse-channel/blob/main/server.json) for
 `io.github.anulum/synapse-channel`. It follows the official 2025-12-11 schema,
 points at the PyPI package and stdio transport, and supplies a `uvx --with
-mcp>=1.28.0` runtime hint. The `synapse-channel` console entry starts this MCP
-face directly for package launchers; humans can keep using `synapse mcp`.
+mcp==1.28.1` runtime hint. The exact pin matches the package extra and prevents
+an unreviewed MCP-major upgrade. The `synapse-channel` console entry starts this
+MCP face directly for package launchers; humans can keep using `synapse mcp`.
 
 The official MCP Registry is still a preview and its published versions are
 immutable. SYNAPSE CHANNEL is active there: version `0.99.15` was the latest

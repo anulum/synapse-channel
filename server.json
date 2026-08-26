@@ -19,7 +19,7 @@
         {
           "type": "named",
           "name": "--with",
-          "value": "mcp>=1.28.0"
+          "value": "mcp==1.28.1"
         }
       ],
       "transport": {

@@ -50,6 +50,7 @@ dev = [
   "build>=1.5.0",
   "setuptools>=68",
   "wheel>=0.43",
+  "packaging>=26.2",
   "prometheus-client>=0.20",
   "hypothesis>=6.100",
   "bandit>=1.7",

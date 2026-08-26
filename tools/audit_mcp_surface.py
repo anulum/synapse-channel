@@ -28,6 +28,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import canonicalize_name
+
 if sys.version_info >= (3, 11):  # pragma: no cover - version branch.
     import tomllib
 else:  # pragma: no cover - covered on Python 3.10.
@@ -43,6 +46,8 @@ DEFAULT_README = REPO_ROOT / "README.md"
 
 REGISTRY_NAME = "io.github.anulum/synapse-channel"
 REGISTRY_SCHEMA = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
+VERIFIED_MCP_REQUIREMENT = Requirement("mcp==1.28.1")
+MCP_PACKAGE_EXTRAS = ("dev", "mcp", "all")
 
 REQUIRED_ONBOARDING_TOOLS = frozenset(
     {"synapse_send", "synapse_inbox", "synapse_board", "synapse_claim", "synapse_status"}
@@ -63,6 +68,7 @@ REQUIRED_DOC_PHRASES = (
     "no MCP `synapse_lock(command)` tool",
     "the vendor `claude/channel` extension",
     "examples/mcp/.mcp.json",
+    "mcp==1.28.1` runtime hint",
 )
 """Boundary phrases that must stay present in the MCP guide."""
 
@@ -258,6 +264,8 @@ def _audit_onboarding_artifacts(
     if f"mcp-name: {REGISTRY_NAME}" not in readme:
         errors.append(f"README is missing the PyPI MCP ownership marker for {REGISTRY_NAME}")
 
+    project_mcp = _project_mcp_requirement(project, errors)
+
     packages = registry.get("packages")
     package = packages[0] if isinstance(packages, list) and len(packages) == 1 else None
     if registry.get("$schema") != REGISTRY_SCHEMA:
@@ -277,8 +285,14 @@ def _audit_onboarding_artifacts(
         ):
             errors.append("server.json PyPI package identity/version/transport drifted")
         runtime_args = package.get("runtimeArguments")
-        if package.get("runtimeHint") != "uvx" or not _has_mcp_runtime(runtime_args):
+        registry_mcp = _registry_mcp_requirement(runtime_args, errors)
+        if package.get("runtimeHint") != "uvx" or registry_mcp is None:
             errors.append("server.json must install the optional MCP SDK through uvx --with")
+        elif project_mcp is not None and registry_mcp != project_mcp:
+            errors.append(
+                "server.json MCP runtime requirement must match pyproject.toml "
+                "exactly (mcp==1.28.1)"
+            )
 
     servers = template.get("mcpServers")
     synapse = servers.get("synapse") if isinstance(servers, dict) else None
@@ -310,17 +324,75 @@ def _audit_onboarding_artifacts(
     return errors
 
 
-def _has_mcp_runtime(value: object) -> bool:
-    """Return whether registry runtime args request the MCP SDK through ``--with``."""
+def _parse_requirement(raw: object, *, source: str, errors: list[str]) -> Requirement | None:
+    """Parse one PEP 508 requirement and append a stable error on failure."""
+    if not isinstance(raw, str):
+        errors.append(f"{source} must be a valid PEP 508 requirement")
+        return None
+    try:
+        return Requirement(raw)
+    except InvalidRequirement:
+        errors.append(f"{source} must be a valid PEP 508 requirement")
+        return None
+
+
+def _project_mcp_requirement(project: dict[str, object], errors: list[str]) -> Requirement | None:
+    """Return the MCP SDK requirement after checking every installing extra."""
+    optional = project.get("optional-dependencies")
+    if not isinstance(optional, dict):
+        errors.append("pyproject.toml must declare optional-dependency extras")
+        return None
+
+    canonical_requirement: Requirement | None = None
+    for extra in MCP_PACKAGE_EXTRAS:
+        raw_requirements = optional.get(extra)
+        if not isinstance(raw_requirements, list):
+            errors.append(f"pyproject.toml must declare the {extra} optional-dependency extra")
+            continue
+        requirements = tuple(
+            requirement
+            for raw in raw_requirements
+            if (
+                requirement := _parse_requirement(
+                    raw,
+                    source=f"pyproject.toml {extra} extra",
+                    errors=errors,
+                )
+            )
+            is not None
+            and canonicalize_name(requirement.name) == "mcp"
+        )
+        if len(requirements) != 1 or requirements[0] != VERIFIED_MCP_REQUIREMENT:
+            errors.append(f"pyproject.toml {extra} extra must declare exactly mcp==1.28.1")
+            continue
+        if extra == "mcp":
+            canonical_requirement = requirements[0]
+    return canonical_requirement
+
+
+def _registry_mcp_requirement(value: object, errors: list[str]) -> Requirement | None:
+    """Return the single MCP SDK requirement from registry runtime arguments."""
     if not isinstance(value, list):
-        return False
-    return any(
-        isinstance(item, dict)
-        and item.get("type") == "named"
-        and item.get("name") == "--with"
-        and str(item.get("value", "")).startswith("mcp>=")
-        for item in value
-    )
+        return None
+
+    requirements: list[Requirement] = []
+    for item in value:
+        if (
+            not isinstance(item, dict)
+            or item.get("type") != "named"
+            or item.get("name") != "--with"
+        ):
+            continue
+        requirement = _parse_requirement(
+            item.get("value"),
+            source="server.json --with value",
+            errors=errors,
+        )
+        if requirement is not None and canonicalize_name(requirement.name) == "mcp":
+            requirements.append(requirement)
+    if len(requirements) != 1:
+        return None
+    return requirements[0]
 
 
 def parse_args(argv: Sequence[str] | None = None) -> CliArgs:

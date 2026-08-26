@@ -60,6 +60,93 @@ def test_onboarding_audit_detects_registry_version_and_runtime_drift(tmp_path: P
     assert "server.json must install the optional MCP SDK through uvx --with" in errors
 
 
+@pytest.mark.parametrize("extra", ("dev", "mcp", "all"))
+def test_onboarding_audit_requires_exact_mcp_constraint_in_every_installing_extra(
+    tmp_path: Path,
+    extra: str,
+) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    source = DEFAULT_PYPROJECT.read_text(encoding="utf-8")
+    section_start = source.index(f"{extra} = [")
+    requirement_start = source.index('"mcp==1.28.1"', section_start)
+    pyproject.write_text(
+        source[:requirement_start]
+        + '"mcp>=1.28.1"'
+        + source[requirement_start + len('"mcp==1.28.1"') :],
+        encoding="utf-8",
+    )
+
+    assert f"pyproject.toml {extra} extra must declare exactly mcp==1.28.1" in _audit(
+        pyproject=pyproject
+    )
+
+
+def test_onboarding_audit_requires_optional_dependency_metadata(tmp_path: Path) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        DEFAULT_PYPROJECT.read_text(encoding="utf-8").replace(
+            "[project.optional-dependencies]",
+            "[project.optional-dependencies-removed]",
+        ),
+        encoding="utf-8",
+    )
+
+    assert "pyproject.toml must declare optional-dependency extras" in _audit(pyproject=pyproject)
+
+
+@pytest.mark.parametrize("extra", ("dev", "mcp", "all"))
+def test_onboarding_audit_requires_every_mcp_installing_extra(
+    tmp_path: Path,
+    extra: str,
+) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        DEFAULT_PYPROJECT.read_text(encoding="utf-8").replace(
+            f"{extra} = [",
+            f"{extra}_removed = [",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert f"pyproject.toml must declare the {extra} optional-dependency extra" in _audit(
+        pyproject=pyproject
+    )
+
+
+@pytest.mark.parametrize("invalid_requirement", (42, "mcp=>1.28.1"))
+def test_onboarding_audit_rejects_invalid_registry_requirements(
+    tmp_path: Path,
+    invalid_requirement: object,
+) -> None:
+    registry = json.loads(DEFAULT_REGISTRY.read_text(encoding="utf-8"))
+    registry["packages"][0]["runtimeArguments"][0]["value"] = invalid_requirement
+    drifted = tmp_path / "server.json"
+    drifted.write_text(json.dumps(registry), encoding="utf-8")
+
+    assert "server.json --with value must be a valid PEP 508 requirement" in _audit(
+        registry=drifted
+    )
+
+
+def test_onboarding_audit_rejects_ambiguous_registry_runtime_arguments(
+    tmp_path: Path,
+) -> None:
+    registry = json.loads(DEFAULT_REGISTRY.read_text(encoding="utf-8"))
+    registry["packages"][0]["runtimeArguments"] = [
+        {"type": "positional", "value": "mcp==1.28.1"},
+        {"type": "named", "name": "--with", "value": "cryptography>=42.0"},
+        {"type": "named", "name": "--with", "value": "mcp==1.28.1"},
+        {"type": "named", "name": "--with", "value": "MCP == 1.28.1"},
+    ]
+    drifted = tmp_path / "server.json"
+    drifted.write_text(json.dumps(registry), encoding="utf-8")
+
+    assert "server.json must install the optional MCP SDK through uvx --with" in _audit(
+        registry=drifted
+    )
+
+
 def test_onboarding_audit_detects_identity_and_secret_template_drift(tmp_path: Path) -> None:
     template = json.loads(DEFAULT_TEMPLATE.read_text(encoding="utf-8"))
     server = template["mcpServers"]["synapse"]

@@ -24,6 +24,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Keep the MCP Registry `uvx --with` requirement exactly aligned with the
+  package's audited `mcp==1.28.1` extra. The repository audit now parses both
+  PEP 508 requirements and rejects stale floors, broad MCP v2 ranges, malformed
+  constraints, and documentation drift.
 - Clarify three operator-facing timing and identity contracts: dead WebSocket
   names can persist for the 15-second ping interval plus the 15-second pong
   timeout, bare `synapse who` connects as literal `USER` while `syn who`
