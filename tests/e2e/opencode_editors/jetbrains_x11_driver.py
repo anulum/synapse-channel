@@ -26,6 +26,11 @@ _PROJECT_SELECTOR_GEOMETRY = (1400, 1000)
 _CHAT_COMPOSER_RIGHT_INSET = 240
 _CHAT_COMPOSER_BOTTOM_INSET = 130
 _CHAT_INPUT_SETTLE_SECONDS = 0.25
+# JetBrains' controlled Swing composer can drop the start of a long prompt when
+# XTEST key events arrive faster than its document listener drains them. Keep
+# the real GUI input below that boundary; the acceptance trace still proves the
+# complete prompt byte length and SHA-256 after submission.
+_CHAT_INPUT_KEY_DELAY_MS = "20"
 _CANONICAL_XID = re.compile(r"0x[0-9A-Fa-f]+\Z")
 _X11_BAD_WINDOW_LINE = "X Error of failed request:  BadWindow (invalid Window parameter)"
 _X11_DISAPPEARING_WINDOW_OPCODES = frozenset(
@@ -459,7 +464,7 @@ def _submit_chat_prompt(
         "type the ACP prompt",
         "type",
         "--delay",
-        "1",
+        _CHAT_INPUT_KEY_DELAY_MS,
         "--",
         prompt,
         deadline=deadline,

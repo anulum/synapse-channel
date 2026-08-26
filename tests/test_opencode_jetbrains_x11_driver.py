@@ -828,7 +828,7 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
         ("clear the ACP prompt composer", ("key", "ctrl+a")),
         (
             "type the ACP prompt",
-            ("type", "--delay", "1", "--", "governed prompt"),
+            ("type", "--delay", "20", "--", "governed prompt"),
         ),
         (
             "submit the JetBrains ACP prompt from the focused composer",
