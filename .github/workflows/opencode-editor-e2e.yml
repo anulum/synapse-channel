@@ -323,6 +323,14 @@ jobs:
                 com/intellij/ml/llm/core/settings/LLMSettings.class \
                 | strings > "$RUNNER_TEMP/llm-settings.contract"
               grep -Fq 'chat_mode' "$RUNNER_TEMP/llm-settings.contract"
+              unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar" \
+                com/intellij/ml/llm/agents/acp/registry/AcpAgentInstallationState.class \
+                | strings > "$RUNNER_TEMP/acp-installation-state.contract"
+              grep -Fq 'llm.chat.agent.acp.bundled' \
+                "$RUNNER_TEMP/acp-installation-state.contract"
+              grep -Fq 'llm.chat.agent.acp.bundled.nightly' \
+                "$RUNNER_TEMP/acp-installation-state.contract"
               echo "SYNAPSE_JETBRAINS_BIN=$idea_bin" >> "$GITHUB_ENV"
               echo "SYNAPSE_JETBRAINS_PLUGINS=$RUNNER_TEMP/jetbrains-plugins" >> "$GITHUB_ENV"
               ;;

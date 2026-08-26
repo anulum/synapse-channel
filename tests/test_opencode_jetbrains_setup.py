@@ -52,6 +52,8 @@ def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
         'value="true" />\n'
         '    <entry key="llm.chat.default.agent.cdn.config.override.path" '
         f'value="{default_agent_config}" />\n'
+        '    <entry key="llm.chat.agent.acp.bundled" value="" />\n'
+        '    <entry key="llm.chat.agent.acp.bundled.nightly" value="" />\n'
         "  </component>\n"
         "</application>\n"
     )

@@ -31,6 +31,10 @@ _USER_AGREEMENT_ENV = "SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION"
 _DATA_SHARING_TITLE = "Data Sharing"
 _AGENT_SELECTOR_REGISTRY_KEY = "llm.chat.new.chat.and.agent.selector.enabled"
 _DEFAULT_AGENT_CONFIG_REGISTRY_KEY = "llm.chat.default.agent.cdn.config.override.path"
+_BUNDLED_AGENT_REGISTRY_KEYS = (
+    "llm.chat.agent.acp.bundled",
+    "llm.chat.agent.acp.bundled.nightly",
+)
 _DEFAULT_AGENT_CONFIG_FILENAME = "synapse-default-agent.json"
 _LLM_SETTINGS_FILENAME = "llm.for.code.xml"
 
@@ -286,8 +290,9 @@ def write_idea_profile(config_root: Path) -> None:
         f'    <entry key="{_AGENT_SELECTOR_REGISTRY_KEY}" value="true" />\n'
         f'    <entry key="{_DEFAULT_AGENT_CONFIG_REGISTRY_KEY}" '
         f"value={quoteattr(str(default_agent_config))} />\n"
-        "  </component>\n"
-        "</application>\n"
+        + "".join(f'    <entry key="{key}" value="" />\n' for key in _BUNDLED_AGENT_REGISTRY_KEYS)
+        + "  </component>\n"
+        + "</application>\n"
     )
     (options / "ide.general.xml").write_text(registry, encoding="utf-8")
 
