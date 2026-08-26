@@ -85,6 +85,30 @@ from synapse_channel import SynapseHub, HubConfig
 hub = SynapseHub(**HubConfig().to_kwargs())
 ```
 
+For an embedded disposable hub, pass port `0` and wait for the live address;
+this keeps socket selection and binding atomic:
+
+```python
+import asyncio
+
+from synapse_channel import SynapseHub
+
+
+async def start_embedded_hub() -> None:
+    hub = SynapseHub(hub_id="embedded")
+    server = asyncio.create_task(hub.serve("127.0.0.1", 0))
+    try:
+        host, port = await hub.wait_until_serving()
+        print(f"ws://{host}:{port}")
+        # Connect embedded clients here.
+    finally:
+        server.cancel()
+        await asyncio.gather(server, return_exceptions=True)
+```
+
+`bound_address` is `None` before the bind and after shutdown. A failed bind
+unblocks the readiness waiter without publishing a false address.
+
 ## Supporting surfaces
 
 The remaining exports fall into a few families you reach for as needed:

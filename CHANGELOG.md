@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Let embedded hubs bind port `0` atomically and report the kernel-assigned
+  address through `bound_address` and `wait_until_serving()`. The installed,
+  coding-fleet, source-checkout, LLM-worker, and benchmark paths now consume
+  that live address instead of reserving and releasing a guessed free port.
 - Make the installed golden demo provider-honest on every public and translated
   surface. `CLAUDE` and `CODEX` are now explicitly scripted in-process
   `SynapseAgent` identities, not vendor runtimes; runtime-owned labels and the

@@ -29,11 +29,11 @@ from synapse_channel.demo_runtime import (
     _SOURCE_PATH,
     _TEST_PATH,
     DemoInbox,
-    _await_listening,
     _guard,
     _post_story,
     _release_with_receipt,
     _seed_workspace,
+    _start_local_hub,
 )
 from synapse_channel.file_claim_guard import GuardVerdict
 
@@ -211,8 +211,7 @@ async def _run_golden_scenario(port: int, workspace: Path) -> GoldenDemoResult:
         print(line)
 
     hub = SynapseHub(hub_id="demo-hub")
-    server = asyncio.create_task(hub.serve("localhost", port))
-    uri = f"ws://localhost:{port}"
+    server, uri = await _start_local_hub(hub, port)
     claude_rx, codex_rx = DemoInbox(), DemoInbox()
     claude = SynapseAgent(
         _CLAUDE_LABEL,
@@ -231,7 +230,6 @@ async def _run_golden_scenario(port: int, workspace: Path) -> GoldenDemoResult:
     connections: list[asyncio.Task[None]] = []
 
     try:
-        await _await_listening(port)
         connections = [
             asyncio.create_task(claude.connect()),
             asyncio.create_task(codex.connect()),

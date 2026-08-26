@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import socket
 from collections.abc import Callable
 from typing import Any
 
 from websockets.asyncio.client import connect as ws_connect
 
 from synapse_channel import SynapseAgent, SynapseHub
+from synapse_channel.demo_runtime import _start_local_hub
 
 
 class CodingFleetInbox:
@@ -63,15 +63,6 @@ class CodingFleetInbox:
         raise TimeoutError("expected message did not arrive")
 
 
-def _free_port() -> int:
-    """Reserve and immediately release an ephemeral localhost TCP port."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("localhost", 0))
-    port = int(sock.getsockname()[1])
-    sock.close()
-    return port
-
-
 async def _await_listening(port: int, timeout: float = 3.0) -> None:
     """Block until the hub accepts a WebSocket handshake or the timeout elapses.
 
@@ -104,13 +95,14 @@ async def _await_listening(port: int, timeout: float = 3.0) -> None:
     raise TimeoutError(f"hub did not start listening on {port}")
 
 
-async def run_coding_agents_demo(port: int) -> list[str]:
+async def run_coding_agents_demo(port: int = 0) -> list[str]:
     """Run two coding agents through a no-collision edit session.
 
     Parameters
     ----------
     port : int
-        Port the in-process hub listens on.
+        Port the in-process hub listens on. The default ``0`` asks the kernel
+        to assign an unused port atomically.
 
     Returns
     -------
@@ -124,8 +116,7 @@ async def run_coding_agents_demo(port: int) -> list[str]:
         print(line)
 
     hub = SynapseHub(hub_id="repo-hub")
-    server = asyncio.create_task(hub.serve("localhost", port))
-    uri = f"ws://localhost:{port}"
+    server, uri = await _start_local_hub(hub, port)
 
     api_rx, test_rx = CodingFleetInbox(), CodingFleetInbox()
     api = SynapseAgent("api-dev", api_rx, uri=uri, verbose=False)
@@ -133,7 +124,6 @@ async def run_coding_agents_demo(port: int) -> list[str]:
     conns: list[asyncio.Task[None]] = []
 
     try:
-        await _await_listening(port)
         conns = [asyncio.create_task(api.connect()), asyncio.create_task(test.connect())]
         await api.wait_until_ready(3.0)
         await test.wait_until_ready(3.0)
@@ -180,7 +170,7 @@ async def run_coding_agents_demo(port: int) -> list[str]:
 def main() -> int:
     """Run the coding-fleet demo on a free local port."""
     print("=== SYNAPSE CHANNEL — coding agents, no collisions ===")
-    run_log = asyncio.run(run_coding_agents_demo(_free_port()))
+    run_log = asyncio.run(run_coding_agents_demo())
     if not run_log:
         raise RuntimeError("coding fleet demo produced no narration")
     print("success: coding fleet demo completed")

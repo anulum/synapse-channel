@@ -26,7 +26,7 @@ def _load(name: str) -> ModuleType:
 
 async def test_coordination_demo_drives_the_full_plane() -> None:
     demo = _load("coordination_demo")
-    result = await demo.run_demo(demo._free_port())
+    result = await demo.run_demo()
     assert result.completed is True
     assert result.guard_before_handoff.allowed is False
     assert result.guard_after_handoff.allowed is True
@@ -37,13 +37,13 @@ async def test_coordination_demo_drives_the_full_plane() -> None:
 
 async def test_llm_team_demo_offline_reply() -> None:
     demo = _load("llm_team_demo")
-    reply = await demo.run_demo(demo._free_port(), provider="rule")
+    reply = await demo.run_demo(provider="rule")
     assert reply == "message received via Synapse. I am active on-channel."
 
 
 async def test_coding_agents_demo_prevents_collisions() -> None:
     demo = _load("coding_agents_demo")
-    log = await demo.run_demo(demo._free_port())
+    log = await demo.run_demo()
     # One agent holds a file scope; the other's overlapping claim is refused,
     # a disjoint claim is granted, a direct message arrives, and the lease is freed.
     assert any("claimed src/app/api.py" in line for line in log)

@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import socket
 import statistics
 import time
 from collections.abc import Awaitable, Callable
@@ -228,15 +227,6 @@ class _MessageWaiter:
         await asyncio.wait_for(self._event.wait(), timeout=timeout)
 
 
-def _free_port() -> int:
-    """Return an OS-assigned free loopback TCP port."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("localhost", 0))
-    port = int(sock.getsockname()[1])
-    sock.close()
-    return port
-
-
 async def _connect_ready_agent(
     waiter: _MessageWaiter, port: int, *, attempts: int = 50
 ) -> tuple[SynapseAgent, asyncio.Task[None]]:
@@ -251,7 +241,7 @@ async def _connect_ready_agent(
         agent = SynapseAgent(
             "bench-agent",
             waiter,
-            uri=f"ws://localhost:{port}",
+            uri=f"ws://127.0.0.1:{port}",
             heartbeat_interval=60.0,
             verbose=False,
         )
@@ -280,8 +270,8 @@ async def _measure_over_live_hub(
     each iteration of ``exercise``.
     """
     hub = SynapseHub(hub_id="syn-bench", journal=journal, anti_rollback_checkpoint=False)
-    port = _free_port()
-    server = asyncio.create_task(hub.serve("localhost", port))
+    server = asyncio.create_task(hub.serve("127.0.0.1", 0))
+    _, port = await hub.wait_until_serving()
     samples: list[float] = []
     scheduler_lags: list[float] = []
     stop_scheduler = asyncio.Event()

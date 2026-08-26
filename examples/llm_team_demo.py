@@ -24,50 +24,25 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import socket
 from typing import Any
 
 from synapse_channel import SynapseAgent, SynapseHub, SynapseLLMWorker
 from synapse_channel.client.launcher import detect_model
+from synapse_channel.demo_runtime import _start_local_hub
 
 logging.getLogger("websockets.server").setLevel(logging.CRITICAL)
 
 QUESTION = "In one sentence, what problem does a coordination hub solve?"
 
 
-def _free_port() -> int:
-    """Reserve and immediately release an ephemeral localhost port."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("localhost", 0))
-    port = int(sock.getsockname()[1])
-    sock.close()
-    return port
-
-
-async def _await_listening(port: int, timeout: float = 3.0) -> None:
-    """Block until ``port`` accepts a TCP connection or the timeout elapses."""
-    loop = asyncio.get_event_loop()
-    deadline = loop.time() + timeout
-    while loop.time() < deadline:
-        try:
-            _, writer = await asyncio.open_connection("localhost", port)
-        except OSError:
-            await asyncio.sleep(0.02)
-            continue
-        writer.close()
-        with contextlib.suppress(Exception):
-            await writer.wait_closed()
-        return
-    raise TimeoutError(f"hub did not start listening on {port}")
-
-
-async def run_demo(port: int, *, provider: str = "rule", model: str = "llama3") -> str:
+async def run_demo(port: int = 0, *, provider: str = "rule", model: str = "llama3") -> str:
     """Start a hub and a worker, ask one question, and return the reply text.
 
     Parameters
     ----------
     port : int
-        Port the in-process hub listens on.
+        Port the in-process hub listens on. The default ``0`` asks the kernel
+        to assign an unused port atomically.
     provider : str, optional
         Worker backend: ``"rule"`` (offline, default) or ``"ollama"``.
     model : str, optional
@@ -79,8 +54,7 @@ async def run_demo(port: int, *, provider: str = "rule", model: str = "llama3") 
         The worker's reply payload.
     """
     hub = SynapseHub(hub_id="llm-demo")
-    server = asyncio.create_task(hub.serve("localhost", port))
-    uri = f"ws://localhost:{port}"
+    server, uri = await _start_local_hub(hub, port)
     worker = SynapseLLMWorker(name="REASON", uri=uri, provider=provider, model=model)
 
     replies: list[dict[str, Any]] = []
@@ -92,7 +66,6 @@ async def run_demo(port: int, *, provider: str = "rule", model: str = "llama3") 
     user = SynapseAgent("USER", collect, uri=uri, verbose=False)
     tasks: list[asyncio.Task[None]] = []
     try:
-        await _await_listening(port)
         tasks = [asyncio.create_task(worker.run()), asyncio.create_task(user.connect())]
         await user.wait_until_ready(3.0)
         await asyncio.sleep(0.4)  # let the worker register
@@ -120,10 +93,10 @@ def main() -> int:
     model = detect_model(["gemma3:1b", "gemma3", "llama3"])
     if model:
         print(f"(using Ollama model '{model}')")
-        asyncio.run(run_demo(_free_port(), provider="ollama", model=model))
+        asyncio.run(run_demo(provider="ollama", model=model))
     else:
         print("(no Ollama model found — using the offline rule backend)")
-        asyncio.run(run_demo(_free_port()))
+        asyncio.run(run_demo())
     print("=== done ===")
     return 0
 

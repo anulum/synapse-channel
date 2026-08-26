@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import asyncio
-import socket
 import subprocess  # nosec B404
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -18,7 +17,7 @@ from typing import Any
 
 from websockets.asyncio.client import connect as ws_connect
 
-from synapse_channel import SynapseAgent
+from synapse_channel import SynapseAgent, SynapseHub
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.release_verification import VerifiedReleaseReceipt
 from synapse_channel.file_claim_guard import (
@@ -80,15 +79,6 @@ class DemoInbox:
         raise TimeoutError("expected message did not arrive")
 
 
-def _free_port() -> int:
-    """Reserve and immediately release an ephemeral localhost TCP port."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("localhost", 0))
-    port = int(sock.getsockname()[1])
-    sock.close()
-    return port
-
-
 async def _await_listening(port: int, timeout: float = 3.0) -> None:
     """Wait for one clean WebSocket handshake against the demo hub."""
     loop = asyncio.get_event_loop()
@@ -107,6 +97,22 @@ async def _await_listening(port: int, timeout: float = 3.0) -> None:
         await connection.close()
         return
     raise TimeoutError(f"hub did not start listening on {port}")
+
+
+async def _start_local_hub(
+    hub: SynapseHub,
+    port: int = 0,
+) -> tuple[asyncio.Task[None], str]:
+    """Bind ``hub`` atomically and return its task and actual WebSocket URI."""
+    server = asyncio.create_task(hub.serve("127.0.0.1", port))
+    try:
+        _, bound_port = await hub.wait_until_serving()
+    except BaseException:
+        if not server.done():
+            server.cancel()
+        await asyncio.gather(server, return_exceptions=True)
+        raise
+    return server, f"ws://127.0.0.1:{bound_port}"
 
 
 def _run_git(workspace: Path, *args: str) -> str:

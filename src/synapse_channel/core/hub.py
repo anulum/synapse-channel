@@ -557,6 +557,8 @@ class SynapseHub:
         self.advertised_host = (advertised_host or "").strip() or None
         self._bind_host = DEFAULT_HOST
         self._bind_port = DEFAULT_PORT
+        self._bound_address: tuple[str, int] | None = None
+        self._serving = asyncio.Event()
         self.insecure_off_loopback = bool(insecure_off_loopback)
         self.insecure_plaintext_at_rest = bool(insecure_plaintext_at_rest)
         self.rate_limiter = rate_limiter
@@ -1644,6 +1646,42 @@ class SynapseHub:
             trusted_authorities=authorities,
         )
 
+    @property
+    def bound_address(self) -> tuple[str, int] | None:
+        """Return the active TCP bind address, including an assigned port.
+
+        The value is ``None`` before :meth:`serve` has bound its socket and
+        after that server stops. In particular, callers that request port
+        ``0`` receive the kernel-assigned port instead of having to perform a
+        racy reserve-and-release probe.
+        """
+        return self._bound_address
+
+    async def wait_until_serving(self, timeout: float = 3.0) -> tuple[str, int]:
+        """Wait for :meth:`serve` to bind and return its actual TCP address.
+
+        Parameters
+        ----------
+        timeout : float, optional
+            Maximum seconds to wait for the socket bind.
+
+        Returns
+        -------
+        tuple[str, int]
+            Host and kernel-assigned port of the active listening socket.
+
+        Raises
+        ------
+        TimeoutError
+            If the hub does not bind before ``timeout``.
+        RuntimeError
+            If readiness is signalled without an active address.
+        """
+        await asyncio.wait_for(self._serving.wait(), timeout=timeout)
+        if self._bound_address is None:
+            raise RuntimeError("hub signalled readiness without a bound address")
+        return self._bound_address
+
     async def serve(
         self,
         host: str = DEFAULT_HOST,
@@ -1671,24 +1709,51 @@ class SynapseHub:
         self._guard_at_rest(host)
         self._bind_host = host
         self._bind_port = int(port)
+        self._bound_address = None
+        self._serving.clear()
         stop = asyncio.Event()
         self._install_signal_handlers(asyncio.get_running_loop(), stop)
-        async with (
-            self._dark_seats.running(),
-            serve(
-                self.handler,
-                host,
-                port,
-                max_size=self.max_msg_bytes,
-                max_queue=DEFAULT_MAX_QUEUE,
-                ping_interval=DEFAULT_PING_INTERVAL,
-                ping_timeout=DEFAULT_PING_TIMEOUT,
-                close_timeout=self.shutdown_close_timeout,
-                process_request=self._process_request,
-                ssl=ssl_context,
-                logger=ws_server_logger,
-            ),
-        ):
-            scheme = "wss" if ssl_context is not None else "ws"
-            logger.info("Synapse Hub running on %s://%s:%d", scheme, host, port)
-            await stop.wait()
+        started = False
+        try:
+            async with (
+                self._dark_seats.running(),
+                serve(
+                    self.handler,
+                    host,
+                    port,
+                    max_size=self.max_msg_bytes,
+                    max_queue=DEFAULT_MAX_QUEUE,
+                    ping_interval=DEFAULT_PING_INTERVAL,
+                    ping_timeout=DEFAULT_PING_TIMEOUT,
+                    close_timeout=self.shutdown_close_timeout,
+                    process_request=self._process_request,
+                    ssl=ssl_context,
+                    logger=ws_server_logger,
+                ) as server,
+            ):
+                sockets = server.sockets
+                if not sockets:
+                    raise RuntimeError("hub server bound without a listening socket")
+                socket_name = sockets[0].getsockname()
+                self._bind_port = int(socket_name[1])
+                self._bound_address = (host, self._bind_port)
+                started = True
+                self._serving.set()
+                scheme = "wss" if ssl_context is not None else "ws"
+                logger.info(
+                    "Synapse Hub running on %s://%s:%d",
+                    scheme,
+                    host,
+                    self._bind_port,
+                )
+                await stop.wait()
+        except BaseException:
+            if not started:
+                # Unblock a startup waiter so it reports the failed bind
+                # immediately instead of disguising it as a readiness timeout.
+                self._serving.set()
+            raise
+        finally:
+            self._bound_address = None
+            if started:
+                self._serving.clear()

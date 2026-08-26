@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import asyncio
 
-from synapse_channel.demo import _free_port, run_coordination_demo
+from synapse_channel.demo import run_coordination_demo
 from synapse_channel.demo_scenario import GoldenDemoResult
 
 
-async def run_demo(port: int) -> GoldenDemoResult:
+async def run_demo(port: int = 0) -> GoldenDemoResult:
     """Drive the shared golden demo against ``port`` and return its evidence."""
     return await run_coordination_demo(port)
 
@@ -29,7 +29,7 @@ async def run_demo(port: int) -> GoldenDemoResult:
 def main() -> int:
     """Run the demo on a free port for interactive source-checkout use."""
     print("=== SYNAPSE CHANNEL — coordination demo ===")
-    asyncio.run(run_demo(_free_port()))
+    asyncio.run(run_demo())
     print("=== done ===")
     return 0
 

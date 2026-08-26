@@ -15,7 +15,6 @@ import pytest
 from synapse_channel.benchmark.probes import (
     PROBES,
     _connect_ready_agent,
-    _free_port,
     _MessageWaiter,
     _percentiles_ms,
     probe_claim_grant,
@@ -112,7 +111,7 @@ def test_percentiles_of_a_single_sample_collapse() -> None:
 
 def test_connect_ready_agent_times_out_without_a_hub() -> None:
     async def attempt() -> None:
-        await _connect_ready_agent(_MessageWaiter(), _free_port(), attempts=1)
+        await _connect_ready_agent(_MessageWaiter(), 0, attempts=1)
 
     with pytest.raises(TimeoutError, match="did not receive the hub welcome"):
         asyncio.run(attempt())

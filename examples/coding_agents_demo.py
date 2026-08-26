@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import asyncio
 
-from synapse_channel.coding_fleet import _free_port, run_coding_agents_demo
+from synapse_channel.coding_fleet import run_coding_agents_demo
 
 
-async def run_demo(port: int) -> list[str]:
+async def run_demo(port: int = 0) -> list[str]:
     """Drive the shared coding-fleet demo against ``port`` and return narration."""
     return await run_coding_agents_demo(port)
 
@@ -28,7 +28,7 @@ async def run_demo(port: int) -> list[str]:
 def main() -> int:
     """Run the demo on a free port for interactive source-checkout use."""
     print("=== SYNAPSE CHANNEL — coding agents, no collisions ===")
-    asyncio.run(run_demo(_free_port()))
+    asyncio.run(run_demo())
     print("=== done ===")
     return 0
 

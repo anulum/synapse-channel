@@ -17,7 +17,8 @@ from pathlib import Path
 import pytest
 
 from synapse_channel import cli, cli_demo
-from synapse_channel.demo import _free_port, run_coordination_demo
+from synapse_channel.demo import run_coordination_demo
+from synapse_channel.demo_scenario import DEMO_AGENT_LABELS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -39,11 +40,11 @@ def test_parser_routes_demo_to_installed_first_run_command() -> None:
 
 
 async def test_installed_demo_drives_core_coordination_flow() -> None:
-    result = await run_coordination_demo(_free_port())
+    result = await run_coordination_demo()
     log = result.narration
 
     assert result.completed is True
-    assert any("Claude and Codex" in line for line in log)
+    assert any(" and ".join(DEMO_AGENT_LABELS) in line for line in log)
     assert any("CONFLICT REFUSED" in line for line in log)
     assert any("MUTATION DENIED" in line for line in log)
     assert any("HANDOFF" in line for line in log)
@@ -94,7 +95,7 @@ async def test_demo_run_emits_no_handshake_abort_records(
     """
     with caplog.at_level(logging.DEBUG, logger="synapse.hub.ws"):
         level_during = logging.getLogger("synapse.hub.ws").level
-        result = await run_coordination_demo(_free_port())
+        result = await run_coordination_demo()
         assert logging.getLogger("synapse.hub.ws").level == level_during
 
     assert any("HANDOFF" in line for line in result.narration)
@@ -164,7 +165,7 @@ async def test_demo_probe_leaves_logger_levels_untouched_on_both_exits() -> None
     ws_logger.setLevel(logging.WARNING)
     try:
         with pytest.raises(TimeoutError, match="did not start listening"):
-            await demo_module._await_listening(demo_module._free_port(), timeout=0.05)
+            await demo_module._await_listening(0, timeout=0.05)
         assert ws_logger.level == logging.WARNING
     finally:
         ws_logger.setLevel(previous_level)
@@ -179,6 +180,5 @@ async def test_demo_helpers_time_out_honestly(tmp_path: object) -> None:
     inbox = demo_module.DemoInbox()
     with pytest.raises(TimeoutError, match="expected message did not arrive"):
         await inbox.wait_for(lambda _m: False, timeout=0.05)
-    dead_port = demo_module._free_port()
     with pytest.raises(TimeoutError, match="did not start listening"):
-        await demo_module._await_listening(dead_port, timeout=0.05)
+        await demo_module._await_listening(0, timeout=0.05)

@@ -15,7 +15,7 @@ from typing import cast
 import pytest
 
 from synapse_channel.core.release_verification import VerifiedReleaseReceipt
-from synapse_channel.demo import _free_port, run_coordination_demo
+from synapse_channel.demo import run_coordination_demo
 from synapse_channel.demo_scenario import (
     _require_allowed,
     _require_clean_receipt,
@@ -28,10 +28,7 @@ from synapse_channel.file_claim_guard import GuardVerdict
 
 async def test_scenario_enforces_then_transfers_mutation_authority(tmp_path: Path) -> None:
     """The real hub denies Codex before handoff and allows it after handoff."""
-    result = await run_coordination_demo(
-        _free_port(),
-        workspace=tmp_path / "workspace",
-    )
+    result = await run_coordination_demo(workspace=tmp_path / "workspace")
 
     assert result.completed is True
     assert result.guard_before_handoff.allowed is False

@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from synapse_channel import cli, cli_new
-from synapse_channel.coding_fleet import _free_port, run_coding_agents_demo
+from synapse_channel.coding_fleet import run_coding_agents_demo
 from synapse_channel.coding_fleet_template import create_coding_fleet
 
 
@@ -83,7 +83,7 @@ def test_cmd_new_coding_fleet_prints_next_step(
 
 
 async def test_packaged_coding_fleet_demo_prevents_collisions() -> None:
-    log = await run_coding_agents_demo(_free_port())
+    log = await run_coding_agents_demo()
 
     assert any("claimed src/app/api.py" in line for line in log)
     assert any("refused" in line for line in log)
@@ -115,7 +115,7 @@ async def test_coding_fleet_helpers_time_out_honestly() -> None:
     with pytest.raises(TimeoutError, match="expected message did not arrive"):
         await inbox.wait_for(lambda _m: False, timeout=0.05)
     with pytest.raises(TimeoutError, match="did not start listening"):
-        await coding_fleet._await_listening(coding_fleet._free_port(), timeout=0.05)
+        await coding_fleet._await_listening(0, timeout=0.05)
 
 
 async def test_coding_fleet_run_emits_no_handshake_abort_records(
@@ -124,7 +124,7 @@ async def test_coding_fleet_run_emits_no_handshake_abort_records(
     """The real fleet-demo flow keeps hub handshake-abort tracebacks off stderr."""
     with caplog.at_level(logging.DEBUG, logger="synapse.hub.ws"):
         level_during = logging.getLogger("synapse.hub.ws").level
-        log = await run_coding_agents_demo(_free_port())
+        log = await run_coding_agents_demo()
         assert logging.getLogger("synapse.hub.ws").level == level_during
 
     assert any("disjoint scope, granted" in line for line in log)
@@ -194,7 +194,7 @@ async def test_coding_fleet_probe_leaves_logger_levels_untouched_on_both_exits()
     ws_logger.setLevel(logging.WARNING)
     try:
         with pytest.raises(TimeoutError, match="did not start listening"):
-            await coding_fleet._await_listening(coding_fleet._free_port(), timeout=0.05)
+            await coding_fleet._await_listening(0, timeout=0.05)
         assert ws_logger.level == logging.WARNING
     finally:
         ws_logger.setLevel(previous_level)

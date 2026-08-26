@@ -21,16 +21,12 @@ from synapse_channel.demo_runtime import (
 from synapse_channel.demo_runtime import (
     _await_listening as _runtime_await_listening,
 )
-from synapse_channel.demo_runtime import (
-    _free_port as _runtime_free_port,
-)
 from synapse_channel.demo_scenario import GoldenDemoResult, _run_golden_scenario
 
 DemoInbox = _RuntimeDemoInbox
 """Compatibility export for the demo inbox helper."""
 
 _await_listening = _runtime_await_listening
-_free_port = _runtime_free_port
 
 
 @dataclass(frozen=True)
@@ -50,7 +46,7 @@ class InstalledDemoRun:
 
 
 async def run_coordination_demo(
-    port: int,
+    port: int = 0,
     *,
     workspace: Path | None = None,
 ) -> GoldenDemoResult:
@@ -59,7 +55,8 @@ async def run_coordination_demo(
     Parameters
     ----------
     port : int
-        Local TCP port for the disposable in-process hub.
+        Local TCP port for the disposable in-process hub. The default ``0``
+        asks the kernel to assign an unused port atomically.
     workspace : pathlib.Path or None, optional
         Empty directory used for the demo Git repository. ``None`` creates and
         removes a temporary workspace automatically.
@@ -95,5 +92,5 @@ def run_installed_demo(output_dir: Path | None = None) -> InstalledDemoRun:
         if output_dir is not None
         else Path(tempfile.mkdtemp(prefix="synapse-golden-demo-"))
     )
-    result = asyncio.run(run_coordination_demo(_free_port()))
+    result = asyncio.run(run_coordination_demo())
     return InstalledDemoRun(result=result, artifacts=write_demo_artifacts(result, target))
