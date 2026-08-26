@@ -261,6 +261,10 @@ esperado antes da configuração do serviço. `synapse demo` inicia seu próprio
 hub local e conduz o caminho Claude/Codex com claims separados, recusa de
 conflito, handoff e receipt verificado. Ele é bem-sucedido quando imprime:
 
+`CLAUDE` e `CODEX` são apenas rótulos de identidades `SynapseAgent` roteirizadas
+e executadas no processo; a demo não inicia CLIs de providers nem turnos de modelo.
+<!-- demo-provider-boundary: scripted-in-process-no-provider-cli-no-model-turn -->
+
 ```text
 success: coordination demo completed
 ```

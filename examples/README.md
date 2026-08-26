@@ -26,6 +26,9 @@ The installed demo succeeds when it prints:
 success: coordination demo completed
 ```
 
+Its `CLAUDE` and `CODEX` names are scripted in-process `SynapseAgent` labels;
+the installed demo launches no provider CLI and spends no model turn.
+
 `synapse quickstart-coding` creates a temporary coding-agents workspace, runs it,
 removes the temporary workspace after success, and prints `success: coding fleet
 demo completed`.

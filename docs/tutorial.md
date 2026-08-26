@@ -13,8 +13,10 @@ python -m pip install synapse-channel
 synapse demo
 ```
 
-`synapse demo` starts its own local hub, seats two agents ("Claude" and "Codex"),
-and drives a short coordination flow. It succeeds when it prints:
+`synapse demo` starts its own local hub and seats two scripted in-process
+`SynapseAgent` identities labelled `CLAUDE` and `CODEX`. It does not launch
+Claude Code, Codex CLI, or any model turn. The deterministic coordination flow
+succeeds when it prints:
 
 ```text
 success: coordination demo completed

@@ -287,6 +287,8 @@ and `Restart=always`, without installing a hub. Its
 pane delivery without name takeover. The pane bridge fails closed on busy,
 modal, unknown, or ambiguous provider screens: it persists the pending wake and
 submits its fixed prompt only after two provider-specific idle-composer probes.
+It accepts only exact identity, role, or group targets; global priority and CEO
+broadcasts remain durable inbox traffic but never inject into provider panes.
 Native Windows service setup is not
 claimed; use WSL with systemd as documented in the deployment guide.
 
@@ -335,6 +337,10 @@ root-filesystem pressure, and missing waiters. A brand-new machine may warn that
 no hub or waiter is running; that is expected before service setup. `synapse
 demo` starts its own local hub, drives a planner/worker coordination flow, and
 succeeds when it prints:
+
+The `CLAUDE` and `CODEX` names in that flow are scripted in-process
+`SynapseAgent` identities. The demo launches no provider CLI and spends no model
+turn.
 
 ```text
 success: coordination demo completed
@@ -412,7 +418,9 @@ or write to `protoscience@anulum.li`.
 If you need a fixed target, pin a version (`synapse-channel==X.Y.Z`); to get the
 latest fixes, track the newest release. Both are supported.
 
-## Run a hub with model workers
+## Usage
+
+### Run a hub with model workers
 
 Launch a hub plus one or two local model workers in one command:
 
@@ -1589,7 +1597,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 795 |
 | Wire message types | 80 |
 | CLI subcommands | 184 |
-| Test functions | 9327 |
+| Test functions | 9328 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 62 |
 | GitHub Actions workflows | 25 |

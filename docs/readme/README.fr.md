@@ -266,6 +266,10 @@ démarre son propre hub local et déroule le parcours Claude/Codex avec claims
 séparés, refus du conflit, handoff et receipt vérifié. Il réussit quand il
 imprime :
 
+`CLAUDE` et `CODEX` ne sont que les libellés d'identités `SynapseAgent`
+scriptées dans le processus ; la démo ne lance ni CLI fournisseur ni tour de modèle.
+<!-- demo-provider-boundary: scripted-in-process-no-provider-cli-no-model-turn -->
+
 ```text
 success: coordination demo completed
 ```

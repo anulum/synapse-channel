@@ -259,6 +259,10 @@ synapse demo --output ./synapse-golden-demo
 ローカルハブを起動し、Claude/Codex の個別 claim、競合拒否、handoff、
 検証済み receipt までを実行し、次を出力すれば成功です。
 
+`CLAUDE` と `CODEX` は、スクリプト化された同一プロセス内の
+`SynapseAgent` 識別子です。このデモはプロバイダー CLI やモデルターンを起動しません。
+<!-- demo-provider-boundary: scripted-in-process-no-provider-cli-no-model-turn -->
+
 ```text
 success: coordination demo completed
 ```

@@ -232,6 +232,10 @@ synapse demo --output ./synapse-golden-demo
 分离 claim、冲突拒绝、handoff 和已验证 receipt 的完整流程，并在打印以下
 内容时成功：
 
+`CLAUDE` 和 `CODEX` 只是脚本化进程内 `SynapseAgent` 身份的标签；此演示
+不会启动提供商 CLI 或模型轮次。
+<!-- demo-provider-boundary: scripted-in-process-no-provider-cli-no-model-turn -->
+
 ```text
 success: coordination demo completed
 ```

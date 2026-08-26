@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from synapse_channel.demo_scenario import (
+    DEMO_AGENT_LABELS,
+    DEMO_PROVIDER_BOUNDARY,
+    DEMO_STEP_TITLES,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -39,11 +45,12 @@ def test_integration_demo_matrix_documents_the_golden_path_and_three_adapters() 
         assert command in matrix
 
     expected_boundaries = (
-        "| Installed golden path | Supported, real local boundaries | Claude/Codex "
-        "presence, separate Git claims, deliberate conflict refusal, fail-closed "
-        "mutation guard, atomic handoff, observed verification, receipt-backed "
-        "release, static dashboard. | Uses a disposable local Git repository; it "
-        "does not launch vendor model turns or certify external client versions. |",
+        "| Installed golden path | Supported, real local boundaries | Scripted "
+        "in-process `SynapseAgent` identities labelled `CLAUDE`/`CODEX`, separate "
+        "Git claims, deliberate conflict refusal, fail-closed mutation guard, atomic "
+        "handoff, observed verification, receipt-backed release, static dashboard. "
+        "| Uses a disposable local Git repository; it does not launch provider CLIs "
+        "or model turns, and does not certify external client versions. |",
         "| CLI coding sessions | Supported | File-scope claims, claims release, "
         "board/status checks, direct messages. | Does not start or control the "
         "coding agent runtime. |",
@@ -57,6 +64,38 @@ def test_integration_demo_matrix_documents_the_golden_path_and_three_adapters() 
     )
     for row in expected_boundaries:
         assert row in matrix
+
+
+def test_demo_docs_match_runtime_owned_labels_sequence_and_provider_boundary() -> None:
+    """Public prose must describe the real scripted scenario, not vendor turns."""
+    public_docs = (
+        "README.md",
+        "docs/quickstart.md",
+        "docs/tutorial.md",
+        "docs/integration-demos.md",
+        "docs/cli.md",
+        "examples/README.md",
+    )
+    combined = "\n".join(_read_doc(path) for path in public_docs)
+
+    for label in DEMO_AGENT_LABELS:
+        assert f"`{label}`" in combined
+    for title in DEMO_STEP_TITLES.values():
+        assert title in _read_doc("docs/integration-demos.md")
+    assert "scripted in-process" in combined
+    assert "no provider CLI" in combined
+    assert "no model turn" in combined
+    assert "scripted in-process SynapseAgent identities" in DEMO_PROVIDER_BOUNDARY
+
+    marker = "demo-provider-boundary: scripted-in-process-no-provider-cli-no-model-turn"
+    translations = sorted((ROOT / "docs" / "readme").glob("README.*.md"))
+    assert len(translations) == 8
+    for path in translations:
+        text = path.read_text(encoding="utf-8")
+        assert marker in text
+        assert "`SynapseAgent`" in text
+        assert "`CLAUDE`" in text
+        assert "`CODEX`" in text
 
 
 def test_integration_demo_matrix_is_cross_linked_from_public_docs() -> None:

@@ -263,6 +263,10 @@ waiter en ejecución; eso es lo esperado antes de configurar el servicio.
 claims separados, rechazo del conflicto, handoff y receipt verificado. Tiene
 éxito cuando imprime:
 
+`CLAUDE` y `CODEX` son solo etiquetas de identidades `SynapseAgent` guionizadas
+y ejecutadas en proceso; la demo no inicia CLI de proveedores ni turnos de modelo.
+<!-- demo-provider-boundary: scripted-in-process-no-provider-cli-no-model-turn -->
+
 ```text
 success: coordination demo completed
 ```

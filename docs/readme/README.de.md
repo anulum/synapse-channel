@@ -259,6 +259,10 @@ erwarten. `synapse demo` startet seinen eigenen lokalen Hub, fährt den
 Claude/Codex-Pfad mit getrennten Claims, Konfliktverweigerung, Handoff und
 verifiziertem Receipt und ist erfolgreich, wenn es Folgendes ausgibt:
 
+`CLAUDE` und `CODEX` sind nur Bezeichnungen für skriptgesteuerte, prozessinterne
+`SynapseAgent`-Instanzen; die Demo startet weder Provider-CLIs noch Modell-Turns.
+<!-- demo-provider-boundary: scripted-in-process-no-provider-cli-no-model-turn -->
+
 ```text
 success: coordination demo completed
 ```

@@ -576,17 +576,17 @@ to their recorded owner after replay.
 
 ## Fleet-wide announcements
 
-A broadcast (`--target all`, a `--priority` message, or any `CEO` message) wakes
-every waiter at the same instant; their agents then all re-invoke and call the model
-provider together, and the **provider's** request-rate limiter throttles the burst —
-Anthropic's API, for one, returns *"Server is temporarily limiting requests"*, a
-request-rate limit distinct from your usage quota. Two defences, used together:
+A global priority or CEO broadcast can wake every general-purpose directed-only
+waiter at the same instant. Automation that invokes a model on each wake can then
+hit the provider's request-rate limiter. Interactive `agent-tmux` pane bridges
+ignore these global broadcasts and retain them as passive inbox traffic. For
+other wake consumers, use both defences below:
 
 - **Receiver side:** `synapse wait --wake-jitter` (default 8s) spreads broadcast
   wakes over a few seconds so the re-invocations do not land at once.
-- **Sender side:** to roll an update out to a fleet, do **not** `--target all`. Send
-  **directed and staggered** — one message per terminal, a few seconds apart — so the
-  wakes are spread regardless of each waiter's jitter setting:
+- **Sender side:** to roll an update out to a fleet, do **not** `--target all`.
+  Send **directed and staggered** — one message per terminal, a few seconds apart —
+  so pane bridges receive an exact target and other wakes remain spread:
 
   ```bash
   for p in api-dev test-dev docs-dev; do

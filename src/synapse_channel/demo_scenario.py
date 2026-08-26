@@ -37,8 +37,28 @@ from synapse_channel.demo_runtime import (
 )
 from synapse_channel.file_claim_guard import GuardVerdict
 
-_CLAUDE_TASK = "DEMO-CLAUDE"
-_CODEX_TASK = "DEMO-CODEX"
+DEMO_AGENT_LABELS = ("CLAUDE", "CODEX")
+"""Scripted in-process agent labels used by the self-contained demo."""
+
+DEMO_PROVIDER_BOUNDARY = (
+    "scripted in-process SynapseAgent identities; no provider CLI or model turn is launched"
+)
+"""Exact execution boundary that public demo descriptions must preserve."""
+
+DEMO_STEP_TITLES = {
+    "01": "INSTALLED",
+    "02": "CONNECTED",
+    "03": "SEPARATE CLAIMS",
+    "04": "CONFLICT REFUSED",
+    "05": "MUTATION DENIED",
+    "06": "HANDOFF",
+    "07": "VERIFIED RECEIPT",
+}
+"""Stable narration sequence emitted by the golden demo."""
+
+_CLAUDE_LABEL, _CODEX_LABEL = DEMO_AGENT_LABELS
+_CLAUDE_TASK = f"DEMO-{_CLAUDE_LABEL}"
+_CODEX_TASK = f"DEMO-{_CODEX_LABEL}"
 _CONFLICT_TASK = "DEMO-CONFLICT"
 
 
@@ -194,8 +214,20 @@ async def _run_golden_scenario(port: int, workspace: Path) -> GoldenDemoResult:
     server = asyncio.create_task(hub.serve("localhost", port))
     uri = f"ws://localhost:{port}"
     claude_rx, codex_rx = DemoInbox(), DemoInbox()
-    claude = SynapseAgent("CLAUDE", claude_rx, uri=uri, verbose=False, machine_identity=False)
-    codex = SynapseAgent("CODEX", codex_rx, uri=uri, verbose=False, machine_identity=False)
+    claude = SynapseAgent(
+        _CLAUDE_LABEL,
+        claude_rx,
+        uri=uri,
+        verbose=False,
+        machine_identity=False,
+    )
+    codex = SynapseAgent(
+        _CODEX_LABEL,
+        codex_rx,
+        uri=uri,
+        verbose=False,
+        machine_identity=False,
+    )
     connections: list[asyncio.Task[None]] = []
 
     try:
@@ -217,14 +249,16 @@ async def _run_golden_scenario(port: int, workspace: Path) -> GoldenDemoResult:
         )
         installed = DemoStep(
             "01",
-            "INSTALLED",
+            DEMO_STEP_TITLES["01"],
             "the demo started a disposable real Git workspace",
         )
         narrate(installed)
         await _record_step(claude, codex_rx, installed)
 
         connected = DemoStep(
-            "02", "CONNECTED", "Claude and Codex are simultaneously online on one local hub"
+            "02",
+            DEMO_STEP_TITLES["02"],
+            f"{_CLAUDE_LABEL} and {_CODEX_LABEL} are {DEMO_PROVIDER_BOUNDARY}",
         )
         narrate(connected)
         await _record_step(claude, codex_rx, connected)
@@ -293,8 +327,8 @@ async def _run_golden_scenario(port: int, workspace: Path) -> GoldenDemoResult:
         )
         separate = DemoStep(
             "03",
-            "SEPARATE CLAIMS",
-            "Claude owns src/shared.py while Codex owns tests/test_shared.py",
+            DEMO_STEP_TITLES["03"],
+            f"{_CLAUDE_LABEL} owns src/shared.py while {_CODEX_LABEL} owns tests/test_shared.py",
         )
         narrate(separate)
         await _record_step(claude, codex_rx, separate)
@@ -315,7 +349,7 @@ async def _run_golden_scenario(port: int, workspace: Path) -> GoldenDemoResult:
         )
         conflict = DemoStep(
             "04",
-            "CONFLICT REFUSED",
+            DEMO_STEP_TITLES["04"],
             str(denied.get("payload") or "overlapping file claim denied"),
         )
         narrate(conflict)
@@ -330,7 +364,7 @@ async def _run_golden_scenario(port: int, workspace: Path) -> GoldenDemoResult:
             uri=uri,
         )
         _require_denied(guard_before)
-        refused = DemoStep("05", "MUTATION DENIED", guard_before.reason)
+        refused = DemoStep("05", DEMO_STEP_TITLES["05"], guard_before.reason)
         narrate(refused)
         await _record_step(codex, claude_rx, refused)
 
@@ -359,8 +393,8 @@ async def _run_golden_scenario(port: int, workspace: Path) -> GoldenDemoResult:
         _require_allowed(guard_after)
         handed_off = DemoStep(
             "06",
-            "HANDOFF",
-            "Claude atomically transferred src/shared.py authority to Codex",
+            DEMO_STEP_TITLES["06"],
+            f"{_CLAUDE_LABEL} atomically transferred src/shared.py authority to {_CODEX_LABEL}",
         )
         narrate(handed_off)
         await _record_step(claude, codex_rx, handed_off)
@@ -393,7 +427,7 @@ async def _run_golden_scenario(port: int, workspace: Path) -> GoldenDemoResult:
 
         verified = DemoStep(
             "07",
-            "VERIFIED RECEIPT",
+            DEMO_STEP_TITLES["07"],
             "real unittest and git diff checks passed; both changed files were SHA-256 recorded",
         )
         narrate(verified)

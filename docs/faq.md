@@ -74,7 +74,10 @@ in-memory and starts empty.
 
 It should not, on 0.42.0 or later — earlier versions had two routing bugs (a priority/CEO
 message directed at one agent woke everyone, and a bare-project message woke every seat of a
-multi-seat project). Upgrade, and see the wake entries in [Troubleshooting](troubleshooting.md).
+multi-seat project). Interactive `agent-tmux` pane bridges are stricter still: global
+priority and CEO broadcasts remain passive inbox traffic and only exact targets wake
+the provider pane. Upgrade, and see the wake entries in
+[Troubleshooting](troubleshooting.md).
 
 ## Is there an MCP integration?
 

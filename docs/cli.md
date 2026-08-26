@@ -16,7 +16,7 @@ everything, since they need the whole command table.
 | `synapse hub` | Run the coordination hub. |
 | `synapse commands` | List every subcommand by stability tier, or inspect a measured profile with `--profile first-use|core|adapters|governance|labs|all` and optional `--json`. |
 | `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |
-| `synapse demo` | Run the real Claude/Codex claim → conflict refusal → mutation denial → handoff → verified receipt path and write JSON plus a static dashboard (`--output DIR` selects the destination). |
+| `synapse demo` | Run the real hub/Git/claim/guard/receipt path with scripted in-process identities labelled `CLAUDE` and `CODEX`; no provider CLI or model turn is launched. Writes JSON plus a static dashboard (`--output DIR` selects the destination). |
 | `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression; `--trend STORE.db` accumulates runs and renders per-metric sparkline trends (`--ascii` for a printable-ASCII trend block); `--alert` gates the run statistically against its own same-context history, exit `1` on drift. |
 | `synapse quickstart-coding` | Create a coding-fleet workspace, run the live overlapping-claim refusal demo, and print a success marker. |
 | `synapse fleet-init` | Empty machine to working fleet in one command: doctor (`--fix`), persistent workspace scaffold, provider-seat probe, demo smoke, and a printed next-steps plan. |
@@ -177,10 +177,14 @@ while piped output appends one line per refresh, and `--json --watch` streams
 one JSON object per line (NDJSON). `--count N` stops after N refreshes;
 Ctrl-C is the normal way to stop an unbounded watch and exits `0`. `synapse
 demo` starts an ephemeral local hub and disposable Git repository, connects
-Claude and Codex, enforces separate claims, refuses both a deliberate claim
+scripted in-process `SynapseAgent` identities labelled `CLAUDE` and `CODEX`,
+enforces separate claims, refuses both a deliberate claim
 conflict and the corresponding unsafe mutation, transfers authority by atomic
 handoff, runs observed checks, and releases with a supported receipt. It
 succeeds when it prints:
+
+The labels do not claim provider participation: the demo launches no provider
+CLI and spends no model turn.
 
 ```text
 success: coordination demo completed
@@ -837,6 +841,10 @@ the inbox but the pane never re-engages. `agent-tmux wait` is the external bridg
 that closes that gap — it blocks on `synapse wait` for the identity and, on each
 directed message, delivers the fixed prompt only to a verified idle provider
 composer.
+Unlike a general-purpose `synapse wait --directed-only` receiver, the interactive
+pane bridge never treats a global priority or CEO broadcast as permission to
+invoke a provider. Those events remain in the durable inbox; an exact identity,
+role, or group target is required for pane injection.
 Its connection name is `<identity>-pane-rx`, deliberately distinct from the
 permanent mailbox arm's `<identity>-rx`; the split is receiver arbitration, not
 a second agent identity.
@@ -859,16 +867,13 @@ again. If the pane disappeared or became inactive, the bridge exits without
 injecting or starting an owner application; supervision may then report and
 repair it through the ordinary service path.
 
-When a broadcast (`--target all`, or a `--priority`/`CEO` message that reaches a
-`--directed-only` waiter) wakes *every* terminal at the same instant, their agents
-all re-invoke and call the model provider at once. That synchronised burst trips the
-**provider's** request-rate limiter — not a synapse limit: Anthropic's API, for
-instance, answers *"Server is temporarily limiting requests"* (a request-rate
-throttle, distinct from your usage quota). `synapse wait --wake-jitter <seconds>`
-(default 8) spreads the broadcast wakes over `0..jitter` so each agent reacts
-without the stampede; a
-one-to-one directed message has no herd and still wakes immediately. Set `0` to
-disable for a latency-critical single-waiter setup.
+A global priority or CEO broadcast can still wake general-purpose
+`synapse wait --directed-only` automation. If many such consumers invoke a model
+provider together, the synchronised burst can trip the provider's request-rate
+limiter. `synapse wait --wake-jitter <seconds>` (default 8) spreads those generic
+wakes over `0..jitter`. Interactive `agent-tmux` pane bridges do not consume
+global broadcasts at all; one-to-one directed messages still wake immediately.
+Set jitter to `0` only for a latency-critical single-waiter setup.
 
 The shell hook records its background waiter in an identity-scoped pidfile under
 `$XDG_RUNTIME_DIR/synapse-shell` (or `/tmp/synapse-shell`). Use `syn reap` to list

@@ -96,6 +96,8 @@ event-driven alternative to polling.
 A waiter mode (`--directed-only`) that wakes only on a message addressed to the agent (or a
 group glob it is in), a CEO message, or a `--priority` message — suppressing routine broadcasts
 to `all`. The **inbox** still receives everything; directed-only governs only what *wakes* you.
+The interactive `agent-tmux` pane bridge applies a stricter subset: exact identity,
+role, or group targets only, never global priority or CEO broadcasts.
 
 ### Takeover
 

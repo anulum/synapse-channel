@@ -218,17 +218,18 @@ The discipline that makes it reliable:
 
 ## Talking to the fleet without a stampede
 
-A broadcast wakes every waiter at once, so their agents all re-invoke together and
-the model **provider** rate-limits the burst — Anthropic's API, for one, answers
-*"Server is temporarily limiting requests"*. Address one agent, a project group, or
-— when it truly must reach everyone — use `--priority`, which wakes even
-`--directed-only` waiters:
+A global priority or CEO broadcast can wake every general-purpose directed-only
+waiter at once, so automation may invoke the model provider in a burst.
+Interactive `agent-tmux` pane bridges ignore global broadcasts and require an
+exact identity, role, or group target. Address one agent or project group for
+interactive provider wakes; reserve `--priority` for generic waiters that truly
+must wake together:
 
 ```bash
 synapse send --target api-dev "rebased main, re-pull"     # one
 synapse send --require-recipient --target api-dev "are you online?"  # receipt-gated
 synapse send --target quantum/* "freeze, I am tagging"    # a project group
-synapse send --target all --priority "prod is green"      # everyone, sparingly
+synapse send --target all --priority "prod is green"      # generic waiters only, sparingly
 ```
 
 To roll an update across the whole fleet, send **directed and staggered** rather

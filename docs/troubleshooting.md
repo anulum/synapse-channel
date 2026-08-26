@@ -79,6 +79,11 @@ A `--directed-only` waiter wakes on a message addressed to **you**, to a **group
 you are in (`quantum/*`), a **CEO** message, or a **`--priority`** message. Routine
 broadcasts to `all` are suppressed.
 
+An interactive `agent-tmux` pane bridge is stricter: it wakes only for an exact
+identity, role, or group target. A global priority or CEO broadcast stays in the
+inbox and does not inject a provider prompt. This prevents one announcement from
+spending a provider turn in every terminal.
+
 - **Since 0.42.0**, a priority or CEO message *directed at a different agent* no longer
   wakes you — it must still reach you (a broadcast, or one addressed to you).
 - **On a multi-seat project**, arm the **seat** (`--for project/seat`) to wake only on

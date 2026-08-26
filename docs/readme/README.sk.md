@@ -248,6 +248,10 @@ demo` spustí vlastný lokálny hub a prevedie Claude/Codex tok s oddelenými
 claimami, odmietnutím konfliktu, handoffom a overeným receiptom. Uspeje, keď
 vypíše:
 
+Mená `CLAUDE` a `CODEX` sú iba štítky skriptovaných in-process objektov
+`SynapseAgent`; demo nespúšťa provider CLI ani modelové turny.
+<!-- demo-provider-boundary: scripted-in-process-no-provider-cli-no-model-turn -->
+
 ```text
 success: coordination demo completed
 ```

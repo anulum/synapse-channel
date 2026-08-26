@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Make the installed golden demo provider-honest on every public and translated
+  surface. `CLAUDE` and `CODEX` are now explicitly scripted in-process
+  `SynapseAgent` identities, not vendor runtimes; runtime-owned labels and the
+  seven-step narration sequence are enforced by documentation contract tests.
 - Remove the deferred `gitclaim`/`path_identity` and `hub`/`hub_config` import
   inversions through dependency-neutral runtime/default modules. Consolidate
   the shared Claude, Codex, Gemini, and Grok claim-hook command shell and the
@@ -24,6 +28,17 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Prevent global priority and CEO broadcasts from activating interactive
+  `agent-tmux` pane bridges. The messages remain durable passive inbox traffic,
+  while only exact identity, role, or group targets may inject the fixed wake
+  prompt into a verified idle provider pane. A real hub, tmux pane, CLI process,
+  and recording provider acceptance test covers both the suppressed broadcast
+  and the preserved exact-target wake.
+- Restore the real JetBrains/OpenCode ACP acceptance path against current IDE
+  defaults: isolate bundled and external agent registries, select the pinned
+  OpenCode mode through the owning settings surface, submit from the composer,
+  and verify the emitted protocol-v1 request instead of substituting a mock
+  editor transport.
 - Keep the MCP Registry `uvx --with` requirement exactly aligned with the
   package's audited `mcp==1.28.1` extra. The repository audit now parses both
   PEP 508 requirements and rejects stale floors, broad MCP v2 ranges, malformed

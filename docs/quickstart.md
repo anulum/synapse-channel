@@ -27,6 +27,9 @@ claim, proves the mutation guard refuses Codex, atomically hands authority over,
 and runs observed verification before releasing with a supported receipt. It
 succeeds when it prints:
 
+`CLAUDE` and `CODEX` are scripted in-process `SynapseAgent` identities in this
+demo. It launches no provider CLI and spends no model turn.
+
 ```text
 success: coordination demo completed
 ```

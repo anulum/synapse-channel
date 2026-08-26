@@ -251,6 +251,10 @@ synapse demo --output ./synapse-golden-demo
 충돌 거부, handoff, 검증된 receipt 흐름을 구동하고, 다음을 출력하면
 성공입니다.
 
+`CLAUDE`와 `CODEX`는 스크립트로 실행되는 인프로세스 `SynapseAgent`
+식별자일 뿐입니다. 이 데모는 프로바이더 CLI나 모델 턴을 시작하지 않습니다.
+<!-- demo-provider-boundary: scripted-in-process-no-provider-cli-no-model-turn -->
+
 ```text
 success: coordination demo completed
 ```
