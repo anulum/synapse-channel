@@ -163,6 +163,42 @@ The hook timeout always exceeds both bounded hub-query phases. Provider recipes
 reject a per-phase deadline above 299 seconds so their complete query remains
 inside the hosts' 600-second hook ceiling.
 
+## Inspect actual mutation posture
+
+Use the read-only posture view after installing or changing hooks:
+
+```bash
+synapse adapters mutation-status --project .
+synapse adapters mutation-status --project . --json
+```
+
+The command inspects the documented provider configuration paths and the real
+Git repository metadata. It does not start a provider, contact a hub, invoke a
+model, install a hook, or mutate a file. Its three provider facts are deliberately
+independent:
+
+- `runtime_detected` means only that the provider executable is on `PATH`;
+- `configuration_state=configured` means that an exact Synapse hook command (or
+  both owned OpenCode assets) was found in a safely readable configuration;
+- `enforcement_status=not-verified` means static inspection did not prove that
+  the host loaded or invoked the hook for a real mutation.
+
+`partial` identifies a one-sided OpenCode installation. `invalid` identifies a
+malformed or unsafe configuration that could not be inspected without relaxing
+the ownership and mode boundary. The accompanying `configuration_detail` names
+the reason without printing configuration contents or secrets.
+
+The staged gate is reported separately. `ready-not-exercised` requires both the
+staged-claim configuration and an executable pre-commit runner (or an exact
+direct staged-check hook). It still reports `enforcement_status=not-exercised`:
+the posture view does not stage a change or manufacture a claim merely to clear
+its own diagnostic. Real commit-path tests remain independent evidence.
+
+Every report enumerates the covered write tools and the remaining unsupported
+custom, MCP, direct-filesystem, provider crash/timeout, incomplete-interception,
+and external-side-effect paths. The JSON schema is
+`synapse.mutation-governance.v1`.
+
 ## What fail-closed means here
 
 ### Provider × fail-closed matrix (hook failure)

@@ -45,6 +45,7 @@ from synapse_channel.cli_codex_claim_hook import add_parser as add_codex_claim_h
 from synapse_channel.cli_gemini_claim_hook import add_parser as add_gemini_claim_hook_parser
 from synapse_channel.cli_grok_claim_hook import add_parser as add_grok_claim_hook_parser
 from synapse_channel.cli_kimi_claim_hook import add_parser as add_kimi_claim_hook_parser
+from synapse_channel.cli_mutation_governance import add_parser as add_mutation_status_parser
 from synapse_channel.cli_opencode_adapter import (
     add_opencode_adapter_parser,
     add_opencode_claim_hook_parser,
@@ -275,6 +276,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     add_gemini_claim_hook_parser(group)
     add_grok_claim_hook_parser(group)
     add_kimi_claim_hook_parser(group)
+    add_mutation_status_parser(group)
     add_opencode_claim_hook_parser(group)
     add_opencode_adapter_parser(group)
 

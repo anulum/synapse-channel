@@ -28,7 +28,7 @@ everything, since they need the whole command table.
 | `synapse mcp` | Serve identity-safe coordination tools over stdio, including bounded local-feed inbox and live status; an omitted `--name` resolves from an agreeing environment or `<git-project>/mcp` (see [MCP server](mcp.md)). |
 | `synapse mcp-tools` / `synapse mcp-call` | List and call allowlisted tools on an external MCP server (outbound). Stable taxonomy codes distinguish invalid config (exit `2`), deny-by-default access refusal (exit `3`), and tool failure (exit `1`). |
 | `synapse sandbox` | Validate a capability manifest and pre-flight or run a `.wasm` tool against it (`validate`/`test`/`run`). |
-| `synapse adapters` | Detect coding tools and wire them to the hub with a claim-aware adapter (`list`/`install`/`uninstall`). |
+| `synapse adapters` | Detect coding tools, wire claim-aware adapters, and inspect mutation posture (`list`/`install`/`uninstall`/`mutation-status`). |
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-conformance` | Print the local Agent2Agent conformance matrix. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge; an optional default-off gRPC subset has a separate security boundary described below. |
@@ -2381,7 +2381,18 @@ synapse arm --name my-repo --owner-pid $$               # leash the waiter: disa
 synapse worker-session --identity my-repo -- codex      # run a provider CLI with SYN_PROJECT/SYN_IDENTITY set
 synapse adapters list                                   # detect coding tools and report adapter status
 synapse adapters install --project my-repo              # write the claim-aware adapter into each tool
+synapse adapters mutation-status --project my-repo      # read-only hook/gate posture and residuals
 ```
+
+`adapters mutation-status` keeps runtime discovery, static hook configuration,
+and enforcement as separate facts. A provider executable on `PATH` is only
+`detected`; an exact Synapse hook recipe is only `configured`; provider
+enforcement remains `not-verified` until separately exercised. The staged Git
+gate is likewise `ready-not-exercised` when both its configuration and executable
+pre-commit hook are present. Use `--json` for the stable
+`synapse.mutation-governance.v1` report. The command writes nothing and always
+lists the unsupported custom, MCP, direct-filesystem, crash/timeout, incomplete
+interception, and external-side-effect residuals.
 
 `arm install` requires an explicit identity and never silently uses ambient
 `SYN_IDENTITY` for a background service. Add `--uri URI` for a remote hub and
