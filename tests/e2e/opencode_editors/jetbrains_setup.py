@@ -35,13 +35,6 @@ _BUNDLED_AGENT_REGISTRY_KEYS = (
     "llm.chat.agent.acp.bundled",
     "llm.chat.agent.acp.bundled.nightly",
 )
-_BUNDLED_AGENT_IDS = (
-    "acp.registry.claude-acp",
-    "acp.registry.codex-acp",
-    "acp.registry.gemini",
-    "acp.registry.github-copilot",
-    "acp.registry.junie",
-)
 _DEFAULT_AGENT_CONFIG_FILENAME = "synapse-default-agent.json"
 _LLM_SETTINGS_FILENAME = "llm.for.code.xml"
 
@@ -249,17 +242,6 @@ def write_acp_config(home: Path, proxy_argv: list[str], *, agent_name: str) -> N
     config_path.chmod(0o600)
 
 
-def write_bundled_agent_state(data_root: Path) -> None:
-    """Disable every bundled ACP agent in the isolated acceptance profile."""
-    state_dir = data_root / "acp-agents"
-    state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    state_dir.chmod(0o700)
-    state_path = state_dir / "installed.json"
-    state = {"agents": {}, "disabledAgents": list(_BUNDLED_AGENT_IDS)}
-    state_path.write_text(json.dumps(state) + "\n", encoding="utf-8")
-    state_path.chmod(0o600)
-
-
 def write_idea_profile(config_root: Path) -> None:
     """Write the isolated IDEA keymap and provider-safe selector profile."""
     keymaps = config_root / "keymaps"
@@ -308,7 +290,6 @@ def write_idea_profile(config_root: Path) -> None:
         f'    <entry key="{_AGENT_SELECTOR_REGISTRY_KEY}" value="true" />\n'
         f'    <entry key="{_DEFAULT_AGENT_CONFIG_REGISTRY_KEY}" '
         f"value={quoteattr(str(default_agent_config))} />\n"
-        + "".join(f'    <entry key="{key}" value="" />\n' for key in _BUNDLED_AGENT_REGISTRY_KEYS)
         + "  </component>\n"
         + "</application>\n"
     )
@@ -333,6 +314,7 @@ def idea_command(
         f"-Didea.system.path={system_root}",
         f"-Didea.plugins.path={plugins}",
         f"-Didea.log.path={log_root}",
+        *(f"-D{key}=" for key in _BUNDLED_AGENT_REGISTRY_KEYS),
         "-Didea.trust.all.projects=true",
         "-Dide.no.platform.update=true",
         "-Dide.browser.jcef.sandbox.enable=false",

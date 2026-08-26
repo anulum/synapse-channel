@@ -24,9 +24,6 @@ from e2e.opencode_editors.jetbrains_setup import (
     write_acp_config as _write_acp_config,
 )
 from e2e.opencode_editors.jetbrains_setup import (
-    write_bundled_agent_state as _write_bundled_agent_state,
-)
-from e2e.opencode_editors.jetbrains_setup import (
     write_idea_profile as _write_idea_profile,
 )
 
@@ -55,8 +52,6 @@ def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
         'value="true" />\n'
         '    <entry key="llm.chat.default.agent.cdn.config.override.path" '
         f'value="{default_agent_config}" />\n'
-        '    <entry key="llm.chat.agent.acp.bundled" value="" />\n'
-        '    <entry key="llm.chat.agent.acp.bundled.nightly" value="" />\n'
         "  </component>\n"
         "</application>\n"
     )
@@ -77,6 +72,8 @@ def test_idea_command_binds_jvm_home_to_the_isolated_profile(tmp_path: Path) -> 
     )
 
     assert command[1] == f"-Duser.home={tmp_path / 'home'}"
+    assert "-Dllm.chat.agent.acp.bundled=" in command
+    assert "-Dllm.chat.agent.acp.bundled.nightly=" in command
     assert command[-1] == str(tmp_path / "project")
 
 
@@ -96,22 +93,6 @@ def test_acp_config_is_private_and_contains_only_the_selected_agent(tmp_path: Pa
         '{"default_mcp_settings": {"use_idea_mcp": false, "use_custom_mcp": false}, '
         '"agent_servers": {"SYNAPSE OpenCode E2E": {"command": "/opt/opencode", '
         '"args": ["acp"], "env": {}}}}\n'
-    )
-
-
-def test_bundled_agent_state_is_private_and_disables_every_vendor_agent(
-    tmp_path: Path,
-) -> None:
-    _write_bundled_agent_state(tmp_path)
-
-    state_dir = tmp_path / "acp-agents"
-    state = state_dir / "installed.json"
-    assert state_dir.stat().st_mode & 0o777 == 0o700
-    assert state.stat().st_mode & 0o777 == 0o600
-    assert state.read_text(encoding="utf-8") == (
-        '{"agents": {}, "disabledAgents": ["acp.registry.claude-acp", '
-        '"acp.registry.codex-acp", "acp.registry.gemini", '
-        '"acp.registry.github-copilot", "acp.registry.junie"]}\n'
     )
 
 

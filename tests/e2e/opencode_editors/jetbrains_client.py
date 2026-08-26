@@ -40,7 +40,6 @@ from e2e.opencode_editors.jetbrains_setup import (
     idea_command,
     skip_islands_onboarding,
     write_acp_config,
-    write_bundled_agent_state,
     write_idea_profile,
 )
 from e2e.opencode_editors.jetbrains_timing import DEFAULT_JETBRAINS_TIMING
@@ -89,15 +88,13 @@ def main() -> int:
 
     home = Path(_required_env("HOME"))
     artifacts = Path(_required_env("SYNAPSE_EDITOR_E2E_ARTIFACT_DIR"))
-    data_root = Path(_required_env("XDG_DATA_HOME"))
-    runtime_root = data_root / "intellij-e2e"
+    runtime_root = Path(_required_env("XDG_DATA_HOME")) / "intellij-e2e"
     config_root = runtime_root / "config"
     system_root = runtime_root / "system"
     log_root = runtime_root / "log"
     for directory in (config_root, system_root, log_root):
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     write_acp_config(home, proxy_argv, agent_name=_AGENT_NAME)
-    write_bundled_agent_state(data_root)
     write_idea_profile(config_root)
 
     output = artifacts / "intellij-process.log"
