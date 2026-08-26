@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.20] - 2026-08-26
+
 ### Fixed
 
 - Make queued `agent-tmux` delivery at-most-once after a successful pane paste.
