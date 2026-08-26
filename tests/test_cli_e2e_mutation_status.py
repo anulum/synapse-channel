@@ -108,6 +108,16 @@ def test_real_cli_reports_absent_guards_without_writing(tmp_path: Path) -> None:
     assert "direct filesystem writes" in text.stdout
     assert "provider hook crash or timeout" in text.stdout
     assert "Staged Git claim gate" in text.stdout
+    providers = report["providers"]
+    assert isinstance(providers, list)
+    codex = next(
+        item for item in providers if isinstance(item, dict) and item.get("provider") == "codex"
+    )
+    assert codex["covered_write_tools"] == ["apply_patch", "Bash"]
+    assert codex["residuals"] == [
+        "write_stdin does not repeat PreToolUse for an existing exec_command session",
+        "MCP and future write-capable tools outside this recipe matcher",
+    ]
 
 
 def test_real_generated_provider_configs_and_precommit_gate_are_detected(

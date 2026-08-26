@@ -433,7 +433,10 @@ def inspect_mutation_governance(
             "codex-claim-hook",
             (home / ".codex" / "hooks.json", project / ".codex" / "hooks.json"),
             ("apply_patch", "Bash"),
-            ("incomplete unified_exec interception", "MCP and future write-capable tools"),
+            (
+                "write_stdin does not repeat PreToolUse for an existing exec_command session",
+                "MCP and future write-capable tools outside this recipe matcher",
+            ),
         ),
         _ProviderSpec(
             "gemini",

@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Document the existing real Ollama CLI and REST participant routes, including
+  the boundary between `ollama launch codex` model routing and Codex-native
+  mutation hooks. Align Codex mutation-posture residuals with current hook
+  coverage: unified `exec_command` matches `Bash`, while later `write_stdin`
+  calls do not repeat `PreToolUse` and tools outside the recipe matcher remain
+  unmediated.
+
 ## [0.99.20] - 2026-08-26
 
 ### Fixed

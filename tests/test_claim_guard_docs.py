@@ -42,7 +42,11 @@ def test_provider_claim_hook_guide_is_discoverable_and_honest() -> None:
     assert "whole-worktree claim" in guide
     for shell_tool in ("Bash", "run_shell_command", "run_terminal_command", "`bash`"):
         assert shell_tool in guide
-    assert "unified_exec` interception is incomplete" in guide
+    assert "unified `exec_command` calls both match `Bash`" in guide
+    assert "`write_stdin` continuation does not run `PreToolUse` again" in guide
+    assert "ollama launch codex --model gemma3:1b" in guide
+    assert "Launching Codex through Ollama changes the model route" in guide
+    assert "https://docs.ollama.com/cli" in guide
     # SCH-H-NEW-05: provider × fail-closed matrix for hook-host residuals
     assert "Provider × fail-closed matrix" in guide
     assert "Host crash / timeout / bad JSON" in guide

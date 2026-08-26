@@ -163,6 +163,32 @@ The hook timeout always exceeds both bounded hub-query phases. Provider recipes
 reject a per-phase deadline above 299 seconds so their complete query remains
 inside the hosts' 600-second hook ceiling.
 
+## Ollama CLI
+
+Synapse already exposes Ollama through both the real headless CLI participant
+and the local REST participant:
+
+```bash
+synapse participant list --model gemma3:1b
+synapse participant ask ollama "Reply with one word: ready" --model gemma3:1b
+synapse participant ask ollama-api "Reply with one word: ready" --model gemma3:1b
+```
+
+Those participant turns generate text; they do not expose a Synapse-managed
+filesystem tool or need a provider mutation hook. Ollama can also configure and
+launch a separate coding host with a local model. For Codex:
+
+```bash
+ollama launch codex --model gemma3:1b
+```
+
+In that mode Codex remains the tool host. Install the Codex recipe in
+`~/.codex/hooks.json`, review and trust it with Codex `/hooks`, and keep the
+staged Git gate enabled. Launching Codex through Ollama changes the model route;
+it does not turn Ollama itself into the mutation-enforcement boundary. The same
+rule applies to other coding hosts offered by `ollama launch`: configure and
+verify the native hook of the launched host.
+
 ## Inspect actual mutation posture
 
 Use the read-only posture view after installing or changing hooks:
@@ -210,7 +236,7 @@ or returns non-JSON. That host residual is the fail-open matrix:
 | Provider | Synapse handled failure | Host crash / timeout / bad JSON | Residual outside the covered hook path |
 |---|---|---|---|
 | Claude Code | deny on exit 0 for file tools and `Bash` | host-dependent; structured deny preferred | MCP, custom, and future write-capable tools |
-| Codex | deny on exit 0 for `apply_patch` and intercepted `Bash` | host documents PreToolUse as guardrail | `unified_exec` interception is incomplete; MCP and future tools remain outside |
+| Codex | deny on exit 0 for `apply_patch`, shell, and unified exec matched as `Bash` | host documents PreToolUse as guardrail | later `write_stdin` calls do not repeat `PreToolUse`; MCP and future tools outside this recipe matcher remain outside |
 | Gemini CLI | structured `decision=deny` on exit 0, including `run_shell_command` | plain non-JSON exit 1 is a warning (**fail-open**) | MCP, custom, and future write-capable tools |
 | Grok | structured `decision=deny` on exit 0, including `run_terminal_command` | host fail-open on timeout/crash/malformed | custom and future write-capable tools |
 | Kimi Code | structured deny on exit 0, including `Bash` | host documents fail-open on crash/timeout | custom and future write-capable tools |
@@ -229,8 +255,10 @@ avoids provider conventions in which an ordinary non-zero error means
 - **Codex:** the hook validates every path named by `apply_patch`, including both
   sides of a move, and intercepts canonical `Bash` with the whole-worktree rule.
   Codex documents `PreToolUse` as a guardrail rather than a complete enforcement
-  boundary: newer `unified_exec` interception is incomplete, and MCP or future
-  tool paths may perform equivalent writes without this matcher.
+  boundary. Shell and unified `exec_command` calls both match `Bash`; a later
+  `write_stdin` continuation does not run `PreToolUse` again. MCP and other local
+  tools can use Codex hooks, but they remain outside this recipe's deliberately
+  bounded `Edit|Write|Bash` matcher, and specialised tool paths may opt out.
 - **Gemini CLI:** the guard speaks Gemini's native contract — the `BeforeTool`
   event, `replace`/`write_file`/`run_shell_command` tool names, and a top-level
   `{"decision": "deny", "reason": …}` blocking response — verified against the
@@ -291,6 +319,7 @@ agents must claim their scope explicitly.
 ## Source references
 
 - [Codex hooks](https://developers.openai.com/codex/hooks)
+- [Ollama CLI](https://docs.ollama.com/cli)
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli) — the `BeforeTool`
   contract above was read from the installed 0.47.0 bundle source
 - Grok 0.2.101 — the `PreToolUse`, matcher-alias, input, deny, timeout, and
