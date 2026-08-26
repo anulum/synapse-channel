@@ -15,6 +15,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "docker-compose.yml"
+LOCAL_DEVELOPMENT_COMPOSE = ROOT / "docker-compose.local-development.yml"
 DOCKER_WORKFLOW = ROOT / ".github" / "workflows" / "docker.yml"
 DOCKERFILE = ROOT / "Dockerfile"
 DOCKERIGNORE = ROOT / ".dockerignore"
@@ -29,49 +30,43 @@ def _load(path: Path) -> dict[str, Any]:
     return cast("dict[str, Any]", yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
-def _hub_command() -> list[str]:
-    """Return the hub service's command tokens from the shipped compose file."""
-    service = _load(COMPOSE)["services"]["hub"]
+def _hub_command(path: Path = COMPOSE) -> list[str]:
+    """Return the hub service's command tokens from one Compose file."""
+    service = _load(path)["services"]["hub"]
     command = service.get("command", [])
     assert isinstance(command, list), "the hub command must be an explicit argv list"
     return [str(token) for token in command]
 
 
-def test_compose_hub_that_binds_off_loopback_can_actually_start() -> None:
-    """A 0.0.0.0 bind must pair with a token or the explicit off-loopback opt-in.
-
-    The hub refuses to bind a non-loopback host with no token — a security guard. A
-    container must bind 0.0.0.0 for its published port to reach it, so the shipped
-    compose command has to carry the matching opt-in, or the container crash-loops on
-    "Refusing to bind" and `docker compose up` never yields a hub.
-    """
+def test_production_compose_has_no_insecure_runtime_override() -> None:
+    """The canonical production profile must remain fail-closed."""
     command = _hub_command()
-    binds_off_loopback = "--host=0.0.0.0" in command or "0.0.0.0" in command
-    if not binds_off_loopback:
-        return  # a loopback bind needs no opt-in
-    has_token = any(token.startswith("--token") for token in command)
-    accepts_off_loopback = "--insecure-off-loopback" in command
-    assert has_token or accepts_off_loopback, (
-        "a 0.0.0.0 bind needs --token or --insecure-off-loopback or the hub refuses to start"
-    )
+    assert "--host=0.0.0.0" in command
+    assert not any(token.startswith("--insecure-") for token in command)
+    assert not any(token.startswith("--relay-log") for token in command)
+    for required in (
+        "--token-file=/run/synapse/token",
+        "--db-key-file=/run/synapse/db.key",
+        "--tls-certfile=/run/synapse/tls.crt",
+        "--tls-keyfile=/run/synapse/tls.key",
+    ):
+        assert required in command
 
 
-def test_compose_off_loopback_bind_is_published_on_loopback_only() -> None:
-    """`--insecure-off-loopback` is safe only when the host publish stays on loopback.
-
-    The container binding 0.0.0.0 without a token is acceptable precisely because the
-    port is published to ``127.0.0.1`` on the host, so nothing off this machine can
-    reach it. If that opt-in is present, every published port must be loopback-bound.
-    """
+def test_production_compose_mounts_owner_custody_inputs_read_only() -> None:
+    """Production refuses ambient env secrets and requires explicit files."""
     service = _load(COMPOSE)["services"]["hub"]
-    if "--insecure-off-loopback" not in _hub_command():
-        return
-    ports = service.get("ports", [])
-    assert ports, "an off-loopback hub must publish through an explicit loopback port"
-    for mapping in ports:
-        assert str(mapping).startswith("127.0.0.1:"), (
-            f"off-loopback bind must be published on loopback only, got {mapping!r}"
-        )
+    assert str(service["user"]).startswith("${SYNAPSE_UID:?")
+    mounts = {str(item["target"]): item for item in service["volumes"]}
+    assert set(mounts) == {
+        "/data",
+        "/run/synapse/token",
+        "/run/synapse/db.key",
+        "/run/synapse/tls.crt",
+        "/run/synapse/tls.key",
+    }
+    assert all(mounts[path]["read_only"] is True for path in mounts if path != "/data")
+    assert service["ports"] == ["127.0.0.1:8876:8876"]
 
 
 def test_container_health_uses_the_declared_concrete_host_authority() -> None:
@@ -83,31 +78,18 @@ def test_container_health_uses_the_declared_concrete_host_authority() -> None:
     assert f'"--uri", "ws://{authority}"' in dockerfile
 
 
-def test_compose_off_loopback_hub_sits_on_a_dedicated_single_service_network() -> None:
-    """The container-peer audience must be bounded, not only host ingress.
-
-    Containers attached to the hub's network reach ``hub:8876`` container-to-container,
-    regardless of the host publish flags, so an ``--insecure-off-loopback`` hub must sit
-    on an explicitly declared network that no other compose service shares — and the
-    file must explain that boundary where the next operator will edit it.
-    """
-    document = _load(COMPOSE)
+def test_local_development_downgrade_is_loud_bounded_and_separate() -> None:
+    """The insecure topology exists only in its explicit local-dev file."""
+    document = _load(LOCAL_DEVELOPMENT_COMPOSE)
     services = document["services"]
-    if "--insecure-off-loopback" not in _hub_command():
-        return
-    hub_networks = list(services["hub"].get("networks", []))
-    assert hub_networks, "an off-loopback hub must be attached to an explicit named network"
-    declared = document.get("networks") or {}
-    for network in hub_networks:
-        assert network in declared, f"hub network {network!r} must be declared in the file"
-    for name, service in services.items():
-        if name == "hub":
-            continue
-        shared = set(service.get("networks", [])) & set(hub_networks)
-        assert not shared, f"service {name!r} shares the hub network {sorted(shared)} untokened"
-    comments = COMPOSE.read_text(encoding="utf-8")
-    assert "regardless of" in comments, "the container-peer reachability comment must stay"
-    assert "keep untrusted services off this network" in comments
+    assert set(services) == {"hub"}
+    assert services["hub"]["ports"] == ["127.0.0.1:8876:8876"]
+    command = _hub_command(LOCAL_DEVELOPMENT_COMPOSE)
+    assert "--insecure-off-loopback" in command
+    assert "--insecure-plaintext-at-rest" in command
+    prose = LOCAL_DEVELOPMENT_COMPOSE.read_text(encoding="utf-8")
+    assert "INSECURE LOCAL DEVELOPMENT ONLY" in prose
+    assert "NEVER USE IN PRODUCTION" in prose
 
 
 def test_docker_workflow_smoke_tests_the_compose_file() -> None:
@@ -121,7 +103,13 @@ def test_docker_workflow_smoke_tests_the_compose_file() -> None:
     steps = workflow["jobs"]["compose-smoke"]["steps"]
     run_scripts = " ".join(str(step.get("run", "")) for step in steps)
     assert "docker compose up" in run_scripts
-    assert "synapse health --uri ws://127.0.0.1:8876" in run_scripts
+    assert "Create owner-only Compose smoke credentials" in [
+        str(step.get("name", "")) for step in steps
+    ]
+    assert "openssl rand 32" in run_scripts
+    assert "--uri wss://127.0.0.1:8876" in run_scripts
+    assert "--token-file /run/synapse/token" in run_scripts
+    assert 'header != b"SQLite format 3\\x00"' in run_scripts
 
 
 def test_docker_workflow_can_publish_an_immutable_release_tag_after_automation() -> None:
@@ -174,7 +162,9 @@ def test_container_runtime_lock_matches_the_base_project_dependency() -> None:
     lock = CONTAINER_REQUIREMENTS.read_text(encoding="utf-8")
     assert "websockets==16.0" in lock
     assert "--hash=sha256:95724e638f0f9c350bb1c2b0a7ad0e83d9cc0c9259f3ea94e40d7b02a2179ae5" in lock
-    assert lock.count("--hash=sha256:") == 1
+    assert "sqlcipher3-binary==0.6.0" in lock
+    assert "--hash=sha256:8a6afbdef7cbbb33b1228ce96edc1bfe7f15bdf2a5e8bdab87261ab52e4111e6" in lock
+    assert lock.count("--hash=sha256:") == 2
     assert "websockets>=13.0" in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
 

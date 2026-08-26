@@ -32,6 +32,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Make the canonical Compose profile fail closed on missing owner-custody
+  inputs and require token-file authentication, native TLS, and a SQLCipher
+  database key without either insecure hub override. The former loopback-only
+  downgrade and plaintext relay log now live only in the loudly named
+  local-development profile; CI boots and probes the real secured container
+  path.
 - Prevent global priority and CEO broadcasts from activating interactive
   `agent-tmux` pane bridges. The messages remain durable passive inbox traffic,
   while only exact identity, role, or group targets may inject the fixed wake

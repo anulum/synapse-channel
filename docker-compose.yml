@@ -4,7 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE CHANNEL — compose file for the coordination hub
+# SYNAPSE CHANNEL — secure production compose profile
 
 services:
   hub:
@@ -12,52 +12,57 @@ services:
     image: ghcr.io/anulum/synapse-channel:latest
     container_name: synapse-hub
     restart: unless-stopped
-    # Loopback-only on the host: the hub is reachable at 127.0.0.1:8876 on this
-    # machine and nowhere else. To reach it from other hosts, change to "8876:8876"
-    # AND set a token (uncomment the --token command below) — never expose it open.
-    #
-    # The publish flags bound HOST ingress only. Containers are a separate
-    # audience: anything attached to the hub-isolated network below reaches the
-    # hub on hub:8876 directly, regardless of this loopback publish.
+    user: "${SYNAPSE_UID:?Set SYNAPSE_UID to the secret owner uid}:${SYNAPSE_GID:?Set SYNAPSE_GID to the secret owner gid}"
     ports:
       - "127.0.0.1:8876:8876"
     networks:
       - hub-isolated
+    environment:
+      SSL_CERT_FILE: /run/synapse/tls.crt
     volumes:
-      - synapse-data:/data
-    # The hub must bind 0.0.0.0 *inside* the container for the published port to
-    # reach it; --insecure-off-loopback accepts that bind. It is safe here only
-    # because BOTH audiences are bounded: the publish above is loopback-only
-    # (host ingress), and hub-isolated below carries no other service (container
-    # peers). The moment you expose the port beyond 127.0.0.1, or attach any
-    # container you do not fully trust to hub-isolated, drop
-    # --insecure-off-loopback and require a token instead (see the commented lines).
+      - type: bind
+        source: ${SYNAPSE_DATA_DIR:?Set SYNAPSE_DATA_DIR to an owner-only directory}
+        target: /data
+      - type: bind
+        source: ${SYNAPSE_TOKEN_FILE:?Set SYNAPSE_TOKEN_FILE to a mode-0600 token}
+        target: /run/synapse/token
+        read_only: true
+      - type: bind
+        source: ${SYNAPSE_DB_KEY_FILE:?Set SYNAPSE_DB_KEY_FILE to a mode-0600 SQLCipher key}
+        target: /run/synapse/db.key
+        read_only: true
+      - type: bind
+        source: ${SYNAPSE_TLS_CERT_FILE:?Set SYNAPSE_TLS_CERT_FILE to a trusted certificate chain}
+        target: /run/synapse/tls.crt
+        read_only: true
+      - type: bind
+        source: ${SYNAPSE_TLS_KEY_FILE:?Set SYNAPSE_TLS_KEY_FILE to a mode-0600 private key}
+        target: /run/synapse/tls.key
+        read_only: true
     command:
       - hub
       - --host=0.0.0.0
       - --port=8876
-      # Bind the WebSocket Host guard to the loopback authority published above.
       - --advertised-host=127.0.0.1:8876
+      - --token-file=/run/synapse/token
       - --db=/data/hub.db
-      - --relay-log=/data/feed.ndjson
-      - --insecure-off-loopback
-      # The store above is plaintext. On an off-loopback bind the hub refuses a
-      # plaintext store unless this flag accepts it; it is safe here for the same
-      # bounded-audience reason as --insecure-off-loopback — the volume lives on
-      # this single trusted host. To harden, ship an encrypted store instead.
-      - --insecure-plaintext-at-rest
-      # Exposing the port beyond loopback, or sharing hub-isolated with other
-      # containers? Replace --insecure-off-loopback with:
-      # - --token=${SYNAPSE_TOKEN}
+      - --db-key-file=/run/synapse/db.key
+      - --tls-certfile=/run/synapse/tls.crt
+      - --tls-keyfile=/run/synapse/tls.key
+    healthcheck:
+      test:
+        - CMD
+        - synapse
+        - health
+        - --uri=wss://127.0.0.1:8876
+        - --token-file=/run/synapse/token
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
 
 networks:
-  # Dedicated single-service network. Any container joined here can reach the
-  # unauthenticated hub on hub:8876 at the TCP layer regardless of host publish
-  # flags. The shipped Host guard admits only 127.0.0.1:8876, so peers receive
-  # 403 until the operator configures their concrete authority.
-  # Therefore, keep untrusted services off this network — or add the --token line above.
+  # Dedicated single-service network. The token and TLS still protect the hub
+  # if a future edit accidentally attaches another container here.
   hub-isolated:
     driver: bridge
-
-volumes:
-  synapse-data:

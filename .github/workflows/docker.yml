@@ -14,6 +14,7 @@ on:
       - Dockerfile
       - .dockerignore
       - docker-compose.yml
+      - docker-compose.local-development.yml
       - "src/**"
       - pyproject.toml
       - .github/requirements/requirements-container-build.txt
@@ -25,6 +26,7 @@ on:
       - Dockerfile
       - .dockerignore
       - docker-compose.yml
+      - docker-compose.local-development.yml
       - "src/**"
       - pyproject.toml
       - .github/requirements/requirements-container-build.txt
@@ -102,10 +104,12 @@ jobs:
             echo "$release_tag does not resolve to the checked-out commit" >&2
             exit 1
           fi
-          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
-          echo "commit=$source_commit" >> "$GITHUB_OUTPUT"
-          echo "epoch=$(git show -s --format=%ct HEAD)" >> "$GITHUB_OUTPUT"
-          echo "created=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=$release_tag"
+            echo "commit=$source_commit"
+            echo "epoch=$(git show -s --format=%ct HEAD)"
+            echo "created=$(git show -s --format=%cI HEAD)"
+          } >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -230,10 +234,43 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.release_tag || github.ref }}
+      - name: Create owner-only Compose smoke credentials
+        run: |
+          mkdir -p runtime/compose-smoke/data
+          openssl rand -hex 32 > runtime/compose-smoke/token
+          openssl rand 32 > runtime/compose-smoke/db.key
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj '/CN=127.0.0.1' -addext 'subjectAltName=IP:127.0.0.1' \
+            -keyout runtime/compose-smoke/tls.key \
+            -out runtime/compose-smoke/tls.crt
+          chmod 700 runtime/compose-smoke runtime/compose-smoke/data
+          chmod 600 runtime/compose-smoke/token runtime/compose-smoke/db.key \
+            runtime/compose-smoke/tls.key runtime/compose-smoke/tls.crt
+          sudo chown -R 10001:10001 runtime/compose-smoke
+          {
+            echo 'SYNAPSE_UID=10001'
+            echo 'SYNAPSE_GID=10001'
+            echo "SYNAPSE_DATA_DIR=$GITHUB_WORKSPACE/runtime/compose-smoke/data"
+            echo "SYNAPSE_TOKEN_FILE=$GITHUB_WORKSPACE/runtime/compose-smoke/token"
+            echo "SYNAPSE_DB_KEY_FILE=$GITHUB_WORKSPACE/runtime/compose-smoke/db.key"
+            echo "SYNAPSE_TLS_CERT_FILE=$GITHUB_WORKSPACE/runtime/compose-smoke/tls.crt"
+            echo "SYNAPSE_TLS_KEY_FILE=$GITHUB_WORKSPACE/runtime/compose-smoke/tls.key"
+          } >> "$GITHUB_ENV"
       - name: Bring the hub up and wait for it to become healthy
         run: docker compose up --detach --build --wait --wait-timeout 180
       - name: Confirm the hub answers a health probe
-        run: docker compose exec -T hub synapse health --uri ws://127.0.0.1:8876
+        run: >-
+          docker compose exec -T hub synapse health
+          --uri wss://127.0.0.1:8876
+          --token-file /run/synapse/token
+      - name: Confirm the durable database is not plaintext SQLite
+        run: |
+          docker compose exec -T hub python - <<'PY'
+          from pathlib import Path
+
+          header = Path("/data/hub.db").read_bytes()[:16]
+          assert header != b"SQLite format 3\x00", "production database is plaintext"
+          PY
       - name: Show hub logs on failure
         if: failure()
         run: docker compose logs hub

@@ -457,14 +457,18 @@ configured it raises `InsecureBindError` and refuses to start, so a bare
 an open hub. A refused start terminates before the durable event store is
 constructed, so it leaves no database file behind. The operator opt-out is
 explicit — `--insecure-off-loopback` acknowledges the accepted risk on the
-command line itself. The shipped `docker-compose.yml` publishes the port
-loopback-only (`127.0.0.1:8876:8876`), attaches the hub to a dedicated compose
-network that carries no other service, and passes that opt-out precisely
-because both audiences are then bounded: the host-side publish keeps the hub
-unreachable from other machines, and the single-service network keeps it
-unreachable from other containers. Its comments direct operators to require a
-token the moment either boundary widens — publishing beyond loopback, or
-attaching any container they do not fully trust to the hub's network.
+command line itself. The canonical `docker-compose.yml` does not take that
+opt-out: it requires an owner-only token file, a SQLCipher database key, and a
+TLS certificate/key, publishes the port loopback-only
+(`127.0.0.1:8876:8876`), and uses a dedicated compose network that carries no
+other service. Token and TLS remain mandatory even if a future edit weakens
+those topology bounds by attaching any container they do not fully trust.
+
+The former bounded downgrade remains only in
+`docker-compose.local-development.yml`. Its name and header say `INSECURE LOCAL
+DEVELOPMENT ONLY`, and executable tests require its host publish to stay on
+loopback and its network to remain isolated. It is never the implicit Compose
+default.
 
 To expose a containerised hub beyond the host, provide a shared secret
 (`--token`, delivered from a file or environment secret) and terminate TLS

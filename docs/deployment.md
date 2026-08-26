@@ -304,26 +304,44 @@ set -gx SYNAPSE_AUTO_CONNECT 0  # Fish
 
 ## Container
 
+The canonical Compose profile is production-oriented and fails before startup
+unless you provide owner-controlled paths for its token, SQLCipher key, TLS
+certificate/key, and data directory. The hub runs as the numeric owner of
+those files, preserving the normal owner-only secret checks:
+
 ```bash
-docker compose up -d          # builds the image and starts the hub
+install -d -m 700 runtime/compose-production/data
+openssl rand -hex 32 > runtime/compose-production/token
+synapse encrypt-key generate runtime/compose-production/db.key
+# Copy a trusted certificate chain and private key into tls.crt and tls.key.
+chmod 600 runtime/compose-production/{token,db.key,tls.crt,tls.key}
+
+export SYNAPSE_UID="$(id -u)" SYNAPSE_GID="$(id -g)"
+export SYNAPSE_DATA_DIR="$PWD/runtime/compose-production/data"
+export SYNAPSE_TOKEN_FILE="$PWD/runtime/compose-production/token"
+export SYNAPSE_DB_KEY_FILE="$PWD/runtime/compose-production/db.key"
+export SYNAPSE_TLS_CERT_FILE="$PWD/runtime/compose-production/tls.crt"
+export SYNAPSE_TLS_KEY_FILE="$PWD/runtime/compose-production/tls.key"
+
+docker compose up -d --build
 docker compose logs -f hub
 ```
 
-The compose file publishes the port on `127.0.0.1` only and stores the durable log
-in the `synapse-data` volume. A container has to bind `0.0.0.0` internally for the
-published port to reach it, and the hub refuses an off-loopback bind without a token;
-the compose command passes `--insecure-off-loopback` to accept that, which is safe
-only because the publish stays on loopback. To expose the hub beyond this host, change
-the publish and swap `--insecure-off-loopback` for `--token` (see the compose file).
+`docker-compose.yml` contains no insecure override. It publishes on host
+loopback, requires token-file authentication and native WSS, and encrypts the
+durable database with the mounted SQLCipher key. The image includes the exact
+hash-locked SQLCipher runtime needed by this profile.
 
-Build and run the image directly if you prefer — the same off-loopback opt-in applies:
+For a disposable single-host experiment only, use the separately named downgrade:
 
 ```bash
-docker build -t synapse-channel .
-docker run -d --name synapse-hub -p 127.0.0.1:8876:8876 -v synapse-data:/data \
-  synapse-channel hub --host 0.0.0.0 --db /data/hub.db --relay-log /data/feed.ndjson \
-  --insecure-off-loopback
+docker compose -f docker-compose.local-development.yml up -d --build
 ```
+
+That file is marked `INSECURE LOCAL DEVELOPMENT ONLY`, remains host-loopback
+published on a dedicated single-service network, and is never the implicit
+Compose default. It accepts plaintext transport and storage explicitly; do not
+reuse it for a shared, remote, or production hub.
 
 After the verified GitHub Release is created, the release workflow dispatches the
 `docker` workflow with its immutable `vX.Y.Z` tag. The image is published as that tag
@@ -393,8 +411,9 @@ operator on one machine. Before exposing it beyond `localhost`:
   `--host-rate`, which limits frame rate rather than connection count. Idle
   sockets that never register a name are also reaped after `--auth-timeout` on
   both open and secured hubs.
-- In compose, change the port mapping to `8876:8876` **and** set `SYNAPSE_TOKEN`
-  (uncomment the `command:` block). Clients then pass `--token "$SYNAPSE_TOKEN"`.
+- In compose, changing the port mapping to `8876:8876` does not require a new
+  insecure flag: keep the canonical token-file, encrypted store, and TLS
+  mounts, then ensure the certificate covers the advertised external host.
 - The token is a proportionate gate (constant-time check), not a cryptographic
   identity system; put real network controls in front of a multi-host hub.
 

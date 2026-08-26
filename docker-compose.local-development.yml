@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — INSECURE LOCAL DEVELOPMENT ONLY; NEVER USE IN PRODUCTION
+
+services:
+  hub:
+    build: .
+    image: ghcr.io/anulum/synapse-channel:latest
+    container_name: synapse-hub-local-development
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8876:8876"
+    networks:
+      - local-development-isolated
+    volumes:
+      - synapse-local-development-data:/data
+    command:
+      - hub
+      - --host=0.0.0.0
+      - --port=8876
+      - --advertised-host=127.0.0.1:8876
+      - --db=/data/hub.db
+      - --relay-log=/data/feed.ndjson
+      - --insecure-off-loopback
+      - --insecure-plaintext-at-rest
+
+networks:
+  # Keep this downgrade isolated even though host ingress is loopback-only.
+  local-development-isolated:
+    driver: bridge
+
+volumes:
+  synapse-local-development-data:
