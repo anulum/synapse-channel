@@ -45,6 +45,11 @@ def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
     assert default_agent_config.read_text(encoding="utf-8") == (
         '{"enabled": false, "version": 1, "agents": []}\n'
     )
+    external_agent_registry = tmp_path / "synapse-acp-registry.json"
+    assert external_agent_registry.stat().st_mode & 0o777 == 0o600
+    assert external_agent_registry.read_text(encoding="utf-8") == (
+        '{"version": "synapse-e2e", "agents": []}\n'
+    )
     assert (tmp_path / "options" / "ide.general.xml").read_text(encoding="utf-8") == (
         "<application>\n"
         '  <component name="Registry">\n'
@@ -52,6 +57,8 @@ def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
         'value="true" />\n'
         '    <entry key="llm.chat.default.agent.cdn.config.override.path" '
         f'value="{default_agent_config}" />\n'
+        '    <entry key="llm.chat.agent.acp.external.registry.path" '
+        f'value="{external_agent_registry}" />\n'
         "  </component>\n"
         "</application>\n"
     )
@@ -75,6 +82,10 @@ def test_idea_command_binds_jvm_home_to_the_isolated_profile(tmp_path: Path) -> 
     assert (
         "-Dllm.chat.default.agent.cdn.config.override.path="
         f"{tmp_path / 'config' / 'synapse-default-agent.json'}"
+    ) in command
+    assert (
+        "-Dllm.chat.agent.acp.external.registry.path="
+        f"{tmp_path / 'config' / 'synapse-acp-registry.json'}"
     ) in command
     assert "-Dllm.chat.agent.acp.bundled=" in command
     assert "-Dllm.chat.agent.acp.bundled.nightly=" in command

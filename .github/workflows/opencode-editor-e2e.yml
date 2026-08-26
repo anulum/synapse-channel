@@ -305,6 +305,8 @@ jobs:
               grep -Fq \
                 '<registryKey key="llm.chat.default.agent.cdn.config.override.path" defaultValue="" restartRequired="false"' \
                 <<< "$ai_assistant_xml"
+              grep -Fq 'llm.chat.agent.acp.external.registry.path' \
+                <<< "$ai_assistant_xml"
               grep -Fq '<action id="NewChatAgentSelectorAction"' \
                 <<< "$ai_assistant_xml"
               grep -Fq '<action id="AIAssistant.Chat.SendActions.Send"' \
@@ -333,6 +335,18 @@ jobs:
                 "$RUNNER_TEMP/acp-installation-state.contract"
               grep -Fq 'llm.chat.agent.acp.bundled.nightly' \
                 "$RUNNER_TEMP/acp-installation-state.contract"
+              unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar" \
+                com/intellij/ml/llm/agents/acp/registry/AcpRegistryFetcher.class \
+                | strings > "$RUNNER_TEMP/acp-registry-fetcher.contract"
+              grep -Fq 'llm.chat.agent.acp.external.registry.path' \
+                "$RUNNER_TEMP/acp-registry-fetcher.contract"
+              unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar" \
+                com/intellij/ml/llm/agents/acp/registry/AcpExternalRegistry.class \
+                | strings > "$RUNNER_TEMP/acp-external-registry.contract"
+              grep -Fxq 'version' "$RUNNER_TEMP/acp-external-registry.contract"
+              grep -Fxq 'agents' "$RUNNER_TEMP/acp-external-registry.contract"
               unzip -p \
                 "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.chat.jar" \
                 com/intellij/ml/llm/core/chat/defaultAgent/DefaultAgentCdnService.class \

@@ -31,11 +31,13 @@ _USER_AGREEMENT_ENV = "SYNAPSE_JETBRAINS_EULA_ACCEPTED_VERSION"
 _DATA_SHARING_TITLE = "Data Sharing"
 _AGENT_SELECTOR_REGISTRY_KEY = "llm.chat.new.chat.and.agent.selector.enabled"
 _DEFAULT_AGENT_CONFIG_REGISTRY_KEY = "llm.chat.default.agent.cdn.config.override.path"
+_EXTERNAL_AGENT_REGISTRY_PATH_KEY = "llm.chat.agent.acp.external.registry.path"
 _BUNDLED_AGENT_REGISTRY_KEYS = (
     "llm.chat.agent.acp.bundled",
     "llm.chat.agent.acp.bundled.nightly",
 )
 _DEFAULT_AGENT_CONFIG_FILENAME = "synapse-default-agent.json"
+_EXTERNAL_AGENT_REGISTRY_FILENAME = "synapse-acp-registry.json"
 _LLM_SETTINGS_FILENAME = "llm.for.code.xml"
 
 
@@ -284,12 +286,20 @@ def write_idea_profile(config_root: Path) -> None:
         encoding="utf-8",
     )
     default_agent_config.chmod(0o600)
+    external_agent_registry = config_root / _EXTERNAL_AGENT_REGISTRY_FILENAME
+    external_agent_registry.write_text(
+        json.dumps({"version": "synapse-e2e", "agents": []}) + "\n",
+        encoding="utf-8",
+    )
+    external_agent_registry.chmod(0o600)
     registry = (
         "<application>\n"
         '  <component name="Registry">\n'
         f'    <entry key="{_AGENT_SELECTOR_REGISTRY_KEY}" value="true" />\n'
         f'    <entry key="{_DEFAULT_AGENT_CONFIG_REGISTRY_KEY}" '
         f"value={quoteattr(str(default_agent_config))} />\n"
+        f'    <entry key="{_EXTERNAL_AGENT_REGISTRY_PATH_KEY}" '
+        f"value={quoteattr(str(external_agent_registry))} />\n"
         + "  </component>\n"
         + "</application>\n"
     )
@@ -308,6 +318,7 @@ def idea_command(
 ) -> list[str]:
     """Build the pinned IDEA command with an isolated JVM home."""
     default_agent_config = config_root / _DEFAULT_AGENT_CONFIG_FILENAME
+    external_agent_registry = config_root / _EXTERNAL_AGENT_REGISTRY_FILENAME
     return [
         str(binary),
         f"-Duser.home={home}",
@@ -316,6 +327,7 @@ def idea_command(
         f"-Didea.plugins.path={plugins}",
         f"-Didea.log.path={log_root}",
         f"-D{_DEFAULT_AGENT_CONFIG_REGISTRY_KEY}={default_agent_config}",
+        f"-D{_EXTERNAL_AGENT_REGISTRY_PATH_KEY}={external_agent_registry}",
         *(f"-D{key}=" for key in _BUNDLED_AGENT_REGISTRY_KEYS),
         "-Didea.trust.all.projects=true",
         "-Dide.no.platform.update=true",
