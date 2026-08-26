@@ -26,7 +26,7 @@ from synapse_channel.connect_failures import (
     is_superseded_close,
     is_takeover_refused_close,
 )
-from synapse_channel.core.protocol import MessageType, wakes
+from synapse_channel.core.protocol import MessageType, is_directed, wakes
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 from synapse_channel.machine_identity import machine_identity_agent_kwargs
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
@@ -220,19 +220,35 @@ async def _wait(
         The SAME predicate gates the wake collection and the agent's mailbox
         cursor advance, so the two can never drift: a frame this waiter will
         not surface is never consumed from the mailbox either.
+
+        A pane bridge is stricter than a passive waiter.  Its successful wake
+        becomes text submitted to an interactive provider, so a priority or
+        CEO broadcast must remain durable inbox traffic instead of consuming a
+        provider turn in every open terminal.  Exact identity, role, and group
+        targets still wake the pane immediately.
         """
         sender = str(data.get("sender", ""))
+        target = str(data.get("target", "all"))
+        pane_bridge_directed = (
+            wake_capability == WAKE_PANE_BRIDGE
+            and directed_only
+            and is_directed(target, for_name, roles)
+        )
         return (
             data.get("type") == MessageType.CHAT
             and sender != name
             and sender != for_name  # ignore our own sends (the agent sends as for_name)
-            and wakes(
-                str(data.get("target", "all")),
-                for_name,
-                directed_only=directed_only,
-                sender=sender,
-                priority=bool(data.get("priority")),
-                roles=roles,
+            and (
+                pane_bridge_directed
+                if wake_capability == WAKE_PANE_BRIDGE and directed_only
+                else wakes(
+                    target,
+                    for_name,
+                    directed_only=directed_only,
+                    sender=sender,
+                    priority=bool(data.get("priority")),
+                    roles=roles,
+                )
             )
         )
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import time
 import uuid
 from collections.abc import Iterator
@@ -27,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from cli_e2e_helpers import run_cli
+from cli_e2e_helpers import _candidate_environment, _stop, isolated_hub, run_cli
 from synapse_channel.agent_tmux import build_wake_prompt
 
 _TMUX = shutil.which("tmux")
@@ -46,6 +47,20 @@ def _harmless_provider(tmp_path: Path) -> Path:
     )
     provider.chmod(0o700)
     return provider
+
+
+def _recording_provider(tmp_path: Path) -> tuple[Path, Path]:
+    """Create an idle composer that records each actually submitted line."""
+    provider = tmp_path / "codex-fixture-recording"
+    submissions = tmp_path / "codex-fixture-recording.submissions"
+    provider.write_text(
+        "#!/bin/sh\nprintf '\\033[999B› \\n'\nwhile IFS= read -r line; do\n"
+        '  printf \'%s\\n\' "$line" >> "$0.submissions"\n'
+        "  printf '%s\\n› \\n' \"$line\"\ndone\n",
+        encoding="utf-8",
+    )
+    provider.chmod(0o700)
+    return provider, submissions
 
 
 def _modal_provider(tmp_path: Path) -> Path:
@@ -279,6 +294,91 @@ def test_agent_tmux_wait_starts_and_verifies_a_missing_provider(tmp_path: Path) 
         assert health.ok(), health.output
         assert "tmux session: online" in health.stdout
         assert "agent pane: active" in health.stdout
+
+
+def test_agent_tmux_wait_ignores_priority_broadcast_before_exact_wake(tmp_path: Path) -> None:
+    """A real hub and tmux pane prove global priority traffic cannot inject."""
+    provider, submissions = _recording_provider(tmp_path)
+    harmless_command = str(provider)
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+    with _throwaway_session() as session, isolated_hub(tmp_path) as hub:
+        common = [
+            "--identity",
+            _IDENTITY,
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            harmless_command,
+            "--submit-delay",
+            "0",
+            "--uri",
+            hub.uri,
+        ]
+        waiter = subprocess.Popen(  # noqa: S603 - candidate CLI, test-only
+            [
+                sys.executable,
+                "-u",
+                "-m",
+                "synapse_channel.cli",
+                "agent-tmux",
+                "wait",
+                *common,
+                "--max-wakes",
+                "1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=_candidate_environment({"XDG_RUNTIME_DIR": str(runtime)}),
+        )
+        try:
+            deadline = time.monotonic() + 8.0
+            while time.monotonic() < deadline:
+                who = run_cli("who", uri=hub.uri)
+                if f"{_IDENTITY}-pane-rx" in who.stdout and "›" in _capture_pane(session):
+                    break
+                time.sleep(0.05)
+            else:
+                raise AssertionError("pane bridge did not become ready")
+
+            broadcast = run_cli(
+                "send",
+                "global priority",
+                "--name",
+                "A",
+                "--target",
+                "all",
+                "--priority",
+                uri=hub.uri,
+            )
+            assert broadcast.ok(), broadcast.output
+            time.sleep(0.25)
+            assert waiter.poll() is None
+            assert "Synapse wake for" not in _capture_pane(session)
+            assert not submissions.exists()
+
+            directed = run_cli(
+                "send",
+                "exact wake",
+                "--name",
+                "A",
+                "--target",
+                _IDENTITY,
+                uri=hub.uri,
+            )
+            assert directed.ok(), directed.output
+            output, _ = waiter.communicate(timeout=8.0)
+            assert waiter.returncode == 0, output
+            pane = _normalise(_capture_pane(session))
+            assert _normalise(build_wake_prompt(_IDENTITY)) in pane
+            submitted = submissions.read_text(encoding="utf-8").splitlines()
+            assert submitted == [build_wake_prompt(_IDENTITY)]
+        finally:
+            if waiter.poll() is None:
+                _stop(waiter)
 
 
 def test_codex_tmux_alias_injects_the_same_fixed_prompt(tmp_path: Path) -> None:

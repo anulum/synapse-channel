@@ -47,7 +47,14 @@ def test_dashboard_index_page_is_served(tmp_path: Path) -> None:
 def test_doctor_passes_against_a_live_hub(tmp_path: Path) -> None:
     """``doctor --uri`` reports the isolated hub answered, without failures."""
     with isolated_hub(tmp_path) as hub:
-        result = run_cli("doctor", uri=hub.uri)
+        result = run_cli(
+            "doctor",
+            uri=hub.uri,
+            env={
+                "SYN_PROJECT": "SYNAPSE-E2E",
+                "SYN_IDENTITY": "SYNAPSE-E2E/doctor-test",
+            },
+        )
         # doctor exits 0 with warnings allowed; a failure is a non-zero exit.
         assert result.returncode == 0, result.output
         assert "hub at" in result.output

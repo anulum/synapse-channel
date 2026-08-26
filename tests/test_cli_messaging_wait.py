@@ -537,6 +537,41 @@ async def test_wait_directed_only_wakes_on_priority_broadcast() -> None:
     assert code == 0  # a priority broadcast wakes even a directed-only waiter
 
 
+async def test_pane_bridge_ignores_global_priority_wakes_then_accepts_exact_target(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A live pane bridge spends a provider turn only for directed traffic."""
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        observer = await connect_agent("OBSERVER", uri)
+        wait_task = asyncio.create_task(
+            cli_messaging._wait(
+                uri=uri,
+                name="B-pane-rx",
+                for_name="B",
+                timeout=2.0,
+                directed_only=True,
+                poll_interval=0.01,
+                wake_capability=WAKE_PANE_BRIDGE,
+            )
+        )
+        try:
+            await _wait_for_presence(observer, "B-pane-rx")
+            await _send_chat(uri, "A", "all", "global priority", priority=True)
+            await _send_chat(uri, "CEO", "all", "global directive")
+            await asyncio.sleep(0.1)
+            assert not wait_task.done(), "a global broadcast woke an interactive pane"
+            await _send_chat(uri, "A", "B", "exact wake")
+            code = await wait_task
+        finally:
+            await close_agents(observer)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "A: exact wake" in out
+    assert "global priority" not in out
+    assert "global directive" not in out
+
+
 async def test_wait_exits_when_connection_drops() -> None:
     manager: AbstractAsyncContextManager[tuple[SynapseHub, str]] = running_hub(SynapseHub())
     _hub, uri = await manager.__aenter__()
