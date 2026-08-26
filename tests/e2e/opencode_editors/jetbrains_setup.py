@@ -307,6 +307,7 @@ def idea_command(
     project: Path,
 ) -> list[str]:
     """Build the pinned IDEA command with an isolated JVM home."""
+    default_agent_config = config_root / _DEFAULT_AGENT_CONFIG_FILENAME
     return [
         str(binary),
         f"-Duser.home={home}",
@@ -314,6 +315,7 @@ def idea_command(
         f"-Didea.system.path={system_root}",
         f"-Didea.plugins.path={plugins}",
         f"-Didea.log.path={log_root}",
+        f"-D{_DEFAULT_AGENT_CONFIG_REGISTRY_KEY}={default_agent_config}",
         *(f"-D{key}=" for key in _BUNDLED_AGENT_REGISTRY_KEYS),
         "-Didea.trust.all.projects=true",
         "-Dide.no.platform.update=true",

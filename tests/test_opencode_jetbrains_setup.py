@@ -72,6 +72,10 @@ def test_idea_command_binds_jvm_home_to_the_isolated_profile(tmp_path: Path) -> 
     )
 
     assert command[1] == f"-Duser.home={tmp_path / 'home'}"
+    assert (
+        "-Dllm.chat.default.agent.cdn.config.override.path="
+        f"{tmp_path / 'config' / 'synapse-default-agent.json'}"
+    ) in command
     assert "-Dllm.chat.agent.acp.bundled=" in command
     assert "-Dllm.chat.agent.acp.bundled.nightly=" in command
     assert command[-1] == str(tmp_path / "project")

@@ -284,6 +284,8 @@ jobs:
               test -f "$RUNNER_TEMP/jetbrains-plugins/fullLine/lib/fullLine.jar"
               test -f \
                 "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.core.jar"
+              test -f \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.chat.jar"
               ai_assistant_xml=$(unzip -p \
                 "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar" \
                 META-INF/plugin.xml)
@@ -331,6 +333,18 @@ jobs:
                 "$RUNNER_TEMP/acp-installation-state.contract"
               grep -Fq 'llm.chat.agent.acp.bundled.nightly' \
                 "$RUNNER_TEMP/acp-installation-state.contract"
+              unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.chat.jar" \
+                com/intellij/ml/llm/core/chat/defaultAgent/DefaultAgentCdnService.class \
+                | strings > "$RUNNER_TEMP/default-agent-cdn-service.contract"
+              grep -Fq 'llm.chat.default.agent.cdn.config.override.path' \
+                "$RUNNER_TEMP/default-agent-cdn-service.contract"
+              unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.chat.jar" \
+                com/intellij/ml/llm/core/chat/defaultAgent/DefaultAgentCdnConfig.class \
+                | strings > "$RUNNER_TEMP/default-agent-cdn-config.contract"
+              grep -Fxq 'enabled' "$RUNNER_TEMP/default-agent-cdn-config.contract"
+              grep -Fxq 'agents' "$RUNNER_TEMP/default-agent-cdn-config.contract"
               echo "SYNAPSE_JETBRAINS_BIN=$idea_bin" >> "$GITHUB_ENV"
               echo "SYNAPSE_JETBRAINS_PLUGINS=$RUNNER_TEMP/jetbrains-plugins" >> "$GITHUB_ENV"
               ;;
