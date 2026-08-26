@@ -20,6 +20,7 @@ from e2e.opencode_editors import (
     jetbrains_x11_driver,
 )
 from e2e.opencode_editors.jetbrains_selector import (
+    inspect_pinned_agent,
     open_agent_selector,
     select_pinned_agent,
 )
@@ -512,6 +513,59 @@ def test_agent_selector_reacquires_after_filtering_confirms_once_and_proves_clos
         jetbrains_selector._SelectorGeometryPhase.FILTERED_READY,
         jetbrains_selector._SelectorGeometryPhase.FILTERED_READY,
     ]
+
+
+def test_agent_selector_inspection_filters_and_dismisses_without_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actions: list[tuple[str, ...]] = []
+    captures: list[bool] = []
+    monkeypatch.setattr(
+        jetbrains_selector,
+        "is_agent_selector_popup",
+        lambda selector, project, **_kwargs: selector == "selector" and project == "123",
+    )
+    snapshots = iter([("selector",), ("filtered",)])
+    monkeypatch.setattr(
+        jetbrains_selector,
+        "visible_agent_selector_popups",
+        lambda *_args, **_kwargs: next(snapshots),
+    )
+    monkeypatch.setattr(
+        jetbrains_selector,
+        "visible_jetbrains_window_rectangles",
+        lambda **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        jetbrains_selector,
+        "owned_agent_selector_popups",
+        lambda *_args, **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_focus_window_for_input",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_checked_xdotool",
+        lambda _action, *args, **_kwargs: actions.append(args),
+    )
+    monkeypatch.setattr(jetbrains_x11_driver, "_bounded_poll_sleep", lambda _deadline: None)
+
+    inspect_pinned_agent(
+        "selector",
+        "123",
+        deadline=float("inf"),
+        capture_filtered_selector=lambda: captures.append(True),
+    )
+
+    assert actions == [
+        ("key", "ctrl+a"),
+        ("type", "--delay", "1", "--", "SYNAPSE OpenCode E2E"),
+        ("key", "Escape"),
+    ]
+    assert captures == [True]
 
 
 def test_agent_selector_rejects_ambiguous_filtered_reacquisition(

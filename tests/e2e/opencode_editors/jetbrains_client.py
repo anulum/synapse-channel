@@ -29,10 +29,10 @@ from e2e.opencode_editors.jetbrains_selector import (
     AGENT_NAME as _AGENT_NAME,
 )
 from e2e.opencode_editors.jetbrains_selector import (
-    open_agent_selector as _open_agent_selector,
+    inspect_pinned_agent as _inspect_pinned_agent,
 )
 from e2e.opencode_editors.jetbrains_selector import (
-    select_pinned_agent as _select_pinned_agent,
+    open_agent_selector as _open_agent_selector,
 )
 from e2e.opencode_editors.jetbrains_setup import (
     complete_first_run_agreements,
@@ -157,7 +157,7 @@ def main() -> int:
                 guard=lifecycle.assert_at_most_one,
             )
             lifecycle.assert_at_most_one()
-            _select_pinned_agent(
+            _inspect_pinned_agent(
                 selector,
                 window,
                 deadline=selection_deadline,

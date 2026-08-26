@@ -209,6 +209,76 @@ def select_pinned_agent(
         If selector identity, ownership, cardinality, focus, input, or stable
         closure cannot be proven before the deadline.
     """
+    selector = _filter_pinned_agent(
+        selector,
+        project,
+        deadline=deadline,
+        guard=guard,
+        capture_filtered_selector=capture_filtered_selector,
+    )
+    x11._focus_window_for_input(selector, deadline=deadline)
+    x11._checked_xdotool(
+        "confirm the exact SYNAPSE OpenCode ACP agent",
+        "key",
+        "Return",
+        deadline=deadline,
+    )
+    _prove_selector_closed(
+        selector,
+        project,
+        deadline=deadline,
+        guard=guard,
+        action="confirmation",
+    )
+
+
+def inspect_pinned_agent(
+    selector: str,
+    project: str,
+    *,
+    deadline: float,
+    guard: Callable[[], object] | None = None,
+    capture_filtered_selector: Callable[[], None] | None = None,
+) -> None:
+    """Filter to the pinned agent, capture it, and dismiss without reselection.
+
+    This path is used when the isolated persistent profile has already selected
+    and started the exact local agent. Confirming the same row would create a
+    second chat lifecycle in the pinned IDE, so the selector is exercised and
+    owner-proven but dismissed with Escape.
+    """
+    selector = _filter_pinned_agent(
+        selector,
+        project,
+        deadline=deadline,
+        guard=guard,
+        capture_filtered_selector=capture_filtered_selector,
+    )
+    x11._focus_window_for_input(selector, deadline=deadline)
+    x11._checked_xdotool(
+        "dismiss the inspected SYNAPSE OpenCode ACP agent",
+        "key",
+        "Escape",
+        deadline=deadline,
+    )
+    _prove_selector_closed(
+        selector,
+        project,
+        deadline=deadline,
+        guard=guard,
+        action="inspection dismissal",
+    )
+
+
+def _filter_pinned_agent(
+    selector: str,
+    project: str,
+    *,
+    deadline: float,
+    guard: Callable[[], object] | None,
+    capture_filtered_selector: Callable[[], None] | None,
+) -> str:
+    """Return the sole owner-proven selector after filtering the exact agent."""
     if not is_agent_selector_popup(selector, project, deadline=deadline):
         raise RuntimeError("refusing input outside the pinned ACP agent selector popup")
     matches = visible_agent_selector_popups(project, deadline=deadline)
@@ -241,13 +311,18 @@ def select_pinned_agent(
         capture_filtered_selector()
     if guard is not None:
         guard()
-    x11._focus_window_for_input(selector, deadline=deadline)
-    x11._checked_xdotool(
-        "confirm the exact SYNAPSE OpenCode ACP agent",
-        "key",
-        "Return",
-        deadline=deadline,
-    )
+    return selector
+
+
+def _prove_selector_closed(
+    selector: str,
+    project: str,
+    *,
+    deadline: float,
+    guard: Callable[[], object] | None,
+    action: str,
+) -> None:
+    """Require stable closure of the owner-proven selector after one action."""
     closed_snapshots = 0
     while time.monotonic() < deadline:
         if guard is not None:
@@ -266,7 +341,7 @@ def select_pinned_agent(
             continue
         if len(matches) > 1:
             raise RuntimeError(
-                "JetBrains ACP agent selector cardinality changed after confirmation: "
+                f"JetBrains ACP agent selector cardinality changed after {action}: "
                 f"matches={matches!r}"
             )
         visible_windows = {rectangle.window for rectangle in rectangles}
@@ -274,12 +349,10 @@ def select_pinned_agent(
             selector = matches[0]
             closed_snapshots = 0
         elif selector in visible_windows:
-            raise RuntimeError(
-                "JetBrains ACP agent selector lost pinned ownership after confirmation"
-            )
+            raise RuntimeError(f"JetBrains ACP agent selector lost pinned ownership after {action}")
         else:
             closed_snapshots += 1
             if closed_snapshots >= _AGENT_SELECTOR_CLOSED_SNAPSHOTS:
                 return
         x11._bounded_poll_sleep(deadline)
-    raise RuntimeError("JetBrains ACP agent selector remained open after confirmation")
+    raise RuntimeError(f"JetBrains ACP agent selector remained open after {action}")

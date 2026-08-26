@@ -34,6 +34,7 @@ def test_selector_lifecycle_is_not_owned_by_the_client_orchestrator() -> None:
     )
     lifecycle_contract = (
         "def find_agent_selector_popup(",
+        "def inspect_pinned_agent(",
         "def select_pinned_agent(",
     )
     for name in window_contract + lifecycle_contract:
@@ -178,7 +179,7 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
         open_selector,
     )
 
-    def select_agent(
+    def inspect_agent(
         _selector: str,
         _window: str,
         *,
@@ -188,9 +189,9 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
     ) -> None:
         guard()
         capture_filtered_selector()
-        events.append("selected")
+        events.append("inspected")
 
-    monkeypatch.setattr(jetbrains_client, "_select_pinned_agent", select_agent)
+    monkeypatch.setattr(jetbrains_client, "_inspect_pinned_agent", inspect_agent)
 
     def wait_log(
         log_root: Path,
@@ -257,11 +258,11 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
     assert (artifacts / "intellij-agent-selector.png").read_bytes() == b"png"
     assert (artifacts / "intellij.png").read_bytes() == b"png"
     assert (artifacts / "intellij-idea-tail.log").is_file()
-    assert events.index("selector-open") < events.index("selected")
+    assert events.index("selector-open") < events.index("inspected")
     assert events.index("lifecycle-capture") < events.index("agreements")
     assert "none" not in events
     assert "chat" not in events
-    assert "selected" in events
+    assert "inspected" in events
     assert "prompt" in events
     assert events[-1] == "cleanup"
 
