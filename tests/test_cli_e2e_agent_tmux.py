@@ -17,6 +17,7 @@ so no provider CLI is needed. The whole file skips when ``tmux`` is not installe
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -29,7 +30,7 @@ from pathlib import Path
 import pytest
 
 from cli_e2e_helpers import _candidate_environment, _stop, isolated_hub, run_cli
-from synapse_channel.agent_tmux import build_wake_prompt
+from synapse_channel.agent_tmux import AgentTmuxConfig, build_wake_prompt, registry_path
 
 _TMUX = shutil.which("tmux")
 pytestmark = pytest.mark.skipif(_TMUX is None, reason="tmux is not installed")
@@ -379,6 +380,88 @@ def test_agent_tmux_wait_ignores_priority_broadcast_before_exact_wake(tmp_path: 
         finally:
             if waiter.poll() is None:
                 _stop(waiter)
+
+
+def test_agent_tmux_wait_submits_a_persisted_staged_prompt_without_repasting(
+    tmp_path: Path,
+) -> None:
+    """A real tmux pane and CLI prove retry is at-most-once after paste."""
+    assert _TMUX is not None
+    provider, submissions = _recording_provider(tmp_path)
+    harmless_command = str(provider)
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+    cli_env = {"XDG_RUNTIME_DIR": str(runtime)}
+    with _throwaway_session() as session:
+        common = [
+            "--identity",
+            _IDENTITY,
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            harmless_command,
+            "--submit-delay",
+            "0",
+        ]
+        started = run_cli("agent-tmux", "start", *common, env=cli_env)
+        assert started.ok(), started.output
+        assert "›" in _wait_for_idle_fixture(session)
+
+        prompt = build_wake_prompt(_IDENTITY)
+        buffer_name = f"synapse-e2e-staged-{uuid.uuid4().hex[:8]}"
+        set_buffer = subprocess.run(  # noqa: S603 - fixed tmux args, test-only
+            [_TMUX, "set-buffer", "-b", buffer_name, "--", prompt],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert set_buffer.returncode == 0, set_buffer.stderr
+        paste_buffer = subprocess.run(  # noqa: S603 - fixed tmux args, test-only
+            [_TMUX, "paste-buffer", "-b", buffer_name, "-d", "-p", "-t", session],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert paste_buffer.returncode == 0, paste_buffer.stderr
+        assert _normalise(prompt) in _normalise(_capture_pane(session))
+
+        config = AgentTmuxConfig(
+            identity=_IDENTITY,
+            session=session,
+            cwd=tmp_path,
+            agent_command=(harmless_command,),
+            registry_dir=runtime / "synapse-agent-tmux",
+            submit_delay=0,
+        )
+        registry_path(config).write_text(
+            json.dumps(
+                {
+                    "identity": _IDENTITY,
+                    "session": session,
+                    "cwd": str(tmp_path),
+                    "pending_wake": True,
+                    "wake_prompt_staged": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        waited = run_cli(
+            "agent-tmux",
+            "wait",
+            *common,
+            "--max-wakes",
+            "1",
+            env=cli_env,
+        )
+
+        assert waited.ok(), waited.output
+        assert submissions.read_text(encoding="utf-8").splitlines() == [prompt]
+        payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+        assert payload["pending_wake"] is False
+        assert payload["wake_prompt_staged"] is False
 
 
 def test_codex_tmux_alias_injects_the_same_fixed_prompt(tmp_path: Path) -> None:

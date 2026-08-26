@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Make queued `agent-tmux` delivery at-most-once after a successful pane paste.
+  The private registry now distinguishes an already staged wake prompt from an
+  unpasted pending wake, so a modal second safety probe can delay Enter without
+  concatenating another routing prompt into the provider composer on each retry.
+
 ## [0.99.19] - 2026-08-26
 
 ### Changed

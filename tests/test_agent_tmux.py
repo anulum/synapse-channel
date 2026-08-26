@@ -259,6 +259,7 @@ def test_inject_wake_bracket_pastes_then_submits_after_two_idle_probes(tmp_path:
     payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
     assert payload["last_inject_returncode"] == 0
     assert payload["pending_wake"] is False
+    assert payload["wake_prompt_staged"] is False
 
 
 def test_inject_wake_queues_when_buffer_setup_fails(tmp_path: Path) -> None:
@@ -306,6 +307,61 @@ def test_inject_wake_reports_failed_submit(tmp_path: Path) -> None:
     assert len([call for call in runner.calls if call[1] == "send-keys"]) == 1
     payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
     assert payload["pending_wake"] is True
+    assert payload["wake_prompt_staged"] is True
+
+
+def test_inject_wake_retries_a_staged_prompt_without_pasting_it_again(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["idle"]),
+            _result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["modal"]),
+        ]
+    )
+
+    first = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert first.injected is False
+    assert len([call for call in runner.calls if call[1] == "paste-buffer"]) == 1
+    runner.results = [_result(["tmux", "send-keys"], 0)]
+    second = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert second.injected is True
+    assert second.detail == "injected staged wake"
+    assert len([call for call in runner.calls if call[1] == "paste-buffer"]) == 1
+    assert len([call for call in runner.calls if call[1] == "set-buffer"]) == 1
+    assert len([call for call in runner.calls if call[1] == "send-keys"]) == 1
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["pending_wake"] is False
+    assert payload["wake_prompt_staged"] is False
+
+
+def test_inject_wake_never_repastes_a_staged_prompt_that_disappeared(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    registry_path(config).write_text(
+        json.dumps(
+            {
+                "identity": config.identity,
+                "session": config.session,
+                "cwd": str(config.cwd),
+                "pending_wake": True,
+                "wake_prompt_staged": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = RecordingRunner()
+
+    result = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert result.injected is True
+    assert result.detail == "staged wake no longer present; not repasted"
+    assert not [
+        call for call in runner.calls if call[1] in {"set-buffer", "paste-buffer", "send-keys"}
+    ]
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["pending_wake"] is False
+    assert payload["wake_prompt_staged"] is False
 
 
 @pytest.mark.parametrize("provider", sorted(PROVIDER_SCREENS))

@@ -215,6 +215,7 @@ class RegistryRecord:
     last_start_returncode: int | None = None
     last_inject_returncode: int | None = None
     pending_wake: bool = False
+    wake_prompt_staged: bool = False
 
 
 def agent_binary(config: AgentTmuxConfig) -> str:
@@ -286,6 +287,7 @@ def _write_registry(
     last_start_returncode: int | None = None,
     last_inject_returncode: int | None = None,
     pending_wake: bool | None = None,
+    wake_prompt_staged: bool | None = None,
 ) -> None:
     """Write the local wake-target registry atomically, preserving prior state."""
     # Parent is already an owner-only directory via :func:`_registry_dir`.
@@ -314,6 +316,11 @@ def _write_registry(
         pending_wake=(
             pending_wake if pending_wake is not None else existing.get("pending_wake") is True
         ),
+        wake_prompt_staged=(
+            wake_prompt_staged
+            if wake_prompt_staged is not None
+            else existing.get("wake_prompt_staged") is True
+        ),
     )
     temp = path.with_suffix(".tmp")
     temp.write_text(json.dumps(record.__dict__, sort_keys=True) + "\n", encoding="utf-8")
@@ -332,6 +339,19 @@ def _pending_wake(config: AgentTmuxConfig) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     return isinstance(payload, dict) and payload.get("pending_wake") is True
+
+
+def _wake_prompt_staged(config: AgentTmuxConfig) -> bool:
+    """Return whether the queued wake prompt is already present in the pane."""
+    try:
+        payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return (
+        isinstance(payload, dict)
+        and payload.get("pending_wake") is True
+        and payload.get("wake_prompt_staged") is True
+    )
 
 
 def build_wake_prompt(identity: str) -> str:
@@ -570,11 +590,12 @@ def inject_wake(
 
     The pane is captured before any mutation and must match a provider-specific
     idle profile with no modal/busy marker. The fixed prompt is then delivered as
-    one bracketed paste, not as individual shortcut-capable keys. After the
-    submit delay a second capture must still show both the idle composer and the
-    exact fixed prompt before Enter is sent. Any unknown or ambiguous state is a
-    successful queue operation: the consumed wake remains in the private local
-    registry for :func:`wait_and_wake` to retry after a bounded quiet interval.
+    one bracketed paste, not as individual shortcut-capable keys. The private
+    registry records that paste before the second safety probe, so a queued retry
+    never pastes the same wake a second time. After the submit delay a second
+    capture must still show both the idle composer and the exact fixed prompt
+    before Enter is sent. Any unknown or ambiguous state is a successful queue
+    operation retried by :func:`wait_and_wake` after a bounded quiet interval.
 
     Parameters
     ----------
@@ -604,16 +625,64 @@ def inject_wake(
             returncode=BINDING_REFUSAL_EXIT_CODE,
             detail=f"refusing wake injection: {binding_detail}",
         )
-    safe, safety_detail = _pane_is_safe_for_submit(config, runner=runner)
+    prompt = build_wake_prompt(config.identity)
+    prompt_staged = _wake_prompt_staged(config)
+    safe, safety_detail = _pane_is_safe_for_submit(
+        config,
+        runner=runner,
+        required_text=prompt if prompt_staged else None,
+    )
     if not safe:
-        _write_registry(config, last_inject_returncode=0, pending_wake=True)
+        if prompt_staged and safety_detail == "wake prompt was not accepted by the idle composer":
+            # The prior paste is no longer in the idle composer. It may already
+            # have been submitted or deliberately cleared; either way, replaying
+            # it would violate the pane transport's at-most-once contract. The
+            # underlying inbox entry remains durable for an explicit read.
+            _write_registry(
+                config,
+                last_inject_returncode=0,
+                pending_wake=False,
+                wake_prompt_staged=False,
+            )
+            return AgentTmuxWakeResult(
+                injected=True,
+                started=False,
+                returncode=0,
+                detail="staged wake no longer present; not repasted",
+            )
+        _write_registry(
+            config,
+            last_inject_returncode=0,
+            pending_wake=True,
+            wake_prompt_staged=prompt_staged,
+        )
         return AgentTmuxWakeResult(
             injected=False,
             started=False,
             returncode=0,
             detail=f"wake queued: {safety_detail}",
         )
-    prompt = build_wake_prompt(config.identity)
+    if prompt_staged:
+        submit_proc = runner(
+            [config.tmux_bin, "send-keys", "-t", config.session, "Enter"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        _write_registry(
+            config,
+            last_inject_returncode=submit_proc.returncode,
+            pending_wake=submit_proc.returncode != 0,
+            wake_prompt_staged=submit_proc.returncode != 0,
+        )
+        return AgentTmuxWakeResult(
+            injected=submit_proc.returncode == 0,
+            started=False,
+            returncode=submit_proc.returncode,
+            detail="injected staged wake"
+            if submit_proc.returncode == 0
+            else (submit_proc.stderr or submit_proc.stdout).strip() or "submit failed",
+        )
     buffer_name = f"synapse-wake-{_safe_key(config.identity)}"
     buffer_proc = runner(
         [
@@ -633,6 +702,7 @@ def inject_wake(
             config,
             last_inject_returncode=buffer_proc.returncode,
             pending_wake=True,
+            wake_prompt_staged=False,
         )
         return AgentTmuxWakeResult(
             injected=False,
@@ -660,6 +730,7 @@ def inject_wake(
             config,
             last_inject_returncode=paste_proc.returncode,
             pending_wake=True,
+            wake_prompt_staged=False,
         )
         return AgentTmuxWakeResult(
             injected=False,
@@ -667,6 +738,12 @@ def inject_wake(
             returncode=paste_proc.returncode,
             detail=(paste_proc.stderr or paste_proc.stdout).strip() or "paste failed",
         )
+    _write_registry(
+        config,
+        last_inject_returncode=0,
+        pending_wake=True,
+        wake_prompt_staged=True,
+    )
     sleeper(max(config.submit_delay, 0.0))
     safe, safety_detail = _pane_is_safe_for_submit(
         config,
@@ -674,7 +751,12 @@ def inject_wake(
         required_text=prompt,
     )
     if not safe:
-        _write_registry(config, last_inject_returncode=0, pending_wake=True)
+        _write_registry(
+            config,
+            last_inject_returncode=0,
+            pending_wake=True,
+            wake_prompt_staged=True,
+        )
         return AgentTmuxWakeResult(
             injected=False,
             started=False,
@@ -691,6 +773,7 @@ def inject_wake(
         config,
         last_inject_returncode=submit_proc.returncode,
         pending_wake=submit_proc.returncode != 0,
+        wake_prompt_staged=submit_proc.returncode != 0,
     )
     return AgentTmuxWakeResult(
         injected=submit_proc.returncode == 0,
