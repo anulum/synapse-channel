@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.19] - 2026-08-26
+
 ### Changed
 
 - Let embedded hubs bind port `0` atomically and report the kernel-assigned
