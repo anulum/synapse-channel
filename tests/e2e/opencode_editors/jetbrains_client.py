@@ -119,6 +119,12 @@ def main() -> int:
             text=True,
             start_new_session=True,
         )
+        lifecycle = JetBrainsLifecycleGuard.capture(
+            log_root,
+            trace,
+            agent_id=_AGENT_ID,
+            agent_name=_AGENT_NAME,
+        )
         try:
             startup_deadline = time.monotonic() + _STARTUP_TIMEOUT_SECONDS
             complete_first_run_agreements(startup_deadline)
@@ -143,20 +149,14 @@ def main() -> int:
                     _PROJECT_READY_COMPLETION,
                 ),
             )
-            lifecycle = JetBrainsLifecycleGuard.capture(
-                log_root,
-                trace,
-                agent_id=_AGENT_ID,
-                agent_name=_AGENT_NAME,
-            )
             lifecycle.assert_at_most_one()
             selection_deadline = time.monotonic() + _AGENT_SELECTION_TIMEOUT_SECONDS
             selector = _open_agent_selector(
                 window,
                 deadline=selection_deadline,
-                guard=lifecycle.require_none,
+                guard=lifecycle.assert_at_most_one,
             )
-            lifecycle.require_none()
+            lifecycle.assert_at_most_one()
             _select_pinned_agent(
                 selector,
                 window,

@@ -161,11 +161,12 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
         "skip_islands_onboarding",
         lambda _deadline, _window: events.append("onboarding"),
     )
-    monkeypatch.setattr(
-        JetBrainsLifecycleGuard,
-        "capture",
-        lambda *_args, **_kwargs: lifecycle,
-    )
+
+    def capture_lifecycle(*_args: object, **_kwargs: object) -> _FakeLifecycle:
+        events.append("lifecycle-capture")
+        return lifecycle
+
+    monkeypatch.setattr(JetBrainsLifecycleGuard, "capture", capture_lifecycle)
 
     def open_selector(*_args: object, **_kwargs: object) -> str:
         events.append("selector-open")
@@ -257,6 +258,8 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
     assert (artifacts / "intellij.png").read_bytes() == b"png"
     assert (artifacts / "intellij-idea-tail.log").is_file()
     assert events.index("selector-open") < events.index("selected")
+    assert events.index("lifecycle-capture") < events.index("agreements")
+    assert "none" not in events
     assert "chat" not in events
     assert "selected" in events
     assert "prompt" in events
