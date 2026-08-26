@@ -35,6 +35,13 @@ _BUNDLED_AGENT_REGISTRY_KEYS = (
     "llm.chat.agent.acp.bundled",
     "llm.chat.agent.acp.bundled.nightly",
 )
+_BUNDLED_AGENT_IDS = (
+    "acp.registry.claude-acp",
+    "acp.registry.codex-acp",
+    "acp.registry.gemini",
+    "acp.registry.github-copilot",
+    "acp.registry.junie",
+)
 _DEFAULT_AGENT_CONFIG_FILENAME = "synapse-default-agent.json"
 _LLM_SETTINGS_FILENAME = "llm.for.code.xml"
 
@@ -240,6 +247,17 @@ def write_acp_config(home: Path, proxy_argv: list[str], *, agent_name: str) -> N
     config_path = config_dir / "acp.json"
     config_path.write_text(json.dumps(config) + "\n", encoding="utf-8")
     config_path.chmod(0o600)
+
+
+def write_bundled_agent_state(data_root: Path) -> None:
+    """Disable every bundled ACP agent in the isolated acceptance profile."""
+    state_dir = data_root / "acp-agents"
+    state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    state_dir.chmod(0o700)
+    state_path = state_dir / "installed.json"
+    state = {"agents": {}, "disabledAgents": list(_BUNDLED_AGENT_IDS)}
+    state_path.write_text(json.dumps(state) + "\n", encoding="utf-8")
+    state_path.chmod(0o600)
 
 
 def write_idea_profile(config_root: Path) -> None:

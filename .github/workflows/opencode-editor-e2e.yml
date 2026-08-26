@@ -331,6 +331,28 @@ jobs:
                 "$RUNNER_TEMP/acp-installation-state.contract"
               grep -Fq 'llm.chat.agent.acp.bundled.nightly' \
                 "$RUNNER_TEMP/acp-installation-state.contract"
+              unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar" \
+                'com/intellij/ml/llm/agents/acp/registry/AcpAgentInstallationState$StateData.class' \
+                | strings > "$RUNNER_TEMP/acp-installation-data.contract"
+              grep -Fxq 'agents' "$RUNNER_TEMP/acp-installation-data.contract"
+              grep -Fxq 'disabledAgents' "$RUNNER_TEMP/acp-installation-data.contract"
+              unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar" \
+                com/intellij/ml/llm/agents/acp/registry/AcpPaths.class \
+                | strings > "$RUNNER_TEMP/acp-paths.contract"
+              grep -Fxq 'acp-agents' "$RUNNER_TEMP/acp-paths.contract"
+              grep -Fxq 'installed.json' "$RUNNER_TEMP/acp-paths.contract"
+              unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar" \
+                com/intellij/ml/llm/agents/acp/registry/AcpBundledAgentUtils.class \
+                | strings > "$RUNNER_TEMP/acp-bundled-agents.contract"
+              grep -Fq 'codex-acp' "$RUNNER_TEMP/acp-bundled-agents.contract"
+              grep -Fxq 'github-copilot' "$RUNNER_TEMP/acp-bundled-agents.contract"
+              grep -Fxq 'acp.registry.claude-acp' \
+                "$RUNNER_TEMP/acp-bundled-agents.contract"
+              grep -Fxq 'acp.registry.gemini' "$RUNNER_TEMP/acp-bundled-agents.contract"
+              grep -Fxq 'acp.registry.junie' "$RUNNER_TEMP/acp-bundled-agents.contract"
               echo "SYNAPSE_JETBRAINS_BIN=$idea_bin" >> "$GITHUB_ENV"
               echo "SYNAPSE_JETBRAINS_PLUGINS=$RUNNER_TEMP/jetbrains-plugins" >> "$GITHUB_ENV"
               ;;
