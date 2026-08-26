@@ -40,7 +40,6 @@ def test_driver_consumes_the_shared_timing_budget() -> None:
 
     assert jetbrains_client._STARTUP_TIMEOUT_SECONDS == budget.startup_seconds
     assert jetbrains_client._PROJECT_READY_TIMEOUT_SECONDS == budget.chat_ready_seconds
-    assert jetbrains_client._AGENT_SELECTION_TIMEOUT_SECONDS == budget.agent_selection_seconds
     assert jetbrains_client._ACP_HANDSHAKE_TIMEOUT_SECONDS == budget.acp_handshake_seconds
     assert jetbrains_client._ACP_PROMPT_TIMEOUT_SECONDS == budget.acp_prompt_seconds
     assert jetbrains_x11_driver._GUI_COMMAND_TIMEOUT_SECONDS == budget.command_timeout_seconds

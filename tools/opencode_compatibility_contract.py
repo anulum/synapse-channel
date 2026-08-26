@@ -76,7 +76,7 @@ _EXPECTED_COMPONENTS = frozenset(
 )
 _EXPECTED_CLIENTS = {
     "emacs": ("agent-shell", "0.59.1", "Agent Shell", ""),
-    "jetbrains": ("JetBrains.IntelliJ IDEA", "2026.1.4", "IntelliJ IDEA", ""),
+    "jetbrains": ("JetBrains.IntelliJ IDEA", "2026.2.1", "IntelliJ IDEA", ""),
     "neovim": ("CodeCompanion.nvim", "1.0.0", "CodeCompanion.nvim", ""),
     "zed": (
         "zed",

@@ -364,23 +364,25 @@ the exact OpenCode binary and a local deterministic provider:
 | Neovim | Neovim 0.12.4 and CodeCompanion.nvim 19.19.0 | `CodeCompanion.nvim` `1.0.0` |
 | Emacs | Emacs 29.3, Agent Shell 0.59.1, `acp.el` 0.12.2, and Shell Maker 0.93.5 | `agent-shell` `0.59.1` |
 | Zed | Zed 1.10.3 under Xvfb through `agent::NewExternalAgentThread` | `zed` `1.10.3+stable.324.0c54c414d522234de7298039708ffe85a116892a` |
-| JetBrains | IntelliJ IDEA 2026.1.4, AI Assistant 261.26222.65, and required Full Line Code Completion 261.26222.65 under Xvfb | `JetBrains.IntelliJ IDEA` `2026.1.4` |
+| JetBrains | IntelliJ IDEA 2026.2.1, AI Assistant 262.9437.185, and required Full Line Code Completion 262.9437.185 under Xvfb | `JetBrains.IntelliJ IDEA` `2026.2.1` |
 
 Version 2 of `integrations/opencode/compatibility.json` is authoritative for
 these ACP `clientInfo` tuples as well as the executable and plugin pins.
 Release archives are SHA-256 verified; editor plugins are checked out at exact
 commits or verified by archive hash and declared version. The JetBrains lane
-uses a single exact platform build (`261.26222.65`) for the IDE and both plugin
+uses a single exact platform build (`262.9437.185`) for the IDE and both plugin
 archives, verifies AI Assistant's required Full Line dependency, completes the
 real pinned first-run data-sharing UI, and explicitly declines telemetry. Its
 driver requires the exact top-level `Data Sharing` title, fixed dialog geometry,
 and X11 root parent before any pointer input, so the nested `Content window`
-cannot receive an accidental click. It then binds the late Islands onboarding
-popup to its exact geometry and `WM_TRANSIENT_FOR` project owner, selects the
-verified `Skip` action, and proves that transient disappeared before sending
-ACP shortcuts. IDEA's JVM home is bound to the same isolated profile that owns
-the private `acp.json`; the driver waits for exactly one active local ACP agent
-before opening the AI Assistant UI. The repository owner records legal consent
+cannot receive an accidental click. It handles both the legacy transient and
+the 2026.2 integrated Islands onboarding, accepting only the exact pinned popup
+or 1400 by 1000 top-level project frame before the bounded `Skip` input. IDEA's
+JVM home is bound to the same isolated profile that owns the private `acp.json`.
+The driver starts with no active custom agent, opens the public
+`Acp.OpenConfiguration` action, enters and saves the exact owner-only agent
+configuration through IDEA, then proves that one local agent was reloaded. The
+repository owner records legal consent
 through the non-secret `JETBRAINS_USER_AGREEMENT_ACCEPTED_VERSION` repository
 variable. The driver accepts only the pinned `2.0` agreement, fails closed on a
 missing or different attestation, and still explicitly declines telemetry. A
@@ -402,53 +404,25 @@ durable hub journal must retain exactly one matching claim, release, and
 assessment receipt.
 
 The JetBrains driver selects only a top-level project frame with the pinned
-geometry. Before opening AI Chat, invoking the selector, or entering selector
-input, it focuses the validated target and proves that keyboard focus belongs
-to that frame or reaches it through a bounded, cycle-free X11 parent chain;
-only then does it use the current-focus XTEST path accepted by Swing. The chat
-composer applies the same ownership proof after its bounded pointer focus.
-The selector re-proves owned focus immediately before final confirmation, after
-all filtered-state evidence has been captured. Agent-selector discovery batches
-the visible JetBrains window geometry into one X11 query, then performs the
-more expensive root-child and transient-owner checks only for phase-valid
-selector dimensions during discovery and filtered readiness. During closure,
-an exact-title remap with phase-invalid geometry is also owner-classified and
-fails explicitly rather than counting as an absence. Initial discovery requires
-the exact unfiltered
-`310 × 407` popup. After filtering, the result-bearing popup may shrink but
-must stay 310 pixels wide, exceed the observed 42-pixel search-only shell, and
-remain no taller than the unfiltered popup. Post-confirmation closure continues
-tracking every positive height within that bound, including the search-only
-shell, so a collapsing or remapped selector cannot masquerade as disappearance.
-Malformed batch output, multiple matching selectors, or a selector whose
-ownership changes before or after filtering fails closed. The driver clears
-the selector filter, types the exact
-`SYNAPSE OpenCode E2E` name, then boundedly reacquires exactly one title- and
-owner-proven selector through the existing selection deadline before it
-captures the filtered result and confirms with `Return`. A transient empty
-snapshot or an owner-proven popup XID remap is retried without repeating input;
-multiple selectors, an exact selector title outside the pinned project frame,
-or malformed ownership state still fails immediately. After confirmation the
-driver follows any single owner-proven replacement XID and requires two
-consecutive clean absence snapshots before declaring the selector closed. A
-legitimate empty X11 search is accepted only without diagnostics;
-timeouts, display/transport failures, malformed geometry, or failed title,
-parentage, and transient-owner queries fail closed instead of being interpreted
-as disappearance. Ownership tokens must be positive canonical hexadecimal X11
-IDs; Python-only signed, underscored, decimal, and octal forms are rejected.
-Selector screenshots consume the selection phase's remaining
-deadline, are written through an owner-only temporary regular file, and are
-sealed to a previously absent destination. Its readiness contract requires the
-pinned plugin check before both session start and available-command evidence,
-while allowing those independently scheduled completion events in either
-observed IDEA 2026.1.4 order. Lifecycle baselines bind each log's device and
-inode, reject replacement or truncation, and reject any post-baseline chat or
-process event for an agent other than the exact pinned identity. The
-implementation keeps client orchestration, selector interaction lifecycle,
-selector-window discovery/classification, X11 transport/input, first-run setup,
-and evidence capture in separate responsibility modules. The generated IDEA ACP
-entry also refuses an empty or relative proxy executable. IDEA starts as an
-isolated process-group leader;
+geometry. Before configuration or chat input, it focuses the validated target
+and proves keyboard focus belongs to that frame or reaches it through a bounded,
+cycle-free X11 parent chain; only then does it use the current-focus XTEST path
+accepted by Swing. It opens the 2026.2 AI Chat hub and uses its provider-neutral
+`Continue to Chat` path without activating a JetBrains AI subscription or
+accepting additional service terms. The exact profile preselects
+`acp.synapse-opencode-e2e` with externally managed authentication and disables
+both custom and IDEA MCP forwarding. Lifecycle baselines bind each log's device
+and inode, reject replacement or truncation, and reject any post-baseline chat
+or process event for another agent. After configuration reload, the observed
+2026.2 schedules may expose zero or one dormant replay controller, but no
+process or trace. Opening the chat must then produce exactly one local process
+and base trace while still allowing only zero or one controller; the first real
+prompt must produce `session/new`, the required plugin/readiness events,
+`session/prompt`, and its successful response while cardinality remains exactly
+one. Screenshots are written through owner-only temporary regular files and
+sealed to previously absent destinations. The generated IDEA ACP entry refuses
+an empty or relative proxy executable. IDEA starts as an isolated process-group
+leader;
 cleanup terminates every helper with bounded
 `SIGTERM`/`SIGKILL` escalation. Its ACP initialization phase has a bounded
 three-minute budget for delayed plugin continuations on loaded headless hosts

@@ -165,15 +165,15 @@ jobs:
           ACP_EL_COMMIT: 5140f4121156707245567b8fc3072d4c3b5c867f
           AGENT_SHELL_COMMIT: 5351f9b0e983b00b2d21ecc41916635e2ed13ebe
           CODECOMPANION_COMMIT: a8a754491999d97695d6134e8d3d98effe6b2a98
-          JETBRAINS_AI_ASSISTANT_SHA256: 8d5352e2c03fa419cc169c2e4dc1b9009247d52d641f4b8883029f347a61ceaf
-          JETBRAINS_AI_ASSISTANT_URL: https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1095694
-          JETBRAINS_FULL_LINE_SHA256: 497bdf80d4600d947ebdbcdb440c7f68b21a048ec4fd77ad6a0171ae9d0bf0d8
-          JETBRAINS_FULL_LINE_URL: https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1095696
+          JETBRAINS_AI_ASSISTANT_SHA256: bde9f0ccfbd51d92edad5713dee4568e6cf2d251a614c12c5d47daf359e28599
+          JETBRAINS_AI_ASSISTANT_URL: https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1132029
+          JETBRAINS_FULL_LINE_SHA256: 01d69f21bc3f33675a29db1e1d7eb89133e86f6c69b700cbc15a8eb953e1e1b7
+          JETBRAINS_FULL_LINE_URL: https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1132041
           NEOVIM_SHA256: 012bf3fcac5ade43914df3f174668bf64d05e049a4f032a388c027b1ebd78628
           NEOVIM_URL: https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-linux-x86_64.tar.gz
           PLENARY_COMMIT: 74b06c6c75e4eeb3108ec01852001636d85a932b
-          INTELLIJ_IDEA_SHA256: 3104d85d9507ff882065e3f8eb9506402b4a8129092d2682662bb6e9c4f063fc
-          INTELLIJ_IDEA_URL: https://download.jetbrains.com/idea/idea-2026.1.4.tar.gz
+          INTELLIJ_IDEA_SHA256: dac2021204c8bf3bd8d66567a1ae36a341da0050b6006c32d42006c6577eb29a
+          INTELLIJ_IDEA_URL: https://download.jetbrains.com/idea/idea-2026.2.1.tar.gz
           SHELL_MAKER_COMMIT: 071c6df3ca22a2f4c0daa689848ac9bd21bf4e2b
           ZED_SHA256: 55eb5ef8b211c950a9009da30b7f603d2c9d2c80b207f9de94ffab6d31d58f8c
           ZED_URL: https://github.com/zed-industries/zed/releases/download/v1.10.3/zed-linux-x86_64.tar.gz
@@ -248,25 +248,25 @@ jobs:
               dpkg-query --show --showformat='${Package}=${Version}\n' \
                 imagemagick libasound2t64 libfreetype6 libxi6 libxrender1 \
                 libxtst6 libxkbcommon-x11-0 wmctrl x11-utils xdotool xvfb
-              archive="$RUNNER_TEMP/idea-2026.1.4.tar.gz"
-              ai_assistant="$RUNNER_TEMP/ai-assistant-261.26222.65.zip"
-              full_line="$RUNNER_TEMP/full-line-261.26222.65.zip"
+              archive="$RUNNER_TEMP/idea-2026.2.1.tar.gz"
+              ai_assistant="$RUNNER_TEMP/ai-assistant-262.9437.185.zip"
+              full_line="$RUNNER_TEMP/full-line-262.9437.185.zip"
               curl --fail --location --proto '=https' --proto-redir '=https' \
                 --tlsv1.2 --retry 3 --output "$archive" "$INTELLIJ_IDEA_URL"
               printf '%s  %s\n' "$INTELLIJ_IDEA_SHA256" "$archive" \
                 | sha256sum --check --strict
-              mkdir "$RUNNER_TEMP/idea-2026.1.4"
-              tar -xzf "$archive" -C "$RUNNER_TEMP/idea-2026.1.4"
-              idea_bin=$(find "$RUNNER_TEMP/idea-2026.1.4" \
+              mkdir "$RUNNER_TEMP/idea-2026.2.1"
+              tar -xzf "$archive" -C "$RUNNER_TEMP/idea-2026.2.1"
+              idea_bin=$(find "$RUNNER_TEMP/idea-2026.2.1" \
                 -type f -path '*/bin/idea' -print -quit)
-              product_info=$(find "$RUNNER_TEMP/idea-2026.1.4" \
+              product_info=$(find "$RUNNER_TEMP/idea-2026.2.1" \
                 -type f -name product-info.json -print -quit)
               test -n "$idea_bin"
               test -x "$idea_bin"
               test -n "$product_info"
               jq -e \
-                '.name == "IntelliJ IDEA" and .version == "2026.1.4" and
-                 .buildNumber == "261.26222.65" and .productCode == "IU"' \
+                '.name == "IntelliJ IDEA" and .version == "2026.2.1" and
+                 .buildNumber == "262.9437.185" and .productCode == "IU"' \
                 "$product_info" >/dev/null
               curl --fail --location --proto '=https' --proto-redir '=https' \
                 --tlsv1.2 --retry 3 --output "$ai_assistant" \
@@ -286,6 +286,8 @@ jobs:
                 "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.core.jar"
               test -f \
                 "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.chat.jar"
+              test -f \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.agents.acp.jar"
               ai_assistant_xml=$(unzip -p \
                 "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar" \
                 META-INF/plugin.xml)
@@ -293,9 +295,9 @@ jobs:
                 "$RUNNER_TEMP/jetbrains-plugins/fullLine/lib/fullLine.jar" \
                 META-INF/plugin.xml)
               grep -Fq '<id>com.intellij.ml.llm</id>' <<< "$ai_assistant_xml"
-              grep -Fq '<version>261.26222.65</version>' <<< "$ai_assistant_xml"
+              grep -Fq '<version>262.9437.185</version>' <<< "$ai_assistant_xml"
               grep -Fq \
-                '<idea-version since-build="261.26222.65" until-build="261.26222.65" />' \
+                '<idea-version since-build="262.9437.185" until-build="262.9437.185" />' \
                 <<< "$ai_assistant_xml"
               grep -Fq '<plugin id="org.jetbrains.completion.full.line" />' \
                 <<< "$ai_assistant_xml"
@@ -309,10 +311,13 @@ jobs:
                 <<< "$ai_assistant_xml"
               grep -Fq '<action id="AIAssistant.Chat.SendActions.Send"' \
                 <<< "$ai_assistant_xml"
-              grep -Fq '<id>org.jetbrains.completion.full.line</id>' <<< "$full_line_xml"
-              grep -Fq '<version>261.26222.65</version>' <<< "$full_line_xml"
               grep -Fq \
-                '<idea-version since-build="261.26222.65" until-build="261.26222.65" />' \
+                '<action class="com.intellij.ml.llm.agents.acp.config.OpenAcpConfigurationAction" id="Acp.OpenConfiguration" />' \
+                <<< "$ai_assistant_xml"
+              grep -Fq '<id>org.jetbrains.completion.full.line</id>' <<< "$full_line_xml"
+              grep -Fq '<version>262.9437.185</version>' <<< "$full_line_xml"
+              grep -Fq \
+                '<idea-version since-build="262.9437.185" until-build="262.9437.185" />' \
                 <<< "$full_line_xml"
               unzip -p \
                 "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.core.jar" \
@@ -332,13 +337,26 @@ jobs:
                 | strings > "$RUNNER_TEMP/chat-session-mode.contract"
               grep -Fxq 'AGENT' "$RUNNER_TEMP/chat-session-mode.contract"
               unzip -p \
-                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/ml-llm.jar" \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.agents.acp.jar" \
                 com/intellij/ml/llm/agents/acp/registry/AcpAgentInstallationState.class \
                 | strings > "$RUNNER_TEMP/acp-installation-state.contract"
               grep -Fq 'llm.chat.agent.acp.bundled' \
                 "$RUNNER_TEMP/acp-installation-state.contract"
               grep -Fq 'llm.chat.agent.acp.bundled.nightly' \
                 "$RUNNER_TEMP/acp-installation-state.contract"
+              unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.agents.acp.jar" \
+                com/intellij/ml/llm/agents/acp/settings/AcpAgentSettings.class \
+                | strings > "$RUNNER_TEMP/acp-agent-settings.contract"
+              grep -Fxq 'agent_auth' "$RUNNER_TEMP/acp-agent-settings.contract"
+              grep -Fxq 'global_use_custom_mcp' "$RUNNER_TEMP/acp-agent-settings.contract"
+              grep -Fxq 'global_use_idea_mcp' "$RUNNER_TEMP/acp-agent-settings.contract"
+              unzip -p \
+                "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.agents.acp.jar" \
+                com/intellij/ml/llm/agents/acp/session/AcpSessionReplayController.class \
+                | strings > "$RUNNER_TEMP/acp-session-replay-controller.contract"
+              grep -Fq 'Created ACP session replay controller for agent=' \
+                "$RUNNER_TEMP/acp-session-replay-controller.contract"
               unzip -p \
                 "$RUNNER_TEMP/jetbrains-plugins/ml-llm/lib/modules/intellij.ml.llm.chat.jar" \
                 com/intellij/ml/llm/core/chat/defaultAgent/DefaultAgentCdnService.class \

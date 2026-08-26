@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess  # nosec B404
 import sys
 import time
@@ -20,6 +21,7 @@ from e2e.opencode_editors import jetbrains_x11_driver as x11
 from e2e.opencode_editors.jetbrains_cleanup import capture_evidence_and_terminate
 from e2e.opencode_editors.jetbrains_evidence import (
     capture_screenshot,
+    trace_has,
     wait_for_idea_log,
     wait_for_trace,
 )
@@ -28,26 +30,20 @@ from e2e.opencode_editors.jetbrains_readiness import all_then_completion, prereq
 from e2e.opencode_editors.jetbrains_selector import (
     AGENT_NAME as _AGENT_NAME,
 )
-from e2e.opencode_editors.jetbrains_selector import (
-    inspect_pinned_agent as _inspect_pinned_agent,
-)
-from e2e.opencode_editors.jetbrains_selector import (
-    open_agent_selector as _open_agent_selector,
-)
 from e2e.opencode_editors.jetbrains_setup import (
     complete_first_run_agreements,
     find_project_window,
     idea_command,
+    render_acp_config,
     skip_islands_onboarding,
-    write_acp_config,
     write_idea_profile,
+    write_inactive_acp_config,
 )
 from e2e.opencode_editors.jetbrains_timing import DEFAULT_JETBRAINS_TIMING
 
 _AGENT_ID = "acp.synapse-opencode-e2e"
 _STARTUP_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.startup_seconds
 _PROJECT_READY_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.chat_ready_seconds
-_AGENT_SELECTION_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.agent_selection_seconds
 _ACP_HANDSHAKE_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_handshake_seconds
 _ACP_PROMPT_TIMEOUT_SECONDS = DEFAULT_JETBRAINS_TIMING.acp_prompt_seconds
 _PROJECT_READY_MARKERS = (
@@ -57,6 +53,9 @@ _PROJECT_READY_MARKERS = (
 _PROJECT_READY_PREREQUISITES = _PROJECT_READY_MARKERS[:1]
 _PROJECT_READY_COMPLETION = _PROJECT_READY_MARKERS[1]
 _ACP_SESSION_PREREQUISITE = "Required plugins check passed"
+_ACP_CHAT_CREATED_MARKER = (
+    "Created ACP session replay controller for agent=acp.synapse-opencode-e2e"
+)
 _ACP_SESSION_COMPLETIONS = (
     "Starting ACP client session ",
     "Received notification: AvailableCommandsUpdate",
@@ -85,6 +84,7 @@ def main() -> int:
         or not all(isinstance(arg, str) for arg in proxy_argv)
     ):
         raise RuntimeError("SYNAPSE_ACP_PROXY_ARGV_JSON must contain non-empty string arguments")
+    agent_config = render_acp_config(proxy_argv, agent_name=_AGENT_NAME)
 
     home = Path(_required_env("HOME"))
     artifacts = Path(_required_env("SYNAPSE_EDITOR_E2E_ARTIFACT_DIR"))
@@ -94,12 +94,13 @@ def main() -> int:
     log_root = runtime_root / "log"
     for directory in (config_root, system_root, log_root):
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    write_acp_config(home, proxy_argv, agent_name=_AGENT_NAME)
+    write_inactive_acp_config(home)
     write_idea_profile(config_root)
 
     output = artifacts / "intellij-process.log"
     screenshot = artifacts / "intellij.png"
-    selector_screenshot = artifacts / "intellij-agent-selector.png"
+    hub_screenshot = artifacts / "intellij-ai-chat-hub.png"
+    chat_screenshot = artifacts / "intellij-chat-open.png"
     command = idea_command(
         binary,
         home=home,
@@ -131,12 +132,6 @@ def main() -> int:
             window = find_project_window(startup_deadline)
             skip_islands_onboarding(startup_deadline, window)
             window = find_project_window(startup_deadline)
-            wait_for_idea_log(
-                log_root,
-                "Local ACP agents reloaded: 1 active",
-                startup_deadline,
-                process.poll,
-            )
             project_deadline = time.monotonic() + _PROJECT_READY_TIMEOUT_SECONDS
             wait_for_idea_log(
                 log_root,
@@ -149,30 +144,101 @@ def main() -> int:
                     _PROJECT_READY_COMPLETION,
                 ),
             )
-            lifecycle.assert_at_most_one()
-            selection_deadline = time.monotonic() + _AGENT_SELECTION_TIMEOUT_SECONDS
-            selector = _open_agent_selector(
-                window,
-                deadline=selection_deadline,
-                guard=lifecycle.assert_at_most_one,
-            )
-            lifecycle.assert_at_most_one()
-            _inspect_pinned_agent(
-                selector,
-                window,
-                deadline=selection_deadline,
-                guard=lifecycle.assert_at_most_one,
-                capture_filtered_selector=lambda: capture_screenshot(
-                    selector_screenshot,
-                    deadline=selection_deadline,
-                ),
+            lifecycle.require_none()
+            activation_deadline = time.monotonic() + _ACP_HANDSHAKE_TIMEOUT_SECONDS
+            x11._focus_window_for_input(window, deadline=activation_deadline)
+            x11._checked_xdotool(
+                "open the isolated JetBrains ACP configuration",
+                "key",
+                "ctrl+alt+shift+a",
+                deadline=activation_deadline,
             )
             wait_for_idea_log(
                 log_root,
-                "Creating AcpSessionLifecycleManager for agent 'acp.synapse-opencode-e2e'",
-                selection_deadline,
+                "fileOpened acp.json",
+                activation_deadline,
                 process.poll,
                 guard=lifecycle.assert_at_most_one,
+            )
+            x11._focus_window_for_input(window, deadline=activation_deadline)
+            x11._pointer_click(
+                window,
+                900,
+                300,
+                "focus the opened JetBrains ACP configuration editor",
+                deadline=activation_deadline,
+            )
+            x11._checked_xdotool(
+                "select the isolated JetBrains ACP configuration",
+                "key",
+                "ctrl+a",
+                deadline=activation_deadline,
+            )
+            x11._checked_xdotool(
+                "enter the exact JetBrains ACP configuration",
+                "type",
+                "--clearmodifiers",
+                "--delay",
+                "1",
+                agent_config,
+                deadline=activation_deadline,
+            )
+            x11._checked_xdotool(
+                "save the isolated JetBrains ACP configuration",
+                "key",
+                "ctrl+s",
+                deadline=activation_deadline,
+            )
+            wait_for_idea_log(
+                log_root,
+                "Local ACP agents reloaded: 1 active",
+                activation_deadline,
+                process.poll,
+                guard=lifecycle.assert_at_most_one,
+            )
+            config_path = home / ".jetbrains" / "acp.json"
+            config_stat = config_path.lstat()
+            if (
+                not stat.S_ISREG(config_stat.st_mode)
+                or config_stat.st_uid != os.getuid()
+                or config_stat.st_mode & 0o777 != 0o600
+                or json.loads(config_path.read_text(encoding="utf-8")) != json.loads(agent_config)
+            ):
+                raise RuntimeError("IntelliJ IDEA did not save the exact ACP configuration")
+            lifecycle.require_configured_state()
+            selection_deadline = time.monotonic() + _ACP_HANDSHAKE_TIMEOUT_SECONDS
+            x11._pointer_click(
+                window,
+                1382,
+                83,
+                "open the JetBrains AI Chat tool window",
+                deadline=selection_deadline,
+            )
+            x11._checked_xdotool(
+                "wait for the JetBrains AI Chat hub",
+                "sleep",
+                "2",
+                deadline=selection_deadline,
+            )
+            lifecycle.assert_at_most_one()
+            capture_screenshot(hub_screenshot, deadline=selection_deadline)
+            for attempt in range(10):
+                if trace_has(trace, '"method":"initialize"'):
+                    break
+                x11._pointer_click(
+                    window,
+                    1130,
+                    613,
+                    "continue to JetBrains AI Chat without activating JetBrains AI "
+                    f"(attempt {attempt + 1})",
+                    deadline=selection_deadline,
+                )
+                x11._bounded_poll_sleep(selection_deadline)
+            x11._checked_xdotool(
+                "wait for the provider-neutral JetBrains AI Chat",
+                "sleep",
+                "2",
+                deadline=selection_deadline,
             )
             handshake_deadline = time.monotonic() + _ACP_HANDSHAKE_TIMEOUT_SECONDS
             wait_for_trace(
@@ -182,10 +248,21 @@ def main() -> int:
                 process,
                 guard=lifecycle.assert_at_most_one,
             )
+            lifecycle.require_initialized_state()
+            capture_screenshot(chat_screenshot, deadline=handshake_deadline)
+            prompt_deadline = time.monotonic() + _ACP_PROMPT_TIMEOUT_SECONDS
+            x11._submit_chat_prompt(window, prompt, deadline=prompt_deadline)
+            wait_for_idea_log(
+                log_root,
+                _ACP_CHAT_CREATED_MARKER,
+                prompt_deadline,
+                process.poll,
+                guard=lifecycle.assert_at_most_one,
+            )
             wait_for_trace(
                 trace,
                 '"method":"session/new"',
-                handshake_deadline,
+                prompt_deadline,
                 process,
                 guard=lifecycle.assert_at_most_one,
             )
@@ -193,7 +270,7 @@ def main() -> int:
             wait_for_idea_log(
                 log_root,
                 (_ACP_SESSION_PREREQUISITE, *_ACP_SESSION_COMPLETIONS),
-                handshake_deadline,
+                prompt_deadline,
                 process.poll,
                 guard=lifecycle.require_exactly_one,
                 matcher=lambda contents: prerequisite_then_all(
@@ -203,8 +280,6 @@ def main() -> int:
                 ),
                 contents_reader=lifecycle.idea_contents,
             )
-            prompt_deadline = time.monotonic() + _ACP_PROMPT_TIMEOUT_SECONDS
-            x11._submit_chat_prompt(window, prompt, deadline=prompt_deadline)
             wait_for_trace(
                 trace,
                 '"method":"session/prompt"',

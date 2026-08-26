@@ -50,6 +50,22 @@ def _append_lifecycle(
         stream.write(events)
 
 
+def _append_replay_lifecycle(
+    guard: JetBrainsLifecycleGuard,
+    *,
+    chat_id: str = _CHAT_ID,
+    process_id: str = "284153",
+) -> None:
+    events = (
+        "2026 INFO - Created ACP session replay controller for "
+        f"agent={_AGENT_ID}, chatId={chat_id}, project=project\n"
+        f"2026 INFO - [{_AGENT_NAME}] Process started with PID: "
+        f"LocalPid(value={process_id})\n"
+    )
+    with guard.idea_log.open("a", encoding="utf-8") as stream:
+        stream.write(events)
+
+
 def test_lifecycle_guard_accepts_one_real_log_lifecycle_and_base_trace(tmp_path: Path) -> None:
     guard = _guard(tmp_path)
     _append_lifecycle(guard)
@@ -60,6 +76,118 @@ def test_lifecycle_guard_accepts_one_real_log_lifecycle_and_base_trace(tmp_path:
     assert observation.chat_ids == (_CHAT_ID,)
     assert observation.process_ids == (284153,)
     assert observation.trace_segments == (guard.trace,)
+
+
+def test_lifecycle_guard_accepts_the_2026_2_replay_controller_marker(
+    tmp_path: Path,
+) -> None:
+    guard = _guard(tmp_path)
+    _append_replay_lifecycle(guard)
+    guard.trace.write_text('{"method":"initialize"}\n', encoding="utf-8")
+
+    observation = guard.require_exactly_one()
+
+    assert observation.chat_ids == (_CHAT_ID,)
+    assert observation.process_ids == (284153,)
+
+
+@pytest.mark.parametrize("controller", [False, True])
+def test_lifecycle_guard_accepts_both_dormant_configuration_orders(
+    tmp_path: Path,
+    controller: bool,
+) -> None:
+    guard = _guard(tmp_path)
+    if controller:
+        with guard.idea_log.open("a", encoding="utf-8") as stream:
+            stream.write(
+                "2026 INFO - Created ACP session replay controller for "
+                f"agent={_AGENT_ID}, chatId={_CHAT_ID}, project=project\n"
+            )
+
+    observation = guard.require_configured_state()
+
+    assert observation.chat_ids == ((_CHAT_ID,) if controller else ())
+    assert observation.process_ids == ()
+    assert observation.trace_segments == ()
+
+
+@pytest.mark.parametrize(
+    "present",
+    [("process",), ("trace",), ("chat", "process"), ("chat", "trace")],
+)
+def test_lifecycle_guard_rejects_an_active_backend_before_chat_open(
+    tmp_path: Path,
+    present: tuple[str, ...],
+) -> None:
+    guard = _guard(tmp_path)
+    if "chat" in present:
+        with guard.idea_log.open("a", encoding="utf-8") as stream:
+            stream.write(
+                "2026 INFO - Created ACP session replay controller for "
+                f"agent={_AGENT_ID}, chatId={_CHAT_ID}, project=project\n"
+            )
+    if "process" in present:
+        with guard.idea_log.open("a", encoding="utf-8") as stream:
+            stream.write(
+                f"2026 INFO - [{_AGENT_NAME}] Process started with PID: LocalPid(value=284153)\n"
+            )
+    if "trace" in present:
+        guard.trace.touch()
+
+    with pytest.raises(RuntimeError, match="backend before the chat was opened"):
+        guard.require_configured_state()
+
+
+@pytest.mark.parametrize("controller", [False, True])
+def test_lifecycle_guard_accepts_both_initialized_controller_orders(
+    tmp_path: Path,
+    controller: bool,
+) -> None:
+    guard = _guard(tmp_path)
+    if controller:
+        with guard.idea_log.open("a", encoding="utf-8") as stream:
+            stream.write(
+                "2026 INFO - Created ACP session replay controller for "
+                f"agent={_AGENT_ID}, chatId={_CHAT_ID}, project=project\n"
+            )
+    with guard.idea_log.open("a", encoding="utf-8") as stream:
+        stream.write(
+            f"2026 INFO - [{_AGENT_NAME}] Process started with PID: LocalPid(value=284153)\n"
+        )
+    guard.trace.touch()
+
+    observation = guard.require_initialized_state()
+
+    assert observation.chat_ids == ((_CHAT_ID,) if controller else ())
+    assert observation.process_ids == (284153,)
+    assert observation.trace_segments == (guard.trace,)
+
+
+@pytest.mark.parametrize(
+    "present",
+    [(), ("process",), ("trace",), ("chat", "process"), ("chat", "trace")],
+)
+def test_lifecycle_guard_rejects_incomplete_initialized_state(
+    tmp_path: Path,
+    present: tuple[str, ...],
+) -> None:
+    guard = _guard(tmp_path)
+    if "chat" in present:
+        with guard.idea_log.open("a", encoding="utf-8") as stream:
+            stream.write(
+                "2026 INFO - Created ACP session replay controller for "
+                f"agent={_AGENT_ID}, chatId={_CHAT_ID}, project=project\n"
+            )
+    if "process" in present:
+        with guard.idea_log.open("a", encoding="utf-8") as stream:
+            stream.write(
+                f"2026 INFO - [{_AGENT_NAME}] Process started with PID: LocalPid(value=284153)\n"
+            )
+    if "trace" in present:
+        guard.trace.touch()
+
+    with pytest.raises(RuntimeError, match="initialized local ACP backend"):
+        guard.require_initialized_state()
 
 
 def test_lifecycle_guard_rejects_a_backend_started_before_capture(tmp_path: Path) -> None:

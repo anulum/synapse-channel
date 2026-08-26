@@ -86,6 +86,14 @@ class _FakeLifecycle:
         """Record the pre-selection zero-lifecycle gate."""
         self._events.append("none")
 
+    def require_configured_state(self) -> None:
+        """Record the dormant state gate after configuration reload."""
+        self._events.append("configured-state")
+
+    def require_initialized_state(self) -> None:
+        """Record the exact backend gate before the first prompt."""
+        self._events.append("initialized-state")
+
     def require_exactly_one(self) -> None:
         """Record the post-handshake exact cardinality gate."""
         self._events.append("exactly-one")
@@ -129,8 +137,22 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
     lifecycle = _FakeLifecycle(events)
     monkeypatch.setattr(
         jetbrains_client,
-        "write_acp_config",
-        lambda *_args, **_kwargs: events.append("config"),
+        "render_acp_config",
+        lambda *_args, **_kwargs: "{}",
+    )
+
+    def inactive_config(target_home: Path) -> None:
+        config_dir = target_home / ".jetbrains"
+        config_dir.mkdir()
+        config = config_dir / "acp.json"
+        config.write_text("inactive", encoding="utf-8")
+        config.chmod(0o600)
+        events.append("inactive-config")
+
+    monkeypatch.setattr(
+        jetbrains_client,
+        "write_inactive_acp_config",
+        inactive_config,
     )
     monkeypatch.setattr(
         jetbrains_client,
@@ -168,30 +190,6 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
         return lifecycle
 
     monkeypatch.setattr(JetBrainsLifecycleGuard, "capture", capture_lifecycle)
-
-    def open_selector(*_args: object, **_kwargs: object) -> str:
-        events.append("selector-open")
-        return "selector"
-
-    monkeypatch.setattr(
-        jetbrains_client,
-        "_open_agent_selector",
-        open_selector,
-    )
-
-    def inspect_agent(
-        _selector: str,
-        _window: str,
-        *,
-        guard: Callable[[], object],
-        capture_filtered_selector: Callable[[], None],
-        **_kwargs: object,
-    ) -> None:
-        guard()
-        capture_filtered_selector()
-        events.append("inspected")
-
-    monkeypatch.setattr(jetbrains_client, "_inspect_pinned_agent", inspect_agent)
 
     def wait_log(
         log_root: Path,
@@ -233,15 +231,22 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
     monkeypatch.setattr(jetbrains_client, "wait_for_idea_log", wait_log)
     monkeypatch.setattr(jetbrains_client, "wait_for_trace", wait_trace)
     monkeypatch.setattr(jetbrains_client, "capture_screenshot", screenshot)
-    monkeypatch.setattr(
-        jetbrains_x11_driver,
-        "_checked_xdotool",
-        lambda *_args, **_kwargs: events.append("chat"),
-    )
+
+    def checked_xdotool(action: str, *_args: object, **_kwargs: object) -> None:
+        if action == "enter the exact JetBrains ACP configuration":
+            (home / ".jetbrains" / "acp.json").write_text("{}", encoding="utf-8")
+        events.append("chat")
+
+    monkeypatch.setattr(jetbrains_x11_driver, "_checked_xdotool", checked_xdotool)
     monkeypatch.setattr(
         jetbrains_x11_driver,
         "_focus_window_for_input",
         lambda *_args, **_kwargs: events.append("focus"),
+    )
+    monkeypatch.setattr(
+        jetbrains_x11_driver,
+        "_pointer_click",
+        lambda *_args, **_kwargs: events.append("editor-click"),
     )
     monkeypatch.setattr(
         jetbrains_x11_driver,
@@ -255,14 +260,18 @@ def test_main_orchestrates_full_pinned_flow_and_preserves_failure_evidence(
     )
 
     assert jetbrains_client.main() == 0
-    assert (artifacts / "intellij-agent-selector.png").read_bytes() == b"png"
+    assert (artifacts / "intellij-chat-open.png").read_bytes() == b"png"
     assert (artifacts / "intellij.png").read_bytes() == b"png"
     assert (artifacts / "intellij-idea-tail.log").is_file()
-    assert events.index("selector-open") < events.index("inspected")
     assert events.index("lifecycle-capture") < events.index("agreements")
-    assert "none" not in events
-    assert "chat" not in events
-    assert "inspected" in events
+    assert events.index("inactive-config") < events.index("lifecycle-capture")
+    assert events.index("none") < events.index("focus")
+    assert events.index("focus") < events.index("chat")
+    assert events.index("editor-click") < events.index("prompt")
+    assert events.count("focus") == 2
+    assert events.index("configured-state") < events.index("initialized-state")
+    assert events.index("initialized-state") < events.index("prompt")
+    assert events.index("prompt") < events.index('"method":"session/new"')
     assert "prompt" in events
     assert events[-1] == "cleanup"
 

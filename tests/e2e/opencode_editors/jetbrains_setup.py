@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import time
 from pathlib import Path
 from xml.sax.saxutils import quoteattr
@@ -37,6 +38,11 @@ _BUNDLED_AGENT_REGISTRY_KEYS = (
 )
 _DEFAULT_AGENT_CONFIG_FILENAME = "synapse-default-agent.json"
 _LLM_SETTINGS_FILENAME = "llm.for.code.xml"
+_ACP_SETTINGS_FILENAME = "acpAgents.xml"
+_LOCAL_AGENT_ID = "acp.synapse-opencode-e2e"
+_INTEGRATED_ISLANDS_SKIP = (698, 702)
+_LEGACY_ISLANDS_DISCOVERY_SECONDS = 5.0
+_INTEGRATED_ISLANDS_DISMISS_ATTEMPTS = 40
 
 
 def find_first_run_dialog(deadline: float) -> tuple[str, str]:
@@ -201,8 +207,28 @@ def find_islands_popup(deadline: float, project: str) -> str:
 
 
 def skip_islands_onboarding(deadline: float, project: str) -> None:
-    """Dismiss the pinned onboarding transient and prove it disappeared."""
-    popup = find_islands_popup(deadline, project)
+    """Dismiss either pinned form of the Islands quick-tour onboarding."""
+    legacy_deadline = min(deadline, time.monotonic() + _LEGACY_ISLANDS_DISCOVERY_SECONDS)
+    try:
+        popup = find_islands_popup(legacy_deadline, project)
+    except RuntimeError:
+        geometry = _window_geometry(project, deadline=deadline)
+        root_child = _window_is_root_child(project, deadline=deadline)
+        if geometry != (1400, 1000) or not root_child:
+            rendered = "?x?" if geometry is None else f"{geometry[0]}x{geometry[1]}"
+            raise RuntimeError(
+                "refusing integrated Islands onboarding input outside the pinned "
+                f"project frame: geometry={rendered}, root_child={root_child}"
+            ) from None
+        for attempt in range(_INTEGRATED_ISLANDS_DISMISS_ATTEMPTS):
+            _pointer_click(
+                project,
+                *_INTEGRATED_ISLANDS_SKIP,
+                f"skip the integrated JetBrains Islands quick tour (attempt {attempt + 1})",
+                deadline=deadline,
+            )
+            _bounded_poll_sleep(deadline)
+        return
     if not _is_islands_popup(popup, project, deadline=deadline):
         raise RuntimeError("refusing input outside the pinned Islands onboarding popup")
     _pointer_click(
@@ -219,42 +245,74 @@ def skip_islands_onboarding(deadline: float, project: str) -> None:
     raise RuntimeError("JetBrains Islands onboarding popup remained after Skip")
 
 
-def write_acp_config(home: Path, proxy_argv: list[str], *, agent_name: str) -> None:
-    """Write an owner-only ACP config containing exactly the pinned agent."""
-    if not proxy_argv or not all(proxy_argv):
-        raise ValueError("JetBrains ACP proxy argv must contain non-empty strings")
-    if not Path(proxy_argv[0]).is_absolute():
-        raise ValueError("JetBrains ACP proxy executable must be an absolute path")
+def _write_private_acp_config(home: Path, agent_servers: dict[str, object]) -> None:
+    """Atomically create the private watched ACP configuration."""
     config_dir = home / ".jetbrains"
     config_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     config = {
         "default_mcp_settings": {"use_idea_mcp": False, "use_custom_mcp": False},
-        "agent_servers": {
-            agent_name: {
-                "command": proxy_argv[0],
-                "args": proxy_argv[1:],
-                "env": {},
-            }
-        },
+        "agent_servers": agent_servers,
     }
     config_path = config_dir / "acp.json"
-    config_path.write_text(json.dumps(config) + "\n", encoding="utf-8")
-    config_path.chmod(0o600)
+    payload = json.dumps(config) + "\n"
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=config_dir,
+            prefix=".acp.",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(payload)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        temporary_path.chmod(0o600)
+        os.replace(temporary_path, config_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def write_inactive_acp_config(home: Path) -> None:
+    """Create the watched ACP config without registering any agent."""
+    _write_private_acp_config(home, {})
+
+
+def render_acp_config(proxy_argv: list[str], *, agent_name: str) -> str:
+    """Render the exact one-agent configuration for real editor activation."""
+    if not proxy_argv or not all(proxy_argv):
+        raise ValueError("JetBrains ACP proxy argv must contain non-empty strings")
+    if not Path(proxy_argv[0]).is_absolute():
+        raise ValueError("JetBrains ACP proxy executable must be an absolute path")
+    return json.dumps(
+        {
+            "default_mcp_settings": {
+                "use_idea_mcp": False,
+                "use_custom_mcp": False,
+            },
+            "agent_servers": {
+                agent_name: {
+                    "command": proxy_argv[0],
+                    "args": proxy_argv[1:],
+                    "env": {},
+                }
+            },
+        },
+    )
 
 
 def write_idea_profile(config_root: Path) -> None:
-    """Write the isolated IDEA keymap and provider-safe selector profile."""
+    """Write the isolated IDEA profile for one externally authenticated agent."""
     keymaps = config_root / "keymaps"
     options = config_root / "options"
     keymaps.mkdir(mode=0o700, parents=True, exist_ok=True)
     options.mkdir(mode=0o700, parents=True, exist_ok=True)
     (keymaps / "SynapseE2E.xml").write_text(
         """<keymap version="1" name="Synapse E2E" parent="$default">
-  <action id="AIAssistant.ToolWindow.ShowOrFocus">
-    <keyboard-shortcut first-keystroke="control alt shift J" />
-  </action>
-  <action id="NewChatAgentSelectorAction">
-    <keyboard-shortcut first-keystroke="control alt shift K" />
+  <action id="Acp.OpenConfiguration">
+    <keyboard-shortcut first-keystroke="control alt shift A" />
   </action>
 </keymap>
 """,
@@ -279,6 +337,23 @@ def write_idea_profile(config_root: Path) -> None:
 """,
         encoding="utf-8",
     )
+    acp_settings = options / _ACP_SETTINGS_FILENAME
+    acp_settings.write_text(
+        f"""<application>
+  <component name="AcpAgentSettings">
+    <option name="agent_auth">
+      <map>
+        <entry key="{_LOCAL_AGENT_ID}" value="MANAGED_EXTERNALLY" />
+      </map>
+    </option>
+    <option name="global_use_custom_mcp" value="false" />
+    <option name="global_use_idea_mcp" value="false" />
+  </component>
+</application>
+""",
+        encoding="utf-8",
+    )
+    acp_settings.chmod(0o600)
     default_agent_config = config_root / _DEFAULT_AGENT_CONFIG_FILENAME
     default_agent_config.write_text(
         json.dumps({"enabled": False, "version": 1, "agents": []}) + "\n",

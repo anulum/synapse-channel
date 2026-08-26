@@ -175,8 +175,10 @@ class JetBrainsLifecycleGuard:
         self.idea_identity = idea_identity
         self.acp_identity = acp_identity
         chat_pattern = re.compile(
-            r"Creating AcpSessionLifecycleManager for agent '(?P<agent>[^']+)' "
-            r"in chat (?P<value>\S+)"
+            r"(?:Creating AcpSessionLifecycleManager for agent '|"
+            r"Created ACP session replay controller for agent=)"
+            r"(?P<agent>[^',\s]+)"
+            r"(?:' in chat |, chatId=)(?P<value>[^,\s]+)"
         )
         process_pattern = re.compile(
             r"\[(?P<agent>[^]]+)\] Process started with PID: "
@@ -271,6 +273,36 @@ class JetBrainsLifecycleGuard:
         if counts != (0, 0, 0):
             raise RuntimeError(
                 "JetBrains created an ACP lifecycle before agent confirmation: "
+                f"chats={counts[0]}, processes={counts[1]}, traces={counts[2]}"
+            )
+        return observation
+
+    def require_configured_state(self) -> JetBrainsLifecycleObservation:
+        """Allow only the two dormant 2026.2 states after ACP reload."""
+        observation = self.assert_at_most_one()
+        counts = (
+            len(observation.chat_ids),
+            len(observation.process_ids),
+            len(observation.trace_segments),
+        )
+        if counts not in ((0, 0, 0), (1, 0, 0)):
+            raise RuntimeError(
+                "JetBrains started an ACP backend before the chat was opened: "
+                f"chats={counts[0]}, processes={counts[1]}, traces={counts[2]}"
+            )
+        return observation
+
+    def require_initialized_state(self) -> JetBrainsLifecycleObservation:
+        """Require one backend while allowing either replay-controller order."""
+        observation = self.assert_at_most_one()
+        counts = (
+            len(observation.chat_ids),
+            len(observation.process_ids),
+            len(observation.trace_segments),
+        )
+        if counts not in ((0, 1, 1), (1, 1, 1)):
+            raise RuntimeError(
+                "JetBrains did not expose exactly one initialized local ACP backend: "
                 f"chats={counts[0]}, processes={counts[1]}, traces={counts[2]}"
             )
         return observation

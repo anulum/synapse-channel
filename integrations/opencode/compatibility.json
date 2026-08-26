@@ -94,7 +94,7 @@
     "jetbrains": {
       "component": "IntelliJ IDEA",
       "name": "JetBrains.IntelliJ IDEA",
-      "version": "2026.1.4"
+      "version": "2026.2.1"
     },
     "neovim": {
       "component": "CodeCompanion.nvim",
@@ -167,24 +167,24 @@
     },
     {
       "name": "IntelliJ IDEA",
-      "pin": "3104d85d9507ff882065e3f8eb9506402b4a8129092d2682662bb6e9c4f063fc",
+      "pin": "dac2021204c8bf3bd8d66567a1ae36a341da0050b6006c32d42006c6577eb29a",
       "pin_type": "sha256",
-      "source": "https://download.jetbrains.com/idea/idea-2026.1.4.tar.gz",
-      "version": "2026.1.4"
+      "source": "https://download.jetbrains.com/idea/idea-2026.2.1.tar.gz",
+      "version": "2026.2.1"
     },
     {
       "name": "JetBrains AI Assistant",
-      "pin": "8d5352e2c03fa419cc169c2e4dc1b9009247d52d641f4b8883029f347a61ceaf",
+      "pin": "bde9f0ccfbd51d92edad5713dee4568e6cf2d251a614c12c5d47daf359e28599",
       "pin_type": "sha256",
-      "source": "https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1095694",
-      "version": "261.26222.65"
+      "source": "https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1132029",
+      "version": "262.9437.185"
     },
     {
       "name": "JetBrains Full Line Code Completion",
-      "pin": "497bdf80d4600d947ebdbcdb440c7f68b21a048ec4fd77ad6a0171ae9d0bf0d8",
+      "pin": "01d69f21bc3f33675a29db1e1d7eb89133e86f6c69b700cbc15a8eb953e1e1b7",
       "pin_type": "sha256",
-      "source": "https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1095696",
-      "version": "261.26222.65"
+      "source": "https://plugins.jetbrains.com/plugin/download?rel=true&updateId=1132041",
+      "version": "262.9437.185"
     }
   ],
   "schema_version": "synapse.opencode-compatibility.v2",

@@ -21,10 +21,13 @@ from e2e.opencode_editors.jetbrains_setup import (
     idea_command as _idea_command,
 )
 from e2e.opencode_editors.jetbrains_setup import (
-    write_acp_config as _write_acp_config,
+    render_acp_config as _render_acp_config,
 )
 from e2e.opencode_editors.jetbrains_setup import (
     write_idea_profile as _write_idea_profile,
+)
+from e2e.opencode_editors.jetbrains_setup import (
+    write_inactive_acp_config as _write_inactive_acp_config,
 )
 
 
@@ -38,6 +41,22 @@ def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
         '  <component name="LLMSettings">\n'
         '    <option name="chat_mode" value="AGENT" />\n'
         '    <option name="agent_id" value="acp.synapse-opencode-e2e" />\n'
+        "  </component>\n"
+        "</application>\n"
+    )
+    acp_settings = tmp_path / "options" / "acpAgents.xml"
+    assert acp_settings.stat().st_mode & 0o777 == 0o600
+    assert acp_settings.read_text(encoding="utf-8") == (
+        "<application>\n"
+        '  <component name="AcpAgentSettings">\n'
+        '    <option name="agent_auth">\n'
+        "      <map>\n"
+        '        <entry key="acp.synapse-opencode-e2e" '
+        'value="MANAGED_EXTERNALLY" />\n'
+        "      </map>\n"
+        "    </option>\n"
+        '    <option name="global_use_custom_mcp" value="false" />\n'
+        '    <option name="global_use_idea_mcp" value="false" />\n'
         "  </component>\n"
         "</application>\n"
     )
@@ -57,7 +76,8 @@ def test_idea_profile_enables_the_pinned_agent_selector_before_startup(
         "</application>\n"
     )
     keymap = (tmp_path / "keymaps" / "SynapseE2E.xml").read_text(encoding="utf-8")
-    assert "NewChatAgentSelectorAction" in keymap
+    assert "NewChatAgentSelectorAction" not in keymap
+    assert '<action id="Acp.OpenConfiguration">' in keymap
     assert "AIAssistant.Chat.SendActions.Send" not in keymap
 
 
@@ -82,22 +102,30 @@ def test_idea_command_binds_jvm_home_to_the_isolated_profile(tmp_path: Path) -> 
     assert command[-1] == str(tmp_path / "project")
 
 
-def test_acp_config_is_private_and_contains_only_the_selected_agent(tmp_path: Path) -> None:
+def test_inactive_acp_config_is_private_and_contains_no_agents(tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
 
-    _write_acp_config(
-        home,
-        ["/opt/opencode", "acp"],
-        agent_name="SYNAPSE OpenCode E2E",
-    )
+    _write_inactive_acp_config(home)
 
     config = home / ".jetbrains" / "acp.json"
     assert config.stat().st_mode & 0o777 == 0o600
     assert config.read_text(encoding="utf-8") == (
+        '{"default_mcp_settings": {"use_idea_mcp": false, '
+        '"use_custom_mcp": false}, "agent_servers": {}}\n'
+    )
+
+
+def test_rendered_acp_config_contains_only_the_selected_agent() -> None:
+    rendered = _render_acp_config(
+        ["/opt/opencode", "acp"],
+        agent_name="SYNAPSE OpenCode E2E",
+    )
+
+    assert rendered == (
         '{"default_mcp_settings": {"use_idea_mcp": false, "use_custom_mcp": false}, '
         '"agent_servers": {"SYNAPSE OpenCode E2E": {"command": "/opt/opencode", '
-        '"args": ["acp"], "env": {}}}}\n'
+        '"args": ["acp"], "env": {}}}}'
     )
 
 
@@ -115,8 +143,7 @@ def test_acp_config_rejects_empty_or_relative_proxy_commands(
     message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        _write_acp_config(
-            tmp_path,
+        _render_acp_config(
             proxy_argv,
             agent_name="SYNAPSE OpenCode E2E",
         )
@@ -416,6 +443,54 @@ def test_islands_popup_discovery_and_skip_enforce_transient_ownership(
     monkeypatch.setattr(jetbrains_setup, "_bounded_poll_sleep", lambda _deadline: None)
     jetbrains_setup.skip_islands_onboarding(float("inf"), "123")
     assert clicks == ["clicked"]
+
+
+def test_integrated_islands_skip_is_bounded_to_the_pinned_project_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clicks: list[tuple[str, int, int]] = []
+    monkeypatch.setattr(
+        jetbrains_setup,
+        "find_islands_popup",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("no legacy popup")),
+    )
+    monkeypatch.setattr(jetbrains_setup, "_window_geometry", lambda *_a, **_k: (1400, 1000))
+    monkeypatch.setattr(jetbrains_setup, "_window_is_root_child", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        jetbrains_setup,
+        "_pointer_click",
+        lambda window, x, y, *_a, **_k: clicks.append((window, x, y)),
+    )
+    monkeypatch.setattr(jetbrains_setup, "_bounded_poll_sleep", lambda _deadline: None)
+
+    jetbrains_setup.skip_islands_onboarding(float("inf"), "123")
+
+    assert clicks == [("123", 698, 702)] * 40
+
+
+@pytest.mark.parametrize(
+    ("geometry", "root_child"),
+    [((1399, 1000), True), ((1400, 1000), False), (None, True)],
+)
+def test_integrated_islands_skip_rejects_unpinned_project_frames(
+    monkeypatch: pytest.MonkeyPatch,
+    geometry: tuple[int, int] | None,
+    root_child: bool,
+) -> None:
+    monkeypatch.setattr(
+        jetbrains_setup,
+        "find_islands_popup",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("no legacy popup")),
+    )
+    monkeypatch.setattr(jetbrains_setup, "_window_geometry", lambda *_a, **_k: geometry)
+    monkeypatch.setattr(
+        jetbrains_setup,
+        "_window_is_root_child",
+        lambda *_a, **_k: root_child,
+    )
+
+    with pytest.raises(RuntimeError, match="outside the pinned project frame"):
+        jetbrains_setup.skip_islands_onboarding(float("inf"), "123")
 
 
 @pytest.mark.parametrize(
