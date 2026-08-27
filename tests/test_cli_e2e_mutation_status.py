@@ -12,9 +12,12 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 from cli_e2e_helpers import CliResult, git_repo, git_run, run_cli
 from synapse_channel import cli
@@ -298,3 +301,151 @@ def test_real_cli_reports_invalid_and_partial_configuration(tmp_path: Path) -> N
         item for item in providers if isinstance(item, dict) and item.get("provider") == "gemini"
     )
     assert "writable by group or others" in gemini["configuration_detail"]
+
+
+def test_real_cli_treats_malformed_hook_commands_as_not_configured(tmp_path: Path) -> None:
+    """Valid provider JSON with non-command values never becomes configured."""
+    repo = git_repo(tmp_path / "repo")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    settings = home / ".claude" / "settings.json"
+    _private_write(
+        settings,
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {"command": "'unterminated"},
+                        {"command": 7},
+                        {"command": True},
+                        {"command": None},
+                    ]
+                }
+            }
+        ),
+    )
+    before = (settings.read_bytes(), settings.stat().st_mtime_ns, settings.stat().st_mode)
+
+    report = _report(home, repo)
+
+    assert _provider_states(report)["claude"] == "not-configured"
+    assert before == (settings.read_bytes(), settings.stat().st_mtime_ns, settings.stat().st_mode)
+
+
+def test_real_cli_reports_unsafe_grok_hook_directory(tmp_path: Path) -> None:
+    """A symlinked provider hook directory fails closed without traversal."""
+    repo = git_repo(tmp_path / "repo")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    outside = tmp_path / "outside-hooks"
+    outside.mkdir(mode=0o700)
+    fragment = _provider_fragment(repo, "grok")
+    _private_write(outside / "synapse.json", fragment)
+    grok_root = home / ".grok"
+    grok_root.mkdir(mode=0o700)
+    (grok_root / "hooks").symlink_to(outside, target_is_directory=True)
+
+    report = _report(home, repo)
+
+    providers = report["providers"]
+    assert isinstance(providers, list)
+    grok = next(
+        item for item in providers if isinstance(item, dict) and item.get("provider") == "grok"
+    )
+    assert grok["configuration_state"] == "invalid"
+    assert "cannot safely enumerate" in grok["configuration_detail"]
+    assert (outside / "synapse.json").read_text(encoding="utf-8") == fragment
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory modes are required")
+def test_real_cli_reports_unreadable_grok_hook_boundaries(tmp_path: Path) -> None:
+    """Real POSIX permission denial covers both parent and directory reads."""
+    repo = git_repo(tmp_path / "repo")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    grok_root = home / ".grok"
+    hooks = grok_root / "hooks"
+    hooks.mkdir(parents=True, mode=0o700)
+    config = hooks / "synapse.json"
+    _private_write(config, _provider_fragment(repo, "grok"))
+    before = config.read_bytes()
+
+    grok_root.chmod(0)
+    try:
+        parent_denied = _report(home, repo)
+    finally:
+        grok_root.chmod(0o700)
+    assert _provider_states(parent_denied)["grok"] == "invalid"
+
+    hooks.chmod(0)
+    try:
+        directory_denied = _report(home, repo)
+    finally:
+        hooks.chmod(0o700)
+    assert _provider_states(directory_denied)["grok"] == "invalid"
+    assert config.read_bytes() == before
+
+
+def test_real_cli_distinguishes_unowned_and_invalid_kimi_config(tmp_path: Path) -> None:
+    """A real Kimi file is either unowned or invalid, never silently configured."""
+    repo = git_repo(tmp_path / "repo")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    config = home / ".kimi-code" / "config.toml"
+    _private_write(config, 'model = "kimi-k2"\n')
+
+    unowned = _report(home, repo)
+    assert _provider_states(unowned)["kimi"] == "not-configured"
+
+    _private_write(config, "[[hooks]\n")
+    before = (config.read_bytes(), config.stat().st_mtime_ns, config.stat().st_mode)
+    invalid = _report(home, repo)
+    assert _provider_states(invalid)["kimi"] == "invalid"
+    assert before == (config.read_bytes(), config.stat().st_mtime_ns, config.stat().st_mode)
+
+
+def test_real_cli_reports_invalid_opencode_schema_outside_git(tmp_path: Path) -> None:
+    """Invalid OpenCode structure and a non-repository staged gate both fail closed."""
+    project = tmp_path / "not-a-repository"
+    project.mkdir(mode=0o700)
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    config = home / ".config" / "opencode" / "opencode.json"
+    _private_write(config, json.dumps({"mcp": []}))
+    before = (config.read_bytes(), config.stat().st_mtime_ns, config.stat().st_mode)
+
+    report = _report(home, project)
+
+    assert _provider_states(report)["opencode"] == "invalid"
+    gate = report["staged_gate"]
+    assert isinstance(gate, dict)
+    assert gate["repository"] is None
+    assert gate["configuration_state"] == "not-configured"
+    assert gate["hook_state"] == "not-a-repository"
+    assert gate["gate_status"] == "not-configured"
+    assert before == (config.read_bytes(), config.stat().st_mtime_ns, config.stat().st_mode)
+
+
+def test_real_cli_reports_unsafe_staged_gate_files(tmp_path: Path) -> None:
+    """Symlinked pre-commit policy and hook files produce an incomplete gate."""
+    repo = git_repo(tmp_path / "repo")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    outside_config = tmp_path / "outside-pre-commit.yaml"
+    outside_config.write_text("repos: []\n", encoding="utf-8")
+    outside_hook = tmp_path / "outside-pre-commit-hook"
+    outside_hook.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    outside_hook.chmod(0o700)
+    (repo / ".pre-commit-config.yaml").symlink_to(outside_config)
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    hook.symlink_to(outside_hook)
+    before = (outside_config.read_bytes(), outside_hook.read_bytes())
+
+    report = _report(home, repo)
+
+    gate = report["staged_gate"]
+    assert isinstance(gate, dict)
+    assert gate["configuration_state"] == "invalid"
+    assert gate["hook_state"] == "invalid"
+    assert gate["gate_status"] == "incomplete"
+    assert (outside_config.read_bytes(), outside_hook.read_bytes()) == before
