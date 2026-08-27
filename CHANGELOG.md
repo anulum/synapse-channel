@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Require observable pane consumption before `agent-tmux` acknowledges a staged
+  wake. A zero-returning Enter ignored during asynchronous Codex startup now
+  preserves the single staged prompt for a later safe Enter-only retry instead
+  of clearing registry state or pasting a duplicate routing prompt.
+
 ## [0.99.21] - 2026-08-27
 
 ### Added

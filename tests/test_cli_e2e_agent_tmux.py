@@ -11,8 +11,9 @@ pasting a fixed prompt into a verified idle composer. The unit suite exercises t
 with an injected command runner; this journey instead starts real throwaway tmux
 sessions, runs ``start``/``status``/``wake`` and the supervised ``wait`` boundary
 as the packaged CLI, and captures the pane to prove the fixed, payload-free prompt
-actually lands. ``codex`` is never launched — a harmless local fixture stands in —
-so no provider CLI is needed. The whole file skips when ``tmux`` is not installed.
+actually lands. Ordinary tests use harmless local fixtures and need no provider.
+One explicit opt-in smoke test launches the real Codex TUI to cover its asynchronous
+startup boundary. The whole file skips when ``tmux`` is not installed.
 """
 
 from __future__ import annotations
@@ -160,7 +161,7 @@ def test_agent_tmux_starts_reports_and_injects_the_fixed_prompt(tmp_path: Path) 
 
         woken = run_cli("agent-tmux", "wake", *common, "--submit-delay", "0.1")
         assert woken.ok(), woken.output
-        assert "injected" in woken.stdout
+        assert "consumption observed" in woken.stdout
 
         # The pane received the fixed routing prompt — payload-free by design, so a
         # remote sender cannot inject terminal text through the wake path.
@@ -509,13 +510,30 @@ def test_agent_tmux_submits_the_wake_in_a_real_codex_composer(tmp_path: Path) ->
             env=cli_env,
         )
         assert woken.ok(), woken.output
-        assert "injected" in woken.stdout
+        if "consumption observed" not in woken.stdout:
+            assert "queued" in woken.stdout or "unacknowledged" in woken.stdout
+            recovered = run_cli(
+                "agent-tmux",
+                "wait",
+                *common,
+                "--submit-delay",
+                "0.2",
+                "--pane-probe-interval",
+                "0.2",
+                "--max-wakes",
+                "1",
+                env=cli_env,
+                timeout=60.0,
+            )
+            assert recovered.ok(), recovered.output
 
         prompt = _normalise(build_wake_prompt(identity))
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline:
             pane = _capture_pane(session)
-            if prompt in _normalise(pane) and "› Ask Codex to do anything" in pane:
+            normalised_pane = _normalise(pane)
+            if prompt in normalised_pane and "› Ask Codex to do anything" in pane:
+                assert normalised_pane.count(prompt) == 1
                 break
             time.sleep(0.05)
         else:

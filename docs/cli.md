@@ -856,7 +856,11 @@ the consumed wake is persisted in the owner-only registry and retried after the
 bounded pane-probe interval, including after a bridge restart. For a safe pane,
 the fixed prompt is delivered as one bracketed paste rather than shortcut-capable
 individual characters. After `--submit-delay`, a second capture must still show
-the exact prompt in the safe composer before Enter is sent. It retries a failed
+the exact prompt in the safe composer before Enter is sent. The bridge then
+requires a post-submit capture to show that the prompt disappeared or that a new
+idle composer appeared after it. A zero-returning Enter that Codex ignores during
+asynchronous startup leaves the one staged prompt pending for a later safe
+Enter-only retry; the prompt is never pasted twice. It retries a failed
 `synapse wait` with backoff instead of exiting, giving up only after
 `--max-wait-failures` consecutive failures (unbounded by default), so a hub
 restart does not permanently stop the waker.

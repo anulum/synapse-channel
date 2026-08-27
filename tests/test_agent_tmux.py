@@ -51,6 +51,7 @@ class RecordingRunner:
         self,
         results: Sequence[subprocess.CompletedProcess[str]] = (),
         *,
+        consume_submit: bool = True,
         session_environment: str | None = (
             "SYN_PROJECT=SYNAPSE-CHANNEL\nSYN_IDENTITY=SYNAPSE-CHANNEL/codex-main\n"
         ),
@@ -58,6 +59,7 @@ class RecordingRunner:
         self.calls: list[list[str]] = []
         self.envs: list[Mapping[str, str] | None] = []
         self.results = list(results)
+        self.consume_submit = consume_submit
         self.session_environment = session_environment
         self.buffer_text = ""
         self.buffer_pasted = False
@@ -96,6 +98,15 @@ class RecordingRunner:
                 return self.results.pop(0)
             self.buffer_pasted = True
             return subprocess.CompletedProcess(list(args), 0, "", "")
+        if command == "send-keys":
+            result = (
+                self.results.pop(0)
+                if self.results
+                else subprocess.CompletedProcess(list(args), 0, "", "")
+            )
+            if result.returncode == 0 and self.consume_submit:
+                self.buffer_pasted = False
+            return result
         if self.results:
             return self.results.pop(0)
         return subprocess.CompletedProcess(list(args), 0, "", "")
@@ -238,7 +249,7 @@ def test_inject_wake_bracket_pastes_then_submits_after_two_idle_probes(tmp_path:
     )
 
     assert result.injected is True
-    assert len([call for call in runner.calls if call[1] == "capture-pane"]) == 2
+    assert len([call for call in runner.calls if call[1] == "capture-pane"]) == 3
     set_buffer = next(call for call in runner.calls if call[1] == "set-buffer")
     paste_buffer = next(call for call in runner.calls if call[1] == "paste-buffer")
     assert set_buffer[:4] == ["tmux", "set-buffer", "-b", "synapse-wake-SYNAPSE-CHANNEL_codex-main"]
@@ -255,11 +266,170 @@ def test_inject_wake_bracket_pastes_then_submits_after_two_idle_probes(tmp_path:
     ]
     send_calls = [call for call in runner.calls if call[1] == "send-keys"]
     assert send_calls == [["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]]
-    assert sleeper.delays == [config.submit_delay]
+    assert sleeper.delays == [config.submit_delay, config.submit_delay]
     payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
     assert payload["last_inject_returncode"] == 0
     assert payload["pending_wake"] is False
     assert payload["wake_prompt_staged"] is False
+
+
+def test_inject_wake_retains_a_prompt_when_enter_has_no_observable_effect(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(consume_submit=False)
+    sleeper = RecordingSleeper()
+
+    result = inject_wake(config, runner=runner, sleeper=sleeper)
+
+    assert result.injected is False
+    assert result.returncode == 0
+    assert result.detail == "wake submit unacknowledged: wake prompt remains staged"
+    assert len([call for call in runner.calls if call[1] == "send-keys"]) == 1
+    assert len([call for call in runner.calls if call[1] == "paste-buffer"]) == 1
+    assert sleeper.delays == [config.submit_delay, config.submit_delay]
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["last_inject_returncode"] == 0
+    assert payload["pending_wake"] is True
+    assert payload["wake_prompt_staged"] is True
+
+    runner.consume_submit = True
+    retried = inject_wake(config, runner=runner, sleeper=sleeper)
+
+    assert retried.injected is True
+    assert retried.detail == "injected and consumption observed"
+    assert len([call for call in runner.calls if call[1] == "send-keys"]) == 2
+    assert len([call for call in runner.calls if call[1] == "paste-buffer"]) == 1
+    assert len([call for call in runner.calls if call[1] == "set-buffer"]) == 1
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["pending_wake"] is False
+    assert payload["wake_prompt_staged"] is False
+
+
+def test_inject_wake_accepts_a_new_idle_composer_after_staged_prompt(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    prompt = build_wake_prompt(config.identity)
+    registry_path(config).write_text(
+        json.dumps(
+            {
+                "identity": config.identity,
+                "session": config.session,
+                "cwd": str(config.cwd),
+                "pending_wake": True,
+                "wake_prompt_staged": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    consumed_screen = f"› {prompt}\n\n• Turn completed\n\n› Ask Codex to do anything\n"
+    runner = RecordingRunner([_result(["tmux", "capture-pane"], stdout=consumed_screen)])
+
+    result = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert result.injected is True
+    assert result.detail == "staged wake consumption observed; not repasted"
+    assert not [
+        call for call in runner.calls if call[1] in {"set-buffer", "paste-buffer", "send-keys"}
+    ]
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["pending_wake"] is False
+    assert payload["wake_prompt_staged"] is False
+
+
+def test_inject_wake_keeps_staged_state_when_post_submit_capture_fails(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "send-keys"], 0),
+            _result(["tmux", "capture-pane"], 1, stderr="pane vanished"),
+        ]
+    )
+
+    result = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert result.injected is False
+    assert result.returncode == 0
+    assert result.detail == "wake submit unacknowledged: pane capture failed"
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["pending_wake"] is True
+    assert payload["wake_prompt_staged"] is True
+
+
+def test_inject_wake_queues_when_staged_prompt_capture_fails(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    registry_path(config).write_text(
+        json.dumps(
+            {
+                "identity": config.identity,
+                "session": config.session,
+                "cwd": str(config.cwd),
+                "pending_wake": True,
+                "wake_prompt_staged": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = RecordingRunner([_result(["tmux", "capture-pane"], 1, stderr="pane unavailable")])
+
+    result = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert result.injected is False
+    assert result.returncode == 0
+    assert result.detail == "wake queued: pane capture failed"
+    assert not [call for call in runner.calls if call[1] == "send-keys"]
+
+
+def test_inject_wake_requires_prompt_after_a_successful_paste(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["idle"]),
+            _result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["idle"]),
+        ]
+    )
+
+    result = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert result.injected is False
+    assert result.returncode == 0
+    assert result.detail == (
+        "wake queued after paste: wake prompt was not accepted by the idle composer"
+    )
+    assert not [call for call in runner.calls if call[1] == "send-keys"]
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["pending_wake"] is True
+    assert payload["wake_prompt_staged"] is True
+
+
+def test_inject_wake_queues_staged_prompt_without_an_idle_composer(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    prompt = build_wake_prompt(config.identity)
+    registry_path(config).write_text(
+        json.dumps(
+            {
+                "identity": config.identity,
+                "session": config.session,
+                "cwd": str(config.cwd),
+                "pending_wake": True,
+                "wake_prompt_staged": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = RecordingRunner(
+        [_result(["tmux", "capture-pane"], stdout=f"Provider starting\n{prompt}\n")]
+    )
+
+    result = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
+
+    assert result.injected is False
+    assert result.returncode == 0
+    assert result.detail == "wake queued: codex idle composer marker is absent"
+    assert not [call for call in runner.calls if call[1] == "send-keys"]
 
 
 def test_inject_wake_queues_when_buffer_setup_fails(tmp_path: Path) -> None:
@@ -327,7 +497,7 @@ def test_inject_wake_retries_a_staged_prompt_without_pasting_it_again(tmp_path: 
     second = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
 
     assert second.injected is True
-    assert second.detail == "injected staged wake"
+    assert second.detail == "injected and consumption observed"
     assert len([call for call in runner.calls if call[1] == "paste-buffer"]) == 1
     assert len([call for call in runner.calls if call[1] == "set-buffer"]) == 1
     assert len([call for call in runner.calls if call[1] == "send-keys"]) == 1
@@ -355,7 +525,7 @@ def test_inject_wake_never_repastes_a_staged_prompt_that_disappeared(tmp_path: P
     result = inject_wake(config, runner=runner, sleeper=RecordingSleeper())
 
     assert result.injected is True
-    assert result.detail == "staged wake no longer present; not repasted"
+    assert result.detail == "staged wake consumption observed; not repasted"
     assert not [
         call for call in runner.calls if call[1] in {"set-buffer", "paste-buffer", "send-keys"}
     ]
@@ -606,7 +776,11 @@ def test_wait_and_wake_queues_modal_then_delivers_when_idle(tmp_path: Path) -> N
 
     assert result == 0
     assert len([call for call in runner.calls if call[:2] == ["synapse", "wait"]]) == 1
-    assert sleeper.delays == [config.pane_probe_interval, config.submit_delay]
+    assert sleeper.delays == [
+        config.pane_probe_interval,
+        config.submit_delay,
+        config.submit_delay,
+    ]
     assert [call for call in runner.calls if call[1] == "send-keys"] == [
         ["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]
     ]
@@ -751,7 +925,7 @@ def test_wait_and_wake_rearms_after_timeout_only_when_the_pane_stays_live(
 
     assert result == 0
     assert len([call for call in runner.calls if call[:2] == ["synapse", "wait"]]) == 2
-    assert sleeper.delays == [config.submit_delay]
+    assert sleeper.delays == [config.submit_delay, config.submit_delay]
 
 
 def test_wait_and_wake_retries_failed_wait_with_backoff_then_wakes(tmp_path: Path) -> None:
@@ -779,7 +953,7 @@ def test_wait_and_wake_retries_failed_wait_with_backoff_then_wakes(tmp_path: Pat
     assert result == 0
     wait_calls = [call for call in runner.calls if call[:2] == ["synapse", "wait"]]
     assert len(wait_calls) == 3
-    assert sleeper.delays == [1.0, 2.0, config.submit_delay]
+    assert sleeper.delays == [1.0, 2.0, config.submit_delay, config.submit_delay]
 
 
 def test_wait_and_wake_resets_failure_counter_after_a_wake(tmp_path: Path) -> None:
@@ -799,7 +973,14 @@ def test_wait_and_wake_resets_failure_counter_after_a_wake(tmp_path: Path) -> No
     result = wait_and_wake(config, runner=runner, max_wakes=2, sleeper=sleeper, rng=lambda: 0.0)
 
     assert result == 0
-    assert sleeper.delays == [1.0, config.submit_delay, 1.0, config.submit_delay]
+    assert sleeper.delays == [
+        1.0,
+        config.submit_delay,
+        config.submit_delay,
+        1.0,
+        config.submit_delay,
+        config.submit_delay,
+    ]
 
 
 def test_backoff_delay_grows_and_caps() -> None:
@@ -830,13 +1011,15 @@ def test_wait_and_wake_jitters_the_default_backoff(tmp_path: Path) -> None:
     sleeper = RecordingSleeper()
 
     # The default retry_jitter is non-zero; a full-jitter rng inflates the
-    # one backoff delay above the bare base, while the submit delay is unchanged.
+    # one backoff delay above the bare base, while both submit probes use the
+    # configured delay.
     result = wait_and_wake(config, runner=runner, max_wakes=1, sleeper=sleeper, rng=lambda: 1.0)
 
     assert result == 0
-    backoff, submit = sleeper.delays
+    backoff, pre_submit, post_submit = sleeper.delays
     assert backoff > 1.0
-    assert submit == config.submit_delay
+    assert pre_submit == config.submit_delay
+    assert post_submit == config.submit_delay
 
 
 def test_wait_command_threads_a_custom_uri_and_token(tmp_path: Path) -> None:

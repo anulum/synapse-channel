@@ -417,9 +417,67 @@ def _capture_pane(config: AgentTmuxConfig, *, runner: CommandRunner) -> tuple[st
     return proc.stdout, "pane captured"
 
 
+def _rendered_text_match(screen: str, required_text: str) -> re.Match[str] | None:
+    """Return the last whitespace-tolerant match for terminal-rendered text."""
+    pattern = r"\s+".join(re.escape(token) for token in required_text.split())
+    matches = list(re.finditer(pattern, screen))
+    return matches[-1] if matches else None
+
+
 def _contains_rendered_text(screen: str, required_text: str) -> bool:
     """Return whether terminal wrapping preserved the complete required text."""
-    return " ".join(required_text.split()) in " ".join(screen.split())
+    return _rendered_text_match(screen, required_text) is not None
+
+
+def _screen_is_safe_for_submit(
+    provider: str,
+    screen: str,
+    *,
+    required_text: str | None = None,
+) -> tuple[bool, str]:
+    """Classify an already captured pane for safe Enter submission."""
+    if _UNSAFE_PANE_PATTERN.search(screen):
+        return False, f"{provider} pane is busy, modal, or ambiguous"
+    if not _PROVIDER_IDLE_PATTERNS[provider].search(screen):
+        return False, f"{provider} idle composer marker is absent"
+    if required_text is not None and not _contains_rendered_text(screen, required_text):
+        return False, "wake prompt was not accepted by the idle composer"
+    return True, f"{provider} idle composer verified"
+
+
+def _staged_wake_was_consumed(
+    provider: str,
+    screen: str,
+    prompt: str,
+) -> bool:
+    """Return whether a staged prompt has observable at-most-once completion.
+
+    A prompt that disappeared cannot safely be replayed. If it remains visible,
+    it counts as consumed only when a newer provider idle composer appears after
+    its final rendered occurrence. Busy or modal text alone is deliberately not
+    an acknowledgement: current Codex can show asynchronous startup status while
+    leaving the prompt unsubmitted in the active composer.
+    """
+    prompt_match = _rendered_text_match(screen, prompt)
+    if prompt_match is None:
+        return True
+    return _PROVIDER_IDLE_PATTERNS[provider].search(screen, prompt_match.end()) is not None
+
+
+def _observe_staged_wake(
+    config: AgentTmuxConfig,
+    provider: str,
+    prompt: str,
+    *,
+    runner: CommandRunner,
+) -> tuple[bool, str]:
+    """Observe whether the pane consumed a staged wake without exposing text."""
+    screen, detail = _capture_pane(config, runner=runner)
+    if screen is None:
+        return False, detail
+    if _staged_wake_was_consumed(provider, screen, prompt):
+        return True, "wake prompt consumption observed"
+    return False, "wake prompt remains staged"
 
 
 def _pane_is_safe_for_submit(
@@ -440,13 +498,59 @@ def _pane_is_safe_for_submit(
     screen, detail = _capture_pane(config, runner=runner)
     if screen is None:
         return False, detail
-    if _UNSAFE_PANE_PATTERN.search(screen):
-        return False, f"{provider} pane is busy, modal, or ambiguous"
-    if not _PROVIDER_IDLE_PATTERNS[provider].search(screen):
-        return False, f"{provider} idle composer marker is absent"
-    if required_text is not None and not _contains_rendered_text(screen, required_text):
-        return False, "wake prompt was not accepted by the idle composer"
-    return True, f"{provider} idle composer verified"
+    return _screen_is_safe_for_submit(provider, screen, required_text=required_text)
+
+
+def _submit_staged_wake(
+    config: AgentTmuxConfig,
+    provider: str,
+    prompt: str,
+    *,
+    runner: CommandRunner,
+    sleeper: Sleeper,
+) -> AgentTmuxWakeResult:
+    """Send Enter and require pane evidence before acknowledging delivery."""
+    submit_proc = runner(
+        [config.tmux_bin, "send-keys", "-t", config.session, "Enter"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if submit_proc.returncode != 0:
+        _write_registry(
+            config,
+            last_inject_returncode=submit_proc.returncode,
+            pending_wake=True,
+            wake_prompt_staged=True,
+        )
+        return AgentTmuxWakeResult(
+            injected=False,
+            started=False,
+            returncode=submit_proc.returncode,
+            detail=(submit_proc.stderr or submit_proc.stdout).strip() or "submit failed",
+        )
+
+    sleeper(max(config.submit_delay, 0.0))
+    consumed, observation = _observe_staged_wake(
+        config,
+        provider,
+        prompt,
+        runner=runner,
+    )
+    _write_registry(
+        config,
+        last_inject_returncode=0,
+        pending_wake=not consumed,
+        wake_prompt_staged=not consumed,
+    )
+    return AgentTmuxWakeResult(
+        injected=consumed,
+        started=False,
+        returncode=0,
+        detail="injected and consumption observed"
+        if consumed
+        else f"wake submit unacknowledged: {observation}",
+    )
 
 
 def _has_session(config: AgentTmuxConfig, *, runner: CommandRunner) -> bool:
@@ -591,8 +695,11 @@ def inject_wake(
     registry records that paste before the second safety probe, so a queued retry
     never pastes the same wake a second time. After the submit delay a second
     capture must still show both the idle composer and the exact fixed prompt
-    before Enter is sent. Any unknown or ambiguous state is a successful queue
-    operation retried by :func:`wait_and_wake` after a bounded quiet interval.
+    before Enter is sent. A zero-returning key send is not delivery evidence: a
+    post-submit capture must show that the prompt disappeared or that a newer
+    idle composer appeared after it. Otherwise the one staged prompt remains
+    pending and :func:`wait_and_wake` retries Enter after a bounded quiet
+    interval, without pasting the text again.
 
     Parameters
     ----------
@@ -609,8 +716,9 @@ def inject_wake(
     Returns
     -------
     AgentTmuxWakeResult
-        ``injected`` is true only when both safety probes, the paste, and submit
-        succeed. A queued wake returns zero with ``injected`` false.
+        ``injected`` is true only when the safety probes, paste, submit, and
+        observable consumption succeed. A queued wake returns zero with
+        ``injected`` false.
     """
     del unsafe_payload
     binding_valid, binding_detail = _session_binding(config, runner=runner)
@@ -622,19 +730,22 @@ def inject_wake(
             returncode=BINDING_REFUSAL_EXIT_CODE,
             detail=f"refusing wake injection: {binding_detail}",
         )
+    provider = _provider_family(config)
+    if provider is None:
+        _write_registry(config, last_inject_returncode=0, pending_wake=True)
+        return AgentTmuxWakeResult(
+            injected=False,
+            started=False,
+            returncode=0,
+            detail="wake queued: provider has no fail-closed idle profile",
+        )
     prompt = build_wake_prompt(config.identity)
     prompt_staged = _wake_prompt_staged(config)
-    safe, safety_detail = _pane_is_safe_for_submit(
-        config,
-        runner=runner,
-        required_text=prompt if prompt_staged else None,
-    )
-    if not safe:
-        if prompt_staged and safety_detail == "wake prompt was not accepted by the idle composer":
-            # The prior paste is no longer in the idle composer. It may already
-            # have been submitted or deliberately cleared; either way, replaying
-            # it would violate the pane transport's at-most-once contract. The
-            # underlying inbox entry remains durable for an explicit read.
+    if prompt_staged:
+        screen, capture_detail = _capture_pane(config, runner=runner)
+        if screen is None:
+            safe, safety_detail = False, capture_detail
+        elif _staged_wake_was_consumed(provider, screen, prompt):
             _write_registry(
                 config,
                 last_inject_returncode=0,
@@ -645,8 +756,17 @@ def inject_wake(
                 injected=True,
                 started=False,
                 returncode=0,
-                detail="staged wake no longer present; not repasted",
+                detail="staged wake consumption observed; not repasted",
             )
+        else:
+            safe, safety_detail = _screen_is_safe_for_submit(
+                provider,
+                screen,
+                required_text=prompt,
+            )
+    else:
+        safe, safety_detail = _pane_is_safe_for_submit(config, runner=runner)
+    if not safe:
         _write_registry(
             config,
             last_inject_returncode=0,
@@ -660,25 +780,12 @@ def inject_wake(
             detail=f"wake queued: {safety_detail}",
         )
     if prompt_staged:
-        submit_proc = runner(
-            [config.tmux_bin, "send-keys", "-t", config.session, "Enter"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        _write_registry(
+        return _submit_staged_wake(
             config,
-            last_inject_returncode=submit_proc.returncode,
-            pending_wake=submit_proc.returncode != 0,
-            wake_prompt_staged=submit_proc.returncode != 0,
-        )
-        return AgentTmuxWakeResult(
-            injected=submit_proc.returncode == 0,
-            started=False,
-            returncode=submit_proc.returncode,
-            detail="injected staged wake"
-            if submit_proc.returncode == 0
-            else (submit_proc.stderr or submit_proc.stdout).strip() or "submit failed",
+            provider,
+            prompt,
+            runner=runner,
+            sleeper=sleeper,
         )
     buffer_name = f"synapse-wake-{_safe_key(config.identity)}"
     buffer_proc = runner(
@@ -760,25 +867,12 @@ def inject_wake(
             returncode=0,
             detail=f"wake queued after paste: {safety_detail}",
         )
-    submit_proc = runner(
-        [config.tmux_bin, "send-keys", "-t", config.session, "Enter"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    _write_registry(
+    return _submit_staged_wake(
         config,
-        last_inject_returncode=submit_proc.returncode,
-        pending_wake=submit_proc.returncode != 0,
-        wake_prompt_staged=submit_proc.returncode != 0,
-    )
-    return AgentTmuxWakeResult(
-        injected=submit_proc.returncode == 0,
-        started=False,
-        returncode=submit_proc.returncode,
-        detail="injected"
-        if submit_proc.returncode == 0
-        else (submit_proc.stderr or submit_proc.stdout).strip() or "submit failed",
+        provider,
+        prompt,
+        runner=runner,
+        sleeper=sleeper,
     )
 
 

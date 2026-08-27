@@ -287,6 +287,9 @@ and `Restart=always`, without installing a hub. Its
 pane delivery without name takeover. The pane bridge fails closed on busy,
 modal, unknown, or ambiguous provider screens: it persists the pending wake and
 submits its fixed prompt only after two provider-specific idle-composer probes.
+It acknowledges delivery only after the pane shows prompt consumption; an Enter
+ignored during asynchronous provider startup leaves the single staged prompt
+pending for a safe Enter-only retry.
 It accepts only exact identity, role, or group targets; global priority and CEO
 broadcasts remain durable inbox traffic but never inject into provider panes.
 Native Windows service setup is not
@@ -669,6 +672,9 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   sessions are accepted only when their live tmux environment matches the
   configured `SYN_PROJECT` and exact `SYN_IDENTITY`; a session already owned by
   another seat is refused by start, status, and wake before any keys are sent.
+  A successful `tmux send-keys` call is not treated as provider delivery: the
+  bridge observes prompt consumption and retains an unacknowledged staged prompt
+  for a later Enter-only retry, so provider startup cannot strand or duplicate it.
   While waiting, the bridge disconnects at a bounded interval and re-proves the
   session, binding, and live agent pane before registering again, so a vanished
   pane cannot remain advertised indefinitely.
@@ -1597,7 +1603,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 799 |
 | Wire message types | 80 |
 | CLI subcommands | 185 |
-| Test functions | 9345 |
+| Test functions | 9351 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 62 |
 | GitHub Actions workflows | 25 |

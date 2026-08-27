@@ -101,6 +101,11 @@ their input marker above status/footer rows, so the probe classifies the complet
 visible pane rather than only its last few lines. It still refuses busy, modal,
 unknown, or cross-identity panes and requires the exact fixed routing prompt to
 remain visible, allowing only terminal line wrapping, before Enter is sent.
+It does not equate `tmux send-keys` exit zero with provider consumption. A
+post-submit capture must show that the prompt disappeared or that a newer idle
+composer appeared after it. During asynchronous startup an ignored Enter leaves
+the single prompt staged and pending; the bridge waits for a safe pane and retries
+only Enter, never the prompt paste.
 
 If `syn-name` reports `user/terminal-*` while the command runs inside a plausible
 project checkout, upgrade or refresh the local runtime. That identity is only a
