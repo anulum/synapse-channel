@@ -9,12 +9,16 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 from cli_e2e_helpers import CliResult, git_repo, git_run, run_cli
+from synapse_channel import cli
+from synapse_channel.mutation_governance import inspect_mutation_governance
 
 _SYNAPSE_BIN = Path(sys.executable).with_name("synapse")
 _PRE_COMMIT_BIN = Path(sys.executable).with_name("pre-commit")
@@ -45,8 +49,17 @@ def _provider_fragment(repo: Path, provider: str) -> str:
     return rendered.stdout
 
 
+def _run_in_process(*args: str) -> CliResult:
+    """Drive the public CLI dispatcher while retaining parent-process coverage."""
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        returncode = cli.main(list(args))
+    return CliResult(tuple(args), returncode, stdout.getvalue(), stderr.getvalue())
+
+
 def _report(home: Path, repo: Path) -> dict[str, object]:
-    result = _run(
+    args = (
         "adapters",
         "mutation-status",
         "--home",
@@ -54,11 +67,20 @@ def _report(home: Path, repo: Path) -> dict[str, object]:
         "--project",
         str(repo),
         "--json",
-        cwd=repo,
     )
+    result = _run(*args, cwd=repo)
     assert result.ok(), result.output
     decoded = json.loads(result.stdout)
     assert isinstance(decoded, dict)
+    in_process = _run_in_process(*args)
+    assert in_process.ok(), in_process.output
+    assert json.loads(in_process.stdout) == decoded
+    direct = inspect_mutation_governance(
+        home=home,
+        project=repo,
+        opencode_config_root=home / ".config",
+    )
+    assert json.loads(json.dumps(direct.to_dict())) == decoded
     return decoded
 
 
@@ -108,6 +130,16 @@ def test_real_cli_reports_absent_guards_without_writing(tmp_path: Path) -> None:
     assert "direct filesystem writes" in text.stdout
     assert "provider hook crash or timeout" in text.stdout
     assert "Staged Git claim gate" in text.stdout
+    in_process_text = _run_in_process(
+        "adapters",
+        "mutation-status",
+        "--home",
+        str(home),
+        "--project",
+        str(repo),
+    )
+    assert in_process_text.ok(), in_process_text.output
+    assert in_process_text.stdout == text.stdout
     providers = report["providers"]
     assert isinstance(providers, list)
     codex = next(

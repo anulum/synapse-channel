@@ -100,6 +100,7 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/ergonomics_inbox.py": (2, "protocol-body"),
     "src/synapse_channel/kimi_hook_installer.py": (1, "interpreter-guard"),
     "src/synapse_channel/locks.py": (2, "protocol-body"),
+    "src/synapse_channel/mutation_governance.py": (1, "optional-import"),
     "src/synapse_channel/observed_peers.py": (1, "protocol-body"),
     "src/synapse_channel/reap.py": (3, "protocol-body"),
 }
@@ -120,7 +121,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_at_rest_pkcs11.py": (1, "optional-dep-guard"),
     "tests/test_at_rest_tpm2.py": (1, "optional-dep-guard"),
     "tests/test_benchmark.py": (1, "optional-dep-guard"),
-    "tests/test_cli_e2e_agent_tmux.py": (1, "optional-dep-guard"),
+    "tests/test_cli_e2e_agent_tmux.py": (2, "optional-dep-guard + operator-smoke"),
     "tests/test_cli_e2e_opencode_editors.py": (1, "operator-smoke"),
     "tests/test_cli_sqlcipher.py": (2, "optional-dep-guard"),
     "tests/test_cli_streams_sqlcipher.py": (1, "optional-dep-guard"),
@@ -253,4 +254,7 @@ def test_the_ledgers_carry_no_unconditional_skips() -> None:
         "optional-dep-guard",
         "platform-guard",
     }
-    assert {reason for _, reason in SKIP_LEDGER.values()} <= allowed
+    observed = {
+        reason_class for _, reason in SKIP_LEDGER.values() for reason_class in reason.split(" + ")
+    }
+    assert observed <= allowed

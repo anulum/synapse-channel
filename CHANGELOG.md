@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add `synapse adapters mutation-status`, a read-only posture report that keeps
+  provider runtime detection, inspected hook configuration, staged Git-gate
+  readiness, and verified enforcement as separate facts. Its text and JSON
+  output enumerate covered write tools and the remaining custom-tool, MCP,
+  direct-filesystem, crash/timeout, incomplete-interception, and external-effect
+  boundaries without invoking providers or changing configuration.
+
 ### Changed
 
 - Document the existing real Ollama CLI and REST participant routes, including
