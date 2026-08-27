@@ -49,7 +49,9 @@ dev = [
   # present in the test environment (``--no-isolation`` does not provision them).
   "build>=1.5.0",
   "setuptools>=68",
+  "setuptools-scm[toml]>=3.4.3",
   "wheel>=0.43",
+  "pkgconfig>=1.5.5",
   "packaging>=26.2",
   "prometheus-client>=0.20",
   "hypothesis>=6.100",

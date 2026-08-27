@@ -45,8 +45,9 @@ All notable changes to this project are documented here.
   gRPC capability so the existing real loopback, TLS, and mTLS A2A journeys run
   in CI rather than capability-skip. Hash-lock the Linux SQLCipher capability
   in the same dev cohort instead of installing it separately without artifact
-  hashes. Python 3.12 owns the canonical coverage measurement while every
-  supported Python still runs the complete real suite.
+  hashes, and build the exact hash-locked TPM 2.0 sdist without an isolated
+  unpinned build environment. Python 3.12 owns the canonical coverage
+  measurement while every supported Python still runs the complete real suite.
 
 ## [0.99.20] - 2026-08-26
 
