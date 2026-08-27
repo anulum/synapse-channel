@@ -93,6 +93,21 @@ spending a provider turn in every terminal.
   default for the `syn arm`/`syn-wait` wrapper — if you want project-level messages
   to wake you.
 
+## A wake prompt is pasted but remains in the input composer
+
+`agent-tmux` must complete both halves of delivery: bracketed paste followed by
+an Enter key after a second safety probe. Current provider composers may render
+their input marker above status/footer rows, so the probe classifies the complete
+visible pane rather than only its last few lines. It still refuses busy, modal,
+unknown, or cross-identity panes and requires the exact fixed routing prompt to
+remain visible, allowing only terminal line wrapping, before Enter is sent.
+
+If `syn-name` reports `user/terminal-*` while the command runs inside a plausible
+project checkout, upgrade or refresh the local runtime. That identity is only a
+non-project fallback; the repository project must win. Pin a multi-seat identity
+explicitly (`SYN_PROJECT=<project>` plus `SYN_IDENTITY=<project>/<seat>`) and
+verify the matching `agent-tmux` session binding before re-arming the bridge.
+
 ## Messages are in the feed but `syn-inbox` shows nothing
 
 Two independent causes:

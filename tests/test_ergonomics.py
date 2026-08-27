@@ -81,6 +81,32 @@ def test_syn_project_and_identity_env_keep_full_identity() -> None:
     assert ident.source == "env"
 
 
+def test_project_checkout_replaces_user_terminal_fallback() -> None:
+    ident = resolve_identity(
+        env={"SYN_PROJECT": "user", "SYN_IDENTITY": "user/terminal-2280843"},
+        cwd_basename="SYNAPSE-CHANNEL",
+        cwd_project_bound=True,
+        home_basename="anulum",
+    )
+    assert ident.project == "SYNAPSE-CHANNEL"
+    assert ident.identity == "SYNAPSE-CHANNEL"
+    assert ident.source == "cwd"
+    assert ident.ignored_ambient == "user/terminal-2280843"
+    assert ident.plausible is True
+
+
+def test_user_terminal_remains_the_fallback_outside_a_project() -> None:
+    ident = resolve_identity(
+        env={"SYN_PROJECT": "user", "SYN_IDENTITY": "user/terminal-2280843"},
+        cwd_basename="anulum",
+        home_basename="anulum",
+    )
+    assert ident.project == "user"
+    assert ident.identity == "user/terminal-2280843"
+    assert ident.source == "env"
+    assert ident.plausible is False
+
+
 def test_disagreeing_syn_project_and_identity_drops_the_borrowed_identity() -> None:
     # SYN_PROJECT deliberately names one project while a stale SYN_IDENTITY from a
     # borrowed shell names another. The ambient identity did NOT supply the project,

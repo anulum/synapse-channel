@@ -18,13 +18,15 @@ waiter whose name collided with the sender it waits for.
 
 This module makes that layer a versioned, tested part of the package, so a single
 upgrade distributes the fixes. The one thing it gets right that the wrappers did
-not is **identity**: it is resolved from an explicit flag or an environment
-variable first and the working directory only as a last resort, and an identity
-that looks accidental (the home directory, a system path, nothing at all) is
-flagged loudly rather than used in silence. Everything else is a thin, correct
-assembly of the arguments the package CLI already implements — the waiter already
-takes over its own name and suffixes ``-rx`` to stay distinct from the sender, so
-``syn arm`` uses the persistent package arm command instead of a one-shot wait.
+not is **identity**: it is resolved from an explicit flag, a plausible environment
+binding, or the current project. An implausible fallback such as
+``user/terminal-*`` cannot override a plausible repository project, and an
+identity that still looks accidental (the home directory, a system path, nothing
+at all) is flagged loudly rather than used in silence. Everything else is a thin,
+correct assembly of the arguments the package CLI already implements — the waiter
+already takes over its own name and suffixes ``-rx`` to stay distinct from the
+sender, so ``syn arm`` uses the persistent package arm command instead of a
+one-shot wait.
 """
 
 from __future__ import annotations
@@ -176,12 +178,15 @@ def resolve_identity(
     agent_type: str = DEFAULT_AGENT_TYPE,
     env: Mapping[str, str] | None = None,
     cwd_basename: str = "",
+    cwd_project_bound: bool = False,
     home_basename: str = "",
 ) -> Identity:
     """Resolve the coordination identity from explicit inputs and opted-into env.
 
     Precedence for the project, first match wins: an explicit ``project`` flag,
-    the ``$SYN_PROJECT`` env var, then the working-directory basename. Ambient
+    a plausible ``$SYN_PROJECT`` env binding, then a Git-confirmed plausible
+    repository project. An implausible environment fallback is retained when
+    the current directory is not a confirmed project. Ambient
     ``$SYN_IDENTITY`` is **never a silent source**: it refines the identity to
     the full ``project/<type>-<id>`` form only when ``$SYN_PROJECT`` is also set
     and agrees with its project segment — the pair the shell hook exports
@@ -206,6 +211,8 @@ def resolve_identity(
         environment when ``None``.
     cwd_basename : str, optional
         The working-directory (or git-toplevel) basename, the last-resort project.
+    cwd_project_bound : bool, optional
+        Whether Git confirmed that ``cwd_basename`` names a repository root.
     home_basename : str, optional
         The home-directory basename, used to flag an accidental identity.
 
@@ -221,15 +228,19 @@ def resolve_identity(
     explicit_project = bool(project and project.strip())
     explicit_id = bool(agent_id and agent_id.strip())
 
+    cwd_project = cwd_basename.strip()
+    cwd_plausible = is_plausible_project(cwd_project, home_basename=home_basename)
+    env_plausible = is_plausible_project(syn_project, home_basename=home_basename)
+
     if explicit_project:
         proj, source = str(project).strip(), "flag"
-    elif syn_project:
+    elif syn_project and (env_plausible or not (cwd_project_bound and cwd_plausible)):
         proj, source = syn_project, "env"
     else:
-        proj, source = cwd_basename.strip(), "cwd"
+        proj, source = cwd_project, "cwd"
 
     ambient_opted_in = bool(
-        syn_identity and syn_project and syn_identity.split("/", 1)[0] == syn_project
+        source == "env" and syn_identity and syn_project and syn_identity.split("/", 1)[0] == proj
     )
     if explicit_id:
         identity = f"{proj}/{str(agent_type).strip()}-{str(agent_id).strip()}"
@@ -401,8 +412,10 @@ def name_lines(identity: Identity) -> list[str]:
     return lines
 
 
-def _cwd_basename(*, runner: Callable[[Sequence[str]], str] | None = None) -> str:
-    """Return the git-toplevel basename, falling back to the working directory."""
+def _cwd_project_context(
+    *, runner: Callable[[Sequence[str]], str] | None = None
+) -> tuple[str, bool]:
+    """Return the current project name and whether Git confirmed its root."""
     if runner is None:
 
         def runner(cmd: Sequence[str]) -> str:
@@ -415,7 +428,12 @@ def _cwd_basename(*, runner: Callable[[Sequence[str]], str] | None = None) -> st
         top = runner(["git", "rev-parse", "--show-toplevel"])
     except (subprocess.SubprocessError, OSError):
         top = ""
-    return Path(top).name if top else Path.cwd().name
+    return (Path(top).name, True) if top else (Path.cwd().name, False)
+
+
+def _cwd_basename(*, runner: Callable[[Sequence[str]], str] | None = None) -> str:
+    """Return the git-toplevel basename, falling back to the working directory."""
+    return _cwd_project_context(runner=runner)[0]
 
 
 def _warn_if_implausible(identity: Identity) -> None:
@@ -527,6 +545,7 @@ def main(
     *,
     env: Mapping[str, str] | None = None,
     cwd_basename: str | None = None,
+    cwd_project_bound: bool | None = None,
     dispatcher: CliDispatcher = cli.main,
     reap_runner: ReapRunner = reap_command.main,
     locks_runner: LocksRunner = locks_command.main,
@@ -543,6 +562,9 @@ def main(
         Environment mapping used for identity and relay-home resolution.
     cwd_basename : str or None, optional
         Git toplevel/CWD basename. When omitted, resolved from the process.
+    cwd_project_bound : bool or None, optional
+        Whether an injected ``cwd_basename`` is a Git-confirmed project. When
+        omitted with no injected basename, the live Git probe supplies it.
     dispatcher : callable, optional
         Package CLI entry point to call for verbs that delegate to ``synapse``.
     reap_runner : callable, optional
@@ -566,12 +588,20 @@ def main(
         return 2
 
     env = os.environ if env is None else env
+    if cwd_basename is None:
+        resolved_cwd, detected_project_bound = _cwd_project_context()
+    else:
+        resolved_cwd = cwd_basename
+        detected_project_bound = False
     identity = resolve_identity(
         project=args.project,
         agent_id=args.agent_id,
         agent_type=args.agent_type,
         env=env,
-        cwd_basename=_cwd_basename() if cwd_basename is None else cwd_basename,
+        cwd_basename=resolved_cwd,
+        cwd_project_bound=(
+            detected_project_bound if cwd_project_bound is None else cwd_project_bound
+        ),
         home_basename=Path(env.get("HOME", str(Path.home()))).name,
     )
     rest: list[str] = list(args.rest)

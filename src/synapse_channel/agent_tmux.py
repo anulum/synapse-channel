@@ -85,11 +85,8 @@ DEFAULT_PANE_PROBE_INTERVAL = 5.0
 BINDING_REFUSAL_EXIT_CODE = 4
 """Stable refusal code when a live tmux session belongs to another identity."""
 
-PANE_CAPTURE_HISTORY_LINES = 80
-"""Bounded visible history used for the provider-state safety probe."""
-
 PANE_CAPTURE_MAX_CHARS = 64 * 1024
-"""Maximum pane text retained by the safety classifier."""
+"""Maximum visible pane text retained by the safety classifier."""
 
 _PROVIDER_IDLE_PATTERNS = {
     "codex": re.compile(r"(?m)^\s*›(?:\s|$)"),
@@ -399,7 +396,7 @@ def _provider_family(config: AgentTmuxConfig) -> str | None:
 
 
 def _capture_pane(config: AgentTmuxConfig, *, runner: CommandRunner) -> tuple[str | None, str]:
-    """Capture a bounded pane tail without returning terminal contents in errors."""
+    """Capture the current visible pane without returning its contents in errors."""
     proc = runner(
         [
             config.tmux_bin,
@@ -408,8 +405,6 @@ def _capture_pane(config: AgentTmuxConfig, *, runner: CommandRunner) -> tuple[st
             config.session,
             "-p",
             "-J",
-            "-S",
-            f"-{PANE_CAPTURE_HISTORY_LINES}",
         ],
         capture_output=True,
         text=True,
@@ -420,6 +415,11 @@ def _capture_pane(config: AgentTmuxConfig, *, runner: CommandRunner) -> tuple[st
     if len(proc.stdout) > PANE_CAPTURE_MAX_CHARS:
         return None, "pane capture exceeded the safety bound"
     return proc.stdout, "pane captured"
+
+
+def _contains_rendered_text(screen: str, required_text: str) -> bool:
+    """Return whether terminal wrapping preserved the complete required text."""
+    return " ".join(required_text.split()) in " ".join(screen.split())
 
 
 def _pane_is_safe_for_submit(
@@ -440,14 +440,11 @@ def _pane_is_safe_for_submit(
     screen, detail = _capture_pane(config, runner=runner)
     if screen is None:
         return False, detail
-    lines = screen.splitlines()
-    state_window = "\n".join(lines[-24:])
-    idle_window = "\n".join(lines[-8:])
-    if _UNSAFE_PANE_PATTERN.search(state_window):
+    if _UNSAFE_PANE_PATTERN.search(screen):
         return False, f"{provider} pane is busy, modal, or ambiguous"
-    if not _PROVIDER_IDLE_PATTERNS[provider].search(idle_window):
+    if not _PROVIDER_IDLE_PATTERNS[provider].search(screen):
         return False, f"{provider} idle composer marker is absent"
-    if required_text is not None and required_text not in screen:
+    if required_text is not None and not _contains_rendered_text(screen, required_text):
         return False, "wake prompt was not accepted by the idle composer"
     return True, f"{provider} idle composer verified"
 

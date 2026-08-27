@@ -18,6 +18,7 @@ so no provider CLI is needed. The whole file skips when ``tmux`` is not installe
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -33,6 +34,7 @@ from cli_e2e_helpers import _candidate_environment, _stop, isolated_hub, run_cli
 from synapse_channel.agent_tmux import AgentTmuxConfig, build_wake_prompt, registry_path
 
 _TMUX = shutil.which("tmux")
+_CODEX = shutil.which("codex")
 pytestmark = pytest.mark.skipif(_TMUX is None, reason="tmux is not installed")
 
 _IDENTITY = "E2EAGENT"
@@ -460,6 +462,74 @@ def test_agent_tmux_wait_submits_a_persisted_staged_prompt_without_repasting(
         assert waited.ok(), waited.output
         assert submissions.read_text(encoding="utf-8").splitlines() == [prompt]
         payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+        assert payload["pending_wake"] is False
+        assert payload["wake_prompt_staged"] is False
+
+
+@pytest.mark.skipif(
+    os.environ.get("SYNAPSE_REAL_CODEX_TMUX_SMOKE") != "1" or _CODEX is None,
+    reason="set SYNAPSE_REAL_CODEX_TMUX_SMOKE=1 with Codex installed",
+)
+def test_agent_tmux_submits_the_wake_in_a_real_codex_composer(tmp_path: Path) -> None:
+    """A real Codex TUI consumes the fixed prompt and restores its composer."""
+    assert _CODEX is not None
+    repository = Path(__file__).resolve().parents[1]
+    identity = "SYNAPSE-CHANNEL/codex-real-tmux-smoke"
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+    cli_env = {"XDG_RUNTIME_DIR": str(runtime)}
+    with _throwaway_session() as session:
+        common = [
+            "--identity",
+            identity,
+            "--session",
+            session,
+            "--cwd",
+            str(repository),
+            "--agent-command",
+            f"{_CODEX} --no-alt-screen",
+        ]
+        started = run_cli("agent-tmux", "start", *common, env=cli_env)
+        assert started.ok(), started.output
+
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline:
+            if "› Ask Codex to do anything" in _capture_pane(session):
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("real Codex composer did not become idle")
+
+        woken = run_cli(
+            "agent-tmux",
+            "wake",
+            *common,
+            "--submit-delay",
+            "0.4",
+            env=cli_env,
+        )
+        assert woken.ok(), woken.output
+        assert "injected" in woken.stdout
+
+        prompt = _normalise(build_wake_prompt(identity))
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            pane = _capture_pane(session)
+            if prompt in _normalise(pane) and "› Ask Codex to do anything" in pane:
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("real Codex did not consume the wake and restore its composer")
+
+        config = AgentTmuxConfig(
+            identity=identity,
+            session=session,
+            cwd=repository,
+            agent_command=(_CODEX, "--no-alt-screen"),
+            registry_dir=runtime / "synapse-agent-tmux",
+        )
+        payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+        assert payload["last_inject_returncode"] == 0
         assert payload["pending_wake"] is False
         assert payload["wake_prompt_staged"] is False
 

@@ -22,6 +22,14 @@ All notable changes to this project are documented here.
   calls do not repeat `PreToolUse` and tools outside the recipe matcher remain
   unmediated.
 
+### Fixed
+
+- Treat `user/terminal-*` as a fallback only when no plausible repository
+  project is available, and make `agent-tmux` inspect the complete visible
+  provider pane before submitting a staged wake. Current Codex composers whose
+  prompt appears above footer rows now receive the matching Enter instead of
+  leaving the routing text pending in the CLI.
+
 ## [0.99.20] - 2026-08-26
 
 ### Fixed
