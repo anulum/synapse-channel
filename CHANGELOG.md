@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.21] - 2026-08-27
+
 ### Added
 
 - Add `synapse adapters mutation-status`, a read-only posture report that keeps
