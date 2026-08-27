@@ -78,7 +78,7 @@ jobs:
           softhsm2 swtpm swtpm-tools tpm2-tools libtss2-dev
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
       - run: python -m pip install -e . --no-deps
-      # The hash-locked dev cohort includes the shipped a2a-grpc extra. Keep the
+      # The hash-locked dev cohort includes the shipped gRPC dependency. Keep the
       # capability fail-closed so the real loopback/TLS/mTLS tests cannot silently skip.
       - name: Require the real gRPC test capability
         run: python -c "import grpc; assert grpc.__version__"

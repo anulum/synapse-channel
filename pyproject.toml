@@ -59,6 +59,7 @@ dev = [
   "reuse>=6.0",
   "tomli>=2.4.1; python_version < '3.11'",
   "mcp==1.28.1",
+  "grpcio>=1.62.0",
   "cryptography>=42.0",
   "python-pkcs11>=0.9",
   "wasmtime>=14.0.0",
