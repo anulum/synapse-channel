@@ -40,6 +40,11 @@ All notable changes to this project are documented here.
   provider pane before submitting a staged wake. Current Codex composers whose
   prompt appears above footer rows now receive the matching Enter instead of
   leaving the routing text pending in the CLI.
+- Make the hosted coverage gate compare at two-decimal precision instead of
+  silently accepting a rounded value below 98%, and install the hash-locked
+  gRPC capability so the existing real loopback, TLS, and mTLS A2A journeys run
+  in CI rather than capability-skip. Python 3.12 owns the canonical coverage
+  measurement while every supported Python still runs the complete real suite.
 
 ## [0.99.20] - 2026-08-26
 
