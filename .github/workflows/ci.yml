@@ -88,11 +88,6 @@ jobs:
       # source, PyPI 2.3.0) to stop version-range drift into an unvetted release; full hash-locking
       # would need a compiled dependency closure at build time and is tracked separately.
       - run: python -m pip install 'tpm2-pytss==2.3.0'
-      # sqlcipher3-binary lives in the optional [sqlcipher] extra, not the hash-locked dev
-      # requirements, so without this install the whole SQLCipher at-rest suite (persistence,
-      # session capability, reliability workflow, multihub MCP, encrypt-key) silently skips.
-      # Manylinux wheels exist for every matrix Python (cp310–cp314).
-      - run: python -m pip install 'sqlcipher3-binary==0.6.0'
       - name: Run the full suite with the exact coverage gate
         if: matrix.python-version == '3.12'
         run: pytest --cov=synapse_channel --cov-report=term-missing --cov-report=xml

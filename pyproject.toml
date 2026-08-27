@@ -60,6 +60,7 @@ dev = [
   "tomli>=2.4.1; python_version < '3.11'",
   "mcp==1.28.1",
   "grpcio>=1.62.0",
+  "sqlcipher3-binary==0.6.0; sys_platform == 'linux'",
   "cryptography>=42.0",
   "python-pkcs11>=0.9",
   "wasmtime>=14.0.0",

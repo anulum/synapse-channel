@@ -1877,6 +1877,15 @@ sortedcontainers==2.4.0 \
     # via
     #   cyclonedx-python-lib
     #   hypothesis
+sqlcipher3-binary==0.6.0 ; sys_platform == 'linux' \
+    --hash=sha256:04dc5ac3f748c4cec5fb53e5f0f6474e9d702239372cc9d3d94cd27d06e3ebd3 \
+    --hash=sha256:1a616747d6244918259d9dc8a668b58ddf9fd751c56eaddf8733566a412f2bae \
+    --hash=sha256:421abf7a81e134bd808a7933d296f408aaf75475d6561d4a21e1f285b75445aa \
+    --hash=sha256:8a6afbdef7cbbb33b1228ce96edc1bfe7f15bdf2a5e8bdab87261ab52e4111e6 \
+    --hash=sha256:9886d2d30b5bb4e3ddc3a9e2b9e5b65261fa0c748eaf8a584781082312d37cee \
+    --hash=sha256:c8a7076a18b4f6fc9b580b0f24aa526d6a47605b1e3e6491ee3e9f2977940d8e \
+    --hash=sha256:f9bccb9e942a04bbf920714940c8f9e00134cd655b11ba4c6f1306bcc3504d6c
+    # via synapse-channel (pyproject.toml)
 sse-starlette==3.4.5 \
     --hash=sha256:83072538bc211a2f68b7b0422226c4af3e9b62e106e07034664b832ca019842a \
     --hash=sha256:e71bad53323f65573c3864a6c3bd0c1eb6e5f092b2e48082b0c35927d19ca296
