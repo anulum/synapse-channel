@@ -829,7 +829,7 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
             "prime the ACP prompt composer",
             ("type", "--clearmodifiers", "--delay", "20", "--", "x"),
         ),
-        ("clear the ACP prompt composer", ("key", "ctrl+a")),
+        ("clear the ACP prompt composer", ("key", "ctrl+a", "BackSpace")),
         (
             "type the ACP prompt",
             (

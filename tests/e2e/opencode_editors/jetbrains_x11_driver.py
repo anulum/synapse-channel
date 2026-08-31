@@ -472,6 +472,7 @@ def _submit_chat_prompt(
         "clear the ACP prompt composer",
         "key",
         "ctrl+a",
+        "BackSpace",
         deadline=deadline,
     )
     clear_deadline = deadline
