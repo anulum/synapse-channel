@@ -452,7 +452,10 @@ socket connected. Directed sends request a private receipt by default and exit
 non-zero when no consume-live recipient matches — including when a stale socket
 is still connected but has neither a recent reaction nor a live waiter. The
 message remains journalled and best-effort routed, while the hub records a dead
-letter instead of reporting socket presence as delivery. Add
+letter instead of reporting socket presence as delivery. Each one-shot send
+uses a unique message identity and accepts only its matching receipt, so an old
+pending receipt replayed when the sender reconnects cannot be reported as the
+new send's result. Add
 `--require-recipient` when the positive receipt should also be printed and a hub
 too old to return receipts must fail closed.
 
@@ -1603,7 +1606,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 799 |
 | Wire message types | 80 |
 | CLI subcommands | 185 |
-| Test functions | 9355 |
+| Test functions | 9356 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 62 |
 | GitHub Actions workflows | 25 |

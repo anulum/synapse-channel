@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import contextlib
 import os
+import uuid
 from typing import Any
 
 from synapse_channel.cli_messaging_types import AgentFactory
@@ -104,13 +105,18 @@ async def _send(
         ``0`` on success, ``1`` when the hub could not be reached.
     """
     sender_name = _one_shot_sender_name(name)
+    client_msg_id = f"cli-{uuid.uuid4().hex}"
     replies: list[dict[str, Any]] = []
     receipts: list[dict[str, Any]] = []
 
     async def collect(data: dict[str, Any]) -> None:
         if data.get("type") == MessageType.CHAT and data.get("sender") != sender_name:
             replies.append(data)
-        elif data.get("type") == MessageType.DELIVERY_RECEIPT and data.get("target") == sender_name:
+        elif (
+            data.get("type") == MessageType.DELIVERY_RECEIPT
+            and data.get("target") == sender_name
+            and data.get("client_msg_id") == client_msg_id
+        ):
             receipts.append(data)
 
     agent = agent_factory(sender_name, collect, uri=uri, verbose=False, token=token)
@@ -147,6 +153,7 @@ async def _send(
         request_receipt = require_recipient or (not channel and is_directed_target(target))
         if request_receipt:
             extra["receipt_requested"] = True
+            extra["client_msg_id"] = client_msg_id
         if channel:
             extra["channel"] = channel
         outbound_payload = message

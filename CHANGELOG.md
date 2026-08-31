@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Correlate every one-shot directed CLI send with a unique `client_msg_id` and
+  accept only the matching delivery receipt. A pending receipt replayed when a
+  sender identity reconnects can no longer be mistaken for the verdict of its
+  new message or print the old message's target as the current failure.
 - Make `synapse status` prefer the current worktree's configured exact identity
   over conflicting ambient shell state, and use an agreeing
   `SYN_PROJECT`/`SYN_IDENTITY` pair outside a configured worktree. Missing or

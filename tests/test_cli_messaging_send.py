@@ -20,6 +20,7 @@ from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli_messaging
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -346,6 +347,77 @@ async def test_send_require_recipient_counts_project_waiter_as_logical_seat(
     assert code == 0
     assert message["target"] == "SYNAPSE-CHANNEL"
     assert "delivered to SYNAPSE-CHANNEL/kimi-3dcd (passive receiver)" in capsys.readouterr().out
+
+
+async def test_send_ignores_an_older_replayed_receipt_for_the_same_sender(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A reconnect receipt cannot be mistaken for the new send's verdict."""
+    store = EventStore(tmp_path / "events.db")
+    old_seq = store.commit_delivery_receipt_request(
+        chat={
+            "sender": "USER",
+            "target": "OLD-TARGET",
+            "msg_id": 1,
+            "payload": "old",
+            "client_msg_id": "old-client-message",
+        },
+        requested={
+            "sender": "USER",
+            "target": "OLD-TARGET",
+            "message_id": 1,
+            "client_msg_id": "old-client-message",
+        },
+    )
+    store.commit_delivery_receipt_transition(
+        kind="delivery_receipt_immediate",
+        payload={
+            "sender": "USER",
+            "target": "OLD-TARGET",
+            "message_id": 1,
+            "message_seq": old_seq,
+            "client_msg_id": "old-client-message",
+            "delivered": False,
+            "deferred": False,
+        },
+        notification={
+            "type": "delivery_receipt",
+            "sender": "Hub",
+            "target": "USER",
+            "message_target": "OLD-TARGET",
+            "payload": "delivery failed: no online recipient matched OLD-TARGET",
+            "client_msg_id": "old-client-message",
+            "delivered": False,
+            "deferred": False,
+        },
+        state="pending",
+    )
+
+    async with running_hub(SynapseHub(journal=store)) as (_hub, uri):
+        receiver = await connect_agent("NEW-TARGET", uri)
+        try:
+            code = await cli_messaging._send(
+                uri=uri,
+                name="USER",
+                target="NEW-TARGET",
+                message="new",
+                wait_seconds=0.0,
+                require_recipient=True,
+            )
+            message = await receiver.recorder.wait_for(
+                lambda item: item.get("type") == "chat" and item.get("payload") == "new"
+            )
+        finally:
+            await close_agents(receiver)
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert str(message["client_msg_id"]).startswith("cli-")
+    assert message["client_msg_id"] != "old-client-message"
+    assert "delivered to NEW-TARGET" in output
+    assert "OLD-TARGET" not in output
+    store.close()
 
 
 async def test_send_require_recipient_fails_without_online_recipient(
