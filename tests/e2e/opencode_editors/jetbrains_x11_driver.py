@@ -31,6 +31,7 @@ _CHAT_INPUT_SETTLE_SECONDS = 0.25
 # the real GUI input below that boundary; the acceptance trace still proves the
 # complete prompt byte length and SHA-256 after submission.
 _CHAT_INPUT_KEY_DELAY_MS = "20"
+_CHAT_INPUT_PRIMER = "x"
 _CANONICAL_XID = re.compile(r"0x[0-9A-Fa-f]+\Z")
 _X11_BAD_WINDOW_LINE = "X Error of failed request:  BadWindow (invalid Window parameter)"
 _X11_DISAPPEARING_WINDOW_OPCODES = frozenset(
@@ -450,6 +451,23 @@ def _submit_chat_prompt(
     if focus_deadline is None:
         focus_deadline = time.monotonic() + _CHAT_INPUT_SETTLE_SECONDS
     _bounded_poll_sleep(focus_deadline)
+    # The first printable XTEST event can be consumed while JetBrains attaches
+    # the Swing document listener. Prime the focused widget with disposable
+    # input, let the listener settle, then clear it before entering the prompt.
+    _checked_xdotool(
+        "prime the ACP prompt composer",
+        "type",
+        "--clearmodifiers",
+        "--delay",
+        _CHAT_INPUT_KEY_DELAY_MS,
+        "--",
+        _CHAT_INPUT_PRIMER,
+        deadline=deadline,
+    )
+    primer_deadline = deadline
+    if primer_deadline is None:
+        primer_deadline = time.monotonic() + _CHAT_INPUT_SETTLE_SECONDS
+    _bounded_poll_sleep(primer_deadline)
     _checked_xdotool(
         "clear the ACP prompt composer",
         "key",
@@ -463,6 +481,7 @@ def _submit_chat_prompt(
     _checked_xdotool(
         "type the ACP prompt",
         "type",
+        "--clearmodifiers",
         "--delay",
         _CHAT_INPUT_KEY_DELAY_MS,
         "--",

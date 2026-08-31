@@ -823,12 +823,23 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
 
     assert focused == ["project"]
     expected_deadline = 100.25 if deadline is None else deadline
-    assert sleeps == [expected_deadline, expected_deadline]
+    assert sleeps == [expected_deadline, expected_deadline, expected_deadline]
     assert actions == [
+        (
+            "prime the ACP prompt composer",
+            ("type", "--clearmodifiers", "--delay", "20", "--", "x"),
+        ),
         ("clear the ACP prompt composer", ("key", "ctrl+a")),
         (
             "type the ACP prompt",
-            ("type", "--delay", "20", "--", "governed prompt"),
+            (
+                "type",
+                "--clearmodifiers",
+                "--delay",
+                "20",
+                "--",
+                "governed prompt",
+            ),
         ),
         (
             "submit the JetBrains ACP prompt from the focused composer",
