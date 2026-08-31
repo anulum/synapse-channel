@@ -40,17 +40,22 @@ presence daemons add more, so a large fleet can reach the ceiling.
 | `0` | a matching message arrived (it is printed) |
 | `1` | the hub was unreachable |
 | `2` | it waited the full `--timeout` and nothing arrived |
-| `3` | the connection dropped while waiting — **re-arm, do not treat as an error** |
+| `3` | a finite wait's connection dropped — **re-arm, do not treat as an error** |
 
-Re-arming on exit is normal. A *tight* re-arm loop almost always means you are being
-woken by traffic that is not for you — see the next two entries.
+An unbounded `--timeout 0` wait re-arms itself after its first established
+connection drops and keeps retrying temporary hub unavailability. Re-arming a
+finite wait on exit is normal. A *tight* external re-arm loop almost always
+means you are being woken by traffic that is not for you — see the next two
+entries.
 
 ## `[NAME] connection to ws://… closed; re-arm the waiter.`
 
-Exit code `3`: the hub closed the connection (a hub restart, a name takeover, or a
-network drop). This is expected — re-arm the waiter. A `--timeout 0` (indefinite)
-waiter prints this instead of hanging on a dead socket, precisely so the caller
-re-arms rather than going silently dark.
+The hub closed the connection (for example, during a hub restart or network
+drop). This is expected. A finite wait exits with code `3` so its caller can
+re-arm it. A `--timeout 0` (indefinite) wait prints the diagnostic, re-arms
+internally after a bounded delay, and continues through temporary connection
+failures. A superseding waiter or identity refusal remains a terminal verdict;
+the old waiter must yield rather than steal or hammer the governed identity.
 
 ### Right after a hub restart, `who` / `health` fail and the port shows high Recv-Q
 

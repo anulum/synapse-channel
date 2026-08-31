@@ -41,7 +41,12 @@ from synapse_channel.waiter_identity import (
 from synapse_channel.wake_staleness import message_age_seconds, stale_marker
 
 WaitRunner = Callable[..., Coroutine[Any, Any, int]]
+WaitAttempt = Callable[[], Coroutine[Any, Any, int]]
+SleepRunner = Callable[[float], Coroutine[Any, Any, None]]
 AsyncRunner = Callable[[Coroutine[Any, Any, int]], int]
+
+WAIT_RECONNECT_DELAY_SECONDS = 1.0
+"""Delay between re-arm attempts after an established unbounded wait drops."""
 
 
 def _load_dispatch_card(path: Path) -> dict[str, Any] | None:
@@ -419,10 +424,35 @@ async def _wait(
             save_cursor(mailbox_cursor_path, surfaced_seq[0])
 
 
+async def _run_wait_with_reconnect(
+    attempt: WaitAttempt,
+    *,
+    timeout: float,
+    sleep_runner: SleepRunner = asyncio.sleep,
+) -> int:
+    """Keep an unbounded CLI wait alive after its established socket drops.
+
+    An initial connection failure retains the one-shot failure contract. Once
+    an established wait reports a dropped socket (code 3), temporary reconnect
+    failures are retried until a wake or a terminal identity verdict arrives.
+    Finite waits remain single-attempt operations so their deadline cannot be
+    silently extended.
+    """
+    code = await attempt()
+    if timeout > 0 or code != 3:
+        return code
+    while True:
+        await sleep_runner(WAIT_RECONNECT_DELAY_SECONDS)
+        code = await attempt()
+        if code not in (1, 3):
+            return code
+
+
 def _cmd_wait(
     args: argparse.Namespace,
     *,
     wait_runner: WaitRunner = _wait,
+    sleep_runner: SleepRunner = asyncio.sleep,
     async_runner: AsyncRunner = asyncio.run,
 ) -> int:
     """Dispatch the ``wait`` subcommand.
@@ -480,8 +510,9 @@ def _cmd_wait(
     capability_card_path = (
         Path(args.capability_card) if getattr(args, "capability_card", None) else None
     )
-    return async_runner(
-        wait_runner(
+
+    def attempt() -> Coroutine[Any, Any, int]:
+        return wait_runner(
             uri=args.uri,
             name=connect_name,
             for_name=for_name,
@@ -497,5 +528,12 @@ def _cmd_wait(
             identity_key_id=str(machine.get("identity_key_id", "")),
             capability_card_path=capability_card_path,
             capability_refresh_seconds=float(getattr(args, "capability_refresh_seconds", 21_600.0)),
+        )
+
+    return async_runner(
+        _run_wait_with_reconnect(
+            attempt,
+            timeout=args.timeout,
+            sleep_runner=sleep_runner,
         )
     )

@@ -121,6 +121,86 @@ def test_cmd_wait_dispatches_with_for_default(capsys: pytest.CaptureFixture[str]
     assert "[X-rx] Could not reach hub" in capsys.readouterr().out
 
 
+def test_cmd_wait_reconnects_an_unbounded_wait_after_a_drop(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("SYN_TMUX_PROVIDER", raising=False)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    outcomes = iter((3, 1, 0))
+    attempts: list[str] = []
+    sleeps: list[float] = []
+
+    async def wait_once(**kwargs: object) -> int:
+        attempts.append(str(kwargs["name"]))
+        return next(outcomes)
+
+    async def sleep_once(delay: float) -> None:
+        sleeps.append(delay)
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="X",
+        for_name=None,
+        timeout=0.0,
+        directed_only=True,
+        wake_jitter=0.0,
+        token=None,
+        ready_timeout=0.1,
+    )
+
+    assert (
+        cli_messaging._cmd_wait(
+            ns,
+            wait_runner=wait_once,
+            sleep_runner=sleep_once,
+            async_runner=lambda coro: asyncio.run(coro),
+        )
+        == 0
+    )
+    assert attempts == ["X-rx", "X-rx", "X-rx"]
+    assert sleeps == [1.0, 1.0]
+
+
+def test_cmd_wait_does_not_extend_a_finite_wait_after_a_drop(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("SYN_TMUX_PROVIDER", raising=False)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    attempts = 0
+
+    async def dropped_once(**_kwargs: object) -> int:
+        nonlocal attempts
+        attempts += 1
+        return 3
+
+    async def unexpected_sleep(_delay: float) -> None:
+        raise AssertionError("a finite wait must not reconnect")
+
+    ns = argparse.Namespace(
+        uri="ws://h",
+        name="X",
+        for_name=None,
+        timeout=30.0,
+        directed_only=True,
+        wake_jitter=0.0,
+        token=None,
+        ready_timeout=0.1,
+    )
+
+    assert (
+        cli_messaging._cmd_wait(
+            ns,
+            wait_runner=dropped_once,
+            sleep_runner=unexpected_sleep,
+            async_runner=lambda coro: asyncio.run(coro),
+        )
+        == 3
+    )
+    assert attempts == 1
+
+
 def test_cmd_wait_defaults_to_passive_wake_capability(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

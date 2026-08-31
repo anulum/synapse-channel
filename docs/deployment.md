@@ -509,9 +509,11 @@ derived state and bounded by `--relay-max-lines`; it is safe to truncate.
 
 The hub restarts cleanly because both ends are built for it. With `--db`, a restart
 replays the event log, so active leases are **restored rather than dropped**. On the
-client side a waiter on 0.28.1+ **exits with code 3 when its socket drops** instead
-of hanging on a dead connection, so a hub restart makes every waiter exit and re-arm
-rather than go dark.
+client side a finite waiter **exits with code 3 when its socket drops** instead
+of hanging on a dead connection, so its caller can re-arm it rather than go
+dark. An unbounded `synapse wait --timeout 0` re-arms internally after an
+established connection drops and retries temporary hub unavailability with a
+bounded delay. Takeover and identity-refusal verdicts still stop it.
 
 On `SIGTERM` or `SIGINT`, the hub stops accepting new sockets, closes active
 WebSocket sessions through the server close path, and bounds the close handshake

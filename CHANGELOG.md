@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Keep `synapse wait --timeout 0` alive after an established socket drops. The
+  CLI now re-arms after code 3, retries temporary reconnect failures with a
+  bounded delay, and still stops on takeover or identity-refusal verdicts;
+  finite waits retain their single-attempt deadline.
 - Require observable pane consumption before `agent-tmux` acknowledges a staged
   wake. A zero-returning Enter ignored during asynchronous Codex startup now
   preserves the single staged prompt for a later safe Enter-only retry instead
