@@ -25,6 +25,7 @@ from synapse_channel import cli_processes
 from synapse_channel.core.hub import (
     SynapseHub,
 )
+from synapse_channel.core.tls import HubTLSConfigError
 
 
 def test_cmd_hub_composes_federation_store_into_the_bundle(tmp_path: Path) -> None:
@@ -134,6 +135,62 @@ def test_cmd_hub_refuses_an_invalid_serving_policy_before_tls_or_hub(
     )
     assert calls == []
     assert "multi-hub serving policy" in capsys.readouterr().err
+
+
+def test_cmd_hub_refuses_missing_certificate_pin_support_before_tls_or_hub(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = Path(_federation_store(tmp_path))
+    client_ca = tmp_path / "client-ca.pem"
+    client_ca.write_text("public CA material\n", encoding="utf-8")
+    client_ca.chmod(0o600)
+    policy_path = tmp_path / "serving-policy.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "federation_store": store.name,
+                "client_ca_file": client_ca.name,
+                "grants": [
+                    {
+                        "sender": "fleet-a",
+                        "domain_id": "domain-b",
+                        "namespace": "SYNAPSE-CHANNEL",
+                        "signing_key_id": "domain-b:main",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    policy_path.chmod(0o600)
+    calls: list[str] = []
+
+    def missing_support() -> None:
+        raise HubTLSConfigError(
+            "certificate-pin verification requires the optional cryptography package; "
+            "install synapse-channel[encryption]"
+        )
+
+    def build_hub(**_kwargs: Any) -> SynapseHub:
+        calls.append("hub")
+        return SynapseHub()
+
+    def build_tls(**_kwargs: Any) -> None:
+        calls.append("tls")
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(multihub_serving_policy=str(policy_path)),
+            runner=_close_runner,
+            hub_factory=build_hub,
+            tls_context_factory=build_tls,
+            certificate_pin_support_checker=missing_support,
+        )
+        == 2
+    )
+    assert calls == []
+    assert "install synapse-channel[encryption]" in capsys.readouterr().err
 
 
 def test_cmd_hub_refuses_scope_granting_store_without_message_auth(

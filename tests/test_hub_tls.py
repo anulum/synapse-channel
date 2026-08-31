@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import ssl
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,7 @@ from synapse_channel.core.tls import (
     MTLSPeerTrustBundle,
     MTLSTrustedPeer,
     MTLSVerificationResult,
+    _require_certificate_pin_support,
     build_mutual_tls_server_ssl_context,
     build_server_ssl_context,
     certificate_sha256_pin,
@@ -335,6 +337,15 @@ def test_certificate_pin_from_der_rejects_empty_and_unparsable_bytes() -> None:
         certificate_sha256_pin_from_der(b"")
     with pytest.raises(HubTLSConfigError, match="could not parse peer certificate"):
         certificate_sha256_pin_from_der(b"not a certificate")
+
+
+def test_certificate_pin_support_reports_the_required_optional_extra(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "cryptography", None)
+
+    with pytest.raises(HubTLSConfigError, match=r"install synapse-channel\[encryption\]"):
+        _require_certificate_pin_support()
 
 
 def test_verify_peer_pin_mirrors_certificate_verification(tmp_path: Path) -> None:

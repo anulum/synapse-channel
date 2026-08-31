@@ -32,6 +32,26 @@ class HubTLSConfigError(SynapseError, ValueError):
     code = "hub_tls_config"
 
 
+def _require_certificate_pin_support() -> None:
+    """Refuse certificate-pin operation when its optional parser is absent.
+
+    Live TLS peers expose DER bytes only after OpenSSL has accepted the
+    certificate, but Synapse deliberately parses and re-encodes those bytes so
+    file and socket pins share one canonical representation.  A serving policy
+    therefore needs the ``encryption`` extra before the hub begins accepting
+    connections, not after the first peer reaches the authorisation gate.
+    """
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import serialization
+    except ImportError as exc:
+        raise HubTLSConfigError(
+            "certificate-pin verification requires the optional cryptography package; "
+            "install synapse-channel[encryption]"
+        ) from exc
+    _ = x509, serialization
+
+
 def _write_private_tls_material(path: Path, material: bytes) -> None:
     """Write one mode-0600, create-new TLS staging file."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
@@ -248,6 +268,7 @@ def _canonical_der(data: bytes) -> bytes:
     the live socket's ``getpeercert(binary_form=True)`` of the same certificate all hash to the
     same pin.
     """
+    _require_certificate_pin_support()
     from cryptography import x509
     from cryptography.hazmat.primitives import serialization
 

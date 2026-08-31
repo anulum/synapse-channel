@@ -89,7 +89,11 @@ from synapse_channel.core.secret_files import (
 )
 from synapse_channel.core.secure import SecureModeError, apply_secure_hub_profile
 from synapse_channel.core.team_secure import TeamSecureModeError, apply_team_secure_hub_profile
-from synapse_channel.core.tls import HubTLSConfigError, build_server_ssl_context
+from synapse_channel.core.tls import (
+    HubTLSConfigError,
+    _require_certificate_pin_support,
+    build_server_ssl_context,
+)
 
 _PRECHECK_LOGGER = logging.getLogger(__name__ + ".exposure_precheck")
 _PRECHECK_LOGGER.addHandler(logging.NullHandler())
@@ -310,6 +314,7 @@ def _cmd_hub(
     ),
     logging_configurator: Callable[..., object] = configure_logging,
     tls_context_factory: Callable[..., ssl.SSLContext | None] = build_server_ssl_context,
+    certificate_pin_support_checker: Callable[[], None] = _require_certificate_pin_support,
 ) -> int:
     """Run the coordination hub until interrupted.
 
@@ -359,7 +364,8 @@ def _cmd_hub(
     if serving_policy_path:
         try:
             serving_config = load_multihub_serving_config(serving_policy_path)
-        except MultiHubServingConfigError as exc:
+            certificate_pin_support_checker()
+        except (MultiHubServingConfigError, HubTLSConfigError) as exc:
             print(f"synapse hub: {exc}", file=sys.stderr)
             return 2
     try:
