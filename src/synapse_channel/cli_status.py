@@ -21,7 +21,9 @@ import argparse
 import asyncio
 import contextlib
 import json
+import os
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, TextIO
 
@@ -30,6 +32,8 @@ from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.clock_skew import format_clock_skew
 from synapse_channel.core.mailbox_pending import format_pending_line, parse_pending_counts
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.git.claim_check_config import read_claim_check_config
+from synapse_channel.git.gitclaim import GitError, GitRunner, _default_git_runner
 from synapse_channel.observed_peers import (
     ObservedPeerSnapshot,
     ObservedPeerSpec,
@@ -65,6 +69,10 @@ class HubStatus:
         Live resource offers on the hub.
     waiters : int
         Wake-listener sidecars (``-rx``) holding open connections.
+    roster_available : bool
+        Whether ``online`` and ``waiters`` came from a valid roster reply.
+    state_available : bool
+        Whether ``claims`` and ``resources`` came from a valid state reply.
     """
 
     reachable: bool
@@ -72,6 +80,8 @@ class HubStatus:
     claims: int = 0
     resources: int = 0
     waiters: int = 0
+    roster_available: bool = True
+    state_available: bool = True
     mailbox_identity: str = ""
     mailbox_pending: int = 0
     mailbox_pending_available: bool = False
@@ -106,11 +116,19 @@ def render_status_line(status: HubStatus, *, plain: bool = False) -> str:
     """
     if not status.reachable:
         return "synapse offline" if plain else "synapse ○ offline"
-    segments = [_count_word(status.online, "agent"), _count_word(status.claims, "claim")]
-    if status.waiters:
-        segments.append(_count_word(status.waiters, "waiter"))
-    if status.resources:
-        segments.append(_count_word(status.resources, "resource"))
+    segments: list[str] = []
+    if status.roster_available:
+        segments.append(_count_word(status.online, "agent"))
+        if status.waiters:
+            segments.append(_count_word(status.waiters, "waiter"))
+    else:
+        segments.append("roster unavailable")
+    if status.state_available:
+        segments.append(_count_word(status.claims, "claim"))
+        if status.resources:
+            segments.append(_count_word(status.resources, "resource"))
+    else:
+        segments.append("state unavailable")
     if status.mailbox_identity:
         if status.mailbox_pending_available:
             segments.append(format_pending_line(status.mailbox_identity, status.mailbox_pending))
@@ -144,6 +162,7 @@ async def query_status(
     observed_token: str | None = None,
     observed_timeout: float = 10.0,
     observed_pins: dict[str, str] | None = None,
+    mailbox_identity: str | None = None,
 ) -> HubStatus:
     """Connect once, request the roster and the state, and return the status counts.
 
@@ -165,6 +184,10 @@ async def query_status(
         Seconds to await the welcome handshake before treating the hub as down.
     attempts : int, optional
         Poll attempts (50 ms each) for both snapshots to arrive. Defaults to ``50``.
+    mailbox_identity : str or None, optional
+        Identity whose pending count is selected from the roster reply. ``None``
+        uses ``name``; an empty string suppresses mailbox reporting when no exact
+        identity can be resolved safely.
 
     Returns
     -------
@@ -183,7 +206,11 @@ async def query_status(
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
-            return HubStatus(reachable=False)
+            return HubStatus(
+                reachable=False,
+                roster_available=False,
+                state_available=False,
+            )
         await agent.request_who()
         await agent.request_state()
         for _ in range(attempts):
@@ -199,7 +226,12 @@ async def query_status(
                 pins=observed_pins,
             ),
         )
-        return _tally(seen, probe=probe, identity=name, observed_peers=observed)
+        return _tally(
+            seen,
+            probe=probe,
+            identity=name if mailbox_identity is None else mailbox_identity,
+            observed_peers=observed,
+        )
     finally:
         agent.running = False
         conn_task.cancel()
@@ -217,14 +249,20 @@ def _tally(
     """Fold the collected ``who`` and ``state`` replies into a reachable ``HubStatus``."""
     who = seen.get(MessageType.WHO_SNAPSHOT, {})
     roster = who.get("online_agents", [])
+    roster_available = MessageType.WHO_SNAPSHOT in seen and isinstance(roster, list)
     names = (
         [str(agent) for agent in roster if str(agent) != probe] if isinstance(roster, list) else []
     )
     agents, waiters = split_roster(names)
     state = seen.get(MessageType.STATE_SNAPSHOT, {})
     snapshot = state.get("snapshot", {})
-    claims = _len_of(snapshot.get("active_claims")) if isinstance(snapshot, dict) else 0
-    resources = _len_of(snapshot.get("resources")) if isinstance(snapshot, dict) else 0
+    active_claims = snapshot.get("active_claims") if isinstance(snapshot, dict) else None
+    resource_rows = snapshot.get("resources") if isinstance(snapshot, dict) else None
+    state_available = isinstance(active_claims, (list, dict)) and (
+        resource_rows is None or isinstance(resource_rows, (list, dict))
+    )
+    claims = _len_of(active_claims) if state_available else 0
+    resources = _len_of(resource_rows) if state_available else 0
     pending_counts = parse_pending_counts(who.get("mailbox_pending"))
     return HubStatus(
         reachable=True,
@@ -232,6 +270,8 @@ def _tally(
         claims=claims,
         resources=resources,
         waiters=len(waiters),
+        roster_available=roster_available,
+        state_available=state_available,
         mailbox_identity=identity,
         mailbox_pending=pending_counts.get(identity, 0) if pending_counts is not None else 0,
         mailbox_pending_available=pending_counts is not None,
@@ -252,6 +292,8 @@ def status_to_json(status: HubStatus) -> dict[str, object]:
         "claims": status.claims,
         "resources": status.resources,
         "waiters": status.waiters,
+        "roster_available": status.roster_available,
+        "state_available": status.state_available,
         "observed_peers": observed_peers_to_dict(status.observed_peers),
         "observed_claims": observed_claim_count(status.observed_peers),
         "observed_max_lag": observed_max_lag(status.observed_peers),
@@ -284,6 +326,7 @@ async def watch_status(
     observed_token: str | None = None,
     observed_timeout: float = 10.0,
     observed_pins: dict[str, str] | None = None,
+    mailbox_identity: str | None = None,
 ) -> int:
     """Refresh the status every ``interval`` seconds — a watch-style dashboard.
 
@@ -311,6 +354,9 @@ async def watch_status(
         Factory for the probe agent; injectable for testing.
     out : typing.TextIO or None, optional
         Output stream; defaults to ``sys.stdout``.
+    mailbox_identity : str or None, optional
+        Exact identity whose mailbox count is rendered; forwarded to each
+        :func:`query_status` refresh.
 
     Returns
     -------
@@ -333,6 +379,7 @@ async def watch_status(
                 observed_token=observed_token,
                 observed_timeout=observed_timeout,
                 observed_pins=observed_pins,
+                mailbox_identity=mailbox_identity,
             )
             if as_json:
                 stream.write(json.dumps(status_to_json(status), sort_keys=True) + "\n")
@@ -352,6 +399,44 @@ async def watch_status(
     return 0 if status.reachable else 1
 
 
+_PLACEHOLDER_IDENTITIES = frozenset({"ME", "USER", "YOUR_IDENTITY"})
+
+
+def resolve_status_identity(
+    explicit_name: str | None,
+    *,
+    environment: Mapping[str, str] | None = None,
+    runner: GitRunner = _default_git_runner,
+) -> str:
+    """Resolve an exact mailbox identity without trusting stray shell state."""
+    if explicit_name is not None:
+        name = explicit_name.strip()
+        if not name:
+            raise ValueError("synapse status: --name must not be blank")
+        return name
+
+    try:
+        configured = read_claim_check_config("synapse.identity", runner=runner).strip()
+    except GitError:
+        configured = ""
+    if configured and not any(
+        segment in _PLACEHOLDER_IDENTITIES for segment in configured.split("/")
+    ):
+        return configured
+
+    env = os.environ if environment is None else environment
+    project = env.get("SYN_PROJECT", "").strip()
+    identity = env.get("SYN_IDENTITY", "").strip()
+    if (
+        project
+        and identity
+        and (identity == project or identity.startswith(project + "/"))
+        and not any(segment in _PLACEHOLDER_IDENTITIES for segment in identity.split("/"))
+    ):
+        return identity
+    return ""
+
+
 def _cmd_status(args: argparse.Namespace) -> int:
     """Dispatch ``status``: print the line, exit ``0`` if reachable else ``1``.
 
@@ -359,6 +444,12 @@ def _cmd_status(args: argparse.Namespace) -> int:
     ``--count`` refreshes ran or the operator interrupts; Ctrl-C is the normal
     way to stop a watch, so it exits ``0`` rather than tracing.
     """
+    try:
+        mailbox_identity = resolve_status_identity(args.name)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    probe_name = mailbox_identity or "STATUS"
     observed_specs = tuple(getattr(args, "observed_peers", ()))
     try:
         observed_pins = resolve_observed_pins(getattr(args, "observed_pins", ()), observed_specs)
@@ -373,7 +464,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
             return asyncio.run(
                 watch_status(
                     uri=args.uri,
-                    name=args.name,
+                    name=probe_name,
                     token=args.token,
                     ready_timeout=args.ready_timeout,
                     interval=args.interval,
@@ -384,6 +475,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
                     observed_token=getattr(args, "observed_token", None),
                     observed_timeout=float(getattr(args, "observed_timeout", 10.0)),
                     observed_pins=observed_pins,
+                    mailbox_identity=mailbox_identity,
                 )
             )
         except KeyboardInterrupt:
@@ -391,13 +483,14 @@ def _cmd_status(args: argparse.Namespace) -> int:
     status = asyncio.run(
         query_status(
             uri=args.uri,
-            name=args.name,
+            name=probe_name,
             token=args.token,
             ready_timeout=args.ready_timeout,
             observed_peers=observed_specs,
             observed_token=getattr(args, "observed_token", None),
             observed_timeout=float(getattr(args, "observed_timeout", 10.0)),
             observed_pins=observed_pins,
+            mailbox_identity=mailbox_identity,
         )
     )
     if args.json:
@@ -414,7 +507,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Print a one-line hub summary for shell prompts and tmux status bars.",
     )
     status.add_argument("--uri", default=default_hub_uri())
-    status.add_argument("--name", default="USER")
+    status.add_argument(
+        "--name",
+        default=None,
+        help=(
+            "Exact mailbox identity; defaults to worktree synapse.identity, then an "
+            "agreeing SYN_PROJECT/SYN_IDENTITY pair."
+        ),
+    )
     status.add_argument(
         "--plain",
         action="store_true",

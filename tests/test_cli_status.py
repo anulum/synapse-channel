@@ -26,6 +26,7 @@ from synapse_channel.cli_status import (
     add_parsers,
     query_status,
     render_status_line,
+    resolve_status_identity,
     status_to_json,
 )
 from synapse_channel.core.hub import SynapseHub
@@ -33,6 +34,7 @@ from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_fold import fold_observed_state
 from synapse_channel.core.multihub_merge import HubEvent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.git.gitclaim import GitError
 from synapse_channel.observed_peers import ObservedPeerSnapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -99,8 +101,18 @@ def test_tally_counts_roster_excluding_probe_and_reads_state() -> None:
     assert status == HubStatus(reachable=True, online=2, claims=1, resources=1)
 
 
-def test_tally_returns_zeroes_when_replies_absent() -> None:
-    assert _tally({}, probe="USER-status") == HubStatus(reachable=True)
+def test_tally_marks_counts_unavailable_when_replies_are_absent() -> None:
+    status = _tally({}, probe="USER-status")
+    assert status == HubStatus(
+        reachable=True,
+        roster_available=False,
+        state_available=False,
+    )
+    line = render_status_line(status)
+    assert "roster unavailable" in line
+    assert "state unavailable" in line
+    assert "0 agents" not in line
+    assert "0 claims" not in line
 
 
 def test_tally_tolerates_malformed_fields() -> None:
@@ -108,7 +120,11 @@ def test_tally_tolerates_malformed_fields() -> None:
         MessageType.WHO_SNAPSHOT: {"online_agents": "not-a-list"},
         MessageType.STATE_SNAPSHOT: {"snapshot": "not-a-dict"},
     }
-    assert _tally(seen, probe="USER-status") == HubStatus(reachable=True)
+    assert _tally(seen, probe="USER-status") == HubStatus(
+        reachable=True,
+        roster_available=False,
+        state_available=False,
+    )
 
 
 @pytest.mark.parametrize(
@@ -140,7 +156,11 @@ async def test_query_status_reports_unreachable_hub() -> None:
     status = await query_status(
         uri=f"ws://127.0.0.1:{_free_port()}", name="USER", ready_timeout=0.1
     )
-    assert status == HubStatus(reachable=False)
+    assert status == HubStatus(
+        reachable=False,
+        roster_available=False,
+        state_available=False,
+    )
 
 
 # --- command dispatch ---------------------------------------------------------
@@ -215,6 +235,40 @@ def test_add_parsers_routes_status_to_dispatcher() -> None:
     assert args.plain is True
 
 
+def test_status_identity_prefers_the_worktree_over_ambient_shell_state() -> None:
+    def configured(_argv: list[str]) -> str:
+        return "SYNAPSE-CHANNEL/codex-2970473"
+
+    identity = resolve_status_identity(
+        None,
+        environment={"SYN_PROJECT": "user", "SYN_IDENTITY": "user/terminal-2370887"},
+        runner=configured,
+    )
+    assert identity == "SYNAPSE-CHANNEL/codex-2970473"
+
+
+def test_status_identity_uses_only_an_agreeing_ambient_pair_outside_a_worktree() -> None:
+    def no_repository(_argv: list[str]) -> str:
+        raise GitError("not a repository")
+
+    assert (
+        resolve_status_identity(
+            None,
+            environment={"SYN_PROJECT": "FLUCTARA", "SYN_IDENTITY": "FLUCTARA/claude-17c3"},
+            runner=no_repository,
+        )
+        == "FLUCTARA/claude-17c3"
+    )
+    assert (
+        resolve_status_identity(
+            None,
+            environment={"SYN_IDENTITY": "FOREIGN/seat"},
+            runner=no_repository,
+        )
+        == ""
+    )
+
+
 # --- documentation contract ---------------------------------------------------
 
 
@@ -246,8 +300,8 @@ class _SilentStatusAgent:
         return None
 
 
-async def test_query_status_tallies_zeros_when_snapshots_never_arrive() -> None:
-    """A ready hub that answers nothing still yields a reachable zero status."""
+async def test_query_status_marks_unanswered_snapshots_unavailable() -> None:
+    """A ready hub that answers nothing never turns missing measurements into zeroes."""
     status = await query_status(
         uri="ws://unused",
         agent_factory=_SilentStatusAgent,  # type: ignore[arg-type]
@@ -255,6 +309,11 @@ async def test_query_status_tallies_zeros_when_snapshots_never_arrive() -> None:
     )
     assert status.reachable is True
     assert (status.online, status.claims, status.resources) == (0, 0, 0)
+    assert status.roster_available is False
+    assert status.state_available is False
+    line = render_status_line(status)
+    assert "0 agents" not in line
+    assert "0 claims" not in line
 
 
 def test_render_appends_waiters_only_when_present() -> None:
@@ -297,6 +356,8 @@ def test_cmd_status_json_offline_reports_unreachable(
         "claims": 0,
         "resources": 0,
         "waiters": 0,
+        "roster_available": False,
+        "state_available": False,
         "observed_peers": [],
         "observed_claims": 0,
         "observed_max_lag": None,
@@ -369,6 +430,20 @@ def test_status_line_and_json_include_observed_peer_counts() -> None:
     assert payload["observed_claims"] == 1
     assert payload["observed_max_lag"] == 1
     assert payload["observed_max_clock_skew_seconds"] == -6.5
+
+    unavailable = ObservedPeerSnapshot(
+        hub_id="quiet",
+        uri="ws://quiet",
+        reachable=False,
+    )
+    unavailable_line = render_status_line(
+        HubStatus(reachable=True, observed_peers=(unavailable,)),
+        plain=True,
+    )
+    assert "1 observed peer" in unavailable_line
+    assert "observed claim" not in unavailable_line
+    assert "max lag" not in unavailable_line
+    assert "max skew" not in unavailable_line
 
 
 # --- watch mode -----------------------------------------------------------------
@@ -508,3 +583,8 @@ def test_cmd_status_refuses_a_stray_observed_pin(capsys: pytest.CaptureFixture[s
     )
     assert cli_status._cmd_status(args) == 2
     assert "does not fetch" in capsys.readouterr().err
+
+    blank = _namespace(uri="ws://127.0.0.1:1")
+    blank.name = ""
+    assert cli_status._cmd_status(blank) == 2
+    assert "--name must not be blank" in capsys.readouterr().err

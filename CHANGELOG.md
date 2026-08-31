@@ -15,6 +15,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Make `synapse status` prefer the current worktree's configured exact identity
+  over conflicting ambient shell state, and use an agreeing
+  `SYN_PROJECT`/`SYN_IDENTITY` pair outside a configured worktree. Missing or
+  malformed roster/state replies now render as unavailable and carry explicit
+  JSON availability flags instead of presenting unmeasured zero counts.
 - Keep `synapse wait --timeout 0` alive after an established socket drops. The
   CLI now re-arms after code 3, retries temporary reconnect failures with a
   bounded delay, and still stops on takeover or identity-refusal verdicts;

@@ -147,7 +147,14 @@ exposure, disk pressure, or any non-default hub — are reported with a remedy b
 never touched. `synapse doctor --json` emits every verdict plus the overall
 health as one JSON document for CI health gates (it refuses the mutating and
 checklist flags so stdout stays a single document); `synapse status --json`
-does the same for the status counts, sized for monitoring scripts.
+does the same for the status counts, sized for monitoring scripts. Without an
+explicit `--name`, status prefers the current worktree's configured
+`synapse.identity`, then an agreeing `SYN_PROJECT`/`SYN_IDENTITY` pair; stray
+ambient identity state is never reported as the mailbox owner. Roster and state
+counts are independently measured: a missing or malformed reply renders as
+`roster unavailable` or `state unavailable`, and JSON exposes
+`roster_available` / `state_available` instead of presenting an unmeasured zero
+as fact.
 `synapse doctor --notify-cmd CMD` additionally pipes any warn/fail findings
 to the sink command's stdin — one line each, remedy attached, hub URI in
 `SYNAPSE_DOCTOR_URI` — turning the diagnostics into a proactive alert: a
