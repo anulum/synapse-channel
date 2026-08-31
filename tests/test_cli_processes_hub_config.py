@@ -212,6 +212,41 @@ def test_cmd_hub_with_db_opens_and_closes_event_store(tmp_path: Path) -> None:
     assert db.exists()
 
 
+def test_cmd_hub_reports_constructor_error_and_closes_the_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from synapse_channel.core.persistence import EventStore
+
+    class RecordingEventStore(EventStore):
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+            super().close()
+
+    store = RecordingEventStore(tmp_path / "events.db")
+
+    def same_store(*_args: Any, **_kwargs: Any) -> EventStore:
+        return store
+
+    def refuse_hub(**_kwargs: Any) -> SynapseHub:
+        raise PermissionError(13, "Permission denied", "/home/operator/synapse/identity-pins.json")
+
+    assert (
+        cli_processes._cmd_hub(
+            _hub_ns(db=str(tmp_path / "events.db")),
+            runner=_close_runner,
+            hub_factory=refuse_hub,
+            store_factory=same_store,
+        )
+        == 2
+    )
+    assert store.closed
+    error = capsys.readouterr().err
+    assert "could not initialise hub" in error
+    assert "identity-pins.json" in error
+
+
 def test_cmd_hub_aef_route_refuses_an_unreadable_signing_key(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

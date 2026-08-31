@@ -854,7 +854,15 @@ def _cmd_hub(
         "insecure_off_loopback": args.insecure_off_loopback,
         "insecure_plaintext_at_rest": getattr(args, "insecure_plaintext_at_rest", False),
     }
-    hub = hub_factory(**hub_kwargs)
+    try:
+        hub = hub_factory(**hub_kwargs)
+    except (OSError, ValueError) as exc:
+        if message_auth_replay_store is not None:
+            message_auth_replay_store.close()
+        if journal is not None:
+            journal.close()
+        print(f"synapse hub: could not initialise hub: {exc}", file=sys.stderr)
+        return 2
     # Direct SynapseHub(...) construction does not run from_config, so config_epoch
     # would stay empty and the hub's pinning indicator inert. Regroup the flat kwargs
     # and fingerprint the posture, so /health, the who snapshot, and /snapshot.json
