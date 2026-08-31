@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.22] - 2026-08-31
+
 ### Fixed
 
 - Correlate every one-shot directed CLI send with a unique `client_msg_id` and
