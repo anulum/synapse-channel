@@ -18,7 +18,12 @@ from synapse_channel.core.mailbox_pending import format_pending_line
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN, wake_capability_label
 from synapse_channel.observed_peers import ObservedPeerSnapshot
 from synapse_channel.terminal_text import shell_long_option, terminal_text
-from synapse_channel.waiter_identity import pane_waiter_name, split_roster, waiter_name
+from synapse_channel.waiter_identity import (
+    pane_waiter_name,
+    split_roster,
+    waiter_name,
+    waiter_owner,
+)
 
 
 def _format_reaction_age(seconds: float) -> str:
@@ -80,15 +85,22 @@ def _render_who(
     connected-but-deaf terminal is told apart from a live one, and a trailing
     ``Unarmed`` line names the present agents that have no live ``-rx`` waiter — the
     ones an operator should re-arm before they go quiet. Without that data the roster
-    renders exactly as before.
+    renders exactly as before. Owners represented only by receiver sockets are listed
+    separately as reachable seats, so ``0 agents`` cannot be mistaken for ``0 seats``.
     """
     names = roster
     if project:
         prefix = f"{project}/"
         names = [name for name in names if name == project or name.startswith(prefix)]
     agents, waiters = split_roster(names)
+    reachable_seats = sorted({waiter_owner(waiter) for waiter in waiters} - set(agents))
     scope = f" in {terminal_text(project)}" if project else ""
     print(f"Online{scope} ({len(agents)} agents · {len(waiters)} waiters):")
+    if reachable_seats:
+        print(
+            f"Reachable seats via waiters ({len(reachable_seats)}): "
+            + ", ".join(terminal_text(name) for name in reachable_seats)
+        )
     marks = liveness or {}
     for agent_name in agents:
         capability = _wake_capability_suffix(agent_name, wake_capabilities)

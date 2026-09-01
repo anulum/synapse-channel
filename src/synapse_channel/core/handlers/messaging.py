@@ -197,6 +197,15 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         await _route_channel_chat(hub, sender, data, websocket, channel)
         return
     target = str(data.get("target") or "all")
+    logical_target = waiter_owner(target)
+    if logical_target != target:
+        # ``-rx`` and ``-pane-rx`` are transport sockets, not addressable agents.
+        # Accepting those familiar names as aliases for their owner prevents a
+        # live receiver from being classified as ``agent-rx-rx`` (and therefore
+        # dead-lettered), while also storing an offline message under the owner
+        # identity that the receiver will drain when it reconnects.
+        target = logical_target
+        data["target"] = target
     recipients = _matching_online_recipients(target, sender, hub.online_agents(), hub.roles_of)
     directed = is_directed_target(target)
     stale_recipients = hub.recipients_without_live_waiter(recipients) if directed else ()

@@ -564,6 +564,12 @@ def test_deaf_agents_accepts_a_pane_bridge_as_a_live_waiter() -> None:
     assert diagnosis.status == "pass"
 
 
+def test_deaf_agents_ignores_presence_holders_that_are_not_wakeable_seats() -> None:
+    diagnosis = check_deaf_agents(["RIGOR-FOUNDRY-presence", "proj/a", "proj/a-rx"])
+    assert diagnosis.status == "pass"
+    assert "2 agent(s)" not in diagnosis.detail
+
+
 def test_deaf_agents_warns_on_arm_without_waiter() -> None:
     diagnosis = check_deaf_agents(["FLUCTARA/codex-arm", "SCPN/CORE", "SCPN/CORE-rx"])
     assert diagnosis.status == "warn"

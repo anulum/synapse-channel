@@ -703,7 +703,8 @@ def check_deaf_agents(roster: list[str] | None) -> Diagnosis:
 
     Presence without a waiter is the "online but deaf" failure: directed messages
     land in the feed and never wake the seat. Passive ``-rx`` names are ignored as
-    agents (they are waiters themselves).
+    agents (they are waiters themselves), as are deliberate ``-presence`` holders:
+    those keep a project visible and durable but never represent a wakeable seat.
     """
     if roster is None:
         return Diagnosis(
@@ -713,17 +714,21 @@ def check_deaf_agents(roster: list[str] | None) -> Diagnosis:
             remedy="bring the hub up, then re-run",
         )
     agents, _waiters = split_roster(roster)
+    wakeable_agents = [agent for agent in agents if not agent.endswith("-presence")]
     live = set(roster)
     deaf = [
         agent
-        for agent in agents
+        for agent in wakeable_agents
         if waiter_name(agent) not in live and pane_waiter_name(agent) not in live
     ]
     if not deaf:
         return Diagnosis(
             check="deaf-agents",
             status="pass",
-            detail=f"every live agent has a -rx waiter ({len(agents)} agent(s))",
+            detail=(
+                "every live agent that is wakeable has a -rx waiter "
+                f"({len(wakeable_agents)} agent(s))"
+            ),
         )
     listing = ", ".join(terminal_text(agent) for agent in deaf[:3])
     more = f" and {len(deaf) - 3} more" if len(deaf) > 3 else ""

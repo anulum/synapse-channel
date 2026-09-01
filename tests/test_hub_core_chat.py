@@ -444,6 +444,47 @@ async def test_chat_delivery_receipt_reports_no_online_recipient() -> None:
     assert "no online recipient matched MISSING" in receipt["payload"]
 
 
+async def test_direct_waiter_targets_route_to_their_logical_owners() -> None:
+    hub = SynapseHub(private_directed_messages=True)
+    async with running_hub(hub) as (_, uri):
+        async with (
+            connect(uri) as mailbox_waiter,
+            connect(uri) as pane_waiter,
+            connect(uri) as sender,
+        ):
+            await read_until_type(mailbox_waiter, "welcome")
+            await mailbox_waiter.send(json.dumps({"sender": "BETA-rx", "type": "heartbeat"}))
+            await read_until_type(pane_waiter, "welcome")
+            await pane_waiter.send(json.dumps({"sender": "GAMMA-pane-rx", "type": "heartbeat"}))
+            await read_until_type(sender, "welcome")
+
+            receipts: list[dict[str, Any]] = []
+            frames: list[dict[str, Any]] = []
+            for requested_target, receiver in (
+                ("BETA-rx", mailbox_waiter),
+                ("GAMMA-pane-rx", pane_waiter),
+            ):
+                await sender.send(
+                    json.dumps(
+                        {
+                            "sender": "ALPHA",
+                            "type": "chat",
+                            "target": requested_target,
+                            "payload": "wake",
+                            "receipt_requested": True,
+                        }
+                    )
+                )
+                receipts.append(await read_until_type(sender, "delivery_receipt"))
+                frames.append(await read_until_type(receiver, "chat"))
+
+    assert [receipt["delivered"] for receipt in receipts] == [True, True]
+    assert [receipt["message_target"] for receipt in receipts] == ["BETA", "GAMMA"]
+    assert [receipt["recipients"] for receipt in receipts] == [["BETA"], ["GAMMA"]]
+    assert [frame["target"] for frame in frames] == ["BETA", "GAMMA"]
+    assert hub.dead_letters.snapshot() == []
+
+
 async def test_stale_socket_receipt_precedes_fanout_without_a_journal() -> None:
     now = [0.0]
     hub = SynapseHub(

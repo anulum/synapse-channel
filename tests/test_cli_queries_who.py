@@ -110,6 +110,19 @@ async def test_who_project_filter_applies_to_waiters_too(
     assert "other/agent-2-rx" not in out
 
 
+def test_render_who_names_waiter_only_owners_as_reachable_seats(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_queries._render_who(
+        ["quantum/agent-1-rx", "quantum/agent-2-pane-rx", "quantum/agent-3"],
+    )
+
+    out = capsys.readouterr().out
+    assert "Online (1 agents · 2 waiters)" in out
+    assert "Reachable seats via waiters (2): quantum/agent-1, quantum/agent-2" in out
+    assert "quantum/agent-3" in out
+
+
 async def test_who_me_reports_presence_and_waiter_without_creating_subject_presence(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
