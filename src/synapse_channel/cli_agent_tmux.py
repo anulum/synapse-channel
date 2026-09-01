@@ -83,6 +83,13 @@ def _print_status(snapshot: AgentTmuxStatus) -> None:
     command = snapshot.pane_command or "unknown"
     print(f"pane command: {command}")
     print(f"agent pane: {'active' if snapshot.agent_active else 'inactive'}")
+    print(f"pane readiness: {snapshot.pane_state}")
+    print(f"pending wake: {'yes' if snapshot.pending_wake else 'no'}")
+    if snapshot.pending_since is not None:
+        print(f"pending since: {snapshot.pending_since:.3f}")
+    alignment = "aligned" if snapshot.compatibility_aligned else "degraded"
+    print(f"provider compatibility: {alignment}")
+    print(f"compatibility detail: {snapshot.compatibility_detail}")
 
 
 def _cmd_agent_tmux(

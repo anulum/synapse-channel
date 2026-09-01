@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep managed Codex pane bridges waiter-reachable while an already-running
+  provider is blocked by an update chooser, report the pending wake and pane
+  compatibility state explicitly, and coalesce later routing hints until the
+  same live pane becomes safe to submit. New Synapse-managed Codex sessions
+  disable provider-owned startup update prompts because package updates are
+  centrally managed; existing terminals are never restarted or rewritten.
+
 ## [0.99.23] - 2026-09-01
 
 ### Fixed

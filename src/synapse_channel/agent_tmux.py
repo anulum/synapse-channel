@@ -82,6 +82,9 @@ face a thundering herd on recovery.
 DEFAULT_PANE_PROBE_INTERVAL = 5.0
 """Seconds a pane bridge may advertise before re-proving its live target."""
 
+CODEX_MANAGED_UPDATE_CONFIG = "check_for_update_on_startup=false"
+"""Codex override used when Synapse centrally manages provider launches."""
+
 BINDING_REFUSAL_EXIT_CODE = 4
 """Stable refusal code when a live tmux session belongs to another identity."""
 
@@ -107,6 +110,12 @@ _UNSAFE_PANE_PATTERN = re.compile(
     r")"
 )
 """Conservative modal/busy markers that override every idle marker."""
+
+_CODEX_UPDATE_MODAL_PATTERN = re.compile(
+    r"(?is)Update available!\s*\S+\s*->\s*\S+.*Skip until next version.*"
+    r"Press enter to continue"
+)
+"""Exact Codex update chooser that blocks the interactive composer."""
 
 
 class Sleeper(Protocol):
@@ -199,6 +208,11 @@ class AgentTmuxStatus:
     agent_active: bool
     binding_valid: bool = False
     binding_detail: str = "session binding was not verified"
+    pane_state: str = "unknown"
+    pending_wake: bool = False
+    pending_since: float | None = None
+    compatibility_aligned: bool = False
+    compatibility_detail: str = "provider compatibility was not evaluated"
 
 
 @dataclass(frozen=True)
@@ -213,6 +227,7 @@ class RegistryRecord:
     last_inject_returncode: int | None = None
     pending_wake: bool = False
     wake_prompt_staged: bool = False
+    pending_since: float | None = None
 
 
 def agent_binary(config: AgentTmuxConfig) -> str:
@@ -296,6 +311,19 @@ def _write_registry(
             existing = loaded
     except (OSError, json.JSONDecodeError):
         pass
+    existing_pending = existing.get("pending_wake") is True
+    resolved_pending = pending_wake if pending_wake is not None else existing_pending
+    existing_pending_since = existing.get("pending_since")
+    pending_since = (
+        float(existing_pending_since)
+        if resolved_pending
+        and existing_pending
+        and isinstance(existing_pending_since, int | float)
+        and not isinstance(existing_pending_since, bool)
+        else time.time()
+        if resolved_pending
+        else None
+    )
     record = RegistryRecord(
         identity=config.identity,
         session=config.session,
@@ -310,14 +338,13 @@ def _write_registry(
             if last_inject_returncode is not None
             else _optional_int(existing.get("last_inject_returncode"))
         ),
-        pending_wake=(
-            pending_wake if pending_wake is not None else existing.get("pending_wake") is True
-        ),
+        pending_wake=resolved_pending,
         wake_prompt_staged=(
             wake_prompt_staged
             if wake_prompt_staged is not None
             else existing.get("wake_prompt_staged") is True
         ),
+        pending_since=pending_since,
     )
     temp = path.with_suffix(".tmp")
     temp.write_text(json.dumps(record.__dict__, sort_keys=True) + "\n", encoding="utf-8")
@@ -336,6 +363,18 @@ def _pending_wake(config: AgentTmuxConfig) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     return isinstance(payload, dict) and payload.get("pending_wake") is True
+
+
+def _pending_since(config: AgentTmuxConfig) -> float | None:
+    """Return when the current queued wake first became pending."""
+    try:
+        payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    value = payload.get("pending_since") if isinstance(payload, dict) else None
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return float(value)
+    return None
 
 
 def _wake_prompt_staged(config: AgentTmuxConfig) -> bool:
@@ -395,6 +434,35 @@ def _provider_family(config: AgentTmuxConfig) -> str | None:
     return None
 
 
+def _has_codex_update_override(command: Sequence[str]) -> bool:
+    """Return whether ``command`` explicitly configures Codex update checks."""
+    return any("check_for_update_on_startup" in token.replace(" ", "") for token in command)
+
+
+def _managed_agent_command(config: AgentTmuxConfig) -> tuple[str, ...]:
+    """Return the provider command with centrally managed Codex update checks.
+
+    Existing sessions are never rewritten or restarted. The override applies
+    only when Synapse creates a new Codex tmux session, and an explicit owner
+    override in ``agent_command`` always wins.
+    """
+    command = config.agent_command
+    if _provider_family(config) != "codex" or _has_codex_update_override(command):
+        return command
+    return (*command, "--config", CODEX_MANAGED_UPDATE_CONFIG)
+
+
+def _pane_state(provider: str, screen: str) -> str:
+    """Return the provider pane's operational wake state."""
+    if provider == "codex" and _CODEX_UPDATE_MODAL_PATTERN.search(screen):
+        return "update-required"
+    if _UNSAFE_PANE_PATTERN.search(screen):
+        return "blocked"
+    if _PROVIDER_IDLE_PATTERNS[provider].search(screen):
+        return "idle"
+    return "unknown"
+
+
 def _capture_pane(config: AgentTmuxConfig, *, runner: CommandRunner) -> tuple[str | None, str]:
     """Capture the current visible pane without returning its contents in errors."""
     proc = runner(
@@ -436,9 +504,12 @@ def _screen_is_safe_for_submit(
     required_text: str | None = None,
 ) -> tuple[bool, str]:
     """Classify an already captured pane for safe Enter submission."""
-    if _UNSAFE_PANE_PATTERN.search(screen):
+    state = _pane_state(provider, screen)
+    if state == "update-required":
+        return False, f"{provider} update chooser blocks the managed composer"
+    if state == "blocked":
         return False, f"{provider} pane is busy, modal, or ambiguous"
-    if not _PROVIDER_IDLE_PATTERNS[provider].search(screen):
+    if state != "idle":
         return False, f"{provider} idle composer marker is absent"
     if required_text is not None and not _contains_rendered_text(screen, required_text):
         return False, "wake prompt was not accepted by the idle composer"
@@ -647,7 +718,7 @@ def start_session(
         "SYN_TMUX_PROVIDER=1",
         "SYNAPSE_AUTO_CONNECT=0",
     ]
-    command = shlex.join(["env", *provider_env, *config.agent_command])
+    command = shlex.join(["env", *provider_env, *_managed_agent_command(config)])
     proc = runner(
         [
             config.tmux_bin,
@@ -906,6 +977,7 @@ def status(
             agent_active=False,
             binding_valid=False,
             binding_detail=f"tmux session {config.session} is missing",
+            pane_state="missing",
         )
     binding_valid, binding_detail = _session_binding(config, runner=runner)
     proc = runner(
@@ -932,15 +1004,48 @@ def status(
     started_with_agent = bool(binary) and any(
         part == binary or part.endswith(f"/{binary}") for part in start_parts
     )
+    agent_active = binding_valid and (pane_command in config.pane_commands or started_with_agent)
+    provider = _provider_family(config)
+    screen, _capture_detail = _capture_pane(config, runner=runner)
+    pane_state = (
+        _pane_state(provider, screen)
+        if agent_active and provider is not None and screen is not None
+        else "unknown"
+    )
+    start_command = tuple(start_parts)
+    codex_policy_aligned = provider != "codex" or _has_codex_update_override(start_command)
+    compatibility_aligned = bool(
+        agent_active
+        and provider is not None
+        and pane_state in {"idle", "blocked"}
+        and codex_policy_aligned
+    )
+    if not agent_active:
+        compatibility_detail = "active provider pane was not verified"
+    elif provider is None:
+        compatibility_detail = "provider has no supported pane profile"
+    elif pane_state == "update-required":
+        compatibility_detail = "provider update chooser blocks automatic wake delivery"
+    elif not codex_policy_aligned:
+        compatibility_detail = "Codex update checks are not centrally managed for this session"
+    elif pane_state == "unknown":
+        compatibility_detail = "provider pane readiness is unknown"
+    else:
+        compatibility_detail = "provider launch and pane profile are aligned"
     return AgentTmuxStatus(
         identity=config.identity,
         session=config.session,
         session_exists=True,
         pane_command=pane_command,
         pane_start_command=pane_start_command,
-        agent_active=binding_valid and (pane_command in config.pane_commands or started_with_agent),
+        agent_active=agent_active,
         binding_valid=binding_valid,
         binding_detail=binding_detail,
+        pane_state=pane_state,
+        pending_wake=_pending_wake(config),
+        pending_since=_pending_since(config),
+        compatibility_aligned=compatibility_aligned,
+        compatibility_detail=compatibility_detail,
     )
 
 
@@ -1088,7 +1193,35 @@ def wait_and_wake(
                 pending = False
                 wakes += 1
             else:
-                sleeper(max(config.pane_probe_interval, 0.1))
+                # Keep advertising the pane capability while a modal, busy turn,
+                # or asynchronous startup prevents injection. New exact wakes
+                # coalesce into the already durable routing hint instead of
+                # disappearing into the passive mailbox sidecar alone.
+                wait_proc = runner(
+                    _wait_command(config),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    env=_wait_process_env(),
+                )
+                false_wake = wait_proc.returncode == 0 and _is_provider_yield_stdout(
+                    wait_proc.stdout
+                )
+                if wait_proc.returncode in {0, 2} and not false_wake:
+                    consecutive_failures = 0
+                    continue
+                consecutive_failures += 1
+                if max_wait_failures is not None and consecutive_failures >= max_wait_failures:
+                    return 3 if false_wake else wait_proc.returncode
+                sleeper(
+                    _backoff_delay(
+                        consecutive_failures,
+                        base=retry_base,
+                        cap=retry_cap,
+                        jitter=retry_jitter,
+                        rng=rng,
+                    )
+                )
             continue
         wait_proc = runner(
             _wait_command(config),
@@ -1134,7 +1267,6 @@ def wait_and_wake(
             return wake.returncode
         if not wake.injected:
             pending = True
-            sleeper(max(config.pane_probe_interval, 0.1))
             continue
         wakes += 1
     return 0

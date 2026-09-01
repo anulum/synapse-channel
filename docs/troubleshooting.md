@@ -112,6 +112,33 @@ composer appeared after it. During asynchronous startup an ignored Enter leaves
 the single prompt staged and pending; the bridge waits for a safe pane and retries
 only Enter, never the prompt paste.
 
+If `agent-tmux status` reports `pane readiness: update-required`, the update
+chooser belongs to the already running managed provider process; it may be in a
+detached tmux session even when visible terminals and the currently installed
+binary are up to date. Do not kill or restart a visible Kitty/tmux terminal and
+do not assume a package update changed the resident process. Check the exact
+session named by the bridge, its identity binding, absolute provider command,
+and the local pending-wake record.
+
+New Synapse-managed Codex sessions disable startup update checks through
+`--config check_for_update_on_startup=false`, which Codex documents for
+centrally managed updates. Existing sessions are preserved. If one is already
+on an update chooser, `agent-tmux` marks compatibility degraded and keeps its
+pane receiver advertised while the wake stays pending; it does not select a
+numbered choice or relaunch the provider. A version handover requires separate
+owner authority and must preserve the old terminal until the replacement
+session, exact binding, wake consumption, and semantic reply are all proven.
+
+The diagnostic layers are intentionally distinct:
+
+- `-rx` reachable: durable mailbox transport is available;
+- `-pane-rx` visible: a pane bridge is currently advertised;
+- `pending wake: yes`: a routing hint is retained locally but not yet consumed;
+- `pane readiness: idle`: the provider composer can accept the fixed wake;
+- semantic reply: the model actually handled the newest actionable message.
+
+Do not report the first layer as proof of the last.
+
 If `syn-name` reports `user/terminal-*` while the command runs inside a plausible
 project checkout, upgrade or refresh the local runtime. That identity is only a
 non-project fallback; the repository project must win. Pin a multi-seat identity

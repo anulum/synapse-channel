@@ -195,6 +195,47 @@ disconnects the receiver and re-proves the session, exact binding, and active
 agent pane before reconnecting. A missing pane makes the bridge exit without
 sending keys or starting/stopping an owner application.
 
+### Provider/session compatibility without terminal downtime
+
+The installed provider executable and an already running terminal process are
+separate version surfaces. Replacing a Codex or Claude executable does not
+rewrite the process already resident in a tmux or Kitty session. Synapse never
+stops or relaunches that provider merely to make the versions equal: an active
+turn, composer, transcript, and terminal remain owner state.
+
+For new Synapse-managed Codex tmux sessions, the launcher adds
+`--config check_for_update_on_startup=false`. This is the official Codex setting
+for centrally managed updates and prevents the interactive update chooser from
+occupying the composer. An explicit `check_for_update_on_startup` value already
+present in `--agent-command` wins and is not duplicated. Other providers retain
+their supplied command unchanged.
+
+Compatibility means that the bound session has a supported provider pane
+profile and can preserve or consume a wake safely; it does not claim that every
+already running provider process is the newest installed build. Inspect the two
+states explicitly:
+
+```bash
+synapse agent-tmux status \
+  --identity myproject/codex-main \
+  --session myproject-codex \
+  --agent-command /absolute/path/to/codex
+```
+
+The status reports the identity binding, active process, pane readiness
+(`idle`, `blocked`, `update-required`, or `unknown`), pending wake state, and
+provider compatibility. `update-required` is degraded: the bridge does not
+press a numbered update choice, update the executable, or restart the terminal.
+A pending bridge remains registered on Synapse while it retries the safe pane,
+so later exact wakes coalesce instead of becoming passive-mailbox-only traffic.
+
+When an existing session predates the managed Codex setting, preserve it. Apply
+the setting to the canonical user or managed configuration for future starts,
+record the exact running and installed versions, and schedule a controlled
+session handover only with owner authority. Updating the package, restarting a
+bridge sidecar, and restarting a provider terminal are three separate actions;
+none authorizes the next.
+
 ## Fresh terminal auto-connect
 
 Install the shell hook once when you want every new terminal to join the local

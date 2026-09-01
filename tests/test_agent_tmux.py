@@ -189,6 +189,34 @@ def test_start_session_launches_the_configured_agent_command(tmp_path: Path) -> 
     assert payload["last_start_returncode"] == 0
 
 
+def test_start_session_centrally_manages_codex_update_checks(tmp_path: Path) -> None:
+    config = _config(tmp_path, agent_command=("/opt/codex",))
+    runner = RecordingRunner(
+        [_result(["tmux", "has-session"], 1), _result(["tmux", "new-session"], 0)]
+    )
+
+    result = start_session(config, runner=runner)
+
+    assert result.started is True
+    assert runner.calls[1][-1].endswith("/opt/codex --config check_for_update_on_startup=false")
+
+
+def test_start_session_preserves_an_explicit_codex_update_policy(tmp_path: Path) -> None:
+    config = _config(
+        tmp_path,
+        agent_command=("codex", "--config", "check_for_update_on_startup=true"),
+    )
+    runner = RecordingRunner(
+        [_result(["tmux", "has-session"], 1), _result(["tmux", "new-session"], 0)]
+    )
+
+    result = start_session(config, runner=runner)
+
+    assert result.started is True
+    assert runner.calls[1][-1].count("check_for_update_on_startup") == 1
+    assert runner.calls[1][-1].endswith("check_for_update_on_startup=true")
+
+
 def test_start_session_does_not_duplicate_existing_session(tmp_path: Path) -> None:
     config = _config(tmp_path)
     runner = RecordingRunner([_result(["tmux", "has-session"], 0)])
@@ -626,6 +654,73 @@ def test_status_detects_codex_start_command(tmp_path: Path) -> None:
     assert result.session_exists is True
     assert result.pane_command == "fish"
     assert result.agent_active is True
+    assert result.pane_state == "idle"
+    assert result.compatibility_aligned is False
+    assert "not centrally managed" in result.compatibility_detail
+
+
+def test_status_reports_an_update_blocked_pending_wake(tmp_path: Path) -> None:
+    config = _config(tmp_path, agent_command=("codex",))
+    registry_path(config).write_text(
+        json.dumps(
+            {
+                "identity": config.identity,
+                "session": config.session,
+                "cwd": str(config.cwd),
+                "pending_wake": True,
+                "pending_since": 123.5,
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "has-session"], 0),
+            _result(
+                ["tmux", "display-message"],
+                0,
+                "fish\tcodex --config check_for_update_on_startup=false\n",
+            ),
+            _result(
+                ["tmux", "capture-pane"],
+                stdout=PROVIDER_SCREENS["codex"]["update"],
+            ),
+        ]
+    )
+
+    result = status(config, runner=runner)
+
+    assert result.agent_active is True
+    assert result.pane_state == "update-required"
+    assert result.pending_wake is True
+    assert result.pending_since == 123.5
+    assert result.compatibility_aligned is False
+    assert "blocks automatic wake" in result.compatibility_detail
+
+
+def test_status_does_not_align_an_unknown_provider_pane(tmp_path: Path) -> None:
+    config = _config(
+        tmp_path,
+        agent_command=("codex", "--config", "check_for_update_on_startup=false"),
+    )
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "has-session"], 0),
+            _result(
+                ["tmux", "display-message"],
+                0,
+                "fish\tcodex --config check_for_update_on_startup=false\n",
+            ),
+            _result(["tmux", "capture-pane"], stdout="unrecognised provider screen\n"),
+        ]
+    )
+
+    result = status(config, runner=runner)
+
+    assert result.agent_active is True
+    assert result.pane_state == "unknown"
+    assert result.compatibility_aligned is False
+    assert result.compatibility_detail == "provider pane readiness is unknown"
 
 
 def test_status_detects_kimi_from_quoted_env_start_command(tmp_path: Path) -> None:
@@ -777,7 +872,6 @@ def test_wait_and_wake_queues_modal_then_delivers_when_idle(tmp_path: Path) -> N
     assert result == 0
     assert len([call for call in runner.calls if call[:2] == ["synapse", "wait"]]) == 1
     assert sleeper.delays == [
-        config.pane_probe_interval,
         config.submit_delay,
         config.submit_delay,
     ]
@@ -786,6 +880,46 @@ def test_wait_and_wake_queues_modal_then_delivers_when_idle(tmp_path: Path) -> N
     ]
     payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
     assert payload["pending_wake"] is False
+
+
+def test_wait_and_wake_keeps_advertising_while_a_pending_modal_persists(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    registry_path(config).write_text(
+        json.dumps(
+            {
+                "identity": config.identity,
+                "session": config.session,
+                "cwd": str(config.cwd),
+                "pending_wake": True,
+                "pending_since": 100.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "has-session"], 0),
+            _result(["tmux", "display-message"], 0, "codex\tcodex\n"),
+            _result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["update"]),
+            _result(["tmux", "capture-pane"], stdout=PROVIDER_SCREENS["codex"]["update"]),
+            _result(["synapse", "wait"], 0, "sender: coalesced wake\n"),
+            _result(["tmux", "has-session"], 0),
+            _result(["tmux", "display-message"], 0, "codex\tcodex\n"),
+            _result(["tmux", "send-keys"], 0),
+        ]
+    )
+
+    result = wait_and_wake(config, runner=runner, max_wakes=1, sleeper=RecordingSleeper())
+
+    assert result == 0
+    wait_calls = [call for call in runner.calls if call[:2] == ["synapse", "wait"]]
+    assert len(wait_calls) == 1
+    assert "--wake-capability" in wait_calls[0]
+    payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
+    assert payload["pending_wake"] is False
+    assert payload["pending_since"] is None
 
 
 def test_wait_and_wake_recovers_a_persisted_pending_wake_before_bus_read(tmp_path: Path) -> None:

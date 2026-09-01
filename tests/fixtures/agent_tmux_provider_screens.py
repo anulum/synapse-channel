@@ -14,6 +14,11 @@ PROVIDER_SCREENS: dict[str, dict[str, str]] = {
         "idle": "• Turn completed\n\n› \n  gpt-5.6 100% context left\n",
         "busy": "› owner task\n\nWorking (12s) · esc to interrupt\n",
         "modal": "Allow Codex to run this command?\n› 1. Yes\n  2. No\n",
+        "update": (
+            "✨ Update available! 0.151.0 -> 0.152.0\n"
+            "› 1. Update now\n  2. Skip\n  3. Skip until next version\n"
+            "Press enter to continue\n"
+        ),
     },
     "claude": {
         "idle": "Claude Code\n\n❯ \n  ? for shortcuts\n",

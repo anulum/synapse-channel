@@ -101,6 +101,11 @@ def test_cmd_status_dispatches(capsys: Any, tmp_path: Path) -> None:
             agent_active=True,
             binding_valid=True,
             binding_detail="verified test binding",
+            pane_state="idle",
+            pending_wake=True,
+            pending_since=123.5,
+            compatibility_aligned=True,
+            compatibility_detail="provider launch and pane profile are aligned",
         )
 
     ns = argparse.Namespace(
@@ -121,6 +126,10 @@ def test_cmd_status_dispatches(capsys: Any, tmp_path: Path) -> None:
     out = capsys.readouterr().out
     assert "tmux session: online" in out
     assert "agent pane: active" in out
+    assert "pane readiness: idle" in out
+    assert "pending wake: yes" in out
+    assert "pending since: 123.500" in out
+    assert "provider compatibility: aligned" in out
 
 
 def test_cmd_wait_starts_and_verifies_before_registering(tmp_path: Path) -> None:
