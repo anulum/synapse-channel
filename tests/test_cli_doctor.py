@@ -133,6 +133,8 @@ async def test_diagnose_reachable_with_waiter_passes() -> None:
     text = "\n".join(lines)
     assert "[ok] hub:" in text
     assert "[ok] waiter:" in text
+    assert "[ok] deaf-agents:" in text
+    assert "demorepo-doctor" not in text
     assert code == 0
 
 

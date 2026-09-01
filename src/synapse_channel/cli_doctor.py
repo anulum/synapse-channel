@@ -318,9 +318,10 @@ async def _diagnose(
             warn_free_mib=disk_warn_free_mib,
         )
     )
+    probe_name = f"{identity.identity}-doctor"
     roster_result = await roster_probe(
         uri=uri,
-        name=f"{identity.identity}-doctor",
+        name=probe_name,
         token=token,
         agent_factory=agent_factory,
         ready_timeout=ready_timeout,
@@ -331,6 +332,11 @@ async def _diagnose(
     else:
         doctor_roster = None
         roster = roster_result
+    if roster is not None:
+        # The one-shot query socket is present in the snapshot it requests. It is
+        # diagnostic plumbing, not a wakeable seat, so including it would make a
+        # healthy doctor invocation diagnose itself as a deaf agent.
+        roster = [name for name in roster if name != probe_name]
     diagnoses.append(check_reachable(roster is not None, uri))
     diagnoses.append(check_waiter(roster, identity.waiter_name))
     diagnoses.append(check_deaf_agents(roster))
