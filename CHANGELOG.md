@@ -13,6 +13,24 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.23] - 2026-09-01
+
+### Fixed
+
+- Canonicalize direct receiver aliases before liveness, durable delivery, and
+  receipt handling. Sending to a worker's base identity now reaches its live
+  `-rx` endpoint instead of producing a false `no_live_receiver` verdict,
+  dead-lettering the message, or replaying it under the wrong identity.
+- Treat waiter-only owners as reachable seats in roster output, while excluding
+  `*-presence` holders and the doctor's transient self-probe from deaf-agent
+  diagnostics. Healthy agents no longer appear unavailable merely because the
+  durable waiter is their only persistent connection.
+- Report expected hub construction failures as concise CLI startup errors and
+  close any durable stores already opened during partial initialization.
+- Refuse certificate-pin serving policy at startup when the optional
+  cryptography-backed certificate parser is unavailable, with the exact remedy
+  reported before the hub accepts clients.
+
 ## [0.99.22] - 2026-08-31
 
 ### Fixed
