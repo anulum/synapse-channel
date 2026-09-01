@@ -44,7 +44,9 @@ from typing import Protocol
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.waiter_identity import pane_waiter_name
 
-DEFAULT_AGENT_PANE_COMMANDS = frozenset({"codex", "node", "kimi", "claude", "grok", "gemini"})
+DEFAULT_AGENT_PANE_COMMANDS = frozenset(
+    {"codex", "node", "kimi", "claude", "grok", "gemini", "opencode"}
+)
 """Pane command names that, on their own, indicate a live agent stack.
 
 Terminal agents usually run under a shell (``fish``/``bash``), so the live agent
@@ -99,6 +101,7 @@ _PROVIDER_IDLE_PATTERNS = {
     "gemini": re.compile(
         r"(?im)^\s*(?:›|❯|>)?\s*(?:Type your message|Type a message|Ask Gemini)\b"
     ),
+    "opencode": re.compile(r"(?im)^\s*Ask anything\.\.\.\s*(?:\"|$)"),
 }
 """Provider-specific idle composer markers; unknown providers fail closed."""
 

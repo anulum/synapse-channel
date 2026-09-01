@@ -761,11 +761,19 @@ def test_registry_dir_falls_back_to_runtime_dir_then_tmp(
 
 def test_default_pane_commands_cover_every_first_class_provider_binary() -> None:
     """Every shipped provider binary is detected out of the box as a live pane."""
-    assert {"codex", "kimi", "claude", "grok", "gemini", "node"} <= DEFAULT_AGENT_PANE_COMMANDS
+    assert {
+        "codex",
+        "kimi",
+        "claude",
+        "grok",
+        "gemini",
+        "opencode",
+        "node",
+    } <= DEFAULT_AGENT_PANE_COMMANDS
 
 
-def test_status_detects_grok_and_gemini_panes_by_default(tmp_path: Path) -> None:
-    for binary in ("grok", "gemini"):
+def test_status_detects_non_node_provider_panes_by_default(tmp_path: Path) -> None:
+    for binary in ("grok", "gemini", "opencode"):
         config = _config(tmp_path, agent_command=("codex",))
         runner = RecordingRunner(
             [

@@ -40,4 +40,12 @@ PROVIDER_SCREENS: dict[str, dict[str, str]] = {
         "busy": "Type your message or @path/to/file\n\nThinking… esc to interrupt\n",
         "modal": "Trust this folder?\n> 1. Trust\n  2. Cancel\n",
     },
+    "opencode": {
+        "idle": (
+            "OpenCode\n/media/anulum/GOTM/aaa_God_of_the_Math_Collection\n\n"
+            'Ask anything... "Fix a TODO in the codebase"\n\nBUILD  ctrl+p cmd\n'
+        ),
+        "busy": "Ask anything...\n\nThinking… esc to interrupt\n",
+        "modal": "Permission required\n> 1. Allow once\n  2. Deny\n",
+    },
 }
