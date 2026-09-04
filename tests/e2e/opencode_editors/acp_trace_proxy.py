@@ -334,11 +334,9 @@ def _private_directory(path: Path) -> Path:
 
 
 def _lifecycle_environment(trace_path: Path, environment: Mapping[str, str]) -> dict[str, str]:
-    """Give one concurrent OpenCode lifecycle an exclusive XDG and home runtime."""
+    """Isolate runtime state while preserving the test's config and identity key."""
     runtime = _private_directory(Path(f"{trace_path}.runtime"))
     home = _private_directory(runtime / "home")
-    config = _private_directory(runtime / "config")
-    data = _private_directory(runtime / "data")
     state = _private_directory(runtime / "state")
     cache = _private_directory(runtime / "cache")
     child = dict(environment)
@@ -346,8 +344,6 @@ def _lifecycle_environment(trace_path: Path, environment: Mapping[str, str]) -> 
         {
             "HOME": str(home),
             "OPENCODE_TEST_HOME": str(home),
-            "XDG_CONFIG_HOME": str(config),
-            "XDG_DATA_HOME": str(data),
             "XDG_STATE_HOME": str(state),
             "XDG_CACHE_HOME": str(cache),
         }
