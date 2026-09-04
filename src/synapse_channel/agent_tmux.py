@@ -173,6 +173,9 @@ class AgentTmuxConfig:
         Seconds between the bracketed paste and the second pane-safety probe.
     pane_probe_interval : float, optional
         Maximum seconds between live pane and identity-binding probes.
+    token_file : pathlib.Path or None, optional
+        Owner-only token file passed to the wait child instead of exposing the
+        secret value in its process arguments.
     """
 
     identity: str
@@ -187,6 +190,7 @@ class AgentTmuxConfig:
     registry_dir: Path | None = None
     submit_delay: float = DEFAULT_SUBMIT_DELAY
     pane_probe_interval: float = DEFAULT_PANE_PROBE_INTERVAL
+    token_file: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -1069,7 +1073,9 @@ def _wait_command(config: AgentTmuxConfig) -> list[str]:
     ]
     if config.uri != DEFAULT_HUB_URI:
         command.extend(["--uri", config.uri])
-    if config.token:
+    if config.token_file is not None:
+        command.extend(["--token-file", str(config.token_file)])
+    elif config.token:
         command.extend(["--token", config.token])
     return command
 
@@ -1140,6 +1146,7 @@ def wait_and_wake(
     retry_cap: float = DEFAULT_WAIT_RETRY_CAP,
     retry_jitter: float = DEFAULT_WAIT_RETRY_JITTER,
     rng: Callable[[], float] = random.random,
+    heartbeat: Callable[[], None] | None = None,
 ) -> int:
     """Run the wait loop and inject the fixed prompt after successful wakes.
 
@@ -1171,6 +1178,10 @@ def wait_and_wake(
         not reconnect in a synchronised burst after a shared hub outage.
     rng : Callable[[], float], optional
         Returns a float in ``[0, 1)`` for the jitter; injectable for tests.
+    heartbeat : Callable[[], None] or None, optional
+        Called before each bounded wait/injection cycle. A systemd supervisor
+        uses this to prove that the main delivery loop, rather than a detached
+        helper thread, is still advancing.
 
     Returns
     -------
@@ -1183,6 +1194,8 @@ def wait_and_wake(
     pending = _pending_wake(config)
     consecutive_failures = 0
     while max_wakes is None or wakes < max_wakes:
+        if heartbeat is not None:
+            heartbeat()
         if pending:
             snapshot = status(config, runner=runner)
             if not snapshot.session_exists or not snapshot.agent_active:

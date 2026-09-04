@@ -16,7 +16,7 @@ remain operator-readable templates; these helpers are the installed path.
 from __future__ import annotations
 
 import shutil
-import subprocess  # nosec B404 - fixed systemctl argv, never a shell string
+import subprocess  # nosec B404
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -262,6 +262,52 @@ def render_arm_unit(
         "RestartPreventExitStatus=78\n"
         "RestartSec=2\n"
         + hardening_directives(write_paths=LISTENER_WRITE_PATHS, nofile=LISTENER_NOFILE)
+        + "\n"
+        "[Install]\n"
+        "WantedBy=default.target\n"
+    )
+
+
+def render_waker_unit(*, synapse_bin: str) -> str:
+    """Render the active terminal-agent waker template unit.
+
+    Unlike passive listeners, this unit must share the host ``/tmp`` namespace
+    with the already-running tmux server. Its writable state remains confined
+    to Synapse's owner-only data directory.
+    """
+    executable = validate_systemd_executable(synapse_bin)
+    return (
+        "# SPDX-License-"
+        "Identifier: AGPL-3.0-or-later\n"
+        "# Commercial license available\n"
+        "# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.\n"
+        "# © Code 2020–2026 Miroslav Šotek. All rights reserved.\n"
+        "# ORCID: 0009-0009-3560-0851\n"
+        "# Contact: www.anulum.li | protoscience@anulum.li\n"
+        "# SYNAPSE CHANNEL — generated active terminal-agent waker service\n\n"
+        "[Unit]\n"
+        "Description=SYNAPSE CHANNEL active terminal-agent waker for %I\n"
+        "Documentation=https://github.com/anulum/synapse-channel\n"
+        "After=network-online.target synapse-hub.service\n"
+        "Wants=network-online.target\n"
+        "StartLimitIntervalSec=0\n\n"
+        "[Service]\n"
+        "Type=notify\n"
+        "NotifyAccess=main\n"
+        "Environment=XDG_DATA_HOME=%h/.local/share\n"
+        "Environment=XDG_RUNTIME_DIR=%h/.local/share/synapse/runtime\n"
+        f"ExecStart={executable} waker run --identity=%I\n"
+        "Restart=always\n"
+        "RestartPreventExitStatus=78\n"
+        "RestartSec=2\n"
+        "WatchdogSec=90\n"
+        "TimeoutStopSec=15\n"
+        "KillMode=control-group\n"
+        + hardening_directives(
+            write_paths=LISTENER_WRITE_PATHS,
+            nofile=LISTENER_NOFILE,
+            private_tmp=False,
+        )
         + "\n"
         "[Install]\n"
         "WantedBy=default.target\n"

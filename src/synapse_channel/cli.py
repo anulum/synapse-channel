@@ -19,6 +19,7 @@ The ``synapse`` command exposes these subcommands:
 * ``send`` — connect, send one message, optionally wait for replies, and exit;
 * ``wait`` — block until a message addressed to you arrives, then exit (a wake trigger);
 * ``arm`` — keep a directed waiter armed, re-arming after every wake or reconnect;
+* ``waker`` — supervise active terminal-agent wake delivery independently of agent turns;
 * ``listen`` — connect and stream channel messages until interrupted;
 * ``relay`` — decode and print a lite relay log a hub mirrored to a file;
 * ``ingest`` — stream durable events from a hub event store since a sequence cursor (read-side);
@@ -151,6 +152,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_multihub:add_parsers", ("multihub",)),
     ("synapse_channel.cli:_register_participant_group", ("participant",)),
     ("synapse_channel.cli_arm:add_parser", ("arm",)),
+    ("synapse_channel.cli_waker:add_parsers", ("waker",)),
     (
         "synapse_channel.cli_queries:add_parsers",
         ("who", "state", "dead-letters", "approvals", "board", "manifest", "health"),

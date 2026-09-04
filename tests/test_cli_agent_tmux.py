@@ -52,6 +52,8 @@ def test_parser_registers_wait_resilience_options() -> None:
             "0.7",
             "--max-wait-failures",
             "4",
+            "--token-file",
+            "/run/secrets/hub-token",
         ]
     )
 
@@ -61,6 +63,7 @@ def test_parser_registers_wait_resilience_options() -> None:
     assert args.max_wakes is None
     # Default agent command is codex when the flag is omitted.
     assert args.agent_command == "codex"
+    assert args.token_file == "/run/secrets/hub-token"
 
 
 def test_cmd_start_dispatches_and_splits_agent_command(capsys: Any, tmp_path: Path) -> None:

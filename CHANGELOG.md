@@ -15,6 +15,15 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Add `synapse waker install|status|stop|resume` and the hardened
+  `synapse-waker@.service` user unit for unattended exact-seat prompt delivery.
+  Systemd recreates a dead bridge and watchdogs the advancing delivery loop;
+  an owner-only generation-guarded configuration persists explicit
+  `armed`/`inhibited` intent. Stopping a waker records the inhibit before it
+  stops only that bridge, so automatic restart cannot undo an agent-requested
+  malfunction stop and the provider terminal remains untouched. Persistent
+  credentials are accepted only by owner-only token-file path, never embedded
+  as token values.
 - Add `synapse setup verification-plan|authorize-verification|verify` to the
   `synapse-setup.v1` contract. The separate, single-use transaction binds the
   original application lineage and a fresh inspection, sends one directed

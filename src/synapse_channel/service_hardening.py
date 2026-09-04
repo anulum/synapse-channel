@@ -43,7 +43,9 @@ LISTENER_WRITE_PATHS: tuple[str, ...] = ("%h/synapse", "%h/.local/share/synapse"
 """Clients also auto-provision the trust-on-first-use machine key."""
 
 
-def hardening_directives(*, write_paths: tuple[str, ...], nofile: int) -> str:
+def hardening_directives(
+    *, write_paths: tuple[str, ...], nofile: int, private_tmp: bool = True
+) -> str:
     """Return the ``[Service]`` sandbox directive block for a generated unit.
 
     Parameters
@@ -55,6 +57,10 @@ def hardening_directives(*, write_paths: tuple[str, ...], nofile: int) -> str:
     nofile : int
         ``LimitNOFILE`` value: :data:`HUB_NOFILE` for the hub,
         :data:`LISTENER_NOFILE` for single-connection listeners.
+    private_tmp : bool, optional
+        Whether the unit receives a private ``/tmp``. Active tmux bridges set
+        this false because the existing provider socket is deliberately owned
+        outside the service mount namespace.
 
     Returns
     -------
@@ -66,7 +72,7 @@ def hardening_directives(*, write_paths: tuple[str, ...], nofile: int) -> str:
     return (
         "NoNewPrivileges=yes\n"
         "UMask=0077\n"
-        "PrivateTmp=yes\n"
+        f"PrivateTmp={'yes' if private_tmp else 'no'}\n"
         "ProtectSystem=strict\n"
         "ProtectHome=read-only\n"
         f"ReadWritePaths={paths}\n"

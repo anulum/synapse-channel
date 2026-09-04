@@ -87,6 +87,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "ingest": ADAPTER,
     "codex-tmux": ADAPTER,
     "agent-tmux": ADAPTER,
+    "waker": ADAPTER,
     "worker": ADAPTER,
     "worker-session": ADAPTER,
     "git-claim": ADAPTER,

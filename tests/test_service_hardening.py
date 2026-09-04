@@ -48,6 +48,7 @@ from synapse_channel.service_setup import (
     render_arm_unit,
     render_hub_unit,
     render_presence_unit,
+    render_waker_unit,
 )
 
 _DEPLOY = Path(__file__).resolve().parent.parent / "deploy"
@@ -68,6 +69,7 @@ def _rendered_units() -> dict[str, str]:
         "synapse-hub.service": render_hub_unit(synapse_bin=_TEST_SYN_BIN),
         "synapse-presence@.service": render_presence_unit(synapse_bin=_TEST_SYN_BIN),
         "synapse-arm@.service": render_arm_unit(synapse_bin=_TEST_SYN_BIN),
+        "synapse-waker@.service": render_waker_unit(synapse_bin=_TEST_SYN_BIN),
     }
 
 
@@ -124,7 +126,12 @@ def test_block_joins_multiple_write_paths_on_one_line() -> None:
 def test_no_forbidden_directive_anywhere() -> None:
     surfaces = list(_rendered_units().values()) + [
         (_DEPLOY / name).read_text(encoding="utf-8")
-        for name in ("synapse-hub.service", "synapse-presence@.service", "synapse-arm@.service")
+        for name in (
+            "synapse-hub.service",
+            "synapse-presence@.service",
+            "synapse-arm@.service",
+            "synapse-waker@.service",
+        )
     ]
     for text in surfaces:
         for forbidden in _FORBIDDEN_IN_USER_UNITS:
@@ -149,6 +156,16 @@ def test_presence_and_arm_units_carry_listener_block() -> None:
     listener_block = hardening_directives(write_paths=LISTENER_WRITE_PATHS, nofile=LISTENER_NOFILE)
     assert listener_block in render_presence_unit(synapse_bin=_TEST_SYN_BIN)
     assert listener_block in render_arm_unit(synapse_bin=_TEST_SYN_BIN)
+
+
+def test_active_waker_keeps_listener_floor_but_shares_tmux_socket_namespace() -> None:
+    block = hardening_directives(
+        write_paths=LISTENER_WRITE_PATHS,
+        nofile=LISTENER_NOFILE,
+        private_tmp=False,
+    )
+    assert "PrivateTmp=no" in block
+    assert block in render_waker_unit(synapse_bin=_TEST_SYN_BIN)
 
 
 def test_rendered_units_still_parse_as_unit_files() -> None:

@@ -48,6 +48,36 @@ finite wait on exit is normal. A *tight* external re-arm loop almost always
 means you are being woken by traffic that is not for you — see the next two
 entries.
 
+If that waiter is supposed to wake a terminal provider unattended, do not make
+the agent itself responsible for re-arming it. Install the exact-seat bridge
+with `synapse waker install --identity NAME --session SESSION --cwd "$PWD"
+--agent-command PROVIDER --start`, then inspect all layers with `synapse waker
+status --identity NAME`. A healthy verdict requires durable desired state,
+active systemd service, valid tmux identity binding, and a live provider pane.
+
+## The message is durable but the terminal agent did not wake
+
+This usually means only the passive `synapse arm` receiver is alive, or an
+unsupervised `agent-tmux wait` process exited. Presence and mailbox delivery are
+not proof that a provider turn was invoked.
+
+1. Run `synapse waker status --identity NAME`.
+2. If `desired state: inhibited`, read the recorded reason and use `waker
+   resume` only after the malfunction is resolved.
+3. If the service is inactive but desired state is armed, inspect
+   `journalctl --user -u "$(systemd-escape --template=synapse-waker@.service --
+   NAME)"` and the reported main status/restart count.
+4. If the provider is unavailable, inspect the exact tmux session and its
+   `SYN_PROJECT`/`SYN_IDENTITY` binding. Do not restart or replace the terminal
+   merely to make the service green.
+5. If `pending wake: yes`, the routing hint is retained while the provider is
+   busy, modal, starting, or otherwise unsafe for injection.
+
+To terminate a malfunctioning bridge without losing the provider terminal, use
+`synapse waker stop --identity NAME --reason "…"`. The inhibit is written
+before systemd stops the exact bridge, and only an explicit `waker resume`
+permits automatic restart again.
+
 ## `[NAME] connection to ws://… closed; re-arm the waiter.`
 
 The hub closed the connection (for example, during a hub restart or network

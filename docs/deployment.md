@@ -9,8 +9,10 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # Deployment
 
-The hub is the only long-running piece — workers and human clients connect to it.
-Run one hub per coordinating group.
+The hub is the only required shared long-running piece; workers and human clients
+connect to it. Optional per-project presence, passive waiter, and exact-seat
+active-waker user services keep local reachability and delivery alive. Run one
+hub per coordinating group.
 
 ## Local, always-on (systemd user service)
 
@@ -35,11 +37,14 @@ synapse init --project myproject --identity myproject/worker
 
 It prints exact `systemctl --user` commands. `synapse git-init` accepts the same
 `--install-user-services` and `--start-user-services` flags, so claim-aware git
-setup can also write/start the hub, presence, and wake-listener units.
+setup can also write/start the hub, presence, and passive wake-listener units.
+The active provider bridge is intentionally separate and requires an explicit
+`synapse waker install` for each exact seat.
 
 ### Sandboxing of the generated units
 
-Every generated unit (hub, presence, wake listener) ships a systemd sandbox
+Every generated unit (hub, presence, passive wake listener, active waker) ships
+a systemd sandbox
 block: `ProtectSystem=strict` with `ProtectHome=read-only` makes the whole
 filesystem read-only to the service except its declared `ReadWritePaths=` —
 `~/synapse` (event store, relay feed, mailbox cursors, owner leases) and, for
@@ -121,6 +126,74 @@ Native Windows Task Scheduler installation is not implemented or claimed.
 `synapse arm install` exits `2` outside Linux; on Windows, use WSL with systemd
 enabled and install the unit inside that distribution. This is the supported
 permanent-waiter path until a real native Windows service is validated.
+
+## Unattended active waker (`synapse waker`)
+
+The permanent waiter above preserves durable reachability but deliberately does
+not invoke a model provider. To deliver a routing hint into an already bound
+terminal provider without relying on the agent to re-arm a one-shot waiter,
+install one exact-seat active waker:
+
+```bash
+synapse waker install \
+  --identity myproject/codex-main \
+  --session myproject-codex \
+  --cwd "$PWD" \
+  --agent-command "codex" \
+  --start
+synapse waker status --identity myproject/codex-main
+```
+
+The owner-only JSON configuration records the exact identity, tmux session,
+working directory, provider command, hub URI, optional token-file path, desired
+state, and a monotonically increasing generation. It never stores a token
+value. For a secured or remote hub, add `--uri wss://… --token-file
+~/.config/synapse/token`; the nested wait process receives the file path.
+
+The waker is not the provider execution boundary: it neither runs model work
+nor writes the configured workspace. Its systemd unit receives network access,
+the shared tmux socket namespace, read access to the configured token file, and
+write access only to Synapse state. The already-running provider process must
+separately have a non-interactive permission profile sufficient for its own
+workspace and continuity operations. Synapse never auto-approves a provider
+prompt or silently widens its sandbox; validate that provider profile before
+enabling unattended delivery. A modal permission request is reported as a
+blocked provider rather than approved by the waker.
+
+`synapse-waker@.service` uses `Restart=always`, `Type=notify`, and
+`WatchdogSec=90`. Heartbeats come from the advancing delivery loop, so a stuck
+loop is restarted rather than merely masked by a detached heartbeat thread.
+The bridge retries temporary hub failure with bounded jitter and retains a
+pending wake while the provider is busy or modal. It uses the existing
+`<identity>-pane-rx` receiver and exact tmux binding checks.
+
+The service owns only the bridge, not the provider terminal. A missing,
+inactive, or mismatched provider makes status unhealthy and fails closed; the
+waker never kills or silently replaces an owner terminal. Stop a malfunctioning
+bridge safely with:
+
+```bash
+generation=$(synapse waker status --identity myproject/codex-main | sed -n 's/^generation: //p')
+synapse waker stop \
+  --identity myproject/codex-main \
+  --reason "provider bridge malfunction" \
+  --expect-generation "$generation"
+```
+
+`stop` persists `inhibited` before stopping the exact escaped unit.
+`RestartPreventExitStatus=78` also prevents a manual or Fleet start from
+overriding that intent. Recovery is explicit and generation-guarded:
+
+```bash
+synapse waker resume \
+  --identity myproject/codex-main \
+  --expect-generation "$((generation + 1))"
+```
+
+The passive `synapse arm install` receiver may remain enabled alongside the
+active waker: mailbox recovery and pane injection have distinct receiver names
+and responsibilities. Native Windows service installation is not claimed; use
+WSL with systemd.
 
 ## Provider-independent presence
 

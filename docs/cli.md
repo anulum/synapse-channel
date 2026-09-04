@@ -40,6 +40,7 @@ everything, since they need the whole command table.
 | `synapse sqlcipher` | SQLCipher page-encryption ops for the hub event store: `rekey` via PRAGMA rekey, `migrate` plaintext → encrypted. |
 | `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. |
 | `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |
+| `synapse waker` | Install, inspect, persistently inhibit, or explicitly resume a systemd-supervised exact-seat `agent-tmux` bridge. The service restarts the bridge, never the provider terminal. |
 | `synapse dashboard` | Serve a loopback-only read-only live cockpit (fleet graph, board, claims, risk guidance, stream, receipts) over hub snapshots, plus `/snapshot.json`; `--feeds-db` adds durable store feeds including `/postmortem.json?task=ID` and `/receipts.json`, and `--observed-peer HUB=URI` adds advisory peer-hub rows. |
 | `synapse route-task` | Recommend agents for a board task using local capability signals. |
 | `synapse resource-bids` | Rank live resource offers for a board task without reserving capacity. |
@@ -897,6 +898,26 @@ Enter-only retry; the prompt is never pasted twice. It retries a failed
 `synapse wait` with backoff instead of exiting, giving up only after
 `--max-wait-failures` consecutive failures (unbounded by default), so a hub
 restart does not permanently stop the waker.
+
+For unattended operation, put that bridge under the dedicated user service:
+
+```bash
+synapse waker install --identity api-dev/codex-main --session api-dev-codex \
+  --cwd "$PWD" --agent-command codex --start
+synapse waker status --identity api-dev/codex-main
+synapse waker stop --identity api-dev/codex-main --reason "bridge malfunction"
+synapse waker resume --identity api-dev/codex-main
+```
+
+`install` writes an owner-only exact-seat JSON configuration and the shared
+`synapse-waker@.service` template. Add `--uri` and `--token-file` for a secured
+remote hub; token values are never persisted. `status` reports the durable
+desired state and generation, systemd state/restarts, actual provider binding,
+and pending wake state separately. `stop` writes `inhibited` before stopping
+the exact unit, and only `resume` clears it. Both mutation commands accept
+`--expect-generation` to reject stale control decisions. Automatic bridge
+restart, watchdog recovery, and configuration reload never terminate or replace
+the tmux provider session.
 The default `--pane-probe-interval 5` bounds stale pane-bridge presence: after
 each quiet interval the wait socket closes, then the bridge rechecks the tmux
 session, exact identity binding, and active agent pane before registering

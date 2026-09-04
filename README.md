@@ -292,6 +292,26 @@ ignored during asynchronous provider startup leaves the single staged prompt
 pending for a safe Enter-only retry.
 It accepts only exact identity, role, or group targets; global priority and CEO
 broadcasts remain durable inbox traffic but never inject into provider panes.
+
+For unattended active delivery, supervise that pane bridge independently of
+agent turns:
+
+```bash
+synapse waker install \
+  --identity myproject/agent \
+  --session myproject-agent \
+  --cwd "$PWD" \
+  --agent-command codex \
+  --start
+synapse waker status --identity myproject/agent
+```
+
+The generated `synapse-waker@.service` has `Restart=always` and a main-loop
+watchdog, so a dead bridge is recreated without relying on the agent to remember
+to re-arm it. `waker stop --reason ...` first persists an `inhibited` state and
+then stops only the exact bridge; systemd cannot immediately resurrect it, and
+the tmux provider terminal is not killed or restarted. Only an explicit
+`waker resume` clears the inhibit.
 Native Windows service setup is not
 claimed; use WSL with systemd as documented in the deployment guide.
 
@@ -708,6 +728,12 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   synapse codex-tmux start --identity myrepo/codex-main --session myrepo-codex --cwd "$PWD"
   synapse codex-tmux wait --identity myrepo/codex-main --session myrepo-codex --cwd "$PWD"
   ```
+
+  For unattended operation, replace the manually maintained `wait` process with
+  `synapse waker install --identity myrepo/codex-main --session myrepo-codex
+  --cwd "$PWD" --agent-command codex --start`. The waker supervises only the
+  delivery bridge and attaches to the existing bound session; it never owns the
+  provider terminal lifecycle.
 
 ### Agent ergonomics — the `syn` commands
 
@@ -1624,11 +1650,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.24 |
 | Public API exports | 70 |
-| Package modules | 543 |
-| Classes | 822 |
+| Package modules | 548 |
+| Classes | 831 |
 | Wire message types | 80 |
-| CLI subcommands | 194 |
-| Test functions | 9531 |
+| CLI subcommands | 200 |
+| Test functions | 9574 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 63 |
 | GitHub Actions workflows | 25 |

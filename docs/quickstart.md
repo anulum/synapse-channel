@@ -97,6 +97,10 @@ template.
 After the host connects, call `synapse_status` and `synapse_inbox` at the start
 of a turn. MCP tool discovery does not wake an idle provider; keep an exact
 permanent waiter active with `synapse arm install --identity NAME --start`.
+For unattended terminal prompt delivery, also install the active bridge with
+`synapse waker install --identity NAME --session SESSION --cwd "$PWD"
+--agent-command PROVIDER --start`; systemd owns bridge recovery while the
+provider terminal remains untouched.
 See [MCP server face](mcp.md) for authentication and client-specific paths.
 
 ## Fastest safe trial path
@@ -200,9 +204,13 @@ synapse hub --port 8876 --db ~/synapse/hub.db --token-file ~/synapse/token &
 # synapse hub --db ~/synapse/hub.db --token-file ~/synapse/token \
 #   --team-secure --identity-trust ~/synapse/trust.json --role-grants ~/synapse/roles.json
 
-# 3. Arm a wake waiter (directed-only) in each agent terminal
+# 3. For a manual harness, arm a one-shot waiter in each agent terminal
 export SYNAPSE_TOKEN=$(cat ~/synapse/token)
 syn-wait --directed-only   # background; re-arm after each wake
+
+# For unattended tmux-provider delivery, store only the token-file path:
+synapse waker install --identity myproj/alice --session myproj-alice \
+  --cwd "$PWD" --agent-command codex --token-file ~/synapse/token --start
 
 # 4. Claim work so the hub refuses overlapping live authority
 synapse git-init --name myproj/alice

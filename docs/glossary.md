@@ -91,6 +91,12 @@ A **waiter** is a one-shot `synapse wait` an **agent** arms in the background; i
 message that should **wake** it arrives, then exits and re-invokes the agent. This is the
 event-driven alternative to polling.
 
+An **active waker** is the supervised `agent-tmux` bridge installed by `synapse waker install`.
+It converts an exact directed wake into a fixed routing prompt in an already bound provider
+tmux pane. Its systemd service automatically recreates the bridge after exit or failure, while
+the durable `inhibited` state lets the owning agent stop that exact bridge without stopping or
+restarting the provider terminal.
+
 ### Directed-only
 
 A waiter mode (`--directed-only`) that wakes only on a message addressed to the agent (or a

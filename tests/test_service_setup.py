@@ -22,6 +22,7 @@ from synapse_channel.service_setup import (
     render_arm_unit,
     render_hub_unit,
     render_presence_unit,
+    render_waker_unit,
     service_suggestions,
     validate_systemd_executable,
 )
@@ -136,7 +137,7 @@ def test_render_arm_unit_escapes_systemd_percent_specifiers() -> None:
     ],
 )
 def test_rendered_units_reject_ambiguous_systemd_tokens(value: str, match: str) -> None:
-    for renderer in (render_hub_unit, render_presence_unit, render_arm_unit):
+    for renderer in (render_hub_unit, render_presence_unit, render_arm_unit, render_waker_unit):
         with pytest.raises(ValueError, match=match):
             renderer(synapse_bin=value)
 
@@ -149,6 +150,7 @@ def test_rendered_units_never_order_after_their_install_target(tmp_path: Path) -
         "hub": render_hub_unit(synapse_bin="/bin/synapse"),
         "presence": render_presence_unit(synapse_bin="/bin/synapse"),
         "arm": render_arm_unit(synapse_bin="/bin/synapse"),
+        "waker": render_waker_unit(synapse_bin="/bin/synapse"),
     }
     for name, unit in units.items():
         assert "WantedBy=default.target" in unit, name
@@ -156,15 +158,20 @@ def test_rendered_units_never_order_after_their_install_target(tmp_path: Path) -
 
     analyzer = shutil.which("systemd-analyze")
     if analyzer is not None:
-        unit_path = tmp_path / "synapse-hub.service"
-        unit_path.write_text(render_hub_unit(synapse_bin="/bin/true"), encoding="utf-8")
-        completed = subprocess.run(
-            [analyzer, "verify", str(unit_path)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert completed.returncode == 0, completed.stderr
+        verified_units = {
+            "synapse-hub.service": render_hub_unit(synapse_bin="/bin/true"),
+            "synapse-waker@.service": render_waker_unit(synapse_bin="/bin/true"),
+        }
+        for filename, unit in verified_units.items():
+            unit_path = tmp_path / filename
+            unit_path.write_text(unit, encoding="utf-8")
+            completed = subprocess.run(
+                [analyzer, "verify", str(unit_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert completed.returncode == 0, completed.stderr
 
 
 def test_checked_in_deploy_templates_have_no_boot_ordering_cycle() -> None:
@@ -173,6 +180,7 @@ def test_checked_in_deploy_templates_have_no_boot_ordering_cycle() -> None:
         "synapse-hub.service",
         "synapse-presence@.service",
         "synapse-arm@.service",
+        "synapse-waker@.service",
     ):
         template = (deploy_dir / filename).read_text(encoding="utf-8")
         directives = "\n".join(
@@ -196,6 +204,25 @@ def test_checked_in_arm_template_matches_generated_runtime_contract() -> None:
     assert "Restart=on-failure" not in template
     assert "WorkingDirectory=%h/.local/share" in template
     assert "Environment=XDG_DATA_HOME=." in template
+
+
+def test_checked_in_waker_template_matches_active_runtime_contract() -> None:
+    template = (
+        Path(__file__).resolve().parents[1] / "deploy" / "synapse-waker@.service"
+    ).read_text(encoding="utf-8")
+    generated = render_waker_unit(synapse_bin="synapse")
+
+    for contract in (
+        "ExecStart=synapse waker run --identity=%I",
+        "Type=notify",
+        "WatchdogSec=90",
+        "Restart=always",
+        "RestartPreventExitStatus=78",
+        "PrivateTmp=no",
+        "KillMode=control-group",
+    ):
+        assert contract in template
+        assert contract in generated
 
 
 def test_install_arm_service_writes_only_waiter_unit(tmp_path: Path) -> None:

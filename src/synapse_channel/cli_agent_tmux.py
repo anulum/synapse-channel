@@ -64,6 +64,9 @@ def _config_from_args(args: argparse.Namespace) -> AgentTmuxConfig:
         synapse_bin=args.synapse_bin,
         uri=args.uri,
         token=args.token,
+        token_file=(
+            Path(args.token_file) if getattr(args, "token_file", None) is not None else None
+        ),
         submit_delay=args.submit_delay,
         pane_probe_interval=getattr(args, "pane_probe_interval", DEFAULT_PANE_PROBE_INTERVAL),
     )
@@ -156,6 +159,11 @@ def _add_common_args(
     parser.add_argument("--synapse-bin", default="synapse", help="synapse executable.")
     parser.add_argument("--uri", default=default_hub_uri(), help="Synapse hub URI.")
     parser.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    parser.add_argument(
+        "--token-file",
+        default=None,
+        help="Read the shared-secret token from an owner-only file.",
+    )
     parser.add_argument(
         "--submit-delay",
         type=float,

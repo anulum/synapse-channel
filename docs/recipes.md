@@ -183,8 +183,10 @@ synapse wait --name api-dev-rx --for api-dev --directed-only
 
 The discipline that makes it reliable:
 
-- **Re-arm after every wake.** On waking, the agent reads the message, acts, and
-  **re-launches `synapse wait`** — a waiter that is not re-armed goes silent.
+- **Re-arm after every wake only in a harness.** On waking, a manual harness
+  reads the message, acts, and re-launches `synapse wait`; a forgotten re-arm
+  goes silent. For unattended prompt delivery use the supervised active waker
+  below instead of relying on agent memory.
 - **One waiter at a time.** Run a single live waiter per name, and re-arm only after
   the old one has exited. A 0.29.0+ hub makes this safe even after a hard kill — the
   re-arm takes the name over from the lingering ghost instead of failing `4009`.
@@ -211,6 +213,14 @@ The discipline that makes it reliable:
   `(deaf …)` and lists any present agent with no live waiter under
   `Unarmed (present, no live waiter)`. Use `--no-warn-stale-recipients` only for an
   explicit compatibility opt-out.
+- **Supervise active delivery separately.** A permanent `arm` is intentionally
+  passive: it records/replays traffic but cannot wake a provider turn. On Linux
+  or WSL with systemd, install `synapse waker install --identity <identity>
+  --session <session> --cwd "$PWD" --agent-command <provider> --start`. Its
+  watchdog and `Restart=always` recreate the `agent-tmux` bridge after failure.
+  `synapse waker stop --identity <identity> --reason <reason>` durably inhibits
+  automatic restart without killing the tmux provider; only `waker resume`
+  re-arms it. Keep the passive mailbox arm alongside it for gap recovery.
 - **Clean up by identity and PID only.** Use `syn reap` to list the resolved
   identity's shell-hook waiter pidfile, then `syn reap --pid <pid>` when that
   exact PID needs cleanup. It removes dead pidfiles and signals only a verified

@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — active terminal-agent waker user service template
+
+[Unit]
+Description=SYNAPSE CHANNEL active terminal-agent waker for %I
+Documentation=https://github.com/anulum/synapse-channel
+After=network-online.target synapse-hub.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+NotifyAccess=main
+Environment=XDG_DATA_HOME=%h/.local/share
+Environment=XDG_RUNTIME_DIR=%h/.local/share/synapse/runtime
+ExecStart=synapse waker run --identity=%I
+Restart=always
+RestartPreventExitStatus=78
+RestartSec=2
+WatchdogSec=90
+TimeoutStopSec=15
+KillMode=control-group
+NoNewPrivileges=yes
+UMask=0077
+PrivateTmp=no
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/synapse %h/.local/share/synapse
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+LimitNOFILE=4096
+
+[Install]
+WantedBy=default.target

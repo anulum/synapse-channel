@@ -129,6 +129,39 @@ def _config(tmp_path: Path, **overrides: object) -> AgentTmuxConfig:
     return AgentTmuxConfig(**base)  # type: ignore[arg-type]
 
 
+def test_config_preserves_historical_positional_field_order(tmp_path: Path) -> None:
+    pane_commands = frozenset({"kimi"})
+    registry = tmp_path / "registry"
+    config = AgentTmuxConfig(
+        "SYNAPSE-CHANNEL/kimi-main",
+        "synapse-kimi-main",
+        tmp_path,
+        ("kimi", "--model", "k2"),
+        pane_commands,
+        "tmux-custom",
+        "synapse-custom",
+        "ws://coordinator:9999",
+        "secret",
+        registry,
+        0.5,
+        12.0,
+    )
+
+    assert config.identity == "SYNAPSE-CHANNEL/kimi-main"
+    assert config.session == "synapse-kimi-main"
+    assert config.cwd == tmp_path
+    assert config.agent_command == ("kimi", "--model", "k2")
+    assert config.pane_commands == pane_commands
+    assert config.tmux_bin == "tmux-custom"
+    assert config.synapse_bin == "synapse-custom"
+    assert config.uri == "ws://coordinator:9999"
+    assert config.token == "secret"
+    assert config.registry_dir == registry
+    assert config.submit_delay == 0.5
+    assert config.pane_probe_interval == 12.0
+    assert config.token_file is None
+
+
 def test_agent_binary_resolves_the_launch_basename(tmp_path: Path) -> None:
     assert agent_binary(_config(tmp_path, agent_command=("codex",))) == "codex"
     assert agent_binary(_config(tmp_path, agent_command=("/usr/bin/kimi", "--x"))) == "kimi"
@@ -860,6 +893,35 @@ def test_wait_and_wake_injects_after_successful_wait(tmp_path: Path) -> None:
     ]
     send_calls = [call for call in runner.calls if call[1] == "send-keys"]
     assert send_calls == [["tmux", "send-keys", "-t", "synapse-codex-main", "Enter"]]
+
+
+def test_wait_command_prefers_token_file_and_main_loop_reports_heartbeat(tmp_path: Path) -> None:
+    token_file = tmp_path / "hub-token"
+    config = _config(
+        tmp_path,
+        token="process-visible",
+        token_file=token_file,
+        pane_probe_interval=5.0,
+    )
+    heartbeats: list[str] = []
+    runner = RecordingRunner(
+        [_result(["synapse", "wait"], 0, "sender: wake\n"), _result(["tmux", "send-keys"], 0)]
+    )
+
+    result = wait_and_wake(
+        config,
+        runner=runner,
+        max_wakes=1,
+        sleeper=RecordingSleeper(),
+        heartbeat=lambda: heartbeats.append("alive"),
+    )
+
+    assert result == 0
+    assert heartbeats == ["alive"]
+    wait_command = runner.calls[0]
+    assert "--token-file" in wait_command
+    assert str(token_file) in wait_command
+    assert "process-visible" not in wait_command
 
 
 def test_wait_and_wake_queues_modal_then_delivers_when_idle(tmp_path: Path) -> None:
