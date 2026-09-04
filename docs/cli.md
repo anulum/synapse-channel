@@ -921,6 +921,34 @@ operation fails without changing configuration or sending service commands;
 after the active command finishes, inspect status and retry with its current
 generation. A command failure releases the lock but does not roll back the
 persisted desired state. A generation is not proof of applied service state.
+Service commands have a 30-second wait limit per command, configurable with
+`--command-timeout` on `install`, `stop`, `resume`, and `status`. This is not a
+whole-operation deadline, and killing the local command does not prove that a
+job already accepted by systemd was cancelled. The local command process group
+is terminated on timeout and its direct child is reaped.
+
+An owner-only durable control record is written before configuration and service
+effects. `status` exposes `control state: idle`, `pending`, or `uncertain` alongside
+the desired generation and service state. Pending requires a live controller with
+the recorded Linux boot ID, PID, and process start time. An orphaned intent,
+timeout, failed operation, or malformed record is not readiness. The bridge
+refuses an uncertain start and stops at its next control heartbeat if uncertainty
+appears while running. Existing configurations without a control record remain
+readable; their configuration schema has not changed.
+
+Uncertainty survives `stop` and offline `install`. These remain available for
+inhibition and configuration repair, but `install --start` and an ordinary
+`resume` cannot clear it. First verify that the earlier control processes and
+manager jobs have settled, then inspect the latest generation and explicitly run:
+
+```bash
+synapse waker resume --identity api-dev/codex-main \
+  --expect-generation 4 --acknowledge-uncertain
+```
+
+Use the actual observed generation, not the example value. The acknowledgement
+is an operator assertion, not automatic proof of systemd reconciliation. Do not
+downgrade to a version that ignores control records while recovery is outstanding.
 Automatic bridge
 restart, watchdog recovery, and configuration reload never terminate or replace
 the tmux provider session.

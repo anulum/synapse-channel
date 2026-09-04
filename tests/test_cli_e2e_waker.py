@@ -18,10 +18,13 @@ from pathlib import Path
 
 import pytest
 
+from _platform_caps import requires_linux
 from synapse_channel.waker_config import DESIRED_ARMED, DESIRED_INHIBITED, load_waker_config
+from synapse_channel.waker_transition import transition_state
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 IDENTITY = "journey/codex-1"
+pytestmark = requires_linux
 
 
 def _run_cli(home: Path, fake_bin: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -210,3 +213,101 @@ def test_real_cli_process_preserves_terminal_while_controlling_exact_waker(tmp_p
     commands = (tmp_path / "systemctl.log").read_text(encoding="utf-8").splitlines()
     assert "--user stop synapse-waker@journey-codex-1.service" in commands
     assert all("kill" not in command for command in commands)
+
+
+@pytest.mark.parametrize("failure", ["timeout", "crash", "nonzero"])
+def test_cli_uncertain_control_blocks_late_start_until_explicit_recovery(
+    tmp_path: Path, failure: str
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    escape = fake_bin / "systemd-escape"
+    escape.write_text(
+        "#!/bin/sh\nprintf '%s\\n' 'synapse-waker@journey-codex-1.service'\n",
+        encoding="utf-8",
+    )
+    escape.chmod(0o755)
+    systemctl = fake_bin / "systemctl"
+    systemctl.write_text(
+        f"#!{sys.executable}\n"
+        "import os, pathlib, signal, sys, time\n"
+        "home = pathlib.Path(os.environ['HOME'])\n"
+        "mode = (home / 'mode').read_text()\n"
+        "if mode == 'timeout': time.sleep(10)\n"
+        "if mode == 'crash': os.kill(os.getppid(), signal.SIGKILL)\n"
+        "if mode == 'nonzero': sys.exit(3)\n"
+        "print('ActiveState=inactive\\nSubState=dead\\nNRestarts=0\\nExecMainStatus=0')\n",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
+    mode = tmp_path / "mode"
+    mode.write_text("")
+    install = (
+        "waker",
+        "install",
+        "--identity",
+        IDENTITY,
+        "--session",
+        "journey",
+        "--cwd",
+        str(REPO_ROOT),
+        "--agent-command",
+        "codex",
+        "--synapse-bin",
+        "/usr/bin/synapse",
+    )
+    assert _run_cli(tmp_path, fake_bin, *install).returncode == 0
+    mode.write_text(failure)
+    failed = _run_cli(
+        tmp_path,
+        fake_bin,
+        "waker",
+        "resume",
+        "--identity",
+        IDENTITY,
+        "--command-timeout",
+        "0.5",
+        "--expect-generation",
+        "1",
+    )
+    assert failed.returncode != 0
+    assert load_waker_config(IDENTITY, home=tmp_path).generation == 2
+    assert transition_state(IDENTITY, home=tmp_path) == "uncertain"
+    mode.write_text("")
+    late_start = _run_cli(tmp_path, fake_bin, "waker", "run", "--identity", IDENTITY)
+    assert late_start.returncode == 78
+    assert "requires explicit recovery" in late_start.stdout
+    status = _run_cli(tmp_path, fake_bin, "waker", "status", "--identity", IDENTITY)
+    assert status.returncode == 1 and "control state: uncertain" in status.stdout
+    refused = _run_cli(tmp_path, fake_bin, "waker", "resume", "--identity", IDENTITY)
+    assert refused.returncode == 2 and "recovery required" in refused.stderr
+    assert _run_cli(tmp_path, fake_bin, *install, "--start").returncode != 0
+    assert load_waker_config(IDENTITY, home=tmp_path).generation == 2
+    stopped = _run_cli(
+        tmp_path,
+        fake_bin,
+        "waker",
+        "stop",
+        "--identity",
+        IDENTITY,
+        "--reason",
+        "settle",
+    )
+    assert stopped.returncode == 0
+    assert transition_state(IDENTITY, home=tmp_path) == "uncertain"
+    assert _run_cli(tmp_path, fake_bin, *install).returncode == 0
+    assert transition_state(IDENTITY, home=tmp_path) == "uncertain"
+    recovered = _run_cli(
+        tmp_path,
+        fake_bin,
+        "waker",
+        "resume",
+        "--identity",
+        IDENTITY,
+        "--acknowledge-uncertain",
+        "--expect-generation",
+        "4",
+    )
+    assert recovered.returncode == 0, recovered.stderr
+    assert transition_state(IDENTITY, home=tmp_path) == "idle"
+    assert load_waker_config(IDENTITY, home=tmp_path).generation == 5

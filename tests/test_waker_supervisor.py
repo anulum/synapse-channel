@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from _platform_caps import requires_proc
 from synapse_channel.agent_tmux import AgentTmuxConfig
 from synapse_channel.waker_config import DESIRED_INHIBITED, WakerConfig, save_waker_config
 from synapse_channel.waker_supervisor import (
@@ -24,6 +25,7 @@ from synapse_channel.waker_supervisor import (
     run_waker,
     systemd_notify,
 )
+from synapse_channel.waker_transition import waker_transition
 
 IDENTITY = "repo/codex-1"
 
@@ -202,3 +204,47 @@ def test_heartbeat_applies_durable_control_changes(
         return 0
 
     assert run_waker(IDENTITY, home=tmp_path, wake_runner=wake_runner) == expected
+
+
+@requires_proc
+def test_uncertain_control_is_checked_before_ready_and_at_heartbeat(tmp_path: Path) -> None:
+    save_waker_config(_config(tmp_path), home=tmp_path)
+    notifications: list[str] = []
+
+    def notify(message: str) -> bool:
+        notifications.append(message)
+        return True
+
+    def wake_runner(
+        config: AgentTmuxConfig,
+        *,
+        max_wakes: int | None,
+        max_wait_failures: int | None,
+        heartbeat: Callable[[], None] | None,
+    ) -> int:
+        del config, max_wakes, max_wait_failures
+        with waker_transition(IDENTITY, 1, "resume", home=tmp_path):
+            pass
+        assert heartbeat is not None
+        heartbeat()
+        pytest.fail("uncertain control did not stop the wake loop")
+
+    assert run_waker(IDENTITY, home=tmp_path, wake_runner=wake_runner, notifier=notify) == 78
+    assert notifications == ["READY=1\nSTATUS=armed generation 1", "STOPPING=1"]
+    notifications.clear()
+    assert run_waker(IDENTITY, home=tmp_path, wake_runner=wake_runner, notifier=notify) == 78
+    assert notifications == []
+
+
+@requires_proc
+def test_live_pending_controller_allows_startup_before_success_receipt(tmp_path: Path) -> None:
+    save_waker_config(_config(tmp_path), home=tmp_path)
+    with waker_transition(IDENTITY, 1, "resume", home=tmp_path) as transition:
+        code = run_waker(
+            IDENTITY,
+            home=tmp_path,
+            wake_runner=lambda *_args, **_kwargs: 7,
+            notifier=lambda _message: True,
+        )
+        assert code == 7
+        transition.complete()

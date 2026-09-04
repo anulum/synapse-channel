@@ -16,6 +16,7 @@ from pathlib import Path
 
 from synapse_channel.agent_tmux import DEFAULT_PANE_PROBE_INTERVAL, DEFAULT_SUBMIT_DELAY
 from synapse_channel.client.agent import default_hub_uri
+from synapse_channel.waker_commands import DEFAULT_COMMAND_TIMEOUT
 from synapse_channel.waker_service import inhibit_waker, inspect_waker, install_waker, resume_waker
 from synapse_channel.waker_supervisor import run_waker
 
@@ -43,6 +44,7 @@ def _cmd_waker(args: argparse.Namespace) -> int:
                 submit_delay=args.submit_delay,
                 pane_probe_interval=args.pane_probe_interval,
                 start=args.start,
+                command_timeout=args.command_timeout,
             )
             _print_lines(result.lines)
             return 0 if result.ok else 1
@@ -51,6 +53,7 @@ def _cmd_waker(args: argparse.Namespace) -> int:
                 args.identity,
                 reason=args.reason,
                 expected_generation=args.expect_generation,
+                command_timeout=args.command_timeout,
             )
             _print_lines(result.lines)
             return 0 if result.ok else 1
@@ -58,14 +61,17 @@ def _cmd_waker(args: argparse.Namespace) -> int:
             result = resume_waker(
                 args.identity,
                 expected_generation=args.expect_generation,
+                command_timeout=args.command_timeout,
+                acknowledge_uncertain=args.acknowledge_uncertain,
             )
             _print_lines(result.lines)
             return 0 if result.ok else 1
         if args.waker_command == "status":
-            snapshot = inspect_waker(args.identity)
+            snapshot = inspect_waker(args.identity, command_timeout=args.command_timeout)
             print(f"identity: {snapshot.identity}")
             print(f"desired state: {snapshot.desired_state}")
             print(f"generation: {snapshot.generation}")
+            print(f"control state: {snapshot.control_state}")
             print(f"unit: {snapshot.unit}")
             print(f"service: {snapshot.service_active}/{snapshot.service_substate}")
             print(
@@ -113,6 +119,15 @@ def _generation_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _command_timeout_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--command-timeout",
+        type=float,
+        default=DEFAULT_COMMAND_TIMEOUT,
+        help="Maximum wait for each service command in seconds (not a systemd job cancellation).",
+    )
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``synapse waker`` active-execution lifecycle."""
     group = subparsers.add_parser(
@@ -148,23 +163,32 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Maximum seconds between provider liveness probes.",
     )
     install.add_argument("--start", action="store_true", help="Enable and start the exact unit.")
+    _command_timeout_argument(install)
     install.set_defaults(func=_cmd_waker)
 
     stop = nested.add_parser("stop", help="Persistently inhibit and stop one exact waker.")
     _identity_argument(stop)
     stop.add_argument("--reason", required=True, help="Recorded malfunction or operator reason.")
     _generation_argument(stop)
+    _command_timeout_argument(stop)
     stop.set_defaults(func=_cmd_waker)
 
     resume = nested.add_parser("resume", help="Explicitly clear inhibit and start one exact waker.")
     _identity_argument(resume)
     _generation_argument(resume)
+    _command_timeout_argument(resume)
+    resume.add_argument(
+        "--acknowledge-uncertain",
+        action="store_true",
+        help="Confirm earlier control processes and systemd jobs have settled before recovery.",
+    )
     resume.set_defaults(func=_cmd_waker)
 
     status_parser = nested.add_parser(
         "status", help="Report desired, systemd, provider, and pending-wake state."
     )
     _identity_argument(status_parser)
+    _command_timeout_argument(status_parser)
     status_parser.set_defaults(func=_cmd_waker)
 
     run = nested.add_parser("run", help="Run the configured bridge (service-manager entry point).")

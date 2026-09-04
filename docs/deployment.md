@@ -186,6 +186,17 @@ installation and resume. Concurrent controls fail without changing the stored
 generation; inspect status and retry once the active operation completes.
 Service failures preserve desired state, so inspect systemd state separately.
 Direct operator `systemctl` calls do not participate in this CLI lock.
+Each service command has a configurable 30-second wait limit. A timeout or
+controller crash leaves durable uncertainty; a delayed service start cannot
+silently wake the provider once that controller is gone. The running bridge
+checks this state at its existing control heartbeat, not continuously.
+
+After an uncertain operation, verify the old command processes and the exact
+unit's systemd jobs have settled. `stop` and offline `install` do not clear the
+recovery gate. Read the new generation and use `resume --expect-generation ...
+--acknowledge-uncertain` only after that verification. Acknowledgement is explicit
+operator authority, not a service-manager cancellation guarantee. Status keeps
+desired, control-outcome, systemd and provider observations separate.
 `RestartPreventExitStatus=78` also prevents a manual or Fleet start from
 overriding that intent. Recovery is explicit and generation-guarded:
 

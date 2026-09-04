@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from _platform_caps import requires_linux
 from synapse_channel.agent_tmux import AgentTmuxConfig, AgentTmuxStatus
 from synapse_channel.waker_config import (
     DESIRED_ARMED,
@@ -30,8 +31,14 @@ from synapse_channel.waker_service import (
     install_waker,
     resume_waker,
 )
+from synapse_channel.waker_transition import (
+    WakerTransitionError,
+    transition_state,
+    waker_transition,
+)
 
 IDENTITY = "repo/codex-1"
+pytestmark = requires_linux
 UNIT = "synapse-waker@repo-codex-1.service"
 
 
@@ -478,5 +485,112 @@ def test_lifecycle_holds_lock_for_every_command_and_releases_after_result(
     assert commands[0][0] == "systemd-escape"
     assert commands[-1][0] == "systemctl"
     assert load_waker_config(IDENTITY, home=tmp_path).generation == 2
-    retried = resume_waker(IDENTITY, expected_generation=2, home=tmp_path, runner=ServiceRunner())
+    if fail:
+        with pytest.raises(WakerTransitionError, match="recovery required"):
+            resume_waker(IDENTITY, expected_generation=2, home=tmp_path, runner=ServiceRunner())
+        assert transition_state(IDENTITY, home=tmp_path) == "uncertain"
+    retried = resume_waker(
+        IDENTITY,
+        expected_generation=2,
+        home=tmp_path,
+        runner=ServiceRunner(),
+        acknowledge_uncertain=fail,
+    )
     assert retried.ok and retried.generation == 3
+
+
+@pytest.mark.parametrize("operation", ["install", "stop", "resume", "status"])
+def test_service_timeout_is_unknown_and_mutations_require_recovery(
+    tmp_path: Path,
+    operation: str,
+) -> None:
+    _install(tmp_path, ServiceRunner())
+
+    def timed_out(
+        args: list[str],
+        *,
+        capture_output: bool = False,
+        text: bool = False,
+        check: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        del capture_output, text, check
+        if args[0] == "systemd-escape":
+            return subprocess.CompletedProcess(args, 0, stdout=UNIT, stderr="")
+        raise subprocess.TimeoutExpired(args, 0.1)
+
+    if operation == "status":
+        snapshot = inspect_waker(
+            IDENTITY,
+            home=tmp_path,
+            runner=timed_out,
+            provider_status=lambda config: _provider(config),
+        )
+        assert not snapshot.ready and not snapshot.service_query_ok
+        assert snapshot.service_active == "unknown"
+        assert transition_state(IDENTITY, home=tmp_path) == "idle"
+        return
+    if operation == "install":
+        result = install_waker(
+            identity=IDENTITY,
+            session="repo-codex-1",
+            cwd=tmp_path,
+            agent_command=("codex",),
+            synapse_bin="/usr/bin/synapse",
+            home=tmp_path,
+            runner=timed_out,
+            start=True,
+        )
+    elif operation == "stop":
+        result = inhibit_waker(IDENTITY, reason="test", home=tmp_path, runner=timed_out)
+    else:
+        result = resume_waker(IDENTITY, home=tmp_path, runner=timed_out)
+    assert not result.ok and "job outcome is unknown" in " ".join(result.lines)
+    assert transition_state(IDENTITY, home=tmp_path) == "uncertain"
+
+
+def test_unit_lookup_timeout_does_not_mutate_configuration(tmp_path: Path) -> None:
+    _install(tmp_path, ServiceRunner())
+    before = load_waker_config(IDENTITY, home=tmp_path)
+
+    def timed_out(
+        args: list[str],
+        *,
+        capture_output: bool = False,
+        text: bool = False,
+        check: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        del capture_output, text, check
+        raise subprocess.TimeoutExpired(args, 0.1)
+
+    with pytest.raises(WakerConfigError, match="name lookup timed out"):
+        resume_waker(IDENTITY, home=tmp_path, runner=timed_out)
+    assert load_waker_config(IDENTITY, home=tmp_path) == before
+    assert transition_state(IDENTITY, home=tmp_path) == "idle"
+
+
+def test_recovery_requires_explicit_generation_before_commands(tmp_path: Path) -> None:
+    _install(tmp_path, ServiceRunner())
+    runner = ServiceRunner()
+    with pytest.raises(WakerConfigError, match="requires --expect-generation"):
+        resume_waker(IDENTITY, home=tmp_path, runner=runner, acknowledge_uncertain=True)
+    assert not runner.commands
+
+
+def test_interrupted_first_install_can_repair_config_without_clearing_recovery(
+    tmp_path: Path,
+) -> None:
+    with waker_transition(IDENTITY, 1, "install", home=tmp_path):
+        pass
+    _install(tmp_path, ServiceRunner())
+    assert load_waker_config(IDENTITY, home=tmp_path).generation == 1
+    assert transition_state(IDENTITY, home=tmp_path) == "uncertain"
+    with pytest.raises(WakerTransitionError, match="recovery required"):
+        resume_waker(IDENTITY, home=tmp_path, runner=ServiceRunner())
+    result = resume_waker(
+        IDENTITY,
+        home=tmp_path,
+        runner=ServiceRunner(),
+        expected_generation=1,
+        acknowledge_uncertain=True,
+    )
+    assert result.ok and transition_state(IDENTITY, home=tmp_path) == "idle"

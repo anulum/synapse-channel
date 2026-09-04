@@ -121,12 +121,24 @@ def test_stop_and_resume_dispatch_generation_guards(
     calls: list[tuple[str, str, int | None]] = []
 
     def stop(
-        identity: str, *, reason: str, expected_generation: int | None
+        identity: str,
+        *,
+        reason: str,
+        expected_generation: int | None,
+        command_timeout: float,
     ) -> WakerOperationResult:
+        assert command_timeout == 30
         calls.append((identity, reason, expected_generation))
         return WakerOperationResult(True, ("stopped",), 5)
 
-    def resume(identity: str, *, expected_generation: int | None) -> WakerOperationResult:
+    def resume(
+        identity: str,
+        *,
+        expected_generation: int | None,
+        command_timeout: float,
+        acknowledge_uncertain: bool,
+    ) -> WakerOperationResult:
+        assert command_timeout == 30 and not acknowledge_uncertain
         calls.append((identity, "resume", expected_generation))
         return WakerOperationResult(False, ("resume failed",), 6)
 
@@ -156,7 +168,7 @@ def test_status_prints_execution_layers_pending_and_inhibit(
     monkeypatch: pytest.MonkeyPatch, capsys: Any
 ) -> None:
     snapshot = _status(provider=_provider(pending=True), inhibit_reason="manual stop")
-    monkeypatch.setattr(cli_waker, "inspect_waker", lambda _identity: snapshot)
+    monkeypatch.setattr(cli_waker, "inspect_waker", lambda _identity, **_kwargs: snapshot)
     assert cli.main(["waker", "status", "--identity", IDENTITY]) == 0
     output = capsys.readouterr().out
     assert "desired state: armed" in output
@@ -173,7 +185,7 @@ def test_status_prints_execution_layers_pending_and_inhibit(
         service_query_ok=False,
         provider=replace(_provider(), session_exists=False),
     )
-    monkeypatch.setattr(cli_waker, "inspect_waker", lambda _identity: unavailable)
+    monkeypatch.setattr(cli_waker, "inspect_waker", lambda _identity, **_kwargs: unavailable)
     assert cli.main(["waker", "status", "--identity", IDENTITY]) == 1
     output = capsys.readouterr().out
     assert "restarts: unknown" in output

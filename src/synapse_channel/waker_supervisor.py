@@ -17,6 +17,7 @@ from typing import Protocol
 
 from synapse_channel.agent_tmux import AgentTmuxConfig, wait_and_wake
 from synapse_channel.waker_config import DESIRED_INHIBITED, load_waker_config
+from synapse_channel.waker_transition import transition_state
 
 INHIBITED_EXIT_CODE = 78
 """Exit code reserved for an explicit persistent operator or agent inhibit."""
@@ -96,6 +97,9 @@ def run_waker(
 ) -> int:
     """Run the configured active bridge until stopped or fatally refused."""
     config = load_waker_config(identity, home=home)
+    if transition_state(identity, home=home, generation=config.generation) == "uncertain":
+        print(f"waker {identity} requires explicit recovery of an uncertain control operation")
+        return INHIBITED_EXIT_CODE
     if config.desired_state == DESIRED_INHIBITED:
         print(
             f"waker {identity} is inhibited at generation {config.generation}: "
@@ -106,6 +110,8 @@ def run_waker(
 
     def heartbeat() -> None:
         current = load_waker_config(identity, home=home)
+        if transition_state(identity, home=home, generation=current.generation) == "uncertain":
+            raise _ControlChange(INHIBITED_EXIT_CODE)
         if current.desired_state == DESIRED_INHIBITED:
             raise _ControlChange(INHIBITED_EXIT_CODE)
         if current.generation != config.generation:
