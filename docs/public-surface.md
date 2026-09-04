@@ -83,7 +83,7 @@ Inspection and reporting that never mutates the coordination plan or leases.
 Explicit export modes can write an operator-selected file or collector endpoint;
 they never silently enable telemetry or change hub authority.
 
-`accounting`  `approvals`  `causality`  `conflicts`  `cross-repo`  `dashboard`  `dead-letters`  `debug`  `directory`  `doctor`  `event-query`  `fleet-scorecard`  `health`  `identity`  `manifest`  `multihub`  `relay`  `reliability`  `state`  `trust-graph`
+`accounting`  `approvals`  `causality`  `conflicts`  `cross-repo`  `dashboard`  `dead-letters`  `debug`  `directory`  `doctor`  `event-query`  `fleet-scorecard`  `health`  `identity`  `manifest`  `multihub`  `relay`  `reliability`  `setup`  `state`  `trust-graph`
 
 ### Advisory governance — `governance`
 

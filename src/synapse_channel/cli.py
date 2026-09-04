@@ -142,6 +142,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_processes:add_parsers", ("hub", "worker", "team", "supervisor")),
     ("synapse_channel.cli_demo:add_parsers", ("demo",)),
     ("synapse_channel.cli_commands_overview:add_parsers", ("commands",)),
+    ("synapse_channel.cli_setup:add_parsers", ("setup",)),
     ("synapse_channel.cli_completions:add_parsers", ("completions",)),
     ("synapse_channel.cli_quickstart_coding:add_parsers", ("quickstart-coding",)),
     ("synapse_channel.cli_fleet_init:add_parsers", ("fleet-init",)),

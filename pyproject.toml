@@ -173,6 +173,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 synapse_channel = [
   "py.typed",
+  "schemas/*.json",
   "dashboard_assets/*.css",
   "dashboard_assets/*.js",
   "dashboard_assets/fonts/*.md",

@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add the versioned `synapse setup spec|inspect` machine-readable contract for
+  agent-assisted host setup. The initial `local-single-user` profile reports
+  installed package, Python, platform, executable, identity, hub, waiter, and
+  optional service-manager evidence without writing files, installing services,
+  restarting terminals, or accepting secrets on the command line. Its strict
+  JSON Schema ships inside the wheel.
+
 ## [0.99.24] - 2026-09-04
 
 ### Fixed

@@ -97,6 +97,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "install-shell-hook": ADAPTER,
     "shell-hook": ADAPTER,
     # read-only inspection and reporting
+    "setup": ANALYSIS,
     "doctor": ANALYSIS,
     "state": ANALYSIS,
     "dead-letters": ANALYSIS,
