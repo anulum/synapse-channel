@@ -142,15 +142,17 @@ export function parseLiveFrame(line: string): LiveFrame | null {
 
 function defaultWait(milliseconds: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, milliseconds);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true },
-    );
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const finish = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, milliseconds);
+    signal.addEventListener("abort", finish, { once: true });
   });
 }
 
@@ -158,7 +160,11 @@ function errorDetail(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-/** Open and maintain one authenticated stream with bounded reconnect backoff. */
+/**
+ * Maintain an authenticated stream with bounded reconnect backoff.
+ * Each attempt aborts its request, cancels its reader and releases the reader
+ * lock before retrying. stop() initiates teardown; it does not await it.
+ */
 export function createLiveTransport(options: LiveTransportOptions = {}): LiveTransport {
   const fetcher = options.fetcher ?? authenticatedFetch;
   const url = options.url ?? LIVE_TRANSPORT_URL;
@@ -180,20 +186,23 @@ export function createLiveTransport(options: LiveTransportOptions = {}): LiveTra
   const run = async (): Promise<void> => {
     let attempt = 0;
     while (!stopped) {
-      request = new AbortController();
+      const currentRequest = new AbortController();
+      request = currentRequest;
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      let failure: unknown;
       try {
         const response = await fetcher(url, {
           headers: { Accept: "application/x-ndjson" },
-          signal: request.signal,
+          signal: currentRequest.signal,
         });
+        reader = response.body?.getReader();
+        if (stopped) return;
         if (response.status === 404) {
           publishState({ status: "unsupported", attempt, detail: "live transport unavailable" });
           return;
         }
         if (!response.ok) throw new Error(`live transport returned ${response.status}`);
-        if (response.body === null) throw new Error("live transport response had no body");
-
-        const reader = response.body.getReader();
+        if (reader === undefined) throw new Error("live transport response had no body");
         const decoder = new TextDecoder();
         let buffer = "";
         let connectionId: string | null = null;
@@ -236,13 +245,27 @@ export function createLiveTransport(options: LiveTransportOptions = {}): LiveTra
         throw new Error("live transport closed");
       } catch (cause) {
         if (stopped) return;
-        attempt += 1;
-        const delay = Math.min(maximumBackoffMs, minimumBackoffMs * 2 ** (attempt - 1));
-        if (state.status !== "gap") {
-          publishState({ status: "reconnecting", attempt, detail: errorDetail(cause) });
+        failure = cause;
+      } finally {
+        currentRequest.abort();
+        if (reader !== undefined) {
+          try {
+            await reader.cancel();
+          } catch {
+            // Aborting fetch may already have errored the response stream.
+          } finally {
+            reader.releaseLock();
+          }
         }
-        await wait(delay, lifecycle.signal);
+        request = undefined;
       }
+      if (stopped) return;
+      attempt += 1;
+      const delay = Math.min(maximumBackoffMs, minimumBackoffMs * 2 ** (attempt - 1));
+      if (state.status !== "gap") {
+        publishState({ status: "reconnecting", attempt, detail: errorDetail(failure) });
+      }
+      await wait(delay, lifecycle.signal);
     }
   };
 

@@ -131,6 +131,65 @@ describe("parseLiveFrame", () => {
 });
 
 describe("createLiveTransport", () => {
+  it("does not wait when a reconnect observer stops the transport", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new Error("offline"));
+    const transport = createLiveTransport({ fetcher, minimumBackoffMs: 10_000 });
+    transport.subscribeState((state) => {
+      if (state.status === "reconnecting") transport.stop();
+    });
+    await settle();
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("retries after the default timer expires", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(new Response(null, { status: 404 }));
+    const transport = createLiveTransport({ fetcher, minimumBackoffMs: 10 });
+    try {
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    } finally {
+      transport.stop();
+    }
+  });
+
+  it("cancels and unlocks a response that arrives after stop", async () => {
+    let resolveResponse!: (response: Response) => void;
+    let cancelled = false;
+    const response = new Response(new ReadableStream<Uint8Array>({
+      cancel() { cancelled = true; },
+    }));
+    const transport = createLiveTransport({
+      fetcher: async () => await new Promise<Response>((resolve) => { resolveResponse = resolve; }),
+    });
+    const states: LiveConnectionState[] = [];
+    transport.subscribeState((state) => states.push(state));
+    transport.stop();
+    resolveResponse(response);
+    await vi.waitFor(() => expect(cancelled).toBe(true));
+    expect(response.body?.locked).toBe(false);
+    expect(states.at(-1)?.status).toBe("stopped");
+    expect(states.some((state) => state.status === "live")).toBe(false);
+  });
+
+  it("does not schedule retry if stopped during reader cancellation", async () => {
+    let cancelled = false;
+    const wait = vi.fn(async () => undefined);
+    const response = new Response(new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode("invalid\n")); },
+      cancel() {
+        cancelled = true;
+        transport.stop();
+      },
+    }));
+    const transport = createLiveTransport({ fetcher: async () => response, wait });
+    await vi.waitFor(() => {
+      expect(cancelled).toBe(true);
+      expect(response.body?.locked).toBe(false);
+    });
+    expect(wait).not.toHaveBeenCalled();
+  });
+
   it("uses the authenticated default fetcher and live endpoint", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 404 }));
     vi.stubGlobal("fetch", fetcher);

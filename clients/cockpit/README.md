@@ -124,6 +124,13 @@ first), with the spine kept at every width.
 | `POST /task` | on declaration | governed task declaration with `id`, `title`, and `depends_on` |
 | `POST /task/update` | on update | governed task status and/or progress-note update |
 
+The multiplexed `/live.ndjson` transport owns each HTTP attempt separately.
+Before reconnect backoff it aborts the request, cancels the response reader and
+releases its lock, including invalid frames, sequence gaps and consumer frame
+callback failures. Unsupported and failed HTTP responses are closed too.
+`stop()` initiates asynchronous teardown and prevents new attempts; it does not
+wait for the server to observe closure. Late responses cannot restore live state.
+
 Optional endpoints answer `404` on dashboards that do not serve them; the
 corresponding panel states that plainly and activates the moment the surface
 ships (`synapse dashboard --feeds-db PATH` serves the store-backed feeds).
