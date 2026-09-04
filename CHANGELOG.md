@@ -26,6 +26,14 @@ All notable changes to this project are documented here.
   30–900 second envelope bound to the exact plan digest, target, unique replay
   nonce, and any exact restart PID authority. Both remain explicitly
   non-executable; no apply route or nonce consumer is exposed.
+- Make the setup authorization boundary execution-ready without exposing an
+  executor. Inspection records the active user hub `MainPID`; planning uses
+  ordinary confirmation for a first start and binds restart authority to that
+  exact PID. Environment and identity changes without safe installed-package
+  adapters are blocked. Add an owner-only SQLite lifecycle ledger that
+  atomically reserves a domain-separated nonce digest, rejects cross-process
+  replay, and retains separate effect and recovery receipt digests for a future
+  apply/recover transaction.
 
 ## [0.99.24] - 2026-09-04
 

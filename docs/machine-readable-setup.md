@@ -47,7 +47,8 @@ The `inspection` document reports these facts:
 - the resolved `synapse` executable;
 - resolved project and identity;
 - live hub reachability and the identity's durable `-rx` waiter;
-- optional systemd availability for persistent Linux user services.
+- optional systemd availability for persistent Linux user services and the
+  active hub service's read-only `MainPID` when one exists.
 
 The command uses the same identity and hub diagnostics as `synapse doctor`.
 `--project`, `--id`, and `--uri` select non-secret inputs. A secured hub may use
@@ -75,14 +76,20 @@ document. Every plan contains:
 - `plan_digest`, binding every plan field except the digest itself;
 - `effects`, each with its trigger check, observed status, disposition,
   authority class, disruption class, reversibility, and verification check;
+- `process_id`, normally `null`, or the exact observed hub PID when the effect
+  would restart an already-running hub;
 - `authority_required`, deduplicated from effects that are safe enough to plan;
 - `can_apply: false` and `apply_not_available`, which prevent the document from
   being mistaken for mutation authority.
 
-An unavailable observation is blocked rather than guessed. An unsupported
-platform is also blocked and requires manual remediation. A hub change carries
-`operator_restart_authority`; ordinary configuration/environment/service-start
-proposals carry `operator_confirmation`. Those labels describe future authority
+An unavailable observation is blocked rather than guessed. Unsupported
+platform, package, Python, executable-path, and identity changes are also
+blocked: the installed package cannot safely replace its own environment or
+choose where a customer's repository identity should be persisted. A missing
+hub with no active user-service PID is a first start and carries
+`operator_confirmation`. A hub effect against an observed active PID carries
+`operator_restart_authority` and binds that exact PID. Waiter establishment
+carries `operator_confirmation`. Those labels describe future authority
 requirements only—there is no executor in this tranche.
 
 ## Authorize one exact plan
@@ -112,8 +119,8 @@ authorization. The lifetime must be 30–900 seconds. The resulting
 expiry times, and the authorities already required by the plan. It retains
 `read_only: true`, `can_apply: false`, and `apply_not_available`.
 
-If a plan requires `operator_restart_authority`, authorization also requires an
-exact live PID:
+If a plan requires `operator_restart_authority`, authorization also requires
+the exact PID already recorded in the reviewed plan:
 
 ```bash
 synapse setup authorize \
@@ -124,12 +131,24 @@ synapse setup authorize \
   --json
 ```
 
-A PID is refused when the plan does not require restart authority, preventing
-scope widening. The envelope sets `consumption_required: true`, but this command
-does not maintain a replay ledger. A future apply implementation must verify the
-authorization digest and expiry, recheck the exact target and PID, and atomically
-record the nonce as consumed before its first effect. Until that consumer ships,
-the envelope is evidence of intent only and cannot change the host.
+A different PID, or any PID when the plan represents a first start, is refused
+to prevent scope widening and stale-process authority.
+
+The package now includes an owner-only durable authorization ledger for the
+future executor. It stores only a domain-separated SHA-256 nonce digest, never
+the nonce itself; `BEGIN IMMEDIATE` atomically reserves the nonce and exact
+authorization/plan digests before any future effect. Its lifecycle is explicit:
+`reserved`, `applied`, `failed`, or `recovered`, with separate effect and
+recovery receipt digests. Reopening the SQLite store verifies its schema,
+integrity, permissions, and existing records. A replay is refused across
+separate processes and database connections.
+
+`setup authorize` deliberately does not open or mutate that ledger. The
+envelope's `consumption_required: true` tells a future apply implementation that
+it must validate expiry and all bindings, recheck the exact target and PID, and
+reserve the nonce durably immediately before its first effect. Until that
+consumer ships, the envelope is evidence of intent only and cannot change the
+host.
 
 Exit codes are stable: for `inspect`, `0` means every required check passed and
 `1` means inspection completed but the profile is not ready. A successfully
@@ -182,6 +201,8 @@ A consumer must refuse an unknown `schema_version` or profile version. New
 profiles may be added without changing v1 documents; incompatible field changes
 require a new schema version. An inspection and its derived plan are evidence,
 never permission to mutate the host. An authorization envelope is bounded input
-for a future consumer, not an executable capability. That future apply surface
-must consume the nonce once, revalidate all bindings and authority, and emit
-verification and recovery receipts; it is intentionally outside this tranche.
+for a future consumer, not an executable capability. The durable ledger is a
+package-internal prerequisite and is not called by `authorize`. A future apply
+surface must reserve the nonce once, revalidate all bindings and authority, and
+emit verification and recovery receipts; it is intentionally outside this
+tranche.

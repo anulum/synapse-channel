@@ -68,11 +68,17 @@
           "enum": ["configuration_change", "environment_change", "service_start", "host_migration"]
         },
         "reversible": { "type": "boolean" },
-        "verification_check": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+        "verification_check": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "process_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 2, "maximum": 2147483647 }
+          ]
+        }
       },
       "required": [
         "id", "trigger_check", "observed_status", "disposition", "authority",
-        "disruption", "reversible", "verification_check"
+        "disruption", "reversible", "verification_check", "process_id"
       ]
     },
     "spec": {
@@ -268,7 +274,9 @@
                 "unknown_profile", "invalid_uri", "inspection_failed", "planning_failed",
                 "invalid_plan", "digest_mismatch", "invalid_nonce", "invalid_expiry",
                 "plan_blocked", "restart_authority_required", "unexpected_restart_authority",
-                "authorization_failed"
+                "authorization_failed", "invalid_authorization", "authorization_expired",
+                "authorization_mismatch", "authorization_replayed",
+                "authorization_ledger_unavailable", "authorization_transition_invalid"
               ]
             },
             "message": { "type": "string", "minLength": 1 }

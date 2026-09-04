@@ -13,7 +13,7 @@ from copy import deepcopy
 import pytest
 
 from synapse_channel.setup_contract import document_digest, setup_schema
-from synapse_channel.setup_planner import build_setup_plan
+from synapse_channel.setup_planner import _observed_hub_pid, build_setup_plan
 from synapse_channel.setup_profiles import SetupProfile, get_setup_profile
 
 
@@ -25,6 +25,8 @@ def _profile() -> SetupProfile:
 
 def inspection_document(
     overrides: dict[str, str] | None = None,
+    *,
+    hub_pid: int | None = None,
 ) -> dict[str, object]:
     """Return one complete schema-valid inspection fixture."""
     profile = _profile()
@@ -41,6 +43,12 @@ def inspection_document(
         }
         for requirement in profile.requirements
     ]
+    service_manager = next(check for check in checks if check["id"] == "service_manager")
+    service_manager["value"] = {
+        "kind": "systemd-user",
+        "executable": "/usr/bin/systemctl",
+        "hub_pid": hub_pid or 0,
+    }
     ready = all(
         statuses[requirement.requirement_id] == "pass"
         for requirement in profile.requirements
@@ -88,7 +96,10 @@ def test_ready_plan_is_deterministic_digest_bound_and_non_executable() -> None:
 
 
 def test_unmet_checks_map_only_to_allowlisted_effects_and_authorities() -> None:
-    inspection = inspection_document({"identity": "fail", "hub": "fail", "waiter": "warn"})
+    inspection = inspection_document(
+        {"identity": "fail", "hub": "fail", "waiter": "warn"},
+        hub_pid=4321,
+    )
     plan = build_setup_plan(_profile(), inspection)
     effects = plan["effects"]
     assert isinstance(effects, list)
@@ -98,10 +109,10 @@ def test_unmet_checks_map_only_to_allowlisted_effects_and_authorities() -> None:
         "establish_local_loopback_hub",
         "establish_identity_waiter",
     ]
-    assert all(effect["disposition"] == "planned" for effect in effects)
+    assert [effect["disposition"] for effect in effects] == ["blocked", "planned", "planned"]
     assert plan["authority_required"] == [
-        "operator_confirmation",
         "operator_restart_authority",
+        "operator_confirmation",
     ]
     assert plan["ready"] is False
 
@@ -118,6 +129,53 @@ def test_unavailable_and_unsupported_effects_fail_closed() -> None:
     assert by_id["establish_local_loopback_hub"]["disposition"] == "blocked"
     assert plan["authority_required"] == []
     assert plan["warnings"] == ["apply_not_available", "manual_remediation_required"]
+
+
+def test_hub_start_and_restart_have_distinct_exact_authority() -> None:
+    start = build_setup_plan(_profile(), inspection_document({"hub": "fail"}))
+    restart = build_setup_plan(_profile(), inspection_document({"hub": "fail"}, hub_pid=4321))
+    start_effects = start["effects"]
+    restart_effects = restart["effects"]
+    assert isinstance(start_effects, list)
+    assert isinstance(restart_effects, list)
+    assert start_effects[0]["authority"] == "operator_confirmation"
+    assert start_effects[0]["process_id"] is None
+    assert restart_effects[0]["authority"] == "operator_restart_authority"
+    assert restart_effects[0]["process_id"] == 4321
+
+
+@pytest.mark.parametrize(
+    "inspection",
+    [
+        {},
+        {"checks": []},
+        {"checks": ["not-an-object"]},
+        {"checks": [{"id": "service_manager", "status": "fail", "value": {}}]},
+        {"checks": [{"id": "service_manager", "status": "pass", "value": None}]},
+        {"checks": [{"id": "service_manager", "status": "pass", "value": {"hub_pid": True}}]},
+    ],
+)
+def test_observed_hub_pid_fails_closed_for_untrusted_evidence(
+    inspection: dict[str, object],
+) -> None:
+    assert _observed_hub_pid(inspection) is None
+
+
+def test_non_automatable_host_changes_are_blocked() -> None:
+    plan = build_setup_plan(_profile(), inspection_document({"identity": "fail"}))
+    effects = plan["effects"]
+    assert isinstance(effects, list)
+    assert effects[0]["authority"] == "unsupported"
+    assert effects[0]["disposition"] == "blocked"
+
+
+def test_local_profile_refuses_a_nondefault_or_nonloopback_target() -> None:
+    inspection = inspection_document()
+    target = inspection["target"]
+    assert isinstance(target, dict)
+    target["uri"] = "wss://hub.example.test:8876"
+    with pytest.raises(ValueError, match="default loopback"):
+        build_setup_plan(_profile(), inspection)
 
 
 @pytest.mark.parametrize(

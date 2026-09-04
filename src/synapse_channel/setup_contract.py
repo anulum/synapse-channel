@@ -45,11 +45,18 @@ SetupErrorCode = Literal[
     "restart_authority_required",
     "unexpected_restart_authority",
     "authorization_failed",
+    "invalid_authorization",
+    "authorization_expired",
+    "authorization_mismatch",
+    "authorization_replayed",
+    "authorization_ledger_unavailable",
+    "authorization_transition_invalid",
 ]
 
 MAX_SETUP_URI_LENGTH = 2048
 MAX_SETUP_PROJECT_LENGTH = 128
 MAX_SETUP_IDENTITY_LENGTH = 256
+LOCAL_SINGLE_USER_URIS = frozenset({"ws://localhost:8876", "ws://127.0.0.1:8876"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +115,7 @@ class SetupPlannedEffect:
     disruption: SetupEffectDisruption
     reversible: bool
     verification_check: str
+    process_id: int | None = None
 
     def as_dict(self) -> dict[str, object]:
         """Return the stable, value-free effect projection."""
@@ -120,6 +128,7 @@ class SetupPlannedEffect:
             "disruption": self.disruption,
             "reversible": self.reversible,
             "verification_check": self.verification_check,
+            "process_id": self.process_id,
         }
 
 
@@ -249,6 +258,12 @@ def setup_error_document(
         "restart_authority_required": "The setup plan requires authority for one exact process ID.",
         "unexpected_restart_authority": "Restart authority would exceed the setup plan's scope.",
         "authorization_failed": "A safe setup authorization could not be produced.",
+        "invalid_authorization": "The supplied setup authorization is not valid.",
+        "authorization_expired": "The supplied setup authorization has expired.",
+        "authorization_mismatch": "The setup authorization does not match its exact plan.",
+        "authorization_replayed": "The setup authorization was already reserved for execution.",
+        "authorization_ledger_unavailable": "The setup authorization ledger is unavailable.",
+        "authorization_transition_invalid": "The setup authorization state transition is invalid.",
     }
     return {
         "schema_version": SETUP_SCHEMA_VERSION,

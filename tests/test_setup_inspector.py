@@ -20,6 +20,7 @@ from synapse_channel.setup_inspector import (
     PlatformSnapshot,
     current_platform,
     inspect_setup,
+    systemd_user_hub_pid,
     systemd_user_manager_available,
 )
 from synapse_channel.setup_profiles import get_setup_profile
@@ -54,6 +55,7 @@ async def test_inspection_is_ready_deterministic_and_schema_valid() -> None:
         "executable_probe": _which,
         "platform_probe": lambda: PlatformSnapshot("Linux", "6.8", "x86_64"),
         "service_manager_probe": lambda _executable: True,
+        "hub_service_pid_probe": lambda _executable: 4321,
         "diagnose_runner": _healthy_diagnose,
     }
 
@@ -68,6 +70,12 @@ async def test_inspection_is_ready_deterministic_and_schema_valid() -> None:
         "project": "DEMO",
         "identity": "DEMO/claude-codex-1",
     }
+    checks = first["checks"]
+    assert isinstance(checks, list)
+    service_manager = next(check for check in checks if check["id"] == "service_manager")
+    service_value = service_manager["value"]
+    assert isinstance(service_value, dict)
+    assert service_value["hub_pid"] == 4321
     jsonschema.validate(first, setup_schema())
 
 
@@ -87,6 +95,7 @@ async def test_probe_failure_is_bounded_and_never_echoes_secret() -> None:
         executable_probe=_which,
         platform_probe=lambda: PlatformSnapshot("Linux", "6.8", "x86_64"),
         service_manager_probe=lambda _executable: True,
+        hub_service_pid_probe=lambda _executable: None,
         diagnose_runner=fail,
     )
 
@@ -131,3 +140,28 @@ def test_systemd_probe_reports_success_nonzero_and_execution_failure(
 
     monkeypatch.setattr("synapse_channel.setup_inspector.subprocess.run", unavailable)
     assert systemd_user_manager_available("/usr/bin/systemctl") is False
+
+
+def test_systemd_hub_pid_probe_requires_a_successful_positive_pid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "synapse_channel.setup_inspector.subprocess.run",
+        lambda *_args, **_kwargs: CompletedProcess([], 0, stdout="4321\n"),
+    )
+    assert systemd_user_hub_pid("/usr/bin/systemctl") == 4321
+    monkeypatch.setattr(
+        "synapse_channel.setup_inspector.subprocess.run",
+        lambda *_args, **_kwargs: CompletedProcess([], 1, stdout="4321\n"),
+    )
+    assert systemd_user_hub_pid("/usr/bin/systemctl") is None
+    monkeypatch.setattr(
+        "synapse_channel.setup_inspector.subprocess.run",
+        lambda *_args, **_kwargs: CompletedProcess([], 0, stdout="0\n"),
+    )
+    assert systemd_user_hub_pid("/usr/bin/systemctl") is None
+    monkeypatch.setattr(
+        "synapse_channel.setup_inspector.subprocess.run",
+        lambda *_args, **_kwargs: CompletedProcess([], 0, stdout="invalid\n"),
+    )
+    assert systemd_user_hub_pid("/usr/bin/systemctl") is None

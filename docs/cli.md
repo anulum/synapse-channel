@@ -125,10 +125,12 @@ local-single-user --json` to observe the current host, then `synapse setup plan
 non-executable effect plan. After reviewing a saved plan, `synapse setup
 authorize --plan FILE --confirm-digest SHA256 --nonce TOKEN --json` emits an
 expiring envelope bound to its exact target. Add `--authorize-restart-pid PID`
-only when the plan requires restart authority. These operations never install a
+only when the plan requires restart authority; it must equal the read-only hub
+PID already bound into that plan. A first start carries no PID. These operations never install a
 package, write configuration, start services, restart a terminal, or accept a
 secret in argv. Authorization is output-only and cannot apply its plan; its
-nonce must be consumed atomically by a future executor that is not yet exposed.
+nonce must be reserved atomically through the package's owner-only durable
+ledger by a future executor that is not yet exposed.
 See [Machine-readable setup](machine-readable-setup.md).
 
 The unfiltered command prints all five stability tiers. A profile is a

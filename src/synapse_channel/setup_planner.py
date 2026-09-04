@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from synapse_channel.setup_contract import (
+    LOCAL_SINGLE_USER_URIS,
     SETUP_SCHEMA_VERSION,
     SetupCheckStatus,
     SetupEffectAuthority,
@@ -42,16 +43,16 @@ _EFFECT_RULES = (
     EffectRule(
         "package",
         "install_synapse_package",
-        "operator_confirmation",
+        "unsupported",
         "environment_change",
-        True,
+        False,
     ),
     EffectRule(
         "python",
         "select_supported_python",
-        "operator_confirmation",
+        "unsupported",
         "environment_change",
-        True,
+        False,
     ),
     EffectRule(
         "platform",
@@ -63,21 +64,21 @@ _EFFECT_RULES = (
     EffectRule(
         "executable",
         "expose_synapse_entrypoint",
-        "operator_confirmation",
+        "unsupported",
         "environment_change",
-        True,
+        False,
     ),
     EffectRule(
         "identity",
         "configure_coordination_identity",
-        "operator_confirmation",
+        "unsupported",
         "configuration_change",
-        True,
+        False,
     ),
     EffectRule(
         "hub",
         "establish_local_loopback_hub",
-        "operator_restart_authority",
+        "operator_confirmation",
         "service_start",
         True,
     ),
@@ -142,22 +143,31 @@ def build_setup_plan(profile: SetupProfile, inspection: dict[str, object]) -> di
     """Build a deterministic, digest-bound plan that cannot be applied."""
     statuses = _validated_statuses(profile, inspection)
     target = validated_setup_target(inspection.get("target"))
+    if profile.profile_id == "local-single-user" and target["uri"] not in LOCAL_SINGLE_USER_URIS:
+        raise ValueError("local-single-user plans require the default loopback hub URI")
+    hub_pid = _observed_hub_pid(inspection)
     effects: list[SetupPlannedEffect] = []
     for rule in _EFFECT_RULES:
         status = statuses[rule.check_id]
         if status == "pass":
             continue
-        blocked = status == "unavailable" or rule.authority == "unsupported"
+        authority = rule.authority
+        process_id = None
+        if rule.effect_id == "establish_local_loopback_hub" and hub_pid is not None:
+            authority = "operator_restart_authority"
+            process_id = hub_pid
+        blocked = status == "unavailable" or authority == "unsupported"
         effects.append(
             SetupPlannedEffect(
                 effect_id=rule.effect_id,
                 trigger_check=rule.check_id,
                 observed_status=status,
                 disposition="blocked" if blocked else "planned",
-                authority=rule.authority,
+                authority=authority,
                 disruption=rule.disruption,
                 reversible=rule.reversible,
                 verification_check=rule.check_id,
+                process_id=process_id,
             )
         )
 
@@ -175,3 +185,25 @@ def build_setup_plan(profile: SetupProfile, inspection: dict[str, object]) -> di
         warnings=tuple(warnings),
     )
     return plan.as_dict()
+
+
+def _observed_hub_pid(inspection: dict[str, object]) -> int | None:
+    """Return a trustworthy active hub PID from the service-manager check."""
+    checks = inspection.get("checks")
+    if not isinstance(checks, list):
+        return None
+    for item in checks:
+        if not isinstance(item, dict) or item.get("id") != "service_manager":
+            continue
+        value = item.get("value")
+        if item.get("status") != "pass" or not isinstance(value, dict):
+            return None
+        hub_pid = value.get("hub_pid")
+        if (
+            isinstance(hub_pid, int)
+            and not isinstance(hub_pid, bool)
+            and 1 < hub_pid <= 2_147_483_647
+        ):
+            return hub_pid
+        return None
+    return None

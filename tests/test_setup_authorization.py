@@ -19,7 +19,9 @@ from synapse_channel.setup_authorization import (
     MAX_PLAN_BYTES,
     SetupAuthorizationError,
     build_setup_authorization,
+    load_setup_authorization,
     load_setup_plan,
+    validate_setup_authorization,
     validate_setup_plan,
 )
 from synapse_channel.setup_contract import document_digest, setup_schema
@@ -35,7 +37,11 @@ def _profile() -> SetupProfile:
     return profile
 
 
-def _inspection(overrides: dict[str, str] | None = None) -> dict[str, object]:
+def _inspection(
+    overrides: dict[str, str] | None = None,
+    *,
+    hub_pid: int | None = None,
+) -> dict[str, object]:
     profile = _profile()
     statuses = {item.requirement_id: "pass" for item in profile.requirements}
     statuses.update(overrides or {})
@@ -50,6 +56,12 @@ def _inspection(overrides: dict[str, str] | None = None) -> dict[str, object]:
         }
         for item in profile.requirements
     ]
+    service_manager = next(check for check in checks if check["id"] == "service_manager")
+    service_manager["value"] = {
+        "kind": "systemd-user",
+        "executable": "/usr/bin/systemctl",
+        "hub_pid": hub_pid or 0,
+    }
     return {
         "schema_version": "synapse-setup.v1",
         "document_kind": "inspection",
@@ -74,8 +86,12 @@ def _inspection(overrides: dict[str, str] | None = None) -> dict[str, object]:
     }
 
 
-def _plan(overrides: dict[str, str] | None = None) -> dict[str, object]:
-    return build_setup_plan(_profile(), _inspection(overrides))
+def _plan(
+    overrides: dict[str, str] | None = None,
+    *,
+    hub_pid: int | None = None,
+) -> dict[str, object]:
+    return build_setup_plan(_profile(), _inspection(overrides, hub_pid=hub_pid))
 
 
 def _write_plan(path: Path, plan: dict[str, object]) -> None:
@@ -89,7 +105,7 @@ def _assert_code(code: str, call: object) -> None:
 
 def test_authorization_is_deterministic_schema_valid_and_non_executable() -> None:
     jsonschema = pytest.importorskip("jsonschema")
-    plan = _plan({"identity": "fail", "waiter": "fail"})
+    plan = _plan({"waiter": "fail"})
     kwargs = {
         "confirm_digest": plan["plan_digest"],
         "nonce": NONCE,
@@ -116,7 +132,7 @@ def test_authorization_is_deterministic_schema_valid_and_non_executable() -> Non
 
 
 def test_authorization_binds_restart_authority_to_one_exact_pid() -> None:
-    plan = _plan({"hub": "fail"})
+    plan = _plan({"hub": "fail"}, hub_pid=4321)
     document = build_setup_authorization(
         plan,
         confirm_digest=str(plan["plan_digest"]),
@@ -127,6 +143,24 @@ def test_authorization_binds_restart_authority_to_one_exact_pid() -> None:
     )
     assert document["authority_granted"] == ["operator_restart_authority"]
     assert document["restart_authority"] == {"pid": 4321}
+    assert validate_setup_authorization(plan, document, now=11) == document
+
+    with pytest.raises(SetupAuthorizationError) as caught:
+        build_setup_authorization(
+            plan,
+            confirm_digest=str(plan["plan_digest"]),
+            nonce=NONCE,
+            expires_in=30,
+            restart_pid=4322,
+            clock=lambda: 10.0,
+        )
+    _assert_code("authorization_mismatch", caught.value)
+
+    changed = deepcopy(document)
+    changed["restart_authority"] = {"pid": 4322}
+    with pytest.raises(SetupAuthorizationError) as caught:
+        validate_setup_authorization(plan, changed, now=11)
+    _assert_code("authorization_mismatch", caught.value)
 
 
 @pytest.mark.parametrize("digest", ["A" * 64, "0" * 64, "short"])
@@ -186,7 +220,7 @@ def test_authorization_refuses_blocked_plan_before_any_authority() -> None:
 
 @pytest.mark.parametrize("pid", [None, 1, 2_147_483_648])
 def test_authorization_requires_a_valid_pid_for_restart_authority(pid: int | None) -> None:
-    plan = _plan({"hub": "fail"})
+    plan = _plan({"hub": "fail"}, hub_pid=4321)
     with pytest.raises(SetupAuthorizationError) as caught:
         build_setup_authorization(
             plan,
@@ -199,7 +233,7 @@ def test_authorization_requires_a_valid_pid_for_restart_authority(pid: int | Non
 
 
 def test_authorization_refuses_restart_pid_that_widens_scope() -> None:
-    plan = _plan({"identity": "fail"})
+    plan = _plan({"waiter": "fail"})
     with pytest.raises(SetupAuthorizationError) as caught:
         build_setup_authorization(
             plan,
@@ -332,7 +366,8 @@ def test_plan_validator_rejects_effect_tampering() -> None:
         ("id", "unknown"),
         ("trigger_check", "hub"),
         ("observed_status", "pass"),
-        ("disposition", "blocked"),
+        ("disposition", "planned"),
+        ("process_id", 4321),
     ):
         plan = deepcopy(base)
         effects = plan["effects"]
@@ -360,3 +395,122 @@ def test_plan_validator_rejects_effect_tampering() -> None:
     with pytest.raises(SetupAuthorizationError) as caught:
         validate_setup_plan(plan)
     _assert_code("invalid_plan", caught.value)
+
+
+def test_plan_validator_refuses_valid_but_nondefault_local_target() -> None:
+    plan = _plan()
+    target = plan["target"]
+    assert isinstance(target, dict)
+    target["uri"] = "ws://localhost:9999"
+    unsigned = {key: item for key, item in plan.items() if key != "plan_digest"}
+    plan["plan_digest"] = document_digest(unsigned)
+
+    with pytest.raises(SetupAuthorizationError) as caught:
+        validate_setup_plan(plan)
+    _assert_code("invalid_plan", caught.value)
+
+
+def test_plan_validator_refuses_invalid_hub_process_id() -> None:
+    plan = _plan({"hub": "fail"}, hub_pid=4321)
+    effects = plan["effects"]
+    assert isinstance(effects, list)
+    effects[0]["process_id"] = 1
+    unsigned = {key: item for key, item in plan.items() if key != "plan_digest"}
+    plan["plan_digest"] = document_digest(unsigned)
+
+    with pytest.raises(SetupAuthorizationError) as caught:
+        validate_setup_plan(plan)
+    _assert_code("invalid_plan", caught.value)
+
+
+def test_repeated_authority_is_listed_once() -> None:
+    plan = _plan({"hub": "fail", "waiter": "fail"})
+    assert plan["authority_required"] == ["operator_confirmation"]
+    assert validate_setup_plan(plan) == plan
+
+
+def test_authorization_validation_and_loader_bind_plan_time_and_digest(tmp_path: Path) -> None:
+    plan = _plan({"waiter": "fail"})
+    authorization = build_setup_authorization(
+        plan,
+        confirm_digest=str(plan["plan_digest"]),
+        nonce=NONCE,
+        expires_in=300,
+        restart_pid=None,
+        clock=lambda: 100.0,
+    )
+    assert validate_setup_authorization(plan, authorization, now=101) == authorization
+    path = tmp_path / "authorization.json"
+    path.write_text(json.dumps(authorization), encoding="utf-8")
+    assert load_setup_authorization(path, plan=plan, now=101) == authorization
+
+    with pytest.raises(SetupAuthorizationError) as caught:
+        validate_setup_authorization(plan, authorization, now=400)
+    _assert_code("authorization_expired", caught.value)
+
+    with pytest.raises(SetupAuthorizationError) as caught:
+        validate_setup_authorization(plan, authorization, now=99)
+    _assert_code("invalid_authorization", caught.value)
+
+    changed = deepcopy(authorization)
+    changed["target"] = {
+        "uri": "ws://127.0.0.1:8876",
+        "project": "DEMO",
+        "identity": "DEMO/codex-one",
+    }
+    with pytest.raises(SetupAuthorizationError) as caught:
+        validate_setup_authorization(plan, changed, now=101)
+    _assert_code("authorization_mismatch", caught.value)
+
+
+def test_authorization_validator_refuses_structure_token_and_scope_tampering() -> None:
+    plan = _plan({"waiter": "fail"})
+    authorization = build_setup_authorization(
+        plan,
+        confirm_digest=str(plan["plan_digest"]),
+        nonce=NONCE,
+        expires_in=300,
+        restart_pid=None,
+        clock=lambda: 100.0,
+    )
+
+    malformed = deepcopy(authorization)
+    malformed["extra"] = True
+    with pytest.raises(SetupAuthorizationError) as caught:
+        validate_setup_authorization(plan, malformed, now=101)
+    _assert_code("invalid_authorization", caught.value)
+
+    malformed = deepcopy(authorization)
+    malformed["confirmation_nonce"] = "short"
+    with pytest.raises(SetupAuthorizationError) as caught:
+        validate_setup_authorization(plan, malformed, now=101)
+    _assert_code("invalid_authorization", caught.value)
+
+    widened = deepcopy(authorization)
+    widened["restart_authority"] = {"pid": 4321}
+    with pytest.raises(SetupAuthorizationError) as caught:
+        validate_setup_authorization(plan, widened, now=101)
+    _assert_code("authorization_mismatch", caught.value)
+
+    changed = deepcopy(authorization)
+    changed["authorization_digest"] = "0" * 64
+    with pytest.raises(SetupAuthorizationError) as caught:
+        validate_setup_authorization(plan, changed, now=101)
+    _assert_code("authorization_mismatch", caught.value)
+
+
+def test_authorization_loader_refuses_malformed_or_symlink_input(tmp_path: Path) -> None:
+    plan = _plan({"waiter": "fail"})
+    malformed = tmp_path / "authorization.json"
+    malformed.write_text('{"duplicate":1,"duplicate":2}', encoding="utf-8")
+    with pytest.raises(SetupAuthorizationError) as caught:
+        load_setup_authorization(malformed, plan=plan, now=100)
+    _assert_code("invalid_authorization", caught.value)
+
+    target = tmp_path / "target.json"
+    target.write_text("{}", encoding="utf-8")
+    link = tmp_path / "link.json"
+    link.symlink_to(target)
+    with pytest.raises(SetupAuthorizationError) as caught:
+        load_setup_authorization(link, plan=plan, now=100)
+    _assert_code("invalid_authorization", caught.value)

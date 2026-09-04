@@ -27,6 +27,7 @@ from synapse_channel.setup_profiles import SetupProfile
 DiagnoseRunner = Callable[..., Awaitable[tuple[int, list[str], list[Diagnosis]]]]
 ExecutableProbe = Callable[[str], str | None]
 ServiceManagerProbe = Callable[[str], bool]
+ServicePidProbe = Callable[[str], int | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +67,30 @@ def systemd_user_manager_available(executable: str) -> bool:
     return completed.returncode == 0
 
 
+def systemd_user_hub_pid(executable: str) -> int | None:
+    """Return the active user hub PID through one bounded read-only probe."""
+    try:
+        completed = subprocess.run(  # nosec B603
+            [
+                executable,
+                "--user",
+                "show",
+                "--property=MainPID",
+                "--value",
+                "--",
+                "synapse-hub.service",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2.0,
+        )
+        value = int(completed.stdout.strip())
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    return value if completed.returncode == 0 and value > 1 else None
+
+
 def _doctor_check(
     diagnoses: list[Diagnosis],
     check_id: str,
@@ -102,6 +127,7 @@ async def inspect_setup(
     executable_probe: ExecutableProbe = shutil.which,
     platform_probe: PlatformProbe = current_platform,
     service_manager_probe: ServiceManagerProbe = systemd_user_manager_available,
+    hub_service_pid_probe: ServicePidProbe = systemd_user_hub_pid,
     diagnose_runner: DiagnoseRunner = _diagnose,
 ) -> dict[str, object]:
     """Inspect one setup profile using only read-only local and hub probes."""
@@ -120,6 +146,11 @@ async def inspect_setup(
     executable = executable_probe("synapse")
     systemctl = executable_probe("systemctl") if system == "linux" else None
     service_manager_available = bool(systemctl is not None and service_manager_probe(systemctl))
+    hub_service_pid = (
+        hub_service_pid_probe(systemctl)
+        if systemctl is not None and service_manager_available
+        else None
+    )
 
     checks = [
         SetupCheck(
@@ -200,7 +231,11 @@ async def inspect_setup(
                 "service_manager",
                 "pass" if service_manager_available else "unavailable",
                 False,
-                {"kind": "systemd-user", "executable": systemctl or ""},
+                {
+                    "kind": "systemd-user",
+                    "executable": systemctl or "",
+                    "hub_pid": hub_service_pid or 0,
+                },
                 "The systemd user manager answers for optional persistent services."
                 if service_manager_available
                 else "No supported persistent user service manager answered.",
