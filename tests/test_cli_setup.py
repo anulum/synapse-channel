@@ -17,15 +17,19 @@ import pytest
 from synapse_channel import cli, cli_setup
 
 
-def test_setup_parser_routes_both_read_only_operations() -> None:
+def test_setup_parser_routes_every_read_only_operation() -> None:
     spec = cli.build_parser().parse_args(
         ["setup", "spec", "--profile", "local-single-user", "--json"]
     )
     inspect = cli.build_parser().parse_args(
         ["setup", "inspect", "--profile", "local-single-user", "--json"]
     )
+    plan = cli.build_parser().parse_args(
+        ["setup", "plan", "--profile", "local-single-user", "--json"]
+    )
     assert spec.func is cli_setup._cmd_spec
     assert inspect.func is cli_setup._cmd_inspect
+    assert plan.func is cli_setup._cmd_plan
 
 
 def test_setup_parser_exposes_no_secret_or_mutating_options() -> None:
@@ -88,6 +92,30 @@ def test_human_inspection_renders_ready_and_not_ready(
     assert "result: ready (read-only)" in capsys.readouterr().out
     cli_setup._print_document({**base, "ready": False}, as_json=False)
     assert "result: not ready (read-only)" in capsys.readouterr().out
+
+
+def test_human_plan_renders_digest_and_effects(capsys: pytest.CaptureFixture[str]) -> None:
+    cli_setup._print_document(
+        {
+            "document_kind": "plan",
+            "profile": "local-single-user",
+            "profile_version": 1,
+            "plan_digest": "a" * 64,
+            "effects": [
+                {
+                    "id": "establish_identity_waiter",
+                    "disposition": "planned",
+                    "authority": "operator_confirmation",
+                    "disruption": "service_start",
+                }
+            ],
+        },
+        as_json=False,
+    )
+    output = capsys.readouterr().out
+    assert "1 proposed effect(s); apply unavailable" in output
+    assert f"digest: {'a' * 64}" in output
+    assert "planned establish_identity_waiter" in output
 
 
 def test_unknown_inspect_profile_returns_stable_error(
@@ -172,4 +200,76 @@ def test_inspect_failure_returns_bounded_error(
     assert cli_setup._cmd_inspect(args) == 2
     output = capsys.readouterr().out
     assert json.loads(output)["code"] == "inspection_failed"
+    assert "secret" not in output
+
+
+def test_plan_builds_from_read_only_inspection_and_returns_zero(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def inspect_stub(*_args: Any, **_kwargs: Any) -> dict[str, object]:
+        return {"inspection": "fixture"}
+
+    expected = {
+        "schema_version": "synapse-setup.v1",
+        "document_kind": "plan",
+        "profile": "local-single-user",
+        "profile_version": 1,
+        "ready": False,
+        "can_apply": False,
+        "effects": [],
+        "plan_digest": "b" * 64,
+    }
+    monkeypatch.setattr(cli_setup, "inspect_setup", inspect_stub)
+    monkeypatch.setattr(cli_setup, "build_setup_plan", lambda *_args: expected)
+    args = argparse.Namespace(
+        profile="local-single-user",
+        uri="ws://localhost:8876",
+        project="DEMO",
+        id="one",
+        json=True,
+    )
+    assert cli_setup._cmd_plan(args) == 0
+    assert json.loads(capsys.readouterr().out) == expected
+
+
+def test_plan_refuses_unknown_profile_and_invalid_uri(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = argparse.Namespace(
+        profile="future",
+        uri="ws://localhost:8876",
+        project=None,
+        id=None,
+        json=True,
+    )
+    assert cli_setup._cmd_plan(args) == 2
+    assert json.loads(capsys.readouterr().out)["code"] == "unknown_profile"
+
+    args.profile = "local-single-user"
+    args.uri = "ws://user:secret@localhost:8876"
+    assert cli_setup._cmd_plan(args) == 2
+    output = capsys.readouterr().out
+    assert json.loads(output)["code"] == "invalid_uri"
+    assert "secret" not in output
+
+
+def test_plan_failure_is_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def inspect_stub(*_args: Any, **_kwargs: Any) -> dict[str, object]:
+        raise RuntimeError("Bearer secret")
+
+    monkeypatch.setattr(cli_setup, "inspect_setup", inspect_stub)
+    args = argparse.Namespace(
+        profile="local-single-user",
+        uri="ws://localhost:8876",
+        project=None,
+        id=None,
+        json=True,
+    )
+    assert cli_setup._cmd_plan(args) == 2
+    output = capsys.readouterr().out
+    assert json.loads(output)["code"] == "planning_failed"
     assert "secret" not in output

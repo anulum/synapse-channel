@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from hashlib import sha256
 from importlib.resources import files
 from typing import Literal, cast
 
@@ -24,7 +25,12 @@ SETUP_SCHEMA_VERSION = "synapse-setup.v1"
 SETUP_SCHEMA_RESOURCE = "schemas/synapse-setup-v1.schema.json"
 
 SetupCheckStatus = Literal["pass", "warn", "fail", "unavailable"]
-SetupErrorCode = Literal["unknown_profile", "invalid_uri", "inspection_failed"]
+SetupEffectDisposition = Literal["planned", "blocked"]
+SetupEffectAuthority = Literal["operator_confirmation", "operator_restart_authority", "unsupported"]
+SetupEffectDisruption = Literal[
+    "configuration_change", "environment_change", "service_start", "host_migration"
+]
+SetupErrorCode = Literal["unknown_profile", "invalid_uri", "inspection_failed", "planning_failed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,9 +77,89 @@ class SetupCheck:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class SetupPlannedEffect:
+    """One allow-listed future effect proposed by a read-only plan."""
+
+    effect_id: str
+    trigger_check: str
+    observed_status: SetupCheckStatus
+    disposition: SetupEffectDisposition
+    authority: SetupEffectAuthority
+    disruption: SetupEffectDisruption
+    reversible: bool
+    verification_check: str
+
+    def as_dict(self) -> dict[str, object]:
+        """Return the stable, value-free effect projection."""
+        return {
+            "id": self.effect_id,
+            "trigger_check": self.trigger_check,
+            "observed_status": self.observed_status,
+            "disposition": self.disposition,
+            "authority": self.authority,
+            "disruption": self.disruption,
+            "reversible": self.reversible,
+            "verification_check": self.verification_check,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SetupPlan:
+    """Immutable non-executable plan bound to one inspection and profile."""
+
+    profile: str
+    profile_version: int
+    inspection_digest: str
+    profile_digest: str
+    ready: bool
+    effects: tuple[SetupPlannedEffect, ...]
+    warnings: tuple[str, ...]
+
+    def unsigned_dict(self) -> dict[str, object]:
+        """Return the canonical digest input, excluding its own digest."""
+        authorities = list(
+            dict.fromkeys(
+                effect.authority
+                for effect in self.effects
+                if effect.disposition == "planned" and effect.authority != "unsupported"
+            )
+        )
+        return {
+            "schema_version": SETUP_SCHEMA_VERSION,
+            "document_kind": "plan",
+            "profile": self.profile,
+            "profile_version": self.profile_version,
+            "read_only": True,
+            "can_apply": False,
+            "ready": self.ready,
+            "inspection_digest": self.inspection_digest,
+            "profile_digest": self.profile_digest,
+            "authority_required": authorities,
+            "effects": [effect.as_dict() for effect in self.effects],
+            "warnings": list(self.warnings),
+        }
+
+    @property
+    def digest(self) -> str:
+        """Return the lowercase SHA-256 digest of the canonical plan input."""
+        return document_digest(self.unsigned_dict())
+
+    def as_dict(self) -> dict[str, object]:
+        """Return the complete plan document including its digest."""
+        document = self.unsigned_dict()
+        document["plan_digest"] = self.digest
+        return document
+
+
 def canonical_json(document: dict[str, object]) -> str:
     """Serialize a setup document deterministically on one line."""
     return json.dumps(document, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def document_digest(document: dict[str, object]) -> str:
+    """Return the canonical lowercase SHA-256 digest of a setup document."""
+    return sha256(canonical_json(document).encode("utf-8")).hexdigest()
 
 
 def setup_schema() -> dict[str, object]:
@@ -84,7 +170,7 @@ def setup_schema() -> dict[str, object]:
 
 def setup_error_document(
     *,
-    command: Literal["spec", "inspect"],
+    command: Literal["spec", "inspect", "plan"],
     profile: str,
     code: SetupErrorCode,
 ) -> dict[str, object]:
@@ -93,6 +179,7 @@ def setup_error_document(
         "unknown_profile": "The requested setup profile is not supported.",
         "invalid_uri": "The hub URI must be a credential-free ws:// or wss:// endpoint.",
         "inspection_failed": "The environment could not be inspected safely.",
+        "planning_failed": "A safe plan could not be derived from the inspection.",
     }
     return {
         "schema_version": SETUP_SCHEMA_VERSION,

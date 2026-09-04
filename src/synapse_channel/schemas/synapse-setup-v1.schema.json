@@ -5,6 +5,7 @@
   "oneOf": [
     { "$ref": "#/$defs/spec" },
     { "$ref": "#/$defs/inspection" },
+    { "$ref": "#/$defs/plan" },
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
@@ -41,6 +42,28 @@
       },
       "required": ["id", "status", "required", "value", "detail", "remedy"]
     },
+    "effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "trigger_check": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "observed_status": { "enum": ["warn", "fail", "unavailable"] },
+        "disposition": { "enum": ["planned", "blocked"] },
+        "authority": {
+          "enum": ["operator_confirmation", "operator_restart_authority", "unsupported"]
+        },
+        "disruption": {
+          "enum": ["configuration_change", "environment_change", "service_start", "host_migration"]
+        },
+        "reversible": { "type": "boolean" },
+        "verification_check": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+      },
+      "required": [
+        "id", "trigger_check", "observed_status", "disposition", "authority",
+        "disruption", "reversible", "verification_check"
+      ]
+    },
     "spec": {
       "allOf": [
         { "$ref": "#/$defs/base" },
@@ -57,7 +80,11 @@
             "read_only": { "const": true },
             "supported_operations": {
               "type": "array",
-              "prefixItems": [{ "const": "spec" }, { "const": "inspect" }],
+              "prefixItems": [
+                { "const": "spec" },
+                { "const": "inspect" },
+                { "const": "plan" }
+              ],
               "items": false
             },
             "requirements": {
@@ -120,6 +147,49 @@
         }
       ]
     },
+    "plan": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": { "const": "synapse-setup.v1" },
+            "document_kind": { "const": "plan" },
+            "profile": { "const": "local-single-user" },
+            "profile_version": { "const": 1 },
+            "read_only": { "const": true },
+            "can_apply": { "const": false },
+            "ready": { "type": "boolean" },
+            "inspection_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "profile_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "plan_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "authority_required": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": ["operator_confirmation", "operator_restart_authority"]
+              }
+            },
+            "effects": {
+              "type": "array",
+              "maxItems": 7,
+              "items": { "$ref": "#/$defs/effect" }
+            },
+            "warnings": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "enum": ["apply_not_available", "manual_remediation_required"] }
+            }
+          },
+          "required": [
+            "schema_version", "document_kind", "profile", "profile_version", "read_only",
+            "can_apply", "ready", "inspection_digest", "profile_digest", "plan_digest",
+            "authority_required", "effects", "warnings"
+          ]
+        }
+      ]
+    },
     "error": {
       "allOf": [
         { "$ref": "#/$defs/base" },
@@ -129,9 +199,11 @@
           "properties": {
             "schema_version": { "const": "synapse-setup.v1" },
             "document_kind": { "const": "error" },
-            "command": { "enum": ["spec", "inspect"] },
+            "command": { "enum": ["spec", "inspect", "plan"] },
             "profile": { "type": "string", "minLength": 1, "maxLength": 128 },
-            "code": { "enum": ["unknown_profile", "invalid_uri", "inspection_failed"] },
+            "code": {
+              "enum": ["unknown_profile", "invalid_uri", "inspection_failed", "planning_failed"]
+            },
             "message": { "type": "string", "minLength": 1 }
           },
           "required": ["schema_version", "document_kind", "command", "profile", "code", "message"]

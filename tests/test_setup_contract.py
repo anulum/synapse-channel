@@ -52,7 +52,7 @@ def test_packaged_schema_is_a_valid_draft_2020_12_schema() -> None:
     assert schema_id.endswith("synapse-setup-v1.schema.json")
 
 
-@pytest.mark.parametrize("command", ["spec", "inspect"])
+@pytest.mark.parametrize("command", ["spec", "inspect", "plan"])
 def test_unknown_profile_error_is_stable_and_schema_valid(command: str) -> None:
     jsonschema = pytest.importorskip("jsonschema")
     document = setup_error_document(

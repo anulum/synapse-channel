@@ -15,7 +15,7 @@ everything, since they need the whole command table.
 | --- | --- |
 | `synapse hub` | Run the coordination hub. |
 | `synapse commands` | List every subcommand by stability tier, or inspect a measured profile with `--profile first-use|core|adapters|governance|labs|all` and optional `--json`. |
-| `synapse setup` | Emit the versioned `local-single-user` setup specification or inspect package, Python, platform, executable, identity, hub, waiter, and service-manager evidence without changing the host. |
+| `synapse setup` | Emit the versioned `local-single-user` setup specification, inspect package/Python/platform/executable/identity/hub/waiter/service-manager evidence, or derive a digest-bound non-executable plan without changing the host. |
 | `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |
 | `synapse demo` | Run the real hub/Git/claim/guard/receipt path with scripted in-process identities labelled `CLAUDE` and `CODEX`; no provider CLI or model turn is launched. Writes JSON plus a static dashboard (`--output DIR` selects the destination). |
 | `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression; `--trend STORE.db` accumulates runs and renders per-metric sparkline trends (`--ascii` for a printable-ASCII trend block); `--alert` gates the run statistically against its own same-context history, exit `1` on drift. |
@@ -120,9 +120,11 @@ synapse commands
 
 For an agent-consumable setup contract, use `synapse setup spec --profile
 local-single-user --json`; use `synapse setup inspect --profile
-local-single-user --json` to observe the current host. Inspection is read-only:
-it never installs a package, writes configuration, starts services, restarts a
-terminal, or accepts a secret in argv. See [Machine-readable setup](machine-readable-setup.md).
+local-single-user --json` to observe the current host, then `synapse setup plan
+--profile local-single-user --json` to bind that fresh observation to a
+non-executable effect plan. These operations are read-only: they never install a
+package, write configuration, start services, restart a terminal, or accept a
+secret in argv. See [Machine-readable setup](machine-readable-setup.md).
 
 The unfiltered command prints all five stability tiers. A profile is a
 machine-readable discovery and package boundary, not a global feature toggle;

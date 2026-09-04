@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.setup_contract import canonical_json, setup_error_document
 from synapse_channel.setup_inspector import inspect_setup
+from synapse_channel.setup_planner import build_setup_plan
 from synapse_channel.setup_profiles import build_setup_spec, get_setup_profile
 
 
@@ -37,6 +38,16 @@ def _print_document(document: dict[str, object], *, as_json: bool) -> None:
         for requirement in requirements:
             marker = "required" if requirement["required"] else "optional"
             print(f"- {requirement['id']} ({marker}): {requirement['description']}")
+        return
+    if kind == "plan":
+        effects = cast(list[dict[str, object]], document["effects"])
+        print(f"plan: {len(effects)} proposed effect(s); apply unavailable")
+        print(f"digest: {document['plan_digest']}")
+        for effect in effects:
+            print(
+                f"- {effect['disposition']} {effect['id']}: "
+                f"{effect['authority']} / {effect['disruption']}"
+            )
         return
     ready = "ready" if document["ready"] else "not ready"
     print(f"result: {ready} (read-only)")
@@ -114,6 +125,46 @@ def _cmd_inspect(
     return 0 if document["ready"] is True else 1
 
 
+def _cmd_plan(
+    args: argparse.Namespace,
+    *,
+    async_runner: Callable[
+        [Coroutine[Any, Any, dict[str, object]]], dict[str, object]
+    ] = asyncio.run,
+) -> int:
+    profile = get_setup_profile(args.profile)
+    if profile is None:
+        _print_document(
+            setup_error_document(command="plan", profile=args.profile, code="unknown_profile"),
+            as_json=args.json,
+        )
+        return 2
+    if not _valid_inspection_uri(args.uri):
+        _print_document(
+            setup_error_document(command="plan", profile=args.profile, code="invalid_uri"),
+            as_json=args.json,
+        )
+        return 2
+    try:
+        inspection = async_runner(
+            inspect_setup(
+                profile,
+                uri=args.uri,
+                project=args.project,
+                agent_id=args.id,
+            )
+        )
+        document = build_setup_plan(profile, inspection)
+    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+        _print_document(
+            setup_error_document(command="plan", profile=args.profile, code="planning_failed"),
+            as_json=args.json,
+        )
+        return 2
+    _print_document(document, as_json=args.json)
+    return 0
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the read-only ``setup`` command family."""
     setup = subparsers.add_parser(
@@ -136,3 +187,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     inspect.add_argument("--id", default=None)
     inspect.add_argument("--json", action="store_true", help="Emit one canonical JSON document.")
     inspect.set_defaults(func=_cmd_inspect)
+
+    plan = actions.add_parser(
+        "plan", help="Derive a digest-bound future effect plan without applying it."
+    )
+    plan.add_argument("--profile", required=True)
+    plan.add_argument("--uri", default=default_hub_uri())
+    plan.add_argument("--project", default=None)
+    plan.add_argument("--id", default=None)
+    plan.add_argument("--json", action="store_true", help="Emit one canonical JSON document.")
+    plan.set_defaults(func=_cmd_plan)

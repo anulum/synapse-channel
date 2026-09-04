@@ -15,12 +15,14 @@ All notable changes to this project are documented here.
 
 ### Added
 
-- Add the versioned `synapse setup spec|inspect` machine-readable contract for
+- Add the versioned `synapse setup spec|inspect|plan` machine-readable contract for
   agent-assisted host setup. The initial `local-single-user` profile reports
   installed package, Python, platform, executable, identity, hub, waiter, and
   optional service-manager evidence without writing files, installing services,
   restarting terminals, or accepting secrets on the command line. Its strict
-  JSON Schema ships inside the wheel.
+  JSON Schema ships inside the wheel. Planning binds one exact inspection and
+  profile specification to canonical SHA-256 digests and allow-listed proposed
+  effects while remaining explicitly non-executable.
 
 ## [0.99.24] - 2026-09-04
 

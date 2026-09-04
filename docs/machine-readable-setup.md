@@ -10,8 +10,9 @@ Contact: www.anulum.li | protoscience@anulum.li
 # Machine-readable setup
 
 `synapse setup` gives an LLM agent a versioned description of what Synapse
-needs and a read-only measurement of the current host. The initial contract is
-`synapse-setup.v1`; its first profile is `local-single-user`.
+needs, a read-only measurement of the current host, and an immutable plan of
+what remains. The initial contract is `synapse-setup.v1`; its first profile is
+`local-single-user`.
 
 This is discovery, not installation. Neither command writes configuration,
 installs packages or services, starts or restarts a process, changes a terminal,
@@ -25,8 +26,9 @@ synapse setup spec --profile local-single-user --json
 ```
 
 The deterministic `spec` document lists every requirement, whether it is
-mandatory, the evidence source, and the remedy an agent may propose. In v1 the
-supported operations are exactly `spec` and `inspect`; there is no apply route.
+mandatory, the evidence source, and the remedy an agent may propose. In this
+tranche the supported operations are exactly `spec`, `inspect`, and `plan`;
+there is no apply route.
 
 ## Inspect a host
 
@@ -52,9 +54,36 @@ argument on this surface. The URI must use `ws://` or `wss://` and cannot contai
 userinfo, a query string, or a fragment, so inline credentials are refused before
 the probe runs.
 
-Exit codes are stable: `0` means every required check passed, `1` means the
-inspection completed but the profile is not ready, and `2` means the request or
-inspection itself could not be processed. Consumers should use
+## Derive a non-executable plan
+
+```bash
+synapse setup plan --profile local-single-user --json
+```
+
+`plan` performs the same fresh read-only inspection and maps only failed,
+warning, or unavailable required checks to package-owned effect identifiers. It
+does not accept an arbitrary effect, command, file, or previously supplied JSON
+document. Every plan contains:
+
+- `inspection_digest`, binding the complete canonical inspection;
+- `profile_digest`, binding the exact package-owned profile specification;
+- `plan_digest`, binding every plan field except the digest itself;
+- `effects`, each with its trigger check, observed status, disposition,
+  authority class, disruption class, reversibility, and verification check;
+- `authority_required`, deduplicated from effects that are safe enough to plan;
+- `can_apply: false` and `apply_not_available`, which prevent the document from
+  being mistaken for mutation authority.
+
+An unavailable observation is blocked rather than guessed. An unsupported
+platform is also blocked and requires manual remediation. A hub change carries
+`operator_restart_authority`; ordinary configuration/environment/service-start
+proposals carry `operator_confirmation`. Those labels describe future authority
+requirements only—there is no executor in this tranche.
+
+Exit codes are stable: for `inspect`, `0` means every required check passed and
+`1` means inspection completed but the profile is not ready. A successfully
+derived `plan` exits `0` even when it contains proposed or blocked effects.
+Every operation returns `2` when its request cannot be processed. Consumers should use
 `schema_version`, `document_kind`, `code`, and the per-check `status` fields,
 not parse human text.
 
@@ -99,7 +128,7 @@ installation single-dependency and does not require that package at runtime.
 
 A consumer must refuse an unknown `schema_version` or profile version. New
 profiles may be added without changing v1 documents; incompatible field changes
-require a new schema version. An inspection is evidence for a later plan, never
-permission to mutate the host. Future planning and apply surfaces must bind an
-exact plan digest to an explicit operator confirmation and emit verification and
-recovery receipts; they are intentionally outside this read-only tranche.
+require a new schema version. An inspection and its derived plan are evidence,
+never permission to mutate the host. A future apply surface must bind the exact
+plan digest to an explicit operator confirmation and emit verification and
+recovery receipts; it is intentionally outside this read-only tranche.

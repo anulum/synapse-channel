@@ -120,6 +120,6 @@ def build_setup_spec(profile: SetupProfile) -> dict[str, object]:
         "summary": profile.summary,
         "scope": profile.scope,
         "read_only": True,
-        "supported_operations": ["spec", "inspect"],
+        "supported_operations": ["spec", "inspect", "plan"],
         "requirements": [requirement.as_dict() for requirement in profile.requirements],
     }
