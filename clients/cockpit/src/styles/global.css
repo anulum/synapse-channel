@@ -35,7 +35,8 @@ body {
 /* ---------- app shell: HUD strip over an asymmetric deck ---------- */
 .shell {
   display: grid;
-  grid-template-rows: var(--hud-h) auto auto auto auto 1fr;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(var(--hud-h), auto) auto auto auto auto 1fr;
   height: 100vh;
   overflow: hidden;
 }
@@ -263,6 +264,7 @@ body {
 /* ---------- HUD ---------- */
 .hud {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-5);
   padding: 0 var(--sp-4);

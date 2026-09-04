@@ -26,6 +26,12 @@ discrete event-driven oscilloscope of observed coordination transitions.
 
 ## Layout
 
+The shell constrains its grid column to the viewport. The HUD wraps controls
+onto additional rows when needed and grows to contain them; the deck does not
+widen to the header's intrinsic content width. The production-browser layout
+gate checks panel and header-control bounds at 1100, 1280, 1440 and 1920 pixels
+across all five interface languages and both display densities.
+
 - **HUD** — mark, the KPIs (agents online / claims held / observed
   transitions per minute / risk signals, each with a redundant delta —
   clicking one drills the signal log to its event kinds), the **focus
@@ -192,6 +198,11 @@ npm run coverage   # vitest with full-coverage thresholds on src/lib
 npm run e2e        # production build against a real local hub/dashboard (Chromium)
 npm run preview    # serves the PRODUCTION build on :8772 with the same proxy
 ```
+
+For an isolated browser run, set `SYNAPSE_COCKPIT_E2E_DIST` to an absolute
+production-build directory. The harness otherwise uses `clients/cockpit/dist`.
+For example, after building that directory, run
+`SYNAPSE_COCKPIT_E2E_DIST=/path/to/build npx playwright test e2e/layout.spec.ts`.
 
 The pure data logic — snapshot parsing, the freshness contract, polling stores,
 transition derivation, and every panel's data shaping — is held to full line

@@ -106,7 +106,11 @@ async def _serve() -> None:
         "operator": os.environ.get("SYNAPSE_COCKPIT_E2E_TOKEN", ""),
         "admin": os.environ.get("SYNAPSE_COCKPIT_E2E_ADMIN_TOKEN", ""),
     }
-    dist = Path(__file__).resolve().parents[1] / "dist"
+    dist = Path(
+        os.environ.get(
+            "SYNAPSE_COCKPIT_E2E_DIST", str(Path(__file__).resolve().parents[1] / "dist")
+        )
+    )
     if not (dist / "index.html").is_file():
         raise FileNotFoundError("build the cockpit before running the browser gate")
 
