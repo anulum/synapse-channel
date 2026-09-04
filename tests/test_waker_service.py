@@ -22,6 +22,7 @@ from synapse_channel.waker_config import (
     WakerConfigError,
     load_waker_config,
 )
+from synapse_channel.waker_lock import WakerLockError, waker_control_lock
 from synapse_channel.waker_service import (
     WakerStatus,
     inhibit_waker,
@@ -430,3 +431,52 @@ def test_ready_requires_every_execution_layer(change: dict[str, Any]) -> None:
         service_query_ok=True,
     )
     assert replace(baseline, **change).ready is False
+
+
+@pytest.mark.parametrize("operation", ["install", "stop", "resume"])
+@pytest.mark.parametrize("fail", [False, True])
+def test_lifecycle_holds_lock_for_every_command_and_releases_after_result(
+    tmp_path: Path, operation: str, fail: bool
+) -> None:
+    _install(tmp_path, ServiceRunner())
+    commands: list[list[str]] = []
+
+    def runner(
+        args: list[str],
+        *,
+        capture_output: bool = False,
+        text: bool = False,
+        check: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        del capture_output, text, check
+        commands.append(args)
+        with pytest.raises(WakerLockError, match="already changing"):
+            with waker_control_lock(IDENTITY, home=tmp_path):
+                pytest.fail("service command ran outside lifecycle lock")
+        if args[0] == "systemd-escape":
+            return subprocess.CompletedProcess(args, 0, stdout=f"{UNIT}\n", stderr="")
+        return subprocess.CompletedProcess(
+            args, int(fail), stdout="", stderr="failed" if fail else ""
+        )
+
+    if operation == "install":
+        result = install_waker(
+            identity=IDENTITY,
+            session="repo-codex-1",
+            cwd=tmp_path,
+            agent_command=("codex",),
+            synapse_bin="/usr/bin/synapse",
+            start=True,
+            home=tmp_path,
+            runner=runner,
+        )
+    elif operation == "stop":
+        result = inhibit_waker(IDENTITY, reason="test", home=tmp_path, runner=runner)
+    else:
+        result = resume_waker(IDENTITY, home=tmp_path, runner=runner)
+    assert result.ok is not fail
+    assert commands[0][0] == "systemd-escape"
+    assert commands[-1][0] == "systemctl"
+    assert load_waker_config(IDENTITY, home=tmp_path).generation == 2
+    retried = resume_waker(IDENTITY, expected_generation=2, home=tmp_path, runner=ServiceRunner())
+    assert retried.ok and retried.generation == 3

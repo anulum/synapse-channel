@@ -915,7 +915,13 @@ remote hub; token values are never persisted. `status` reports the durable
 desired state and generation, systemd state/restarts, actual provider binding,
 and pending wake state separately. `stop` writes `inhibited` before stopping
 the exact unit, and only `resume` clears it. Both mutation commands accept
-`--expect-generation` to reject stale control decisions. Automatic bridge
+`--expect-generation` to reject stale control decisions. Installation, stop, and
+resume hold the same per-identity lock through their service commands. A competing
+operation fails without changing configuration or sending service commands;
+after the active command finishes, inspect status and retry with its current
+generation. A command failure releases the lock but does not roll back the
+persisted desired state. A generation is not proof of applied service state.
+Automatic bridge
 restart, watchdog recovery, and configuration reload never terminate or replace
 the tmux provider session.
 The default `--pane-probe-interval 5` bounds stale pane-bridge presence: after

@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — atomic exact-seat active-waker lifecycle lock
-"""Serialize active-waker configuration generations across CLI processes."""
+"""Serialise active-waker configuration and service effects across CLI processes."""
 
 from __future__ import annotations
 

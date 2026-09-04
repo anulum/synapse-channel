@@ -132,7 +132,12 @@ def install_waker(
     clock: Callable[[], float] = time.time,
     platform: str = sys.platform,
 ) -> WakerOperationResult:
-    """Install or update one active-waker configuration and user unit."""
+    """Install or update a waker while holding its lock through service commands.
+
+    A competing lifecycle operation is refused without changing configuration.
+    The lock is released after command completion or failure; desired state is
+    retained on service failure and does not certify the applied service state.
+    """
     if not platform.startswith("linux"):
         return WakerOperationResult(
             False,
@@ -175,37 +180,38 @@ def install_waker(
             unit_path.parent.mkdir(parents=True, exist_ok=True)
             unit_path.write_text(render_waker_unit(synapse_bin=executable), encoding="utf-8")
             config_path = save_waker_config(config, home=home)
+            lines = [f"wrote {unit_path}", f"wrote {config_path}", f"generation: {generation}"]
+            unit = _unit(identity, runner=runner)
+            if config.desired_state == DESIRED_INHIBITED:
+                lines.extend(
+                    (
+                        "desired state remains inhibited; service was not started",
+                        f"run: synapse waker resume {identity}",
+                    )
+                )
+                return WakerOperationResult(True, tuple(lines), generation)
+            if not start:
+                lines.extend(
+                    (
+                        "run: systemctl --user daemon-reload",
+                        f"run: systemctl --user enable --now {unit}",
+                    )
+                )
+                return WakerOperationResult(True, tuple(lines), generation)
+            for command in (
+                ["systemctl", "--user", "daemon-reload"],
+                ["systemctl", "--user", "enable", unit],
+                ["systemctl", "--user", "restart", unit],
+            ):
+                _completed, failure = _run_command(command, runner=runner)
+                if failure:
+                    lines.append(failure)
+                    return WakerOperationResult(False, tuple(lines), generation)
+                lines.append(f"ok: {' '.join(command)}")
+            return WakerOperationResult(True, tuple(lines), generation)
+
     except (OSError, ValueError) as exc:
         return WakerOperationResult(False, (f"failed to install waker — {exc}",))
-    lines = [f"wrote {unit_path}", f"wrote {config_path}", f"generation: {generation}"]
-    unit = _unit(identity, runner=runner)
-    if config.desired_state == DESIRED_INHIBITED:
-        lines.extend(
-            (
-                "desired state remains inhibited; service was not started",
-                f"run: synapse waker resume {identity}",
-            )
-        )
-        return WakerOperationResult(True, tuple(lines), generation)
-    if not start:
-        lines.extend(
-            (
-                "run: systemctl --user daemon-reload",
-                f"run: systemctl --user enable --now {unit}",
-            )
-        )
-        return WakerOperationResult(True, tuple(lines), generation)
-    for command in (
-        ["systemctl", "--user", "daemon-reload"],
-        ["systemctl", "--user", "enable", unit],
-        ["systemctl", "--user", "restart", unit],
-    ):
-        _completed, failure = _run_command(command, runner=runner)
-        if failure:
-            lines.append(failure)
-            return WakerOperationResult(False, tuple(lines), generation)
-        lines.append(f"ok: {' '.join(command)}")
-    return WakerOperationResult(True, tuple(lines), generation)
 
 
 def _require_generation(config: WakerConfig, expected: int | None) -> None:
@@ -225,7 +231,15 @@ def inhibit_waker(
     runner: CommandRunner = subprocess.run,
     clock: Callable[[], float] = time.time,
 ) -> WakerOperationResult:
-    """Inhibit one exact waker persistently before stopping its service."""
+    """Persist inhibition and stop the service under one identity lock.
+
+    Raises
+    ------
+    WakerLockError
+        Another lifecycle operation for this identity is still running.
+    WakerConfigError
+        The expected configuration generation no longer matches.
+    """
     with waker_control_lock(identity, home=home):
         config = load_waker_config(identity, home=home)
         _require_generation(config, expected_generation)
@@ -237,14 +251,14 @@ def inhibit_waker(
             updated_at=clock(),
         )
         path = save_waker_config(updated, home=home)
-    unit = _unit(identity, runner=runner)
-    _completed, failure = _run_command(["systemctl", "--user", "stop", unit], runner=runner)
-    lines = [f"inhibited {identity} at generation {updated.generation}", f"wrote {path}"]
-    if failure:
-        lines.extend((failure, "desired state remains inhibited; a later start cannot run"))
-        return WakerOperationResult(False, tuple(lines), updated.generation)
-    lines.append(f"ok: systemctl --user stop {unit}")
-    return WakerOperationResult(True, tuple(lines), updated.generation)
+        unit = _unit(identity, runner=runner)
+        _completed, failure = _run_command(["systemctl", "--user", "stop", unit], runner=runner)
+        lines = [f"inhibited {identity} at generation {updated.generation}", f"wrote {path}"]
+        if failure:
+            lines.extend((failure, "desired state remains inhibited; a later start cannot run"))
+            return WakerOperationResult(False, tuple(lines), updated.generation)
+        lines.append(f"ok: systemctl --user stop {unit}")
+        return WakerOperationResult(True, tuple(lines), updated.generation)
 
 
 def resume_waker(
@@ -255,7 +269,15 @@ def resume_waker(
     runner: CommandRunner = subprocess.run,
     clock: Callable[[], float] = time.time,
 ) -> WakerOperationResult:
-    """Clear an inhibit explicitly and start the exact waker service."""
+    """Clear inhibition and start the service under one identity lock.
+
+    Raises
+    ------
+    WakerLockError
+        Another lifecycle operation for this identity is still running.
+    WakerConfigError
+        The expected configuration generation no longer matches.
+    """
     with waker_control_lock(identity, home=home):
         config = load_waker_config(identity, home=home)
         _require_generation(config, expected_generation)
@@ -267,18 +289,18 @@ def resume_waker(
             updated_at=clock(),
         )
         path = save_waker_config(updated, home=home)
-    unit = _unit(identity, runner=runner)
-    lines = [f"armed {identity} at generation {updated.generation}", f"wrote {path}"]
-    for command in (
-        ["systemctl", "--user", "daemon-reload"],
-        ["systemctl", "--user", "enable", "--now", unit],
-    ):
-        _completed, failure = _run_command(command, runner=runner)
-        if failure:
-            lines.append(failure)
-            return WakerOperationResult(False, tuple(lines), updated.generation)
-        lines.append(f"ok: {' '.join(command)}")
-    return WakerOperationResult(True, tuple(lines), updated.generation)
+        unit = _unit(identity, runner=runner)
+        lines = [f"armed {identity} at generation {updated.generation}", f"wrote {path}"]
+        for command in (
+            ["systemctl", "--user", "daemon-reload"],
+            ["systemctl", "--user", "enable", "--now", unit],
+        ):
+            _completed, failure = _run_command(command, runner=runner)
+            if failure:
+                lines.append(failure)
+                return WakerOperationResult(False, tuple(lines), updated.generation)
+            lines.append(f"ok: {' '.join(command)}")
+        return WakerOperationResult(True, tuple(lines), updated.generation)
 
 
 def _optional_int(value: str | None) -> int | None:

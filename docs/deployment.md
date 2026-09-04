@@ -181,6 +181,11 @@ synapse waker stop \
 ```
 
 `stop` persists `inhibited` before stopping the exact escaped unit.
+The identity lock remains held until service commands finish, including during
+installation and resume. Concurrent controls fail without changing the stored
+generation; inspect status and retry once the active operation completes.
+Service failures preserve desired state, so inspect systemd state separately.
+Direct operator `systemctl` calls do not participate in this CLI lock.
 `RestartPreventExitStatus=78` also prevents a manual or Fleet start from
 overriding that intent. Recovery is explicit and generation-guarded:
 
