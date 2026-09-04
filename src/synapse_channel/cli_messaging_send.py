@@ -111,7 +111,11 @@ async def _send(
 
     async def collect(data: dict[str, Any]) -> None:
         if data.get("type") == MessageType.CHAT and data.get("sender") != sender_name:
-            replies.append(data)
+            if channel:
+                if data.get("channel") == channel:
+                    replies.append(data)
+            elif not is_directed_target(target) or data.get("target") == sender_name:
+                replies.append(data)
         elif (
             data.get("type") == MessageType.DELIVERY_RECEIPT
             and data.get("target") == sender_name

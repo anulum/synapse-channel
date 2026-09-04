@@ -11,15 +11,17 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from pathlib import Path
 
 import pytest
 from websockets.asyncio.server import ServerConnection, serve
 
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
-from synapse_channel import cli_messaging
+from synapse_channel import cli_messaging, cli_messaging_send
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.payload_crypto import PAYLOAD_PLACEHOLDER
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.wake_capability import WAKE_PANE_BRIDGE, WAKE_PASSIVE
 
@@ -347,6 +349,207 @@ async def test_send_require_recipient_counts_project_waiter_as_logical_seat(
     assert code == 0
     assert message["target"] == "SYNAPSE-CHANNEL"
     assert "delivered to SYNAPSE-CHANNEL/kimi-3dcd (passive receiver)" in capsys.readouterr().out
+
+
+async def test_concurrent_cli_processes_keep_receipts_and_output_associated() -> None:
+    """Independent send processes cannot exchange receipt or stdout identity."""
+
+    async def run_send(uri: str, *, sender: str, target: str, message: str) -> tuple[int, str, str]:
+        process = await asyncio.create_subprocess_exec(
+            REPO_ROOT / ".venv/bin/synapse",
+            "send",
+            "--uri",
+            uri,
+            "--name",
+            sender,
+            "--target",
+            target,
+            "--require-recipient",
+            "--wait-seconds",
+            "0.2",
+            message,
+            cwd=REPO_ROOT,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+        return process.returncode or 0, stdout.decode(), stderr.decode()
+
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        alpha = await connect_agent("ALPHA-TARGET", uri)
+        beta = await connect_agent("BETA-TARGET", uri)
+        try:
+            alpha_result, beta_result = await asyncio.gather(
+                run_send(
+                    uri,
+                    sender="ALPHA-SENDER",
+                    target="ALPHA-TARGET",
+                    message="alpha-body",
+                ),
+                run_send(
+                    uri,
+                    sender="BETA-SENDER",
+                    target="BETA-TARGET",
+                    message="beta-body",
+                ),
+            )
+            alpha_message = await alpha.recorder.wait_for(
+                lambda item: item.get("payload") == "alpha-body"
+            )
+            beta_message = await beta.recorder.wait_for(
+                lambda item: item.get("payload") == "beta-body"
+            )
+        finally:
+            await close_agents(alpha, beta)
+
+    assert alpha_result[0] == 0
+    assert alpha_result[2] == ""
+    assert "delivered to ALPHA-TARGET" in alpha_result[1]
+    assert "BETA-SENDER" not in alpha_result[1]
+    assert "beta-body" not in alpha_result[1]
+    assert beta_result[0] == 0
+    assert beta_result[2] == ""
+    assert "delivered to BETA-TARGET" in beta_result[1]
+    assert "ALPHA-SENDER" not in beta_result[1]
+    assert "alpha-body" not in beta_result[1]
+    assert alpha_message["sender"] == "ALPHA-SENDER"
+    assert beta_message["sender"] == "BETA-SENDER"
+    assert alpha_message["client_msg_id"] != beta_message["client_msg_id"]
+
+
+async def test_concurrent_directed_sends_reject_each_others_chat_as_replies(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The in-process callback evidence covers the foreign-target rejection."""
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        alpha = await connect_agent("ALPHA-TARGET", uri)
+        beta = await connect_agent("BETA-TARGET", uri)
+        try:
+            codes = await asyncio.gather(
+                cli_messaging._send(
+                    uri=uri,
+                    name="ALPHA-SENDER",
+                    target="ALPHA-TARGET",
+                    message="alpha-body",
+                    wait_seconds=0.1,
+                    require_recipient=True,
+                ),
+                cli_messaging._send(
+                    uri=uri,
+                    name="BETA-SENDER",
+                    target="BETA-TARGET",
+                    message="beta-body",
+                    wait_seconds=0.1,
+                    require_recipient=True,
+                ),
+            )
+        finally:
+            await close_agents(alpha, beta)
+
+    output = capsys.readouterr().out
+    assert codes == (0, 0)
+    assert "delivered to ALPHA-TARGET" in output
+    assert "delivered to BETA-TARGET" in output
+    assert "ALPHA-SENDER:" not in output
+    assert "BETA-SENDER:" not in output
+
+
+async def test_channel_send_prints_only_replies_from_its_channel(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A public chat observed during a channel reply window is not a reply."""
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        owner = await connect_agent("OWNER", uri)
+        await owner.agent.channel_create("ops")
+        await owner.recorder.wait_for(
+            lambda item: item.get("type") == "channel_result" and item.get("channel") == "ops"
+        )
+        await owner.agent.channel_invite("ops", "USER")
+        await owner.recorder.wait_for(
+            lambda item: (
+                item.get("type") == "channel_result" and "invited" in str(item.get("payload"))
+            )
+        )
+        member = await connect_agent("USER", uri)
+        await member.agent.channel_join("ops")
+        await member.recorder.wait_for(
+            lambda item: item.get("type") == "channel_result" and item.get("channel") == "ops"
+        )
+        await close_agents(member)
+
+        send_task = asyncio.create_task(
+            cli_messaging._send(
+                uri=uri,
+                name="USER",
+                target="all",
+                message="request",
+                channel="ops",
+                wait_seconds=0.2,
+            )
+        )
+        try:
+            await owner.recorder.wait_for(
+                lambda item: item.get("type") == "chat" and item.get("payload") == "request"
+            )
+            await owner.agent.chat("channel-reply", channel="ops")
+            await owner.agent.chat("public-noise")
+            code = await send_task
+        finally:
+            await close_agents(owner)
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "OWNER: channel-reply" in output
+    assert "public-noise" not in output
+
+
+@pytest.mark.parametrize(
+    ("target", "explicit_recipients", "expected_recipients"),
+    [
+        ("ENCRYPTED", None, ["ENCRYPTED"]),
+        ("all", None, []),
+        ("ENCRYPTED", ["ARCHIVE", "ENCRYPTED"], ["ARCHIVE", "ENCRYPTED"]),
+    ],
+)
+async def test_send_builds_each_supported_encrypted_recipient_route(
+    tmp_path: Path,
+    target: str,
+    explicit_recipients: list[str] | None,
+    expected_recipients: list[str],
+) -> None:
+    """Encryption covers directed, broadcast, and explicit recipient routes."""
+    key_file = tmp_path / "payload.key"
+    key_file.write_bytes(b"k" * 32)
+    key_file.chmod(0o600)
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        receiver = await connect_agent("ENCRYPTED", uri)
+        try:
+            code = await cli_messaging._send(
+                uri=uri,
+                name="USER",
+                target=target,
+                message="secret",
+                wait_seconds=0.0,
+                encrypt_key_file=str(key_file),
+                encrypt_recipients=explicit_recipients,
+            )
+            delivered = await receiver.recorder.wait_for(
+                lambda item: item.get("type") == "chat" and item.get("sender") == "USER"
+            )
+        finally:
+            await close_agents(receiver)
+
+    assert code == 0
+    assert delivered["payload"] == PAYLOAD_PLACEHOLDER
+    assert delivered["encrypted"]["recipients"] == expected_recipients
+    assert str(delivered["encrypted"]["key_id"]).startswith("payload:")
+
+
+def test_ephemeral_send_name_contains_the_process_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(os, "getpid", lambda: 1729)
+    assert cli_messaging_send.ephemeral_send_name() == "send-1729"
 
 
 async def test_send_ignores_an_older_replayed_receipt_for_the_same_sender(
