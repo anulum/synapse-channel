@@ -9,7 +9,7 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # SYNAPSE·CHANNEL cockpit
 
-A read-mostly, real-time operator cockpit with three opt-in governed writes for
+A read-mostly, real-time operator cockpit with four opt-in governed write routes for
 the coordination hub, built as a static React + TypeScript SPA (Vite). It is a
 *client* — like `clients/go`,
 `clients/js`, and `clients/vscode` — so the Python core stays an untouched,
@@ -132,6 +132,7 @@ first), with the spine kept at every width.
 | `/receipts.json?since=SEQ&limit=N` | 2 s incremental | universal receipts projected from receipt-bearing durable events (optional) |
 | `/operator-actions.json?since=SEQ&limit=N` | 2 s incremental | governed operator-relay audit history from durable `operator_relay` events (optional) |
 | `POST /message` | on send | governed operator chat relay; `undelivered` never reads as "sent" |
+| `POST /message/respond` | on response | semantic reply with `message_seq`, `to`, `status`, and optional `note` |
 | `POST /task` | on declaration | governed task declaration with `id`, `title`, and `depends_on` |
 | `POST /task/update` | on update | governed task status and/or progress-note update |
 
@@ -145,11 +146,16 @@ wait for the server to observe closure. Late responses cannot restore live state
 Optional endpoints answer `404` on dashboards that do not serve them; the
 corresponding panel states that plainly and activates the moment the surface
 ships (`synapse dashboard --feeds-db PATH` serves the store-backed feeds).
-All three write routes are absent unless the dashboard runs `--operator` and
-require the dashboard bearer. Each returns the strict
+All four write routes are absent unless the dashboard runs `--operator` and
+require a recognised bearer with the corresponding capability. Each returns the
 `{action, status, detail, ok}` outcome document; the cockpit reports the hub's
 decision and never treats HTTP `200` alone as acceptance. Task update IDs are
 suggested from the live board, while explicit IDs remain available.
+The version-one `/dashboard-access.json` descriptor advertises `read` and three
+write capabilities: `message_send` covers both message routes, `task_declare`
+covers `/task`, and `task_update` covers `/task/update`. Viewer credentials do
+not permit writes; operator/admin roles still require operator mode. The HTTP
+server and hub enforce permissions independently of these presentation hints.
 The snapshot's `state.pending_relay_approvals` (hubs ≥ 0.98.5) lists relays
 awaiting their second operator; the risk rail names each one, and a hub
 without the field simply shows no section.
@@ -160,11 +166,13 @@ cadence, labelled "observed transitions". The two sources never mix.
 
 ### Dashboard bearer
 
-The normal loopback, read-only dashboard remains open-read and the cockpit
-connects without a prompt. A caller-supplied `--dashboard-token` or a dashboard
-bound beyond loopback protects the live feeds. The validated static shell still
-loads so it can show an unlock veil; paste the bearer printed by the dashboard
-process there. The cockpit retains it only in this tab's `sessionStorage` and
+Dashboard reads require a bearer, including on loopback and in read-only mode.
+Without a caller-supplied token or access-policy file, the dashboard generates
+a token and prints it at startup. With `--dashboard-token`, use the token you
+supplied; with `--dashboard-access-file`, use the credential assigned to your
+principal. The validated React shell at `/cockpit/` loads without a bearer so
+it can show its unlock form; live feeds remain protected. Paste the appropriate
+bearer there. The cockpit retains it only in this tab's `sessionStorage` and
 sends `Authorization: Bearer …` on every snapshot, optional feed, history,
 proof, causality, and operator request. A `401` clears the credential and the
 entire live presentation before showing the veil again.
@@ -174,7 +182,7 @@ does not write the bearer to `localStorage`, rendered HTML, logs, built assets,
 or Cache Storage, and the service worker bypasses every request carrying an
 `Authorization` header.
 
-## Develop
+## Getting started
 
 ```bash
 npm install
@@ -229,8 +237,8 @@ verifies npm v3 package/lock alignment plus registry integrity metadata.
 ## Installing on a phone (PWA)
 
 The built cockpit is an installable PWA. A phone on the tailnet opens
-`http://<hub-tailnet-ip>:<dashboard-port>/cockpit/`; when the dashboard protects
-reads, the token-free shell opens first and asks for the bearer in its unlock
+`http://<hub-tailnet-ip>:<dashboard-port>/cockpit/`; the token-free shell opens
+first and asks for the bearer in its unlock
 veil. Then install it:
 
 - **Android / Chromium**: the cockpit shows an "add to home screen" chip
@@ -250,13 +258,37 @@ Under 640px the deck becomes a segmented single-column view (signals ·
 claims · board · roster · reliability) with 44px touch targets; the spine
 stays at every width and yields vertical panning to the page on touch.
 
-Honest scope (Tier 1): read-mostly observation plus the three explicit,
-foreground operator actions above. Every action remains subject to dashboard
+Honest scope (Tier 1): read-mostly observation plus the four explicit,
+foreground operator routes above. Every action remains subject to dashboard
 gating and the hub's validation, authorisation, rate limit, and audit decision.
 No push, no background wake — mobile OSes suspend the tab, so "the phone stays
 live on the bus" is deliberately not promised here.
 
 ## Serving the built cockpit
+
+### Usage
+
+From this client directory, build and serve the bundle beside the real feeds:
+
+```bash
+npm run build
+synapse dashboard --port 8765 --cockpit-dist "$PWD/dist"
+```
+
+Open `http://127.0.0.1:8765/cockpit/` and use the unlock form. Add `--operator`
+only when you intend to enable the governed write routes.
+
+| Page | Purpose | Access |
+| --- | --- | --- |
+| `/cockpit/` | Rich React client, when `--cockpit-dist` is configured | Public validated static shell; bearer-authenticated feeds |
+| `/` or `/studio/command` | Packaged read-only Studio command centre | Bearer required for page and feeds |
+| `/studio` | Static design-system reference, not live telemetry | Bearer required |
+| `/classic` or `/index.html` | Legacy server-rendered dashboard | Bearer required |
+
+The packaged pages do not provide the React unlock form. Ordinary browser
+navigation cannot supply an Authorization header; use the React client for
+the interactive unlock workflow. A client that opens packaged pages must
+provide the bearer header explicitly. Do not put credentials into URLs.
 
 `npm run build` emits a self-contained static bundle in `dist/` with relative
 asset paths (`base: "./"`), so it can be served from any path on the dashboard
