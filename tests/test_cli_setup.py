@@ -11,11 +11,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from synapse_channel import cli, cli_setup
+from synapse_channel.setup_verification import SetupVerificationError
 
 
 def test_setup_parser_routes_every_setup_operation() -> None:
@@ -56,12 +57,106 @@ def test_setup_parser_routes_every_setup_operation() -> None:
             "--json",
         ]
     )
+    verification_plan = cli.build_parser().parse_args(
+        [
+            "setup",
+            "verification-plan",
+            "--plan",
+            "plan.json",
+            "--authorization",
+            "authorization.json",
+            "--application-receipt",
+            "application.json",
+            "--json",
+        ]
+    )
+    authorize_verification = cli.build_parser().parse_args(
+        [
+            "setup",
+            "authorize-verification",
+            "--verification-plan",
+            "verification-plan.json",
+            "--confirm-digest",
+            "a" * 64,
+            "--nonce",
+            "0123456789abcdefghijkl",
+            "--authorize-restart-pid",
+            "4321",
+            "--json",
+        ]
+    )
+    verify = cli.build_parser().parse_args(
+        [
+            "setup",
+            "verify",
+            "--verification-plan",
+            "verification-plan.json",
+            "--verification-authorization",
+            "verification-authorization.json",
+            "--confirm-digest",
+            "a" * 64,
+            "--protect-pid",
+            "1234",
+            "--json",
+        ]
+    )
     assert spec.func is cli_setup._cmd_spec
     assert inspect.func is cli_setup._cmd_inspect
     assert plan.func is cli_setup._cmd_plan
     assert authorize.func is cli_setup._cmd_authorize
     assert apply.func is cli_setup._cmd_apply
     assert apply.protect_pid == [1234]
+    assert verification_plan.func is cli_setup._cmd_verification_plan
+    assert authorize_verification.func is cli_setup._cmd_authorize_verification
+    assert authorize_verification.authorize_restart_pid == 4321
+    assert verify.func is cli_setup._cmd_verify
+    assert verify.protect_pid == [1234]
+
+
+@pytest.mark.parametrize(
+    ("document", "expected"),
+    [
+        (
+            {
+                "document_kind": "verification_plan",
+                "profile": "local-single-user",
+                "profile_version": 1,
+                "verification_plan_digest": "a" * 64,
+                "current_hub_pid": 4321,
+            },
+            "restart PID: 4321",
+        ),
+        (
+            {
+                "document_kind": "verification_authorization",
+                "profile": "local-single-user",
+                "profile_version": 1,
+                "verification_authorization_digest": "a" * 64,
+                "verification_plan_digest": "b" * 64,
+                "expires_at": 500,
+            },
+            "exact hub restart authority",
+        ),
+        (
+            {
+                "document_kind": "verification_receipt",
+                "profile": "local-single-user",
+                "profile_version": 1,
+                "outcome": "verified",
+                "receipt_digest": "a" * 64,
+                "ledger_state": "verified",
+            },
+            "ledger: verified",
+        ),
+    ],
+)
+def test_human_strict_verification_documents_render(
+    document: dict[str, object],
+    expected: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_setup._print_document(document, as_json=False)
+    assert expected in capsys.readouterr().out
 
 
 def test_setup_parser_exposes_no_secret_or_unbounded_mutation_options() -> None:
@@ -550,4 +645,193 @@ def test_apply_cli_bounds_executor_authorization_and_unexpected_failures(
     assert cli_setup._cmd_apply(args) == 2
     output = capsys.readouterr().out
     assert json.loads(output)["code"] == "application_effect_failed"
+    assert "secret" not in output
+
+
+def test_verification_plan_cli_success_and_bounded_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    plan = {
+        "profile": "local-single-user",
+        "target": {
+            "uri": "ws://localhost:8876",
+            "project": "DEMO",
+            "identity": "DEMO/one",
+        },
+    }
+    result = {
+        "document_kind": "verification_plan",
+        "profile": "local-single-user",
+        "profile_version": 1,
+        "verification_plan_digest": "a" * 64,
+        "current_hub_pid": 4321,
+    }
+    monkeypatch.setattr(cli_setup, "load_setup_plan", lambda _path: plan)
+    monkeypatch.setattr(
+        cli_setup, "load_historical_setup_authorization", lambda *_args, **_kwargs: {"auth": 1}
+    )
+    monkeypatch.setattr(
+        cli_setup, "load_application_receipt", lambda *_args, **_kwargs: {"receipt": 1}
+    )
+
+    async def inspected(*_args: object, **_kwargs: object) -> dict[str, object]:
+        assert _kwargs["uri"] == "ws://localhost:8876"
+        assert _kwargs["project"] is None
+        assert _kwargs["agent_id"] is None
+        environment = cast(dict[str, str], _kwargs["env"])
+        assert environment["SYN_PROJECT"] == "DEMO"
+        assert environment["SYN_IDENTITY"] == "DEMO/one"
+        return {"ready": True}
+
+    monkeypatch.setattr(cli_setup, "inspect_setup", inspected)
+    monkeypatch.setattr(cli_setup, "build_verification_plan", lambda *_args: result)
+    args = argparse.Namespace(
+        plan=Path("plan.json"),
+        authorization=Path("authorization.json"),
+        application_receipt=Path("application.json"),
+        json=True,
+    )
+    assert cli_setup._cmd_verification_plan(args) == 0
+    assert json.loads(capsys.readouterr().out)["document_kind"] == "verification_plan"
+
+    def refused(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise SetupVerificationError("invalid_application_receipt")
+
+    monkeypatch.setattr(cli_setup, "load_application_receipt", refused)
+    assert cli_setup._cmd_verification_plan(args) == 2
+    assert json.loads(capsys.readouterr().out)["code"] == "invalid_application_receipt"
+
+    monkeypatch.setattr(
+        cli_setup,
+        "load_setup_plan",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("Bearer secret")),
+    )
+    assert cli_setup._cmd_verification_plan(args) == 2
+    output = capsys.readouterr().out
+    assert json.loads(output)["code"] == "verification_planning_failed"
+    assert "secret" not in output
+
+
+def test_authorize_verification_cli_success_and_bounded_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    plan = {"profile": "local-single-user", "verification_plan_digest": "a" * 64}
+    result = {
+        "document_kind": "verification_authorization",
+        "profile": "local-single-user",
+        "profile_version": 1,
+        "verification_authorization_digest": "b" * 64,
+        "verification_plan_digest": "a" * 64,
+        "expires_at": 500,
+    }
+    monkeypatch.setattr(cli_setup, "load_verification_plan", lambda _path: plan)
+    monkeypatch.setattr(cli_setup, "build_verification_authorization", lambda *_args, **_kw: result)
+    args = argparse.Namespace(
+        verification_plan=Path("verification-plan.json"),
+        confirm_digest="a" * 64,
+        nonce="verification_nonce_0123456789",
+        expires_in=300,
+        authorize_restart_pid=4321,
+        json=True,
+    )
+    assert cli_setup._cmd_authorize_verification(args) == 0
+    assert json.loads(capsys.readouterr().out)["document_kind"] == "verification_authorization"
+
+    monkeypatch.setattr(
+        cli_setup,
+        "build_verification_authorization",
+        lambda *_args, **_kw: (_ for _ in ()).throw(SetupVerificationError("digest_mismatch")),
+    )
+    assert cli_setup._cmd_authorize_verification(args) == 2
+    assert json.loads(capsys.readouterr().out)["code"] == "digest_mismatch"
+
+    monkeypatch.setattr(
+        cli_setup,
+        "load_verification_plan",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("Bearer secret")),
+    )
+    assert cli_setup._cmd_authorize_verification(args) == 2
+    output = capsys.readouterr().out
+    assert json.loads(output)["code"] == "verification_authorization_failed"
+    assert "secret" not in output
+
+
+def test_verify_cli_projects_verdicts_and_bounded_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    plan = {"profile": "local-single-user", "verification_plan_digest": "a" * 64}
+    authorization = {"verification_authorization_digest": "b" * 64}
+    monkeypatch.setattr(cli_setup, "load_verification_plan", lambda _path: plan)
+    monkeypatch.setattr(
+        cli_setup,
+        "load_verification_authorization",
+        lambda *_args, **_kwargs: authorization,
+    )
+
+    async def verified(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "document_kind": "verification_receipt",
+            "profile": "local-single-user",
+            "profile_version": 1,
+            "outcome": "verified",
+            "receipt_digest": "c" * 64,
+            "ledger_state": "verified",
+        }
+
+    monkeypatch.setattr(cli_setup, "verify_setup", verified)
+    args = argparse.Namespace(
+        verification_plan=Path("verification-plan.json"),
+        verification_authorization=Path("verification-authorization.json"),
+        confirm_digest="a" * 64,
+        protect_pid=[1234],
+        receipt=None,
+        json=True,
+    )
+    assert cli_setup._cmd_verify(args) == 0
+    assert json.loads(capsys.readouterr().out)["outcome"] == "verified"
+
+    async def failed(*_args: object, **_kwargs: object) -> dict[str, object]:
+        receipt = await verified()
+        receipt["outcome"] = "failed"
+        receipt["ledger_state"] = "failed"
+        return receipt
+
+    monkeypatch.setattr(cli_setup, "verify_setup", failed)
+    assert cli_setup._cmd_verify(args) == 1
+    assert json.loads(capsys.readouterr().out)["outcome"] == "failed"
+
+    async def refusal(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise SetupVerificationError("verification_target_changed")
+
+    monkeypatch.setattr(cli_setup, "verify_setup", refusal)
+    assert cli_setup._cmd_verify(args) == 2
+    assert json.loads(capsys.readouterr().out)["code"] == "verification_target_changed"
+
+    carried: dict[str, object] = {
+        "document_kind": "verification_receipt",
+        "profile": "local-single-user",
+        "profile_version": 1,
+        "outcome": "failed",
+        "receipt_digest": "c" * 64,
+        "ledger_state": "failed",
+    }
+
+    async def receipt_refusal(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise SetupVerificationError("verification_receipt_unavailable", receipt=carried)
+
+    monkeypatch.setattr(cli_setup, "verify_setup", receipt_refusal)
+    assert cli_setup._cmd_verify(args) == 2
+    assert json.loads(capsys.readouterr().out)["outcome"] == "failed"
+
+    monkeypatch.setattr(
+        cli_setup,
+        "load_verification_authorization",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Bearer secret")),
+    )
+    assert cli_setup._cmd_verify(args) == 2
+    output = capsys.readouterr().out
+    assert json.loads(output)["code"] == "verification_replay_failed"
     assert "secret" not in output

@@ -296,7 +296,8 @@ Native Windows service setup is not
 claimed; use WSL with systemd as documented in the deployment guide.
 
 For agent-assisted environment preparation, `synapse setup spec`, `inspect`,
-`plan`, `authorize`, and `apply` expose the packaged `synapse-setup.v1`
+`plan`, `authorize`, `apply`, `verification-plan`, `authorize-verification`,
+and `verify` expose the packaged `synapse-setup.v1`
 contract. The first three describe requirements, observe the host, and bind a
 credential-free target to a non-executable SHA-256 plan. `authorize` emits a
 short-lived envelope for one reviewed plan. Restart authority must match the
@@ -306,8 +307,13 @@ Linux with systemd-user,
 reserves the authorization in a private replay ledger, and may install or start
 only the package-owned local hub and exact waiter units. It preserves declared
 PIDs, emits a digest-bound receipt, and restores prior unit and service state on
-failure. Package, Python, identity, secret, remote, macOS, native Windows, and
-container changes remain blocked. See
+failure. After a successful application, the separate verification transaction
+sends one directed canary, requires the exact waiter's durable ACK, restarts
+only the authorized hub PID, proves replay through a new hub PID, re-inspects
+the bound generation, and preserves declared terminal/provider PIDs. It emits a
+single-use, digest-bound verification receipt; an application receipt alone is
+not strict end-to-end readiness evidence. Package, Python, identity, secret,
+remote, macOS, native Windows, and container changes remain blocked. See
 [Machine-readable setup](docs/machine-readable-setup.md) for the schema,
 expiry, nonce-consumption, and exact-PID authority rules.
 
@@ -1618,11 +1624,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.24 |
 | Public API exports | 70 |
-| Package modules | 541 |
-| Classes | 814 |
+| Package modules | 543 |
+| Classes | 822 |
 | Wire message types | 80 |
-| CLI subcommands | 191 |
-| Test functions | 9491 |
+| CLI subcommands | 194 |
+| Test functions | 9531 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 63 |
 | GitHub Actions workflows | 25 |

@@ -11,16 +11,17 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 `synapse setup` gives an LLM agent a versioned description of what Synapse
 needs, a read-only host inspection, an immutable plan, a short-lived
-authorization, and a fail-closed executor for the initial package-owned Linux
-service effects. The initial contract is `synapse-setup.v1`; its first profile
-is `local-single-user`.
+authorization, a fail-closed executor for the initial package-owned Linux
+service effects, and strict end-to-end verification. The initial contract is
+`synapse-setup.v1`; its first profile is `local-single-user`.
 
-`spec`, `inspect`, `plan`, and `authorize` do not mutate the host. `apply` is a
-separate explicit mutation boundary: it consumes one exact authorization and
-may install or start only the local hub and exact identity waiter described
-below. It never installs or replaces Python, the package, identity
-configuration, a terminal, or a provider process. The JSON Schema is shipped
-in the installed wheel as
+`spec`, `inspect`, `plan`, `authorize`, `verification-plan`, and
+`authorize-verification` do not mutate the host. `apply` and `verify` are
+separate explicit effect boundaries. `apply` may install or start only the
+local hub and exact identity waiter described below. `verify` sends one
+directed canary and restarts only the already-managed local hub. Neither command
+installs or replaces Python, the package, identity configuration, a terminal,
+or a provider process. The JSON Schema is shipped in the installed wheel as
 `synapse_channel/schemas/synapse-setup-v1.schema.json`.
 
 ## Read the profile contract
@@ -31,7 +32,8 @@ synapse setup spec --profile local-single-user --json
 
 The deterministic `spec` document lists every requirement, whether it is
 mandatory, the evidence source, and its remedy. The supported operations are
-exactly `spec`, `inspect`, `plan`, `authorize`, and `apply`.
+exactly `spec`, `inspect`, `plan`, `authorize`, `apply`, `verification-plan`,
+`authorize-verification`, and `verify`.
 
 ## Inspect a host
 
@@ -179,11 +181,92 @@ directories, checks protected PIDs again, and records `recovered`. If exact
 restoration cannot be proven, the receipt says `recovery_failed` and the ledger
 remains `failed`; this is never reported as success.
 
+## Prove strict end-to-end operation
+
+A successful application receipt proves that the executor established and
+checked the services. It does not prove that a directed message reaches the
+exact waiter or that the hub replays it after restart. Build a fresh
+verification plan from all three application documents:
+
+```bash
+synapse setup verification-plan \
+  --plan ./setup-plan.json \
+  --authorization ./setup-authorization.json \
+  --application-receipt ./setup-receipt.json \
+  --json > setup-verification-plan.json
+```
+
+This command validates the original plan, historical authorization, and exact
+successful application receipt. It then performs a fresh inspection and binds
+the current target, executable generation, application evidence digests, and
+active hub PID into `verification_plan_digest`. Any failed or recovered
+receipt, changed target or generation, absent waiter, or unavailable hub PID
+fails closed.
+
+Review the verification plan and separately authorize its exact restart PID:
+
+```bash
+synapse setup authorize-verification \
+  --verification-plan ./setup-verification-plan.json \
+  --confirm-digest VERIFICATION_PLAN_DIGEST_FROM_THE_REVIEWED_PLAN \
+  --nonce A_NEW_UNIQUE_URL_SAFE_TOKEN_OF_AT_LEAST_22_CHARACTERS \
+  --expires-in 300 \
+  --authorize-restart-pid HUB_PID_FROM_THE_VERIFICATION_PLAN \
+  --json > setup-verification-authorization.json
+```
+
+Use a new nonce; do not reuse the application nonce. The authorization lasts
+30–900 seconds, binds the exact verification plan and PID, and remains inert
+until `verify` consumes it.
+
+Run verification only after reviewing both documents. Declare every additional
+terminal or provider process that must remain alive; the executor always
+protects its direct parent process:
+
+```bash
+synapse setup verify \
+  --verification-plan ./setup-verification-plan.json \
+  --verification-authorization ./setup-verification-authorization.json \
+  --confirm-digest VERIFICATION_PLAN_DIGEST_FROM_THE_REVIEWED_PLAN \
+  --protect-pid 12345 \
+  --receipt "$PWD/setup-verification-receipt.json" \
+  --json
+```
+
+`verify` takes a non-blocking owner-only host lock and reserves the
+authorization before its first write. It then:
+
+- sends a receipt-requested canary to the exact target without including a
+  credential or user payload;
+- requires the durable chat row and the target waiter's exact
+  `mailbox_watermark` ACK;
+- restarts only `synapse-hub.service` through fixed argv;
+- requires a different live `MainPID`, a hub history snapshot containing the
+  exact canary, and unchanged durable event digests;
+- freshly re-inspects the target and bound executable generation;
+- proves every protected PID remained alive.
+
+The owner-only verification ledger stores a domain-separated nonce digest,
+never the nonce, and rejects replay across processes. A successful receipt has
+`outcome: verified`, `ledger_state: verified`, five passing checks, both hub
+PIDs, and redacted event digests. A failed probe records `outcome: failed` and
+the first stable `failure_code`; it never claims rollback or recovery because
+the canary append and authorized restart are deliberate verification effects.
+The receipt contains no token or canary payload.
+
+`verify` supports the package-owned local Linux/systemd-user profile and its
+local plaintext SQLite event store. A secured local hub may use the existing
+`SYNAPSE_TOKEN` environment value; the verifier never emits it. Remote hubs,
+SQLCipher stores, containers, macOS launchd, and native Windows services remain
+outside this verifier.
+
 `inspect` exits `0` when required checks pass and `1` when inspection completes
-but the profile is not ready. Valid `plan` and `authorize` output exits `0`.
+but the profile is not ready. Valid planning and authorization output exits `0`.
 `apply` exits `0` only for `applied`, `1` after a proven `recovered` failure,
 and `2` for a precondition, authorization, receipt, or unrecoverable executor
-error. Consumers should parse `schema_version`, `document_kind`, `code`,
+error. `verify` exits `0` only for `verified`, `1` for a recorded verification
+failure, and `2` for an invalid document, rejected precondition, or unavailable
+receipt. Consumers should parse `schema_version`, `document_kind`, `code`,
 `outcome`, and per-check status, not human text.
 
 ## Validate output from an installed wheel
@@ -209,17 +292,16 @@ Draft202012Validator(json.loads(schema_path.read_text())).validate(document)
 `jsonschema` belongs to this consumer example; the Synapse base installation
 does not require it.
 
-## Compatibility and remaining release gate
+## Compatibility and readiness evidence
 
 Consumers must refuse unknown schema or profile versions. Incompatible field
 changes require a new schema version. Inspection and plans are evidence, never
 permission. Authorization is bounded input for the separate executor, not an
 executable script or general capability.
 
-This tranche verifies unit ownership, systemd active state, non-zero service
-PIDs, protected-PID continuity, replay refusal, and bounded restoration. Strict
-profile verification—including a directed canary and durable event-store
-restart/replay evidence—is a separate release gate and is not implied by an
-`applied` receipt. macOS launchd, native Windows services, containers, remote
-hubs, secret provisioning, package replacement, and identity persistence remain
-unsupported by this executor.
+An `applied` receipt is service-application evidence, not strict readiness
+evidence. Consumers that require end-to-end readiness must require a valid
+`verified` receipt from the exact plan lineage. macOS launchd, native Windows
+services, containers, remote hubs, encrypted event stores, secret provisioning,
+package replacement, and identity persistence remain unsupported by this
+executor and verifier.

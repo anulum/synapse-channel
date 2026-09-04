@@ -34,7 +34,8 @@ _LOCAL_SINGLE_USER = SetupProfile(
     summary="One user, one loopback Synapse hub, and one durable waiter for the resolved identity.",
     scope=(
         "Discovery plus explicitly authorized package-owned Linux systemd-user service effects; "
-        "package, interpreter, platform, and identity changes remain unsupported."
+        "strict verification may send one canary and restart the managed hub; package, "
+        "interpreter, platform, and identity changes remain unsupported."
     ),
     requirements=(
         SetupRequirement(
@@ -123,6 +124,15 @@ def build_setup_spec(profile: SetupProfile) -> dict[str, object]:
         "summary": profile.summary,
         "scope": profile.scope,
         "read_only": True,
-        "supported_operations": ["spec", "inspect", "plan", "authorize", "apply"],
+        "supported_operations": [
+            "spec",
+            "inspect",
+            "plan",
+            "authorize",
+            "apply",
+            "verification-plan",
+            "authorize-verification",
+            "verify",
+        ],
         "requirements": [requirement.as_dict() for requirement in profile.requirements],
     }

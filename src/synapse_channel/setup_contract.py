@@ -32,7 +32,16 @@ SetupEffectAuthority = Literal["operator_confirmation", "operator_restart_author
 SetupEffectDisruption = Literal[
     "configuration_change", "environment_change", "service_start", "host_migration"
 ]
-SetupCommand = Literal["spec", "inspect", "plan", "authorize", "apply"]
+SetupCommand = Literal[
+    "spec",
+    "inspect",
+    "plan",
+    "authorize",
+    "apply",
+    "verification-plan",
+    "authorize-verification",
+    "verify",
+]
 SetupErrorCode = Literal[
     "unknown_profile",
     "invalid_uri",
@@ -59,6 +68,20 @@ SetupErrorCode = Literal[
     "application_effect_failed",
     "application_recovery_failed",
     "application_receipt_unavailable",
+    "invalid_application_receipt",
+    "verification_planning_failed",
+    "invalid_verification_plan",
+    "verification_authorization_failed",
+    "invalid_verification_authorization",
+    "verification_authorization_replayed",
+    "verification_ledger_unavailable",
+    "verification_target_changed",
+    "verification_lock_unavailable",
+    "verification_protected_process_missing",
+    "verification_canary_failed",
+    "verification_restart_failed",
+    "verification_replay_failed",
+    "verification_receipt_unavailable",
 ]
 
 MAX_SETUP_URI_LENGTH = 2048
@@ -317,6 +340,28 @@ def setup_error_document(
         "application_effect_failed": "An allow-listed setup effect failed.",
         "application_recovery_failed": "A failed setup effect could not be fully recovered.",
         "application_receipt_unavailable": "The setup receipt could not be written safely.",
+        "invalid_application_receipt": "The application receipt is not a valid successful result.",
+        "verification_planning_failed": "A strict verification plan could not be derived safely.",
+        "invalid_verification_plan": "The strict verification plan is invalid.",
+        "verification_authorization_failed": (
+            "A strict verification authorization could not be produced."
+        ),
+        "invalid_verification_authorization": "The strict verification authorization is invalid.",
+        "verification_authorization_replayed": (
+            "The strict verification authorization was already reserved."
+        ),
+        "verification_ledger_unavailable": "The strict verification ledger is unavailable.",
+        "verification_target_changed": "The strict verification target changed or is not ready.",
+        "verification_lock_unavailable": (
+            "Another strict verification transaction owns the host lock."
+        ),
+        "verification_protected_process_missing": "A protected process did not remain alive.",
+        "verification_canary_failed": "Directed canary delivery and consumption were not proven.",
+        "verification_restart_failed": "The exact authorised hub restart was not proven.",
+        "verification_replay_failed": "The canary event was not proven unchanged after restart.",
+        "verification_receipt_unavailable": (
+            "The strict verification receipt could not be written safely."
+        ),
     }
     return {
         "schema_version": SETUP_SCHEMA_VERSION,

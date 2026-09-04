@@ -8,6 +8,9 @@
     { "$ref": "#/$defs/plan" },
     { "$ref": "#/$defs/authorization" },
     { "$ref": "#/$defs/application_receipt" },
+    { "$ref": "#/$defs/verification_plan" },
+    { "$ref": "#/$defs/verification_authorization" },
+    { "$ref": "#/$defs/verification_receipt" },
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
@@ -118,7 +121,10 @@
                 { "const": "inspect" },
                 { "const": "plan" },
                 { "const": "authorize" },
-                { "const": "apply" }
+                { "const": "apply" },
+                { "const": "verification-plan" },
+                { "const": "authorize-verification" },
+                { "const": "verify" }
               ],
               "items": false
             },
@@ -409,6 +415,262 @@
         }
       ]
     },
+    "verification_plan": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": { "const": "synapse-setup.v1" },
+            "document_kind": { "const": "verification_plan" },
+            "profile": { "const": "local-single-user" },
+            "profile_version": { "const": 1 },
+            "read_only": { "const": true },
+            "can_verify": { "const": true },
+            "plan_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "authorization_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "application_receipt_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "inspection_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "verification_plan_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "target": { "$ref": "#/$defs/target" },
+            "generation": { "$ref": "#/$defs/generation" },
+            "current_hub_pid": { "type": "integer", "minimum": 2, "maximum": 2147483647 },
+            "required_checks": {
+              "type": "array",
+              "prefixItems": [
+                { "const": "directed_canary_delivery" },
+                { "const": "exact_waiter_consumption" },
+                { "const": "durable_restart_replay" },
+                { "const": "strict_reinspection" },
+                { "const": "protected_process_continuity" }
+              ],
+              "items": false
+            },
+            "warnings": {
+              "type": "array",
+              "prefixItems": [
+                { "const": "restart_authorization_required" },
+                { "const": "single_use_verification" }
+              ],
+              "items": false
+            }
+          },
+          "required": [
+            "schema_version", "document_kind", "profile", "profile_version", "read_only",
+            "can_verify", "plan_digest", "authorization_digest", "application_receipt_digest",
+            "inspection_digest", "verification_plan_digest", "target", "generation",
+            "current_hub_pid", "required_checks", "warnings"
+          ]
+        }
+      ]
+    },
+    "verification_authorization": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": { "const": "synapse-setup.v1" },
+            "document_kind": { "const": "verification_authorization" },
+            "profile": { "const": "local-single-user" },
+            "profile_version": { "const": 1 },
+            "read_only": { "const": true },
+            "can_verify": { "const": true },
+            "verification_plan_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "verification_authorization_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "target": { "$ref": "#/$defs/target" },
+            "confirmation_nonce": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22,128}$" },
+            "issued_at": { "type": "integer", "minimum": 0 },
+            "expires_at": { "type": "integer", "minimum": 30 },
+            "restart_authority": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pid": { "type": "integer", "minimum": 2, "maximum": 2147483647 }
+              },
+              "required": ["pid"]
+            },
+            "consumption_required": { "const": true },
+            "warnings": {
+              "type": "array",
+              "prefixItems": [{ "const": "single_use_verification_authorization" }],
+              "items": false
+            }
+          },
+          "required": [
+            "schema_version", "document_kind", "profile", "profile_version", "read_only",
+            "can_verify", "verification_plan_digest", "verification_authorization_digest",
+            "target", "confirmation_nonce", "issued_at", "expires_at", "restart_authority",
+            "consumption_required", "warnings"
+          ]
+        }
+      ]
+    },
+    "verification_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "enum": [
+            "directed_canary_delivery", "exact_waiter_consumption", "durable_restart_replay",
+            "strict_reinspection", "protected_process_continuity"
+          ]
+        },
+        "status": { "enum": ["pass", "fail", "not_run"] }
+      },
+      "required": ["id", "status"]
+    },
+    "verification_receipt": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": { "const": "synapse-setup.v1" },
+            "document_kind": { "const": "verification_receipt" },
+            "profile": { "const": "local-single-user" },
+            "profile_version": { "const": 1 },
+            "verification_plan_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "verification_authorization_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "plan_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "authorization_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "application_receipt_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "receipt_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "target": { "$ref": "#/$defs/target" },
+            "generation": { "$ref": "#/$defs/generation" },
+            "started_at": { "type": "integer", "minimum": 0 },
+            "completed_at": { "type": "integer", "minimum": 0 },
+            "outcome": { "enum": ["verified", "failed"] },
+            "ledger_state": { "enum": ["verified", "failed"] },
+            "canary_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+            "message_seq": {
+              "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 1 }]
+            },
+            "chat_digest": {
+              "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[0-9a-f]{64}$" }]
+            },
+            "ack_event_seq": {
+              "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 1 }]
+            },
+            "ack_digest": {
+              "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[0-9a-f]{64}$" }]
+            },
+            "hub_pid_before": { "type": "integer", "minimum": 2, "maximum": 2147483647 },
+            "hub_pid_after": {
+              "oneOf": [
+                { "type": "null" },
+                { "type": "integer", "minimum": 2, "maximum": 2147483647 }
+              ]
+            },
+            "protected_processes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/protected_process" }
+            },
+            "checks": {
+              "type": "array",
+              "minItems": 5,
+              "maxItems": 5,
+              "prefixItems": [
+                {
+                  "allOf": [
+                    { "$ref": "#/$defs/verification_check" },
+                    { "properties": { "id": { "const": "directed_canary_delivery" } } }
+                  ]
+                },
+                {
+                  "allOf": [
+                    { "$ref": "#/$defs/verification_check" },
+                    { "properties": { "id": { "const": "exact_waiter_consumption" } } }
+                  ]
+                },
+                {
+                  "allOf": [
+                    { "$ref": "#/$defs/verification_check" },
+                    { "properties": { "id": { "const": "durable_restart_replay" } } }
+                  ]
+                },
+                {
+                  "allOf": [
+                    { "$ref": "#/$defs/verification_check" },
+                    { "properties": { "id": { "const": "strict_reinspection" } } }
+                  ]
+                },
+                {
+                  "allOf": [
+                    { "$ref": "#/$defs/verification_check" },
+                    { "properties": { "id": { "const": "protected_process_continuity" } } }
+                  ]
+                }
+              ],
+              "items": false
+            },
+            "failure_code": {
+              "oneOf": [
+                { "type": "null" },
+                {
+                  "enum": [
+                    "verification_target_changed", "verification_protected_process_missing",
+                    "verification_canary_failed", "verification_restart_failed",
+                    "verification_replay_failed"
+                  ]
+                }
+              ]
+            }
+          },
+          "required": [
+            "schema_version", "document_kind", "profile", "profile_version",
+            "verification_plan_digest", "verification_authorization_digest", "plan_digest",
+            "authorization_digest", "application_receipt_digest", "receipt_digest", "target",
+            "generation", "started_at", "completed_at", "outcome", "ledger_state", "canary_id",
+            "message_seq", "chat_digest", "ack_event_seq", "ack_digest", "hub_pid_before",
+            "hub_pid_after", "protected_processes", "checks", "failure_code"
+          ],
+          "allOf": [
+            {
+              "if": { "properties": { "outcome": { "const": "verified" } } },
+              "then": {
+                "properties": {
+                  "ledger_state": { "const": "verified" },
+                  "message_seq": { "type": "integer", "minimum": 1 },
+                  "chat_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "ack_event_seq": { "type": "integer", "minimum": 1 },
+                  "ack_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "hub_pid_after": { "type": "integer", "minimum": 2, "maximum": 2147483647 },
+                  "failure_code": { "type": "null" },
+                  "checks": { "items": { "properties": { "status": { "const": "pass" } } } },
+                  "protected_processes": {
+                    "items": { "properties": { "after_alive": { "const": true } } }
+                  }
+                }
+              }
+            },
+            {
+              "if": { "properties": { "outcome": { "const": "failed" } } },
+              "then": {
+                "properties": {
+                  "ledger_state": { "const": "failed" },
+                  "failure_code": { "type": "string" },
+                  "checks": {
+                    "contains": {
+                      "type": "object",
+                      "properties": { "status": { "const": "fail" } },
+                      "required": ["status"]
+                    },
+                    "minContains": 1,
+                    "maxContains": 1
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
     "error": {
       "allOf": [
         { "$ref": "#/$defs/base" },
@@ -418,7 +680,12 @@
           "properties": {
             "schema_version": { "const": "synapse-setup.v1" },
             "document_kind": { "const": "error" },
-            "command": { "enum": ["spec", "inspect", "plan", "authorize", "apply"] },
+            "command": {
+              "enum": [
+                "spec", "inspect", "plan", "authorize", "apply", "verification-plan",
+                "authorize-verification", "verify"
+              ]
+            },
             "profile": { "type": "string", "minLength": 1, "maxLength": 128 },
             "code": {
               "enum": [
@@ -431,7 +698,14 @@
                 "application_target_changed", "application_platform_unsupported",
                 "application_lock_unavailable", "application_protected_process_missing",
                 "application_effect_failed", "application_recovery_failed",
-                "application_receipt_unavailable"
+                "application_receipt_unavailable", "invalid_application_receipt",
+                "verification_planning_failed", "invalid_verification_plan",
+                "verification_authorization_failed", "invalid_verification_authorization",
+                "verification_authorization_replayed", "verification_ledger_unavailable",
+                "verification_target_changed", "verification_lock_unavailable",
+                "verification_protected_process_missing", "verification_canary_failed",
+                "verification_restart_failed", "verification_replay_failed",
+                "verification_receipt_unavailable"
               ]
             },
             "message": { "type": "string", "minLength": 1 }

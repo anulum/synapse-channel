@@ -15,7 +15,7 @@ everything, since they need the whole command table.
 | --- | --- |
 | `synapse hub` | Run the coordination hub. |
 | `synapse commands` | List every subcommand by stability tier, or inspect a measured profile with `--profile first-use|core|adapters|governance|labs|all` and optional `--json`. |
-| `synapse setup` | Emit the `local-single-user` setup specification; inspect and plan; issue a short-lived authorization; or consume it through the allow-listed Linux/systemd-user hub and waiter executor with recovery receipts. |
+| `synapse setup` | Emit the `local-single-user` setup specification; inspect, plan, authorize, and apply allow-listed Linux/systemd-user effects; then authorize and prove directed waiter consumption plus durable hub restart replay. |
 | `synapse completions` | Print a static tab-completion script for bash, zsh, or fish, generated from the installed CLI. |
 | `synapse demo` | Run the real hub/Git/claim/guard/receipt path with scripted in-process identities labelled `CLAUDE` and `CODEX`; no provider CLI or model turn is launched. Writes JSON plus a static dashboard (`--output DIR` selects the destination). |
 | `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression; `--trend STORE.db` accumulates runs and renders per-metric sparkline trends (`--ascii` for a printable-ASCII trend block); `--alert` gates the run statistically against its own same-context history, exit `1` on drift. |
@@ -132,8 +132,15 @@ authorization and run `synapse setup apply --plan FILE --authorization FILE
 that command re-inspects the target, reserves the nonce once, and applies only
 the package-owned local hub and exact waiter effects. `--protect-pid PID` is
 repeatable; bounded failure recovery and digest-bound receipts are mandatory.
-Non-apply operations remain non-mutating and no setup command accepts a secret
-in argv.
+After a successful apply, run `verification-plan` with the original plan,
+authorization, and application receipt; review and authorize its exact digest
+with `authorize-verification`; then run `verify`. Verification sends one
+directed canary, observes the exact waiter ACK, restarts only the bound
+`synapse-hub.service` PID, proves replay through a different PID, re-inspects
+the target, and checks protected processes. `spec`, `inspect`, `plan`,
+`authorize`, `verification-plan`, and `authorize-verification` do not mutate the
+host. `apply` and `verify` are explicit effect boundaries. No setup command
+accepts a secret in argv.
 See [Machine-readable setup](machine-readable-setup.md).
 
 The unfiltered command prints all five stability tiers. A profile is a

@@ -15,6 +15,15 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Add `synapse setup verification-plan|authorize-verification|verify` to the
+  `synapse-setup.v1` contract. The separate, single-use transaction binds the
+  original application lineage and a fresh inspection, sends one directed
+  canary, requires the exact waiter's durable ACK, restarts only the authorized
+  local hub PID, proves replay through a different PID, re-inspects the bound
+  executable generation, preserves declared processes, and emits a redacted
+  digest-bound verification receipt. Owner-only replay state stores a
+  domain-separated nonce digest. Failed verification records stable evidence
+  without claiming rollback or recovery.
 - Add the versioned `synapse setup spec|inspect|plan|authorize|apply`
   machine-readable contract for agent-assisted host setup. The initial
   `local-single-user` profile reports

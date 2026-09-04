@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 import time
 from collections.abc import Callable, Coroutine
@@ -30,6 +31,16 @@ from synapse_channel.setup_executor import SetupExecutionError, apply_setup
 from synapse_channel.setup_inspector import inspect_setup
 from synapse_channel.setup_planner import build_setup_plan
 from synapse_channel.setup_profiles import build_setup_spec, get_setup_profile
+from synapse_channel.setup_verification import (
+    SetupVerificationError,
+    build_verification_authorization,
+    build_verification_plan,
+    load_application_receipt,
+    load_historical_setup_authorization,
+    load_verification_authorization,
+    load_verification_plan,
+)
+from synapse_channel.setup_verifier import verify_setup
 
 
 def _print_document(document: dict[str, object], *, as_json: bool) -> None:
@@ -66,6 +77,22 @@ def _print_document(document: dict[str, object], *, as_json: bool) -> None:
         print(f"expires: {document['expires_at']}")
         return
     if kind == "application_receipt":
+        print(f"outcome: {document['outcome']}")
+        print(f"receipt: {document['receipt_digest']}")
+        print(f"ledger: {document['ledger_state']}")
+        return
+    if kind == "verification_plan":
+        print("verification: strict directed consumption plus durable restart/replay")
+        print(f"digest: {document['verification_plan_digest']}")
+        print(f"restart PID: {document['current_hub_pid']}")
+        return
+    if kind == "verification_authorization":
+        print("verification authorization: single use; exact hub restart authority")
+        print(f"digest: {document['verification_authorization_digest']}")
+        print(f"plan: {document['verification_plan_digest']}")
+        print(f"expires: {document['expires_at']}")
+        return
+    if kind == "verification_receipt":
         print(f"outcome: {document['outcome']}")
         print(f"receipt: {document['receipt_digest']}")
         print(f"ledger: {document['ledger_state']}")
@@ -278,6 +305,149 @@ def _cmd_apply(
     return 1 if document["outcome"] == "recovered" else 2
 
 
+def _cmd_verification_plan(
+    args: argparse.Namespace,
+    *,
+    async_runner: Callable[
+        [Coroutine[Any, Any, dict[str, object]]], dict[str, object]
+    ] = asyncio.run,
+) -> int:
+    profile = "unknown"
+    try:
+        plan = load_setup_plan(args.plan)
+        profile = cast(str, plan["profile"])
+        authorization = load_historical_setup_authorization(args.authorization, plan=plan)
+        application_receipt = load_application_receipt(
+            args.application_receipt,
+            plan=plan,
+            authorization=authorization,
+        )
+        target = cast(dict[str, str], plan["target"])
+        setup_profile = cast(Any, get_setup_profile(profile))
+        inspection_env = {
+            **os.environ,
+            "SYN_PROJECT": target["project"],
+            "SYN_IDENTITY": target["identity"],
+        }
+        inspection = async_runner(
+            inspect_setup(
+                setup_profile,
+                uri=target["uri"],
+                project=None,
+                agent_id=None,
+                env=inspection_env,
+            )
+        )
+        document = build_verification_plan(
+            plan,
+            authorization,
+            application_receipt,
+            inspection,
+        )
+    except (SetupAuthorizationError, SetupVerificationError) as exc:
+        _print_document(
+            setup_error_document(command="verification-plan", profile=profile, code=exc.code),
+            as_json=args.json,
+        )
+        return 2
+    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+        _print_document(
+            setup_error_document(
+                command="verification-plan",
+                profile=profile,
+                code="verification_planning_failed",
+            ),
+            as_json=args.json,
+        )
+        return 2
+    _print_document(document, as_json=args.json)
+    return 0
+
+
+def _cmd_authorize_verification(args: argparse.Namespace) -> int:
+    profile = "unknown"
+    try:
+        plan = load_verification_plan(args.verification_plan)
+        profile = cast(str, plan["profile"])
+        document = build_verification_authorization(
+            plan,
+            confirm_digest=args.confirm_digest,
+            nonce=args.nonce,
+            expires_in=args.expires_in,
+            restart_pid=args.authorize_restart_pid,
+        )
+    except SetupVerificationError as exc:
+        _print_document(
+            setup_error_document(
+                command="authorize-verification",
+                profile=profile,
+                code=exc.code,
+            ),
+            as_json=args.json,
+        )
+        return 2
+    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+        _print_document(
+            setup_error_document(
+                command="authorize-verification",
+                profile=profile,
+                code="verification_authorization_failed",
+            ),
+            as_json=args.json,
+        )
+        return 2
+    _print_document(document, as_json=args.json)
+    return 0
+
+
+def _cmd_verify(
+    args: argparse.Namespace,
+    *,
+    async_runner: Callable[
+        [Coroutine[Any, Any, dict[str, object]]], dict[str, object]
+    ] = asyncio.run,
+) -> int:
+    profile = "unknown"
+    try:
+        plan = load_verification_plan(args.verification_plan)
+        profile = cast(str, plan["profile"])
+        authorization = load_verification_authorization(
+            args.verification_authorization,
+            verification_plan=plan,
+            now=int(time.time()),
+        )
+        document = async_runner(
+            verify_setup(
+                plan,
+                authorization,
+                confirm_digest=args.confirm_digest,
+                protected_pids=tuple(args.protect_pid),
+                receipt_path=args.receipt,
+            )
+        )
+    except SetupVerificationError as exc:
+        if exc.receipt is not None:
+            _print_document(exc.receipt, as_json=args.json)
+        else:
+            _print_document(
+                setup_error_document(command="verify", profile=profile, code=exc.code),
+                as_json=args.json,
+            )
+        return 2
+    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+        _print_document(
+            setup_error_document(
+                command="verify",
+                profile=profile,
+                code="verification_replay_failed",
+            ),
+            as_json=args.json,
+        )
+        return 2
+    _print_document(document, as_json=args.json)
+    return 0 if document["outcome"] == "verified" else 1
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register machine-readable setup inspection and authorized application."""
     setup = subparsers.add_parser(
@@ -334,3 +504,47 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     apply.add_argument("--protect-pid", type=int, action="append", default=[], metavar="PID")
     apply.add_argument("--json", action="store_true", help="Emit one canonical JSON document.")
     apply.set_defaults(func=_cmd_apply)
+
+    verification_plan = actions.add_parser(
+        "verification-plan",
+        help="Bind successful application evidence to a strict restart/replay plan.",
+    )
+    verification_plan.add_argument("--plan", required=True, type=Path, metavar="FILE")
+    verification_plan.add_argument("--authorization", required=True, type=Path, metavar="FILE")
+    verification_plan.add_argument(
+        "--application-receipt", required=True, type=Path, metavar="FILE"
+    )
+    verification_plan.add_argument(
+        "--json", action="store_true", help="Emit one canonical JSON document."
+    )
+    verification_plan.set_defaults(func=_cmd_verification_plan)
+
+    authorize_verification = actions.add_parser(
+        "authorize-verification",
+        help="Authorize one exact strict verification and managed hub restart.",
+    )
+    authorize_verification.add_argument(
+        "--verification-plan", required=True, type=Path, metavar="FILE"
+    )
+    authorize_verification.add_argument("--confirm-digest", required=True, metavar="SHA256")
+    authorize_verification.add_argument("--nonce", required=True, metavar="TOKEN")
+    authorize_verification.add_argument("--expires-in", type=int, default=300, metavar="SECONDS")
+    authorize_verification.add_argument(
+        "--authorize-restart-pid", required=True, type=int, metavar="PID"
+    )
+    authorize_verification.add_argument(
+        "--json", action="store_true", help="Emit one canonical JSON document."
+    )
+    authorize_verification.set_defaults(func=_cmd_authorize_verification)
+
+    verify = actions.add_parser(
+        "verify",
+        help="Consume one authorization and prove canary consumption plus restart replay.",
+    )
+    verify.add_argument("--verification-plan", required=True, type=Path, metavar="FILE")
+    verify.add_argument("--verification-authorization", required=True, type=Path, metavar="FILE")
+    verify.add_argument("--confirm-digest", required=True, metavar="SHA256")
+    verify.add_argument("--receipt", type=Path, metavar="FILE")
+    verify.add_argument("--protect-pid", type=int, action="append", default=[], metavar="PID")
+    verify.add_argument("--json", action="store_true", help="Emit one canonical JSON document.")
+    verify.set_defaults(func=_cmd_verify)
