@@ -15,8 +15,9 @@ All notable changes to this project are documented here.
 
 ### Added
 
-- Add the versioned `synapse setup spec|inspect|plan|authorize` machine-readable contract for
-  agent-assisted host setup. The initial `local-single-user` profile reports
+- Add the versioned `synapse setup spec|inspect|plan|authorize|apply`
+  machine-readable contract for agent-assisted host setup. The initial
+  `local-single-user` profile reports
   installed package, Python, platform, executable, identity, hub, waiter, and
   optional service-manager evidence without writing files, installing services,
   restarting terminals, or accepting secrets on the command line. Its strict
@@ -24,16 +25,28 @@ All notable changes to this project are documented here.
   profile specification, including its credential-free target, to canonical
   SHA-256 digests and allow-listed proposed effects. Authorization then emits a
   30–900 second envelope bound to the exact plan digest, target, unique replay
-  nonce, and any exact restart PID authority. Both remain explicitly
-  non-executable; no apply route or nonce consumer is exposed.
-- Make the setup authorization boundary execution-ready without exposing an
-  executor. Inspection records the active user hub `MainPID`; planning uses
+  nonce, and any exact restart PID authority. Specification, inspection, plan,
+  and authorization documents remain inert; mutation requires the separate
+  explicit `apply` command.
+- Make the setup authorization boundary execution-ready. Inspection records
+  the active user hub `MainPID`; planning uses
   ordinary confirmation for a first start and binds restart authority to that
   exact PID. Environment and identity changes without safe installed-package
   adapters are blocked. Add an owner-only SQLite lifecycle ledger that
   atomically reserves a domain-separated nonce digest, rejects cross-process
-  replay, and retains separate effect and recovery receipt digests for a future
+  replay, and retains separate effect and recovery receipt digests for each
   apply/recover transaction.
+- Add the fail-closed `synapse setup apply` consumer for the initial Linux
+  systemd-user profile. Plans bind the package, Python, Synapse executable,
+  platform, and service-manager generation. The executor freshly re-inspects
+  that generation and target, serializes host mutation, protects declared
+  PIDs, reserves each nonce exactly once, uses only fixed-argv package-owned hub
+  and waiter effects, verifies active service PIDs, emits owner-only
+  digest-bound receipts, and restores prior unit bytes, modes, and service state
+  after partial failure. Managed directory traversal rejects symlink leaves and
+  unsafe child permissions; restoration preserves arbitrary prior unit bytes.
+  Package, environment, and identity changes plus non-Linux service adapters
+  remain blocked.
 
 ## [0.99.24] - 2026-09-04
 

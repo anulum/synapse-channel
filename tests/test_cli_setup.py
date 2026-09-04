@@ -18,7 +18,7 @@ import pytest
 from synapse_channel import cli, cli_setup
 
 
-def test_setup_parser_routes_every_read_only_operation() -> None:
+def test_setup_parser_routes_every_setup_operation() -> None:
     spec = cli.build_parser().parse_args(
         ["setup", "spec", "--profile", "local-single-user", "--json"]
     )
@@ -41,13 +41,30 @@ def test_setup_parser_routes_every_read_only_operation() -> None:
             "--json",
         ]
     )
+    apply = cli.build_parser().parse_args(
+        [
+            "setup",
+            "apply",
+            "--plan",
+            "plan.json",
+            "--authorization",
+            "authorization.json",
+            "--confirm-digest",
+            "a" * 64,
+            "--protect-pid",
+            "1234",
+            "--json",
+        ]
+    )
     assert spec.func is cli_setup._cmd_spec
     assert inspect.func is cli_setup._cmd_inspect
     assert plan.func is cli_setup._cmd_plan
     assert authorize.func is cli_setup._cmd_authorize
+    assert apply.func is cli_setup._cmd_apply
+    assert apply.protect_pid == [1234]
 
 
-def test_setup_parser_exposes_no_secret_or_mutating_options() -> None:
+def test_setup_parser_exposes_no_secret_or_unbounded_mutation_options() -> None:
     parser = cli.build_parser(command="setup")
     help_text = parser.format_help()
     assert parser._subparsers is not None
@@ -115,6 +132,7 @@ def test_human_plan_renders_digest_and_effects(capsys: pytest.CaptureFixture[str
             "document_kind": "plan",
             "profile": "local-single-user",
             "profile_version": 1,
+            "can_apply": True,
             "plan_digest": "a" * 64,
             "effects": [
                 {
@@ -128,7 +146,7 @@ def test_human_plan_renders_digest_and_effects(capsys: pytest.CaptureFixture[str
         as_json=False,
     )
     output = capsys.readouterr().out
-    assert "1 proposed effect(s); apply unavailable" in output
+    assert "1 proposed effect(s); applicable" in output
     assert f"digest: {'a' * 64}" in output
     assert "planned establish_identity_waiter" in output
 
@@ -148,8 +166,27 @@ def test_human_authorization_is_explicitly_output_only(
         as_json=False,
     )
     output = capsys.readouterr().out
-    assert "output only; apply unavailable" in output
+    assert "single use; pass with its exact plan" in output
     assert f"digest: {'a' * 64}" in output
+
+
+def test_human_application_receipt_reports_outcome_and_ledger(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_setup._print_document(
+        {
+            "document_kind": "application_receipt",
+            "profile": "local-single-user",
+            "profile_version": 1,
+            "outcome": "recovered",
+            "receipt_digest": "a" * 64,
+            "ledger_state": "recovered",
+        },
+        as_json=False,
+    )
+    output = capsys.readouterr().out
+    assert "outcome: recovered" in output
+    assert "ledger: recovered" in output
 
 
 def test_unknown_inspect_profile_returns_stable_error(
@@ -375,4 +412,142 @@ def test_authorize_returns_stable_bounded_errors(
     assert cli_setup._cmd_authorize(args) == 2
     output = capsys.readouterr().out
     assert json.loads(output)["code"] == "authorization_failed"
+    assert "secret" not in output
+
+
+def test_apply_missing_plan_uses_the_real_public_cli_error_contract(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    missing = tmp_path / "Bearer-secret-plan.json"
+    assert (
+        cli.main(
+            [
+                "setup",
+                "apply",
+                "--plan",
+                str(missing),
+                "--authorization",
+                str(tmp_path / "authorization.json"),
+                "--confirm-digest",
+                "a" * 64,
+                "--json",
+            ]
+        )
+        == 2
+    )
+    output = capsys.readouterr().out
+    assert json.loads(output)["code"] == "invalid_plan"
+    assert "secret" not in output
+
+
+def test_apply_cli_projects_success_and_recovery_exit_codes(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    plan = {"profile": "local-single-user", "plan_digest": "a" * 64}
+    authorization = {"authorization_digest": "b" * 64}
+    monkeypatch.setattr(cli_setup, "load_setup_plan", lambda _path: plan)
+    monkeypatch.setattr(
+        cli_setup,
+        "load_setup_authorization",
+        lambda _path, **_kwargs: authorization,
+    )
+
+    async def result(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "document_kind": "application_receipt",
+            "profile": "local-single-user",
+            "profile_version": 1,
+            "outcome": "applied",
+            "receipt_digest": "c" * 64,
+            "ledger_state": "applied",
+        }
+
+    monkeypatch.setattr(cli_setup, "apply_setup", result)
+    args = argparse.Namespace(
+        plan=Path("plan.json"),
+        authorization=Path("authorization.json"),
+        confirm_digest="a" * 64,
+        protect_pid=[1234],
+        receipt=None,
+        json=True,
+    )
+    assert cli_setup._cmd_apply(args) == 0
+    assert json.loads(capsys.readouterr().out)["outcome"] == "applied"
+
+    async def recovered(*_args: object, **_kwargs: object) -> dict[str, object]:
+        document = await result()
+        document["outcome"] = "recovered"
+        document["ledger_state"] = "recovered"
+        return document
+
+    monkeypatch.setattr(cli_setup, "apply_setup", recovered)
+    assert cli_setup._cmd_apply(args) == 1
+    assert json.loads(capsys.readouterr().out)["outcome"] == "recovered"
+
+
+def test_apply_cli_bounds_executor_authorization_and_unexpected_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from synapse_channel.setup_authorization import SetupAuthorizationError
+    from synapse_channel.setup_executor import SetupExecutionError
+
+    plan = {"profile": "local-single-user", "plan_digest": "a" * 64}
+    authorization = {"authorization_digest": "b" * 64}
+    monkeypatch.setattr(cli_setup, "load_setup_plan", lambda _path: plan)
+    monkeypatch.setattr(
+        cli_setup,
+        "load_setup_authorization",
+        lambda _path, **_kwargs: authorization,
+    )
+    args = argparse.Namespace(
+        plan=Path("plan.json"),
+        authorization=Path("authorization.json"),
+        confirm_digest="a" * 64,
+        protect_pid=[],
+        receipt=None,
+        json=True,
+    )
+
+    async def execution_error(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise SetupExecutionError("application_target_changed")
+
+    monkeypatch.setattr(cli_setup, "apply_setup", execution_error)
+    assert cli_setup._cmd_apply(args) == 2
+    assert json.loads(capsys.readouterr().out)["code"] == "application_target_changed"
+
+    receipt = {
+        "document_kind": "application_receipt",
+        "profile": "local-single-user",
+        "profile_version": 1,
+        "outcome": "applied",
+        "receipt_digest": "c" * 64,
+        "ledger_state": "applied",
+    }
+
+    async def receipt_error(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise SetupExecutionError("application_receipt_unavailable", receipt=receipt)
+
+    monkeypatch.setattr(cli_setup, "apply_setup", receipt_error)
+    assert cli_setup._cmd_apply(args) == 2
+    assert json.loads(capsys.readouterr().out)["outcome"] == "applied"
+
+    def authorization_error(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise SetupAuthorizationError("authorization_expired")
+
+    monkeypatch.setattr(cli_setup, "load_setup_authorization", authorization_error)
+    assert cli_setup._cmd_apply(args) == 2
+    assert json.loads(capsys.readouterr().out)["code"] == "authorization_expired"
+
+    monkeypatch.setattr(cli_setup, "load_setup_plan", lambda _path: {"profile": 7})
+    monkeypatch.setattr(
+        cli_setup,
+        "load_setup_authorization",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Bearer secret")),
+    )
+    assert cli_setup._cmd_apply(args) == 2
+    output = capsys.readouterr().out
+    assert json.loads(output)["code"] == "application_effect_failed"
     assert "secret" not in output

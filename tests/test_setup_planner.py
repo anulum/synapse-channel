@@ -13,7 +13,7 @@ from copy import deepcopy
 import pytest
 
 from synapse_channel.setup_contract import document_digest, setup_schema
-from synapse_channel.setup_planner import _observed_hub_pid, build_setup_plan
+from synapse_channel.setup_planner import build_setup_plan
 from synapse_channel.setup_profiles import SetupProfile, get_setup_profile
 
 
@@ -49,6 +49,15 @@ def inspection_document(
         "executable": "/usr/bin/systemctl",
         "hub_pid": hub_pid or 0,
     }
+    values = {
+        "package": {"name": "synapse-channel", "version": "0.99.24"},
+        "python": {"executable": "/usr/bin/python3", "version": "3.12.0"},
+        "platform": {"system": "Linux", "release": "test", "machine": "x86_64"},
+        "executable": "/usr/bin/synapse",
+    }
+    for check in checks:
+        if check["id"] in values:
+            check["value"] = values[check["id"]]
     ready = all(
         statuses[requirement.requirement_id] == "pass"
         for requirement in profile.requirements
@@ -87,7 +96,7 @@ def test_ready_plan_is_deterministic_digest_bound_and_non_executable() -> None:
     assert first["can_apply"] is False
     assert first["effects"] == []
     assert first["authority_required"] == []
-    assert first["warnings"] == ["apply_not_available"]
+    assert first["warnings"] == ["no_changes_required"]
     assert first["target"] == inspection["target"]
     assert first["inspection_digest"] == document_digest(inspection)
     unsigned = {key: value for key, value in first.items() if key != "plan_digest"}
@@ -128,7 +137,7 @@ def test_unavailable_and_unsupported_effects_fail_closed() -> None:
     assert by_id["select_supported_platform"]["disposition"] == "blocked"
     assert by_id["establish_local_loopback_hub"]["disposition"] == "blocked"
     assert plan["authority_required"] == []
-    assert plan["warnings"] == ["apply_not_available", "manual_remediation_required"]
+    assert plan["warnings"] == ["manual_remediation_required"]
 
 
 def test_hub_start_and_restart_have_distinct_exact_authority() -> None:
@@ -144,21 +153,20 @@ def test_hub_start_and_restart_have_distinct_exact_authority() -> None:
     assert restart_effects[0]["process_id"] == 4321
 
 
-@pytest.mark.parametrize(
-    "inspection",
-    [
-        {},
-        {"checks": []},
-        {"checks": ["not-an-object"]},
-        {"checks": [{"id": "service_manager", "status": "fail", "value": {}}]},
-        {"checks": [{"id": "service_manager", "status": "pass", "value": None}]},
-        {"checks": [{"id": "service_manager", "status": "pass", "value": {"hub_pid": True}}]},
-    ],
-)
-def test_observed_hub_pid_fails_closed_for_untrusted_evidence(
-    inspection: dict[str, object],
+@pytest.mark.parametrize("hub_pid", [True, "4321", 1, 2_147_483_648])
+def test_public_planner_refuses_untrusted_hub_pid_as_restart_authority(
+    hub_pid: object,
 ) -> None:
-    assert _observed_hub_pid(inspection) is None
+    inspection = inspection_document({"hub": "fail"})
+    checks = inspection["checks"]
+    assert isinstance(checks, list)
+    service_manager = next(check for check in checks if check["id"] == "service_manager")
+    service_manager["value"]["hub_pid"] = hub_pid
+    plan = build_setup_plan(_profile(), inspection)
+    effects = plan["effects"]
+    assert isinstance(effects, list)
+    assert effects[0]["authority"] == "operator_confirmation"
+    assert effects[0]["process_id"] is None
 
 
 def test_non_automatable_host_changes_are_blocked() -> None:
@@ -167,6 +175,26 @@ def test_non_automatable_host_changes_are_blocked() -> None:
     assert isinstance(effects, list)
     assert effects[0]["authority"] == "unsupported"
     assert effects[0]["disposition"] == "blocked"
+
+
+def test_service_effect_is_blocked_when_public_service_manager_evidence_failed() -> None:
+    inspection = inspection_document({"service_manager": "fail", "hub": "fail"})
+    plan = build_setup_plan(_profile(), inspection)
+    effects = plan["effects"]
+    assert isinstance(effects, list)
+    hub = next(effect for effect in effects if effect["id"] == "establish_local_loopback_hub")
+    assert hub["process_id"] is None
+    assert hub["disposition"] == "blocked"
+
+
+def test_planner_refuses_malformed_generation_evidence_through_public_build() -> None:
+    inspection = inspection_document()
+    checks = inspection["checks"]
+    assert isinstance(checks, list)
+    package = next(check for check in checks if check["id"] == "package")
+    package["value"] = "not-an-object"
+    with pytest.raises(ValueError, match="generation evidence"):
+        build_setup_plan(_profile(), inspection)
 
 
 def test_local_profile_refuses_a_nondefault_or_nonloopback_target() -> None:

@@ -10,16 +10,17 @@ Contact: www.anulum.li | protoscience@anulum.li
 # Machine-readable setup
 
 `synapse setup` gives an LLM agent a versioned description of what Synapse
-needs, a read-only measurement of the current host, an immutable plan of what
-remains, and a short-lived authorization envelope for one exact plan and target.
-The initial contract is `synapse-setup.v1`; its first profile is
-`local-single-user`.
+needs, a read-only host inspection, an immutable plan, a short-lived
+authorization, and a fail-closed executor for the initial package-owned Linux
+service effects. The initial contract is `synapse-setup.v1`; its first profile
+is `local-single-user`.
 
-This is preparation, not installation. None of these commands writes
-configuration, installs packages or services, starts or restarts a process, or
-changes a terminal. `authorize` records narrowly scoped operator intent in its
-output, but does not consume that authority or apply an effect. The JSON Schema
-is shipped in the installed wheel as
+`spec`, `inspect`, `plan`, and `authorize` do not mutate the host. `apply` is a
+separate explicit mutation boundary: it consumes one exact authorization and
+may install or start only the local hub and exact identity waiter described
+below. It never installs or replaces Python, the package, identity
+configuration, a terminal, or a provider process. The JSON Schema is shipped
+in the installed wheel as
 `synapse_channel/schemas/synapse-setup-v1.schema.json`.
 
 ## Read the profile contract
@@ -29,9 +30,8 @@ synapse setup spec --profile local-single-user --json
 ```
 
 The deterministic `spec` document lists every requirement, whether it is
-mandatory, the evidence source, and the remedy an agent may propose. In this
-tranche the supported operations are exactly `spec`, `inspect`, `plan`, and
-`authorize`; there is no apply route.
+mandatory, the evidence source, and its remedy. The supported operations are
+exactly `spec`, `inspect`, `plan`, `authorize`, and `apply`.
 
 ## Inspect a host
 
@@ -39,7 +39,7 @@ tranche the supported operations are exactly `spec`, `inspect`, `plan`, and
 synapse setup inspect --profile local-single-user --json
 ```
 
-The `inspection` document reports these facts:
+The `inspection` document reports:
 
 - installed package and version;
 - Python executable and version;
@@ -47,54 +47,48 @@ The `inspection` document reports these facts:
 - the resolved `synapse` executable;
 - resolved project and identity;
 - live hub reachability and the identity's durable `-rx` waiter;
-- optional systemd availability for persistent Linux user services and the
-  active hub service's read-only `MainPID` when one exists.
+- optional systemd availability and the active hub service's read-only
+  `MainPID`, when one exists.
 
 The command uses the same identity and hub diagnostics as `synapse doctor`.
 `--project`, `--id`, and `--uri` select non-secret inputs. A secured hub may use
-an existing `SYNAPSE_TOKEN` environment value; the value is consumed only by the
-read-only probe and never appears in output. There is deliberately no `--token`
-argument on this surface. The URI must use `ws://` or `wss://` and cannot contain
-userinfo, a query string, or a fragment, so inline credentials are refused before
-the probe runs.
+an existing `SYNAPSE_TOKEN` environment value; the probe never emits it. There
+is deliberately no `--token` argument. The URI must use `ws://` or `wss://` and
+cannot contain userinfo, a query string, or a fragment.
 
-## Derive a non-executable plan
+## Derive an inert plan
 
 ```bash
 synapse setup plan --profile local-single-user --json
 ```
 
-`plan` performs the same fresh read-only inspection and maps only failed,
-warning, or unavailable required checks to package-owned effect identifiers. It
-does not accept an arbitrary effect, command, file, or previously supplied JSON
-document. Every plan contains:
+`plan` performs a fresh read-only inspection and maps only unmet checks to
+package-owned effect identifiers. It accepts no command, arbitrary effect, or
+previous inspection document. Every plan binds:
 
-- `inspection_digest`, binding the complete canonical inspection;
-- `profile_digest`, binding the exact package-owned profile specification;
-- `target`, binding the credential-free hub URI, project, and identity observed
-  by the inspection;
-- `plan_digest`, binding every plan field except the digest itself;
-- `effects`, each with its trigger check, observed status, disposition,
-  authority class, disruption class, reversibility, and verification check;
-- `process_id`, normally `null`, or the exact observed hub PID when the effect
-  would restart an already-running hub;
-- `authority_required`, deduplicated from effects that are safe enough to plan;
-- `can_apply: false` and `apply_not_available`, which prevent the document from
-  being mistaken for mutation authority.
+- the complete inspection through `inspection_digest`;
+- the package-owned profile through `profile_digest`;
+- the credential-free URI, project, and identity through `target`;
+- the exact package version, Python executable, Synapse executable, platform,
+  and service-manager executable through `generation`;
+- every remaining field through `plan_digest`;
+- each effect's trigger, disposition, authority, disruption, reversibility,
+  verification check, and optional exact restart PID.
 
-An unavailable observation is blocked rather than guessed. Unsupported
-platform, package, Python, executable-path, and identity changes are also
-blocked: the installed package cannot safely replace its own environment or
-choose where a customer's repository identity should be persisted. A missing
-hub with no active user-service PID is a first start and carries
-`operator_confirmation`. A hub effect against an observed active PID carries
-`operator_restart_authority` and binds that exact PID. Waiter establishment
-carries `operator_confirmation`. Those labels describe future authority
-requirements only—there is no executor in this tranche.
+`can_apply` is true only for a non-empty plan whose every effect has a supported
+adapter and is not blocked. A ready plan has `no_changes_required`; a fully
+applicable plan has `authorization_required`; a blocked plan has
+`manual_remediation_required`.
+
+Unavailable observations are blocked rather than guessed. Package, Python,
+platform, executable-path, and identity changes are also blocked. A missing hub
+with no active service PID is a first start with `operator_confirmation`. A hub
+effect against an active service carries `operator_restart_authority` and its
+exact PID. Waiter establishment carries `operator_confirmation`.
 
 ## Authorize one exact plan
 
-Save the plan explicitly, inspect it, then confirm its printed digest:
+Save and review the plan, then confirm its printed digest:
 
 ```bash
 synapse setup plan --profile local-single-user --json > setup-plan.json
@@ -103,24 +97,21 @@ synapse setup authorize \
   --confirm-digest PLAN_DIGEST_FROM_THE_REVIEWED_PLAN \
   --nonce UNIQUE_URL_SAFE_TOKEN_OF_AT_LEAST_22_CHARACTERS \
   --expires-in 300 \
-  --json
+  --json > setup-authorization.json
 ```
 
-The redirection in the first command is the operator's shell writing a file;
-the setup CLI itself writes only to standard output. `authorize` accepts only a
-regular, non-symlink plan file no larger than 64 KiB. It rejects duplicate JSON
-keys, non-finite numbers, an altered digest, a stale profile contract, unknown
-effects, blocked effects, and a target containing credentials.
+The shell redirections write the files. `authorize` accepts only a regular,
+non-symlink plan no larger than 64 KiB. It rejects duplicate JSON keys,
+non-finite numbers, altered digests, stale profiles, unknown or blocked effects,
+and credential-bearing targets.
 
-The confirmation nonce is a replay token, not a credential. It must contain
-22–128 URL-safe letters, digits, `_`, or `-`, and must be unique for every
-authorization. The lifetime must be 30–900 seconds. The resulting
-`authorization` document binds the exact `plan_digest`, target, nonce, issue and
-expiry times, and the authorities already required by the plan. It retains
-`read_only: true`, `can_apply: false`, and `apply_not_available`.
+The nonce is a replay token, not a credential. It must contain 22–128 URL-safe
+letters, digits, `_`, or `-`, and be unique for every authorization. The
+lifetime must be 30–900 seconds. The authorization has `read_only: true`,
+`can_apply: true`, `single_use_authorization`, and
+`consumption_required: true`; it remains inert until passed to `apply`.
 
-If a plan requires `operator_restart_authority`, authorization also requires
-the exact PID already recorded in the reviewed plan:
+When the plan requires a hub restart, add the exact PID already in the plan:
 
 ```bash
 synapse setup authorize \
@@ -128,40 +119,74 @@ synapse setup authorize \
   --confirm-digest PLAN_DIGEST_FROM_THE_REVIEWED_PLAN \
   --nonce UNIQUE_URL_SAFE_TOKEN_OF_AT_LEAST_22_CHARACTERS \
   --authorize-restart-pid 4321 \
+  --json > setup-authorization.json
+```
+
+A different PID, or any PID for a first start, is refused.
+
+## Apply the authorized Linux effects
+
+Review both files, confirm the digest again, and declare any additional process
+that must remain alive:
+
+```bash
+synapse setup apply \
+  --plan ./setup-plan.json \
+  --authorization ./setup-authorization.json \
+  --confirm-digest PLAN_DIGEST_FROM_THE_REVIEWED_PLAN \
+  --protect-pid 12345 \
+  --receipt "$PWD/setup-receipt.json" \
   --json
 ```
 
-A different PID, or any PID when the plan represents a first start, is refused
-to prevent scope widening and stale-process authority.
+`--receipt` must be an absolute path whose parent already exists. A new receipt
+is owner-only (`0600`); an existing symlink or non-regular leaf is refused.
+`--protect-pid` is repeatable. The executor protects its direct parent
+automatically. An authorized restart target cannot simultaneously be a
+preservation target.
 
-The package now includes an owner-only durable authorization ledger for the
-future executor. It stores only a domain-separated SHA-256 nonce digest, never
-the nonce itself; `BEGIN IMMEDIATE` atomically reserves the nonce and exact
-authorization/plan digests before any future effect. Its lifecycle is explicit:
-`reserved`, `applied`, `failed`, or `recovered`, with separate effect and
-recovery receipt digests. Reopening the SQLite store verifies its schema,
-integrity, permissions, and existing records. A replay is refused across
-separate processes and database connections.
+Immediately before mutation, `apply` takes a non-blocking owner-only host lock,
+re-inspects the exact target, and compares the plan-bound generation. A new or
+blocked effect, changed executable, package, platform, target, or service
+manager, expired or replayed authorization, and absent protected PID all fail
+closed. When an authorized effect became satisfied, the receipt says
+`already_satisfied` and no command runs for it.
 
-`setup authorize` deliberately does not open or mutate that ledger. The
-envelope's `consumption_required: true` tells a future apply implementation that
-it must validate expiry and all bindings, recheck the exact target and PID, and
-reserve the nonce durably immediately before its first effect. Until that
-consumer ships, the envelope is evidence of intent only and cannot change the
-host.
+The initial adapter is deliberately narrow:
 
-Exit codes are stable: for `inspect`, `0` means every required check passed and
-`1` means inspection completed but the profile is not ready. A successfully
-derived `plan` exits `0` even when it contains proposed or blocked effects. A
-successfully emitted authorization exits `0`; invalid, mismatched, blocked, or
-over-broad authorization requests exit `2`. Every operation returns `2` when
-its request cannot be processed. Consumers should use `schema_version`,
-`document_kind`, `code`, and the per-check `status` fields, not parse human text.
+- Linux with an answering systemd user manager only;
+- `establish_local_loopback_hub` atomically installs the package-rendered
+  `synapse-hub.service`, then starts it or restarts only its freshly rechecked,
+  authorized `MainPID`;
+- `establish_identity_waiter` atomically installs `synapse-arm@.service`,
+  escapes the exact identity through the generation-adjacent `systemd-escape`,
+  and enables only that instance;
+- all commands use fixed argv, a bounded timeout, and no shell;
+- setup directories are traversed component by component without following
+  symlink leaves; each managed child directory must be owner-controlled and may
+  not be group- or world-writable;
+- existing unit leaves must be bounded, regular, owner-controlled files.
 
-## Validation example
+The owner-only SQLite ledger stores a domain-separated SHA-256 nonce digest,
+never the nonce. `BEGIN IMMEDIATE` reserves the nonce and authorization/plan
+digests after fresh validation and before the first service-file write. Replay
+is refused across processes and connections.
 
-Python agents can load the schema from the installed package without a source
-checkout:
+On success, the ledger stores the `applied` receipt digest. On partial failure,
+the executor records `failed`, restores prior unit bytes and modes, restores
+the prior enabled/active service state, removes only package-created empty
+directories, checks protected PIDs again, and records `recovered`. If exact
+restoration cannot be proven, the receipt says `recovery_failed` and the ledger
+remains `failed`; this is never reported as success.
+
+`inspect` exits `0` when required checks pass and `1` when inspection completes
+but the profile is not ready. Valid `plan` and `authorize` output exits `0`.
+`apply` exits `0` only for `applied`, `1` after a proven `recovered` failure,
+and `2` for a precondition, authorization, receipt, or unrecoverable executor
+error. Consumers should parse `schema_version`, `document_kind`, `code`,
+`outcome`, and per-check status, not human text.
+
+## Validate output from an installed wheel
 
 ```python
 import json
@@ -171,38 +196,30 @@ from importlib.resources import files
 from jsonschema import Draft202012Validator
 
 result = subprocess.run(
-    [
-        "synapse",
-        "setup",
-        "inspect",
-        "--profile",
-        "local-single-user",
-        "--json",
-    ],
+    ["synapse", "setup", "inspect", "--profile", "local-single-user", "--json"],
     check=False,
     capture_output=True,
     text=True,
 )
 document = json.loads(result.stdout)
-schema_path = (
-    files("synapse_channel")
-    .joinpath("schemas")
-    .joinpath("synapse-setup-v1.schema.json")
-)
+schema_path = files("synapse_channel").joinpath("schemas", "synapse-setup-v1.schema.json")
 Draft202012Validator(json.loads(schema_path.read_text())).validate(document)
 ```
 
-`jsonschema` is used by this example's consumer; Synapse itself keeps the base
-installation single-dependency and does not require that package at runtime.
+`jsonschema` belongs to this consumer example; the Synapse base installation
+does not require it.
 
-## Compatibility and authority
+## Compatibility and remaining release gate
 
-A consumer must refuse an unknown `schema_version` or profile version. New
-profiles may be added without changing v1 documents; incompatible field changes
-require a new schema version. An inspection and its derived plan are evidence,
-never permission to mutate the host. An authorization envelope is bounded input
-for a future consumer, not an executable capability. The durable ledger is a
-package-internal prerequisite and is not called by `authorize`. A future apply
-surface must reserve the nonce once, revalidate all bindings and authority, and
-emit verification and recovery receipts; it is intentionally outside this
-tranche.
+Consumers must refuse unknown schema or profile versions. Incompatible field
+changes require a new schema version. Inspection and plans are evidence, never
+permission. Authorization is bounded input for the separate executor, not an
+executable script or general capability.
+
+This tranche verifies unit ownership, systemd active state, non-zero service
+PIDs, protected-PID continuity, replay refusal, and bounded restoration. Strict
+profile verification—including a directed canary and durable event-store
+restart/replay evidence—is a separate release gate and is not implied by an
+`applied` receipt. macOS launchd, native Windows services, containers, remote
+hubs, secret provisioning, package replacement, and identity persistence remain
+unsupported by this executor.

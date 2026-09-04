@@ -296,14 +296,18 @@ Native Windows service setup is not
 claimed; use WSL with systemd as documented in the deployment guide.
 
 For agent-assisted environment preparation, `synapse setup spec`, `inspect`,
-`plan`, and `authorize` expose the packaged `synapse-setup.v1` contract. The
-first three describe requirements, observe the host, and bind a credential-free
-target to a non-executable SHA-256 plan. `authorize` emits a short-lived envelope
-for one reviewed plan. Restart authority must match the exact hub PID observed
-in that plan; first-start authority carries no PID. A private durable ledger is
-ready for a future executor to reserve hashed nonces atomically, but
-`authorize` does not consume it. The envelope still has `can_apply: false` and never writes
-configuration, starts services, or restarts a process. See
+`plan`, `authorize`, and `apply` expose the packaged `synapse-setup.v1`
+contract. The first three describe requirements, observe the host, and bind a
+credential-free target to a non-executable SHA-256 plan. `authorize` emits a
+short-lived envelope for one reviewed plan. Restart authority must match the
+exact hub PID observed in that plan; first-start authority carries no PID. On
+Linux with systemd-user,
+`apply` re-inspects the target and plan-bound executable generation, atomically
+reserves the authorization in a private replay ledger, and may install or start
+only the package-owned local hub and exact waiter units. It preserves declared
+PIDs, emits a digest-bound receipt, and restores prior unit and service state on
+failure. Package, Python, identity, secret, remote, macOS, native Windows, and
+container changes remain blocked. See
 [Machine-readable setup](docs/machine-readable-setup.md) for the schema,
 expiry, nonce-consumption, and exact-PID authority rules.
 
@@ -1614,11 +1618,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.24 |
 | Public API exports | 70 |
-| Package modules | 540 |
-| Classes | 810 |
+| Package modules | 541 |
+| Classes | 814 |
 | Wire message types | 80 |
-| CLI subcommands | 190 |
-| Test functions | 9454 |
+| CLI subcommands | 191 |
+| Test functions | 9491 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 63 |
 | GitHub Actions workflows | 25 |

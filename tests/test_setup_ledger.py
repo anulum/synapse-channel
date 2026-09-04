@@ -27,8 +27,6 @@ from synapse_channel.setup_ledger import (
     SETUP_LEDGER_DATABASE,
     SetupAuthorizationLedger,
     SetupLedgerError,
-    _decode_record,
-    _restrict_file,
     default_setup_ledger_dir,
 )
 from synapse_channel.setup_planner import build_setup_plan
@@ -68,6 +66,15 @@ def _plan() -> dict[str, object]:
         }
         for requirement in profile.requirements
     ]
+    values = {
+        "package": {"name": "synapse-channel", "version": "0.99.24"},
+        "python": {"executable": "/usr/bin/python3", "version": "3.12.0"},
+        "platform": {"system": "Linux", "release": "test", "machine": "x86_64"},
+        "executable": "/usr/bin/synapse",
+    }
+    for check in checks:
+        if check["id"] in values:
+            check["value"] = values[check["id"]]
     inspection = {
         "schema_version": "synapse-setup.v1",
         "document_kind": "inspection",
@@ -119,6 +126,7 @@ def _reserve_in_process(
 ) -> None:
     """Contend for one nonce from an independent interpreter process."""
     gate.wait(timeout=10.0)
+    outcome: str
     try:
         with SetupAuthorizationLedger(directory) as ledger:
             outcome = ledger.reserve(plan, authorization, now=102).state
@@ -416,53 +424,68 @@ def test_corrupt_record_read_is_bounded(tmp_path: Path) -> None:
         _assert_code("authorization_ledger_unavailable", caught.value)
 
 
-def test_transition_refuses_a_missing_committed_row(
+@pytest.mark.parametrize(("reserved_at", "state"), [(-1, "reserved"), (1, "unknown")])
+def test_corrupt_time_and_state_are_refused_through_public_get(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    reserved_at: int,
+    state: str,
 ) -> None:
-    plan = _plan()
-    authorization = _authorization(plan)
-    auth_digest = cast(str, authorization["authorization_digest"])
+    digest = "d" * 64
     with SetupAuthorizationLedger(tmp_path / "ledger") as ledger:
-        ledger.reserve(plan, authorization, now=101)
-        monkeypatch.setattr(SetupAuthorizationLedger, "get", lambda self, digest: None)
+        connection = sqlite3.connect(ledger.path)
+        connection.execute("PRAGMA ignore_check_constraints=ON")
+        connection.execute(
+            "INSERT INTO setup_authorizations "
+            "(nonce_digest, authorization_digest, plan_digest, reserved_at, state, "
+            "effect_receipt_digest, recovery_receipt_digest) VALUES (?, ?, ?, ?, ?, NULL, NULL)",
+            ("c" * 64, digest, "b" * 64, reserved_at, state),
+        )
+        connection.commit()
+        connection.close()
         with pytest.raises(SetupLedgerError) as caught:
-            ledger.finish(auth_digest, outcome="applied", receipt_digest=RECEIPT)
+            ledger.get(digest)
         _assert_code("authorization_ledger_unavailable", caught.value)
 
 
 @pytest.mark.parametrize(
-    "row",
+    ("plan_digest", "reserved_at", "state"),
     [
-        (),
-        ("a" * 64, "b" * 64, "c" * 64, -1, "reserved", None, None),
-        ("a" * 64, "b" * 64, "c" * 64, 1, "unknown", None, None),
+        ("invalid", 1, "reserved"),
+        ("b" * 64, -1, "reserved"),
+        ("b" * 64, 1, "unknown"),
     ],
 )
-def test_malformed_ledger_records_are_rejected(row: tuple[object, ...]) -> None:
-    with pytest.raises(ValueError, match="ledger|reservation"):
-        _decode_record(row)
-
-
-def test_missing_optional_sidecar_is_ignored(tmp_path: Path) -> None:
-    missing = tmp_path / "missing.db-wal"
-    _restrict_file(missing)
-    with pytest.raises(FileNotFoundError):
-        _restrict_file(missing, required=True)
+def test_malformed_ledger_records_are_rejected_through_public_reopen(
+    tmp_path: Path,
+    plan_digest: str,
+    reserved_at: int,
+    state: str,
+) -> None:
+    directory = tmp_path / "ledger"
+    with SetupAuthorizationLedger(directory):
+        pass
+    database = directory / SETUP_LEDGER_DATABASE
+    connection = sqlite3.connect(database)
+    connection.execute("PRAGMA ignore_check_constraints=ON")
+    connection.execute(
+        "INSERT INTO setup_authorizations "
+        "(nonce_digest, authorization_digest, plan_digest, reserved_at, state, "
+        "effect_receipt_digest, recovery_receipt_digest) VALUES (?, ?, ?, ?, ?, NULL, NULL)",
+        ("c" * 64, "a" * 64, plan_digest, reserved_at, state),
+    )
+    connection.commit()
+    connection.close()
+    with pytest.raises(SetupLedgerError) as caught:
+        SetupAuthorizationLedger(directory)
+    _assert_code("authorization_ledger_unavailable", caught.value)
 
 
 def test_nonregular_database_is_refused(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    real_fstat = os.fstat
-
-    def directory_fstat(descriptor: int) -> os.stat_result:
-        values = list(real_fstat(descriptor))
-        values[0] = stat.S_IFDIR | 0o700
-        return os.stat_result(values)
-
-    monkeypatch.setattr("synapse_channel.setup_ledger.os.fstat", directory_fstat)
+    directory = tmp_path / "ledger"
+    directory.mkdir(mode=0o700)
+    os.mkfifo(directory / SETUP_LEDGER_DATABASE, 0o600)
     with pytest.raises(SetupLedgerError) as caught:
-        SetupAuthorizationLedger(tmp_path / "ledger")
+        SetupAuthorizationLedger(directory)
     _assert_code("authorization_ledger_unavailable", caught.value)

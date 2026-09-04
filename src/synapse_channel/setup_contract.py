@@ -5,11 +5,11 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — versioned machine-readable host setup documents
-"""Stable document primitives for read-only machine setup discovery.
+"""Stable document primitives for machine-readable host setup.
 
-The contract is intentionally narrower than the existing cockpit setup plan:
-these documents describe an installed host and do not expose an apply effect.
-The JSON Schema ships inside the wheel so an LLM agent can validate output
+Plans and authorizations remain inert JSON documents. Only the separately
+invoked, allow-listed executor may consume one exact authorization. The JSON
+Schema ships inside the wheel so an LLM agent can validate every document
 without a source checkout.
 """
 
@@ -19,6 +19,7 @@ import json
 from dataclasses import dataclass
 from hashlib import sha256
 from importlib.resources import files
+from pathlib import Path
 from typing import Literal, cast
 from urllib.parse import urlsplit
 
@@ -31,7 +32,7 @@ SetupEffectAuthority = Literal["operator_confirmation", "operator_restart_author
 SetupEffectDisruption = Literal[
     "configuration_change", "environment_change", "service_start", "host_migration"
 ]
-SetupCommand = Literal["spec", "inspect", "plan", "authorize"]
+SetupCommand = Literal["spec", "inspect", "plan", "authorize", "apply"]
 SetupErrorCode = Literal[
     "unknown_profile",
     "invalid_uri",
@@ -51,11 +52,20 @@ SetupErrorCode = Literal[
     "authorization_replayed",
     "authorization_ledger_unavailable",
     "authorization_transition_invalid",
+    "application_target_changed",
+    "application_platform_unsupported",
+    "application_lock_unavailable",
+    "application_protected_process_missing",
+    "application_effect_failed",
+    "application_recovery_failed",
+    "application_receipt_unavailable",
 ]
 
 MAX_SETUP_URI_LENGTH = 2048
 MAX_SETUP_PROJECT_LENGTH = 128
 MAX_SETUP_IDENTITY_LENGTH = 256
+MAX_SETUP_PATH_LENGTH = 4096
+MAX_SETUP_VERSION_LENGTH = 128
 LOCAL_SINGLE_USER_URIS = frozenset({"ws://localhost:8876", "ws://127.0.0.1:8876"})
 
 
@@ -141,6 +151,7 @@ class SetupPlan:
     inspection_digest: str
     profile_digest: str
     target: dict[str, str]
+    generation: dict[str, str]
     ready: bool
     effects: tuple[SetupPlannedEffect, ...]
     warnings: tuple[str, ...]
@@ -160,11 +171,13 @@ class SetupPlan:
             "profile": self.profile,
             "profile_version": self.profile_version,
             "read_only": True,
-            "can_apply": False,
+            "can_apply": bool(self.effects)
+            and all(effect.disposition == "planned" for effect in self.effects),
             "ready": self.ready,
             "inspection_digest": self.inspection_digest,
             "profile_digest": self.profile_digest,
             "target": dict(self.target),
+            "generation": dict(self.generation),
             "authority_required": authorities,
             "effects": [effect.as_dict() for effect in self.effects],
             "warnings": list(self.warnings),
@@ -224,6 +237,39 @@ def validated_setup_target(value: object) -> dict[str, str]:
     return {"uri": uri, "project": cast(str, project), "identity": cast(str, identity)}
 
 
+def validated_setup_generation(value: object) -> dict[str, str]:
+    """Return immutable executable and platform facts or reject them.
+
+    The executor compares this plan-bound generation with a fresh inspection
+    before reserving authority. Absolute executable paths prevent a changed
+    ``PATH`` from redirecting either the generated unit or service-manager
+    command after operator review.
+    """
+    expected = {
+        "package_version",
+        "python_executable",
+        "synapse_executable",
+        "platform_system",
+        "service_manager_executable",
+    }
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("setup generation has unexpected fields")
+    generation: dict[str, str] = {}
+    for key in expected:
+        item = value.get(key)
+        maximum = MAX_SETUP_VERSION_LENGTH if key == "package_version" else MAX_SETUP_PATH_LENGTH
+        allow_absent = key in {"synapse_executable", "service_manager_executable"}
+        if not isinstance(item, str) or len(item) > maximum or (not item and not allow_absent):
+            raise ValueError("setup generation field is invalid")
+        if any(ord(character) < 32 for character in item):
+            raise ValueError("setup generation field is invalid")
+        generation[key] = item
+    for key in ("python_executable", "synapse_executable", "service_manager_executable"):
+        if generation[key] and not Path(generation[key]).is_absolute():
+            raise ValueError("setup generation executable is not absolute")
+    return generation
+
+
 def _bounded_plain_text(value: object, maximum: int) -> bool:
     return bool(
         isinstance(value, str)
@@ -264,6 +310,13 @@ def setup_error_document(
         "authorization_replayed": "The setup authorization was already reserved for execution.",
         "authorization_ledger_unavailable": "The setup authorization ledger is unavailable.",
         "authorization_transition_invalid": "The setup authorization state transition is invalid.",
+        "application_target_changed": "The inspected setup target changed after authorization.",
+        "application_platform_unsupported": "This setup effect has no supported host adapter.",
+        "application_lock_unavailable": "Another setup executor owns the host mutation lock.",
+        "application_protected_process_missing": "A protected process is not alive.",
+        "application_effect_failed": "An allow-listed setup effect failed.",
+        "application_recovery_failed": "A failed setup effect could not be fully recovered.",
+        "application_receipt_unavailable": "The setup receipt could not be written safely.",
     }
     return {
         "schema_version": SETUP_SCHEMA_VERSION,

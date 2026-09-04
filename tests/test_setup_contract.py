@@ -19,6 +19,7 @@ from synapse_channel.setup_contract import (
     canonical_json,
     setup_error_document,
     setup_schema,
+    validated_setup_generation,
     validated_setup_target,
 )
 
@@ -53,7 +54,7 @@ def test_packaged_schema_is_a_valid_draft_2020_12_schema() -> None:
     assert schema_id.endswith("synapse-setup-v1.schema.json")
 
 
-@pytest.mark.parametrize("command", ["spec", "inspect", "plan", "authorize"])
+@pytest.mark.parametrize("command", ["spec", "inspect", "plan", "authorize", "apply"])
 def test_unknown_profile_error_is_stable_and_schema_valid(command: str) -> None:
     jsonschema = pytest.importorskip("jsonschema")
     document = setup_error_document(
@@ -89,3 +90,32 @@ def test_setup_target_accepts_only_bounded_credential_free_values() -> None:
     ):
         with pytest.raises(ValueError):
             validated_setup_target(invalid)
+
+
+def test_setup_generation_requires_exact_bounded_absolute_execution_facts() -> None:
+    generation = {
+        "package_version": "0.99.24",
+        "python_executable": "/usr/bin/python3",
+        "synapse_executable": "/usr/bin/synapse",
+        "platform_system": "Linux",
+        "service_manager_executable": "/usr/bin/systemctl",
+    }
+    assert validated_setup_generation(generation) == generation
+    assert (
+        validated_setup_generation(
+            {**generation, "synapse_executable": "", "service_manager_executable": ""}
+        )["synapse_executable"]
+        == ""
+    )
+
+    for invalid in (
+        None,
+        {**generation, "extra": "no"},
+        {**generation, "package_version": 1},
+        {**generation, "package_version": ""},
+        {**generation, "platform_system": "bad\nplatform"},
+        {**generation, "python_executable": "relative/python"},
+        {**generation, "synapse_executable": "x" * 4097},
+    ):
+        with pytest.raises(ValueError, match="generation"):
+            validated_setup_generation(invalid)

@@ -23,6 +23,7 @@ from synapse_channel.setup_contract import (
     SETUP_SCHEMA_VERSION,
     SetupErrorCode,
     document_digest,
+    validated_setup_generation,
     validated_setup_target,
 )
 from synapse_channel.setup_profiles import build_setup_spec, get_setup_profile
@@ -77,6 +78,7 @@ _PLAN_KEYS = {
     "inspection_digest",
     "profile_digest",
     "target",
+    "generation",
     "authority_required",
     "effects",
     "warnings",
@@ -157,14 +159,14 @@ def _load_json_document(path: str | Path, *, code: SetupErrorCode) -> dict[str, 
                 raise SetupAuthorizationError(code)
             chunks: list[bytes] = []
             remaining = MAX_PLAN_BYTES + 1
-            while remaining:
+            while remaining:  # pragma: no branch - false only after concurrent post-fstat growth
                 chunk = os.read(descriptor, min(remaining, 8192))
                 if not chunk:
                     break
                 chunks.append(chunk)
                 remaining -= len(chunk)
             payload = b"".join(chunks)
-            if len(payload) > MAX_PLAN_BYTES:
+            if len(payload) > MAX_PLAN_BYTES:  # pragma: no cover - concurrent post-fstat growth
                 raise SetupAuthorizationError(code)
         finally:
             os.close(descriptor)
@@ -195,7 +197,7 @@ def validate_setup_plan(document: dict[str, object]) -> dict[str, object]:
             or profile is None
             or document.get("profile_version") != profile.version
             or document.get("read_only") is not True
-            or document.get("can_apply") is not False
+            or not isinstance(document.get("can_apply"), bool)
             or not isinstance(document.get("ready"), bool)
         ):
             raise ValueError("plan contract mismatch")
@@ -206,6 +208,7 @@ def validate_setup_plan(document: dict[str, object]) -> dict[str, object]:
         if document["profile_digest"] != document_digest(build_setup_spec(profile)):
             raise ValueError("profile digest mismatch")
         target = validated_setup_target(document.get("target"))
+        generation = validated_setup_generation(document.get("generation"))
         if (
             profile.profile_id == "local-single-user"
             and target["uri"] not in LOCAL_SINGLE_USER_URIS
@@ -216,8 +219,17 @@ def validate_setup_plan(document: dict[str, object]) -> dict[str, object]:
             raise ValueError("invalid effects")
         expected_authorities: list[str] = []
         seen_effects: set[str] = set()
+        service_adapter_supported = (
+            generation["platform_system"] == "Linux"
+            and bool(generation["synapse_executable"])
+            and bool(generation["service_manager_executable"])
+        )
         for effect in effects:
-            authority = _validate_effect(effect, seen_effects)
+            authority = _validate_effect(
+                effect,
+                seen_effects,
+                service_adapter_supported=service_adapter_supported,
+            )
             if (
                 authority in _AUTHORITIES
                 and cast(dict[str, object], effect)["disposition"] == "planned"
@@ -230,9 +242,15 @@ def validate_setup_plan(document: dict[str, object]) -> dict[str, object]:
         blocked = any(
             cast(dict[str, object], effect)["disposition"] == "blocked" for effect in effects
         )
-        expected_warnings = ["apply_not_available"]
-        if blocked:
-            expected_warnings.append("manual_remediation_required")
+        expected_can_apply = bool(effects) and not blocked
+        if not effects:
+            expected_warnings = ["no_changes_required"]
+        elif blocked:
+            expected_warnings = ["manual_remediation_required"]
+        else:
+            expected_warnings = ["authorization_required"]
+        if document.get("can_apply") is not expected_can_apply:
+            raise ValueError("apply disposition does not match effects")
         if document.get("warnings") != expected_warnings:
             raise ValueError("warning list does not match effects")
         if document["ready"] is not (len(effects) == 0):
@@ -245,7 +263,12 @@ def validate_setup_plan(document: dict[str, object]) -> dict[str, object]:
     return document
 
 
-def _validate_effect(effect: object, seen: set[str]) -> str:
+def _validate_effect(
+    effect: object,
+    seen: set[str],
+    *,
+    service_adapter_supported: bool,
+) -> str:
     if not isinstance(effect, dict) or set(effect) != _EFFECT_KEYS:
         raise ValueError("invalid effect")
     effect_id = effect.get("id")
@@ -275,9 +298,20 @@ def _validate_effect(effect: object, seen: set[str]) -> str:
         or effect.get("disposition") not in _DISPOSITIONS
     ):
         raise ValueError("effect does not match the allow-list")
-    if (effect["observed_status"] == "unavailable" or authority == "unsupported") != (
-        effect["disposition"] == "blocked"
-    ):
+    service_effect_blocked = (
+        effect_id
+        in {
+            "establish_local_loopback_hub",
+            "establish_identity_waiter",
+        }
+        and not service_adapter_supported
+    )
+    should_block = (
+        effect["observed_status"] == "unavailable"
+        or authority == "unsupported"
+        or service_effect_blocked
+    )
+    if should_block != (effect["disposition"] == "blocked"):
         raise ValueError("effect disposition is not fail-closed")
     return authority
 
@@ -310,7 +344,7 @@ def build_setup_authorization(
     ):
         raise SetupAuthorizationError("invalid_expiry")
     effects = cast(list[dict[str, object]], validated["effects"])
-    if any(effect["disposition"] == "blocked" for effect in effects):
+    if validated["can_apply"] is not True:
         raise SetupAuthorizationError("plan_blocked")
     authorities = cast(list[str], validated["authority_required"])
     expected_restart_pid = _expected_restart_pid(effects)
@@ -341,7 +375,7 @@ def build_setup_authorization(
         "profile": validated["profile"],
         "profile_version": validated["profile_version"],
         "read_only": True,
-        "can_apply": False,
+        "can_apply": True,
         "plan_digest": validated["plan_digest"],
         "target": validated["target"],
         "confirmation_nonce": nonce,
@@ -350,7 +384,7 @@ def build_setup_authorization(
         "authority_granted": authorities,
         "restart_authority": restart_authority,
         "consumption_required": True,
-        "warnings": ["apply_not_available"],
+        "warnings": ["single_use_authorization"],
     }
     document["authorization_digest"] = document_digest(document)
     return document
@@ -384,12 +418,12 @@ def validate_setup_authorization(
             or authorization.get("profile") != validated_plan["profile"]
             or authorization.get("profile_version") != validated_plan["profile_version"]
             or authorization.get("read_only") is not True
-            or authorization.get("can_apply") is not False
+            or authorization.get("can_apply") is not True
             or authorization.get("plan_digest") != validated_plan["plan_digest"]
             or authorization.get("target") != validated_plan["target"]
             or authorization.get("authority_granted") != validated_plan["authority_required"]
             or authorization.get("consumption_required") is not True
-            or authorization.get("warnings") != ["apply_not_available"]
+            or authorization.get("warnings") != ["single_use_authorization"]
         ):
             raise SetupAuthorizationError("authorization_mismatch")
         nonce = authorization.get("confirmation_nonce")

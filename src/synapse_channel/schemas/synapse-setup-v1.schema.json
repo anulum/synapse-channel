@@ -7,6 +7,7 @@
     { "$ref": "#/$defs/inspection" },
     { "$ref": "#/$defs/plan" },
     { "$ref": "#/$defs/authorization" },
+    { "$ref": "#/$defs/application_receipt" },
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
@@ -52,6 +53,21 @@
         "identity": { "type": "string", "minLength": 1, "maxLength": 256 }
       },
       "required": ["uri", "project", "identity"]
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "package_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "python_executable": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "synapse_executable": { "type": "string", "maxLength": 4096 },
+        "platform_system": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "service_manager_executable": { "type": "string", "maxLength": 4096 }
+      },
+      "required": [
+        "package_version", "python_executable", "synapse_executable", "platform_system",
+        "service_manager_executable"
+      ]
     },
     "effect": {
       "type": "object",
@@ -101,7 +117,8 @@
                 { "const": "spec" },
                 { "const": "inspect" },
                 { "const": "plan" },
-                { "const": "authorize" }
+                { "const": "authorize" },
+                { "const": "apply" }
               ],
               "items": false
             },
@@ -168,12 +185,13 @@
             "profile": { "const": "local-single-user" },
             "profile_version": { "const": 1 },
             "read_only": { "const": true },
-            "can_apply": { "const": false },
+            "can_apply": { "type": "boolean" },
             "ready": { "type": "boolean" },
             "inspection_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "profile_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "plan_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "target": { "$ref": "#/$defs/target" },
+            "generation": { "$ref": "#/$defs/generation" },
             "authority_required": {
               "type": "array",
               "uniqueItems": true,
@@ -189,12 +207,15 @@
             "warnings": {
               "type": "array",
               "uniqueItems": true,
-              "items": { "enum": ["apply_not_available", "manual_remediation_required"] }
+              "items": {
+                "enum": ["no_changes_required", "authorization_required", "manual_remediation_required"]
+              }
             }
           },
           "required": [
             "schema_version", "document_kind", "profile", "profile_version", "read_only",
             "can_apply", "ready", "inspection_digest", "profile_digest", "plan_digest", "target",
+            "generation",
             "authority_required", "effects", "warnings"
           ]
         }
@@ -212,7 +233,7 @@
             "profile": { "const": "local-single-user" },
             "profile_version": { "const": 1 },
             "read_only": { "const": true },
-            "can_apply": { "const": false },
+            "can_apply": { "const": true },
             "plan_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "authorization_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "target": { "$ref": "#/$defs/target" },
@@ -245,7 +266,7 @@
             "consumption_required": { "const": true },
             "warnings": {
               "type": "array",
-              "prefixItems": [{ "const": "apply_not_available" }],
+              "prefixItems": [{ "const": "single_use_authorization" }],
               "items": false
             }
           },
@@ -254,6 +275,136 @@
             "can_apply", "plan_digest", "authorization_digest", "target",
             "confirmation_nonce", "issued_at", "expires_at", "authority_granted",
             "restart_authority", "consumption_required", "warnings"
+          ]
+        }
+      ]
+    },
+    "application_effect_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "enum": ["establish_local_loopback_hub", "establish_identity_waiter"]
+        },
+        "unit": { "type": "string" },
+        "outcome": { "enum": ["applied", "already_satisfied", "failed"] }
+      },
+      "required": ["id", "unit", "outcome"],
+      "allOf": [
+        {
+          "if": { "properties": { "outcome": { "const": "applied" } } },
+          "then": { "properties": { "unit": { "minLength": 1 } } }
+        },
+        {
+          "if": { "properties": { "outcome": { "const": "already_satisfied" } } },
+          "then": { "properties": { "unit": { "const": "" } } }
+        }
+      ]
+    },
+    "protected_process": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pid": { "type": "integer", "minimum": 2, "maximum": 2147483647 },
+        "before_alive": { "const": true },
+        "after_alive": { "type": "boolean" }
+      },
+      "required": ["pid", "before_alive", "after_alive"]
+    },
+    "application_receipt": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": { "const": "synapse-setup.v1" },
+            "document_kind": { "const": "application_receipt" },
+            "profile": { "const": "local-single-user" },
+            "profile_version": { "const": 1 },
+            "plan_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "authorization_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "receipt_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "target": { "$ref": "#/$defs/target" },
+            "started_at": { "type": "integer", "minimum": 0 },
+            "completed_at": { "type": "integer", "minimum": 0 },
+            "outcome": { "enum": ["applied", "recovered", "recovery_failed"] },
+            "ledger_state": { "enum": ["applied", "recovered", "failed"] },
+            "effects": {
+              "type": "array",
+              "maxItems": 2,
+              "items": { "$ref": "#/$defs/application_effect_receipt" }
+            },
+            "protected_processes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/protected_process" }
+            },
+            "recovery": { "enum": ["not_required", "complete", "failed"] },
+            "effect_receipt_digest": {
+              "oneOf": [
+                { "type": "null" },
+                { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+              ]
+            }
+          },
+          "required": [
+            "schema_version", "document_kind", "profile", "profile_version", "plan_digest",
+            "authorization_digest", "receipt_digest", "target", "started_at", "completed_at",
+            "outcome", "ledger_state", "effects", "protected_processes", "recovery",
+            "effect_receipt_digest"
+          ],
+          "allOf": [
+            {
+              "if": { "properties": { "outcome": { "const": "applied" } } },
+              "then": {
+                "properties": {
+                  "ledger_state": { "const": "applied" },
+                  "recovery": { "const": "not_required" },
+                  "effect_receipt_digest": { "type": "null" },
+                  "effects": {
+                    "items": {
+                      "properties": {
+                        "outcome": { "enum": ["applied", "already_satisfied"] }
+                      }
+                    }
+                  },
+                  "protected_processes": {
+                    "items": { "properties": { "after_alive": { "const": true } } }
+                  }
+                }
+              }
+            },
+            {
+              "if": { "properties": { "outcome": { "const": "recovered" } } },
+              "then": {
+                "properties": {
+                  "ledger_state": { "const": "recovered" },
+                  "recovery": { "const": "complete" },
+                  "effect_receipt_digest": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "protected_processes": {
+                    "items": { "properties": { "after_alive": { "const": true } } }
+                  }
+                }
+              }
+            },
+            {
+              "if": { "properties": { "outcome": { "const": "recovery_failed" } } },
+              "then": {
+                "properties": {
+                  "ledger_state": { "const": "failed" },
+                  "recovery": { "const": "failed" },
+                  "effect_receipt_digest": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
           ]
         }
       ]
@@ -267,7 +418,7 @@
           "properties": {
             "schema_version": { "const": "synapse-setup.v1" },
             "document_kind": { "const": "error" },
-            "command": { "enum": ["spec", "inspect", "plan", "authorize"] },
+            "command": { "enum": ["spec", "inspect", "plan", "authorize", "apply"] },
             "profile": { "type": "string", "minLength": 1, "maxLength": 128 },
             "code": {
               "enum": [
@@ -276,7 +427,11 @@
                 "plan_blocked", "restart_authority_required", "unexpected_restart_authority",
                 "authorization_failed", "invalid_authorization", "authorization_expired",
                 "authorization_mismatch", "authorization_replayed",
-                "authorization_ledger_unavailable", "authorization_transition_invalid"
+                "authorization_ledger_unavailable", "authorization_transition_invalid",
+                "application_target_changed", "application_platform_unsupported",
+                "application_lock_unavailable", "application_protected_process_missing",
+                "application_effect_failed", "application_recovery_failed",
+                "application_receipt_unavailable"
               ]
             },
             "message": { "type": "string", "minLength": 1 }

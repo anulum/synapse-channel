@@ -21,6 +21,7 @@ from synapse_channel.setup_contract import (
     SetupPlan,
     SetupPlannedEffect,
     document_digest,
+    validated_setup_generation,
     validated_setup_target,
 )
 from synapse_channel.setup_profiles import SetupProfile, build_setup_spec
@@ -140,12 +141,19 @@ def _validated_statuses(
 
 
 def build_setup_plan(profile: SetupProfile, inspection: dict[str, object]) -> dict[str, object]:
-    """Build a deterministic, digest-bound plan that cannot be applied."""
+    """Build a deterministic plan for the closed setup-effect executor."""
     statuses = _validated_statuses(profile, inspection)
     target = validated_setup_target(inspection.get("target"))
+    generation = setup_generation_from_inspection(inspection)
     if profile.profile_id == "local-single-user" and target["uri"] not in LOCAL_SINGLE_USER_URIS:
         raise ValueError("local-single-user plans require the default loopback hub URI")
     hub_pid = _observed_hub_pid(inspection)
+    service_adapter_supported = (
+        generation["platform_system"] == "Linux"
+        and bool(generation["synapse_executable"])
+        and bool(generation["service_manager_executable"])
+        and statuses["service_manager"] == "pass"
+    )
     effects: list[SetupPlannedEffect] = []
     for rule in _EFFECT_RULES:
         status = statuses[rule.check_id]
@@ -156,7 +164,15 @@ def build_setup_plan(profile: SetupProfile, inspection: dict[str, object]) -> di
         if rule.effect_id == "establish_local_loopback_hub" and hub_pid is not None:
             authority = "operator_restart_authority"
             process_id = hub_pid
-        blocked = status == "unavailable" or authority == "unsupported"
+        service_effect = rule.effect_id in {
+            "establish_local_loopback_hub",
+            "establish_identity_waiter",
+        }
+        blocked = (
+            status == "unavailable"
+            or authority == "unsupported"
+            or (service_effect and not service_adapter_supported)
+        )
         effects.append(
             SetupPlannedEffect(
                 effect_id=rule.effect_id,
@@ -171,15 +187,19 @@ def build_setup_plan(profile: SetupProfile, inspection: dict[str, object]) -> di
             )
         )
 
-    warnings = ["apply_not_available"]
-    if any(effect.disposition == "blocked" for effect in effects):
-        warnings.append("manual_remediation_required")
+    if not effects:
+        warnings = ["no_changes_required"]
+    elif any(effect.disposition == "blocked" for effect in effects):
+        warnings = ["manual_remediation_required"]
+    else:
+        warnings = ["authorization_required"]
     plan = SetupPlan(
         profile=profile.profile_id,
         profile_version=profile.version,
         inspection_digest=document_digest(inspection),
         profile_digest=document_digest(build_setup_spec(profile)),
         target=target,
+        generation=generation,
         ready=bool(inspection["ready"]),
         effects=tuple(effects),
         warnings=tuple(warnings),
@@ -187,23 +207,39 @@ def build_setup_plan(profile: SetupProfile, inspection: dict[str, object]) -> di
     return plan.as_dict()
 
 
+def setup_generation_from_inspection(inspection: dict[str, object]) -> dict[str, str]:
+    """Extract the immutable execution generation from an inspection document."""
+    checks = cast(list[dict[str, object]], inspection["checks"])
+    values = {item.get("id"): item.get("value") for item in checks}
+    package = values.get("package")
+    python = values.get("python")
+    platform = values.get("platform")
+    service_manager = values.get("service_manager")
+    if not all(isinstance(item, dict) for item in (package, python, platform, service_manager)):
+        raise ValueError("inspection generation evidence is malformed")
+    package_value = cast(dict[str, object], package)
+    python_value = cast(dict[str, object], python)
+    platform_value = cast(dict[str, object], platform)
+    service_value = cast(dict[str, object], service_manager)
+    executable = values.get("executable")
+    generation = {
+        "package_version": package_value.get("version"),
+        "python_executable": python_value.get("executable"),
+        "synapse_executable": executable,
+        "platform_system": platform_value.get("system"),
+        "service_manager_executable": service_value.get("executable"),
+    }
+    return validated_setup_generation(generation)
+
+
 def _observed_hub_pid(inspection: dict[str, object]) -> int | None:
     """Return a trustworthy active hub PID from the service-manager check."""
-    checks = inspection.get("checks")
-    if not isinstance(checks, list):
+    checks = cast(list[dict[str, object]], inspection["checks"])
+    item = next(check for check in checks if check["id"] == "service_manager")
+    value = cast(dict[str, object], item["value"])
+    if item["status"] != "pass":
         return None
-    for item in checks:
-        if not isinstance(item, dict) or item.get("id") != "service_manager":
-            continue
-        value = item.get("value")
-        if item.get("status") != "pass" or not isinstance(value, dict):
-            return None
-        hub_pid = value.get("hub_pid")
-        if (
-            isinstance(hub_pid, int)
-            and not isinstance(hub_pid, bool)
-            and 1 < hub_pid <= 2_147_483_647
-        ):
-            return hub_pid
-        return None
+    hub_pid = value.get("hub_pid")
+    if isinstance(hub_pid, int) and not isinstance(hub_pid, bool) and 1 < hub_pid <= 2_147_483_647:
+        return hub_pid
     return None

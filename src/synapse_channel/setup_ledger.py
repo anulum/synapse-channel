@@ -263,10 +263,15 @@ class SetupAuthorizationLedger:
                 with contextlib.suppress(sqlite3.Error):
                     self._connection.rollback()
                 raise SetupLedgerError("authorization_ledger_unavailable") from exc
-        updated = self.get(authorization_digest)
-        if updated is None:
-            raise SetupLedgerError("authorization_ledger_unavailable")
-        return updated
+        return SetupLedgerRecord(
+            authorization_digest=current.authorization_digest,
+            plan_digest=current.plan_digest,
+            nonce_digest=current.nonce_digest,
+            reserved_at=current.reserved_at,
+            state=state,
+            effect_receipt_digest=effect_digest,
+            recovery_receipt_digest=recovery_digest,
+        )
 
     def _configure(self) -> None:
         try:
@@ -335,29 +340,27 @@ def _require_transition_digest(value: object) -> str:
         raise SetupLedgerError("authorization_transition_invalid") from exc
 
 
-def _decode_record(row: object) -> SetupLedgerRecord:
-    if not isinstance(row, tuple) or len(row) != 7:
-        raise ValueError("setup authorization ledger row is malformed")
+def _decode_record(
+    row: tuple[object, object, object, object, object, object, object],
+) -> SetupLedgerRecord:
     authorization_digest, plan_digest, nonce_digest, reserved_at, state, effect, recovery = row
-    _validate_digest(authorization_digest)
-    _validate_digest(plan_digest)
-    _validate_digest(nonce_digest)
-    if isinstance(reserved_at, bool) or not isinstance(reserved_at, int) or reserved_at < 0:
+    authorization_value = _validate_digest(authorization_digest)
+    plan_value = _validate_digest(plan_digest)
+    nonce_value = _validate_digest(nonce_digest)
+    if not isinstance(reserved_at, int) or reserved_at < 0:
         raise ValueError("setup authorization reservation time is invalid")
     if state not in {"reserved", "applied", "failed", "recovered"}:
         raise ValueError("setup authorization ledger state is invalid")
-    if effect is not None:
-        _validate_digest(effect)
-    if recovery is not None:
-        _validate_digest(recovery)
+    effect_value = None if effect is None else _validate_digest(effect)
+    recovery_value = None if recovery is None else _validate_digest(recovery)
     return SetupLedgerRecord(
-        authorization_digest=authorization_digest,
-        plan_digest=plan_digest,
-        nonce_digest=nonce_digest,
+        authorization_digest=authorization_value,
+        plan_digest=plan_value,
+        nonce_digest=nonce_value,
         reserved_at=reserved_at,
-        state=state,
-        effect_receipt_digest=effect,
-        recovery_receipt_digest=recovery,
+        state=cast(SetupLedgerState, state),
+        effect_receipt_digest=effect_value,
+        recovery_receipt_digest=recovery_value,
     )
 
 
@@ -376,8 +379,10 @@ def _prepare_database_file(path: Path) -> None:
 
 
 def _restrict_file(path: Path, *, required: bool = False) -> None:
+    if required:
+        os.chmod(path, 0o600, follow_symlinks=False)
+        return
     try:
         os.chmod(path, 0o600, follow_symlinks=False)
-    except FileNotFoundError:
-        if required:
-            raise
+    except FileNotFoundError:  # pragma: no cover - optional SQLite sidecar deletion race
+        return

@@ -12,7 +12,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+import time
 from collections.abc import Callable, Coroutine
+from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
@@ -20,9 +22,11 @@ from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.setup_authorization import (
     SetupAuthorizationError,
     build_setup_authorization,
+    load_setup_authorization,
     load_setup_plan,
 )
 from synapse_channel.setup_contract import canonical_json, setup_error_document
+from synapse_channel.setup_executor import SetupExecutionError, apply_setup
 from synapse_channel.setup_inspector import inspect_setup
 from synapse_channel.setup_planner import build_setup_plan
 from synapse_channel.setup_profiles import build_setup_spec, get_setup_profile
@@ -46,7 +50,8 @@ def _print_document(document: dict[str, object], *, as_json: bool) -> None:
         return
     if kind == "plan":
         effects = cast(list[dict[str, object]], document["effects"])
-        print(f"plan: {len(effects)} proposed effect(s); apply unavailable")
+        disposition = "applicable" if document["can_apply"] else "not applicable"
+        print(f"plan: {len(effects)} proposed effect(s); {disposition}")
         print(f"digest: {document['plan_digest']}")
         for effect in effects:
             print(
@@ -55,10 +60,15 @@ def _print_document(document: dict[str, object], *, as_json: bool) -> None:
             )
         return
     if kind == "authorization":
-        print("authorization: output only; apply unavailable")
+        print("authorization: single use; pass with its exact plan to setup apply")
         print(f"digest: {document['authorization_digest']}")
         print(f"plan: {document['plan_digest']}")
         print(f"expires: {document['expires_at']}")
+        return
+    if kind == "application_receipt":
+        print(f"outcome: {document['outcome']}")
+        print(f"receipt: {document['receipt_digest']}")
+        print(f"ledger: {document['ledger_state']}")
         return
     ready = "ready" if document["ready"] else "not ready"
     print(f"result: {ready} (read-only)")
@@ -210,11 +220,69 @@ def _cmd_authorize(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_apply(
+    args: argparse.Namespace,
+    *,
+    async_runner: Callable[
+        [Coroutine[Any, Any, dict[str, object]]], dict[str, object]
+    ] = asyncio.run,
+) -> int:
+    profile = "unknown"
+    try:
+        plan = load_setup_plan(args.plan)
+        plan_profile = plan.get("profile")
+        if isinstance(plan_profile, str):
+            profile = plan_profile
+        authorization = load_setup_authorization(
+            args.authorization,
+            plan=plan,
+            now=int(time.time()),
+        )
+        document = async_runner(
+            apply_setup(
+                plan,
+                authorization,
+                confirm_digest=args.confirm_digest,
+                protected_pids=tuple(args.protect_pid),
+                receipt_path=args.receipt,
+            )
+        )
+    except SetupExecutionError as exc:
+        if exc.receipt is not None:
+            _print_document(exc.receipt, as_json=args.json)
+        else:
+            _print_document(
+                setup_error_document(command="apply", profile=profile, code=exc.code),
+                as_json=args.json,
+            )
+        return 2
+    except SetupAuthorizationError as exc:
+        _print_document(
+            setup_error_document(command="apply", profile=profile, code=exc.code),
+            as_json=args.json,
+        )
+        return 2
+    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+        _print_document(
+            setup_error_document(
+                command="apply",
+                profile=profile,
+                code="application_effect_failed",
+            ),
+            as_json=args.json,
+        )
+        return 2
+    _print_document(document, as_json=args.json)
+    if document["outcome"] == "applied":
+        return 0
+    return 1 if document["outcome"] == "recovered" else 2
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the non-mutating ``setup`` command family."""
+    """Register machine-readable setup inspection and authorized application."""
     setup = subparsers.add_parser(
         "setup",
-        help="Emit a versioned setup specification or inspect this host without changing it.",
+        help="Inspect, plan, authorize, and apply package-owned setup effects.",
     )
     actions = setup.add_subparsers(dest="setup_command", required=True)
 
@@ -254,3 +322,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     authorize.add_argument("--authorize-restart-pid", type=int, metavar="PID")
     authorize.add_argument("--json", action="store_true", help="Emit one canonical JSON document.")
     authorize.set_defaults(func=_cmd_authorize)
+
+    apply = actions.add_parser(
+        "apply",
+        help="Consume one exact authorization and apply its allow-listed Linux service effects.",
+    )
+    apply.add_argument("--plan", required=True, type=Path, metavar="FILE")
+    apply.add_argument("--authorization", required=True, type=Path, metavar="FILE")
+    apply.add_argument("--confirm-digest", required=True, metavar="SHA256")
+    apply.add_argument("--receipt", type=Path, metavar="FILE")
+    apply.add_argument("--protect-pid", type=int, action="append", default=[], metavar="PID")
+    apply.add_argument("--json", action="store_true", help="Emit one canonical JSON document.")
+    apply.set_defaults(func=_cmd_apply)

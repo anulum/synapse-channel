@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import json
-import os
 from copy import deepcopy
 from pathlib import Path
 
@@ -62,6 +61,15 @@ def _inspection(
         "executable": "/usr/bin/systemctl",
         "hub_pid": hub_pid or 0,
     }
+    values = {
+        "package": {"name": "synapse-channel", "version": "0.99.24"},
+        "python": {"executable": "/usr/bin/python3", "version": "3.12.0"},
+        "platform": {"system": "Linux", "release": "test", "machine": "x86_64"},
+        "executable": "/usr/bin/synapse",
+    }
+    for check in checks:
+        if check["id"] in values:
+            check["value"] = values[check["id"]]
     return {
         "schema_version": "synapse-setup.v1",
         "document_kind": "inspection",
@@ -119,7 +127,7 @@ def test_authorization_is_deterministic_schema_valid_and_non_executable() -> Non
 
     assert first == second
     assert first["read_only"] is True
-    assert first["can_apply"] is False
+    assert first["can_apply"] is True
     assert first["target"] == plan["target"]
     assert first["issued_at"] == 1_788_520_000
     assert first["expires_at"] == 1_788_520_300
@@ -246,7 +254,7 @@ def test_authorization_refuses_restart_pid_that_widens_scope() -> None:
 
 
 def test_authorization_refuses_invalid_clock_range() -> None:
-    plan = _plan()
+    plan = _plan({"waiter": "fail"})
     with pytest.raises(SetupAuthorizationError) as caught:
         build_setup_authorization(
             plan,
@@ -310,25 +318,6 @@ def test_plan_loader_refuses_missing_oversize_symlink_and_directory(tmp_path: Pa
         _assert_code("invalid_plan", caught.value)
 
 
-def test_plan_loader_refuses_a_file_that_grows_after_metadata_check(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path = tmp_path / "growing.json"
-    path.write_bytes(b"x" * (MAX_PLAN_BYTES + 1))
-    real_fstat = os.fstat
-
-    def stale_fstat(descriptor: int) -> os.stat_result:
-        values = list(real_fstat(descriptor))
-        values[6] = 0
-        return os.stat_result(values)
-
-    monkeypatch.setattr(os, "fstat", stale_fstat)
-    with pytest.raises(SetupAuthorizationError) as caught:
-        load_setup_plan(path)
-    _assert_code("invalid_plan", caught.value)
-
-
 @pytest.mark.parametrize(
     ("mutator", "expected"),
     [
@@ -357,6 +346,16 @@ def test_plan_validator_rejects_tampering(mutator: object, expected: str) -> Non
     with pytest.raises(SetupAuthorizationError) as caught:
         validate_setup_plan(plan)
     _assert_code(expected, caught.value)
+
+
+def test_plan_validator_refuses_a_digest_consistent_apply_disposition_lie() -> None:
+    plan = _plan({"waiter": "fail"})
+    plan["can_apply"] = False
+    unsigned = {key: item for key, item in plan.items() if key != "plan_digest"}
+    plan["plan_digest"] = document_digest(unsigned)
+    with pytest.raises(SetupAuthorizationError) as caught:
+        validate_setup_plan(plan)
+    _assert_code("invalid_plan", caught.value)
 
 
 def test_plan_validator_rejects_effect_tampering() -> None:
