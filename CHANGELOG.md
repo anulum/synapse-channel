@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.24] - 2026-09-04
+
 ### Fixed
 
 - Keep managed Codex pane bridges waiter-reachable while an already-running
@@ -21,6 +23,13 @@ All notable changes to this project are documented here.
   same live pane becomes safe to submit. New Synapse-managed Codex sessions
   disable provider-owned startup update prompts because package updates are
   centrally managed; existing terminals are never restarted or rewritten.
+- Keep the real OpenCode 1.17.20 editor lifecycle deterministic by isolating
+  its configuration and data roots, disabling automatic registry bootstrap and
+  project rediscovery, and loading the audited local claim-guard plugin
+  explicitly.
+- Update vulnerable documentation and VS Code dependency surfaces, including
+  `mkdocs-material`, `fast-uri`, `fflate`, and transitive `qs`, and advance the
+  reviewed CodeQL and SBOM actions to immutable upstream commit pins.
 
 ## [0.99.23] - 2026-09-01
 
