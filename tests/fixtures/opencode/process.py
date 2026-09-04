@@ -32,6 +32,13 @@ def isolated_environment(
     disable_project_config: bool,
 ) -> dict[str, str]:
     """Return a filesystem-isolated OpenCode environment for real processes."""
+    # OpenCode installs its plugin SDK in every discovered configuration directory,
+    # even when the test plugin is a dependency-free local file.  A fresh acceptance
+    # home must not turn startup into a registry availability test.  OpenCode 1.17.20
+    # explicitly skips dependency installation for a non-writable config directory.
+    config_dir = home / ".config" / "opencode"
+    config_dir.mkdir(mode=0o500, parents=True, exist_ok=True)
+    config_dir.chmod(0o500)
     environment = {
         **os.environ,
         "OPENCODE_TEST_HOME": str(home),
@@ -44,6 +51,7 @@ def isolated_environment(
         "OPENCODE_DISABLE_AUTOUPDATE": "1",
         "OPENCODE_DISABLE_AUTOCOMPACT": "1",
         "OPENCODE_DISABLE_MODELS_FETCH": "1",
+        "OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER": "1",
         "OPENCODE_AUTH_CONTENT": "{}",
         "NO_COLOR": "1",
     }
@@ -54,6 +62,36 @@ def isolated_environment(
     if disable_project_config:
         environment["OPENCODE_DISABLE_PROJECT_CONFIG"] = "1"
     return environment
+
+
+def governed_project_environment(environment: Mapping[str, str], project: Path) -> dict[str, str]:
+    """Load the installed local adapter without OpenCode's registry bootstrap.
+
+    The adapter installer remains the source of truth for both the MCP entry and
+    the generated claim-guard plugin.  This function only moves those exact
+    installed values into the already-isolated config-content channel so OpenCode
+    does not rediscover the writable project ``.opencode`` directory and start a
+    background SDK installation before the real governance turn.
+    """
+    config_path = project / ".opencode" / "opencode.json"
+    plugin_path = project / ".opencode" / "plugins" / "synapse-claim-guard.js"
+    try:
+        installed = json.loads(config_path.read_text(encoding="utf-8"))
+        configured = json.loads(environment["OPENCODE_CONFIG_CONTENT"])
+    except (KeyError, OSError, json.JSONDecodeError) as exc:
+        message = "installed OpenCode adapter configuration is unreadable"
+        raise AssertionError(message) from exc
+    if not isinstance(installed, dict) or not isinstance(configured, dict):
+        raise AssertionError("installed OpenCode adapter configuration must be an object")
+    if not plugin_path.is_file():
+        raise AssertionError("installed OpenCode claim-guard plugin is missing")
+
+    result = dict(environment)
+    configured.update(installed)
+    configured["plugin"] = [plugin_path.resolve().as_uri()]
+    result["OPENCODE_CONFIG_CONTENT"] = json.dumps(configured)
+    result["OPENCODE_DISABLE_PROJECT_CONFIG"] = "1"
+    return result
 
 
 def find_opencode() -> str:

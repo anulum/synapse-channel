@@ -410,7 +410,16 @@ def test_proxy_isolates_each_lifecycle_runtime(tmp_path: Path) -> None:
     trace = tmp_path / "trace.jsonl"
     first = _new_trace_writer(trace)
     second = _new_trace_writer(trace)
-    inherited = {"HOME": "/shared", "OPENCODE_CONFIG_CONTENT": '{"model":"test"}'}
+    shared_config = tmp_path / "shared-config"
+    shared_data = tmp_path / "shared-data"
+    shared_config.mkdir(mode=0o700)
+    shared_data.mkdir(mode=0o700)
+    inherited = {
+        "HOME": "/shared",
+        "OPENCODE_CONFIG_CONTENT": '{"model":"test"}',
+        "XDG_CONFIG_HOME": str(shared_config),
+        "XDG_DATA_HOME": str(shared_data),
+    }
     try:
         first_environment = _lifecycle_environment(first.path, inherited)
         second_environment = _lifecycle_environment(second.path, inherited)
@@ -423,8 +432,6 @@ def test_proxy_isolates_each_lifecycle_runtime(tmp_path: Path) -> None:
     isolated_keys = (
         "HOME",
         "OPENCODE_TEST_HOME",
-        "XDG_CONFIG_HOME",
-        "XDG_DATA_HOME",
         "XDG_STATE_HOME",
         "XDG_CACHE_HOME",
     )
@@ -434,6 +441,9 @@ def test_proxy_isolates_each_lifecycle_runtime(tmp_path: Path) -> None:
         assert first_path != second_path
         assert stat.S_IMODE(first_path.stat().st_mode) == 0o700
         assert stat.S_IMODE(second_path.stat().st_mode) == 0o700
+    for key in ("XDG_CONFIG_HOME", "XDG_DATA_HOME"):
+        assert first_environment[key] == inherited[key]
+        assert second_environment[key] == inherited[key]
 
 
 def test_trace_contract_accepts_one_prompt_across_lifecycle_segments(tmp_path: Path) -> None:

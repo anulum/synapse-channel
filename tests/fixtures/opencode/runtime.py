@@ -13,6 +13,7 @@ from fixtures.opencode.process import (
     OPENCODE_VERSION,
     TEST_MODEL,
     find_opencode,
+    governed_project_environment,
     isolated_environment,
     run_opencode,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "ScriptedLlmServer",
     "acp_initialize",
     "find_opencode",
+    "governed_project_environment",
     "isolated_environment",
     "run_opencode",
     "running_opencode_server",

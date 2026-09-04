@@ -19,6 +19,7 @@ from fixtures.opencode.runtime import (
     ScriptedLlmServer,
     acp_initialize,
     find_opencode,
+    governed_project_environment,
     isolated_environment,
     run_opencode,
     running_opencode_server,
@@ -170,7 +171,16 @@ def test_real_native_plugin_live_claim_and_adapter_lifecycle(tmp_path: Path) -> 
     home.mkdir()
     config = repo / ".opencode" / "opencode.json"
     config.parent.mkdir(mode=0o700)
-    config.write_text(json.dumps({"permission": {"write": "allow"}}) + "\n", encoding="utf-8")
+    config.write_text(
+        json.dumps(
+            {
+                "$schema": "https://opencode.ai/config.json",
+                "permission": {"write": "allow"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     config.chmod(0o600)
     launcher = _synapse_launcher(tmp_path / "synapse-current")
     allowed_path = repo / "allowed.txt"
@@ -178,6 +188,10 @@ def test_real_native_plugin_live_claim_and_adapter_lifecycle(tmp_path: Path) -> 
     denied_path = repo / "denied.txt"
 
     with ScriptedLlmServer() as llm, isolated_hub(tmp_path) as hub:
+        environment = _source_environment(
+            isolated_environment(home, llm.url, pure=False, disable_project_config=True)
+        )
+        identity_environment = {"XDG_DATA_HOME": environment["XDG_DATA_HOME"]}
         installed = run_cli(
             "adapters",
             "opencode",
@@ -190,6 +204,7 @@ def test_real_native_plugin_live_claim_and_adapter_lifecycle(tmp_path: Path) -> 
             str(launcher),
             uri=hub.uri,
             cwd=repo,
+            env=identity_environment,
         )
         assert installed.ok(), installed.output
         status = run_cli(
@@ -199,6 +214,7 @@ def test_real_native_plugin_live_claim_and_adapter_lifecycle(tmp_path: Path) -> 
             "--project",
             str(repo),
             cwd=repo,
+            env=identity_environment,
         )
         assert status.ok(), status.output
 
@@ -213,12 +229,11 @@ def test_real_native_plugin_live_claim_and_adapter_lifecycle(tmp_path: Path) -> 
             "seat/one",
             uri=hub.uri,
             cwd=repo,
+            env=identity_environment,
         )
         assert claimed.ok(), claimed.output
 
-        environment = _source_environment(
-            isolated_environment(home, llm.url, pure=False, disable_project_config=False)
-        )
+        environment = governed_project_environment(environment, repo)
         llm.enqueue_tool("write", {"filePath": str(allowed_path), "content": "allowed\n"})
         llm.enqueue_text("allowed continuation")
         allowed = run_opencode(
@@ -293,6 +308,7 @@ def test_real_native_plugin_live_claim_and_adapter_lifecycle(tmp_path: Path) -> 
             str(launcher),
             uri=hub.uri,
             cwd=repo,
+            env=identity_environment,
         )
         assert upgraded.ok(), upgraded.output
         upgraded_config = json.loads(config.read_text(encoding="utf-8"))
@@ -306,6 +322,7 @@ def test_real_native_plugin_live_claim_and_adapter_lifecycle(tmp_path: Path) -> 
             "--project",
             str(repo),
             cwd=repo,
+            env=identity_environment,
         )
         assert removed.ok(), removed.output
         final_config = json.loads(config.read_text(encoding="utf-8"))

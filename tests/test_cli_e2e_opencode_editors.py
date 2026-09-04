@@ -41,7 +41,12 @@ from e2e.opencode_editors.jetbrains_timing import DEFAULT_JETBRAINS_TIMING
 from e2e.opencode_editors.trace_contract import assert_editor_trace
 from e2e.opencode_editors.zed_timing import DEFAULT_ZED_TIMING
 from fixtures.opencode.llm import ScriptedLlmServer
-from fixtures.opencode.process import OPENCODE_VERSION, TEST_MODEL, isolated_environment
+from fixtures.opencode.process import (
+    OPENCODE_VERSION,
+    TEST_MODEL,
+    governed_project_environment,
+    isolated_environment,
+)
 
 _CLIENT_TIMEOUT_SECONDS = {
     "emacs": 180,
@@ -203,7 +208,13 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
     config_path = project / ".opencode" / "opencode.json"
     config_path.parent.mkdir(mode=0o700)
     config_path.write_text(
-        json.dumps({"permission": {"write": "allow"}}) + "\n",
+        json.dumps(
+            {
+                "$schema": "https://opencode.ai/config.json",
+                "permission": {"write": "allow"},
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
     config_path.chmod(0o600)
@@ -215,7 +226,17 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
             ready_timeout=_ISOLATED_HUB_READY_TIMEOUT_SECONDS,
         ) as hub,
     ):
+        identity_environment: dict[str, str] | None = None
         try:
+            environment = source_environment(
+                isolated_environment(
+                    home,
+                    llm.url,
+                    pure=False,
+                    disable_project_config=True,
+                )
+            )
+            identity_environment = {"XDG_DATA_HOME": environment["XDG_DATA_HOME"]}
             installed = run_cli(
                 "adapters",
                 "opencode",
@@ -228,16 +249,10 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
                 str(launcher),
                 uri=hub.uri,
                 cwd=project,
+                env=identity_environment,
             )
             assert installed.ok(), installed.output
-            environment = source_environment(
-                isolated_environment(
-                    home,
-                    llm.url,
-                    pure=False,
-                    disable_project_config=False,
-                )
-            )
+            environment = governed_project_environment(environment, project)
             config = json.loads(environment["OPENCODE_CONFIG_CONTENT"])
             config["model"] = TEST_MODEL
             environment["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
@@ -311,6 +326,7 @@ def test_real_editor_client_enforces_synapse_governance(tmp_path: Path) -> None:
                 "--project",
                 str(project),
                 cwd=project,
+                env=identity_environment,
             )
             if not removed.ok():
                 cleanup_errors.append(f"OpenCode adapter uninstall failed: {removed.output}")
