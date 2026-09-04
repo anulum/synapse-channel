@@ -504,6 +504,7 @@ body {
 }
 
 .roster-row {
+  position: relative;
   display: grid;
   grid-template-columns: 14px 1fr auto;
   align-items: baseline;
@@ -517,6 +518,27 @@ body {
 
 .roster-row:hover {
   background: #212a34;
+}
+
+.roster-row__inspect {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.roster-row__inspect::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.roster-row:has(.roster-row__inspect:focus-visible) {
+  outline: 2px solid var(--now);
+  outline-offset: -2px;
 }
 
 .roster-row--holding {
@@ -4293,7 +4315,7 @@ body {
   font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  color: var(--dim);
+  color: var(--muted);
   margin: var(--sp-3) 0 var(--sp-1);
 }
 

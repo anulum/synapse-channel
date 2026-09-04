@@ -7,7 +7,7 @@
 // SYNAPSE_CHANNEL — the detail drawer: one name, everything the fleet knows
 
 import type { JSX } from "react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import type { AgentDetail, TaskDetail } from "../lib/detail";
 import { COLOUR_OF } from "../lib/events";
@@ -70,21 +70,58 @@ interface DetailDrawerProps {
  * the backdrop closes it.
  */
 export function DetailDrawer({ agent, task, onClose, onFilterLog, onTrace }: DetailDrawerProps): JSX.Element | null {
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  const open = agent !== undefined || task !== undefined;
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
   useEffect(() => {
+    const drawer = drawerRef.current;
+    if (!open || drawer === null) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const fallback = opener?.parentElement?.closest<HTMLElement>("[tabindex]");
+    const veil = drawer.parentElement;
+    const siblings = Array.from(veil?.parentElement?.children ?? [])
+      .filter((node): node is HTMLElement => node instanceof HTMLElement && node !== veil);
+    const previousInert = siblings.map((node) => node.hasAttribute("inert"));
+    siblings.forEach((node) => { node.setAttribute("inert", ""); });
+    drawer.querySelector<HTMLButtonElement>("button")?.focus();
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        closeRef.current();
+      } else if (event.key === "Tab") {
+        const buttons = drawer.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+        const first = buttons[0];
+        const last = buttons[buttons.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      siblings.forEach((node, index) => { node.toggleAttribute("inert", previousInert[index]); });
+      if (opener?.isConnected) opener.focus();
+      else if (fallback?.isConnected) fallback.focus();
+    };
+  }, [open]);
 
   if (agent === undefined && task === undefined) return null;
   const subject = agent !== undefined ? agent.name : (task?.taskId ?? "");
 
   return (
     <div className="drawer-veil" onClick={onClose}>
-      <aside
+      <div
+        ref={drawerRef}
         className="drawer"
+        role="dialog"
+        aria-modal="true"
         aria-label={agent !== undefined ? `Agent ${subject}` : `Task ${subject}`}
         onClick={(click) => click.stopPropagation()}
       >
@@ -215,7 +252,7 @@ export function DetailDrawer({ agent, task, onClose, onFilterLog, onTrace }: Det
             </button>
           )}
         </div>
-      </aside>
+      </div>
     </div>
   );
 }

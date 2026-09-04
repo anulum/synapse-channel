@@ -63,6 +63,11 @@ across all five interface languages and both display densities.
   fleet knows about that name (claims with paths, the identity's unread
   dead-letter mailbox, dependency verdicts, history in the window), with
   actions that only steer other panels — filter the log, trace causality.
+  Roster inspection is also a native button: Tab to the identity and activate
+  with Enter or Space. The named modal detail focuses its close button, keeps
+  Tab navigation inside, and makes the background inert. Escape, close, or
+  backdrop dismissal restores the opener (or its surviving focusable container).
+  Live data updates do not reset the selected control inside an open detail.
 - **Deck** — the fleet roster (waker-missing presence honesty included) over
   the reliability EVIDENCE panel; the claims board (per-path detail, ticking
   lease countdowns, loud branch-conflict banner) over the inspector tabs; the

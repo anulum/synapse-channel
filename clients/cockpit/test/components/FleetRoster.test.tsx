@@ -37,6 +37,22 @@ function entry(agent: string, overrides: Partial<RosterEntry> = {}): RosterEntry
 }
 
 describe("FleetRoster", () => {
+  it("inspects through a native button with Enter and Space", async () => {
+    const inspect = vi.fn();
+    render(<FleetRoster roster={[entry("project/worker")]} waiters={0} onInspect={inspect} />);
+    const button = screen.getByRole("button", { name: "Inspect agent project/worker" });
+    expect(button.tagName).toBe("BUTTON");
+    expect(button.getAttribute("aria-haspopup")).toBe("dialog");
+    button.focus();
+    await userEvent.keyboard("{Enter} ");
+    expect(inspect.mock.calls).toEqual([["project/worker"], ["project/worker"]]);
+  });
+
+  it("does not advertise a control without an inspection callback", () => {
+    render(<FleetRoster roster={[entry("project/worker")]} waiters={0} />);
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
   it("waits honestly with an empty roster", () => {
     render(<FleetRoster roster={[]} waiters={0} />);
     expect(screen.getByText("No agents present. Waiting for the hub.")).toBeTruthy();

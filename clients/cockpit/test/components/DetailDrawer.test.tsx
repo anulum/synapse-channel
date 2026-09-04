@@ -88,6 +88,74 @@ const TASK: TaskDetail = {
 };
 
 describe("DetailDrawer", () => {
+  it("does not handle Escape while closed", async () => {
+    const close = vi.fn();
+    render(<DetailDrawer onClose={close} onFilterLog={() => {}} />);
+    await userEvent.keyboard("{Escape}");
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("restores a surviving container when a live roster removes the opener", () => {
+    const close = vi.fn();
+    const view = render(<>
+      <div tabIndex={0} aria-label="roster container"><button>inspect</button></div>
+      <div inert>already unavailable</div>
+      <DetailDrawer onClose={close} onFilterLog={() => {}} />
+    </>);
+    const opener = screen.getByRole("button", { name: "inspect" });
+    opener.focus();
+    view.rerender(<>
+      <div tabIndex={0} aria-label="roster container"><button>inspect</button></div>
+      <div inert>already unavailable</div>
+      <DetailDrawer task={TASK} onClose={close} onFilterLog={() => {}} onTrace={() => {}} />
+    </>);
+    view.rerender(<>
+      <div tabIndex={0} aria-label="roster container" />
+      <div inert>already unavailable</div>
+      <DetailDrawer onClose={close} onFilterLog={() => {}} />
+    </>);
+    expect(document.activeElement).toBe(screen.getByLabelText("roster container"));
+    expect(screen.getByText("already unavailable").hasAttribute("inert")).toBe(true);
+  });
+
+  it("contains focus without resetting it on live updates and restores the opener", async () => {
+    const firstClose = vi.fn();
+    const nextClose = vi.fn();
+    const view = render(<>
+      <button>inspect</button>
+      <DetailDrawer onClose={firstClose} onFilterLog={() => {}} />
+    </>);
+    const opener = screen.getByRole("button", { name: "inspect" });
+    opener.focus();
+    view.rerender(<>
+      <button>inspect</button>
+      <DetailDrawer agent={AGENT} onClose={firstClose} onFilterLog={() => {}} />
+    </>);
+    expect(screen.getByRole("dialog", { name: "Agent quantum/claude" })).toBeTruthy();
+    const close = screen.getByRole("button", { name: "Close the drawer" });
+    const filter = screen.getByRole("button", { name: "filter log" });
+    expect(document.activeElement).toBe(close);
+    expect(opener.hasAttribute("inert")).toBe(true);
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(filter);
+    view.rerender(<>
+      <button>inspect</button>
+      <DetailDrawer agent={{ ...AGENT, moreEvents: 8 }} onClose={nextClose} onFilterLog={() => {}} />
+    </>);
+    expect(document.activeElement).toBe(filter);
+    await userEvent.tab();
+    expect(document.activeElement).toBe(close);
+    await userEvent.keyboard("{Escape}");
+    expect(nextClose).toHaveBeenCalledOnce();
+    expect(firstClose).not.toHaveBeenCalled();
+    view.rerender(<>
+      <button>inspect</button>
+      <DetailDrawer onClose={nextClose} onFilterLog={() => {}} />
+    </>);
+    expect(opener.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(opener);
+  });
+
   it("renders nothing when no subject is inspected", () => {
     const { container } = render(
       <DetailDrawer onClose={() => {}} onFilterLog={() => {}} />,

@@ -54,23 +54,29 @@ function RosterRow({ entry, onInspect, selected }: RosterRowProps): JSX.Element 
   const shown = entry.paths.slice(0, PATHS_SHOWN);
   const overflow = held - shown.length;
   const claimCount = entry.activeClaims.length + entry.staleClaims.length;
+  const identity = <>
+    <span className="roster-row__name">{lastSegment(entry.agent)}</span>
+    {project(entry.agent) !== "" && <span className="roster-row__project">{project(entry.agent)}</span>}
+  </>;
 
   return (
     <li
       className={`roster-row roster-row--${entry.status}${entry.online ? "" : " roster-row--offline"}${onInspect !== undefined ? " roster-row--link" : ""}${selected ? " context-match" : ""}`}
-      onClick={onInspect === undefined ? undefined : () => onInspect(entry.agent)}
       aria-current={selected ? "true" : undefined}
       title={`${entry.agent} — ${STATUS_WORD[entry.status]}${entry.online ? "" : " (offline)"}`}
     >
       <span className="roster-row__glyph" aria-hidden="true">
         {STATUS_GLYPH[entry.status]}
       </span>
-      <span className="roster-row__id">
-        <span className="roster-row__name">{lastSegment(entry.agent)}</span>
-        {project(entry.agent) !== "" && (
-          <span className="roster-row__project">{project(entry.agent)}</span>
-        )}
-      </span>
+      {onInspect === undefined ? <span className="roster-row__id">{identity}</span> : (
+        <button
+          type="button"
+          className="roster-row__id roster-row__inspect"
+          aria-label={`Inspect agent ${entry.agent}`}
+          aria-haspopup="dialog"
+          onClick={() => onInspect(entry.agent)}
+        >{identity}</button>
+      )}
       <span className="roster-row__meta">
         {claimCount > 0 ? (
           <span className="roster-row__count">{`${claimCount} claim${claimCount === 1 ? "" : "s"}`}</span>
