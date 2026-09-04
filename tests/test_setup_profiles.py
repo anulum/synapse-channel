@@ -30,7 +30,7 @@ def test_spec_is_deterministic_complete_and_read_only() -> None:
     first = build_setup_spec(profile)
     second = build_setup_spec(profile)
     assert canonical_json(first) == canonical_json(second)
-    assert first["supported_operations"] == ["spec", "inspect", "plan"]
+    assert first["supported_operations"] == ["spec", "inspect", "plan", "authorize"]
     assert first["read_only"] is True
     requirements = first["requirements"]
     assert isinstance(requirements, list)

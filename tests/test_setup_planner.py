@@ -80,6 +80,7 @@ def test_ready_plan_is_deterministic_digest_bound_and_non_executable() -> None:
     assert first["effects"] == []
     assert first["authority_required"] == []
     assert first["warnings"] == ["apply_not_available"]
+    assert first["target"] == inspection["target"]
     assert first["inspection_digest"] == document_digest(inspection)
     unsigned = {key: value for key, value in first.items() if key != "plan_digest"}
     assert first["plan_digest"] == document_digest(unsigned)
@@ -187,4 +188,20 @@ def test_planner_rejects_duplicate_missing_and_contradictory_checks() -> None:
     inspection = inspection_document({"hub": "fail"})
     inspection["ready"] = True
     with pytest.raises(ValueError, match="contradicts"):
+        build_setup_plan(_profile(), inspection)
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        None,
+        {"uri": "http://localhost", "project": "DEMO", "identity": "DEMO/one"},
+        {"uri": "ws://user:secret@localhost", "project": "DEMO", "identity": "DEMO/one"},
+        {"uri": "ws://localhost", "project": "bad project", "identity": "DEMO/one"},
+    ],
+)
+def test_planner_refuses_an_unsafe_or_incomplete_target(target: object) -> None:
+    inspection = inspection_document()
+    inspection["target"] = target
+    with pytest.raises(ValueError, match="target"):
         build_setup_plan(_profile(), inspection)

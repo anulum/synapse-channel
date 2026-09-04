@@ -6,6 +6,7 @@
     { "$ref": "#/$defs/spec" },
     { "$ref": "#/$defs/inspection" },
     { "$ref": "#/$defs/plan" },
+    { "$ref": "#/$defs/authorization" },
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
@@ -41,6 +42,16 @@
         "remedy": { "type": "string" }
       },
       "required": ["id", "status", "required", "value", "detail", "remedy"]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uri": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "project": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "identity": { "type": "string", "minLength": 1, "maxLength": 256 }
+      },
+      "required": ["uri", "project", "identity"]
     },
     "effect": {
       "type": "object",
@@ -83,7 +94,8 @@
               "prefixItems": [
                 { "const": "spec" },
                 { "const": "inspect" },
-                { "const": "plan" }
+                { "const": "plan" },
+                { "const": "authorize" }
               ],
               "items": false
             },
@@ -113,16 +125,7 @@
             "profile_version": { "const": 1 },
             "read_only": { "const": true },
             "ready": { "type": "boolean" },
-            "target": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "uri": { "type": "string", "minLength": 1 },
-                "project": { "type": "string", "minLength": 1 },
-                "identity": { "type": "string", "minLength": 1 }
-              },
-              "required": ["uri", "project", "identity"]
-            },
+            "target": { "$ref": "#/$defs/target" },
             "summary": {
               "type": "object",
               "additionalProperties": false,
@@ -164,6 +167,7 @@
             "inspection_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "profile_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "plan_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "target": { "$ref": "#/$defs/target" },
             "authority_required": {
               "type": "array",
               "uniqueItems": true,
@@ -184,8 +188,66 @@
           },
           "required": [
             "schema_version", "document_kind", "profile", "profile_version", "read_only",
-            "can_apply", "ready", "inspection_digest", "profile_digest", "plan_digest",
+            "can_apply", "ready", "inspection_digest", "profile_digest", "plan_digest", "target",
             "authority_required", "effects", "warnings"
+          ]
+        }
+      ]
+    },
+    "authorization": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": { "const": "synapse-setup.v1" },
+            "document_kind": { "const": "authorization" },
+            "profile": { "const": "local-single-user" },
+            "profile_version": { "const": 1 },
+            "read_only": { "const": true },
+            "can_apply": { "const": false },
+            "plan_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "authorization_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "target": { "$ref": "#/$defs/target" },
+            "confirmation_nonce": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{22,128}$"
+            },
+            "issued_at": { "type": "integer", "minimum": 0 },
+            "expires_at": { "type": "integer", "minimum": 30 },
+            "authority_granted": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": ["operator_confirmation", "operator_restart_authority"]
+              }
+            },
+            "restart_authority": {
+              "oneOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "pid": { "type": "integer", "minimum": 2, "maximum": 2147483647 }
+                  },
+                  "required": ["pid"]
+                }
+              ]
+            },
+            "consumption_required": { "const": true },
+            "warnings": {
+              "type": "array",
+              "prefixItems": [{ "const": "apply_not_available" }],
+              "items": false
+            }
+          },
+          "required": [
+            "schema_version", "document_kind", "profile", "profile_version", "read_only",
+            "can_apply", "plan_digest", "authorization_digest", "target",
+            "confirmation_nonce", "issued_at", "expires_at", "authority_granted",
+            "restart_authority", "consumption_required", "warnings"
           ]
         }
       ]
@@ -199,10 +261,15 @@
           "properties": {
             "schema_version": { "const": "synapse-setup.v1" },
             "document_kind": { "const": "error" },
-            "command": { "enum": ["spec", "inspect", "plan"] },
+            "command": { "enum": ["spec", "inspect", "plan", "authorize"] },
             "profile": { "type": "string", "minLength": 1, "maxLength": 128 },
             "code": {
-              "enum": ["unknown_profile", "invalid_uri", "inspection_failed", "planning_failed"]
+              "enum": [
+                "unknown_profile", "invalid_uri", "inspection_failed", "planning_failed",
+                "invalid_plan", "digest_mismatch", "invalid_nonce", "invalid_expiry",
+                "plan_blocked", "restart_authority_required", "unexpected_restart_authority",
+                "authorization_failed"
+              ]
             },
             "message": { "type": "string", "minLength": 1 }
           },

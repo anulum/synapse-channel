@@ -20,6 +20,7 @@ from synapse_channel.setup_contract import (
     SetupPlan,
     SetupPlannedEffect,
     document_digest,
+    validated_setup_target,
 )
 from synapse_channel.setup_profiles import SetupProfile, build_setup_spec
 
@@ -140,6 +141,7 @@ def _validated_statuses(
 def build_setup_plan(profile: SetupProfile, inspection: dict[str, object]) -> dict[str, object]:
     """Build a deterministic, digest-bound plan that cannot be applied."""
     statuses = _validated_statuses(profile, inspection)
+    target = validated_setup_target(inspection.get("target"))
     effects: list[SetupPlannedEffect] = []
     for rule in _EFFECT_RULES:
         status = statuses[rule.check_id]
@@ -167,6 +169,7 @@ def build_setup_plan(profile: SetupProfile, inspection: dict[str, object]) -> di
         profile_version=profile.version,
         inspection_digest=document_digest(inspection),
         profile_digest=document_digest(build_setup_spec(profile)),
+        target=target,
         ready=bool(inspection["ready"]),
         effects=tuple(effects),
         warnings=tuple(warnings),

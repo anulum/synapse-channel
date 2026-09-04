@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from importlib.resources import files
 from typing import Literal, cast
+from urllib.parse import urlsplit
 
 SETUP_SCHEMA_VERSION = "synapse-setup.v1"
 SETUP_SCHEMA_RESOURCE = "schemas/synapse-setup-v1.schema.json"
@@ -30,7 +31,25 @@ SetupEffectAuthority = Literal["operator_confirmation", "operator_restart_author
 SetupEffectDisruption = Literal[
     "configuration_change", "environment_change", "service_start", "host_migration"
 ]
-SetupErrorCode = Literal["unknown_profile", "invalid_uri", "inspection_failed", "planning_failed"]
+SetupCommand = Literal["spec", "inspect", "plan", "authorize"]
+SetupErrorCode = Literal[
+    "unknown_profile",
+    "invalid_uri",
+    "inspection_failed",
+    "planning_failed",
+    "invalid_plan",
+    "digest_mismatch",
+    "invalid_nonce",
+    "invalid_expiry",
+    "plan_blocked",
+    "restart_authority_required",
+    "unexpected_restart_authority",
+    "authorization_failed",
+]
+
+MAX_SETUP_URI_LENGTH = 2048
+MAX_SETUP_PROJECT_LENGTH = 128
+MAX_SETUP_IDENTITY_LENGTH = 256
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +131,7 @@ class SetupPlan:
     profile_version: int
     inspection_digest: str
     profile_digest: str
+    target: dict[str, str]
     ready: bool
     effects: tuple[SetupPlannedEffect, ...]
     warnings: tuple[str, ...]
@@ -135,6 +155,7 @@ class SetupPlan:
             "ready": self.ready,
             "inspection_digest": self.inspection_digest,
             "profile_digest": self.profile_digest,
+            "target": dict(self.target),
             "authority_required": authorities,
             "effects": [effect.as_dict() for effect in self.effects],
             "warnings": list(self.warnings),
@@ -162,6 +183,46 @@ def document_digest(document: dict[str, object]) -> str:
     return sha256(canonical_json(document).encode("utf-8")).hexdigest()
 
 
+def validated_setup_target(value: object) -> dict[str, str]:
+    """Return a bounded credential-free target or reject it."""
+    if not isinstance(value, dict) or set(value) != {"uri", "project", "identity"}:
+        raise ValueError("setup target must contain exactly uri, project, and identity")
+    uri = value.get("uri")
+    project = value.get("project")
+    identity = value.get("identity")
+    if not isinstance(uri, str) or not 1 <= len(uri) <= MAX_SETUP_URI_LENGTH:
+        raise ValueError("setup target URI is invalid")
+    if not _bounded_plain_text(project, MAX_SETUP_PROJECT_LENGTH):
+        raise ValueError("setup target project is invalid")
+    if not _bounded_plain_text(identity, MAX_SETUP_IDENTITY_LENGTH):
+        raise ValueError("setup target identity is invalid")
+    try:
+        parsed = urlsplit(uri)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("setup target URI is invalid") from exc
+    if not (
+        parsed.scheme in {"ws", "wss"}
+        and parsed.hostname
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.query == ""
+        and parsed.fragment == ""
+        and (port is None or 0 < port <= 65535)
+        and not any(character.isspace() or ord(character) < 32 for character in uri)
+    ):
+        raise ValueError("setup target URI is invalid")
+    return {"uri": uri, "project": cast(str, project), "identity": cast(str, identity)}
+
+
+def _bounded_plain_text(value: object, maximum: int) -> bool:
+    return bool(
+        isinstance(value, str)
+        and 1 <= len(value) <= maximum
+        and not any(character.isspace() or ord(character) < 32 for character in value)
+    )
+
+
 def setup_schema() -> dict[str, object]:
     """Load the packaged JSON Schema for setup documents."""
     resource = files("synapse_channel").joinpath("schemas").joinpath("synapse-setup-v1.schema.json")
@@ -170,7 +231,7 @@ def setup_schema() -> dict[str, object]:
 
 def setup_error_document(
     *,
-    command: Literal["spec", "inspect", "plan"],
+    command: SetupCommand,
     profile: str,
     code: SetupErrorCode,
 ) -> dict[str, object]:
@@ -180,6 +241,14 @@ def setup_error_document(
         "invalid_uri": "The hub URI must be a credential-free ws:// or wss:// endpoint.",
         "inspection_failed": "The environment could not be inspected safely.",
         "planning_failed": "A safe plan could not be derived from the inspection.",
+        "invalid_plan": "The supplied setup plan is not a valid regular plan document.",
+        "digest_mismatch": "The confirmed digest does not match the supplied setup plan.",
+        "invalid_nonce": "The confirmation nonce does not satisfy the setup contract.",
+        "invalid_expiry": "The authorization lifetime does not satisfy the setup contract.",
+        "plan_blocked": "The setup plan contains a blocked effect and cannot be authorized.",
+        "restart_authority_required": "The setup plan requires authority for one exact process ID.",
+        "unexpected_restart_authority": "Restart authority would exceed the setup plan's scope.",
+        "authorization_failed": "A safe setup authorization could not be produced.",
     }
     return {
         "schema_version": SETUP_SCHEMA_VERSION,

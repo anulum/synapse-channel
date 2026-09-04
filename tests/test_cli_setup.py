@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -27,9 +28,23 @@ def test_setup_parser_routes_every_read_only_operation() -> None:
     plan = cli.build_parser().parse_args(
         ["setup", "plan", "--profile", "local-single-user", "--json"]
     )
+    authorize = cli.build_parser().parse_args(
+        [
+            "setup",
+            "authorize",
+            "--plan",
+            "plan.json",
+            "--confirm-digest",
+            "a" * 64,
+            "--nonce",
+            "0123456789abcdefghijkl",
+            "--json",
+        ]
+    )
     assert spec.func is cli_setup._cmd_spec
     assert inspect.func is cli_setup._cmd_inspect
     assert plan.func is cli_setup._cmd_plan
+    assert authorize.func is cli_setup._cmd_authorize
 
 
 def test_setup_parser_exposes_no_secret_or_mutating_options() -> None:
@@ -116,6 +131,25 @@ def test_human_plan_renders_digest_and_effects(capsys: pytest.CaptureFixture[str
     assert "1 proposed effect(s); apply unavailable" in output
     assert f"digest: {'a' * 64}" in output
     assert "planned establish_identity_waiter" in output
+
+
+def test_human_authorization_is_explicitly_output_only(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_setup._print_document(
+        {
+            "document_kind": "authorization",
+            "profile": "local-single-user",
+            "profile_version": 1,
+            "authorization_digest": "a" * 64,
+            "plan_digest": "b" * 64,
+            "expires_at": 1234,
+        },
+        as_json=False,
+    )
+    output = capsys.readouterr().out
+    assert "output only; apply unavailable" in output
+    assert f"digest: {'a' * 64}" in output
 
 
 def test_unknown_inspect_profile_returns_stable_error(
@@ -272,4 +306,73 @@ def test_plan_failure_is_bounded(
     assert cli_setup._cmd_plan(args) == 2
     output = capsys.readouterr().out
     assert json.loads(output)["code"] == "planning_failed"
+    assert "secret" not in output
+
+
+def test_authorize_emits_document_from_validated_plan(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    plan = {"profile": "local-single-user", "plan_digest": "a" * 64}
+    expected = {
+        "document_kind": "authorization",
+        "profile": "local-single-user",
+        "profile_version": 1,
+        "authorization_digest": "b" * 64,
+    }
+    monkeypatch.setattr(cli_setup, "load_setup_plan", lambda _path: plan)
+    monkeypatch.setattr(cli_setup, "build_setup_authorization", lambda *_args, **_kwargs: expected)
+    args = argparse.Namespace(
+        plan=Path("plan.json"),
+        confirm_digest="a" * 64,
+        nonce="0123456789abcdefghijkl",
+        expires_in=300,
+        authorize_restart_pid=None,
+        json=True,
+    )
+    assert cli_setup._cmd_authorize(args) == 0
+    assert json.loads(capsys.readouterr().out) == expected
+
+
+def test_authorize_returns_stable_bounded_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from synapse_channel.setup_authorization import SetupAuthorizationError
+
+    def refused(_path: object) -> dict[str, object]:
+        raise SetupAuthorizationError("invalid_plan")
+
+    monkeypatch.setattr(cli_setup, "load_setup_plan", refused)
+    args = argparse.Namespace(
+        plan=Path("Bearer-secret.json"),
+        confirm_digest="a" * 64,
+        nonce="0123456789abcdefghijkl",
+        expires_in=300,
+        authorize_restart_pid=None,
+        json=True,
+    )
+    assert cli_setup._cmd_authorize(args) == 2
+    output = capsys.readouterr().out
+    assert json.loads(output)["code"] == "invalid_plan"
+    assert "secret" not in output
+
+    monkeypatch.setattr(cli_setup, "load_setup_plan", lambda _path: {"profile": 7})
+    monkeypatch.setattr(
+        cli_setup,
+        "build_setup_authorization",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(SetupAuthorizationError("invalid_plan")),
+    )
+    assert cli_setup._cmd_authorize(args) == 2
+    assert json.loads(capsys.readouterr().out)["profile"] == "unknown"
+
+    monkeypatch.setattr(cli_setup, "load_setup_plan", lambda _path: {"profile": "safe"})
+    monkeypatch.setattr(
+        cli_setup,
+        "build_setup_authorization",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Bearer secret")),
+    )
+    assert cli_setup._cmd_authorize(args) == 2
+    output = capsys.readouterr().out
+    assert json.loads(output)["code"] == "authorization_failed"
     assert "secret" not in output

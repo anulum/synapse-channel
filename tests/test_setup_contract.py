@@ -19,6 +19,7 @@ from synapse_channel.setup_contract import (
     canonical_json,
     setup_error_document,
     setup_schema,
+    validated_setup_target,
 )
 
 
@@ -52,7 +53,7 @@ def test_packaged_schema_is_a_valid_draft_2020_12_schema() -> None:
     assert schema_id.endswith("synapse-setup-v1.schema.json")
 
 
-@pytest.mark.parametrize("command", ["spec", "inspect", "plan"])
+@pytest.mark.parametrize("command", ["spec", "inspect", "plan", "authorize"])
 def test_unknown_profile_error_is_stable_and_schema_valid(command: str) -> None:
     jsonschema = pytest.importorskip("jsonschema")
     document = setup_error_document(
@@ -65,3 +66,26 @@ def test_unknown_profile_error_is_stable_and_schema_valid(command: str) -> None:
     assert document["schema_version"] == SETUP_SCHEMA_VERSION
     assert document["code"] == "unknown_profile"
     assert "future-profile" not in str(document["message"])
+
+
+def test_setup_target_accepts_only_bounded_credential_free_values() -> None:
+    target = {
+        "uri": "wss://localhost:8876/synapse",
+        "project": "DEMO",
+        "identity": "DEMO/codex-one",
+    }
+    assert validated_setup_target(target) == target
+
+    for invalid in (
+        None,
+        {**target, "extra": "no"},
+        {**target, "uri": ""},
+        {**target, "uri": "https://localhost"},
+        {**target, "uri": "ws://user:secret@localhost"},
+        {**target, "uri": "ws://localhost?token=secret"},
+        {**target, "uri": "ws://localhost:99999"},
+        {**target, "project": "bad project"},
+        {**target, "identity": "bad\nidentity"},
+    ):
+        with pytest.raises(ValueError):
+            validated_setup_target(invalid)

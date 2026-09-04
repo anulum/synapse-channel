@@ -295,6 +295,15 @@ broadcasts remain durable inbox traffic but never inject into provider panes.
 Native Windows service setup is not
 claimed; use WSL with systemd as documented in the deployment guide.
 
+For agent-assisted environment preparation, `synapse setup spec`, `inspect`,
+`plan`, and `authorize` expose the packaged `synapse-setup.v1` contract. The
+first three describe requirements, observe the host, and bind a credential-free
+target to a non-executable SHA-256 plan. `authorize` emits a short-lived envelope
+for one reviewed plan; it still has `can_apply: false` and never writes
+configuration, starts services, or restarts a process. See
+[Machine-readable setup](docs/machine-readable-setup.md) for the schema,
+expiry, nonce-consumption, and exact-PID authority rules.
+
 Two optional shell conveniences ship with the CLI: `synapse completions
 bash|zsh|fish` prints tab completion for every subcommand (generated from the
 live parser, so it never drifts), and `synapse install-shell-hook` adds the
@@ -1602,11 +1611,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.24 |
 | Public API exports | 70 |
-| Package modules | 538 |
-| Classes | 806 |
+| Package modules | 539 |
+| Classes | 807 |
 | Wire message types | 80 |
-| CLI subcommands | 189 |
-| Test functions | 9403 |
+| CLI subcommands | 190 |
+| Test functions | 9423 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 63 |
 | GitHub Actions workflows | 25 |

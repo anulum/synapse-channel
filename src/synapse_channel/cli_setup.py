@@ -17,6 +17,11 @@ from typing import Any, cast
 from urllib.parse import urlsplit
 
 from synapse_channel.client.agent import default_hub_uri
+from synapse_channel.setup_authorization import (
+    SetupAuthorizationError,
+    build_setup_authorization,
+    load_setup_plan,
+)
 from synapse_channel.setup_contract import canonical_json, setup_error_document
 from synapse_channel.setup_inspector import inspect_setup
 from synapse_channel.setup_planner import build_setup_plan
@@ -48,6 +53,12 @@ def _print_document(document: dict[str, object], *, as_json: bool) -> None:
                 f"- {effect['disposition']} {effect['id']}: "
                 f"{effect['authority']} / {effect['disruption']}"
             )
+        return
+    if kind == "authorization":
+        print("authorization: output only; apply unavailable")
+        print(f"digest: {document['authorization_digest']}")
+        print(f"plan: {document['plan_digest']}")
+        print(f"expires: {document['expires_at']}")
         return
     ready = "ready" if document["ready"] else "not ready"
     print(f"result: {ready} (read-only)")
@@ -165,8 +176,42 @@ def _cmd_plan(
     return 0
 
 
+def _cmd_authorize(args: argparse.Namespace) -> int:
+    profile = "unknown"
+    try:
+        plan = load_setup_plan(args.plan)
+        plan_profile = plan.get("profile")
+        if isinstance(plan_profile, str):
+            profile = plan_profile
+        document = build_setup_authorization(
+            plan,
+            confirm_digest=args.confirm_digest,
+            nonce=args.nonce,
+            expires_in=args.expires_in,
+            restart_pid=args.authorize_restart_pid,
+        )
+    except SetupAuthorizationError as exc:
+        _print_document(
+            setup_error_document(command="authorize", profile=profile, code=exc.code),
+            as_json=args.json,
+        )
+        return 2
+    except Exception:  # noqa: BLE001 - keep the CLI error contract bounded
+        _print_document(
+            setup_error_document(
+                command="authorize",
+                profile=profile,
+                code="authorization_failed",
+            ),
+            as_json=args.json,
+        )
+        return 2
+    _print_document(document, as_json=args.json)
+    return 0
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the read-only ``setup`` command family."""
+    """Register the non-mutating ``setup`` command family."""
     setup = subparsers.add_parser(
         "setup",
         help="Emit a versioned setup specification or inspect this host without changing it.",
@@ -197,3 +242,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     plan.add_argument("--id", default=None)
     plan.add_argument("--json", action="store_true", help="Emit one canonical JSON document.")
     plan.set_defaults(func=_cmd_plan)
+
+    authorize = actions.add_parser(
+        "authorize",
+        help="Emit an expiring authorization envelope without applying its plan.",
+    )
+    authorize.add_argument("--plan", required=True, metavar="FILE")
+    authorize.add_argument("--confirm-digest", required=True, metavar="SHA256")
+    authorize.add_argument("--nonce", required=True, metavar="TOKEN")
+    authorize.add_argument("--expires-in", type=int, default=300, metavar="SECONDS")
+    authorize.add_argument("--authorize-restart-pid", type=int, metavar="PID")
+    authorize.add_argument("--json", action="store_true", help="Emit one canonical JSON document.")
+    authorize.set_defaults(func=_cmd_authorize)
