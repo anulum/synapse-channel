@@ -23,6 +23,7 @@ import asyncio
 import json
 import logging
 import math
+import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -280,6 +281,14 @@ async def _lock(
 
 def _cmd_lock(args: argparse.Namespace) -> int:
     """Dispatch the ``lock`` subcommand."""
+    for path in args.paths or []:
+        if "," in path and not Path(path).exists():
+            print(
+                f"lock: --paths takes one path per flag; {path!r} contains a comma "
+                "and names no existing path. Repeat --paths for each path.",
+                file=sys.stderr,
+            )
+            return 2
     return asyncio.run(
         _lock(
             uri=args.uri,

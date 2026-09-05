@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -23,6 +25,41 @@ from synapse_channel.cli_locking import AgentFactory
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.mcp.git_claim import resolve_mcp_git_claim_scope
+
+
+@pytest.mark.parametrize(
+    ("paths", "accepted"),
+    [(["a.py,b.py"], False), (["a.py", "b.py"], True), (["odd,name.txt", "b.py"], True)],
+)
+async def test_packaged_lock_path_arguments(
+    tmp_path: Path, paths: list[str], accepted: bool
+) -> None:
+    (tmp_path / "odd,name.txt").touch()
+    async with running_hub(SynapseHub()) as (hub, uri):
+        argv = [
+            sys.executable,
+            "-m",
+            "synapse_channel.cli",
+            "lock",
+            "--uri",
+            uri,
+            "--name",
+            "path-input",
+            "--ready-timeout",
+            "2",
+        ]
+        for path in paths:
+            argv.extend(["--paths", path])
+        argv.extend(["path-input-task", "--", sys.executable, "-c", "print('command-executed')"])
+        result = await asyncio.to_thread(
+            subprocess.run, argv, cwd=tmp_path, capture_output=True, text=True, timeout=10
+        )
+        assert result.returncode == (0 if accepted else 2), result.stdout + result.stderr
+        assert ("command-executed" in result.stdout) is accepted
+        assert "path-input-task" not in hub.state.claims
+        if not accepted:
+            assert "lock: --paths takes one path per flag" in result.stderr
+            assert "Repeat --paths" in result.stderr
 
 
 def test_parser_lock() -> None:

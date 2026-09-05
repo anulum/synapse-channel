@@ -92,6 +92,12 @@ worktrees remain isolated. Outside Git, ordinary claims retain the historical
 shared worktree namespace. A keyless `synapse lock` remains a deliberately
 separate named mutex keyed by its task id and never probes Git.
 
+For `lock`, repeat `--paths` once per path, for example
+`synapse lock --paths src/a.py --paths src/b.py build -- make`.
+A comma-joined value that names no existing path is refused with exit code 2
+before connecting or running the command. An existing path whose filename
+contains a comma remains a literal path; the CLI never splits it.
+
 The `--auto-release-on` value is the policy stored with the claim; a client-side
 git hook enacts it so a finished branch frees its claim without a manual step.
 

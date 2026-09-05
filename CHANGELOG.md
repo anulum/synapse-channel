@@ -82,6 +82,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Reject comma-joined `lock --paths` values that name no existing path before
+  acquiring a lease or running the wrapped command; repeat the flag per path.
+
 - Make one `SynapseAgent.connect()` call one connection attempt that owns its
   state: readiness is cleared when the attempt starts and ends, `running` is
   re-armed, the previous close diagnostics are reset, and the attempt's
