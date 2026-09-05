@@ -381,6 +381,33 @@ class SystemdVerificationAdapter:
         if completed.returncode != 0:
             raise VerificationProbeError("verification_restart_failed")
 
+    async def _connect_replay(
+        self, agent: VerificationAgent, deadline: float
+    ) -> asyncio.Task[None]:
+        while (remaining := deadline - self._clock()) > 0:
+            task = asyncio.create_task(agent.connect())
+            ready = asyncio.create_task(agent.wait_until_ready(timeout=remaining))
+            connected = False
+            try:
+                await asyncio.wait(
+                    {task, ready}, timeout=remaining, return_when=asyncio.FIRST_COMPLETED
+                )
+                if ready.done() and ready.result() and not task.done():
+                    connected = True
+                    return task
+                if not task.done():
+                    raise VerificationProbeError("verification_replay_failed")
+                await task
+            finally:
+                ready.cancel()
+                await asyncio.gather(ready, return_exceptions=True)
+                if not connected:
+                    agent.running = False
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+            await self._sleep(min(0.05, max(0.0, deadline - self._clock())))
+        raise VerificationProbeError("verification_replay_failed")
+
     async def prove_replay(
         self,
         *,
@@ -392,7 +419,39 @@ class SystemdVerificationAdapter:
         systemctl: str,
         timeout: float,
     ) -> int:
-        """Prove a new hub process replayed the exact pre-restart canary."""
+        """Prove a new hub replayed the canary within one readiness/replay deadline.
+
+        Retry ended connection attempts while the listener starts. Request only
+        the exact canary, not surrounding history that may exceed frame limits.
+        The durable chat and consumption digests must still match the evidence.
+
+        Parameters
+        ----------
+        target : dict
+            Exact hub URI, project and recipient identity from the verified plan.
+        canary_id : str
+            Identifier used when issuing the pre-restart canary.
+        database : pathlib.Path
+            Local durable event store to check after network replay.
+        evidence : CanaryEvidence
+            Original chat and consumption sequence numbers and digests.
+        old_pid : int
+            Hub process observed before the authorised restart.
+        systemctl : str
+            Validated systemctl executable for the exact managed hub unit.
+        timeout : float
+            Shared process-readiness, connection and replay budget in seconds.
+
+        Returns
+        -------
+        int
+            New hub PID whose connection replayed the matching canary.
+
+        Raises
+        ------
+        VerificationProbeError
+            The hub did not restart, replay expired or durable evidence changed.
+        """
         deadline = self._clock() + timeout
         new_pid: int | None = None
         while self._clock() <= deadline:
@@ -429,13 +488,17 @@ class SystemdVerificationAdapter:
             token=self._token,
             machine_identity=False,
         )
-        task = asyncio.create_task(agent.connect())
+        task = await self._connect_replay(agent, deadline)
         try:
-            remaining = max(0.1, deadline - self._clock())
-            if not await agent.wait_until_ready(timeout=remaining):
-                raise VerificationProbeError("verification_replay_failed")
-            await agent.request_history(limit=1000)
-            remaining = max(0.1, deadline - self._clock())
+            await agent.send_message(
+                MessageType.HISTORY_REQUEST,
+                target="System",
+                payload="history",
+                limit=1,
+                history_client_msg_id=f"setup-{canary_id}",
+                history_target=target["identity"],
+            )
+            remaining = max(0.0, deadline - self._clock())
             try:
                 await asyncio.wait_for(replayed.wait(), timeout=remaining)
             except (TimeoutError, asyncio.TimeoutError) as exc:

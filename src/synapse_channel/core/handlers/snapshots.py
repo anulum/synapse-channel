@@ -88,15 +88,31 @@ async def handle_who_request(
 async def handle_history_request(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
-    """Send the requesting agent recent (or full) chat history."""
+    """Send recent chat history, optionally selecting an exact message first.
+
+    ``history_client_msg_id`` and ``history_target`` are optional exact string
+    selectors applied before ``limit``. Invalid selectors yield no matches,
+    never an unfiltered response. Existing recall ACL admission still applies.
+    """
+    history = list(hub.chat_history)
+    for selector, field in (
+        ("history_client_msg_id", "client_msg_id"),
+        ("history_target", "target"),
+    ):
+        if selector in data:
+            value = data[selector]
+            history = (
+                [item for item in history if item.get(field) == value]
+                if isinstance(value, str) and value
+                else []
+            )
     # An absent, non-numeric, or overflowing limit all read as "all" (None).
     limit = safe_int(data.get("limit"))
     if limit is None:
-        history = list(hub.chat_history)
         requested_limit: int | str = "all"
     else:
         n = max(1, limit)
-        history = list(hub.chat_history)[-n:]
+        history = history[-n:]
         requested_limit = n
     await hub._send_json(
         websocket,

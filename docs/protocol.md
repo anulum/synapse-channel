@@ -90,6 +90,18 @@ does not add agent grades to protocol envelopes.
   file-guard refusal; `guard_denial_recorded` acknowledges its durable sequence.
   The authenticated durable contract is defined below.
 
+### Exact history selection
+
+`history_request` accepts optional `history_client_msg_id` and `history_target`
+string selectors. The hub applies exact matches before `limit`; an empty or
+non-string selector returns no matches, never the full history. Ordinary recall
+ACL checks still apply. For example, setup verification requests its canary's
+client message ID and recipient with `limit: 1`, without transferring unrelated
+history or increasing the client's receive budget. The response remains a
+`history_snapshot` with a `history` list. A missing or evicted message produces
+an empty list and cannot prove replay. Older hubs may ignore these additive
+selectors; consumers must validate the returned message identity and recipient.
+
 ### Canonical claim-path identity
 
 A `claim` may carry the additive `path_identity` object below. It does not bump

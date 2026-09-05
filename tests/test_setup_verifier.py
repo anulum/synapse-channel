@@ -26,6 +26,7 @@ from typing import cast
 import pytest
 
 import synapse_channel.setup_verifier as setup_verifier
+from hub_e2e_helpers import close_agents, connect_agent
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.protocol import MessageType
@@ -375,12 +376,19 @@ async def _close_agent(agent: SynapseAgent, task: asyncio.Task[None]) -> None:
         await task
 
 
-def _start_disposable_hub(*, port: int, database: Path) -> subprocess.Popen[bytes]:
+def _start_disposable_hub(
+    *, port: int, database: Path, startup_delay: float = 0.0
+) -> subprocess.Popen[bytes]:
     executable = Path(sys.executable).with_name("synapse")
     isolated_home = database.parent / "home"
     isolated_home.mkdir(mode=0o700, exist_ok=True)
     return subprocess.Popen(  # noqa: S603 - fixed local test executable and argv
         [
+            sys.executable,
+            "-c",
+            "import os,sys,time; time.sleep(float(sys.argv[1])); "
+            "os.execv(sys.argv[2], sys.argv[2:])",
+            str(startup_delay),
             str(executable),
             "hub",
             "--host",
@@ -430,8 +438,10 @@ def _stop_process(process: subprocess.Popen[bytes]) -> None:
 
 
 @pytest.mark.skipif(platform.system() != "Linux", reason="Requires Linux /proc process identity")
+@pytest.mark.parametrize("startup_delay", [0.0, 0.25])
 async def test_systemd_adapter_real_canary_consumption_and_restart_replay(
     tmp_path: Path,
+    startup_delay: float,
 ) -> None:
     database = tmp_path / "hub.db"
     port, first_hub = await _start_ready_disposable_hub(database=database)
@@ -465,13 +475,34 @@ async def test_systemd_adapter_real_canary_consumption_and_restart_replay(
             timeout=3.0,
         )
         assert evidence.message_seq > 0
+        writer = await connect_agent("DEMO/history-writer", uri)
+        try:
+            for index in range(80):
+                await writer.agent.send_message(
+                    MessageType.CHAT, target="DEMO/unrelated", payload=f"{index}:" + "x" * 16384
+                )
+            await writer.agent.send_message(
+                MessageType.HISTORY_REQUEST,
+                target="System",
+                limit=1,
+                history_target="DEMO/unrelated",
+            )
+            await writer.recorder.wait_for(lambda m: m.get("type") == MessageType.HISTORY_SNAPSHOT)
+            with sqlite3.connect(database) as connection:
+                size = connection.execute(
+                    "SELECT sum(length(payload)) FROM events WHERE kind = ?", (EventKind.CHAT,)
+                ).fetchone()[0]
+            assert size > 1048576
+        finally:
+            await close_agents(writer)
         await _close_agent(waiter, waiter_task)
         old_pid = first_hub.pid
         _stop_process(first_hub)
 
-        replay_hub = _start_disposable_hub(port=port, database=database)
+        replay_hub = _start_disposable_hub(
+            port=port, database=database, startup_delay=startup_delay
+        )
         try:
-            await _await_listening(port)
             runner.pid = replay_hub.pid
             new_pid = await adapter.prove_replay(
                 target=target,
@@ -523,6 +554,38 @@ def test_systemd_adapter_replay_refuses_unchanged_pid(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_replay_closed_listener_deadline_and_cancellation_reap_tasks(
+    tmp_path: Path, cancel: bool
+) -> None:
+    before = asyncio.all_tasks()
+    adapter = SystemdVerificationAdapter(runner=PidRunner(os.getpid()))
+    operation = asyncio.create_task(
+        adapter.prove_replay(
+            target={
+                "uri": f"ws://127.0.0.1:{_free_port()}",
+                "project": "DEMO",
+                "identity": "DEMO/x",
+            },
+            canary_id="0" * 32,
+            database=tmp_path / "unused.db",
+            evidence=CanaryEvidence(1, "a" * 64, 2, "b" * 64),
+            old_pid=1,
+            systemctl="/usr/bin/systemctl",
+            timeout=0.15,
+        )
+    )
+    if cancel:
+        await asyncio.sleep(0.05)
+        operation.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await operation
+    else:
+        with pytest.raises(VerificationProbeError, match="verification_replay_failed"):
+            await asyncio.wait_for(operation, timeout=1.0)
+    assert asyncio.all_tasks() == before
+
+
 class ScriptedAgent:
     """Small protocol double for public adapter refusal paths."""
 
@@ -549,7 +612,11 @@ class ScriptedAgent:
         assert timeout > 0
         return self.ready
 
-    async def send_message(self, *_args: object, **_kwargs: object) -> None:
+    async def send_message(self, *args: object, **kwargs: object) -> None:
+        if args == (MessageType.HISTORY_REQUEST,):
+            assert kwargs["limit"] == 1
+            assert kwargs["history_target"] == "DEMO/x"
+            await self.handler({"type": MessageType.HISTORY_SNAPSHOT, "history": self.history})
         for receipt in self.receipts:
             await self.handler(receipt)
 

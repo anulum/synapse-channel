@@ -11,12 +11,47 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, cast
 
+import pytest
+
+from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from synapse_channel.core.handlers import snapshots
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.wake_capability import WAKE_DIRECT, WAKE_UNKNOWN
 
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
+
+
+@pytest.mark.parametrize("selector", ["chosen", "missing", "", None, False, 1, []])
+@pytest.mark.parametrize("recipient", ["destination", "elsewhere", None])
+async def test_history_message_selector_over_real_connection(
+    selector: object, recipient: object
+) -> None:
+    async with running_hub() as (_, uri):
+        client = await connect_agent("history-reader", uri)
+        try:
+            await client.agent.send_message(
+                MessageType.CHAT, target="destination", payload="selected", client_msg_id="chosen"
+            )
+            await client.agent.send_message(
+                MessageType.CHAT, target="elsewhere", payload="newer", client_msg_id="newer"
+            )
+            await client.agent.send_message(
+                MessageType.HISTORY_REQUEST,
+                target="System",
+                limit=1,
+                history_client_msg_id=selector,
+                history_target=recipient,
+            )
+            snapshot = await client.recorder.wait_for(
+                lambda m: m.get("type") == MessageType.HISTORY_SNAPSHOT
+            )
+            history = snapshot["history"]
+            assert len(history) == (1 if selector == "chosen" and recipient == "destination" else 0)
+            if history:
+                assert history[0]["payload"] == "selected"
+        finally:
+            await close_agents(client)
 
 
 class _Snapshotter:
