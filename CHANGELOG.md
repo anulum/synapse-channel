@@ -96,7 +96,14 @@ All notable changes to this project are documented here.
   and detaches the socket so the same instance can `connect()` again; callbacks
   from a superseded socket are ignored; `close()` rejects a pending `connect()`;
   a `connect()` while a socket is open or pending rejects.
-
+- Make the workflow driver's deadline one budget over the whole run: it is checked
+  before task declaration, every board reading, every assignment or retirement and
+  every sleep; each hub await is bounded by the remaining budget; the sleep is
+  shortened to it. An already-expired deadline posts and writes nothing, expiry
+  during a reading produces no further writes, an operation cut off in flight is
+  listed under `interrupted` with its board effect declared unknown, and `state`
+  is `null` when no reading completed instead of an invented empty board. The
+  exit code contract (`0` for an incomplete run) is unchanged and now documented.
 ## [0.99.24] - 2026-09-04
 
 ### Fixed

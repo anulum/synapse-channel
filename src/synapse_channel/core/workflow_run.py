@@ -14,6 +14,13 @@ the tasks once, then on every board reading re-derive the state, route the ready
 steps to capable agents by writing each task's ``suggested_owner`` (advisory, never
 forced), and stop when the workflow is complete or a deadline passes.
 
+The deadline is one budget spanning declaration, every board reading and every
+board write: no operation starts once it has passed, each gateway await is bounded
+by the time left, and the sleep between readings never outlives it. An operation
+that was still in flight when the budget ran out is reported as *interrupted* — its
+effect on the board is unknown and no rollback is promised. When no board reading
+completed, the result carries no state rather than an invented empty one.
+
 The loop is written against a small :class:`WorkflowGateway` Protocol — three
 coroutines for posting tasks, reading the board, and assigning an owner — and an
 injected clock and sleep. That keeps it fully testable over an in-memory fake board
@@ -24,9 +31,11 @@ re-reading an unchanged board issues no redundant writes.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol
+from functools import partial
+from typing import Protocol, TypeVar
 
 from synapse_channel.core.workflow import CompiledTask
 from synapse_channel.core.workflow_driver import (
@@ -35,6 +44,11 @@ from synapse_channel.core.workflow_driver import (
     derive_state,
     plan_assignments,
 )
+
+_T = TypeVar("_T")
+
+_TIMEOUTS: tuple[type[BaseException], ...] = (asyncio.TimeoutError, TimeoutError)
+"""Both timeout classes: they are one class on Python 3.11+, distinct on 3.10."""
 
 
 @dataclass(frozen=True)
@@ -97,8 +111,16 @@ class RunResult:
         Every ``(task_id, agent)`` the loop wrote, in order, across all polls.
     cancellations : tuple[str, ...]
         Every task id the loop retired (a conditional branch not taken), in order.
-    state : WorkflowState
-        The phase buckets derived from the final board reading.
+    state : WorkflowState or None
+        The phase buckets derived from the final completed board reading, or
+        ``None`` when the deadline passed before any reading completed — the board
+        was never observed, so no state is invented.
+    interrupted : tuple[str, ...]
+        Gateway operations still in flight when the budget ran out, in order:
+        ``post_tasks``, ``read_board``, ``assign:<task_id>:<agent>`` or
+        ``cancel:<task_id>``. Their effect on the board is unknown; an interrupted
+        write is not counted in ``assignments`` or ``cancellations`` and is not
+        rolled back.
     """
 
     complete: bool
@@ -106,7 +128,8 @@ class RunResult:
     polls: int
     assignments: tuple[tuple[str, str], ...]
     cancellations: tuple[str, ...]
-    state: WorkflowState
+    state: WorkflowState | None
+    interrupted: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-compatible summary of the run."""
@@ -116,7 +139,8 @@ class RunResult:
             "polls": self.polls,
             "assignments": [{"task_id": tid, "agent": agent} for tid, agent in self.assignments],
             "cancellations": list(self.cancellations),
-            "state": self.state.to_dict(),
+            "state": None if self.state is None else self.state.to_dict(),
+            "interrupted": list(self.interrupted),
         }
 
 
@@ -137,6 +161,12 @@ async def run_workflow(
     phase state, and — while work remains — routes the ready steps to capable free
     agents (bounded by ``max_in_flight``) by advising each chosen owner. It returns
     as soon as every task is terminal, or once ``clock()`` reaches ``deadline``.
+
+    The deadline is checked before every gateway operation and before every sleep,
+    each gateway await is bounded by the remaining budget, and the sleep is
+    shortened to the remaining budget. An already-expired deadline therefore posts
+    and writes nothing; a deadline that passes during a reading produces no further
+    writes; an operation cut off mid-flight is listed in ``RunResult.interrupted``.
 
     Parameters
     ----------
@@ -161,27 +191,61 @@ async def run_workflow(
     -------
     RunResult
         Completion flag, whether it timed out, the poll count, every assignment
-        written, and the final derived state.
+        written, the operations interrupted by the deadline, and the final derived
+        state (``None`` when no board reading completed).
     """
-    await gateway.post_tasks(tasks)
     written: list[tuple[str, str]] = []
     retired: list[str] = []
+    interrupted: list[str] = []
     polls = 0
+    state: WorkflowState | None = None
+
+    def stopped(*, complete: bool) -> RunResult:
+        return RunResult(
+            complete=complete,
+            timed_out=not complete,
+            polls=polls,
+            assignments=tuple(written),
+            cancellations=tuple(retired),
+            state=state,
+            interrupted=tuple(interrupted),
+        )
+
+    async def within_budget(
+        label: str, operation: Callable[[], Awaitable[_T]]
+    ) -> tuple[bool, _T | None]:
+        """Run one gateway operation inside the remaining budget.
+
+        Returns ``(True, value)`` when it completed, ``(False, None)`` when the
+        budget was already spent (nothing started) or ran out mid-flight (then
+        ``label`` is recorded as interrupted).
+        """
+        budget = deadline - clock()
+        if budget <= 0:
+            return False, None
+        try:
+            return True, await asyncio.wait_for(operation(), timeout=budget)
+        except _TIMEOUTS:
+            interrupted.append(label)
+            return False, None
+
+    posted, _ = await within_budget("post_tasks", partial(gateway.post_tasks, tasks))
+    if not posted:
+        return stopped(complete=False)
     while True:
-        snapshot = await gateway.read_board()
+        read, snapshot = await within_budget("read_board", gateway.read_board)
+        if not read or snapshot is None:
+            return stopped(complete=False)
         polls += 1
         state = derive_state(tasks, snapshot.status, evidence=snapshot.evidence)
         if state.complete:
-            return RunResult(
-                complete=True,
-                timed_out=False,
-                polls=polls,
-                assignments=tuple(written),
-                cancellations=tuple(retired),
-                state=state,
-            )
+            return stopped(complete=True)
         for task_id in state.skipped:
-            await gateway.cancel(task_id)
+            cancelled, _ = await within_budget(
+                f"cancel:{task_id}", partial(gateway.cancel, task_id)
+            )
+            if not cancelled:
+                return stopped(complete=False)
             retired.append(task_id)
         for assignment in plan_assignments(
             tasks,
@@ -192,15 +256,14 @@ async def run_workflow(
         ):
             if snapshot.suggested_owner.get(assignment.task_id, "") == assignment.agent:
                 continue
-            await gateway.assign(assignment.task_id, assignment.agent)
-            written.append((assignment.task_id, assignment.agent))
-        if clock() >= deadline:
-            return RunResult(
-                complete=False,
-                timed_out=True,
-                polls=polls,
-                assignments=tuple(written),
-                cancellations=tuple(retired),
-                state=state,
+            assigned, _ = await within_budget(
+                f"assign:{assignment.task_id}:{assignment.agent}",
+                partial(gateway.assign, assignment.task_id, assignment.agent),
             )
-        await sleep(poll_interval)
+            if not assigned:
+                return stopped(complete=False)
+            written.append((assignment.task_id, assignment.agent))
+        budget = deadline - clock()
+        if budget <= 0:
+            return stopped(complete=False)
+        await sleep(min(poll_interval, budget))

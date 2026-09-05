@@ -246,6 +246,22 @@ twice over: by `--max-in-flight` (how much work it will advise at once) and by
 `--deadline` (how long it will run). The decision logic is the pure planner above;
 `run` adds only the connect-post-read-assign shell.
 
+The deadline is one budget over the whole run — declaring the tasks, every board
+reading, every `suggested_owner` write and every retirement. No operation starts
+once it has passed, each hub await is bounded by the time left, and the pause
+between readings is shortened to what remains. A `--deadline 0` run therefore
+posts and writes nothing. When the budget runs out while a hub operation is still
+in flight, the JSON result lists it under `interrupted` (for example
+`assign:release/build:alice`); its effect on the board is unknown and nothing is
+rolled back. `state` is `null` when no board reading completed, so the result
+never invents an empty board.
+
+The exit code is `0` whenever the driver ran and rendered a result, including an
+incomplete run that hit its deadline; automation must read `complete` and
+`timed_out` from `--json` rather than the exit status. Exit `1` means the hub
+could not be reached; exit `2` means the workflow, agents or evidence file was
+invalid.
+
 ## Boundaries
 
 - **The blackboard is the executor.** A workflow compiles to ordinary tasks with

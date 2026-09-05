@@ -332,6 +332,12 @@ def _render_run(result: RunResult, *, json_out: bool) -> None:
         return
     outcome = "complete" if result.complete else "incomplete (deadline reached)"
     print(f"workflow {outcome} after {result.polls} board reads")
+    if result.state is None:
+        print("no board reading completed before the deadline; board state unknown")
+    if result.interrupted:
+        print("interrupted by the deadline (effect on the board unknown):")
+        for label in result.interrupted:
+            print(f"  {terminal_text(label)}")
     if result.assignments:
         print("assignments made:")
         for task_id, agent in result.assignments:

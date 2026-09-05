@@ -703,3 +703,27 @@ def test_contention_honours_the_node_ceiling(
     )
     assert args.func(args) == 2
     assert "would exceed" in capsys.readouterr().err
+
+
+def test_render_run_human_reports_unknown_state_and_interrupted_operations(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = RunResult(
+        complete=False,
+        timed_out=True,
+        polls=0,
+        assignments=(),
+        cancellations=(),
+        state=None,
+        interrupted=("read_board", "assign:w/a\x1b[31m:alpha"),
+    )
+    _render_run(result, json_out=False)
+    out = capsys.readouterr().out
+    assert "incomplete (deadline reached) after 0 board reads" in out
+    assert "no board reading completed before the deadline; board state unknown" in out
+    assert "interrupted by the deadline (effect on the board unknown):" in out
+    assert "assign:w/a\\x1b[31m:alpha" in out and "\x1b" not in out
+    _render_run(result, json_out=True)
+    document = json.loads(capsys.readouterr().out)
+    assert document["state"] is None
+    assert document["interrupted"] == ["read_board", "assign:w/a\x1b[31m:alpha"]
