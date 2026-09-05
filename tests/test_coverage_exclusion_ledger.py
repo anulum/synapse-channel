@@ -103,6 +103,11 @@ PRAGMA_LEDGER: dict[str, tuple[int, str]] = {
     "src/synapse_channel/mutation_governance.py": (1, "optional-import"),
     "src/synapse_channel/observed_peers.py": (1, "protocol-body"),
     "src/synapse_channel/reap.py": (3, "protocol-body"),
+    "src/synapse_channel/setup_authorization.py": (1, "env-defensive"),
+    "src/synapse_channel/setup_executor.py": (8, "env-defensive"),
+    "src/synapse_channel/setup_ledger.py": (1, "env-defensive"),
+    "src/synapse_channel/setup_verification.py": (4, "env-defensive"),
+    "src/synapse_channel/setup_verifier.py": (2, "env-defensive"),
 }
 
 #: Every conditional-skip line in ``tests/``, by file: (line count, justification class).
@@ -133,8 +138,12 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_cli_doctor.py": (1, "platform-guard"),
     "tests/test_cli_encrypt_key.py": (1, "platform-guard"),
     "tests/test_cli_git.py": (1, "platform-guard"),
+    "tests/test_cli_pid_monitor.py": (1, "optional-dep-guard"),
     "tests/test_dashboard_access_store.py": (1, "platform-guard"),
     "tests/test_dashboard_feeds_sqlcipher.py": (1, "optional-dep-guard"),
+    "tests/test_dashboard_host_sessions.py": (1, "optional-dep-guard"),
+    "tests/test_host_sessions.py": (1, "optional-dep-guard"),
+    "tests/test_host_sessions_tmux.py": (1, "optional-dep-guard"),
     "tests/test_hub_sqlcipher_e2e.py": (1, "optional-dep-guard"),
     "tests/test_identity_keys_secret_floor.py": (1, "platform-guard"),
     "tests/test_multihub_mcp_sqlcipher.py": (1, "optional-dep-guard"),

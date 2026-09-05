@@ -159,6 +159,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     ("synapse_channel.cli_status:add_parsers", ("status",)),
     ("synapse_channel.cli_dashboard:add_parsers", ("dashboard",)),
+    ("synapse_channel.cli_pid_monitor:add_parsers", ("pid-monitor",)),
     ("synapse_channel.cli_directory:add_parsers", ("directory",)),
     ("synapse_channel.cli_semantic_routing:add_parsers", ("route-task",)),
     ("synapse_channel.cli_dispatch:add_parsers", ("dispatch",)),

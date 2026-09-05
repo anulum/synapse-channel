@@ -76,6 +76,11 @@ from synapse_channel.dashboard_host_guard import (
     host_allowed,
     is_unspecified_host,
 )
+from synapse_channel.dashboard_host_sessions import (
+    HOST_SESSION_PATHS,
+    host_session_response,
+    load_host_grants,
+)
 from synapse_channel.dashboard_live_transport import (
     LIVE_TRANSPORT_CHANNELS,
     LIVE_TRANSPORT_CONTENT_TYPE,
@@ -110,6 +115,7 @@ from synapse_channel.dashboard_studio_command import (
     STUDIO_COMMAND_PATH,
     render_studio_command_html,
 )
+from synapse_channel.host_sessions import HostSessionMonitor
 from synapse_channel.observed_peers import (
     ObservedPeerSnapshot,
     ObservedPeerSpec,
@@ -478,6 +484,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     heavy_feed_cache: ClassVar[DashboardFeedCache]
     state_feed_cache: ClassVar[DashboardFeedCache]
     snapshot_gate: ClassVar[DashboardSnapshotGate[DashboardSnapshot]]
+    host_sessions_access_file: ClassVar[Path | None] = None
+    host_session_monitor: ClassVar[HostSessionMonitor]
 
     def _reject_foreign_host(self) -> bool:
         """Refuse a request whose ``Host`` is not an admitted authority.
@@ -513,6 +521,17 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         authorization = self.headers.get("Authorization")
+        if path in HOST_SESSION_PATHS:
+            self._write_access_decision(
+                host_session_response(
+                    path,
+                    authorization,
+                    self.access_policy,
+                    self.host_sessions_access_file,
+                    self.host_session_monitor,
+                )
+            )
+            return
         if path == DASHBOARD_ACCESS_PATH:
             self._write_access_decision(
                 access_descriptor_decision(self.access_policy, authorization)
@@ -918,6 +937,40 @@ def _handler_class(
 
     bound_snapshot_gate = DashboardSnapshotGate(_fetch_bound_snapshot)
 
+    def _host_coordination() -> tuple[tuple[str, ...], tuple[tuple[str, str], ...]]:
+        snapshot = bound_snapshot_gate.fetch(
+            wait_timeout=0.05,
+            fetcher=lambda: asyncio.run(
+                fetch_dashboard_snapshot(
+                    uri=bound_uri,
+                    name=bound_name,
+                    token=bound_token,
+                    ready_timeout=0.5,
+                    response_timeout=0.5,
+                )
+            ),
+        )
+        claims = snapshot.state.get("active_claims", [])
+        active: list[tuple[str, str]] = []
+        if len(snapshot.online_agents) > 1024 or (isinstance(claims, list) and len(claims) > 1024):
+            raise DashboardUnavailable("host coordination observation exceeds limit")
+        if isinstance(claims, list):
+            for claim in claims[:1024]:
+                if not isinstance(claim, dict):
+                    continue
+                owner, task = claim.get("owner"), claim.get("task_id")
+                expiry = claim.get("lease_expires_at")
+                if (
+                    isinstance(owner, str)
+                    and isinstance(task, str)
+                    and isinstance(expiry, (int, float))
+                    and expiry > time.time()
+                ):
+                    active.append((owner, task))
+        return tuple(snapshot.online_agents[:1024]), tuple(active)
+
+    bound_host_monitor = HostSessionMonitor(coordination=_host_coordination)
+
     class BoundDashboardHandler(_DashboardHandler):
         """Dashboard handler bound to one hub URI and dashboard identity."""
 
@@ -942,6 +995,7 @@ def _handler_class(
         heavy_feed_cache = bound_heavy_feed_cache
         state_feed_cache = bound_state_feed_cache
         snapshot_gate = bound_snapshot_gate
+        host_session_monitor = bound_host_monitor
 
     return BoundDashboardHandler
 
@@ -960,6 +1014,10 @@ def start_dashboard_server(
     a2a_state_file: str | Path | None = None,
     dashboard_token: str | None = None,
     dashboard_access_file: str | Path | None = None,
+    host_sessions_access_file: str | Path | None = None,
+    host_session_pids: tuple[int, ...] = (),
+    host_session_tmux_socket: str | None = None,
+    host_session_context_root: str | Path | None = None,
     reliability_db: str | Path | None = None,
     reliability_db_key_file: str | Path | None = None,
     federation_store: str | Path | None = None,
@@ -1001,6 +1059,15 @@ def start_dashboard_server(
     dashboard_access_file : str, pathlib.Path, or None, optional
         Strict owner-only principal/token-file policy. Mutually exclusive with
         ``dashboard_token`` and the legacy global ``operator_name``.
+    host_sessions_access_file : str, pathlib.Path, or None, optional
+        Owner-only explicit host observation grants, reloaded per request.
+    host_session_pids : tuple of int, optional
+        Explicit process scope for host observation; empty discovers candidates.
+    host_session_context_root : str, pathlib.Path, or None, optional
+        Allowed context pathname root for a non-default installation. Context
+        disclosure still requires an explicit grant; no transcript body is read.
+    host_session_tmux_socket : str or None, optional
+        Explicit local tmux socket for host observation.
     reliability_db : str, pathlib.Path, or None, optional
         Hub event store powering the store-backed feeds —
         ``/reliability.json``, ``/events.json``, ``/causality.json``,
@@ -1074,6 +1141,20 @@ def start_dashboard_server(
         observed_timeout=observed_timeout,
         observed_pins=observed_pins,
         allow_hosts=tuple(allow_hosts),
+    )
+    handler.host_sessions_access_file = (
+        Path(host_sessions_access_file) if host_sessions_access_file else None
+    )
+    if handler.host_sessions_access_file is not None:
+        load_host_grants(handler.host_sessions_access_file)
+    if len(host_session_pids) > 256 or any(
+        type(pid) is not int or pid <= 0 for pid in host_session_pids
+    ):
+        raise ValueError("host monitor accepts at most 256 positive PIDs")
+    handler.host_session_monitor.pids = host_session_pids
+    handler.host_session_monitor.tmux_socket = host_session_tmux_socket
+    handler.host_session_monitor.context_root = (
+        Path(host_session_context_root).resolve() if host_session_context_root is not None else None
     )
     server = PromptBindThreadingHTTPServer((host, int(port)), handler)
     thread = threading.Thread(target=server.serve_forever, name="synapse-dashboard", daemon=True)

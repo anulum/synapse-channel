@@ -18,6 +18,7 @@ import { FindingsStream } from "./components/FindingsStream";
 import { FleetRoster } from "./components/FleetRoster";
 import { GuideDrawer } from "./components/GuideDrawer";
 import { Hud } from "./components/Hud";
+import { HostSessions } from "./components/HostSessions";
 import { InspectorTabs } from "./components/InspectorTabs";
 import { InstallChip } from "./components/InstallChip";
 import { MobileNav, type MobileSegment } from "./components/MobileNav";
@@ -80,6 +81,7 @@ export function App(): JSX.Element {
   const preferences = useCockpitPreferences();
   const [brush, setBrush] = useState<TimeWindow | null>(null);
   const [mobileSegment, setMobileSegment] = useState<MobileSegment>("signals");
+  const [hostSessionsOpen, setHostSessionsOpen] = useState(false);
   const replay = useCockpitReplay({
     blocked: shellBlocked,
     replay: workspace.replay,
@@ -220,14 +222,22 @@ export function App(): JSX.Element {
       <div className={`deck deck--seg-${mobileSegment}`} role="main">
         <div className="deck__stack deck__stack--roster">
           <div className="seg seg--roster">
-            <PanelBoundary name="Fleet roster">
+            <div className="roster-workspace">
+              <nav className="roster-workspace__switch" aria-label={t("host.switch")}>
+                <button type="button" aria-pressed={!hostSessionsOpen} onClick={() => setHostSessionsOpen(false)}>{t("host.roster")}</button>
+                <button type="button" aria-pressed={hostSessionsOpen} onClick={() => setHostSessionsOpen(true)}>{t("host.title")}</button>
+              </nav>
+              {hostSessionsOpen ? <PanelBoundary name={t("host.title")}>
+                <HostSessions revision={auth.revision} />
+              </PanelBoundary> : <PanelBoundary name="Fleet roster">
               <FleetRoster
                 roster={view.roster}
                 waiters={view.waiters}
                 selection={workspace.selection}
                 onInspect={overlays.inspectAgent}
               />
-            </PanelBoundary>
+              </PanelBoundary>}
+            </div>
           </div>
           <div className="seg seg--reliability">
             <PanelBoundary name="Reliability">

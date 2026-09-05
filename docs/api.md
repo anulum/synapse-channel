@@ -1,9 +1,10 @@
 # Python API reference
 
-Everything public lives on the top-level `synapse_channel` package surface (70
-exported names). This page starts with the handful you actually call, then the
-full generated reference follows. For the compatibility promise on every symbol
-here, see [API and wire stability](api-stability.md).
+The main coordination API lives on the top-level `synapse_channel` package
+surface. Host observation helpers use explicit module imports, documented
+below. This page starts with the main entry points, then renders their source
+docstrings. See [API and wire stability](api-stability.md) for the compatibility
+policy.
 
 ## Two entry points
 
@@ -122,16 +123,91 @@ The remaining exports fall into a few families you reach for as needed:
 - **Pure predicates** — `paths_overlap`, `scopes_conflict`, `would_create_cycle`,
   `is_directed`, `is_recipient`, and friends: no I/O, safe to call anywhere.
 
-Everything is re-exported from the package root, so `from synapse_channel import X`
-works for any name below.
+These coordination helpers are re-exported from the package root, so
+`from synapse_channel import X` works for names in the package reference.
 
 ## Full generated reference
 
-The reference below is generated from the source docstrings for every public
-symbol.
+The package reference below is generated from the source docstrings.
 
 ::: synapse_channel
     options:
       show_root_heading: true
       show_source: false
       members_order: source
+
+## Read-only host observations
+
+Host monitoring uses explicit module imports; it does not add process-control
+methods or top-level package exports:
+
+```python
+import os
+
+from synapse_channel.host_sessions import HostSessionMonitor
+
+monitor = HostSessionMonitor(pids=(os.getpid(),))
+observation = monitor.snapshot()
+print(observation.process_status)
+print(observation.to_json().decode("utf-8"))
+```
+
+This example requests no directory or context disclosure. Process collection
+requires Linux procfs; an unsupported platform reports `unavailable` rather
+than a successful empty scan. tmux and coordination each report their own
+availability. A standalone monitor has no coordination source unless the
+caller supplies a bounded reader.
+
+`snapshot(paths=True, context=True)` opts into pathname metadata for local
+callers. It reads no transcript body. HTTP consumers must use the dashboard's
+explicit principal grants; constructing a monitor does not authorise disclosure
+to another viewer. Terminal and dashboard options are documented under
+“Local host-session observation” in `clients/cockpit/README.md` in the source
+checkout.
+
+Reuse one monitor to share its one-second cache across callers. Observation
+timestamps describe collection, not agent activity. Each row also carries
+`started_at`, the kernel start time derived from the boot time in `/proc/stat`
+and the process start ticks (about one-second resolution); `observed_at -
+started_at` is the process runtime age, which is distinct from observation age
+and proves neither activity nor responsiveness. When the boot reference is
+unreadable, `started_at` is null and `started_at_status` is `unavailable`.
+Check source and field statuses before interpreting missing values.
+
+### Shared collector and wire records
+
+::: synapse_channel.host_sessions
+    options:
+      members: [HostSession, HostObservation, HostSessionMonitor]
+      show_root_heading: true
+      show_source: false
+
+### Kernel process metadata
+
+::: synapse_channel.host_sessions_proc
+    options:
+      members: [ProcessIdentity, ProcessMetadata, KernelClock, observe_process, discover_processes, process_metadata, kernel_clock]
+      show_root_heading: true
+      show_source: false
+
+### tmux pane metadata
+
+::: synapse_channel.host_sessions_tmux
+    options:
+      members: [PaneMetadata, observe_tmux]
+      show_root_heading: true
+      show_source: false
+
+### Dashboard disclosure and terminal rendering
+
+::: synapse_channel.dashboard_host_sessions
+    options:
+      members: [load_host_grants, host_session_response]
+      show_root_heading: true
+      show_source: false
+
+::: synapse_channel.cli_pid_monitor
+    options:
+      members: [render_host_observation, format_runtime]
+      show_root_heading: true
+      show_source: false

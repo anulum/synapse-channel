@@ -39,6 +39,8 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             a2a_state_file=args.a2a_state_file,
             dashboard_token=args.dashboard_token,
             dashboard_access_file=args.dashboard_access_file,
+            host_sessions_access_file=getattr(args, "host_sessions_access_file", None),
+            host_session_context_root=getattr(args, "host_sessions_context_root", None),
             reliability_db=args.reliability_db,
             reliability_db_key_file=getattr(args, "feeds_db_key_file", None),
             federation_store=args.federation_store,
@@ -136,6 +138,17 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     dashboard.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     add_dashboard_access_arguments(dashboard)
+    dashboard.add_argument(
+        "--host-sessions-access-file",
+        type=Path,
+        default=None,
+        help="Opt-in owner-only host metadata grants, reloaded on each request.",
+    )
+    dashboard.add_argument(
+        "--host-sessions-context-root",
+        type=Path,
+        help="Allowed context pathname root; does not grant context disclosure.",
+    )
     dashboard.add_argument(
         "--a2a-state-file",
         type=Path,

@@ -266,6 +266,90 @@ live on the bus" is deliberately not promised here.
 
 ## Serving the built cockpit
 
+### Local host-session observation
+
+The roster workspace includes a **Host sessions** view. It reads
+`/host-sessions.json`, not the cost/turn feed `/sessions.json`. Collection starts
+only after an authenticated request with an explicit host observation grant.
+Without configuration, the host endpoints return `404`; a valid dashboard
+credential without a host grant receives `403`. Operator/admin roles do not
+implicitly grant access. `/dashboard-access.json` remains unchanged.
+
+Create an owner-only JSON file (mode `0600`) with principal IDs from the
+dashboard access policy. The generated/supplied single-token mode uses the
+principal ID `compatibility`:
+
+```json
+{"version":1,"observers":{"compatibility":{"paths":false,"context":false}}}
+```
+
+Pass its path as `synapse dashboard --host-sessions-access-file PATH` alongside
+the cockpit build configuration below. Grants reload on each request; removing
+an observer revokes access. Invalid or inaccessible policy fails closed. The
+separate `/host-sessions-access.json` descriptor reports implemented read grants
+only. No stop, restart or wake endpoints are added.
+
+`paths` permits working-directory observation. `context` permits bounded reads
+of descriptor **pathnames**, looking for a unique open Codex rollout UUID under
+the current user's `.codex/sessions/`. No transcript bodies, terminal contents,
+process argv or process environments are read. Missing, closed or conflicting
+context evidence stays unknown; process names are provider candidates, not
+proof that a particular executable or model is running.
+Each optional value carries a literal evidence status: `not_requested`,
+`observed`, `unavailable`, `denied`, `conflicting`, `partial` or `unsupported`.
+Only `observed` carries a value. An incomplete descriptor scan never establishes
+a unique context ID; a denied filesystem read is distinct from an absent grant.
+These statuses appear in both the terminal and the host-session detail view.
+For a non-default installation, set `--host-sessions-context-root PATH` on the
+dashboard or `--context-root PATH` on the local monitor. This selects the allowed
+pathname root; it does not grant disclosure. The local monitor still requires
+`--context`, and the dashboard still requires the principal's context grant.
+
+Each row shows two distinct ages. **Observation age** is how old the displayed
+scan is. **Runtime** is `observed_at - started_at`, where `started_at` is the
+kernel start time derived from the boot time in `/proc/stat` plus the process
+start ticks; it is accurate to about one second and is displayed as
+`<days>d HH:MM:SS` or `HH:MM:SS`. Runtime proves neither activity nor responsiveness. When the
+boot reference cannot be read, the row says `runtime unknown` and its
+`started_at_status` is `unavailable`. A granted, observed
+context ID has a copy button using the browser clipboard API. Missing clipboard
+support or denied permission is reported without claiming success. Revocation or
+expiry removes the control; copies already requested by the user cannot be
+recalled from the operating-system clipboard.
+
+The collector uses Linux procfs and metadata-only tmux formats. It inspects
+same-user process metadata, retaining provider-name candidates and descendants
+of observed tmux panes. A PID/start-ticks/boot reference distinguishes process
+lifetimes. tmux identity is labelled as a session assertion, never action
+authority. Attached/detached does not establish desktop-window visibility.
+Every ancestor used for a pane join is revalidated. If linked tmux sessions
+report different metadata for the same pane-root PID, the monitor reports a
+partial tmux observation and withholds the ambiguous identity and pane binding.
+Coordination presence, waiter names and unexpired claims remain separate facts;
+the terminal's standalone mode has no hub observation.
+
+Terminal observation uses the same schema:
+
+```bash
+synapse pid-monitor --json
+synapse pid-monitor --pid 1234 --paths --samples 10
+synapse pid-monitor --dashboard-port 8765 --token-file /path/to/dashboard.token --json
+```
+
+Replace `1234` with an intended local PID. The connected mode reads the shared
+loopback HTTP cache; independent standalone scans have distinct observation
+IDs. `--tmux-socket` selects an existing local socket without starting a server.
+The snapshot cache is memory-only, keyed by disclosure grants and refreshed at
+most once per second. The UI polls every two seconds while mounted, expires
+stale rows and clears detail on access failure. It never stores host metadata
+in browser storage. Bounded or unavailable scans do not prove process absence.
+The panel follows the cockpit's English, Slovak, German, Spanish and French
+language selection without resetting its filter. Wire status values and exact
+identifiers remain literal evidence.
+
+This view does not provide a durable process ledger, automatic recovery,
+desktop-window mapping, provider readiness classification or process control.
+
 ### Usage
 
 From this client directory, build and serve the bundle beside the real feeds:

@@ -33,7 +33,34 @@ class DashboardSnapshotGate(Generic[SnapshotT]):
         self._fetcher = fetcher
         self._lock = threading.Lock()
 
-    def fetch(self) -> SnapshotT:
-        """Run one fetch after the prior caller releases the shared identity."""
-        with self._lock:
-            return self._fetcher()
+    def fetch(
+        self,
+        *,
+        wait_timeout: float | None = None,
+        fetcher: Callable[[], SnapshotT] | None = None,
+    ) -> SnapshotT:
+        """Fetch under the identity lease, optionally refusing a busy observer.
+
+        Parameters
+        ----------
+        wait_timeout : float or None, optional
+            Maximum seconds awaiting the identity; none preserves blocking reads.
+        fetcher : callable or None, optional
+            Same-identity fetch with a caller-specific response budget.
+
+        Returns
+        -------
+        SnapshotT
+            The chosen fetcher's result.
+
+        Raises
+        ------
+        TimeoutError
+            If another read retains the identity beyond the wait budget.
+        """
+        if not self._lock.acquire(timeout=-1 if wait_timeout is None else wait_timeout):
+            raise TimeoutError("dashboard snapshot identity is busy")
+        try:
+            return (self._fetcher if fetcher is None else fetcher)()
+        finally:
+            self._lock.release()

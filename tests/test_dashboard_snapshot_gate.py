@@ -77,3 +77,26 @@ def test_snapshot_gate_releases_identity_after_fetch_failure() -> None:
     with pytest.raises(RuntimeError, match="snapshot failed"):
         gate.fetch()
     assert gate.fetch() == "recovered"
+
+
+def test_bounded_observer_refuses_busy_identity_and_recovers() -> None:
+    """The host reader shares the live identity without queuing unbounded work."""
+    entered = threading.Event()
+    release = threading.Event()
+
+    def read() -> str:
+        entered.set()
+        assert release.wait(timeout=2)
+        return "normal"
+
+    gate = DashboardSnapshotGate(read)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(gate.fetch)
+        assert entered.wait(timeout=1)
+        try:
+            with pytest.raises(TimeoutError):
+                gate.fetch(wait_timeout=0.01, fetcher=lambda: "bounded")
+        finally:
+            release.set()
+        assert pending.result(timeout=1) == "normal"
+    assert gate.fetch(wait_timeout=0.01, fetcher=lambda: "bounded") == "bounded"

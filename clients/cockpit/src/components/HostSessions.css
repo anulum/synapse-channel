@@ -1,0 +1,27 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Commercial license available
+ * © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+ * © Code 2020–2026 Miroslav Šotek. All rights reserved.
+ * ORCID: 0009-0009-3560-0851
+ * Contact: www.anulum.li | protoscience@anulum.li
+ * SYNAPSE_CHANNEL — host metadata panel */
+.roster-workspace { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.roster-workspace > .panel { flex: 1; }
+.roster-workspace__switch { display: flex; flex-wrap: wrap; gap: 4px; background: var(--panel); padding: 4px; }
+.roster-workspace__switch button { flex: 1; min-height: 44px; font: inherit; color: var(--ink); border: 1px solid var(--line); background: var(--panel); }
+.roster-workspace__switch button[aria-pressed="true"] { font-weight: 700; border-color: currentColor; }
+.host-sessions h2 { font: 600 16px var(--font-display); margin: 0; }
+.host-sessions input { color: var(--ink); background: var(--panel); border: 1px solid var(--line); }
+.host-sessions { padding: 16px; min-width: 0; overflow-wrap: anywhere; overflow: auto; }
+.host-sessions p, .host-sessions label, .host-sessions details { font-size: 14px; line-height: 1.5; }
+.host-sessions > * { flex-shrink: 0; }
+.host-sessions p { margin: 8px 0; }
+.host-sessions input { display: block; width: 100%; box-sizing: border-box; min-height: 44px; font: inherit; }
+.host-sessions summary { min-height: 44px; padding: 8px 0; cursor: pointer; }
+.host-sessions summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.host-sessions dd { margin: 0 0 8px; }
+.host-sessions dt { font-weight: 600; }
+.host-sessions__copy { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.host-sessions__copy button { min-height: 44px; padding: 8px 12px; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); cursor: pointer; }
+.host-sessions__copy button:disabled { cursor: default; opacity: 0.65; }
+.host-sessions__copy button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

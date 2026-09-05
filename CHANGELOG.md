@@ -15,6 +15,20 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Add the read-only host-session monitor: `synapse pid-monitor` renders
+  same-user process identity (PID, parent, kernel start ticks, state, comm),
+  tmux session and pane joins through revalidated ancestry, per-field
+  opt-in working-directory and open-context-pathname evidence, coordination
+  presence, waiter and claim facts, and a kernel-derived process start time
+  (`started_at`, boot time plus start ticks, about one-second resolution)
+  whose distance to `observed_at` is the runtime age. The dashboard serves
+  the same frozen wire record at `/host-sessions.json` behind explicit
+  owner-only observer grants (`--host-sessions-access-file`) and a
+  `--host-sessions-context-root` selector; the cockpit adds a Host sessions
+  view in five languages showing observation age and runtime separately. Every
+  missing value carries an evidence status instead of being coerced to false,
+  bounded scans report `partial` or `unavailable`, and no process control,
+  transcript body, argv or environment is read or exposed.
 - Add `synapse waker install|status|stop|resume` and the hardened
   `synapse-waker@.service` user unit for unattended exact-seat prompt delivery.
   Systemd recreates a dead bridge and watchdogs the advancing delivery loop;
