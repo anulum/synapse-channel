@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import platform
 import shutil
 import signal
 import stat
@@ -299,6 +300,8 @@ def _process() -> Iterator[subprocess.Popen[bytes]]:
 
 
 def _manager(tmp_path: Path) -> Path:
+    if platform.system() != "Linux":
+        pytest.skip("Linux/systemd-user executor contract: docs/machine-readable-setup.md")
     executable = tmp_path / "systemctl"
     executable.write_text(_MANAGER, encoding="utf-8")
     executable.chmod(0o700)
@@ -334,6 +337,26 @@ def _stop_manager_processes(systemctl: Path) -> None:
         pid = int(cast(int, record.get("pid", 0)))
         if pid > 1 and pid_alive(pid):
             os.kill(pid, signal.SIGTERM)
+
+
+@pytest.mark.skipif(platform.system() == "Linux", reason="Native non-Linux refusal contract")
+def test_apply_on_unsupported_host_is_inert(tmp_path: Path) -> None:
+    inspection = _inspection(Path("/usr/bin/true"), {"waiter": "fail"})
+    plan = build_setup_plan(_profile(), inspection)
+    authorization = _authorization(plan)
+    with pytest.raises(SetupExecutionError, match="application_platform_unsupported"):
+        asyncio.run(
+            apply_setup(
+                plan,
+                authorization,
+                confirm_digest=cast(str, plan["plan_digest"]),
+                env={"HOME": str(tmp_path / "home")},
+                ledger_directory=tmp_path / "ledger",
+                receipt_path=tmp_path / "receipt.json",
+                clock=lambda: 101.0,
+            )
+        )
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_apply_executes_both_allowlisted_effects_and_replay_is_inert(tmp_path: Path) -> None:

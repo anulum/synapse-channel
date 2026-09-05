@@ -13,6 +13,7 @@ import contextlib
 import fcntl
 import json
 import os
+import platform
 import socket
 import sqlite3
 import stat
@@ -116,6 +117,8 @@ def run_verification(
     probe: Callable[[int], bool] = lambda _pid: True,
     receipt: Path | None = None,
 ) -> dict[str, object]:
+    if platform.system() != "Linux":
+        pytest.skip("Linux/systemd-user verifier contract: docs/machine-readable-setup.md")
     _plan, _authorization, _receipt, verification_plan, verification_authorization = (
         setup_documents()
     )
@@ -140,6 +143,24 @@ def run_verification(
             wall_clock=lambda: 201.0,
         )
     )
+
+
+@pytest.mark.skipif(platform.system() == "Linux", reason="Native non-Linux refusal contract")
+def test_verify_on_unsupported_host_is_inert(tmp_path: Path) -> None:
+    _plan, _authorization, _receipt, plan, authorization = setup_documents()
+    with pytest.raises(SetupVerificationError, match="application_platform_unsupported"):
+        asyncio.run(
+            verify_setup(
+                plan,
+                authorization,
+                confirm_digest=cast(str, plan["verification_plan_digest"]),
+                env={"HOME": str(tmp_path / "home")},
+                ledger_directory=tmp_path / "ledger",
+                receipt_path=tmp_path / "receipt.json",
+                wall_clock=lambda: 201.0,
+            )
+        )
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_verify_transaction_binds_all_evidence_and_is_schema_valid(tmp_path: Path) -> None:
@@ -408,6 +429,7 @@ def _stop_process(process: subprocess.Popen[bytes]) -> None:
         process.wait(timeout=5.0)
 
 
+@pytest.mark.skipif(platform.system() != "Linux", reason="Requires Linux /proc process identity")
 async def test_systemd_adapter_real_canary_consumption_and_restart_replay(
     tmp_path: Path,
 ) -> None:
@@ -801,6 +823,7 @@ def test_adapter_replay_refuses_bad_history_timeout_and_changed_evidence(tmp_pat
         )
 
 
+@pytest.mark.skipif(platform.system() != "Linux", reason="Requires Linux setup verification")
 def test_verify_refuses_unsafe_lock_clock_home_and_receipt_write(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -867,6 +890,7 @@ def test_verify_refuses_unsafe_lock_clock_home_and_receipt_write(
     assert error.value.receipt is carried
 
 
+@pytest.mark.skipif(platform.system() != "Linux", reason="Requires Linux setup verification")
 def test_verify_covers_default_construction_unknown_failure_and_failure_clock(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
