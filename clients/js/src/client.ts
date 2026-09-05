@@ -53,6 +53,12 @@ function defaultFactory(uri: string): WebSocketLike {
   return new WebSocket(uri) as unknown as WebSocketLike;
 }
 
+/** One pending `connect()` attempt: its welcome timer and the promise it must settle. */
+interface PendingAttempt {
+  readonly timer: ReturnType<typeof setTimeout>;
+  readonly reject: (error: Error) => void;
+}
+
 /**
  * A typed WebSocket client for the SYNAPSE CHANNEL hub.
  *
@@ -68,56 +74,101 @@ export class SynapseClient {
   private readonly handlers = new Map<string, Set<MessageHandler>>();
   private readonly anyHandlers = new Set<MessageHandler>();
   private ready = false;
+  /** Incremented on every connect and close; callbacks of an older socket are ignored. */
+  private generation = 0;
+  private pending: PendingAttempt | null = null;
 
   constructor(options: SynapseClientOptions) {
     this.options = options;
   }
 
-  /** Whether the hub has acknowledged registration with a welcome. */
+  /** Whether the current socket has been welcomed by the hub; false once it closes. */
   get isReady(): boolean {
     return this.ready;
   }
 
   /**
    * Open the connection, register the identity, and resolve once the hub sends
-   * its welcome. Rejects if the socket closes or errors before the welcome, or
-   * if the welcome does not arrive within `readyTimeoutMs`.
+   * its welcome. Rejects if the socket closes or errors before the welcome, if
+   * the welcome does not arrive within `readyTimeoutMs`, or if `close()` is
+   * called first.
+   *
+   * Each call is one socket generation: readiness starts false, timers and
+   * handlers act only while that socket is current, and a closed socket leaves
+   * the client not ready so the same instance can `connect()` again. A call
+   * while a socket is already open or pending rejects instead of racing it;
+   * `close()` first.
    */
   connect(): Promise<void> {
+    if (this.socket !== null) {
+      return Promise.reject(
+        new Error(`${this.options.name} already has an open or pending connection; close() it first`),
+      );
+    }
     const factory = this.options.webSocketFactory ?? defaultFactory;
     const socket = factory(this.options.uri);
+    const generation = ++this.generation;
     this.socket = socket;
+    this.ready = false;
     return new Promise<void>((resolve, reject) => {
+      const live = (): boolean => generation === this.generation && this.socket === socket;
+      const fail = (error: Error): void => {
+        this.generation += 1;
+        this.pending = null;
+        clearTimeout(timer);
+        this.stopHeartbeat();
+        this.ready = false;
+        this.socket = null;
+        reject(error);
+      };
       const timer = setTimeout(() => {
-        reject(new Error(`hub did not welcome ${this.options.name} in time`));
+        if (!live()) {
+          return;
+        }
+        fail(new Error(`hub did not welcome ${this.options.name} in time`));
         socket.close();
       }, this.options.readyTimeoutMs ?? 5000);
+      this.pending = { timer, reject };
 
       socket.onopen = () => {
+        if (!live()) {
+          return;
+        }
         this.sendRegistration();
         this.startHeartbeat();
       };
       socket.onmessage = (event) => {
+        if (!live()) {
+          return;
+        }
         const message = this.decode(event.data);
         if (message === null) {
           return;
         }
         if (!this.ready && message.type === MessageType.Welcome) {
           this.ready = true;
+          this.pending = null;
           clearTimeout(timer);
           resolve();
         }
         this.dispatch(message);
       };
       socket.onerror = () => {
-        if (!this.ready) {
-          clearTimeout(timer);
-          reject(new Error(`connection to ${this.options.uri} failed`));
+        if (!live() || this.ready) {
+          return;
         }
+        fail(new Error(`connection to ${this.options.uri} failed`));
       };
       socket.onclose = () => {
+        if (!live()) {
+          return;
+        }
+        const welcomed = this.ready;
         this.stopHeartbeat();
-        if (!this.ready) {
+        this.ready = false;
+        this.socket = null;
+        this.pending = null;
+        if (!welcomed) {
           clearTimeout(timer);
           reject(new Error(`hub closed the connection before welcoming ${this.options.name}`));
         }
@@ -199,11 +250,24 @@ export class SynapseClient {
     this.send(MessageType.StateRequest);
   }
 
-  /** Close the connection and stop heartbeats. */
+  /**
+   * Close the connection, stop heartbeats and leave the client not ready.
+   * A `connect()` still awaiting its welcome rejects; callbacks the closed
+   * socket delivers afterwards are ignored.
+   */
   close(): void {
-    this.stopHeartbeat();
-    this.socket?.close();
+    const socket = this.socket;
+    const pending = this.pending;
+    this.generation += 1;
+    this.pending = null;
     this.socket = null;
+    this.ready = false;
+    this.stopHeartbeat();
+    if (pending !== null) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error(`${this.options.name} was closed before the hub welcomed it`));
+    }
+    socket?.close();
   }
 
   private sendRegistration(): void {

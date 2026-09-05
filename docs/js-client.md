@@ -53,8 +53,15 @@ resolver is available. The hub then retains legacy literal-path comparison.
 
 `connect()` opens the socket, sends the registration heartbeat (with the token
 when one is configured), and resolves once the hub returns its welcome; it
-rejects if the hub closes the socket before welcoming the identity or if no
-welcome arrives within `readyTimeoutMs`.
+rejects if the hub closes the socket before welcoming the identity, if no
+welcome arrives within `readyTimeoutMs`, or if `close()` is called first.
+
+Each `connect()` is one socket generation. `isReady` is true only while that
+socket is open and welcomed: a hub close, a transport error, a welcome timeout
+or `close()` all leave the client not ready, stop the heartbeat and detach the
+socket, so the same instance can `connect()` again and receives a fresh welcome.
+Callbacks from a superseded socket are ignored. A `connect()` while a socket is
+already open or pending rejects; `close()` it first.
 
 ## Scope and boundaries
 

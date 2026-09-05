@@ -52,6 +52,9 @@ client.close();
 
 - `new SynapseClient({ uri, name, token?, takeover?, heartbeatIntervalMs?, readyTimeoutMs? })`
 - `connect(): Promise<void>` — opens the socket, registers the identity, resolves on the hub welcome.
+  One call is one socket generation: after a hub close, error, welcome timeout or `close()` the
+  client is not ready and the same instance may `connect()` again; a call while a socket is open
+  or pending rejects.
 - `on(type, handler)` / `onMessage(handler)` — subscribe by `MessageType` or to every frame; each returns an unsubscribe function.
 - `chat(payload, { target?, channel?, priority? })`,
   `claim(taskId, paths?, pathIdentity?)`, `release(taskId)`. The optional
@@ -60,7 +63,8 @@ client.close();
   rather than inventing canonical values.
 - `requestBoard()`, `requestWho()`, `requestState()`.
 - `send(type, { target?, payload?, extra? })` for any other protocol frame.
-- `close()`.
+- `close()` — closes the socket, stops heartbeats, leaves `isReady` false and rejects a
+  `connect()` still awaiting its welcome.
 
 ## Develop
 

@@ -80,6 +80,23 @@ All notable changes to this project are documented here.
   Package, environment, and identity changes plus non-Linux service adapters
   remain blocked.
 
+### Fixed
+
+- Make one `SynapseAgent.connect()` call one connection attempt that owns its
+  state: readiness is cleared when the attempt starts and ends, `running` is
+  re-armed, the previous close diagnostics are reset, and the attempt's
+  heartbeat task is cancelled and awaited before the call returns. A
+  disconnected agent no longer reports ready, a later `connect()` on the same
+  agent dispatches its fresh welcome instead of exiting immediately, the mailbox
+  cursor and owner lease carry over, and an overlapping `connect()` raises
+  `RuntimeError` instead of racing the live listener.
+- Give the JS/TS client the same lifecycle contract: `isReady` is true only
+  while the current socket is open and welcomed; a hub close, transport error,
+  welcome timeout or `close()` leaves the client not ready, stops the heartbeat
+  and detaches the socket so the same instance can `connect()` again; callbacks
+  from a superseded socket are ignored; `close()` rejects a pending `connect()`;
+  a `connect()` while a socket is open or pending rejects.
+
 ## [0.99.24] - 2026-09-04
 
 ### Fixed

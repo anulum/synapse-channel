@@ -58,6 +58,16 @@ Pass `on_message_callback=` to `SynapseAgent(...)` to react to inbound frames
 callback that waits on checkpoint and release confirmations — is in the
 [quick start](quickstart.md).
 
+Each `connect()` call is one connection attempt that owns its state. When the
+attempt ends — the hub closed the socket, the network dropped, or the callback
+cleared `running` — the agent is no longer ready (`wait_until_ready()` returns
+`False`), its heartbeat task has been cancelled and awaited, and
+`last_close_code`/`last_close_reason` describe that attempt. Calling `connect()`
+again on the same agent starts a fresh attempt: readiness is cleared, `running`
+is re-armed and the diagnostics are reset, while the mailbox cursor and any
+owner lease carry over. A second `connect()` while an attempt is still active
+raises `RuntimeError` instead of racing the live listener.
+
 ## The verbs you will use most
 
 Grouped by what they coordinate (all are `async` methods on `SynapseAgent`):

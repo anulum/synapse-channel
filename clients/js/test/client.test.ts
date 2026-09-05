@@ -217,3 +217,124 @@ describe("SynapseClient lifecycle", () => {
     await expect(connected).rejects.toThrow(/did not welcome/);
   });
 });
+
+describe("SynapseClient reconnect contract", () => {
+  function makeReconnectingClient(extra: Record<string, unknown> = {}): {
+    client: SynapseClient;
+    sockets: FakeSocket[];
+  } {
+    const sockets: FakeSocket[] = [];
+    const client = new SynapseClient({
+      uri: "ws://localhost:8876",
+      name: "P/alice",
+      webSocketFactory: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      ...extra,
+    });
+    return { client, sockets };
+  }
+
+  it("is not ready after the hub closes and reconnects the same instance", async () => {
+    const { client, sockets } = makeReconnectingClient();
+    const welcomes: string[] = [];
+    client.on(MessageType.Welcome, (message) => welcomes.push(String(message.sender)));
+    const first = client.connect();
+    sockets[0]!.open();
+    sockets[0]!.welcome();
+    await first;
+    expect(client.isReady).toBe(true);
+
+    sockets[0]!.onclose?.({});
+    expect(client.isReady).toBe(false);
+    expect(() => client.chat("x")).toThrow(/not connected/);
+
+    const second = client.connect();
+    expect(sockets.length).toBe(2);
+    sockets[1]!.open();
+    sockets[1]!.deliver({ type: MessageType.Welcome, sender: "hub-2" });
+    await second;
+    expect(client.isReady).toBe(true);
+    expect(welcomes).toEqual(["hub", "hub-2"]);
+    expect(sockets[1]!.sentEnvelopes()[0]).toMatchObject({ type: "heartbeat", payload: "online" });
+  });
+
+  it("rejects a second connect while a socket is open or pending", async () => {
+    const { client, sockets } = makeReconnectingClient();
+    const first = client.connect();
+    await expect(client.connect()).rejects.toThrow(/already has an open or pending connection/);
+    sockets[0]!.open();
+    sockets[0]!.welcome();
+    await first;
+    await expect(client.connect()).rejects.toThrow(/close\(\) it first/);
+    expect(sockets.length).toBe(1);
+    expect(client.isReady).toBe(true);
+  });
+
+  it("close() rejects a pending connect and ignores the closed socket afterwards", async () => {
+    const { client, sockets } = makeReconnectingClient();
+    const dispatched: string[] = [];
+    client.onMessage((message) => dispatched.push(message.type));
+    const pending = client.connect();
+    sockets[0]!.open();
+    client.close();
+    await expect(pending).rejects.toThrow(/closed before the hub welcomed it/);
+    expect(sockets[0]!.closed).toBe(true);
+    expect(client.isReady).toBe(false);
+
+    sockets[0]!.welcome();
+    sockets[0]!.deliver({ type: MessageType.Chat, sender: "P/bob", payload: "late" });
+    expect(client.isReady).toBe(false);
+    expect(dispatched).toEqual([]);
+
+    const next = client.connect();
+    sockets[1]!.open();
+    sockets[1]!.welcome();
+    await next;
+    expect(client.isReady).toBe(true);
+    expect(dispatched).toEqual([MessageType.Welcome]);
+  });
+
+  it("a welcome timeout frees the client for a later successful connect", async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, sockets } = makeReconnectingClient({ readyTimeoutMs: 1000 });
+      const timedOut = client.connect();
+      sockets[0]!.open();
+      vi.advanceTimersByTime(1500);
+      await expect(timedOut).rejects.toThrow(/did not welcome/);
+      expect(sockets[0]!.closed).toBe(true);
+      expect(client.isReady).toBe(false);
+      sockets[0]!.welcome();
+      expect(client.isReady).toBe(false);
+
+      const next = client.connect();
+      sockets[1]!.open();
+      sockets[1]!.welcome();
+      await next;
+      expect(client.isReady).toBe(true);
+      sockets[1]!.sent = [];
+      vi.advanceTimersByTime(20_000);
+      expect(sockets[1]!.sentEnvelopes().filter((e) => e["type"] === "heartbeat").length).toBe(1);
+      expect(sockets[0]!.sent.length).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("an error before the welcome rejects once and leaves the client reusable", async () => {
+    const { client, sockets } = makeReconnectingClient();
+    const failed = client.connect();
+    sockets[0]!.onerror?.({});
+    await expect(failed).rejects.toThrow(/failed/);
+    sockets[0]!.onclose?.({});
+    expect(client.isReady).toBe(false);
+    const next = client.connect();
+    sockets[1]!.open();
+    sockets[1]!.welcome();
+    await next;
+    expect(client.isReady).toBe(true);
+  });
+});

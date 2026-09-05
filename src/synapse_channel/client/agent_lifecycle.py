@@ -91,6 +91,7 @@ class _LifecycleAgent(Protocol):
     uri: str
     verbose: bool
     wake_capability: str
+    _connect_active: bool
     _heartbeat_task: asyncio.Task[None] | None
     _identity_key: Any
     _mailbox_since_seq: int
@@ -122,6 +123,9 @@ class AgentLifecycleMixin:
     """Manage WebSocket connection setup, readiness, heartbeat, and shutdown."""
 
     connection: ClientConnection | None
+    last_close_code: int | None
+    last_close_reason: str
+    _connect_active: bool
     _heartbeat_task: asyncio.Task[None] | None
 
     async def connect(self: _LifecycleAgent) -> None:
@@ -129,9 +133,29 @@ class AgentLifecycleMixin:
 
         Sends the registration heartbeat, starts the keepalive loop, then
         dispatches each inbound message to the callback. Connection failures are
-        reported (when verbose) and end the loop; the heartbeat task is always
-        cancelled on exit.
+        reported (when verbose) and end the loop.
+
+        Each call is one connection attempt that owns its state: readiness is
+        cleared when the attempt starts and again when it ends, ``running`` is
+        re-armed, the previous close diagnostics are reset, and the attempt's
+        heartbeat task is cancelled and awaited before the call returns, so a
+        disconnected agent is never ready and a later call on the same agent
+        connects afresh. The mailbox cursor and any owner lease survive across
+        attempts. A second call while an attempt is still active is refused
+        instead of racing the live listener.
+
+        Raises
+        ------
+        RuntimeError
+            If another :meth:`connect` call on this agent has not returned yet.
         """
+        if self._connect_active:
+            raise RuntimeError(f"{self.name}: connect() is already active; await it first")
+        self._connect_active = True
+        self.running = True
+        self.ready_event.clear()
+        self.last_close_code, self.last_close_reason = None, ""
+        heartbeat: asyncio.Task[None] | None = None
         try:
             async with connect(
                 self.uri, ping_interval=self.ping_interval, ping_timeout=self.ping_timeout
@@ -186,7 +210,8 @@ class AgentLifecycleMixin:
                     sign_identity=True,
                     **extra,
                 )
-                self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+                heartbeat = asyncio.create_task(self._heartbeat_loop())
+                self._heartbeat_task = heartbeat
 
                 async for raw in websocket:
                     if not self.running:
@@ -207,9 +232,12 @@ class AgentLifecycleMixin:
                 print(f"[{self.name}] Connection lost: {exc}")
         finally:
             self.running = False
-            if self._heartbeat_task is not None:
-                self._heartbeat_task.cancel()
+            self.ready_event.clear()
             self.connection = None
+            if heartbeat is not None:
+                heartbeat.cancel()
+                await asyncio.gather(heartbeat, return_exceptions=True)
+            self._connect_active = False
 
     async def wait_until_ready(self: _LifecycleAgent, timeout: float = 5.0) -> bool:
         """Wait until the hub's welcome message has been received.

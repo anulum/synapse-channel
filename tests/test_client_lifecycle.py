@@ -437,3 +437,114 @@ def test_start_quiet_keyboard_interrupt(
     monkeypatch.setattr("asyncio.run", interrupt)
     agent.start()
     assert capsys.readouterr().out == ""
+
+
+async def _connect_until_ready(agent: SynapseAgent) -> asyncio.Task[None]:
+    session = asyncio.create_task(agent.connect())
+    assert await agent.wait_until_ready(3.0), "the hub did not welcome the agent in time"
+    return session
+
+
+async def _close_and_join(agent: SynapseAgent, session: asyncio.Task[None]) -> None:
+    if agent.connection is not None:
+        await agent.connection.close()
+    await asyncio.wait_for(session, 3.0)
+
+
+async def test_reconnecting_the_same_agent_clears_readiness_and_rearms_the_loop() -> None:
+    """R5: disconnected is not ready; a later connect() on the same agent is a fresh session."""
+    async with running_hub() as (_, uri):
+        agent = SynapseAgent("lifecycle/reconnect", uri=uri, verbose=False, machine_identity=False)
+        first = await _connect_until_ready(agent)
+        assert agent.running is True and agent.connection is not None
+        first_heartbeat = agent._heartbeat_task
+        assert first_heartbeat is not None and not first_heartbeat.done()
+
+        await _close_and_join(agent, first)
+        assert agent.connection is None and agent.running is False
+        assert await agent.wait_until_ready(0.1) is False, (
+            "a disconnected agent must not read ready"
+        )
+        assert first_heartbeat.done(), (
+            "the attempt's heartbeat task is awaited before connect() returns"
+        )
+
+        second = await _connect_until_ready(agent)
+        assert agent.running is True and agent.connection is not None
+        assert agent.hub_id == "syn-test"
+        second_heartbeat = agent._heartbeat_task
+        assert second_heartbeat is not None and second_heartbeat is not first_heartbeat
+        assert not second_heartbeat.done()
+        await _close_and_join(agent, second)
+        assert second_heartbeat.done() and agent.running is False
+        assert await agent.wait_until_ready(0.1) is False
+
+
+async def test_overlapping_connect_is_refused_while_a_session_is_live() -> None:
+    async with running_hub() as (_, uri):
+        agent = SynapseAgent("lifecycle/overlap", uri=uri, verbose=False, machine_identity=False)
+        session = await _connect_until_ready(agent)
+        try:
+            with pytest.raises(RuntimeError, match="already active"):
+                await agent.connect()
+            assert agent.running is True and agent.connection is not None
+            assert await agent.wait_until_ready(0.1) is True, (
+                "the refusal must not disturb the session"
+            )
+        finally:
+            await _close_and_join(agent, session)
+
+
+async def test_a_refused_attempt_leaves_the_agent_reusable_for_a_live_hub() -> None:
+    port = _free_port()
+    agent = SynapseAgent(
+        "lifecycle/retry", uri=f"ws://127.0.0.1:{port}", verbose=False, machine_identity=False
+    )
+    await asyncio.wait_for(agent.connect(), 5.0)
+    assert agent.running is False and agent.connection is None
+    assert await agent.wait_until_ready(0.1) is False
+    async with running_hub() as (_, uri):
+        agent.uri = uri
+        session = await _connect_until_ready(agent)
+        assert agent.running is True
+        await _close_and_join(agent, session)
+
+
+async def test_each_attempt_resets_the_previous_close_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = SynapseAgent("lifecycle/diagnostics", verbose=False, machine_identity=False)
+    original = agent.connect
+
+    def closed(*_args: object, **_kwargs: object) -> object:
+        raise ConnectionClosedError(Close(4008, "policy"), None)
+
+    monkeypatch.setattr("synapse_channel.client.agent_lifecycle.connect", closed)
+    await original()
+    assert (agent.last_close_code, agent.last_close_reason) == (4008, "policy")
+    monkeypatch.undo()
+    async with running_hub() as (_, uri):
+        agent.uri = uri
+        session = await _connect_until_ready(agent)
+        assert (agent.last_close_code, agent.last_close_reason) == (None, "")
+        await _close_and_join(agent, session)
+    assert (agent.last_close_code, agent.last_close_reason) == (None, "")
+
+
+async def test_mailbox_cursor_and_owner_lease_survive_a_reconnect() -> None:
+    async with running_hub() as (_, uri):
+        agent = SynapseAgent(
+            "lifecycle/cursor",
+            uri=uri,
+            verbose=False,
+            machine_identity=False,
+            mailbox=True,
+            mailbox_since_seq=7,
+            owner_lease="persisted-lease-token",
+        )
+        first = await _connect_until_ready(agent)
+        await _close_and_join(agent, first)
+        second = await _connect_until_ready(agent)
+        assert agent.mailbox_cursor == 7
+        assert agent.owner_lease == "persisted-lease-token"
+        await _close_and_join(agent, second)
