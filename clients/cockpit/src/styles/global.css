@@ -4486,6 +4486,8 @@ body {
 }
 
 .timetravel__label {
+  min-width: 0;
+  max-width: 100%;
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   font-variant-numeric: tabular-nums;
@@ -4551,7 +4553,7 @@ body {
 .replay__empty {
   margin: 0;
   padding: var(--sp-2) var(--sp-4);
-  color: var(--warn);
+  color: var(--ink);
   font-size: var(--fs-small);
 }
 
