@@ -89,6 +89,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Reject process discovery time budgets outside the floating-point range with
+  the documented validation error, before inspecting processes.
+
 - Ignore directories and named pipes with rollout-like names when identifying
   host-session context; only open regular files provide context evidence.
 

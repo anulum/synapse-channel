@@ -9,10 +9,10 @@
 
 from __future__ import annotations
 
-import math
 import os
 import re
 import stat
+import sys
 import time
 from collections.abc import Generator
 from dataclasses import dataclass
@@ -292,7 +292,8 @@ def discover_processes(
     limit : int, optional
         Non-negative maximum directory entries considered; zero does no scan.
     seconds : float, optional
-        Finite non-negative monotonic scan budget; zero does no scan.
+        Finite non-negative monotonic scan budget representable as a float;
+        zero does no scan.
 
     Returns
     -------
@@ -304,14 +305,14 @@ def discover_processes(
     ------
     ValueError
         An explicit PID is not a positive integer, limit is not a non-negative
-        integer, or seconds is not a finite non-negative number. Booleans are
-        not accepted as process identifiers or budgets.
+        integer, or seconds is not a finite non-negative number representable
+        as a float. Booleans are not accepted as process identifiers or budgets.
     """
     if any(type(pid) is not int or pid <= 0 for pid in pids):
         raise ValueError("PID must be a positive integer")
     if type(limit) is not int or limit < 0:
         raise ValueError("limit must be a non-negative integer")
-    if type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds < 0:
+    if type(seconds) not in (int, float) or not 0 <= seconds <= sys.float_info.max:
         raise ValueError("seconds must be a finite non-negative number")
     if not hasattr(os, "geteuid") or not Path("/proc/self/stat").exists():
         return {}, "unavailable"

@@ -120,10 +120,29 @@ def test_discovery_refuses_invalid_entry_limits(limit: object) -> None:
         discover_processes(pids=(os.getpid(),), limit=cast(int, limit))
 
 
-@pytest.mark.parametrize("seconds", [-1, float("nan"), float("inf"), True, "1"])
+@pytest.mark.parametrize(
+    "seconds",
+    [
+        -1,
+        float("nan"),
+        float("inf"),
+        True,
+        "1",
+        pytest.param(10**400, id="integer-overflow"),
+        pytest.param(-(10**400), id="negative-integer-overflow"),
+    ],
+)
 def test_discovery_refuses_invalid_time_budgets(seconds: object) -> None:
     with pytest.raises(ValueError, match="seconds"):
         discover_processes(pids=(os.getpid(),), seconds=cast(float, seconds))
+
+
+@requires_proc
+@pytest.mark.parametrize("seconds", [1, sys.float_info.max, int(sys.float_info.max)])
+def test_discovery_accepts_representable_time_budgets(seconds: float) -> None:
+    rows, status = discover_processes(pids=(os.getpid(),), seconds=seconds)
+    assert status == "complete"
+    assert rows[os.getpid()].pid == os.getpid()
 
 
 @pytest.mark.parametrize("pid", [0, -1, True])
