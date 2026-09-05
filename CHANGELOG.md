@@ -88,8 +88,9 @@ All notable changes to this project are documented here.
 - Align Studio snapshot request deadlines with server collection budgets,
   bound identity-queue waits and label failed refreshes stale rather than offline.
 
-- Send the session bearer with Studio snapshots, bound requests to five
-  seconds, prevent duplicate polling loops and label retained data non-current.
+- Send the session bearer with Studio snapshots, bound requests using the
+  server-derived collection budget, prevent duplicate polling loops and label
+  retained data non-current.
 
 - Bound Studio access-descriptor requests and ignore superseded completions,
   preserving newer role downgrades and recovering polling after timeouts.
