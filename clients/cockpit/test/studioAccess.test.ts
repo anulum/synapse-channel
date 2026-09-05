@@ -121,3 +121,27 @@ it.each([
   expect(access.snapshot().phase).toBe("unavailable");
   expect(access.parseDescriptor({ ...descriptor("viewer"), extra: true })).toBeNull();
 });
+
+it.each(["old success", "old error", "old body"])("ignores %s after a newer downgrade", async (outcome) => {
+  let finish!: (response: Response) => void;
+  let fail!: (error: Error) => void;
+  const pending = new Promise<Response>((resolve, reject) => { finish = resolve; fail = reject; });
+  let finishBody!: (value: object) => void;
+  const bodyResponse = new Response();
+  vi.spyOn(bodyResponse, "json").mockImplementation(() => new Promise<object>(resolve => { finishBody = resolve; }));
+  vi.stubGlobal("fetch", vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(descriptor("operator"))))
+    .mockReturnValueOnce(outcome === "old body" ? Promise.resolve(bodyResponse) : pending)
+    .mockResolvedValueOnce(new Response(JSON.stringify(descriptor("viewer")))));
+  const access = loadAccess();
+  await vi.waitFor(() => expect(access.snapshot().role).toBe("operator"));
+  const first = access.refresh();
+  await Promise.resolve();
+  await access.refresh();
+  expect(access.snapshot().role).toBe("viewer");
+  if (outcome === "old success") finish(new Response(JSON.stringify(descriptor("admin"))));
+  else if (outcome === "old body") finishBody(descriptor("admin"));
+  else fail(new Error("old connection failed"));
+  await first;
+  expect(access.snapshot().role).toBe("viewer");
+});

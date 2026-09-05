@@ -78,6 +78,11 @@ synapse dashboard --uri ws://127.0.0.1:8765
 
 ## The command centre — `/studio/command`
 
+Studio access-descriptor polling has a five-second request deadline. A newer
+refresh cancels its predecessor; late replies cannot replace a newer role or
+unavailable state. These displayed capabilities remain presentation hints,
+not a replacement for server-side authorisation.
+
 ### Optional Fleet mirror
 
 The separate Fleet mirror panel consumes an explicitly configured same-host

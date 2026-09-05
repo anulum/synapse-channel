@@ -85,6 +85,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Bound Studio access-descriptor requests and ignore superseded completions,
+  preserving newer role downgrades and recovering polling after timeouts.
+
 - Prevent superseded Fleet mirror responses or errors from replacing a newer
   export or locked state; cancel the previous request on refresh.
 

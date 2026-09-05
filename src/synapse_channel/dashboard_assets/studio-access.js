@@ -24,6 +24,7 @@
   const capabilityNames = ["read", "message_send", "task_declare", "task_update"];
   const listeners = new Set();
   let started = false;
+  let activeRequest = null;
   let state = unavailable();
 
   function unavailable() {
@@ -79,17 +80,28 @@
   }
 
   async function refresh() {
+    const controller = new AbortController();
+    const previous = activeRequest;
+    activeRequest = controller;
+    if (previous) previous.abort();
+    const deadline = window.setTimeout(() => controller.abort(), 5000);
     try {
       const response = await fetch(accessUrl, {
         cache: "no-store",
         headers: authHeaders(),
+        signal: controller.signal,
       });
+      if (activeRequest !== controller || controller.signal.aborted) return state;
       if (!response.ok) throw new Error("access unavailable");
       const next = parseDescriptor(await response.json());
+      if (activeRequest !== controller || controller.signal.aborted) return state;
       if (!next) throw new Error("malformed access descriptor");
       publish(next);
     } catch (_error) {
-      publish(unavailable());
+      if (activeRequest === controller) publish(unavailable());
+    } finally {
+      window.clearTimeout(deadline);
+      if (activeRequest === controller) activeRequest = null;
     }
     return state;
   }
