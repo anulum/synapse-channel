@@ -8,6 +8,9 @@
 """Use real owner-only files and Core HTTP, without importing Fleet."""
 
 import json
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
@@ -167,3 +170,70 @@ def test_duplicate_policy_fields_refused(tmp_path: Path) -> None:
     path.chmod(0o600)
     with pytest.raises(ValueError, match="duplicate"):
         load_mirror_grants(path)
+
+
+def test_atomic_replacement_with_concurrent_http_readers(tmp_path: Path) -> None:
+    export, grants = tmp_path / "mirror.json", tmp_path / "grants.json"
+    first = document()
+    second = document()
+    second["exported_at"] = 200.0
+    second["snapshot"]["generated_at"] = 199.0
+    second["snapshot"]["peers"][0].update(
+        cursor=22,
+        events=22,
+        last_success_at=198.0,
+        consecutive_failures=0,
+        status_written_at=199.0,
+        caught_up=True,
+    )
+    second["snapshot"]["tasks"][0].update(status="done", title="second export")
+    documents = (first, second)
+    expected = {json.dumps(doc, sort_keys=True) for doc in documents}
+    write(export, first)
+    write(grants, {"version": 1, "observers": ["compatibility"]})
+    server = serve(export, grants)
+    barrier = threading.Barrier(5, timeout=5)
+    rounds = 16
+
+    def publish() -> None:
+        try:
+            for index in range(rounds):
+                replacement = tmp_path / f"replacement-{index}.json"
+                write(replacement, documents[index % 2])
+                barrier.wait()
+                os.replace(replacement, export)
+                barrier.wait()
+        except BaseException:
+            barrier.abort()
+            raise
+
+    def read() -> int:
+        successes = 0
+        try:
+            for _ in range(rounds):
+                barrier.wait()
+                code, raw = request(server)
+                assert code in (200, 503)
+                if code == 200:
+                    assert json.dumps(json.loads(raw), sort_keys=True) in expected
+                    successes += 1
+                else:
+                    assert raw == b"mirror unavailable"
+                barrier.wait()
+        except BaseException:
+            barrier.abort()
+            raise
+        return successes
+
+    try:
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            writer = pool.submit(publish)
+            readers = [pool.submit(read) for _ in range(4)]
+            assert all(future.result(timeout=30) > 0 for future in readers)
+            writer.result(timeout=5)
+        code, raw = request(server)
+        assert code == 200
+        assert json.loads(raw) == second
+    finally:
+        barrier.abort()
+        server.close()
