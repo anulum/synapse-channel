@@ -211,7 +211,16 @@ def test_context_uses_exact_open_pathname_not_transcript_body(tmp_path: Path) ->
 
 @pytest.mark.parametrize(
     "mode",
-    ["conflict", "descriptor-limit", "denied", "deleted-cwd", "deleted-context", "non-rollout"],
+    [
+        "conflict",
+        "descriptor-limit",
+        "denied",
+        "deleted-cwd",
+        "deleted-context",
+        "non-rollout",
+        "directory-context",
+        "fifo-context",
+    ],
 )
 @requires_proc
 def test_context_ambiguity_and_unavailable_metadata(tmp_path: Path, mode: str) -> None:
@@ -241,6 +250,15 @@ elif mode == "deleted-context":
 elif mode == "non-rollout":
     streams[0].close()
     streams = [open("ordinary.jsonl", "w+")]
+elif mode in ("directory-context", "fifo-context"):
+    streams[0].close()
+    os.unlink(first)
+    if mode == "directory-context":
+        os.mkdir(first)
+        descriptor = os.open(first, os.O_RDONLY | os.O_DIRECTORY)
+    else:
+        os.mkfifo(first)
+        descriptor = os.open(first, os.O_RDWR | os.O_NONBLOCK)
 print("ready", flush=True)
 sys.stdin.read()
 """
@@ -276,6 +294,8 @@ sys.stdin.read()
                         "deleted-cwd": "observed",
                         "deleted-context": "unavailable",
                         "non-rollout": "unavailable",
+                        "directory-context": "unavailable",
+                        "fifo-context": "unavailable",
                     }[mode]
                 )
         finally:

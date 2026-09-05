@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 import os
 import re
+import stat
 import time
 from collections.abc import Generator
 from dataclasses import dataclass
@@ -53,7 +54,7 @@ def process_metadata(
     context_root: Path | None = None,
     expected_start_ticks: int | None = None,
 ) -> ProcessMetadata:
-    """Read opt-in cwd and exact open Codex rollout UUID, never file contents.
+    """Read opt-in cwd and open regular-file rollout UUID, never file contents.
 
     Parameters
     ----------
@@ -101,10 +102,12 @@ def process_metadata(
                         break
                     try:
                         target = Path(os.readlink(entry.path))
+                        if not target.is_relative_to(base) or ".." in target.parts:
+                            continue
+                        if not stat.S_ISREG(os.stat(entry.path).st_mode):
+                            continue
                     except OSError:
                         complete = False
-                        continue
-                    if not target.is_relative_to(base) or ".." in target.parts:
                         continue
                     match = re.fullmatch(
                         r"rollout-.*-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl",

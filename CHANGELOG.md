@@ -85,6 +85,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Ignore directories and named pipes with rollout-like names when identifying
+  host-session context; only open regular files provide context evidence.
+
 - Align Studio snapshot request deadlines with server collection budgets,
   bound identity-queue waits and label failed refreshes stale rather than offline.
 
