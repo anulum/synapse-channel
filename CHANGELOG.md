@@ -85,6 +85,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Prevent superseded Fleet mirror responses or errors from replacing a newer
+  export or locked state; cancel the previous request on refresh.
+
 - Preserve Fleet mirror task disclosures and keyboard focus across changed
   exports and pagination; use the panel status when a focused row disappears.
 

@@ -13,6 +13,7 @@
   if (!status || !root) return;
   status.tabIndex = -1;
   let current = null;
+  let activeRequest = null;
   let page = 0;
   const opened = new Set();
   const pageSize = 50;
@@ -126,6 +127,9 @@
   }
   async function refresh() {
     const controller = new AbortController();
+    const previous = activeRequest;
+    activeRequest = controller;
+    if (previous) previous.abort();
     const deadline = window.setTimeout(() => controller.abort(), 5000);
     try {
       const response = await fetch("/fleet-observed.json", {
@@ -133,6 +137,7 @@
         headers: window.SynapseStudioAccess ? window.SynapseStudioAccess.authHeaders() : {},
         signal: controller.signal,
       });
+      if (activeRequest !== controller || controller.signal.aborted) return;
       if (!response.ok) {
         const states = { 404: "not configured", 401: "locked", 403: "locked",
           409: "incompatible mirror", 503: "mirror unavailable or invalid" };
@@ -140,12 +145,14 @@
         return;
       }
       const data = await response.json();
+      if (activeRequest !== controller || controller.signal.aborted) return;
       // Unchanged exports retain keyboard focus and expanded evidence.
       if (JSON.stringify(data) !== JSON.stringify(current)) render(data);
     } catch (_error) {
-      unavailable("mirror unavailable");
+      if (activeRequest === controller) unavailable("mirror unavailable");
     } finally {
       window.clearTimeout(deadline);
+      if (activeRequest === controller) activeRequest = null;
     }
   }
   async function loop() {

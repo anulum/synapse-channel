@@ -103,6 +103,10 @@ Authenticated `/fleet-observed-access.json` reports the separate grant;
 404 means disabled, 401/403 locked, 409 incompatible, and 503 unavailable or
 invalid. The reader never returns a cached last-good export as current data.
 The panel clears previously displayed metadata on an unsuccessful refresh.
+Starting a new refresh cancels the previous request. Only the latest request
+may update the panel, including after JSON decoding or a network error; a late
+response cannot restore rows after a newer locked state. Each request has a
+five-second deadline, and a later successful refresh can restore the view.
 Studio uses its existing bearer mechanism; configuring this feed does not
 introduce a separate login flow.
 

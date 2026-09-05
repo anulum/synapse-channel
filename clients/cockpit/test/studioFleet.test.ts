@@ -124,3 +124,73 @@ it("does not steal focus from outside the panel during refresh", () => {
   panel.render(snapshot(2));
   expect(document.activeElement).toBe(outside);
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+it.each(["response", "body", "http error", "network error", "body error"])(
+  "ignores superseded %s completion after a newer export", async (phase) => {
+    const panel = mount();
+    const old = deferred<unknown>();
+    const body = deferred<unknown>();
+    const newer = snapshot(2);
+    newer.exported_at = 20;
+    const fetcher = vi.fn().mockReturnValueOnce(old.promise)
+      .mockResolvedValueOnce({ok: true, json: async () => newer});
+    vi.stubGlobal("fetch", fetcher);
+    const first = panel.refresh();
+    if (phase.startsWith("body")) {
+      old.resolve({ok: true, json: () => body.promise});
+      await Promise.resolve();
+    }
+    await panel.refresh();
+    expect(document.body.textContent).toContain("exported at 20");
+    if (phase === "network error") old.reject(new Error("connection lost"));
+    else if (phase === "http error") old.resolve({ok: false, status: 503});
+    else if (phase === "body error") body.reject(new Error("truncated JSON"));
+    else if (phase === "body") body.resolve(snapshot());
+    else old.resolve({ok: true, json: async () => snapshot()});
+    await first;
+    expect(document.body.textContent).toContain("exported at 20");
+    expect(document.body.textContent).toContain("peer-1");
+    expect(fetcher.mock.calls[0]![1].signal.aborted).toBe(true);
+  },
+);
+
+it("does not restore an old success after access is revoked and can recover", async () => {
+  const panel = mount();
+  const body = deferred<unknown>();
+  vi.stubGlobal("fetch", vi.fn()
+    .mockResolvedValueOnce({ok: true, json: () => body.promise})
+    .mockResolvedValueOnce({ok: false, status: 403})
+    .mockResolvedValueOnce({ok: true, json: async () => snapshot(2)}));
+  const first = panel.refresh();
+  await Promise.resolve();
+  await panel.refresh();
+  body.resolve(snapshot());
+  await first;
+  expect(document.getElementById("cc-fleet-status")?.textContent).toBe("locked");
+  expect(document.getElementById("cc-fleet-mirror")?.textContent).toBe("");
+  await panel.refresh();
+  expect(document.body.textContent).toContain("peer-1");
+});
+
+it("clears on the active request deadline and recovers on the next refresh", async () => {
+  const panel = mount();
+  panel.render(snapshot());
+  vi.stubGlobal("fetch", vi.fn((_url, options: RequestInit) => new Promise((_resolve, reject) => {
+    options.signal!.addEventListener("abort", () => reject(new DOMException("timeout", "AbortError")));
+  })));
+  const pending = panel.refresh();
+  await vi.advanceTimersByTimeAsync(5000);
+  await pending;
+  expect(document.getElementById("cc-fleet-status")?.textContent).toBe("mirror unavailable");
+  expect(document.getElementById("cc-fleet-mirror")?.textContent).toBe("");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ok: true, json: async () => snapshot()}));
+  await panel.refresh();
+  expect(document.body.textContent).toContain("exported at 12");
+});
