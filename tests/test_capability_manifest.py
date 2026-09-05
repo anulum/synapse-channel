@@ -147,6 +147,50 @@ def test_main_check_stale_returns_one(tmp_path: Path) -> None:
     assert cap.main(["--check"], root=tmp_path) == 1
 
 
+@pytest.mark.parametrize(
+    "damage",
+    ["missing", "directory", "malformed", "metric", "schema", "project", "invalid-utf8"],
+)
+def test_main_check_rejects_json_drift(
+    tmp_path: Path, damage: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A current README cannot conceal a damaged machine-readable companion."""
+    _write_manifest_repo(tmp_path)
+    assert cap.main(["--update"], root=tmp_path) == 0
+    assert cap.main(["--check"], root=tmp_path) == 0
+    manifest = tmp_path / "docs" / "_generated" / "capability_manifest.json"
+    readme = (tmp_path / "README.md").read_bytes()
+    if damage == "missing":
+        manifest.unlink()
+    elif damage == "directory":
+        manifest.unlink()
+        manifest.mkdir()
+    elif damage == "malformed":
+        manifest.write_text("{", encoding="utf-8")
+    elif damage == "invalid-utf8":
+        manifest.write_bytes(b"\xff")
+    else:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        if damage == "metric":
+            payload["metrics"]["tests"] += 1
+        elif damage == "schema":
+            payload["schema_version"] = "stale"
+        else:
+            payload["project"] = "different project"
+        manifest.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    damaged = manifest.read_bytes() if manifest.is_file() else None
+    capsys.readouterr()
+    assert cap.main(["--check"], root=tmp_path) == 1
+    assert "stale" in capsys.readouterr().err
+    assert (tmp_path / "README.md").read_bytes() == readme
+    assert (manifest.read_bytes() if manifest.is_file() else None) == damaged
+    if damage == "directory":
+        assert manifest.is_dir()
+        manifest.rmdir()
+    assert cap.main(["--update"], root=tmp_path) == 0
+    assert cap.main(["--check"], root=tmp_path) == 0
+
+
 def test_count_all_exports_zero_without_all(tmp_path: Path) -> None:
     module = tmp_path / "m.py"
     module.write_text("x = 1\n", encoding="utf-8")

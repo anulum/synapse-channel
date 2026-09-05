@@ -14,8 +14,9 @@ between two HTML-comment markers. The counts come from static analysis (a TOML
 read and ``ast``); no project code is imported.
 
 ``--update`` regenerates the snapshot in place and writes a JSON copy.
-``--check`` regenerates and fails if the README is out of date, so a stale
-inventory cannot ship. Configuration lives in ``tools/capability_manifest.toml``.
+``--check`` compares both the README and canonical JSON against the source,
+without writing either file. Missing, unreadable or stale JSON fails the check.
+Configuration lives in ``tools/capability_manifest.toml``.
 
 Requires Python 3.11+ (``tomllib``).
 """
@@ -315,16 +316,21 @@ def inject(text: str, block: str, start: str, end: str) -> str:
     return text[:start_idx] + block + text[end_idx + len(end) :]
 
 
-def write_json(root: Path, config: dict[str, Any], metrics: dict[str, Any]) -> Path:
-    """Write the machine-readable manifest and return its path."""
-    out = root / str(config["paths"]["json_output"])
-    out.parent.mkdir(parents=True, exist_ok=True)
+def _render_json(config: dict[str, Any], metrics: dict[str, Any]) -> str:
+    """Serialise the versioned inventory identically for generation and checking."""
     payload = {
         "schema_version": config["schema_version"],
         "project": config["project_label"],
         "metrics": {key: metrics[key] for key in METRIC_ORDER},
     }
-    out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def write_json(root: Path, config: dict[str, Any], metrics: dict[str, Any]) -> Path:
+    """Write the machine-readable manifest and return its path."""
+    out = root / str(config["paths"]["json_output"])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_render_json(config, metrics), encoding="utf-8")
     return out
 
 
@@ -343,14 +349,24 @@ def update(root: Path, config: dict[str, Any]) -> dict[str, Any]:
 
 
 def check(root: Path, config: dict[str, Any]) -> bool:
-    """Return whether the README snapshot matches the source tree."""
+    """Return whether both generated inventories match the source tree.
+
+    Missing, unreadable or non-UTF-8 JSON returns False. The JSON must match
+    the generator's canonical formatting; this check never rewrites files.
+    """
     metrics = collect_metrics(root, config)
     block = render_block(metrics, config)
     readme = (root / config["readme"]["path"]).read_text(encoding="utf-8")
     current = _extract_region(
         readme, config["readme"]["marker_start"], config["readme"]["marker_end"]
     )
-    return current == block
+    if current != block:
+        return False
+    try:
+        manifest = (root / str(config["paths"]["json_output"])).read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return False
+    return manifest == _render_json(config, metrics)
 
 
 def main(argv: list[str] | None = None, root: Path = REPO_ROOT) -> int:

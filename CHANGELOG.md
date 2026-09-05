@@ -89,6 +89,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Check the generated JSON capability inventory alongside README, rejecting
+  missing, unreadable or stale machine-readable metadata without rewriting it.
+
 - Reject process discovery time budgets outside the floating-point range with
   the documented validation error, before inspecting processes.
 
