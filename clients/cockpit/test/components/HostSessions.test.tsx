@@ -7,7 +7,7 @@
 // SYNAPSE_CHANNEL — component integration with a real Python dashboard
 // @vitest-environment jsdom
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtempSync, writeFileSync, chmodSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -21,6 +21,9 @@ import { resetCockpitAuth, unlockCockpit } from "../../src/lib/auth";
 const directory = mkdtempSync(join(tmpdir(), "host-sessions-component-"));
 const grants = join(directory, "grants.json");
 const token = "disposable-host-component-test-token";
+const localPython = "../../.venv/bin/python";
+const python = process.env["SYNAPSE_COCKPIT_E2E_PYTHON"] ??
+  (existsSync(localPython) ? localPython : "python");
 let child: ChildProcessWithoutNullStreams;
 let base: string;
 const networkFetch = globalThis.fetch;
@@ -52,11 +55,18 @@ finally:
     server.close()
     rollout.close()
 `;
-  child = spawn("../../.venv/bin/python", ["-c", program, grants, token]);
+  child = spawn(python, ["-c", program, grants, token]);
+  let diagnostics = "";
+  child.stderr.on("data", (chunk: Buffer) => {
+    diagnostics = (diagnostics + chunk.toString()).slice(-8192);
+  });
   base = await new Promise<string>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("dashboard startup timed out")), 5000);
-    child.once("error", reject);
-    child.once("exit", (code) => { if (code !== null && code !== 0) reject(new Error("dashboard exited")); });
+    child.once("error", (error) => { clearTimeout(timer); reject(error); });
+    child.once("exit", (code, signal) => {
+      clearTimeout(timer);
+      reject(new Error(`dashboard exited (${code ?? signal}): ${diagnostics}`));
+    });
     child.stdout.once("data", (chunk: Buffer) => { clearTimeout(timer); resolve(chunk.toString().trim()); });
   });
   // jsdom has no browser URL resolution; transport still crosses real loopback HTTP.
@@ -70,7 +80,7 @@ afterEach(() => {
 });
 afterAll(async () => {
   vi.unstubAllGlobals();
-  if (child && child.exitCode === null) {
+  if (child?.pid !== undefined && child.exitCode === null && child.signalCode === null) {
     const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
     child.stdin.end();
     const timeout = setTimeout(() => child.kill("SIGKILL"), 5000);

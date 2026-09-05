@@ -6,11 +6,16 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — host wire contract tests from real process observations
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseHostObservation } from "../../src/lib/hostSessions";
 
+const localPython = "../../.venv/bin/python";
+const python = process.env["SYNAPSE_COCKPIT_E2E_PYTHON"] ??
+  (existsSync(localPython) ? localPython : "python");
+
 function observed(): Record<string, unknown> {
-  return JSON.parse(execFileSync("../../.venv/bin/python", [
+  return JSON.parse(execFileSync(python, [
     "-m", "synapse_channel.cli", "pid-monitor", "--pid", String(process.pid),
     "--tmux-socket", "/nonexistent/host-parser-test.sock", "--json",
   ], { encoding: "utf8", timeout: 10000 })) as Record<string, unknown>;
