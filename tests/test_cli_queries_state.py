@@ -9,16 +9,98 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import subprocess
+import sys
+import time
 
 import pytest
 
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_queries
+from synapse_channel.claim_state import fetch_state_snapshot
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_fold import fold_observed_state
 from synapse_channel.core.multihub_merge import HubEvent
 from synapse_channel.observed_peers import ObservedPeerSnapshot
+
+
+async def test_packaged_state_and_overlap_agree_after_real_lease_expiry() -> None:
+    async with running_hub(SynapseHub()) as (_, uri):
+        owner = await connect_agent("expiry/owner", uri)
+        contender = await connect_agent("expiry/contender", uri)
+        try:
+            await owner.agent.claim("short-lease", ttl_seconds=30, paths=["short-lease"])
+            await owner.agent.claim("retained-lease", ttl_seconds=90, paths=["retained-lease"])
+            await owner.recorder.wait_for(
+                lambda message: (
+                    message.get("type") == "claim_granted"
+                    and message.get("task_id") == "retained-lease"
+                )
+            )
+            await owner.agent.save_checkpoint("short-lease", "resume-here")
+            await owner.recorder.wait_for(
+                lambda message: (
+                    message.get("type") == "checkpoint_saved"
+                    and message.get("task_id") == "short-lease"
+                )
+            )
+            before = await fetch_state_snapshot(
+                uri=uri, requester="expiry/snapshot-before", token=None, timeout=2
+            )
+            short = next(row for row in before["active_claims"] if row["task_id"] == "short-lease")
+            expires = float(short["lease_expires_at"])
+            await contender.agent.claim("overlap", paths=["short-lease"])
+            await contender.recorder.wait_for(
+                lambda message: (
+                    message.get("type") == "claim_denied" and message.get("task_id") == "overlap"
+                )
+            )
+            argv = [
+                sys.executable,
+                "-m",
+                "synapse_channel.cli",
+                "state",
+                "--uri",
+                uri,
+                "--name",
+                "expiry/cli",
+                "--owner",
+                "expiry/owner",
+            ]
+            visible = await asyncio.to_thread(
+                subprocess.run, argv, capture_output=True, text=True, timeout=8
+            )
+            assert visible.returncode == 0, visible.stderr
+            assert "Active claims (2)" in visible.stdout
+            assert "short-lease [claimed]" in visible.stdout
+            assert "checkpoint=resume-here" in visible.stdout
+            await asyncio.sleep(max(0, expires - time.time()) + 0.05)
+            expired = await asyncio.to_thread(
+                subprocess.run, argv, capture_output=True, text=True, timeout=8
+            )
+            assert expired.returncode == 0, expired.stderr
+            assert "Active claims (1)" in expired.stdout
+            assert "short-lease" not in expired.stdout
+            assert "retained-lease [claimed]" in expired.stdout
+            await contender.agent.claim("short-lease", paths=["short-lease"])
+            await contender.recorder.wait_for(
+                lambda message: (
+                    message.get("type") == "claim_granted"
+                    and message.get("task_id") == "short-lease"
+                    and message.get("owner") == "expiry/contender"
+                )
+            )
+            after = await fetch_state_snapshot(
+                uri=uri, requester="expiry/snapshot-after", token=None, timeout=2
+            )
+            renewed = next(row for row in after["active_claims"] if row["task_id"] == "short-lease")
+            assert renewed["owner"] == "expiry/contender"
+            assert renewed["checkpoint"] == "resume-here"
+            assert renewed["epoch"] > short["epoch"]
+        finally:
+            await close_agents(contender, owner)
 
 
 async def _claim(
