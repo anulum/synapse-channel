@@ -944,11 +944,11 @@ def _handler_class(
     bound_observed_pins = observed_pins
     bound_observed_timeout = observed_timeout
     bound_allow_hosts = allow_hosts
-    bound_heavy_feed_cache = DashboardFeedCache(process_isolation=True)
+    bound_heavy_feed_cache = DashboardFeedCache(process_isolation=bound_reliability_db is not None)
     bound_state_feed_cache = DashboardFeedCache(
         ttl_seconds=15.0,
         max_entries=64,
-        process_isolation=True,
+        process_isolation=bound_reliability_db is not None,
     )
 
     def _fetch_bound_snapshot() -> DashboardSnapshot:

@@ -11,7 +11,10 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 from pathlib import Path
+
+import pytest
 
 from dashboard_helpers import _authorized_get, _feeds_server, _http_get
 from synapse_channel.core.journal import EventKind, record_ledger_task, record_operator_relay
@@ -725,14 +728,24 @@ def test_receipts_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
     assert allowed == 200
 
 
-def test_state_at_feed_reports_absence_without_a_store() -> None:
+@pytest.mark.parametrize(
+    ("path", "flag"),
+    [
+        ("/state-at.json?seq=1", "--feeds-db"),
+        ("/reliability.json", "--reliability-db"),
+        ("/health-anomalies.json", "--feeds-db"),
+    ],
+)
+def test_store_feed_reports_absence_without_starting_worker(path: str, flag: str) -> None:
+    children_before = {child.pid for child in multiprocessing.active_children()}
     server = _feeds_server()
     try:
-        status, _, body = _authorized_get(server, "/state-at.json?seq=1")
+        status, _, body = _authorized_get(server, path)
+        assert status == 404
+        assert flag in body
+        assert {child.pid for child in multiprocessing.active_children()} <= children_before
     finally:
         server.close()
-    assert status == 404
-    assert "--feeds-db" in body
 
 
 def _seed_replayable_store(db: Path) -> None:
@@ -762,9 +775,11 @@ def test_state_at_feed_reconstructs_state_at_a_seq(tmp_path: Path) -> None:
     db = tmp_path / "hub.db"
     _seed_replayable_store(db)  # a claim then a release (2 events)
 
+    children_before = {child.pid for child in multiprocessing.active_children()}
     server = _feeds_server(reliability_db=db)
     try:
         status, content_type, body = _authorized_get(server, "/state-at.json?seq=1")
+        assert {child.pid for child in multiprocessing.active_children()} - children_before
     finally:
         server.close()
 

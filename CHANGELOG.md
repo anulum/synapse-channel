@@ -15,6 +15,8 @@ All notable changes to this project are documented here.
 
 ## [0.99.26] - 2026-09-05
 
+- Dashboard feeds return unconfigured-store responses without starting report
+  worker processes; configured-store reconstruction retains process isolation.
 - Setup verification retries connections while the restarted hub opens its
   listener, retaining one readiness/replay deadline and cleaning up cancelled
   connection tasks.
