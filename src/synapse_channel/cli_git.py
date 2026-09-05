@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +84,38 @@ def _resolve_git_claim_task_id(args: argparse.Namespace) -> str | None:
         )
         return None
     return task_id
+
+
+def comma_joined_paths_error(paths: Sequence[str], repo_root: Path) -> str | None:
+    """Return a usage error when a ``--paths`` value is a comma-joined list.
+
+    ``--paths`` is repeatable, one path per flag. A value such as ``a.py,b.py``
+    that names no existing path would be registered as one literal path that no
+    staged file can ever match, so the claim would cover nothing while looking
+    like it covers two files. A path that really contains a comma is accepted
+    when it exists under ``repo_root``.
+
+    Parameters
+    ----------
+    paths : Sequence[str]
+        The ``--paths`` values as parsed.
+    repo_root : Path
+        Directory against which relative paths are checked for existence.
+
+    Returns
+    -------
+    str or None
+        The error message for the first offending value, or ``None`` when every
+        value is acceptable.
+    """
+    for value in paths:
+        if "," in value and not (repo_root / value).exists():
+            return (
+                f"git-claim: --paths takes one path per flag; {value!r} contains a comma and "
+                "names no existing path, so it would register a single literal path that no "
+                "staged file can match. Repeat --paths for each path."
+            )
+    return None
 
 
 def _semantic_selectors_from_args(args: argparse.Namespace) -> tuple[str, ...]:
@@ -157,6 +189,10 @@ def _cmd_git_claim(
         return 2
     if task_id == "suggest" and args.intent:
         return _cmd_git_claim_suggest(args)
+    paths_error = comma_joined_paths_error(args.paths or [], Path.cwd())
+    if paths_error is not None:
+        print(paths_error, file=sys.stderr)
+        return 2
     return async_runner(
         claim_runner(
             uri=args.uri,

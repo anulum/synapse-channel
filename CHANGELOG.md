@@ -104,6 +104,13 @@ All notable changes to this project are documented here.
   listed under `interrupted` with its board effect declared unknown, and `state`
   is `null` when no reading completed instead of an invented empty board. The
   exit code contract (`0` for an incomplete run) is unchanged and now documented.
+- Refuse a `synapse git-claim --paths` value that contains a comma and names no
+  existing path (for example `a.py,b.py`): it was registered as one literal path
+  that no staged file could match, so the claim covered nothing while appearing to
+  cover several files and the staged-claim gate could never be satisfied by it. The
+  command now exits 2 with guidance to repeat `--paths` per path; a real path that
+  contains a comma is still accepted when it exists.
+
 ## [0.99.24] - 2026-09-04
 
 ### Fixed

@@ -42,7 +42,7 @@ Active claims (1):
 
 | Option | Meaning |
 |---|---|
-| `--paths` | File-scope path the claim intends to touch (repeatable). |
+| `--paths` | File-scope path the claim intends to touch (repeatable, one path per flag). A comma-joined value such as `a.py,b.py` that names no existing path is refused: it would register one literal path that no staged file can match. |
 | `--module`, `--symbol`, `--api`, `--source`, `--test`, `--generated`, `--migration` | Resolve semantic selectors locally. Symbol and API selectors use a synthetic descendant scope; the other selectors and companion tests/generated outputs remain whole-file paths. |
 | `--diff-base`, `--diff-head`, `--diff-path` | Infer conservative symbol scopes from a tracked Git diff. `--diff-head` is optional; without it the base is compared with the working tree. Repeat `--diff-path` to limit the diff. |
 | `--semantic-evidence-json` | Write receipt-ready selector and diff evidence JSON under the git root, or to an absolute path. |

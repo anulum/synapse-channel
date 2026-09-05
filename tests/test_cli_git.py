@@ -812,3 +812,68 @@ def test_cmd_conflicts_dispatches() -> None:
     ns = argparse.Namespace(uri="ws://h", name="ME", token=None, check_diff=True)
     assert cli_git._cmd_conflicts(ns, conflict_runner=predict_conflicts) == 0
     assert captured["check_diff"] is True
+
+
+def _claim_namespace(paths: list[str]) -> argparse.Namespace:
+    return argparse.Namespace(
+        uri="ws://h",
+        name="U",
+        task_id="T1",
+        task_id_flag=None,
+        paths=paths,
+        base="main",
+        auto_release_on="merge",
+        token=None,
+        module=None,
+        symbol=None,
+        api=None,
+        source=None,
+        test=None,
+        generated=None,
+        migration=None,
+        semantic_evidence_json=None,
+        intent=None,
+    )
+
+
+def test_cmd_git_claim_refuses_a_comma_joined_paths_value_that_names_no_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "a.py").write_text("")
+    (tmp_path / "b.py").write_text("")
+    dispatched: list[dict[str, Any]] = []
+
+    async def run_claim(**kwargs: Any) -> int:
+        dispatched.append(kwargs)
+        return 0
+
+    assert cli_git._cmd_git_claim(_claim_namespace(["a.py,b.py"]), claim_runner=run_claim) == 2
+    assert dispatched == [], "a refused claim must not reach the hub"
+    err = capsys.readouterr().err
+    assert "one path per flag" in err and "'a.py,b.py'" in err and "Repeat --paths" in err
+
+
+def test_cmd_git_claim_accepts_an_existing_path_that_contains_a_comma(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "odd,name.txt").write_text("")
+    captured: dict[str, Any] = {}
+
+    async def run_claim(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    assert (
+        cli_git._cmd_git_claim(_claim_namespace(["odd,name.txt", "a.py"]), claim_runner=run_claim)
+        == 0
+    )
+    assert captured["paths"] == ["odd,name.txt", "a.py"]
+
+
+def test_comma_joined_paths_error_reports_only_the_first_offender(tmp_path: Path) -> None:
+    assert cli_git.comma_joined_paths_error([], tmp_path) is None
+    assert cli_git.comma_joined_paths_error(["src/a.py", "docs/b.md"], tmp_path) is None
+    message = cli_git.comma_joined_paths_error(["x,y", "p,q"], tmp_path)
+    assert message is not None and "'x,y'" in message and "'p,q'" not in message
