@@ -91,3 +91,7 @@ OS-assigned loopback port. It checks rejected authentication, directed chat,
 conflicting claims, release, snapshots, and reconnecting the same client.
 The fixture uses checkout source, no persistent journal, and no running Synapse
 service or user data. Its child process is stopped after the test.
+
+The `clients-js` CI workflow runs this check with Node 22 and Python 3.12,
+alongside type checking and unit tests. Changes to the Python source, package
+configuration, or its hash-locked test dependencies also trigger the workflow.
