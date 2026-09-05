@@ -11,8 +11,10 @@
   const status = document.getElementById("cc-fleet-status");
   const root = document.getElementById("cc-fleet-mirror");
   if (!status || !root) return;
+  status.tabIndex = -1;
   let current = null;
   let page = 0;
+  const opened = new Set();
   const pageSize = 50;
   const unknown = (value) => value === null || value === undefined ? "unknown" : String(value);
   function node(tag, text) {
@@ -21,20 +23,41 @@
     return result;
   }
   function unavailable(message) {
+    const restoreFocus = root.contains(document.activeElement);
     current = null;
     page = 0;
+    opened.clear();
     status.textContent = message;
     root.replaceChildren();
+    if (restoreFocus) status.focus({ preventScroll: true });
   }
-  function render(data) {
+  function render(data, navigation = null) {
     if (!data || data.version !== 1 || data.advisory !== true ||
         typeof data.source_id !== "string" || !data.snapshot ||
         !Array.isArray(data.snapshot.peers) || !Array.isArray(data.snapshot.tasks)) {
       unavailable("incompatible mirror");
       return;
     }
-    current = data;
+    const active = root.contains(document.activeElement) ? document.activeElement : null;
+    const focusKey = active && active.dataset.mirrorTask;
+    const focusNavigation = navigation || (active && active.dataset.mirrorNavigation);
+    const sameSource = current && current.source_id === data.source_id;
+    for (const details of root.querySelectorAll("details")) {
+      if (details.open) opened.add(details.dataset.mirrorTask);
+      else opened.delete(details.dataset.mirrorTask);
+    }
+    if (!sameSource) {
+      page = 0;
+      opened.clear();
+    }
     const snapshot = data.snapshot;
+    const taskKeys = snapshot.tasks.map(task => JSON.stringify([data.source_id, task.task_id]));
+    const retained = new Set(taskKeys);
+    for (const key of opened) if (!retained.has(key)) opened.delete(key);
+    if (!navigation && sameSource && focusKey && retained.has(focusKey)) {
+      page = Math.floor((snapshot.peers.length + taskKeys.indexOf(focusKey)) / pageSize);
+    }
+    current = data;
     const total = snapshot.peers.length + snapshot.tasks.length;
     page = Math.min(page, Math.max(0, Math.ceil(total / pageSize) - 1));
     status.textContent = data.source_id + " · advisory · exported at " + unknown(data.exported_at) +
@@ -58,17 +81,24 @@
         root.append(row);
       } else {
         const task = snapshot.tasks[index - snapshot.peers.length];
+        const key = taskKeys[index - snapshot.peers.length];
         const details = document.createElement("details");
-        details.append(node("summary", data.source_id + " / " + task.task_id + " · " +
-          task.status + (task.board_conflict ? " · unresolved conflict" : "")));
-        details.addEventListener("toggle", () => {
+        details.dataset.mirrorTask = key;
+        const summary = node("summary", data.source_id + " / " + task.task_id + " · " +
+          task.status + (task.board_conflict ? " · unresolved conflict" : ""));
+        summary.dataset.mirrorTask = key;
+        details.append(summary);
+        function showEvidence() {
           if (details.open && details.childElementCount === 1) {
             const evidence = node("pre", JSON.stringify(task, null, 2));
             evidence.style.whiteSpace = "pre-wrap";
             evidence.style.overflowWrap = "anywhere";
             details.append(evidence);
           }
-        });
+        }
+        details.addEventListener("toggle", showEvidence);
+        details.open = opened.has(key);
+        showEvidence();
         root.append(details);
       }
     }
@@ -77,9 +107,21 @@
       const next = node("button", "Next mirror rows");
       previous.disabled = page === 0;
       next.disabled = end === total;
-      previous.addEventListener("click", () => { page -= 1; render(current); });
-      next.addEventListener("click", () => { page += 1; render(current); });
+      previous.dataset.mirrorNavigation = "previous";
+      next.dataset.mirrorNavigation = "next";
+      previous.addEventListener("click", () => { page -= 1; render(current, "previous"); });
+      next.addEventListener("click", () => { page += 1; render(current, "next"); });
       root.append(previous, next);
+    }
+    if (active) {
+      const summaries = Array.from(root.querySelectorAll("summary"));
+      const buttons = Array.from(root.querySelectorAll("button")).filter(button => !button.disabled);
+      const target = sameSource && focusKey
+        ? summaries.find(summary => summary.dataset.mirrorTask === focusKey)
+        : sameSource && focusNavigation
+          ? buttons.find(button => button.dataset.mirrorNavigation === focusNavigation) || buttons[0]
+          : null;
+      (target || status).focus({ preventScroll: true });
     }
   }
   async function refresh() {

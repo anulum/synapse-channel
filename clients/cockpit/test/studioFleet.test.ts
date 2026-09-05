@@ -74,3 +74,53 @@ it("keeps focus and disclosure for an unchanged export and rejects incompatible 
   panel.render({version: 2});
   expect(document.body.textContent).toContain("incompatible");
 });
+
+it("keeps an opened focused task across changed exports and page shifts", () => {
+  const panel = mount();
+  panel.render(snapshot());
+  const details = document.querySelector("details")!;
+  details.open = true;
+  document.querySelector("summary")!.focus();
+  const updated = snapshot(51);
+  updated.exported_at = 20;
+  updated.snapshot.tasks[0]!.status = "done";
+  panel.render(updated);
+  expect(document.activeElement?.tagName).toBe("SUMMARY");
+  expect(document.querySelector("details")?.open).toBe(true);
+  expect(document.querySelector("details")?.textContent).toContain('"status": "done"');
+  expect(document.body.textContent).toContain("Rows 51–52 of 52");
+});
+
+it.each(["removed", "source", "invalid"])("moves missing selection to panel status: %s", (change) => {
+  const panel = mount();
+  panel.render(snapshot());
+  document.querySelector("details")!.open = true;
+  document.querySelector("summary")!.focus();
+  const updated = snapshot();
+  if (change === "removed") updated.snapshot.tasks = [];
+  if (change === "source") updated.source_id = "another-lab";
+  panel.render(change === "invalid" ? {} : updated);
+  expect(document.activeElement?.id).toBe("cc-fleet-status");
+  expect(document.querySelector("details")?.open ?? false).toBe(false);
+});
+
+it("keeps keyboard pagination focus on an enabled control", () => {
+  const panel = mount();
+  panel.render(snapshot(51));
+  const next = document.querySelectorAll<HTMLButtonElement>("button")[1]!;
+  next.focus();
+  next.click();
+  expect(document.activeElement?.textContent).toBe("Previous mirror rows");
+  (document.activeElement as HTMLButtonElement).click();
+  expect(document.activeElement?.textContent).toBe("Next mirror rows");
+});
+
+it("does not steal focus from outside the panel during refresh", () => {
+  const panel = mount();
+  panel.render(snapshot());
+  const outside = document.createElement("button");
+  document.body.append(outside);
+  outside.focus();
+  panel.render(snapshot(2));
+  expect(document.activeElement).toBe(outside);
+});

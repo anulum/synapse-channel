@@ -85,6 +85,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Preserve Fleet mirror task disclosures and keyboard focus across changed
+  exports and pagination; use the panel status when a focused row disappears.
+
 - Keep reachable Studio peers with unknown log lag amber instead of green,
   with separate unknown-lag counts and an explicit explanation.
 

@@ -112,6 +112,11 @@ The envelope contains version 1, an explicit source label, export time,
 The panel pages through 50 rows at a time and exposes task evidence through
 keyboard-operable disclosure controls. It retains source labels, peer status
 times, unknown counts, partial drains and unresolved conflict evidence.
+Changed exports preserve opened task details and keyboard focus by source and
+task identity, including when a task moves to another page. Pagination keeps
+focus on an enabled navigation control. If the focused task disappears, the
+source changes, or access becomes unavailable, focus moves to the panel status.
+Refreshes do not take focus from elsewhere in Studio.
 An export time is not peer freshness. These rows never enter the local board,
 claim controls, risk verdict or direct-peer reachability totals.
 
