@@ -116,6 +116,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "directory": ANALYSIS,
     "manifest": ANALYSIS,
     "dashboard": ANALYSIS,
+    "pid-monitor": ANALYSIS,
     "identity": ANALYSIS,
     "accounting": ANALYSIS,
     "fleet-scorecard": ANALYSIS,

@@ -1208,6 +1208,30 @@ example `synapse send --target remanentia/FAST "status?"`.
 
 ## Observing
 
+`synapse pid-monitor` reads bounded, same-user Linux process metadata and tmux
+pane associations without changing processes, sessions, claims, or leases.
+Kernel process state is not evidence that an agent is working. Missing or
+incomplete observations carry explicit status values.
+
+```bash
+synapse pid-monitor --json
+synapse pid-monitor --pid 1234 --pid 5678 --samples 3 --json
+```
+
+Use actual process IDs with repeatable `--pid`; `--samples` accepts 1–3600
+snapshots, two seconds apart. `--tmux-socket PATH` selects an existing socket
+and never creates a tmux server. Local `--paths` grants working-directory
+observation; `--context` grants inspection of open Codex context pathnames.
+`--context-root PATH` selects their allowed root and still requires
+`--context`. No transcript contents, process command lines, or process
+environments are read.
+
+Alternatively, `--dashboard-port PORT --token-file FILE` reads the shared
+loopback dashboard observation. The token file must be owner-only; dashboard
+observer grants determine disclosure. Do not combine this mode with local
+`--pid`, `--tmux-socket`, `--paths`, `--context`, or `--context-root`
+selectors. This command provides observation only, not process termination.
+
 `synapse listen` streams chat (and optional presence) until it stops. An intentional
 stop — Ctrl+C, or a finite message cap in tests/tools — exits `0`. If the hub
 refuses the name (close `4009` name conflict, including after the welcome

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from synapse_channel.cli import build_parser
 from synapse_channel.surface_taxonomy import (
+    ANALYSIS,
     CLI_TAXONOMY,
     DESIGN_PREVIEW_DOCS,
     FIRST_USE_CONCEPTS,
@@ -58,6 +59,8 @@ def test_every_tier_label_is_valid() -> None:
 
 def test_tier_of_resolves_and_rejects() -> None:
     assert tier_of("send") == STABLE
+    assert tier_of("pid-monitor") == ANALYSIS
+    assert "pid-monitor" in commands_in_profile("core")
     assert tier_of("not-a-command") is None
 
 
