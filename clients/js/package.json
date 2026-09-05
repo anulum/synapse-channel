@@ -23,7 +23,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --exclude test/real-hub.test.mjs",
+    "test:integration": "npm run build && node --test test/real-hub.test.mjs"
   },
   "keywords": [
     "synapse",

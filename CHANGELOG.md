@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Add a repeatable JavaScript SDK integration check against an isolated,
+  authenticated Python hub, covering delivery, claim conflicts, release,
+  snapshots, and reconnect.
+
 - Add an opt-in, separately granted Fleet mirror feed and read-only Studio
   panel, with versioned bounded file inputs and no Fleet package dependency.
 

@@ -78,3 +78,16 @@ npm run build       # emit dist/
 
 This client is a separate npm package; it does not ship inside the Python
 `synapse-channel` distribution.
+
+For real-protocol integration, use Node 22+ and a Python interpreter with the
+repository's Python dependencies installed:
+
+```bash
+SYNAPSE_TEST_PYTHON=../../.venv/bin/python npm run test:integration
+```
+
+This builds the SDK and starts a temporary authenticated Python hub on an
+OS-assigned loopback port. It checks rejected authentication, directed chat,
+conflicting claims, release, snapshots, and reconnecting the same client.
+The fixture uses checkout source, no persistent journal, and no running Synapse
+service or user data. Its child process is stopped after the test.
