@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.26] - 2026-09-05
+
+- Setup verification retries connections while the restarted hub opens its
+  listener, retaining one readiness/replay deadline and cleaning up cancelled
+  connection tasks.
+- Exact history selectors isolate the verification canary before applying the
+  response limit, avoiding unrelated history above the client frame budget.
+- Exercise delayed CLI hub startup, durable replay behind more than 1 MiB of
+  newer chat history, invalid selectors and cancellation over real connections.
+
 ## [0.99.25] - 2026-09-05
 
 ### Added
