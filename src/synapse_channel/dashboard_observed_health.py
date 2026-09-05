@@ -67,8 +67,11 @@ def _peer_row(peer: Mapping[str, Any]) -> dict[str, Any]:
     else:
         agent_count = 0
     if reachable:
-        level = AMBER if (lag is not None and lag > 0) else GREEN
-        state = "lagging" if level == AMBER else "reachable"
+        if lag is None:
+            level, state = AMBER, "lag_unknown"
+        else:
+            level = AMBER if lag > 0 else GREEN
+            state = "lagging" if level == AMBER else "reachable"
     else:
         level = RED
         state = "unreachable"
@@ -77,6 +80,8 @@ def _peer_row(peer: Mapping[str, Any]) -> dict[str, Any]:
         detail_parts.append(f"{agent_count} observed claim owner(s)")
         if lag is not None:
             detail_parts.append(f"lag={lag}")
+        else:
+            detail_parts.append("lag unknown (peer log high-water unavailable)")
         if skew is not None:
             detail_parts.append(f"skew={skew:.3f}s")
     elif error:
@@ -109,6 +114,8 @@ def build_observed_fleet_health(dashboard: Mapping[str, Any]) -> dict[str, Any]:
     -------
     dict[str, Any]
         ``level``, ``configured``, headline counts, and ordered ``peers`` rows.
+        Reachable peers without a log high-water remain amber and count
+        separately in ``peers_lag_unknown``, not as caught up or unreachable.
     """
     peers_raw = _mappings(dashboard.get("observed_peers"))
     if not peers_raw:
@@ -119,6 +126,7 @@ def build_observed_fleet_health(dashboard: Mapping[str, Any]) -> dict[str, Any]:
             "peers_reachable": 0,
             "peers_unreachable": 0,
             "peers_lagging": 0,
+            "peers_lag_unknown": 0,
             "peers": [],
             "detail": (
                 "no observed peers in this snapshot; start the dashboard with "
@@ -129,9 +137,10 @@ def build_observed_fleet_health(dashboard: Mapping[str, Any]) -> dict[str, Any]:
     reachable = sum(1 for row in rows if row["reachable"])
     unreachable = len(rows) - reachable
     lagging = sum(1 for row in rows if row["state"] == "lagging")
+    lag_unknown = sum(1 for row in rows if row["state"] == "lag_unknown")
     if unreachable:
         level = RED
-    elif lagging:
+    elif lagging or lag_unknown:
         level = AMBER
     else:
         level = GREEN
@@ -142,10 +151,12 @@ def build_observed_fleet_health(dashboard: Mapping[str, Any]) -> dict[str, Any]:
         "peers_reachable": reachable,
         "peers_unreachable": unreachable,
         "peers_lagging": lagging,
+        "peers_lag_unknown": lag_unknown,
         "peers": rows,
         "detail": (
             f"{reachable}/{len(rows)} peer(s) reachable"
             + (f", {lagging} lagging" if lagging else "")
+            + (f", {lag_unknown} lag unknown" if lag_unknown else "")
             + (f", {unreachable} unreachable" if unreachable else "")
         ),
     }

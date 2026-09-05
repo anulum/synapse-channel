@@ -8,12 +8,44 @@
 
 from __future__ import annotations
 
+import pytest
+
 from synapse_channel.dashboard_observed_health import (
     AMBER,
     GREEN,
     RED,
     build_observed_fleet_health,
 )
+from synapse_channel.observed_peers import ObservedPeerSnapshot
+from synapse_channel.studio_snapshot import build_studio_snapshot
+
+
+@pytest.mark.parametrize("known_lag", [0, 4])
+def test_missing_high_water_stays_unknown_in_studio(known_lag: int) -> None:
+    unknown = ObservedPeerSnapshot(
+        hub_id="legacy-peer", uri="ws://localhost:8877", reachable=True, cursor=12
+    )
+    known = ObservedPeerSnapshot(
+        hub_id="reporting-peer",
+        uri="ws://localhost:8878",
+        reachable=True,
+        cursor=12,
+        log_end_seq=12 + known_lag,
+    )
+    studio = build_studio_snapshot({"observed_peers": [unknown.to_dict(), known.to_dict()]})
+    health = studio["observed_fleet"]
+    assert health["level"] == AMBER
+    assert health["peers_reachable"] == 2
+    assert health["peers_unreachable"] == 0
+    assert health["peers_lag_unknown"] == 1
+    assert health["peers_lagging"] == (1 if known_lag else 0)
+    row = health["peers"][0]
+    assert row["reachable"] is True
+    assert row["lag"] is None
+    assert row["state"] == "lag_unknown"
+    assert row["level"] == AMBER
+    assert "lag unknown" in row["detail"]
+    assert "1 lag unknown" in health["detail"]
 
 
 def test_empty_observed_peers_is_amber_not_configured() -> None:
@@ -23,6 +55,22 @@ def test_empty_observed_peers_is_amber_not_configured() -> None:
     assert health["peers_total"] == 0
     assert health["peers"] == []
     assert "--observed-peer" in health["detail"]
+
+
+def test_unreachable_peer_takes_priority_over_unknown_lag() -> None:
+    health = build_observed_fleet_health(
+        {
+            "observed_peers": [
+                ObservedPeerSnapshot("unknown-lag", "ws://localhost:8877", True).to_dict(),
+                ObservedPeerSnapshot("offline", "ws://localhost:8878", False).to_dict(),
+            ]
+        }
+    )
+    assert health["level"] == RED
+    assert health["peers_lag_unknown"] == 1
+    assert health["peers_unreachable"] == 1
+    assert health["peers_reachable"] == 1
+    assert health["peers"][1]["detail"] == "peer fetch failed"
 
 
 def test_all_reachable_peers_are_green() -> None:

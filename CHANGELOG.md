@@ -82,6 +82,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Keep reachable Studio peers with unknown log lag amber instead of green,
+  with separate unknown-lag counts and an explicit explanation.
+
 - Reject comma-joined `lock --paths` values that name no existing path before
   acquiring a lease or running the wrapped command; repeat the flag per path.
 

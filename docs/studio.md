@@ -64,6 +64,13 @@ curated command-centre view. Every headline count is derived from the list it su
 so the instrument and the rows beneath it can never disagree. A partial payload from a
 degraded hub still projects to a renderable snapshot rather than failing.
 
+The observed-peer panel uses the dashboard's direct `--observed-peer` fetches,
+not Fleet's offline mirror JSON. Reachability confirms a fetch, not completeness:
+a reachable peer without a reported log high-water has unknown lag and an amber
+row. `observed_fleet.peers_lag_unknown` counts these separately from lagging or
+unreachable peers. Green requires known zero lag; red fetch failures retain
+priority when mixed with unknown-lag peers. These observations remain advisory.
+
 ```bash
 synapse dashboard --uri ws://127.0.0.1:8765
 # then GET http://127.0.0.1:8765/studio.json
