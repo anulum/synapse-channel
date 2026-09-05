@@ -12,3 +12,4 @@
 # shipped a partial test suite that could not run (external review finding 7).
 # Prune it so the sdist is a clean, installable library that mirrors the wheel.
 prune tests
+prune integrations/github-app/tests

@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.25] - 2026-09-05
+
 ### Added
 
 - Add a repeatable JavaScript SDK integration check against an isolated,
@@ -88,6 +90,20 @@ All notable changes to this project are documented here.
   remain blocked.
 
 ### Fixed
+
+- Exclude the separate GitHub App test tree from Python source distributions,
+  preserving the release wheel/sdist parity contract.
+- Register setup, verification, Fleet mirror and waker exceptions in the
+  common error taxonomy while preserving their historical exception bases
+  and concrete setup refusal reasons. Classify errors by their frozen class
+  code independently of instance-specific reasons.
+- Make cockpit and concurrent CLI test processes use the selected Python
+  interpreter; bound subprocess waits and clean up unfinished children.
+- Align setup execution tests with the Linux/systemd-user contract and verify
+  that native unsupported-host refusal leaves no ledger or receipt.
+- Exercise process metadata under descriptor churn, command changes, process
+  reaping and invalid kernel-input mounts without reporting partial context
+  as a stable identity.
 
 - Check the generated JSON capability inventory alongside README, rejecting
   missing, unreadable or stale machine-readable metadata without rewriting it.

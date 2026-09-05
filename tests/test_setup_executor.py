@@ -580,8 +580,10 @@ def test_receipt_writer_is_atomic_private_and_refuses_unsafe_targets(tmp_path: P
             write_setup_receipt(unsafe, receipt)
         assert caught.value.code == "application_receipt_unavailable"
 
+    # The target fits the filesystem limit; its atomic temporary prefix cannot.
+    maximum_name = "r" * os.pathconf(tmp_path, "PC_NAME_MAX")
     with pytest.raises(SetupExecutionError) as caught:
-        write_setup_receipt(Path("/proc/1/synapse-setup-receipt.json"), receipt)
+        write_setup_receipt(tmp_path / maximum_name, receipt)
     assert caught.value.code == "application_receipt_unavailable"
     assert caught.value.receipt == receipt
 
