@@ -8,8 +8,10 @@
 """Exercise process identity, consent and exit through Linux procfs."""
 
 import os
+import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import cast
@@ -25,6 +27,61 @@ from synapse_channel.host_sessions_proc import (
     observe_process,
     process_metadata,
 )
+
+
+@requires_proc
+@pytest.mark.skipif(shutil.which("bwrap") is None, reason="bubblewrap is not installed")
+@pytest.mark.parametrize(
+    ("source", "target", "call", "expected"),
+    [
+        ("/proc/version", "/proc/stat", "kernel_clock()", "kernel boot time unavailable"),
+        ("/proc/kallsyms", "/proc/stat", "kernel_clock()", "kernel stat exceeds limit"),
+        (
+            "/proc/kallsyms",
+            "process-stat",
+            "observe_process(os.getppid())",
+            "process stat exceeds limit",
+        ),
+    ],
+)
+def test_namespace_kernel_input_limits(source: str, target: str, call: str, expected: str) -> None:
+    if source == "/proc/kallsyms":
+        with Path(source).open("rb") as stream:
+            assert len(stream.read(65537)) == 65537
+    if target == "process-stat":
+        target = f"/proc/{os.getpid()}/stat"
+        call = f"observe_process({os.getpid()})"
+    program = (
+        "import os\n"
+        "from synapse_channel.host_sessions_proc import kernel_clock, observe_process\n"
+        "try:\n"
+        f"    {call}\n"
+        "except ValueError as exc:\n"
+        "    print(str(exc))\n"
+        "else:\n"
+        "    raise AssertionError('invalid kernel input was accepted')\n"
+    )
+    result = subprocess.run(
+        [
+            "bwrap",
+            "--ro-bind",
+            "/",
+            "/",
+            "--ro-bind",
+            source,
+            target,
+            "--die-with-parent",
+            "--",
+            sys.executable,
+            "-c",
+            program,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == expected
 
 
 @requires_proc
@@ -360,3 +417,108 @@ libc.pthread_exit(None)
             assert child.stdin is not None
             child.stdin.close()
             child.wait(timeout=5)
+
+
+@requires_proc
+@pytest.mark.parametrize("change", ["descriptors", "command"])
+def test_concurrent_metadata_changes_never_claim_stable_context(
+    tmp_path: Path, change: str
+) -> None:
+    context = "12345678-1234-1234-1234-123456789abc"
+    rollout = tmp_path / f"rollout-changing-{context}.jsonl"
+    rollout.write_text("CONTEXT-CONTENTS-ARE-NOT-OBSERVED")
+    program = """
+import ctypes, os, sys, threading
+assert ctypes.CDLL(None).prctl(15, b"codex", 0, 0, 0) == 0
+stop = threading.Event()
+def churn():
+    if sys.argv[1] == "descriptors":
+        while not stop.is_set():
+            streams = [open(sys.argv[2], "rb") for _ in range(32)]
+            for stream in streams:
+                stream.close()
+    else:
+        streams = [open(sys.argv[2], "rb") for _ in range(32)]
+        with open("/proc/self/comm", "w", buffering=1) as comm:
+            while not stop.is_set():
+                comm.write("worker\\n")
+                comm.write("codex\\n")
+        for stream in streams:
+            stream.close()
+worker = threading.Thread(target=churn)
+worker.start()
+print("ready", flush=True)
+sys.stdin.read()
+stop.set()
+worker.join()
+"""
+    with subprocess.Popen(
+        [sys.executable, "-c", program, change, str(rollout)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as child:
+        try:
+            assert child.stdout is not None and child.stdout.readline() == "ready\n"
+            deadline = time.monotonic() + 10
+            refused = False
+            while time.monotonic() < deadline:
+                try:
+                    metadata = process_metadata(
+                        child.pid, paths=False, context=True, context_root=tmp_path
+                    )
+                except ProcessLookupError:
+                    assert change == "command"
+                    refused = True
+                    break
+                if metadata.context_status == "partial":
+                    assert metadata.context_id is None
+                    refused = True
+                    break
+                assert metadata.context_id in (None, context)
+            assert refused, f"did not observe concurrent {change} change"
+        finally:
+            assert child.stdin is not None
+            child.stdin.close()
+            child.wait(timeout=5)
+
+
+@requires_proc
+def test_metadata_observation_during_process_reaping(tmp_path: Path) -> None:
+    program = """
+import ctypes, sys, time
+assert ctypes.CDLL(None).prctl(15, b"codex", 0, 0, 0) == 0
+print("ready", flush=True)
+sys.stdin.read(1)
+time.sleep(0.001)
+"""
+    for _ in range(32):
+        with subprocess.Popen(
+            [sys.executable, "-c", program],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+        ) as child:
+            assert child.stdout is not None and child.stdout.readline() == "ready\n"
+            assert child.stdin is not None
+            child.stdin.write("x")
+            child.stdin.flush()
+            reaper = threading.Thread(target=child.wait, kwargs={"timeout": 5})
+            reaper.start()
+            try:
+                deadline = time.monotonic() + 5
+                while reaper.is_alive():
+                    assert time.monotonic() < deadline
+                    try:
+                        metadata = process_metadata(
+                            child.pid, paths=True, context=True, context_root=tmp_path
+                        )
+                    except (OSError, ProcessLookupError):
+                        continue
+                    assert metadata.context_id is None
+                with pytest.raises(FileNotFoundError):
+                    process_metadata(child.pid, paths=True, context=True, context_root=tmp_path)
+            finally:
+                child.stdin.close()
+                reaper.join(timeout=5)
+                assert not reaper.is_alive()

@@ -41,7 +41,9 @@ Justification classes
 ``blocking-wrapper``
     A process-blocking serve wrapper whose factory is covered by real tests.
 ``platform-guard``
-    Tests for POSIX-only semantics, skipped on Windows runners.
+    Tests for native OS semantics: POSIX-only tests skip Windows, and
+    Linux/systemd-user effect tests skip other hosts. Native unsupported-host
+    refusal tests run on those other hosts instead.
 ``platform-native``
     Bodies that call OS-native Win32 (or other non-POSIX) APIs via ctypes and
     can only execute on that OS; pure policy extracted from them is covered on
@@ -143,6 +145,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_dashboard_feeds_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_dashboard_host_sessions.py": (1, "optional-dep-guard"),
     "tests/test_host_sessions.py": (1, "optional-dep-guard"),
+    "tests/test_host_sessions_proc.py": (1, "optional-dep-guard"),
     "tests/test_host_sessions_tmux.py": (1, "optional-dep-guard"),
     "tests/test_hub_sqlcipher_e2e.py": (1, "optional-dep-guard"),
     "tests/test_identity_keys_secret_floor.py": (1, "platform-guard"),
@@ -168,6 +171,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_secret_files.py": (8, "platform-guard"),
     "tests/test_secure_path.py": (5, "platform-guard"),
     "tests/test_session_capability_sqlcipher.py": (1, "optional-dep-guard"),
+    "tests/test_setup_executor.py": (2, "platform-guard"),
+    "tests/test_setup_verifier.py": (5, "platform-guard"),
     "tests/test_shared_host_regression.py": (1, "platform-guard"),
     "tests/test_shell_integration.py": (1, "optional-dep-guard"),
     "tests/test_worker_session.py": (1, "platform-guard"),
