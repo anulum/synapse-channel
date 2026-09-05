@@ -22,8 +22,9 @@ def test_missing_socket_is_unavailable(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is not installed")
-def test_real_detached_pane_and_identity(tmp_path: Path) -> None:
-    socket = str(tmp_path / "tmux.sock")
+@pytest.mark.parametrize("socket_name", ["tmux.sock", "tmux observation.sock"])
+def test_real_detached_pane_and_identity(tmp_path: Path, socket_name: str) -> None:
+    socket = str(tmp_path / socket_name)
     command = ["tmux", "-S", socket]
     subprocess.run(
         command
