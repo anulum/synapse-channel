@@ -18,6 +18,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Literal
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.private_dir import ensure_private_dir
 from synapse_channel.core.secret_files import read_secret_file
 from synapse_channel.waker_config import clean_waker_text, waker_config_dir, waker_config_path
@@ -26,8 +27,10 @@ TransitionState = Literal["idle", "pending", "uncertain"]
 """Observed control state; uncertain requires explicit recovery acknowledgement."""
 
 
-class WakerTransitionError(ValueError):
+class WakerTransitionError(SynapseError, ValueError):
     """A previous control operation has not been safely acknowledged."""
+
+    code = "waker_transition"
 
 
 @dataclass(frozen=True)

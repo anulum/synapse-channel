@@ -18,6 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NoReturn, cast
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.setup_contract import (
     LOCAL_SINGLE_USER_URIS,
     SETUP_SCHEMA_VERSION,
@@ -115,8 +116,10 @@ _AUTHORIZATION_KEYS = {
 }
 
 
-class SetupAuthorizationError(ValueError):
+class SetupAuthorizationError(SynapseError, ValueError):
     """Stable, non-reflective authorization failure."""
+
+    code: SetupErrorCode = "authorization_failed"
 
     def __init__(self, code: SetupErrorCode) -> None:
         super().__init__(code)

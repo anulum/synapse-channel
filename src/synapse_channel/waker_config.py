@@ -20,6 +20,7 @@ from typing import cast
 
 from synapse_channel.agent_tmux import AgentTmuxConfig
 from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.private_dir import ensure_private_dir
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.terminal_text import terminal_text
@@ -42,8 +43,10 @@ DESIRED_INHIBITED = "inhibited"
 _DESIRED_STATES = frozenset({DESIRED_ARMED, DESIRED_INHIBITED})
 
 
-class WakerConfigError(ValueError):
+class WakerConfigError(SynapseError, ValueError):
     """Raised when a waker configuration is absent, unsafe, or malformed."""
+
+    code = "waker_config"
 
 
 @dataclass(frozen=True, slots=True)

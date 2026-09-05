@@ -75,6 +75,8 @@ Clock = Callable[[], float]
 class SetupExecutionError(SetupAuthorizationError):
     """Stable executor refusal, optionally carrying a completed receipt."""
 
+    code: SetupErrorCode = "application_effect_failed"
+
     def __init__(
         self,
         code: SetupErrorCode,

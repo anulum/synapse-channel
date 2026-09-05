@@ -27,6 +27,7 @@ from typing import Any, Protocol, cast
 from urllib.parse import quote
 
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.setup_contract import SETUP_SCHEMA_VERSION, canonical_json, document_digest
@@ -146,8 +147,10 @@ Clock = Callable[[], float]
 Sleeper = Callable[[float], Awaitable[None]]
 
 
-class VerificationProbeError(RuntimeError):
+class VerificationProbeError(SynapseError, RuntimeError):
     """Stable failure raised by a concrete verification runtime adapter."""
+
+    code = "verification_probe"
 
     def __init__(self, code: str) -> None:
         super().__init__(code)

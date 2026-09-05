@@ -30,10 +30,17 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
 from synapse_channel.core.errors import SynapseError, error_code
+from synapse_channel.setup_authorization import SetupAuthorizationError, validate_setup_plan
+from synapse_channel.setup_contract import SetupErrorCode
+from synapse_channel.setup_executor import SetupExecutionError
+from synapse_channel.setup_ledger import SetupLedgerError
+from synapse_channel.setup_verification import SetupVerificationError
+from synapse_channel.setup_verifier import VerificationProbeError
 
 _SRC = Path(__file__).resolve().parent.parent / "src" / "synapse_channel"
 
@@ -42,6 +49,35 @@ _SRC = Path(__file__).resolve().parent.parent / "src" / "synapse_channel"
 # A row may be ADDED for a new error class; an existing row must never change.
 # ---------------------------------------------------------------------------
 FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
+    "MirrorVersionError": ("synapse_channel.fleet_mirror_contract", "mirror_version", ValueError),
+    "SetupAuthorizationError": (
+        "synapse_channel.setup_authorization",
+        "authorization_failed",
+        ValueError,
+    ),
+    "SetupExecutionError": (
+        "synapse_channel.setup_executor",
+        "application_effect_failed",
+        ValueError,
+    ),
+    "SetupLedgerError": (
+        "synapse_channel.setup_ledger",
+        "authorization_ledger_unavailable",
+        ValueError,
+    ),
+    "SetupVerificationError": (
+        "synapse_channel.setup_verification",
+        "verification_planning_failed",
+        ValueError,
+    ),
+    "VerificationProbeError": (
+        "synapse_channel.setup_verifier",
+        "verification_probe",
+        RuntimeError,
+    ),
+    "WakerConfigError": ("synapse_channel.waker_config", "waker_config", ValueError),
+    "WakerLockError": ("synapse_channel.waker_lock", "waker_lock", ValueError),
+    "WakerTransitionError": ("synapse_channel.waker_transition", "waker_transition", ValueError),
     "A2AClientError": (
         "synapse_channel.a2a_client",
         "a2a_client",
@@ -494,6 +530,58 @@ def test_claim_forward_timeout_still_narrows_to_its_parent() -> None:
     parent_cls = _load("ClaimForwardError")
     assert issubclass(timeout_cls, parent_cls)
     assert timeout_cls.code != parent_cls.code
+
+
+@pytest.mark.parametrize(
+    "cls",
+    [SetupAuthorizationError, SetupExecutionError, SetupLedgerError, SetupVerificationError],
+)
+@pytest.mark.parametrize("reason", get_args(SetupErrorCode))
+def test_setup_refusal_preserves_reason_and_classification(
+    cls: type[SetupAuthorizationError], reason: SetupErrorCode
+) -> None:
+    with pytest.raises(SetupAuthorizationError) as caught:
+        raise cls(reason)
+    exc = caught.value
+    assert isinstance(exc, ValueError)
+    assert isinstance(exc, SynapseError)
+    assert exc.code == reason
+    assert exc.args == (reason,)
+    assert str(exc) == reason
+    assert error_code(exc) == FROZEN_ERROR_CODES[cls.__name__][1]
+
+
+@pytest.mark.parametrize("cls", [SetupExecutionError, SetupVerificationError])
+def test_setup_taxonomy_preserves_receipt(
+    cls: type[SetupExecutionError] | type[SetupVerificationError],
+) -> None:
+    receipt: dict[str, object] = {"status": "failed"}
+    exc = cls("application_target_changed", receipt=receipt)
+    assert exc.receipt is receipt
+    assert exc.code == "application_target_changed"
+    assert error_code(exc) == FROZEN_ERROR_CODES[cls.__name__][1]
+
+
+def test_invalid_setup_plan_is_classifiable_without_losing_cli_reason() -> None:
+    with pytest.raises(SynapseError) as caught:
+        validate_setup_plan({})
+    exc = caught.value
+    assert isinstance(exc, SetupAuthorizationError)
+    assert isinstance(exc, ValueError)
+    assert exc.code == "invalid_plan"
+    assert str(exc) == "invalid_plan"
+    assert error_code(exc) == "authorization_failed"
+
+
+def test_verification_probe_keeps_runtime_reason() -> None:
+    with pytest.raises(RuntimeError) as caught:
+        raise VerificationProbeError("verification_replay_failed")
+    exc = caught.value
+    assert isinstance(exc, VerificationProbeError)
+    assert exc.code == "verification_replay_failed"
+    assert exc.args == ("verification_replay_failed",)
+    assert str(exc) == "verification_replay_failed"
+    assert error_code(exc) == "verification_probe"
 
 
 # ---------------------------------------------------------------------------

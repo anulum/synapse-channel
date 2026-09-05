@@ -112,6 +112,8 @@ _NONCE_DOMAIN = b"synapse-setup-verification-nonce-v1\x00"
 class SetupVerificationError(SetupAuthorizationError):
     """Stable strict-verification refusal."""
 
+    code: SetupErrorCode = "verification_planning_failed"
+
     def __init__(
         self,
         code: SetupErrorCode,

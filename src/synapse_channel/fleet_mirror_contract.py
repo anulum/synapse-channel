@@ -14,11 +14,15 @@ import math
 import re
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
+
 MAX_MIRROR_BYTES = 4 * 1024 * 1024
 
 
-class MirrorVersionError(ValueError):
+class MirrorVersionError(SynapseError, ValueError):
     """The export uses an unsupported bridge version."""
+
+    code = "mirror_version"
 
 
 def _unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

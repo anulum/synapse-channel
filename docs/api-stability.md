@@ -75,6 +75,12 @@ the taxonomy landed. A released code never changes meaning and is never reused;
 the registry test freezes the full map, and an AST drift gate refuses any new
 `*Error` class that does not join the taxonomy.
 
+The taxonomy code belongs to the class: `error_code(exc)` reads
+`type(exc).code`. Setup exceptions retain their existing instance `exc.code`
+for the concrete refusal reason used in CLI documents and receipts. This
+instance reason does not change the class-level classification. Constructors,
+exception messages and setup refusal codes remain compatible.
+
 Boundary projections are explicit and frozen by focused tests. A2A validation,
 not-found, conflict, quota, and store codes map to HTTP 400, 404, 409, 429, and
 500 respectively. Outbound MCP config, access, and tool codes map to CLI exits

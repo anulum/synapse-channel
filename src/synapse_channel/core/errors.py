@@ -27,7 +27,7 @@ class-to-code map the same way the wire-surface freeze pins message fields.
 from __future__ import annotations
 
 import re
-from typing import Any, ClassVar
+from typing import Any
 
 __all__ = ["SynapseError", "error_code"]
 
@@ -45,6 +45,10 @@ class SynapseError(Exception):
         refused at class-definition time), and the value is frozen by the
         registry test once released.
 
+        Setup exceptions retain their historical instance-specific refusal
+        codes. Use :func:`error_code` for class-level classification; it is
+        independent of an instance's more specific reason.
+
     Raises
     ------
     TypeError
@@ -53,7 +57,7 @@ class SynapseError(Exception):
         must fail the import, not surface later as an unclassifiable error.
     """
 
-    code: ClassVar[str] = "synapse"
+    code: str = "synapse"
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Refuse a subclass without its own well-formed ``code``."""
@@ -83,10 +87,10 @@ def error_code(exc: BaseException) -> str:
     Returns
     -------
     str
-        ``exc.code`` when ``exc`` is a :class:`SynapseError`; the empty string
+        ``type(exc).code`` when ``exc`` is a :class:`SynapseError`; the empty string
         otherwise, so callers can branch on truthiness without an
         ``isinstance`` check of their own.
     """
     if isinstance(exc, SynapseError):
-        return exc.code
+        return type(exc).code
     return ""

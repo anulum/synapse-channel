@@ -16,12 +16,15 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.private_dir import ensure_private_dir
 from synapse_channel.waker_config import waker_config_dir, waker_config_path
 
 
-class WakerLockError(ValueError):
+class WakerLockError(SynapseError, ValueError):
     """Raised when an exact-seat lifecycle mutation cannot be serialized."""
+
+    code = "waker_lock"
 
 
 @contextmanager

@@ -42,6 +42,8 @@ _NONCE_DOMAIN = b"synapse-setup-authorization-nonce-v1\x00"
 class SetupLedgerError(SetupAuthorizationError):
     """Stable fail-closed ledger refusal."""
 
+    code: SetupErrorCode = "authorization_ledger_unavailable"
+
     def __init__(self, code: SetupErrorCode) -> None:
         super().__init__(code)
 
