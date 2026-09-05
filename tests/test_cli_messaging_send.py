@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -356,7 +357,9 @@ async def test_concurrent_cli_processes_keep_receipts_and_output_associated() ->
 
     async def run_send(uri: str, *, sender: str, target: str, message: str) -> tuple[int, str, str]:
         process = await asyncio.create_subprocess_exec(
-            REPO_ROOT / ".venv/bin/synapse",
+            sys.executable,
+            "-m",
+            "synapse_channel.cli",
             "send",
             "--uri",
             uri,
@@ -372,8 +375,14 @@ async def test_concurrent_cli_processes_keep_receipts_and_output_associated() ->
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
-        return process.returncode or 0, stdout.decode(), stderr.decode()
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10)
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await asyncio.wait_for(process.wait(), timeout=5)
+        assert process.returncode is not None
+        return process.returncode, stdout.decode(), stderr.decode()
 
     async with running_hub(SynapseHub()) as (_hub, uri):
         alpha = await connect_agent("ALPHA-TARGET", uri)
@@ -447,7 +456,7 @@ async def test_concurrent_directed_sends_reject_each_others_chat_as_replies(
             await close_agents(alpha, beta)
 
     output = capsys.readouterr().out
-    assert codes == (0, 0)
+    assert tuple(codes) == (0, 0)
     assert "delivered to ALPHA-TARGET" in output
     assert "delivered to BETA-TARGET" in output
     assert "ALPHA-SENDER:" not in output
