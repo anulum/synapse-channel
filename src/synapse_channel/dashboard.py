@@ -597,7 +597,13 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             # that fills in from /studio.json. Classic hub HTML remains at /classic.
             self._write(
                 HTTPStatus.OK,
-                render_studio_command_html(poll_seconds=self.refresh_seconds).encode("utf-8"),
+                render_studio_command_html(
+                    poll_seconds=self.refresh_seconds,
+                    snapshot_timeout_seconds=self.ready_timeout
+                    + self.response_timeout
+                    + (self.observed_timeout if self.observed_peers else 0)
+                    + 4.0,
+                ).encode("utf-8"),
                 content_type="text/html",
             )
             return
@@ -612,7 +618,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
             return
         try:
-            snapshot = self.snapshot_gate.fetch()
+            snapshot = self.snapshot_gate.fetch(wait_timeout=1.0)
+        except TimeoutError:
+            self._write(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                b"snapshot busy or collection deadline exceeded; retry later\n",
+                content_type="text/plain",
+            )
+            return
         except DashboardUnavailable as exc:
             body = f"{exc}\n".encode()
             self._write(HTTPStatus.SERVICE_UNAVAILABLE, body, content_type="text/plain")
@@ -805,8 +818,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             while cycle_limit is None or cycles < cycle_limit:
                 cycles += 1
                 try:
-                    snapshot = self.snapshot_gate.fetch()
-                except DashboardUnavailable as exc:
+                    snapshot = self.snapshot_gate.fetch(wait_timeout=1.0)
+                except (DashboardUnavailable, TimeoutError) as exc:
                     send("channel", channel="snapshot", status="error", detail=str(exc))
                 else:
                     snapshot_document = snapshot.to_dict(a2a_state_file=self.a2a_state_file)
@@ -940,16 +953,22 @@ def _handler_class(
 
     def _fetch_bound_snapshot() -> DashboardSnapshot:
         return asyncio.run(
-            fetch_dashboard_snapshot(
-                uri=bound_uri,
-                name=bound_name,
-                token=bound_token,
-                ready_timeout=bound_ready_timeout,
-                response_timeout=bound_response_timeout,
-                observed_peers=bound_observed_peers,
-                observed_token=bound_observed_token,
-                observed_timeout=bound_observed_timeout,
-                observed_pins=bound_observed_pins,
+            asyncio.wait_for(
+                fetch_dashboard_snapshot(
+                    uri=bound_uri,
+                    name=bound_name,
+                    token=bound_token,
+                    ready_timeout=bound_ready_timeout,
+                    response_timeout=bound_response_timeout,
+                    observed_peers=bound_observed_peers,
+                    observed_token=bound_observed_token,
+                    observed_timeout=bound_observed_timeout,
+                    observed_pins=bound_observed_pins,
+                ),
+                timeout=bound_ready_timeout
+                + bound_response_timeout
+                + (bound_observed_timeout if bound_observed_peers else 0)
+                + 1.0,
             )
         )
 

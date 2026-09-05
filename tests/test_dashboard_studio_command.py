@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import re
 
+import pytest
+
 from synapse_channel.dashboard_access_http import DASHBOARD_ACCESS_PATH
 from synapse_channel.dashboard_studio import STUDIO_REFERENCE_PATH
 from synapse_channel.dashboard_studio_command import (
@@ -96,6 +98,7 @@ def test_runtime_config_binds_only_fixed_paths_and_poll_interval() -> None:
         "operatorActionsUrl": OPERATOR_ACTIONS_FEED_PATH,
         "pollMs": 8000,
         "snapshotUrl": STUDIO_SNAPSHOT_PATH,
+        "snapshotTimeoutMs": 10000,
     }
 
 
@@ -108,6 +111,18 @@ def test_runtime_config_is_inert_json_not_inline_executable_code() -> None:
     assert json.loads(match.group(1))["pollMs"] == DEFAULT_POLL_SECONDS * 1000
     assert "<script>" not in html
     assert "window.__SYN_STUDIO__" not in html
+
+
+def test_public_shell_keeps_snapshot_deadline_separate_from_poll_interval() -> None:
+    html = render_studio_command_html(poll_seconds=2, snapshot_timeout_seconds=17.25)
+    assert '"pollMs":2000' in html
+    assert '"snapshotTimeoutMs":17250' in html
+
+
+@pytest.mark.parametrize("timeout", [0.0, -1.0, float("inf"), float("nan")])
+def test_public_shell_rejects_invalid_snapshot_deadlines(timeout: float) -> None:
+    with pytest.raises(ValueError, match="finite and positive"):
+        render_studio_command_html(snapshot_timeout_seconds=timeout)
 
 
 def test_access_asset_precedes_the_self_starting_command_asset() -> None:

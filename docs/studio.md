@@ -78,10 +78,17 @@ synapse dashboard --uri ws://127.0.0.1:8765
 
 ## The command centre — `/studio/command`
 
-Main snapshots use the same session bearer as access polling and have a
-five-second request deadline. Only one polling loop starts. Failed refreshes
-show an offline banner marking retained data as not current; the next
-successful snapshot replaces it and clears the banner.
+Main snapshots use the same session bearer as access polling. The server
+supplies a separate request deadline: hub readiness plus hub response budget,
+the observed-peer timeout when peers are configured, and four seconds of
+reserve. Observed peers are collected concurrently. Collection itself has
+one second of reserve; waiting for the shared collection identity is bounded
+to one second, leaving two seconds for response delivery and browser handling.
+A busy collector or expired collection returns HTTP 503 instead of queuing
+indefinitely. These are operational deadlines, not hard real-time guarantees.
+Only one polling loop starts. Failed refreshes mark the view `stale` and
+retained data as not current; a client timeout does not prove the hub is down.
+The next successful snapshot replaces the data and clears the banner.
 
 Studio access-descriptor polling has a five-second request deadline. A newer
 refresh cancels its predecessor; late replies cannot replace a newer role or

@@ -47,8 +47,9 @@ test("session-authenticated snapshots mark old data offline and recover after a 
     await expect(page.locator("#cc-connection")).toHaveText("connected");
     const hub = await page.locator("#cc-hub").textContent();
     await expect.poll(() => held !== undefined).toBe(true);
-    await expect.poll(() => disconnected, { timeout: 7000 }).toBe(true);
-    await expect(page.locator("#cc-connection")).toHaveText("offline");
+    await expect.poll(() => disconnected, { timeout: 15000 }).toBe(true);
+    await expect(page.locator("#cc-connection")).toHaveText("stale");
+    await expect(page.locator("#cc-offline")).toContainText("refresh timed out");
     await expect(page.locator("#cc-offline")).toContainText("not current");
     await expect(page.locator("#cc-hub")).toHaveText(hub!);
     await expect(page.locator("#cc-connection")).toHaveText("connected", { timeout: 7000 });

@@ -20,6 +20,9 @@
   }
   const snapshotUrl = String(config.snapshotUrl || "/studio.json");
   const pollMs = Math.max(1000, Number(config.pollMs) || 5000);
+  const configuredTimeout = Number(config.snapshotTimeoutMs);
+  const snapshotTimeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? configuredTimeout : 10000;
   const reduceMotion = typeof matchMedia === "function" &&
     matchMedia("(prefers-reduced-motion: reduce)").matches;
   const tones = Object.freeze({ green: "ok", amber: "warn", red: "bad", unknown: "warn" });
@@ -220,25 +223,26 @@
 
   async function poll() {
     const controller = new AbortController();
-    const deadline = setTimeout(() => controller.abort(), 5000);
+    const deadline = setTimeout(() => controller.abort(), snapshotTimeoutMs);
     try {
       const response = await fetch(snapshotUrl, {
         cache: "no-store",
         headers: window.SynapseStudioAccess ? window.SynapseStudioAccess.authHeaders() : {},
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error("hub " + response.status);
+      if (!response.ok) throw new Error("snapshot HTTP " + response.status);
       render(await response.json());
     } catch (error) {
       const banner = document.getElementById("cc-offline");
       if (banner) {
         banner.hidden = false;
-        banner.textContent = "hub unavailable — displayed snapshot is not current — " +
+        banner.textContent = (controller.signal.aborted ? "snapshot refresh timed out" : "snapshot request failed") +
+          " — displayed snapshot is not current — " +
           String(error && error.message || error);
       }
       const connection = document.getElementById("cc-connection");
       if (connection) {
-        connection.textContent = "offline";
+        connection.textContent = "stale";
         connection.className = "syn-verdict syn-verdict--amber";
       }
     } finally {

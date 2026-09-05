@@ -47,7 +47,7 @@ function loadCommand(feedStart: ReturnType<typeof vi.fn>, fetcher = vi.fn(() => 
   document.body.insertAdjacentHTML(
     "beforeend",
     '<script id="syn-studio-config" type="application/json">' +
-      '{"snapshotUrl":"/studio.json","pollMs":5000}</script>',
+      '{"snapshotUrl":"/studio.json","pollMs":5000,"snapshotTimeoutMs":7000}</script>',
   );
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
@@ -116,7 +116,7 @@ it("shows a precise offline state when snapshot polling fails", async () => {
     expect(document.getElementById("cc-offline")?.textContent).toContain("connection refused");
   });
   expect(document.getElementById("cc-offline")?.hidden).toBe(false);
-  expect(document.getElementById("cc-connection")?.textContent).toBe("offline");
+  expect(document.getElementById("cc-connection")?.textContent).toBe("stale");
 });
 
 it("starts one authenticated polling loop and one feed subscription", () => {
@@ -146,7 +146,10 @@ it("marks retained data non-current after timeout and resumes polling", async ()
   const command = loadCommand(vi.fn(), fetcher);
   command.render({ hub: { id: "previous" } });
   await vi.advanceTimersByTimeAsync(5000);
-  expect(document.getElementById("cc-connection")?.textContent).toBe("offline");
+  expect(document.getElementById("cc-connection")?.textContent).toBe("connected");
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(document.getElementById("cc-connection")?.textContent).toBe("stale");
+  expect(document.getElementById("cc-offline")?.textContent).toContain("refresh timed out");
   expect(document.getElementById("cc-offline")?.textContent).toContain("not current");
   expect(document.getElementById("cc-hub")?.textContent).toBe("previous");
   await vi.advanceTimersByTimeAsync(5000);

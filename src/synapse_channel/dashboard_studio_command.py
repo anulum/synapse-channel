@@ -17,6 +17,7 @@ feed paths and the bounded poll interval.
 from __future__ import annotations
 
 import json
+import math
 
 from synapse_channel.dashboard_access_http import DASHBOARD_ACCESS_PATH
 from synapse_channel.dashboard_studio import STUDIO_REFERENCE_PATH
@@ -51,37 +52,51 @@ STUDIO_COMMAND_SCRIPTS = (
 """Fixed package scripts loaded in dependency order by the shell."""
 
 
-def _runtime_config(*, poll_seconds: int) -> str:
+def _runtime_config(*, poll_seconds: int, snapshot_timeout_seconds: float = 10.0) -> str:
     """Return the secret-free runtime configuration as compact JSON data."""
+    if not math.isfinite(snapshot_timeout_seconds) or snapshot_timeout_seconds <= 0:
+        raise ValueError("snapshot timeout must be finite and positive")
     payload = {
         "accessUrl": DASHBOARD_ACCESS_PATH,
         "eventsUrl": EVENTS_FEED_PATH,
         "operatorActionsUrl": OPERATOR_ACTIONS_FEED_PATH,
         "pollMs": max(1, int(poll_seconds)) * 1000,
         "snapshotUrl": STUDIO_SNAPSHOT_PATH,
+        "snapshotTimeoutMs": math.ceil(snapshot_timeout_seconds * 1000),
     }
     encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return encoded
 
 
-def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> str:
+def render_studio_command_html(
+    *, poll_seconds: int = DEFAULT_POLL_SECONDS, snapshot_timeout_seconds: float = 10.0
+) -> str:
     """Render the offline-safe, read-only Studio command-centre page.
 
     Parameters
     ----------
     poll_seconds : int, optional
         Snapshot and optional-feed refresh interval, floored at one second.
+    snapshot_timeout_seconds : float, optional
+        Positive finite browser request budget, including server queue and transport reserve.
 
     Returns
     -------
     str
         Complete HTML shell linking only fixed package assets.
+
+    Raises
+    ------
+    ValueError
+        If the snapshot request budget is non-finite or non-positive.
     """
     styles = "\n".join(
         f'  <link rel="stylesheet" href="/{asset}">' for asset in STUDIO_COMMAND_STYLES
     )
     scripts = "\n".join(f'  <script src="/{asset}"></script>' for asset in STUDIO_COMMAND_SCRIPTS)
-    runtime_config = _runtime_config(poll_seconds=poll_seconds)
+    runtime_config = _runtime_config(
+        poll_seconds=poll_seconds, snapshot_timeout_seconds=snapshot_timeout_seconds
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>

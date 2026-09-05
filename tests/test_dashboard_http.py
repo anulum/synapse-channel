@@ -31,6 +31,51 @@ from synapse_channel.dashboard import (
 )
 
 
+async def test_snapshot_http_refuses_busy_identity_without_unbounded_queue() -> None:
+    """A stalled real WebSocket handshake cannot queue every HTTP caller."""
+    entered = asyncio.Event()
+    disconnected = asyncio.Event()
+
+    async def stalled_peer(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        entered.set()
+        try:
+            await reader.read()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+            disconnected.set()
+
+    peer = await asyncio.start_server(stalled_peer, "127.0.0.1", 0)
+    async with peer:
+        port = peer.sockets[0].getsockname()[1]
+        server = start_dashboard_server(
+            host="127.0.0.1",
+            port=0,
+            uri=f"ws://127.0.0.1:{port}",
+            name="busy-snapshot-test",
+            token=None,
+            ready_timeout=2.0,
+            response_timeout=1.0,
+            refresh_seconds=1,
+            allow_non_loopback=False,
+        )
+        first = asyncio.create_task(asyncio.to_thread(_authorized_get, server, "/studio.json"))
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=2.0)
+            status, _, body = await asyncio.wait_for(
+                asyncio.to_thread(_authorized_get, server, "/studio.json"), timeout=2.0
+            )
+            assert status == 503
+            assert "snapshot busy" in body
+            assert not first.done()
+            first_status, _, _ = await asyncio.wait_for(first, timeout=5.0)
+            assert first_status == 503
+            await asyncio.wait_for(disconnected.wait(), timeout=2.0)
+        finally:
+            await asyncio.gather(first, return_exceptions=True)
+            server.close()
+
+
 async def _prepare_dashboard_hub(uri: str) -> AgentHandle:
     handle = await connect_agent("SYNAPSE-CHANNEL/demo", uri)
     await handle.agent.advertise(
@@ -256,6 +301,7 @@ async def test_dashboard_http_server_serves_the_studio_reference_css_and_feed(
     assert command_type == "text/html"
     assert "Coordination clock" in command_body
     assert "/studio.json" in command_body
+    assert '"snapshotTimeoutMs":6000' in command_body
     assert "/events.json" in command_body
     assert 'id="cc-livefeed-list"' in command_body
     assert 'aria-label="Studio navigation"' in command_body

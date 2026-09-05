@@ -85,6 +85,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Align Studio snapshot request deadlines with server collection budgets,
+  bound identity-queue waits and label failed refreshes stale rather than offline.
+
 - Send the session bearer with Studio snapshots, bound requests to five
   seconds, prevent duplicate polling loops and label retained data non-current.
 
