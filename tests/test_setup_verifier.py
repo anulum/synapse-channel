@@ -555,6 +555,7 @@ def test_systemd_adapter_replay_refuses_unchanged_pid(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("cancel", [False, True])
+@pytest.mark.skipif(platform.system() != "Linux", reason="Requires Linux /proc process identity")
 async def test_replay_closed_listener_deadline_and_cancellation_reap_tasks(
     tmp_path: Path, cancel: bool
 ) -> None:
