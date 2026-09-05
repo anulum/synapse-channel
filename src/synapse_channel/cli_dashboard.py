@@ -40,6 +40,8 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             dashboard_token=args.dashboard_token,
             dashboard_access_file=args.dashboard_access_file,
             host_sessions_access_file=getattr(args, "host_sessions_access_file", None),
+            fleet_observed_file=getattr(args, "fleet_observed_file", None),
+            fleet_observed_access_file=getattr(args, "fleet_observed_access_file", None),
             host_session_context_root=getattr(args, "host_sessions_context_root", None),
             reliability_db=args.reliability_db,
             reliability_db_key_file=getattr(args, "feeds_db_key_file", None),
@@ -138,6 +140,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     dashboard.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     add_dashboard_access_arguments(dashboard)
+    dashboard.add_argument(
+        "--fleet-observed-file", type=Path, help="Opt-in versioned Fleet mirror export (read-only)."
+    )
+    dashboard.add_argument(
+        "--fleet-observed-access-file", type=Path, help="Owner-only explicit Fleet observer grants."
+    )
     dashboard.add_argument(
         "--host-sessions-access-file",
         type=Path,

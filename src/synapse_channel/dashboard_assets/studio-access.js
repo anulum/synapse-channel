@@ -111,6 +111,7 @@
   }
 
   window.SynapseStudioAccess = Object.freeze({
+    authHeaders,
     parseDescriptor,
     refresh,
     snapshot: function () { return state; },

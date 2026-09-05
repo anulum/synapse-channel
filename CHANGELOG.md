@@ -15,6 +15,9 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Add an opt-in, separately granted Fleet mirror feed and read-only Studio
+  panel, with versioned bounded file inputs and no Fleet package dependency.
+
 - Add the read-only host-session monitor: `synapse pid-monitor` renders
   same-user process identity (PID, parent, kernel start ticks, state, comm),
   tmux session and pane joins through revalidated ancestry, per-field

@@ -45,6 +45,7 @@ STUDIO_COMMAND_SCRIPTS = (
     "board-columns.js",
     "studio-feeds.js",
     "studio-access.js",
+    "studio-fleet.js",
     "studio-command.js",
 )
 """Fixed package scripts loaded in dependency order by the shell."""
@@ -172,6 +173,11 @@ def render_studio_command_html(*, poll_seconds: int = DEFAULT_POLL_SECONDS) -> s
           <section class="syn-panel">
             <div class="syn-label">observed peers (advisory)</div>
             <div id="cc-peers-list" class="cc-panel-list"></div>
+          </section>
+          <section class="syn-panel" aria-label="Fleet mirror">
+            <div class="syn-label">Fleet mirror (advisory, read-only)</div>
+            <div id="cc-fleet-status" role="status">not configured</div>
+            <div id="cc-fleet-mirror" class="cc-panel-list"></div>
           </section>
           <section class="syn-panel">
             <div class="syn-label">live feed</div>

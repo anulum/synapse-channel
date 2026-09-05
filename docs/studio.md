@@ -78,6 +78,43 @@ synapse dashboard --uri ws://127.0.0.1:8765
 
 ## The command centre — `/studio/command`
 
+### Optional Fleet mirror
+
+The separate Fleet mirror panel consumes an explicitly configured same-host
+export, without importing Fleet or reading its journals. Core-only operation
+and the direct `--observed-peer` panel remain unchanged.
+
+Have Fleet write a version-one export using
+`synapse-fleet observed --state-dir STATE --export-file EXPORT --source-id lab`
+or its opt-in daemon export. Then start Core with both
+`--fleet-observed-file EXPORT` and `--fleet-observed-access-file GRANTS`.
+No service is installed or started automatically. The export and grant files
+must be owner-only, regular, non-symlinked files with a single hardlink.
+
+GRANTS is JSON such as `{"version":1,"observers":["compatibility"]}`.
+`compatibility` is the principal for a single dashboard bearer; with a
+multi-principal access file, list its explicit principal IDs instead.
+A dashboard read capability alone does not grant mirror disclosure. Revocation
+is checked before reading and again before returning data. Existing
+dashboard-access version-one capability keys are unchanged.
+
+Authenticated `/fleet-observed-access.json` reports the separate grant;
+`/fleet-observed.json` returns the complete export. Responses are no-store:
+404 means disabled, 401/403 locked, 409 incompatible, and 503 unavailable or
+invalid. The reader never returns a cached last-good export as current data.
+The panel clears previously displayed metadata on an unsuccessful refresh.
+Studio uses its existing bearer mechanism; configuring this feed does not
+introduce a separate login flow.
+
+The envelope contains version 1, an explicit source label, export time,
+`advisory: true` and the Fleet snapshot. Inputs are bounded to 4 MiB,
+4096 peers and 10000 tasks; oversized or malformed envelopes are refused.
+The panel pages through 50 rows at a time and exposes task evidence through
+keyboard-operable disclosure controls. It retains source labels, peer status
+times, unknown counts, partial drains and unresolved conflict evidence.
+An export time is not peer freshness. These rows never enter the local board,
+claim controls, risk verdict or direct-peer reachability totals.
+
 The live operator view, served at `/studio/command`, reads `/studio.json` and answers at a
 glance what the fleet is doing and what is at risk. Its signature instrument is the
 **Coordination Clock** — a radial gauge where every claim is a segment around the dial,

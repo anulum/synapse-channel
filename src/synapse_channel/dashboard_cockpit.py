@@ -34,6 +34,7 @@ _TEXT_COCKPIT_ASSETS: Final[dict[str, str]] = {
     "studio-fonts.css": "text/css",
     "studio-command.css": "text/css",
     "studio-command.js": "text/javascript",
+    "studio-fleet.js": "text/javascript",
     "studio-access.js": "text/javascript",
     "studio-feeds.js": "text/javascript",
 }

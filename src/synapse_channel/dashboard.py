@@ -71,6 +71,11 @@ from synapse_channel.dashboard_feed_serving import (
     serve_waits,
 )
 from synapse_channel.dashboard_fleet import build_fleet_visibility
+from synapse_channel.dashboard_fleet_mirror import (
+    FLEET_MIRROR_PATHS,
+    fleet_mirror_response,
+    load_mirror_grants,
+)
 from synapse_channel.dashboard_host_guard import (
     allowed_host_authorities,
     host_allowed,
@@ -485,6 +490,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     state_feed_cache: ClassVar[DashboardFeedCache]
     snapshot_gate: ClassVar[DashboardSnapshotGate[DashboardSnapshot]]
     host_sessions_access_file: ClassVar[Path | None] = None
+    fleet_observed_file: ClassVar[Path | None] = None
+    fleet_observed_access_file: ClassVar[Path | None] = None
     host_session_monitor: ClassVar[HostSessionMonitor]
 
     def _reject_foreign_host(self) -> bool:
@@ -521,6 +528,17 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         authorization = self.headers.get("Authorization")
+        if path in FLEET_MIRROR_PATHS:
+            self._write_access_decision(
+                fleet_mirror_response(
+                    path,
+                    authorization,
+                    self.access_policy,
+                    self.fleet_observed_file,
+                    self.fleet_observed_access_file,
+                )
+            )
+            return
         if path in HOST_SESSION_PATHS:
             self._write_access_decision(
                 host_session_response(
@@ -1015,6 +1033,8 @@ def start_dashboard_server(
     dashboard_token: str | None = None,
     dashboard_access_file: str | Path | None = None,
     host_sessions_access_file: str | Path | None = None,
+    fleet_observed_file: str | Path | None = None,
+    fleet_observed_access_file: str | Path | None = None,
     host_session_pids: tuple[int, ...] = (),
     host_session_tmux_socket: str | None = None,
     host_session_context_root: str | Path | None = None,
@@ -1061,6 +1081,9 @@ def start_dashboard_server(
         ``dashboard_token`` and the legacy global ``operator_name``.
     host_sessions_access_file : str, pathlib.Path, or None, optional
         Owner-only explicit host observation grants, reloaded per request.
+    fleet_observed_file, fleet_observed_access_file : str, pathlib.Path, or None, optional
+        Optional versioned Fleet export and explicit observer policy; both are
+        required together. No Fleet package or journal reader is imported.
     host_session_pids : tuple of int, optional
         Explicit process scope for host observation; empty discovers candidates.
     host_session_context_root : str, pathlib.Path, or None, optional
@@ -1142,6 +1165,14 @@ def start_dashboard_server(
         observed_pins=observed_pins,
         allow_hosts=tuple(allow_hosts),
     )
+    if bool(fleet_observed_file) != bool(fleet_observed_access_file):
+        raise ValueError("Fleet export and access file must be supplied together")
+    handler.fleet_observed_file = Path(fleet_observed_file) if fleet_observed_file else None
+    handler.fleet_observed_access_file = (
+        Path(fleet_observed_access_file) if fleet_observed_access_file else None
+    )
+    if handler.fleet_observed_access_file is not None:
+        load_mirror_grants(handler.fleet_observed_access_file)
     handler.host_sessions_access_file = (
         Path(host_sessions_access_file) if host_sessions_access_file else None
     )
