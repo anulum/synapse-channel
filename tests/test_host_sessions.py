@@ -98,16 +98,20 @@ def _chain_argv(tmp_path: Path, depth: int) -> list[str]:
     leaf_binary.chmod(0o700)
     script = tmp_path / "chain.sh"
     script.write_text(
-        '#!/bin/sh\nif [ "$1" -gt 0 ]; then "$0" $(($1 - 1)) "$2"; else exec "$2" 60; fi\n'
+        '#!/bin/sh\nif [ "$1" -gt 0 ]; then "$0" $(($1 - 1)) "$2"; '
+        'else : > "$2.ready"; exec "$2" 60; fi\n'
     )
     script.chmod(0o700)
     return [str(script), str(depth), str(leaf_binary)]
 
 
-def _descend_to_leaf(top: int) -> tuple[int, ...]:
-    """Follow first children from ``top`` until the kernel comm reads ``codex``."""
+def _descend_to_leaf(top: int, ready: Path) -> tuple[int, ...]:
+    """Follow the constructed chain after its leaf announces readiness."""
     chain = [top]
     deadline = time.monotonic() + 10
+    while not ready.exists():
+        assert time.monotonic() < deadline, "process chain did not announce readiness"
+        time.sleep(0.005)
     while observe_process(chain[-1]).command_name != "codex":
         children = [
             int(pid)
@@ -141,7 +145,7 @@ def test_sixty_four_ancestors_without_a_pane_root_keep_the_provider_row(tmp_path
     top = subprocess.Popen(_chain_argv(tmp_path, depth=70), stdin=subprocess.DEVNULL)
     chain: tuple[int, ...] = ()
     try:
-        chain = _descend_to_leaf(top.pid)
+        chain = _descend_to_leaf(top.pid, tmp_path / "codex.ready")
         assert len(chain) == 71
         observation = HostSessionMonitor(
             pids=chain, tmux_socket=str(tmp_path / "absent")
@@ -186,7 +190,7 @@ def test_budget_exhausted_during_ancestor_validation_withholds_the_row(tmp_path:
                 timeout=5,
             )
         )
-        chain = _descend_to_leaf(root)
+        chain = _descend_to_leaf(root, tmp_path / "codex.ready")
         assert 41 <= len(chain) <= 42
         joined = HostSessionMonitor(pids=chain, tmux_socket=socket).snapshot()
         leaf = {row.pid: row for row in joined.rows}[chain[-1]]
