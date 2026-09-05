@@ -43,7 +43,7 @@ function mount(): void {
   }).join("") + '<svg id="cc-clock"></svg>';
 }
 
-function loadCommand(feedStart: ReturnType<typeof vi.fn>): StudioCommand {
+function loadCommand(feedStart: ReturnType<typeof vi.fn>, fetcher = vi.fn(() => new Promise<Response>(() => undefined))): StudioCommand {
   document.body.insertAdjacentHTML(
     "beforeend",
     '<script id="syn-studio-config" type="application/json">' +
@@ -54,13 +54,14 @@ function loadCommand(feedStart: ReturnType<typeof vi.fn>): StudioCommand {
     value: vi.fn(() => ({ matches: true })),
   });
   Object.assign(window, { SynapseStudioFeeds: { start: feedStart } });
-  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+  vi.stubGlobal("fetch", fetcher);
   window.eval(boardSource);
   window.eval(commandSource);
   return (window as typeof window & { SynapseStudioCommand: StudioCommand }).SynapseStudioCommand;
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -108,15 +109,48 @@ it("renders the snapshot, exact board projection, and untrusted fields as inert 
 it("shows a precise offline state when snapshot polling fails", async () => {
   mount();
   const feedStart = vi.fn();
-  const command = loadCommand(feedStart);
-  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connection refused")));
   vi.spyOn(globalThis, "setTimeout").mockImplementation(() => 1 as never);
-
-  command.start();
+  loadCommand(feedStart, vi.fn().mockRejectedValue(new Error("connection refused")));
 
   await vi.waitFor(() => {
     expect(document.getElementById("cc-offline")?.textContent).toContain("connection refused");
   });
   expect(document.getElementById("cc-offline")?.hidden).toBe(false);
   expect(document.getElementById("cc-connection")?.textContent).toBe("offline");
+});
+
+it("starts one authenticated polling loop and one feed subscription", () => {
+  vi.useFakeTimers();
+  mount();
+  vi.stubGlobal("SynapseStudioAccess", { authHeaders: () => ({ Authorization: "Bearer test-session" }) });
+  const fetcher = vi.fn(() => new Promise<Response>(() => undefined));
+  const feeds = vi.fn();
+  const command = loadCommand(feeds, fetcher);
+  command.start();
+  command.start();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(feeds).toHaveBeenCalledTimes(1);
+  expect(fetcher).toHaveBeenCalledWith("/studio.json", expect.objectContaining({
+    headers: { Authorization: "Bearer test-session" },
+    signal: expect.any(AbortSignal),
+  }));
+});
+
+it("marks retained data non-current after timeout and resumes polling", async () => {
+  vi.useFakeTimers();
+  mount();
+  const fetcher = vi.fn().mockImplementationOnce((_url, options: RequestInit) =>
+    new Promise((_resolve, reject) => options.signal!.addEventListener("abort", () =>
+      reject(new DOMException("deadline", "AbortError")))))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ hub: { id: "recovered" } })));
+  const command = loadCommand(vi.fn(), fetcher);
+  command.render({ hub: { id: "previous" } });
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(document.getElementById("cc-connection")?.textContent).toBe("offline");
+  expect(document.getElementById("cc-offline")?.textContent).toContain("not current");
+  expect(document.getElementById("cc-hub")?.textContent).toBe("previous");
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(document.getElementById("cc-connection")?.textContent).toBe("connected");
+  expect(document.getElementById("cc-hub")?.textContent).toBe("recovered");
+  expect(document.getElementById("cc-offline")?.hidden).toBe(true);
 });

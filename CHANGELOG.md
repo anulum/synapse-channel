@@ -85,6 +85,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Send the session bearer with Studio snapshots, bound requests to five
+  seconds, prevent duplicate polling loops and label retained data non-current.
+
 - Bound Studio access-descriptor requests and ignore superseded completions,
   preserving newer role downgrades and recovering polling after timeouts.
 

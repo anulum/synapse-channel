@@ -78,6 +78,11 @@ synapse dashboard --uri ws://127.0.0.1:8765
 
 ## The command centre — `/studio/command`
 
+Main snapshots use the same session bearer as access polling and have a
+five-second request deadline. Only one polling loop starts. Failed refreshes
+show an offline banner marking retained data as not current; the next
+successful snapshot replaces it and clears the banner.
+
 Studio access-descriptor polling has a five-second request deadline. A newer
 refresh cancels its predecessor; late replies cannot replace a newer role or
 unavailable state. These displayed capabilities remain presentation hints,

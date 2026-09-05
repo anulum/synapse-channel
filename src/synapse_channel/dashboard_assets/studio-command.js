@@ -27,6 +27,7 @@
   const centreX = 180;
   const centreY = 180;
   const radius = 132;
+  let started = false;
 
   function svgNode(tag, attributes, value) {
     const item = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -218,15 +219,22 @@
   }
 
   async function poll() {
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 5000);
     try {
-      const response = await fetch(snapshotUrl, { cache: "no-store" });
+      const response = await fetch(snapshotUrl, {
+        cache: "no-store",
+        headers: window.SynapseStudioAccess ? window.SynapseStudioAccess.authHeaders() : {},
+        signal: controller.signal,
+      });
       if (!response.ok) throw new Error("hub " + response.status);
       render(await response.json());
     } catch (error) {
       const banner = document.getElementById("cc-offline");
       if (banner) {
         banner.hidden = false;
-        banner.textContent = "hub unavailable — " + String(error && error.message || error);
+        banner.textContent = "hub unavailable — displayed snapshot is not current — " +
+          String(error && error.message || error);
       }
       const connection = document.getElementById("cc-connection");
       if (connection) {
@@ -234,11 +242,14 @@
         connection.className = "syn-verdict syn-verdict--amber";
       }
     } finally {
+      clearTimeout(deadline);
       setTimeout(poll, pollMs);
     }
   }
 
   function start() {
+    if (started) return;
+    started = true;
     void poll();
     if (window.SynapseStudioFeeds) window.SynapseStudioFeeds.start(config);
   }
