@@ -144,7 +144,7 @@ synapse git-claim TASK-WORKER \
 
 Use `--diff-head HEAD` for a committed comparison. The standalone tool accepts
 the equivalent `--head` and repeatable `--path` flags. Python/PYI,
-JavaScript/JSX, TypeScript/TSX, Rust, and Go are supported by locally installed
+JavaScript/JSX, TypeScript/TSX, Rust, Go, Java, C#, and Ruby are supported by locally installed
 upstream grammar wheels. Parser imports are lazy, and neither command downloads
 a grammar or contacts a service at runtime.
 

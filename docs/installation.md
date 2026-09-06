@@ -48,7 +48,7 @@ only `synapse --help` would not detect an omitted alias module.
 | `otel` | The OpenTelemetry SDK + OTLP/HTTP exporters, for `synapse causality otel --endpoint` and `synapse fleet-scorecard --endpoint`. |
 | `mcp` | MCP stdio server/client dependencies and cryptographic helpers. |
 | `a2a-grpc` | gRPC runtime for the default-off `a2a-serve --grpc-port` sibling. |
-| `semantic` | Local tree-sitter runtime and Python, JavaScript/JSX, TypeScript/TSX, Rust, and Go grammar wheels for function-level Git-diff claims. |
+| `semantic` | Local tree-sitter runtime and Python, JavaScript/JSX, TypeScript/TSX, Rust, Go, Java, C#, and Ruby grammar wheels for function-level Git-diff claims. |
 | `encryption` | Software cryptography for encrypted channels, identities, cards, and envelopes. |
 | `sqlcipher` | SQLCipher wheel for an explicitly keyed live event store. |
 | `pkcs11` | PKCS #11 key-provider adapter. |

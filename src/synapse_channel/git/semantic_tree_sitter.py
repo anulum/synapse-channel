@@ -114,6 +114,63 @@ _GO = LanguageSpec(
     frozenset({"function_declaration", "method_declaration", "type_spec"}),
     frozenset({"function_declaration", "method_declaration", "type_spec"}),
 )
+_JAVA = LanguageSpec(
+    "tree_sitter_java",
+    "language",
+    frozenset(
+        {
+            "class_declaration",
+            "interface_declaration",
+            "enum_declaration",
+            "record_declaration",
+            "annotation_type_declaration",
+            "method_declaration",
+            "constructor_declaration",
+        }
+    ),
+    frozenset(
+        {
+            "class_declaration",
+            "interface_declaration",
+            "enum_declaration",
+            "record_declaration",
+            "annotation_type_declaration",
+        }
+    ),
+)
+_CSHARP = LanguageSpec(
+    "tree_sitter_c_sharp",
+    "language",
+    frozenset(
+        {
+            "namespace_declaration",
+            "class_declaration",
+            "interface_declaration",
+            "struct_declaration",
+            "record_declaration",
+            "enum_declaration",
+            "method_declaration",
+            "constructor_declaration",
+            "property_declaration",
+        }
+    ),
+    frozenset(
+        {
+            "namespace_declaration",
+            "class_declaration",
+            "interface_declaration",
+            "struct_declaration",
+            "record_declaration",
+            "enum_declaration",
+        }
+    ),
+)
+_RUBY = LanguageSpec(
+    "tree_sitter_ruby",
+    "language",
+    frozenset({"module", "class", "method", "singleton_method"}),
+    frozenset({"module", "class"}),
+)
 
 _EXTENSIONS: dict[str, tuple[str, LanguageSpec]] = {
     ".py": ("python", _PYTHON),
@@ -126,6 +183,9 @@ _EXTENSIONS: dict[str, tuple[str, LanguageSpec]] = {
     ".tsx": ("tsx", _TSX),
     ".rs": ("rust", _RUST),
     ".go": ("go", _GO),
+    ".java": ("java", _JAVA),
+    ".cs": ("csharp", _CSHARP),
+    ".rb": ("ruby", _RUBY),
 }
 
 ParserFactory = Callable[[LanguageSpec], Any]
@@ -209,6 +269,7 @@ def extract_declarations(
     declarations: list[Declaration] = []
 
     def visit(node: Any, parents: tuple[str, ...]) -> None:
+        """Collect declarations while preserving enclosing symbol names."""
         nested_parents = parents
         if node.type in spec.declarations:
             name = _declaration_name(node, source)

@@ -62,11 +62,52 @@ from synapse_channel.git.semantic_tree_sitter import (
             b"func (c C) method() int { return c.x }\n",
             ("top", "C", "C.method"),
         ),
+        (
+            "worker.java",
+            b"public class Widget {\n    public int total() { return 1; }\n}\n"
+            b"interface Drawable { void draw(); }\n"
+            b"enum Color { RED }\n"
+            b"record Point(int x, int y) {}\n",
+            ("Widget", "Widget.total", "Drawable", "Drawable.draw", "Color", "Point"),
+        ),
+        (
+            "worker.cs",
+            b"namespace App {\n"
+            b"    public class Widget {\n"
+            b"        public int Total() { return 1; }\n"
+            b"        public int Count { get; set; }\n"
+            b"    }\n"
+            b"    public interface IDrawable { void Draw(); }\n"
+            b"    public struct P { public int X; }\n"
+            b"    public enum Color { Red }\n"
+            b"}\n",
+            (
+                "App",
+                "App.Widget",
+                "App.Widget.Total",
+                "App.Widget.Count",
+                "App.IDrawable",
+                "App.IDrawable.Draw",
+                "App.P",
+                "App.Color",
+            ),
+        ),
+        (
+            "worker.rb",
+            b"module Shapes\n"
+            b"  class Widget\n"
+            b"    def total\n      1\n    end\n"
+            b"    def self.build\n      new\n    end\n"
+            b"  end\n"
+            b"end\n",
+            ("Shapes", "Shapes.Widget", "Shapes.Widget.total", "Shapes.Widget.build"),
+        ),
     ],
 )
 def test_real_local_grammars_extract_qualified_declarations(
     path: str, source: bytes, symbols: tuple[str, ...]
 ) -> None:
+    """Extract expected qualified names using installed upstream grammars."""
     language = language_for_path(path)
     assert language is not None
 
@@ -76,12 +117,29 @@ def test_real_local_grammars_extract_qualified_declarations(
     assert all(declaration.start_line <= declaration.end_line for declaration in declarations)
 
 
-@pytest.mark.parametrize("path", ["a.py", "a.PYI", "a.jsx", "a.mjs", "a.cjs", "a.tsx"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "a.py",
+        "a.PYI",
+        "a.jsx",
+        "a.mjs",
+        "a.cjs",
+        "a.tsx",
+        "a.java",
+        "a.JAVA",
+        "a.cs",
+        "a.rb",
+        "a.RB",
+    ],
+)
 def test_supported_extension_aliases_are_case_insensitive(path: str) -> None:
+    """Recognise supported filename suffixes without case sensitivity."""
     assert language_for_path(path) is not None
 
 
 def test_unknown_extension_and_syntax_error_do_not_invent_declarations() -> None:
+    """Refuse declaration inference for unsupported paths or invalid syntax."""
     assert language_for_path("README.md") is None
     language = language_for_path("broken.py")
     assert language is not None
@@ -91,10 +149,12 @@ def test_unknown_extension_and_syntax_error_do_not_invent_declarations() -> None
 def test_missing_binding_raises_actionable_optional_extra_hint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Report an explicit installation hint when a grammar import fails."""
     language = language_for_path("worker.py")
     assert language is not None
 
     def refuse(_name: str) -> Any:
+        """Inject a missing optional dependency at the import boundary."""
         raise ImportError("not installed")
 
     monkeypatch.setattr(importlib, "import_module", refuse)
@@ -115,6 +175,7 @@ class _FakeNode:
         start_byte: int = 0,
         end_byte: int = 0,
     ) -> None:
+        """Describe a syntax-node boundary unavailable from ordinary source."""
         self.type = node_type
         self._fields = fields or {}
         self.named_children = children
@@ -127,6 +188,7 @@ class _FakeNode:
 
 
 def test_descendant_and_missing_name_boundaries_do_not_invent_symbols() -> None:
+    """Keep absent names and receiver types from creating invented symbols."""
     name = _FakeNode("identifier", end_byte=4)
     nested = _FakeNode("wrapper", fields={"type": name})
     receiver = _FakeNode("parameters", children=(_FakeNode("empty"), nested))

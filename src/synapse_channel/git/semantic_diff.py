@@ -15,7 +15,7 @@ old and new symbols rather than silently freeing one side.
 
 Parser imports are lazy and come from the optional ``semantic`` extra. It uses
 upstream pre-built grammar wheels for Python, JavaScript/JSX, TypeScript/TSX,
-Rust, and Go; this module never downloads a parser or contacts a service.
+Rust, Go, Java, C#, and Ruby; this module never downloads a parser or contacts a service.
 """
 
 from __future__ import annotations

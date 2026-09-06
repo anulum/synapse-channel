@@ -74,6 +74,9 @@ dev = [
   "tree-sitter-typescript>=0.23.2",
   "tree-sitter-rust>=0.24.2",
   "tree-sitter-go>=0.25.0",
+  "tree-sitter-java>=0.23.5",
+  "tree-sitter-c-sharp>=0.23.5",
+  "tree-sitter-ruby>=0.23.1",
 ]
 # NB: tpm2-pytss (the [tpm2] extra) is deliberately NOT in dev. It is sdist-only and its build
 # needs the TSS2 system headers (libtss2-dev), so putting it in the hash-locked requirements-dev.txt
@@ -103,6 +106,9 @@ semantic = [
   "tree-sitter-typescript>=0.23.2",
   "tree-sitter-rust>=0.24.2",
   "tree-sitter-go>=0.25.0",
+  "tree-sitter-java>=0.23.5",
+  "tree-sitter-c-sharp>=0.23.5",
+  "tree-sitter-ruby>=0.23.1",
 ]
 encryption = [
   "cryptography>=42.0",
@@ -138,6 +144,9 @@ all = [
   "tree-sitter-typescript>=0.23.2",
   "tree-sitter-rust>=0.24.2",
   "tree-sitter-go>=0.25.0",
+  "tree-sitter-java>=0.23.5",
+  "tree-sitter-c-sharp>=0.23.5",
+  "tree-sitter-ruby>=0.23.1",
 ]
 docs = [
   "mkdocs-material>=9.5",

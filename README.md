@@ -1264,7 +1264,7 @@ synapse git-claim TASK-WORKER \
 ```
 
 The client maps zero-context hunks on both old and new source sides to the
-smallest named Python, JavaScript/JSX, TypeScript/TSX, Rust, or Go declaration.
+smallest named Python, JavaScript/JSX, TypeScript/TSX, Rust, Go, Java, C#, or Ruby declaration.
 Renames claim both symbol names. Add/delete/rename statuses, module-level edits,
 unsupported or invalid syntax, oversized sources, and every other incomplete
 mapping widen to the whole file. Grammar wheels are installed with the extra;
@@ -1654,7 +1654,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 842 |
 | Wire message types | 80 |
 | CLI subcommands | 201 |
-| Test functions | 9712 |
+| Test functions | 9713 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 63 |
 | GitHub Actions workflows | 25 |

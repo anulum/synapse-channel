@@ -152,7 +152,7 @@ Function-level inference from actual edits is also client-side. Install
 --base main --claim-args` or `synapse git-claim TASK --diff-base main`. The
 resolver maps zero-context Git hunks on both old and new source sides to the
 smallest named tree-sitter declaration for Python, JavaScript, TypeScript, Rust,
-and Go. Any incomplete mapping — including module-level changes, unsupported or
+Go, Java, C#, and Ruby. Any incomplete mapping — including module-level changes, unsupported or
 invalid syntax, add/delete/rename statuses, or unavailable source content —
 widens to the whole file. Optional `--diff-head`, repeatable `--diff-path`, and
 `--semantic-evidence-json` keep the comparison and receipt evidence explicit.

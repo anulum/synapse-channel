@@ -737,7 +737,7 @@ other selectors and companion paths stay whole-file.
 
 With the optional `semantic` extra, `--diff-base main` maps tracked working-tree
 changes to the smallest named declaration in Python, JavaScript/JSX,
-TypeScript/TSX, Rust, or Go. Add `--diff-head HEAD` for a committed comparison
+TypeScript/TSX, Rust, Go, Java, C#, or Ruby. Add `--diff-head HEAD` for a committed comparison
 and repeat `--diff-path src/pkg` to filter it. Every incomplete mapping widens to
 the whole file. `python tools/semantic_diff_claims.py --base main --claim-args`
 exposes the same diff-only planning surface. Add `--semantic-evidence-json
