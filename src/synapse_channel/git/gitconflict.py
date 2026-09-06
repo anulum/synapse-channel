@@ -19,7 +19,9 @@ ordinary state snapshot and never runs git.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
@@ -31,6 +33,10 @@ from synapse_channel.core.path_identity import (
 )
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.git.gitclaim import AgentFactory, GitError, GitRunner, _default_git_runner
+from synapse_channel.git.semantic_diff import SemanticDiffRecord, resolve_git_diff
+
+SemanticResolver = Callable[..., tuple[SemanticDiffRecord, ...]]
+"""Resolve committed branch diffs into conservative semantic records."""
 
 
 @dataclass(frozen=True)
@@ -45,6 +51,9 @@ class PredictedConflict:
         The second claim's owner, branch, and merge base.
     paths : tuple[str, ...]
         The overlapping paths; empty means both claims hold the whole worktree.
+    symbols : tuple[str, ...]
+        The overlapping named declarations when ``--check-semantic`` narrowed the
+        pair to shared functions/types; empty when unrefined or file-wide.
     """
 
     owner_a: str
@@ -54,14 +63,16 @@ class PredictedConflict:
     branch_b: str
     base_b: str
     paths: tuple[str, ...]
+    symbols: tuple[str, ...] = ()
 
     def describe(self) -> str:
         """Render the predicted conflict as one human-readable line."""
         where = ", ".join(self.paths) if self.paths else "the whole worktree"
         base = self.base_a if self.base_a == self.base_b else f"{self.base_a}/{self.base_b}"
+        detail = f"{where} [{', '.join(self.symbols)}]" if self.symbols else where
         return (
             f"{self.owner_a}@{self.branch_a} vs {self.owner_b}@{self.branch_b} "
-            f"(both -> {base}): {where}"
+            f"(both -> {base}): {detail}"
         )
 
 
@@ -209,7 +220,7 @@ def _changed_paths_inside_scope(
 ) -> tuple[str, ...]:
     """Return common changed files that sit inside the declared overlap scopes."""
     common = sorted(changed_a & changed_b)
-    if not scopes:
+    if not scopes or "" in scopes:
         return tuple(common)
     return tuple(
         path for path in common if any(_path_overlaps_scope(path, scope) for scope in scopes)
@@ -229,6 +240,7 @@ def _refine_with_diff(
     cache: dict[tuple[str, str], set[str] | None] = {}
 
     def changed(branch: str, base: str) -> set[str] | None:
+        """Cache file-level evidence while preserving failures as uncertainty."""
         key = (base, branch)
         if key not in cache:
             try:
@@ -250,14 +262,125 @@ def _refine_with_diff(
     return refined
 
 
+def _semantic_touch(
+    resolver: SemanticResolver,
+    repo_root: Path,
+    *,
+    base: str,
+    branch: str,
+    path: str,
+) -> tuple[frozenset[str], bool]:
+    """Return the declarations one branch changed in ``path`` and whether it narrowed.
+
+    The boolean is ``True`` only when every record for the file narrowed to named
+    declarations; a whole-file record, unsupported language, missing grammar,
+    or unavailable commit evidence forces the conservative file-wide path.
+    """
+    try:
+        records = resolver(repo_root, base=base, head=branch, paths=[path])
+    except (ValueError, GitError, RuntimeError):
+        return frozenset(), False
+    symbols: set[str] = set()
+    narrowed = bool(records)
+    for record in records:
+        symbols.update(record.symbols)
+        narrowed = narrowed and record.narrowed and bool(record.symbols)
+    return frozenset(symbols), narrowed
+
+
+def _refine_with_semantic(
+    conflicts: list[PredictedConflict],
+    *,
+    repo_root: Path,
+    runner: GitRunner,
+    resolver: SemanticResolver,
+) -> list[PredictedConflict]:
+    """Narrow file-level conflicts to the named declarations both branches changed.
+
+    For every file each branch actually changed inside the declared overlap, the
+    resolver projects the branch diff onto tree-sitter declarations. A pair is
+    kept only when the two branches touched an overlapping declaration in a shared
+    file, or when either side cannot be narrowed (a whole-file change, an
+    unsupported language, or a branch not checked out locally) — better to
+    over-warn than to miss a real conflict. A pair whose shared files all narrowed
+    to disjoint declarations is dropped: the agents edit the same file but
+    different functions.
+    """
+    cache: dict[tuple[str, str], tuple[str, str, set[str]] | None] = {}
+
+    def changed(branch: str, base: str) -> tuple[str, str, set[str]] | None:
+        """Pin a unique merge base and head, retaining literal Git filenames."""
+        key = (base, branch)
+        if key not in cache:
+            try:
+                head = runner(
+                    ["rev-parse", "--verify", "--end-of-options", branch + "^{commit}"]
+                ).strip()
+                base_head = runner(
+                    ["rev-parse", "--verify", "--end-of-options", base + "^{commit}"]
+                ).strip()
+                bases = runner(["merge-base", "--all", base_head, head]).splitlines()
+                if len(bases) != 1:
+                    cache[key] = None
+                else:
+                    names = runner(
+                        ["diff", "--name-only", "-z", "--no-renames", bases[0], head, "--"]
+                    )
+                    cache[key] = (bases[0], head, set(names.rstrip("\0").split("\0")) - {""})
+            except GitError:
+                cache[key] = None
+        return cache[key]
+
+    refined: list[PredictedConflict] = []
+    for conflict in conflicts:
+        changed_a = changed(conflict.branch_a, conflict.base_a)
+        changed_b = changed(conflict.branch_b, conflict.base_b)
+        if changed_a is None or changed_b is None:
+            refined.append(conflict)
+            continue
+        base_a, head_a, files_a = changed_a
+        base_b, head_b, files_b = changed_b
+        shared = _changed_paths_inside_scope(files_a, files_b, conflict.paths)
+        if not shared:
+            continue
+        overlap_symbols: set[str] = set()
+        keep_file_wide = False
+        for path in shared:
+            symbols_a, narrowed_a = _semantic_touch(
+                resolver, repo_root, base=base_a, branch=head_a, path=path
+            )
+            symbols_b, narrowed_b = _semantic_touch(
+                resolver, repo_root, base=base_b, branch=head_b, path=path
+            )
+            if not (narrowed_a and narrowed_b):
+                keep_file_wide = True
+                continue
+            for symbol_a in symbols_a:
+                for symbol_b in symbols_b:
+                    if (
+                        symbol_a == symbol_b
+                        or symbol_a.startswith(symbol_b + ".")
+                        or symbol_b.startswith(symbol_a + ".")
+                    ):
+                        overlap_symbols.update((symbol_a, symbol_b))
+        if keep_file_wide:
+            refined.append(conflict)
+        elif overlap_symbols:
+            refined.append(replace(conflict, symbols=tuple(sorted(overlap_symbols))))
+    return refined
+
+
 async def run_conflicts(
     *,
     uri: str,
     name: str,
     token: str | None = None,
     check_diff: bool = False,
+    check_semantic: bool = False,
     agent_factory: AgentFactory = SynapseAgent,
     runner: GitRunner = _default_git_runner,
+    semantic_resolver: SemanticResolver = resolve_git_diff,
+    repo_root: Path | None = None,
     ready_timeout: float = 5.0,
     attempts: int = 40,
     poll_interval: float = 0.05,
@@ -272,10 +395,19 @@ async def run_conflicts(
         Shared-secret token for a secured hub.
     check_diff : bool, optional
         When ``True``, refine the prediction against each branch's ``git diff``.
+    check_semantic : bool, optional
+        When ``True``, further narrow each pair to the named declarations both
+        branches changed in a shared file, dropping same-file/different-function
+        pairs. Uncertain files (whole-file, unsupported language, or a branch not
+        checked out locally) are kept unrefined.
     agent_factory : AgentFactory, optional
         Factory for the hub client; injectable for testing.
     runner : GitRunner, optional
         The git executor; injectable for testing.
+    semantic_resolver : SemanticResolver, optional
+        Resolve pinned committed revisions to conservative declaration scopes.
+    repo_root : Path or None, optional
+        Repository for semantic Git reads; defaults to the current directory.
     ready_timeout : float, optional
         Seconds to wait for hub connection readiness.
     attempts : int, optional
@@ -294,6 +426,7 @@ async def run_conflicts(
     snapshots: list[dict[str, Any]] = []
 
     async def collect(data: dict[str, Any]) -> None:
+        """Capture hub state without inferring success from other messages."""
         if data.get("type") == MessageType.STATE_SNAPSHOT:
             snapshots.append(data.get("snapshot", {}))
 
@@ -308,10 +441,26 @@ async def run_conflicts(
             if snapshots:
                 break
             await asyncio.sleep(poll_interval)
+        if check_semantic and not snapshots:
+            print("Semantic conflict evidence unavailable: no state snapshot received.")
+            return 1
         claims = (snapshots[-1].get("active_claims") or []) if snapshots else []
         conflicts = find_conflicts(claims)
-        if check_diff:
+        if check_diff and not check_semantic:
             conflicts = _refine_with_diff(conflicts, runner=runner)
+        if check_semantic:
+            root = repo_root or Path.cwd()
+
+            def semantic_runner(args: list[str]) -> str:
+                """Read pinned branch evidence from the selected repository."""
+                return runner(["-C", str(root), *args])
+
+            conflicts = _refine_with_semantic(
+                conflicts,
+                repo_root=root,
+                runner=semantic_runner,
+                resolver=semantic_resolver,
+            )
         if not conflicts:
             print("No predicted conflicts.")
             return 0

@@ -1158,7 +1158,12 @@ empty staged index succeeds without a hub so
 branch, while `synapse conflicts` flags agents about to edit the same files on
 branches that merge into the same base.
 `--check-diff` narrows directory or whole-worktree claims to files both branches
-actually changed when both branch diffs are available. The hub stays
+actually changed when both branch diffs are available.
+With the optional `semantic` extra, `--check-semantic` further compares named
+declarations on pinned revisions. Enclosing declarations overlap their members;
+unavailable or ambiguous evidence retains a warning. A missing hub snapshot
+returns an error. This committed-diff view neither reserves work nor proves
+behavioural independence or a conflict-free merge. The hub stays
 **git-agnostic** — it stores the branch as opaque metadata and never runs git or
 reads a filesystem — so all git work is on the client. See the
 [git-native claims guide](docs/git-claims.md).
@@ -1654,7 +1659,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 842 |
 | Wire message types | 80 |
 | CLI subcommands | 201 |
-| Test functions | 9713 |
+| Test functions | 9714 |
 | Benchmark harnesses | 6 |
 | Documentation pages | 63 |
 | GitHub Actions workflows | 25 |

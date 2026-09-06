@@ -387,11 +387,18 @@ def _cmd_conflicts(
     """Predict merge conflicts between branch-scoped claims on different branches.
 
     Reads the hub's live claims and flags cross-branch path overlaps; ``--check-diff``
-    refines the prediction against each branch's actual ``git diff``. All git work is
-    client-side.
+    refines the prediction against each branch's actual ``git diff``, and
+    ``--check-semantic`` narrows further to the named declarations both branches
+    changed. All git work is client-side.
     """
     return async_runner(
-        conflict_runner(uri=args.uri, name=args.name, token=args.token, check_diff=args.check_diff)
+        conflict_runner(
+            uri=args.uri,
+            name=args.name,
+            token=args.token,
+            check_diff=args.check_diff,
+            check_semantic=getattr(args, "check_semantic", False),
+        )
     )
 
 
@@ -635,6 +642,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--check-diff",
         action="store_true",
         help="Refine the prediction against each branch's actual 'git diff base...branch'.",
+    )
+    conflicts.add_argument(
+        "--check-semantic",
+        action="store_true",
+        help="Narrow to the named declarations both branches changed (function-level).",
     )
     conflicts.add_argument("--uri", default=default_hub_uri())
     conflicts.add_argument("--name", default="USER")

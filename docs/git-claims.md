@@ -335,6 +335,7 @@ See a collision before it happens:
 ```bash
 synapse conflicts
 synapse conflicts --check-diff
+synapse conflicts --check-semantic
 ```
 
 `synapse conflicts` reads the hub's live claims and flags every pair held on
@@ -347,6 +348,20 @@ changed are reported. A directory-scoped claim such as `--paths src` matches
 changed files below that directory, and a whole-worktree claim is refined to the
 common changed files when both branch diffs are available. A branch that is not
 checked out locally is kept as a conservative warning rather than dropped.
+
+With the optional `semantic` extra, `--check-semantic` compares the named
+declarations changed by each branch relative to its unique merge base. It pins
+commit identities before reading filenames and syntax, and preserves literal
+Git filenames. Enclosing declarations overlap their nested members, so a class
+edit cannot be declared independent of a method edit. Disjoint declarations
+can remove a predicted overlap; missing grammars, unavailable branches,
+ambiguous merge bases or incomplete syntax retain conservative warnings.
+A missing state snapshot returns an error, not a clean result.
+
+When both flags are set, the semantic pass performs its own file filtering.
+This is a committed-diff advisory view: it does not observe future edits or
+uncommitted work in other checkouts, reserve paths, establish behavioural
+independence, or replace a real merge and its tests.
 
 ```
 Predicted conflicts (1):
