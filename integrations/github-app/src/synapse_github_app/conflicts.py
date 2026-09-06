@@ -25,6 +25,7 @@ class ConflictNotice:
     other_number: int
     other_head_ref: str
     paths: tuple[str, ...]
+    other_author: str | None = None
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class ConflictReport:
     evaluated_pull_requests: int
     open_pull_requests_truncated: bool
     truncated_file_inventories: tuple[int, ...]
+    current_author: str | None = None
 
 
 def analyse_conflicts(
@@ -83,6 +85,7 @@ def analyse_conflicts(
                 other_number=other.number,
                 other_head_ref=other.head_ref,
                 paths=conflict.paths,
+                other_author=other.author,
             )
         )
     notices.sort(key=lambda item: (item.other_number, item.paths))
@@ -97,4 +100,5 @@ def analyse_conflicts(
         evaluated_pull_requests=len(snapshots),
         open_pull_requests_truncated=open_pull_requests_truncated,
         truncated_file_inventories=truncated_files,
+        current_author=current.author,
     )

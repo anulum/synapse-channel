@@ -22,7 +22,9 @@ def _snapshot(
     *,
     base: str = "main",
     truncated: bool = False,
+    author: str | None = None,
 ) -> PullRequestSnapshot:
+    """Build a validated pull-request snapshot for overlap analysis."""
     return PullRequestSnapshot(
         number=number,
         head_sha=f"{number:040x}",
@@ -30,10 +32,12 @@ def _snapshot(
         base_ref=base,
         paths=paths,
         paths_truncated=truncated,
+        author=author,
     )
 
 
 def test_directory_overlap_flows_through_core_finder() -> None:
+    """Project directory overlaps through the production conflict finder."""
     current = _snapshot(7, ("src/auth", "README.md"))
     other = _snapshot(9, ("src/auth/tokens.py", "docs/guide.md"))
 
@@ -47,6 +51,7 @@ def test_directory_overlap_flows_through_core_finder() -> None:
 
 
 def test_current_may_be_second_and_unrelated_other_pairs_are_ignored() -> None:
+    """Ignore unrelated pairs regardless of current-PR inventory order."""
     current = _snapshot(7, ("src/shared.py",))
     other = _snapshot(9, ("src/shared.py", "docs/same.md"))
     third = _snapshot(10, ("docs/same.md",))
@@ -63,6 +68,7 @@ def test_current_may_be_second_and_unrelated_other_pairs_are_ignored() -> None:
 
 
 def test_same_base_is_required_and_empty_pr_is_not_whole_worktree() -> None:
+    """Exclude different-base PRs and empty file inventories."""
     current = _snapshot(1, ("src/a.py",))
     other_base = _snapshot(2, ("src/a.py",), base="release")
     empty = _snapshot(3, ())
@@ -76,6 +82,7 @@ def test_same_base_is_required_and_empty_pr_is_not_whole_worktree() -> None:
 
 
 def test_report_records_both_inventory_incompleteness_sources() -> None:
+    """Retain both inventory truncation markers."""
     current = _snapshot(1, ("src/a.py",), truncated=True)
     other = _snapshot(2, ("src/a.py",), truncated=True)
 
@@ -87,7 +94,25 @@ def test_report_records_both_inventory_incompleteness_sources() -> None:
     assert report.notices[0].other_number == 2
 
 
+def test_report_attributes_each_overlap_to_its_pull_request_author() -> None:
+    """Associate each overlap with its own known or missing author."""
+    current = _snapshot(7, ("src/shared.py",), author="octo-dev")
+    other = _snapshot(9, ("src/shared.py",), author="dependabot[bot]")
+    unattributed = _snapshot(11, ("src/shared.py",), author=None)
+
+    report = analyse_conflicts(
+        current,
+        (current, other, unattributed),
+        open_pull_requests_truncated=False,
+    )
+
+    assert report.current_author == "octo-dev"
+    attribution = {notice.other_number: notice.other_author for notice in report.notices}
+    assert attribution == {9: "dependabot[bot]", 11: None}
+
+
 def test_duplicate_or_missing_current_is_refused() -> None:
+    """Reject duplicate or missing current pull requests."""
     current = _snapshot(1, ("a",))
     with pytest.raises(PayloadError, match="duplicate"):
         analyse_conflicts(current, (current, current), open_pull_requests_truncated=False)

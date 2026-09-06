@@ -20,13 +20,21 @@ def pull_request_record(
     head_ref: str = "feature/risk",
     base_ref: str = "main",
     head_sha: str | None = None,
+    login: str | None = "octo-dev",
 ) -> dict[str, object]:
-    """Return one GitHub REST-shaped pull-request record."""
-    return {
+    """Return one GitHub REST-shaped pull-request record.
+
+    When ``login`` is ``None`` the ``user`` object is omitted so tests can drive
+    the unattributed pull-request path GitHub emits for deleted accounts.
+    """
+    record: dict[str, object] = {
         "number": number,
         "head": {"sha": head_sha or f"{number:040x}", "ref": head_ref},
         "base": {"ref": base_ref},
     }
+    if login is not None:
+        record["user"] = {"login": login}
+    return record
 
 
 def pull_request_payload(
@@ -36,6 +44,7 @@ def pull_request_payload(
     head_ref: str = "feature/risk",
     base_ref: str = "main",
     head_sha: str | None = None,
+    login: str | None = "octo-dev",
 ) -> dict[str, object]:
     """Return the authenticated fields consumed from a GitHub webhook."""
     return {
@@ -47,6 +56,7 @@ def pull_request_payload(
             head_ref=head_ref,
             base_ref=base_ref,
             head_sha=head_sha,
+            login=login,
         ),
     }
 
@@ -58,6 +68,7 @@ def encoded_payload(
     head_ref: str = "feature/risk",
     base_ref: str = "main",
     head_sha: str | None = None,
+    login: str | None = "octo-dev",
 ) -> bytes:
     """Encode :func:`pull_request_payload` as deterministic UTF-8 JSON."""
     return json.dumps(
@@ -67,6 +78,7 @@ def encoded_payload(
             head_ref=head_ref,
             base_ref=base_ref,
             head_sha=head_sha,
+            login=login,
         ),
         sort_keys=True,
     ).encode("utf-8")

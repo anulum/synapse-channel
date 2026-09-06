@@ -14,7 +14,11 @@ This independently installable package is the hosting-neutral stage 2 of the
 Managed GitHub App plan. It verifies signed pull-request webhooks, authenticates
 as a GitHub App installation, reads bounded open-PR file inventories, reuses
 SYNAPSE's existing file-scope conflict finder, and creates a completed neutral
-Check Run. It does not register, host, deploy, or persist an App.
+Check Run. Each reported overlap is attributed to the two pull requests' authors
+so a reviewer can identify the source pull requests. Author attribution does
+not establish a SYNAPSE claim, an agent identity, or ownership of the changed
+files. It does not rank, score, or gate any agent. It does not
+register, host, deploy, or persist an App.
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) before integrating it. The document is
 the contract: GitHub concerns stay here, the local core stays single-dependency,

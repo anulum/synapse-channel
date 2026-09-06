@@ -29,10 +29,12 @@ PULLS_PATH = "/repos/anulum/synapse-channel/pulls?state=open&per_page=100&page=1
 
 
 def _files_path(number: int) -> str:
+    """Return the changed-files REST route for one pull request."""
     return f"/repos/anulum/synapse-channel/pulls/{number}/files?per_page=100&page=1"
 
 
 def _service(api: GitHubApi, private_pem: bytes) -> GitHubAppService:
+    """Bind the service to a test API endpoint and signing material."""
     return GitHubAppService(
         api=api,
         app_issuer="Iv1.synapse-client",
@@ -42,6 +44,7 @@ def _service(api: GitHubApi, private_pem: bytes) -> GitHubAppService:
 
 
 def test_signed_webhook_reaches_real_api_and_creates_neutral_conflict_check() -> None:
+    """Exercise signed webhook processing through real HTTP check creation."""
     private_pem, public_pem = rsa_pem_pair()
     plans = {
         ("POST", "/app/installations/42/access_tokens"): [
@@ -92,7 +95,45 @@ def test_signed_webhook_reaches_real_api_and_creates_neutral_conflict_check() ->
     assert "src/shared.py" in check_body["output"]["summary"]
 
 
+def test_check_summary_attributes_overlap_to_each_pull_request_author() -> None:
+    """Carry webhook and REST authors through HTTP into an advisory check."""
+    private_pem, _ = rsa_pem_pair()
+    plans = {
+        ("POST", "/app/installations/42/access_tokens"): [
+            ResponseSpec(body={"token": "installation-token", "expires_at": "2026-07-11T15:00:00Z"})
+        ],
+        ("GET", PULLS_PATH): [
+            ResponseSpec(
+                body=[
+                    pull_request_record(7, head_ref="feature/current", login="octo-dev"),
+                    pull_request_record(9, head_ref="feature/other", login="automation-bot"),
+                ]
+            )
+        ],
+        ("GET", _files_path(7)): [ResponseSpec(body=[{"filename": "src/shared.py"}])],
+        ("GET", _files_path(9)): [ResponseSpec(body=[{"filename": "src/shared.py"}])],
+        ("POST", "/repos/anulum/synapse-channel/check-runs"): [ResponseSpec(body={"id": 773})],
+    }
+    body = encoded_payload(number=7, head_ref="feature/current", login="octo-dev")
+    with serve_api(plans) as server:
+        api = GitHubApi(api_url=server.url, allow_insecure_loopback=True)
+        result = _service(api, private_pem).handle(
+            headers=signed_headers(body, SECRET),
+            body=body,
+            now=NOW,
+        )
+
+    assert result.report is not None
+    assert result.report.current_author == "octo-dev"
+    summary = json.loads(server.requests[-1].body)["output"]["summary"]
+    assert "Pull request #7 by <code>octo-dev</code>" in summary
+    assert "PR #9 by <code>automation-bot</code> on" in summary
+    assert "not evidence of a SYNAPSE claim or agent identity" in summary
+    assert "@" not in summary
+
+
 def test_event_missing_from_open_inventory_is_still_evaluated_at_event_head() -> None:
+    """Preserve the authenticated event head when the inventory omits it."""
     private_pem, _ = rsa_pem_pair()
     plans = {
         ("POST", "/app/installations/42/access_tokens"): [
@@ -116,6 +157,7 @@ def test_event_missing_from_open_inventory_is_still_evaluated_at_event_head() ->
 
 
 def test_event_pr_replaces_last_inventory_item_at_evaluation_bound() -> None:
+    """Reserve evaluation capacity for the event PR at the inventory bound."""
     pull_records = [pull_request_record(number) for number in range(1, 101)]
     plans = {
         ("GET", PULLS_PATH): [ResponseSpec(body=pull_records)],
@@ -139,6 +181,7 @@ def test_event_pr_replaces_last_inventory_item_at_evaluation_bound() -> None:
 
 
 def test_ignored_event_does_not_authenticate_or_call_api() -> None:
+    """Keep ignored webhook actions from making API calls."""
     private_pem, _ = rsa_pem_pair()
     body = encoded_payload()
     with serve_api({}) as server:
@@ -154,6 +197,7 @@ def test_ignored_event_does_not_authenticate_or_call_api() -> None:
 
 
 def test_expired_installation_token_stops_before_repository_reads() -> None:
+    """Refuse expired tokens before repository reads."""
     private_pem, _ = rsa_pem_pair()
     plans = {
         ("POST", "/app/installations/42/access_tokens"): [

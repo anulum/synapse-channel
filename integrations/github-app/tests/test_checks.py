@@ -22,7 +22,9 @@ def _report(
     complete: bool = True,
     pulls_truncated: bool = False,
     files_truncated: tuple[int, ...] = (),
+    current_author: str | None = None,
 ) -> ConflictReport:
+    """Build an advisory report with explicit completeness and attribution."""
     return ConflictReport(
         current_number=7,
         head_sha="7" * 40,
@@ -31,10 +33,12 @@ def _report(
         evaluated_pull_requests=2,
         open_pull_requests_truncated=pulls_truncated,
         truncated_file_inventories=files_truncated,
+        current_author=current_author,
     )
 
 
 def test_clean_complete_check_remains_neutral_and_advisory() -> None:
+    """Keep no-overlap conclusions neutral and non-reserving."""
     check = build_check_run(_report(), delivery_id="delivery-7")
     payload = check.as_payload()
 
@@ -49,6 +53,7 @@ def test_clean_complete_check_remains_neutral_and_advisory() -> None:
 
 
 def test_overlap_check_escapes_untrusted_ref_and_path() -> None:
+    """Escape branch and path markup in check output."""
     notice = ConflictNotice(
         other_number=9,
         other_head_ref='feature/<img src=x onerror="alert(1)">',
@@ -62,7 +67,57 @@ def test_overlap_check_escapes_untrusted_ref_and_path() -> None:
     assert "&lt;script&gt;" in check.summary
 
 
+def test_attribution_names_authors_without_mentioning_them() -> None:
+    """Display author labels without claiming reservation ownership."""
+    notice = ConflictNotice(
+        other_number=9,
+        other_head_ref="feature/9",
+        paths=("src/a.py",),
+        other_author="dependabot[bot]",
+    )
+    check = build_check_run(
+        _report(notices=(notice,), current_author="octo-dev"),
+        delivery_id="delivery",
+    )
+
+    assert "Pull request #7 by <code>octo-dev</code>" in check.summary
+    assert "does not rank, score, or gate any agent" in check.summary
+    assert "PR #9 by <code>dependabot[bot]</code> on" in check.summary
+    assert "@" not in check.summary
+    assert "not evidence of a SYNAPSE claim or agent identity" in check.summary
+    assert "holds the file-scope claims" not in check.summary
+
+
+def test_attribution_is_omitted_for_unattributed_pull_requests() -> None:
+    """Omit labels for unattributed pull requests."""
+    notice = ConflictNotice(other_number=9, other_head_ref="feature/9", paths=("src/a.py",))
+    check = build_check_run(_report(notices=(notice,)), delivery_id="delivery")
+
+    assert "Pull request #7 changes files in the overlaps listed below." in check.summary
+    assert "PR #9 on <code>feature/9</code>" in check.summary
+    assert " by <code>@" not in check.summary
+
+
+def test_author_login_is_html_escaped_in_attribution() -> None:
+    """Escape author markup before displaying it."""
+    notice = ConflictNotice(
+        other_number=9,
+        other_head_ref="feature/9",
+        paths=("src/a.py",),
+        other_author="<b>x",
+    )
+    check = build_check_run(
+        _report(notices=(notice,), current_author="a&b"),
+        delivery_id="delivery",
+    )
+
+    assert "&lt;b&gt;x" in check.summary
+    assert "a&amp;b" in check.summary
+    assert "<b>x" not in check.summary
+
+
 def test_partial_overlap_is_honest_but_partial_clean_is_refused() -> None:
+    """Refuse clean conclusions from incomplete evidence."""
     notice = ConflictNotice(other_number=9, other_head_ref="feature/9", paths=("src/a.py",))
     partial = build_check_run(
         _report(
@@ -83,6 +138,7 @@ def test_partial_overlap_is_honest_but_partial_clean_is_refused() -> None:
 
 
 def test_each_incompleteness_note_is_independently_optional() -> None:
+    """Disclose only the inventory limits that were reached."""
     notice = ConflictNotice(other_number=9, other_head_ref="feature/9", paths=("src/a.py",))
     pulls_only = build_check_run(
         _report(notices=(notice,), complete=False, pulls_truncated=True),
@@ -100,6 +156,7 @@ def test_each_incompleteness_note_is_independently_optional() -> None:
 
 
 def test_check_output_bounds_paths_and_total_summary() -> None:
+    """Bound path listings and total summary size."""
     paths = tuple(f"src/{index:04d}-{'x' * 1000}.py" for index in range(MAX_PATHS_PER_NOTICE + 10))
     notices = tuple(
         ConflictNotice(other_number=index + 10, other_head_ref=f"feature/{index}", paths=paths)

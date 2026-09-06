@@ -23,13 +23,14 @@ The integration must:
 2. verify `X-Hub-Signature-256` over the unmodified request body before JSON
    parsing, using HMAC-SHA256 and constant-time comparison;
 3. accept only bounded `pull_request` events and extract a typed installation,
-   repository, head, base, and pull-request identity;
+   repository, head, base, pull-request, and author identity;
 4. authenticate as the App with a short-lived RS256 JWT, exchange it for a
    one-hour installation token, and scope that token back down to the two App
    permissions;
 5. read bounded open-PR and changed-file pages, map them onto the existing
    `synapse_channel.git.gitconflict.find_conflicts` contract, and publish one
-   completed `neutral` check for the event head;
+   completed `neutral` check for the event head that attributes each overlap to
+   its pull-request author without ranking, scoring, or gating any agent;
 6. stay stateless, advisory, independently installable, and outside
    `synapse_channel.core`;
 7. fail visibly on invalid signatures, malformed payloads, incomplete API data,

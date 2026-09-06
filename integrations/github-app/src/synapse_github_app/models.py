@@ -19,19 +19,23 @@ from synapse_github_app.errors import PayloadError
 _OWNER_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\Z")
 _REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]{1,100}\Z")
 _SHA_RE = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\Z")
+_MAX_AUTHOR_CHARS = 48
 
 
 def _mapping(value: object, field: str) -> Mapping[str, object]:
+    """Require a JSON object before accessing fields."""
     if not isinstance(value, dict):
         raise PayloadError(f"{field} must be an object")
     return cast(Mapping[str, object], value)
 
 
 def _child(parent: Mapping[str, object], field: str) -> Mapping[str, object]:
+    """Read a required nested JSON object."""
     return _mapping(parent.get(field), field)
 
 
 def _string(value: object, field: str, *, max_length: int) -> str:
+    """Require bounded printable non-empty text."""
     if not isinstance(value, str) or not value or len(value) > max_length:
         raise PayloadError(f"{field} must be a non-empty string of at most {max_length} characters")
     if not value.isprintable():
@@ -40,12 +44,14 @@ def _string(value: object, field: str, *, max_length: int) -> str:
 
 
 def _positive_int(value: object, field: str) -> int:
+    """Reject booleans and non-positive identifiers."""
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise PayloadError(f"{field} must be a positive integer")
     return value
 
 
 def _sha(value: object, field: str) -> str:
+    """Validate and normalise a hexadecimal Git identifier."""
     text = _string(value, field, max_length=64)
     if _SHA_RE.fullmatch(text) is None:
         raise PayloadError(f"{field} must be a 40- or 64-character hexadecimal object id")
@@ -53,6 +59,7 @@ def _sha(value: object, field: str) -> str:
 
 
 def _path(value: object) -> str:
+    """Reject absolute, traversal and malformed changed-file paths."""
     text = _string(value, "filename", max_length=1024)
     if text.startswith("/") or "\\" in text:
         raise PayloadError("filename must be a repository-relative POSIX path")
@@ -65,6 +72,24 @@ def _path(value: object) -> str:
 def normalize_paths(paths: Iterable[object]) -> tuple[str, ...]:
     """Return validated, de-duplicated repository paths in stable order."""
     return tuple(sorted({_path(path) for path in paths}))
+
+
+def _author(pull: Mapping[str, object]) -> str | None:
+    """Return the pull-request author login, or ``None`` when unattributable.
+
+    GitHub omits or nulls the ``user`` object for deleted accounts and includes
+    a bracketed ``login`` such as ``dependabot[bot]`` for App actors, so this
+    accepts any bounded printable login and never fabricates an identity.
+    """
+    user = pull.get("user")
+    if user is None:
+        return None
+    if not isinstance(user, dict):
+        raise PayloadError("pull_request.user must be an object or null")
+    login = cast(Mapping[str, object], user).get("login")
+    if login is None:
+        return None
+    return _string(login, "pull_request.user.login", max_length=_MAX_AUTHOR_CHARS)
 
 
 @dataclass(frozen=True)
@@ -95,6 +120,7 @@ class PullRequestSeed:
     head_sha: str
     head_ref: str
     base_ref: str
+    author: str | None = None
 
     def __post_init__(self) -> None:
         """Keep directly constructed seeds within the webhook contract."""
@@ -102,6 +128,8 @@ class PullRequestSeed:
         object.__setattr__(self, "head_sha", _sha(self.head_sha, "pull_request.head.sha"))
         _string(self.head_ref, "pull_request.head.ref", max_length=512)
         _string(self.base_ref, "pull_request.base.ref", max_length=512)
+        if self.author is not None:
+            _string(self.author, "pull_request.user.login", max_length=_MAX_AUTHOR_CHARS)
 
     @classmethod
     def from_api(cls, value: object) -> PullRequestSeed:
@@ -114,6 +142,7 @@ class PullRequestSeed:
             head_sha=_sha(head.get("sha"), "pull_request.head.sha"),
             head_ref=_string(head.get("ref"), "pull_request.head.ref", max_length=512),
             base_ref=_string(base.get("ref"), "pull_request.base.ref", max_length=512),
+            author=_author(pull),
         )
 
     def with_paths(
@@ -127,6 +156,7 @@ class PullRequestSeed:
             base_ref=self.base_ref,
             paths=normalize_paths(paths),
             paths_truncated=paths_truncated,
+            author=self.author,
         )
 
 
@@ -140,6 +170,7 @@ class PullRequestSnapshot:
     base_ref: str
     paths: tuple[str, ...]
     paths_truncated: bool = False
+    author: str | None = None
 
     def __post_init__(self) -> None:
         """Validate direct construction and preserve deterministic path order."""
@@ -149,6 +180,8 @@ class PullRequestSnapshot:
         _string(self.base_ref, "pull_request.base.ref", max_length=512)
         if not isinstance(self.paths_truncated, bool):
             raise PayloadError("paths_truncated must be boolean")
+        if self.author is not None:
+            _string(self.author, "pull_request.user.login", max_length=_MAX_AUTHOR_CHARS)
         normalized = normalize_paths(self.paths)
         object.__setattr__(self, "paths", normalized)
 

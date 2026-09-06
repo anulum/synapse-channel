@@ -21,14 +21,23 @@ MAX_PATHS_PER_NOTICE = 50
 
 
 def _code(value: str) -> str:
+    """Escape untrusted text inside an HTML code element."""
     return f"<code>{html.escape(value, quote=True)}</code>"
 
 
+def _actor(login: str | None) -> str:
+    """Render an escaped author label without adding a mention prefix."""
+    if not login:
+        return ""
+    return f" by {_code(login)}"
+
+
 def _notice_lines(notice: ConflictNotice) -> list[str]:
+    """Render a bounded list of escaped overlap paths."""
     shown = notice.paths[:MAX_PATHS_PER_NOTICE]
     lines = [
-        f"- PR #{notice.other_number} on {_code(notice.other_head_ref)} overlaps on "
-        f"{len(notice.paths)} path(s):"
+        f"- PR #{notice.other_number}{_actor(notice.other_author)} on "
+        f"{_code(notice.other_head_ref)} overlaps on {len(notice.paths)} path(s):"
     ]
     lines.extend(f"  - {_code(path)}" for path in shown)
     if len(notice.paths) > len(shown):
@@ -37,6 +46,7 @@ def _notice_lines(notice: ConflictNotice) -> list[str]:
 
 
 def _summary(report: ConflictReport) -> str:
+    """Disclose incomplete inventories and bounded advisory evidence."""
     lines = [
         "This check is advisory. It does not reserve files, assign work, or block a merge.",
         "",
@@ -46,6 +56,14 @@ def _summary(report: ConflictReport) -> str:
             f"Observed file-scope overlap with {len(report.notices)} open pull request(s) "
             f"while evaluating {report.evaluated_pull_requests} pull request(s)."
         )
+        lines.append(
+            f"Pull request #{report.current_number}{_actor(report.current_author)} "
+            "changes files in the overlaps listed below."
+        )
+        lines.append(
+            "Attribution is by pull-request author; it does not rank, score, or gate any agent."
+        )
+        lines.append("A pull-request author is not evidence of a SYNAPSE claim or agent identity.")
         lines.append("")
         for notice in report.notices:
             lines.extend(_notice_lines(notice))
