@@ -141,6 +141,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "deliberate": EXPERIMENTAL,
     "memory-recall": EXPERIMENTAL,
     "participant": EXPERIMENTAL,
+    "claim-parse": EXPERIMENTAL,
     "resource-bids": EXPERIMENTAL,
     "route-task": EXPERIMENTAL,
     "dispatch": EXPERIMENTAL,

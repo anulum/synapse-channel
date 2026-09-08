@@ -151,6 +151,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_messaging:add_parsers", ("send", "wait", "listen")),
     ("synapse_channel.cli_multihub:add_parsers", ("multihub",)),
     ("synapse_channel.cli:_register_participant_group", ("participant",)),
+    ("synapse_channel.cli_claim_parse:add_parsers", ("claim-parse",)),
     ("synapse_channel.cli_arm:add_parser", ("arm",)),
     ("synapse_channel.cli_waker:add_parsers", ("waker",)),
     (

@@ -16,6 +16,42 @@ an ordinary claim. The hub stores it, replays it from the durable log on restart
 and shows it in the state view, but it never acts on it. That keeps the
 local-first, single-dependency guarantee intact while making claims branch-aware.
 
+## Natural-language claim drafts
+
+`synapse claim-parse` asks an explicitly selected provider for a draft:
+
+```bash
+synapse claim-parse --provider=ollama-api --model=your-model \
+  --name=PROJECT/seat --from-text='Refactor src/auth.py' --json
+```
+
+This experimental command prints `submitted: false` and an argument array for
+the normal `git-claim` command. It never calls the hub or executes that array.
+Without `--json`, it prints a POSIX-shell-quoted command for review.
+Use `--endpoint` only with `ollama-api` to select an explicit generate URL.
+`--uri` selects the hub in the proposed command, not a connection by the drafter.
+
+Provider and owner identity are required; no paid provider is selected by default.
+The selected provider retains its configured credentials, tools, filesystem and
+network permissions. This adapter is not a provider sandbox. Prompt framing is
+not a prompt-injection defence; run only an appropriately restricted provider.
+No repository files are automatically included in the request by this adapter.
+
+Requests are limited to 8192 characters and parsed answers to 32768. Answers must
+be one JSON object with `paths`, `task`, optional `base` (default `main`) and
+optional `scope_note`. Duplicate and unknown keys, invalid types and prose-wrapped
+JSON are rejected. One to 64 paths use a conservative portable relative-path
+subset: no absolute/drive paths, backslashes, traversal segments, terminal controls,
+Windows reserved names or trailing dots/spaces. Legal but nonportable filenames,
+including POSIX newline names, require the ordinary manually reviewed claim flow.
+Base names must be literal branch names; the ambiguous `@` alias is refused.
+
+These are lexical checks, not evidence that paths exist, symlinks stay inside
+the repository, or the proposed scope matches your intent. Review those facts
+before running the printed command. Values bind to options with `=` so model
+text cannot become additional CLI options. No file existence or reservation
+guarantee is inferred from a successfully validated draft.
+
 ## Claim on the current branch
 
 ```bash
