@@ -418,8 +418,9 @@ async def run_conflicts(
     Returns
     -------
     int
-        ``0`` when no conflict is predicted (safe to proceed), ``2`` when one or
-        more are predicted, and ``1`` when the hub is unreachable. The non-zero
+        ``0`` when no conflict is predicted, ``2`` when one or more are
+        predicted, and ``1`` when the hub is unreachable or no state snapshot
+        arrives within the polling budget. The non-zero
         codes let ``synapse conflicts && <merge>`` proceed only on a clean,
         successfully checked result.
     """
@@ -441,10 +442,10 @@ async def run_conflicts(
             if snapshots:
                 break
             await asyncio.sleep(poll_interval)
-        if check_semantic and not snapshots:
-            print("Semantic conflict evidence unavailable: no state snapshot received.")
+        if not snapshots:
+            print("Conflict evidence unavailable: no state snapshot received.")
             return 1
-        claims = (snapshots[-1].get("active_claims") or []) if snapshots else []
+        claims = snapshots[-1].get("active_claims") or []
         conflicts = find_conflicts(claims)
         if check_diff and not check_semantic:
             conflicts = _refine_with_diff(conflicts, runner=runner)

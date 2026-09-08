@@ -356,7 +356,6 @@ Git filenames. Enclosing declarations overlap their nested members, so a class
 edit cannot be declared independent of a method edit. Disjoint declarations
 can remove a predicted overlap; missing grammars, unavailable branches,
 ambiguous merge bases or incomplete syntax retain conservative warnings.
-A missing state snapshot returns an error, not a clean result.
 
 When both flags are set, the semantic pass performs its own file filtering.
 This is a committed-diff advisory view: it does not observe future edits or
@@ -369,7 +368,10 @@ Predicted conflicts (1):
 ```
 
 `synapse conflicts` exits `0` when nothing is predicted, `2` when a conflict is,
-and `1` if the hub is unreachable — so a gate like `synapse conflicts && git
+and `1` if the hub is unreachable or no state snapshot arrives within the polling
+budget. This applies to every mode, including the default without either flag.
+A received empty inventory is distinct from a missing response and can return
+`0`. A gate like `synapse conflicts && git
 merge feature/x` proceeds only on a clean, successfully checked result.
 
 The prediction is computed entirely on the client from the ordinary state

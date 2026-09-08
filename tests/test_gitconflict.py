@@ -9,12 +9,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
 from hub_e2e_helpers import AgentHandle, _free_port, close_agents, connect_agent, running_hub
-from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.core.protocol import MessageType
@@ -453,35 +452,37 @@ async def test_run_conflicts_check_diff_caches_repeated_branches(
     assert len(calls) == 3
 
 
-async def test_run_conflicts_empty_live_snapshot(capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize("check_diff", [False, True])
+@pytest.mark.parametrize("check_semantic", [False, True])
+async def test_run_conflicts_empty_live_snapshot(
+    capsys: pytest.CaptureFixture[str], check_diff: bool, check_semantic: bool
+) -> None:
+    """Accept an actually delivered empty inventory in every prediction mode."""
     async with running_hub(SynapseHub()) as (_hub, uri):
-        rc = await run_conflicts(uri=uri, name="U", runner=lambda _a: "")
+        rc = await run_conflicts(
+            uri=uri, name="U", check_diff=check_diff, check_semantic=check_semantic
+        )
 
     assert rc == 0
     assert "No predicted conflicts." in capsys.readouterr().out
 
 
-async def test_run_conflicts_no_snapshot_response(capsys: pytest.CaptureFixture[str]) -> None:
-    class SilentAgent:
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            self.running = True
+@pytest.mark.parametrize("check_diff", [False, True])
+@pytest.mark.parametrize("check_semantic", [False, True])
+async def test_run_conflicts_no_snapshot_response(
+    capsys: pytest.CaptureFixture[str], check_diff: bool, check_semantic: bool
+) -> None:
+    """Refuse an expired snapshot budget despite a successful live connection."""
+    async with running_hub(SynapseHub()) as (_hub, uri):
+        rc = await run_conflicts(
+            uri=uri,
+            name="U",
+            check_diff=check_diff,
+            check_semantic=check_semantic,
+            attempts=0,
+        )
 
-        async def connect(self) -> None:
-            return None
-
-        async def wait_until_ready(self, *, timeout: float) -> bool:
-            return True
-
-        async def request_state(self) -> None:
-            return None
-
-    rc = await run_conflicts(
-        uri="ws://example.invalid",
-        name="U",
-        agent_factory=cast("type[SynapseAgent]", SilentAgent),
-        runner=lambda _a: "",
-        attempts=0,
-    )
-
-    assert rc == 0
-    assert "No predicted conflicts." in capsys.readouterr().out
+    assert rc == 1
+    output = capsys.readouterr().out
+    assert "no state snapshot received" in output
+    assert "No predicted conflicts." not in output
