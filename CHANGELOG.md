@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- Add a pinned pi 0.85.1 RPC Participant with owner-private resumable sessions,
+  bounded JSONL correlation and full-run settlement. An optional, separately
+  packaged TypeScript extension binds file writes to a live Synapse task,
+  worktree, session and claim epoch; shell and unknown tool effects are denied.
+
 - Add an owner-local, versioned account and quota ledger with auditable
   corrections, shared-pool deduplication, advisory window forecasts, a private
   CLI and a redacted MCP overview. Account labels and balances stay out of the

@@ -2843,6 +2843,7 @@ synapse workflow plan ./workflow.json --evidence ./evidence.json  # hold proof-c
 synapse workflow contention ./workflow.json ~/synapse/hub.db   # yield advice scoped to this workflow
 synapse participant list                                # readiness of every provider driver
 synapse participant ask ollama "summarise this diff" --model llama3   # one turn, print the answer
+synapse participant ask pi "review this diff" --model PROVIDER/MODEL --pi-binary ./integrations/pi/node_modules/.bin/pi
 synapse participant ask claude "review src/foo.py" --context "be terse" --json
 synapse participant ask claude "review src/foo.py" \
     --memory-url http://127.0.0.1:8001 \
@@ -2860,6 +2861,12 @@ synapse participant convene "…" claude codex --dry-run --pricing ./prices.json
 synapse participant costs ~/synapse/hub.db              # per-session spend and telemetry + totals
 synapse participant costs ~/synapse/hub.db --json       # the same report, machine-readable
 ```
+
+The pinned pi RPC participant defaults to no tools. Its optional coding mode
+requires an exact project, repository, task and live claim epoch; query the
+epoch with `synapse adapters pi-claim-status`. See the [pi participant guide](pi.md)
+for the extension installation and the complete command. Pi `write` and `edit`
+checks are cooperative pre-tool guards; `bash` and unknown tools are denied.
 
 Headless provider prompts are an execution trust boundary, not shell text.
 SYNAPSE passes them as one argv value without a shell. Claude additionally runs

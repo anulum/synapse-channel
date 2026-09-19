@@ -51,6 +51,10 @@ from synapse_channel.cli_opencode_adapter import (
     add_opencode_adapter_parser,
     add_opencode_claim_hook_parser,
 )
+from synapse_channel.cli_pi_claim_hook import (
+    add_pi_claim_hook_parser,
+    add_pi_claim_status_parser,
+)
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.kimi_hook_config_file import (
     KimiHookConfigFileError,
@@ -280,6 +284,8 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     add_kimi_claim_hook_parser(group)
     add_mutation_status_parser(group)
     add_opencode_claim_hook_parser(group)
+    add_pi_claim_hook_parser(group)
+    add_pi_claim_status_parser(group)
     add_opencode_adapter_parser(group)
 
     lister = group.add_parser("list", help="Detect tools and report adapter status (read-only).")

@@ -222,6 +222,20 @@ Check source and field statuses before interpreting missing values.
       show_root_heading: true
       show_source: false
 
+## Pinned pi participant
+
+`PiParticipant` implements the typed Participant Fabric interface over a
+subprocess RPC session. Its default is model-only; an explicit `PiClaimBinding`
+loads the separately packaged extension and binds file tool calls to a live
+claim. See the [operator guide](pi.md) for installation and the cooperative
+hook boundary.
+
+::: synapse_channel.participants.headless_pi
+    options:
+      members: [PiParticipant, PiClaimBinding]
+      show_root_heading: true
+      show_source: false
+
 ## Local account and quota evidence
 
 These APIs operate on an owner-local ledger, separate from hub events. See the

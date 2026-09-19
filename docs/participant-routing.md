@@ -84,3 +84,7 @@ The [local account and quota ledger](entitlements.md) retains account, pool and
 window evidence separately. This router does not consume that ledger or treat
 its advisory forecast as a spending reservation. Cross-hub hard limits require
 an authoritative Fleet allocation contract.
+
+The [pi participant](pi.md) reports a model's final usage as observation only.
+Selecting a pi model or enabling its claim guard does not turn those figures
+into verified price evidence or a hard spend reservation.

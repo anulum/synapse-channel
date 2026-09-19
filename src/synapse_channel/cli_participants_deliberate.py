@@ -43,8 +43,9 @@ from synapse_channel.cli_participants_memory import (
     add_memory_arguments,
     wrap_participants,
 )
-from synapse_channel.cli_participants_opencode import (
-    add_opencode_connection_arguments,
+from synapse_channel.cli_participants_opencode import add_opencode_connection_arguments
+from synapse_channel.cli_participants_pi import (
+    add_pi_connection_arguments,
     build_cli_participant,
 )
 from synapse_channel.core.accounting import ModelPrice
@@ -500,6 +501,7 @@ def _add_shared_arguments(parser: argparse.ArgumentParser) -> None:
         "--json", action="store_true", help="Print the full typed transcript as JSON."
     )
     add_opencode_connection_arguments(parser)
+    add_pi_connection_arguments(parser)
     add_memory_arguments(parser)
 
 

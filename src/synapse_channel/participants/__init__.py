@@ -112,6 +112,7 @@ from synapse_channel.participants.headless_opencode import (
     build_opencode_argv,
     compose_opencode_prompt,
 )
+from synapse_channel.participants.headless_pi import PiClaimBinding, PiParticipant
 from synapse_channel.participants.kimi_stream import (
     extract_kimi_session,
     parse_kimi_stream,
@@ -258,6 +259,8 @@ __all__ = [
     "OllamaParticipant",
     "OpenCodeApiParticipant",
     "OpenCodeParticipant",
+    "PiClaimBinding",
+    "PiParticipant",
     "OPENCODE_SCHEMA_VERIFIED",
     "OPENCODE_SCHEMA_VERSION",
     "OrchestrationRound",

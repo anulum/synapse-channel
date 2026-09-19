@@ -40,8 +40,9 @@ from synapse_channel.cli_participants_memory import (
     add_memory_arguments,
     wrap_participants,
 )
-from synapse_channel.cli_participants_opencode import (
-    add_opencode_connection_arguments,
+from synapse_channel.cli_participants_opencode import add_opencode_connection_arguments
+from synapse_channel.cli_participants_pi import (
+    add_pi_connection_arguments,
     build_cli_participant,
 )
 from synapse_channel.participants.api_ollama import OllamaApiParticipant
@@ -55,6 +56,7 @@ from synapse_channel.participants.headless_grok import GrokParticipant
 from synapse_channel.participants.headless_kimi import KimiParticipant
 from synapse_channel.participants.headless_ollama import OllamaParticipant
 from synapse_channel.participants.headless_opencode import OpenCodeParticipant
+from synapse_channel.participants.headless_pi import PiParticipant
 from synapse_channel.participants.opencode_api import OpenCodeApiParticipant
 from synapse_channel.participants.opencode_stream import OPENCODE_SCHEMA_VERIFIED
 from synapse_channel.participants.participant import Participant
@@ -64,7 +66,7 @@ ParticipantBuilder = Callable[..., Participant]
 
 DEFAULT_ASK_TIMEOUT = 600.0
 
-_MODEL_REQUIRED = frozenset({"ollama", "ollama-api"})
+_MODEL_REQUIRED = frozenset({"ollama", "ollama-api", "pi"})
 """Providers whose driver has no configured default model, so ``--model`` is mandatory."""
 
 PROVIDERS: dict[str, ParticipantBuilder] = {
@@ -76,6 +78,7 @@ PROVIDERS: dict[str, ParticipantBuilder] = {
     "ollama-api": OllamaApiParticipant,
     "opencode": OpenCodeParticipant,
     "opencode-api": OpenCodeApiParticipant,
+    "pi": PiParticipant,
     "grok": GrokParticipant,
 }
 """Registered provider drivers, keyed by the name the operator selects."""
@@ -242,6 +245,7 @@ def _cmd_ask(args: argparse.Namespace) -> int:
         topic_id=args.topic or f"participant-cli-{uuid.uuid4().hex[:8]}",
         prompt=args.prompt,
         context=args.context,
+        resume_session=args.pi_resume_session if args.provider == "pi" else "",
         model=args.model,
     )
     result = asyncio.run(participant.take_turn(request))
@@ -310,6 +314,7 @@ def add_parsers(
         help="Seconds the turn may take before the driver reports an error result.",
     )
     add_opencode_connection_arguments(ask)
+    add_pi_connection_arguments(ask)
     add_memory_arguments(ask)
     ask.add_argument("--json", action="store_true", help="Print the full TurnResult as JSON.")
     ask.set_defaults(func=_cmd_ask)

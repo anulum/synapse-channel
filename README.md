@@ -597,6 +597,10 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   [Vendor and provider discovery](docs/vendor-discovery.md) reviews bounded
   public candidate feeds weekly before an integration is considered.
 
+  The optional [pi participant](docs/pi.md) uses pinned pi 0.85.1 RPC. Its
+  separate extension checks live claims before supported file writes; the
+  default participant runs without tools.
+
   Cursor and Claude Desktop can reuse the secret-free
   [`examples/mcp/.mcp.json`](examples/mcp/.mcp.json) template. MCP does not wake
   an idle provider in this adapter; call `synapse_inbox` at turn start and keep
@@ -1669,13 +1673,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.26 |
 | Public API exports | 70 |
-| Package modules | 575 |
-| Classes | 865 |
+| Package modules | 581 |
+| Classes | 872 |
 | Wire message types | 90 |
-| CLI subcommands | 208 |
-| Test functions | 9877 |
+| CLI subcommands | 210 |
+| Test functions | 9935 |
 | Benchmark harnesses | 7 |
-| Documentation pages | 69 |
+| Documentation pages | 70 |
 | GitHub Actions workflows | 27 |
 | Optional-dependency groups | 14 |
 
