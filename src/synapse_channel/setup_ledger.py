@@ -360,7 +360,7 @@ def _decode_record(
         plan_digest=plan_value,
         nonce_digest=nonce_value,
         reserved_at=reserved_at,
-        state=cast(SetupLedgerState, state),
+        state=state,
         effect_receipt_digest=effect_value,
         recovery_receipt_digest=recovery_value,
     )

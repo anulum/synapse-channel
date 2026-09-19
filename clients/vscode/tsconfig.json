@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "bundler",
+    "types": ["node", "vscode"],
     "lib": ["ES2022", "DOM"],
     "outDir": "./out",
     "rootDir": "./src",
