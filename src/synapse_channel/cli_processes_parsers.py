@@ -547,7 +547,22 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     worker.add_argument("--uri", default=default_hub_uri())
     worker.add_argument(
-        "--provider", choices=["openai", "ollama", "rule", "tiered"], default="ollama"
+        "--provider",
+        choices=[
+            "ollama",
+            "rule",
+            "tiered",
+            "openai",
+            "deepseek",
+            "openrouter",
+            "qwen",
+            "mistral",
+            "anthropic",
+            "google",
+            "xai",
+            "moonshot",
+        ],
+        default="ollama",
     )
     worker.add_argument("--model", default="llama3")
     worker.add_argument(
@@ -555,6 +570,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     worker.add_argument("--base-url", default=DEFAULT_OLLAMA_BASE_URL)
     worker.add_argument("--api-key-env", default="OPENAI_API_KEY")
+    worker.add_argument("--allow-paid-api", action="store_true")
+    worker.add_argument("--paid-budget-usd", type=float, default=None)
+    worker.add_argument("--price-quote-file", default=None)
     worker.add_argument("--max-context", type=int, default=8)
     worker.add_argument("--reply-target-mode", choices=["all", "sender"], default="all")
     worker.add_argument("--min-reply-interval", type=float, default=0.7)

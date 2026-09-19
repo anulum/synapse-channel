@@ -28,6 +28,7 @@ import urllib.parse
 import urllib.request
 from typing import Protocol
 
+from synapse_channel.client.provider_http import open_provider_request
 from synapse_channel.core.http_response import read_bounded
 
 
@@ -158,21 +159,23 @@ class OpenAIChatClient:
         )
         try:
             # scheme constrained to http/https at construction
-            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:  # nosec B310
+            with open_provider_request(req, timeout=self.timeout_seconds) as resp:
                 raw = read_bounded(resp, purpose="chat backend response").decode(
                     "utf-8", errors="replace"
                 )
         except urllib.error.HTTPError as exc:
-            detail = read_bounded(exc, purpose="chat backend error body").decode(
-                "utf-8", errors="replace"
-            )
-            raise RuntimeError(f"chat backend HTTP {exc.code}: {detail[:300]}") from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"chat backend connection error: {exc}") from exc
+            raise RuntimeError(f"chat backend HTTP {exc.code}") from None
+        except urllib.error.URLError:
+            raise RuntimeError("chat backend connection error") from None
 
-        data = json.loads(raw)
+        try:
+            data = json.loads(raw)
+        except ValueError as exc:
+            raise RuntimeError("chat backend response parse error") from exc
         try:
             content = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError(f"chat backend response parse error: {raw[:300]}") from exc
+            raise RuntimeError("chat backend response parse error") from exc
+        if not isinstance(content, str):
+            raise RuntimeError("chat backend response parse error")
         return sanitize_text(content, max_len=1000)

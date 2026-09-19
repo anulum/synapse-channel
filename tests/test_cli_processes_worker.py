@@ -150,6 +150,11 @@ def test_egress_warning_openai_flags_context_and_key() -> None:
     assert "https://api.openai.com/v1" in msg
 
 
+def test_egress_warning_paid_loopback_is_silent() -> None:
+    """A paid profile aimed at a local test server does not egress off-host."""
+    assert cli_processes._egress_warning("openai", "http://127.0.0.1:8000/v1") is None
+
+
 def test_egress_warning_openai_without_base_url_names_the_endpoint() -> None:
     assert "the configured endpoint" in (cli_processes._egress_warning("openai", "") or "")
 
@@ -178,10 +183,11 @@ def test_cmd_worker_prints_egress_warning_only_when_off_host(
             _worker_ns(provider="openai", base_url="https://api.openai.com/v1"),
             runner=_close_runner,
         )
-        == 0
+        == 2
     )
     err = capsys.readouterr().err
     assert "WARNING" in err and "SENDS" in err
+    assert "allow-paid-api" in err
 
     # A local backend starts silently.
     assert cli_processes._cmd_worker(_worker_ns(provider="rule"), runner=_close_runner) == 0

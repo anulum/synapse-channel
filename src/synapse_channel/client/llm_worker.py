@@ -30,6 +30,9 @@ from synapse_channel.client.chat_backends import (
     RuleBasedClient,
     sanitize_text,
 )
+from synapse_channel.client.provider_budget import EstimatedSpendGuard, ProviderQuote
+from synapse_channel.client.provider_http import ProviderHTTPClient, ProviderWorkerBackend
+from synapse_channel.client.provider_profiles import PROFILES
 from synapse_channel.core.capability_card_signing import (
     DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
 )
@@ -98,13 +101,21 @@ class SynapseLLMWorker:
     uri : str, optional
         Hub URI. Defaults to :data:`~synapse_channel.client.agent.DEFAULT_HUB_URI`.
     provider : str, optional
-        Backend provider: ``ollama`` (default), ``openai``, or ``rule``.
+        Backend provider: ``ollama`` (default), ``rule``, ``tiered``, or a
+        named paid profile from :mod:`synapse_channel.client.provider_profiles`.
     model : str, optional
         Model identifier for HTTP providers. Defaults to ``"llama3"``.
     base_url : str, optional
         OpenAI-compatible base URL. Defaults to the local Ollama endpoint.
     api_key_env : str, optional
-        Environment variable holding the API key. Defaults to ``"OPENAI_API_KEY"``.
+        Environment variable holding the API key. Named paid profiles use their
+        own default when this is left at ``"OPENAI_API_KEY"``.
+    allow_paid_api : bool, optional
+        Explicit opt-in for paid provider calls.
+    paid_budget_usd : float or None, optional
+        Local estimated spend ceiling for a paid worker.
+    price_quote_file : str or None, optional
+        Dated operator quote for the exact provider and model.
     max_context : int, optional
         Number of recent messages retained for prompt context (floored at 2).
     reply_target_mode : str, optional
@@ -138,6 +149,9 @@ class SynapseLLMWorker:
         model: str = "llama3",
         base_url: str = DEFAULT_OLLAMA_BASE_URL,
         api_key_env: str = "OPENAI_API_KEY",
+        allow_paid_api: bool = False,
+        paid_budget_usd: float | None = None,
+        price_quote_file: str | None = None,
         max_context: int = 8,
         reply_target_mode: str = "all",
         min_reply_interval: float = 0.7,
@@ -157,6 +171,9 @@ class SynapseLLMWorker:
         self.heavy_model = heavy_model or model
         self.base_url = base_url
         self.api_key_env = api_key_env
+        self.allow_paid_api = allow_paid_api
+        self.paid_budget_usd = paid_budget_usd
+        self.price_quote_file = price_quote_file
         self.reply_target_mode = reply_target_mode
         self.min_reply_interval = max(float(min_reply_interval), 0.0)
         self.ready_timeout = max(float(ready_timeout), 0.1)
@@ -183,22 +200,37 @@ class SynapseLLMWorker:
         Returns
         -------
         ChatBackend
-            A :class:`RuleBasedClient`, :class:`OpenAIChatClient`, or a
-            :class:`~synapse_channel.client.routing.TieredChatClient` for ``tiered``.
+            A rule, Ollama, tiered, or paid provider backend.
 
         Raises
         ------
         RuntimeError
-            If ``provider`` is not ``rule``, ``openai``, ``ollama``, or ``tiered``.
+            If ``provider`` has no registered profile.
         """
         if self.provider == "rule":
             return RuleBasedClient()
-        if self.provider in ("openai", "ollama"):
+        if self.provider == "ollama":
             return self._http_client(self.model)
+        if self.provider in PROFILES:
+            profile = PROFILES[self.provider]
+            key_env = self.api_key_env if self.api_key_env != "OPENAI_API_KEY" else profile.key_env
+            key = os.getenv(key_env, "").strip()
+            if not self.allow_paid_api or self.paid_budget_usd is None or not self.price_quote_file:
+                raise ValueError(
+                    "paid provider requires --allow-paid-api, "
+                    "--paid-budget-usd and --price-quote-file"
+                )
+            quote = ProviderQuote.load(self.price_quote_file)
+            budget = EstimatedSpendGuard(quote, budget_usd=self.paid_budget_usd)
+            effective_base = (
+                profile.base_url if self.base_url == DEFAULT_OLLAMA_BASE_URL else self.base_url
+            )
+            client = ProviderHTTPClient(profile, api_key=key, base_url=effective_base)
+            return ProviderWorkerBackend(client, model=self.model, budget=budget)
         if self.provider == "tiered":
             return self._build_tiered_client()
         raise RuntimeError(
-            f"Unsupported provider '{self.provider}'. Use openai, ollama, rule, or tiered."
+            f"Unsupported provider '{self.provider}'. Use a named profile, rule, or tiered."
         )
 
     def _http_client(self, model: str) -> OpenAIChatClient:

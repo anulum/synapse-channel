@@ -16,7 +16,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 from synapse_channel.cli_processes_runtime import _run
-from synapse_channel.client.llm_worker import SynapseLLMWorker
+from synapse_channel.client.llm_worker import DEFAULT_OLLAMA_BASE_URL, SynapseLLMWorker
+from synapse_channel.client.provider_profiles import PROFILES
 from synapse_channel.core.identity_keys import IdentityKeyError
 from synapse_channel.core.logging_setup import configure_logging
 
@@ -26,10 +27,9 @@ _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
 def _egress_warning(provider: str, base_url: str) -> str | None:
     """Return a one-line warning when a worker will send channel context off-host.
 
-    The ``openai`` provider posts recent channel context and the bearer token read
-    from ``--api-key-env`` to its configured endpoint; any provider pointed at a
-    non-loopback ``base_url`` likewise leaves the machine. The offline ``rule``
-    backend never touches the network and returns ``None``.
+    A paid provider posts recent channel context and its API credential to the
+    configured endpoint. Any provider on a non-loopback ``base_url`` sends
+    context off-host. The offline ``rule`` backend returns ``None``.
 
     Parameters
     ----------
@@ -47,9 +47,11 @@ def _egress_warning(provider: str, base_url: str) -> str | None:
     if provider == "rule":
         return None
     host = (urlparse(base_url).hostname or "").lower()
-    if provider != "openai" and host in _LOCAL_HOSTS:
+    if host and host in _LOCAL_HOSTS:
         return None
-    what = "recent channel context" + (" and the API key" if provider == "openai" else "")
+    what = "recent channel context" + (
+        " and the API key" if provider not in {"ollama", "tiered"} else ""
+    )
     return f"this worker SENDS {what} to {base_url or 'the configured endpoint'}"
 
 
@@ -69,7 +71,11 @@ def _cmd_worker(
     """
     logging_configurator(log_format=args.log_format, level=args.log_level)
     name = f"{args.prefix}{args.name}"
-    warning = _egress_warning(args.provider, args.base_url)
+    warning_base = args.base_url
+    if args.provider in PROFILES and PROFILES[args.provider].paid:
+        if warning_base == DEFAULT_OLLAMA_BASE_URL:
+            warning_base = PROFILES[args.provider].base_url
+    warning = _egress_warning(args.provider, warning_base)
     if warning:
         print(f"[{name}] WARNING: {warning}.", file=sys.stderr)
     try:
@@ -80,6 +86,9 @@ def _cmd_worker(
             model=args.model,
             base_url=args.base_url,
             api_key_env=args.api_key_env,
+            allow_paid_api=getattr(args, "allow_paid_api", False),
+            paid_budget_usd=getattr(args, "paid_budget_usd", None),
+            price_quote_file=getattr(args, "price_quote_file", None),
             max_context=args.max_context,
             reply_target_mode=args.reply_target_mode,
             min_reply_interval=args.min_reply_interval,

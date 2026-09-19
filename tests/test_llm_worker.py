@@ -28,6 +28,7 @@ from synapse_channel.client.llm_worker import (
     SynapseLLMWorker,
     is_service_message,
 )
+from synapse_channel.client.provider_http import ProviderWorkerBackend
 from synapse_channel.core.hub import SynapseHub
 
 
@@ -114,12 +115,10 @@ def test_build_client_rule() -> None:
     assert isinstance(worker.client, RuleBasedClient)
 
 
-def test_build_client_openai_keeps_base() -> None:
+def test_build_client_openai_requires_explicit_spend_controls() -> None:
     with _env_var("OPENAI_API_KEY", None):
-        worker = _worker(provider="openai", base_url=OPENAI_DEFAULT_BASE_URL)
-    assert isinstance(worker.client, OpenAIChatClient)
-    assert worker.client.base_url == OPENAI_DEFAULT_BASE_URL
-    assert worker.client.api_key == "ollama"  # falls back when env is empty
+        with pytest.raises(ValueError, match="allow-paid-api"):
+            _worker(provider="openai", base_url=OPENAI_DEFAULT_BASE_URL)
 
 
 def test_build_client_ollama_redirects_openai_default() -> None:
@@ -134,11 +133,40 @@ def test_build_client_ollama_keeps_custom_base() -> None:
     assert worker.client.base_url == "http://gpu:11434/v1"
 
 
-def test_build_client_uses_api_key_from_env() -> None:
+def test_build_client_uses_api_key_from_env(tmp_path: object) -> None:
+    from pathlib import Path
+
+    quote = Path(str(tmp_path)) / "quote.json"
+    quote.write_text(
+        json.dumps(
+            {
+                "provider": "openai",
+                "model": "llama3",
+                "currency": "USD",
+                "input_per_million": 1.0,
+                "output_per_million": 2.0,
+                "cache_read_per_million": None,
+                "cache_write_per_million": None,
+                "reasoning_per_million": None,
+                "source_url": "https://example.test/pricing",
+                "source_date": "2026-09-19",
+                "price_revision": "2026-09-19-test",
+                "observed_at": time.time() - 10,
+                "valid_until": time.time() + 3600,
+            }
+        ),
+        encoding="utf-8",
+    )
     with _env_var("MY_KEY", "secret-token"):
-        worker = _worker(provider="openai", api_key_env="MY_KEY")
-    assert isinstance(worker.client, OpenAIChatClient)
-    assert worker.client.api_key == "secret-token"
+        worker = _worker(
+            provider="openai",
+            api_key_env="MY_KEY",
+            allow_paid_api=True,
+            paid_budget_usd=1.0,
+            price_quote_file=str(quote),
+        )
+    assert isinstance(worker.client, ProviderWorkerBackend)
+    assert worker.client.client.api_key == "secret-token"
 
 
 def test_build_client_rejects_unknown_provider() -> None:
@@ -225,7 +253,7 @@ async def test_process_item_sends_reply_to_room() -> None:
             worker, task, observer = await _worker_and_observer(
                 uri,
                 name="ALPHA",
-                provider="openai",
+                provider="ollama",
                 base_url=f"{server.url}/v1",
             )
             try:
@@ -268,7 +296,7 @@ async def test_process_item_reports_backend_error() -> None:
             worker, task, observer = await _worker_and_observer(
                 uri,
                 name="ALPHA",
-                provider="openai",
+                provider="ollama",
                 base_url=f"{server.url}/v1",
             )
             try:

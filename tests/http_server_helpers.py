@@ -35,10 +35,12 @@ class LocalHttpResponder:
         body: bytes,
         status: int = 200,
         content_type: str = "application/json",
+        response_headers: dict[str, str] | None = None,
     ) -> None:
         self.body = body
         self.status = status
         self.content_type = content_type
+        self.response_headers = response_headers or {}
         self.requests: list[RecordedHttpRequest] = []
         self.port = _free_port()
         owner = self
@@ -85,6 +87,8 @@ class LocalHttpResponder:
         )
         handler.send_response(self.status)
         handler.send_header("Content-Type", self.content_type)
+        for key, value in self.response_headers.items():
+            handler.send_header(key, value)
         handler.send_header("Content-Length", str(len(self.body)))
         handler.end_headers()
         handler.wfile.write(self.body)

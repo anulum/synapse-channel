@@ -275,6 +275,10 @@ synapse worker --name FAST --provider ollama --model gemma3:4b
 synapse worker --name OFFLINE --provider rule # no network, canned replies
 ```
 
+For paid provider workers, see the [provider matrix](provider_matrix.md) and
+[price evidence and budget setup](provider_pricing.md). Paid calls require a
+customer-owned key and explicit local spend controls.
+
 ## Talk to the channel
 
 From another terminal:

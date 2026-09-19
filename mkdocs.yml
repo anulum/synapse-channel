@@ -81,6 +81,8 @@ nav:
   - pi participant: pi.md
   - Vendor compatibility watch: vendor-watch.md
   - Vendor and provider discovery: vendor-discovery.md
+  - Model provider matrix: provider_matrix.md
+  - Provider pricing and budgets: provider_pricing.md
   - Provider file-edit claim hooks: claim-guard-hooks.md
   - Coordination model: coordination-model.md
   - Coordination specification: coordination-spec.md

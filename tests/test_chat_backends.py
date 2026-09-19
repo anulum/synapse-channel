@@ -107,6 +107,15 @@ def test_generate_raises_on_http_error() -> None:
             client.generate(system_prompt="s", user_prompt="u")
 
 
+def test_generate_error_does_not_echo_untrusted_body() -> None:
+    """A provider's error body may contain secrets and is never user-facing."""
+    with LocalHttpResponder(body=b"private-response-token", status=401) as server:
+        client = OpenAIChatClient(api_key="k", model="m", base_url=server.url, timeout_seconds=3.0)
+        with pytest.raises(RuntimeError) as captured:
+            client.generate(system_prompt="s", user_prompt="u")
+    assert "private-response-token" not in str(captured.value)
+
+
 def test_generate_raises_on_connection_error() -> None:
     client = OpenAIChatClient(
         api_key="k",
