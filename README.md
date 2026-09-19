@@ -588,6 +588,8 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   the existing claim-aware edit hook and reversible profile onboarding.
   The [vendor compatibility watch](docs/vendor-watch.md) checks official
   releases daily and records which host versions have actually been verified.
+  [Vendor and provider discovery](docs/vendor-discovery.md) reviews bounded
+  public candidate feeds weekly before an integration is considered.
 
   Cursor and Claude Desktop can reuse the secret-free
   [`examples/mcp/.mcp.json`](examples/mcp/.mcp.json) template. MCP does not wake
@@ -1665,10 +1667,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 851 |
 | Wire message types | 80 |
 | CLI subcommands | 203 |
-| Test functions | 9770 |
+| Test functions | 9782 |
 | Benchmark harnesses | 7 |
-| Documentation pages | 67 |
-| GitHub Actions workflows | 26 |
+| Documentation pages | 68 |
+| GitHub Actions workflows | 27 |
 | Optional-dependency groups | 14 |
 
 This snapshot is a static inventory generated from the source tree. Performance and coverage claims have their own committed evidence — see `VALIDATION.md` and `benchmarks/`.

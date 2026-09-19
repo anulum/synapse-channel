@@ -3,14 +3,14 @@
     "benchmark_harnesses": 7,
     "classes": 851,
     "cli_subcommands": 203,
-    "documentation_pages": 67,
+    "documentation_pages": 68,
     "optional_dependency_groups": 14,
     "package_modules": 562,
     "public_api_exports": 70,
-    "tests": 9770,
+    "tests": 9782,
     "version": "0.99.26",
     "wire_message_types": 80,
-    "workflows": 26
+    "workflows": 27
   },
   "project": "SYNAPSE CHANNEL",
   "schema_version": "capability-manifest.v1"

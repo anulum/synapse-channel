@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- Add bounded public vendor/provider discovery for model APIs, MCP servers and
+  agent host candidates, with provenance, manual alias review and a weekly
+  report. Discovery never activates a provider or changes support claims.
+
 - Add a read-only daily official-source vendor watch with a dated compatibility
   matrix, installed-version observations, stale-review and source-failure
   handling, and a scheduled report. New releases require real host validation

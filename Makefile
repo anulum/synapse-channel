@@ -13,7 +13,7 @@ SRC := src tests benchmarks
 .DEFAULT_GOAL := help
 
 .PHONY: help install install-hooks lint fmt typecheck test cov preflight \
-	preflight-fast reuse manifest manifest-check build docs docs-build bench vendor-watch clean
+	preflight-fast reuse manifest manifest-check build docs docs-build bench vendor-watch vendor-discovery clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -75,6 +75,10 @@ bench: ## Run the committed benchmark harnesses
 
 vendor-watch: ## Check official vendor releases against verified host versions
 	$(PY) tools/vendor_watch.py --strict --report build/vendor-watch-report.json
+
+vendor-discovery: ## Review bounded public vendor and provider candidate feeds
+	$(PY) tools/vendor_discovery.py --strict --report build/vendor-discovery.json \
+		--next-catalog build/vendor-catalog-proposal.json
 
 clean: ## Remove build artefacts and caches
 	rm -rf build dist *.egg-info src/*.egg-info .pytest_cache .ruff_cache \

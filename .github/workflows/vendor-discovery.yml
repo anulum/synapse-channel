@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — read-only public candidate discovery
+name: vendor-discovery
+
+on:
+  schedule:
+    - cron: "27 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  public-candidates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Compare public feeds with the reviewed catalog
+        run: |
+          python tools/vendor_discovery.py --strict \
+            --report "$RUNNER_TEMP/vendor-discovery.json" \
+            --next-catalog "$RUNNER_TEMP/vendor-catalog-proposal.json"
+      - name: Summarize review queue
+        if: always()
+        env:
+          REPORT_PATH: ${{ runner.temp }}/vendor-discovery.json
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["REPORT_PATH"])
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          if not path.exists():
+              summary.write_text("## Vendor discovery\n\nSource check failed before a report was written.\n")
+              raise SystemExit(1)
+          report = json.loads(path.read_text())
+          lines = [
+              "## Vendor discovery", "",
+              f"Checked: {report['checked_at']}; next review: {report['next_review_at']}",
+              f"Candidates: {report['counts']['persisted']}; review queue: "
+              f"{report['counts']['review_queue']}", "",
+              "| Source | Status | Count |", "|---|---|---|",
+          ]
+          for name, row in report["sources"].items():
+              lines.append(f"| {name} | {row['status']} | {row.get('count', 'unknown')} |")
+          summary.write_text("\n".join(lines) + "\n")
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: vendor-discovery-review
+          path: |
+            ${{ runner.temp }}/vendor-discovery.json
+            ${{ runner.temp }}/vendor-catalog-proposal.json
+          if-no-files-found: warn
+          retention-days: 7
