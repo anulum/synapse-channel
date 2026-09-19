@@ -64,6 +64,12 @@ one repository from receiving overlapping live authority. Documented provider
 hooks and the staged Git gate enforce that authority only on their covered
 mutation surfaces.
 
+### Watch the presentation
+
+[![SYNAPSE CHANNEL presentation video on YouTube](https://i.ytimg.com/vi/Dlyn7k0M_Xs/hqdefault.jpg)](https://www.youtube.com/watch?v=Dlyn7k0M_Xs)
+
+[Watch the SYNAPSE CHANNEL presentation on YouTube](https://www.youtube.com/watch?v=Dlyn7k0M_Xs) (8 minutes; starts from the beginning).
+
 > **New here?** Read [**Why SYNAPSE CHANNEL**](docs/why-synapse.md) — a
 > five-minute read on what it is, what you build on it, how it differs from the
 > tools next to it, and why coordination becomes the bottleneck once you run more
