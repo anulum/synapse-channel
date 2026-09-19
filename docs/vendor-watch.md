@@ -56,3 +56,19 @@ versus installed/tested 1.17.20. Pi had no local executable; its official
 stable release was 0.85.1. The official MCP specification repository's latest
 release tag was 2026-07-28; no remote MCP profile is marked verified. These
 are dated observations, not claims that the newer releases are compatible.
+
+The same-day isolated host review subsequently accepted Claude Code 2.1.278
+and OpenCode 1.18.31 for the packaged integrations. Claude's official strict
+plugin validator, isolated plugin load and live hub claim guard passed without
+a model turn. OpenCode's official Linux x64 release asset was checked against
+its published SHA-256; real JSONL, ACP session creation and prompt through a
+local scripted provider, authenticated server and live hub claim guard journeys
+passed. The matrix records
+the new tested versions and retains the previous 2.1.273 and 1.17.20 versions
+as rollback references. The workstation's installed hosts were not upgraded.
+The same-day C03 acceptance also verified Pi 0.85.1 with a local model,
+native extension and real hub claim checks; its optional coding mode remains
+subject to the documented cooperative hook boundary.
+The OpenCode macOS, Windows and Linux arm64 release assets have official
+digests in the compatibility manifest; their executable workflow tests are
+separate platform gates when the local change is published.

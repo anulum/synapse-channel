@@ -22,10 +22,17 @@ start OpenCode, a Synapse hub, or a provider turn.
 | Server participant | Run and cancel an authenticated long-lived server turn | Bounded HTTP(S) API |
 | ACP editor face | Use OpenCode from an ACP-compatible IDE | JSON-RPC over stdio |
 
-The verified contract is **OpenCode 1.17.20**, official tag commit
-`4473fc3c9055046183990a965d68df3db7ea6f62`. Both participant drivers refuse a
+The verified contract is **OpenCode 1.18.31**, official tag commit
+`014614d35b397775e5d397a490fc72368c894ec2`. Both participant drivers refuse a
 different server or CLI version instead of attempting to parse an unknown
 schema.
+
+The 1.18.31 review checked the official Linux x64 archive and extracted
+binary, then ran JSONL, ACP, authenticated server and claim-guard journeys
+against a local scripted provider and real Synapse hub. The previous 1.17.20
+contract remains a rollback reference. Other platform archives are digest
+pinned in the compatibility manifest and receive their own executable checks
+in the corresponding workflow; an asset digest alone is not a runtime pass.
 
 ## Install the bridge
 
@@ -34,7 +41,7 @@ Install the MCP extra and verify that OpenCode is the pinned version:
 ```bash
 python -m pip install 'synapse-channel[mcp]'
 opencode --version
-# 1.17.20
+# 1.18.31
 ```
 
 Claim the paths this OpenCode seat may edit, then install the project adapter:
@@ -196,7 +203,7 @@ synapse participant ask opencode-api "Review the current claim boundary"
 
 `opencode` runs a local `opencode run --format json` process and normalizes its
 typed JSONL events. `opencode-api` negotiates `/global/health`, requires version
-1.17.20, creates or resumes a session, posts a bounded text prompt, and maps the
+1.18.31, creates or resumes a session, posts a bounded text prompt, and maps the
 source-verified response. Cancellation performs a best-effort
 `/session/{id}/abort` request.
 
@@ -258,7 +265,7 @@ with OpenCode's `--password` flag because command-line arguments may be visible
 to other local processes.
 
 Prefer the API participant when Synapse must capture a returned answer.
-OpenCode 1.17.20's non-interactive `run --attach` path posts the prompt but
+OpenCode 1.18.31's non-interactive `run --attach` path posts the prompt but
 returns before its event subscriber is awaited, so the real CLI can exit zero
 with empty stdout even though the server received and executed the prompt. The
 focused acceptance test pins that behavior instead of treating an empty stream
@@ -271,7 +278,7 @@ when the expected JSONL completion is absent.
 
 ## ACP and IDE integration
 
-OpenCode 1.17.20 exposes an ACP subprocess:
+OpenCode 1.18.31 exposes an ACP subprocess:
 
 ```bash
 opencode acp --cwd /absolute/project
@@ -284,7 +291,7 @@ HTTP and SSE MCP capabilities, and optional `terminal-auth` metadata. The ACP
 process loads the same project configuration, so the installed Synapse MCP entry
 and native mutation plugin remain part of the OpenCode runtime.
 
-Official OpenCode 1.17.20 documentation supplies configurations for Zed,
+Current official OpenCode documentation supplies configurations for Zed,
 JetBrains IDEs, Avante.nvim, and CodeCompanion.nvim. The common launch contract
 is:
 
@@ -328,7 +335,7 @@ SHA-256, require a bounded single regular root member, and create the binary
 through component-by-component no-follow parent traversal without overwriting an
 existing path. The downloaded process receives a minimal cross-platform
 environment allowlist with isolated home/config/temp roots rather than caller
-credentials. Each lane then requires CLI version 1.17.20 and performs a real ACP
+credentials. Each lane then requires CLI version 1.18.31 and performs a real ACP
 initialize exchange:
 
 | Platform artifact | Public runner | Gate |
@@ -352,7 +359,7 @@ terminal-auth command metadata.
 
 The focused `opencode-integration` workflow installs the hash-locked Python
 dependency sets, pins OpenCode's official Linux x64 archive and extracted binary
-by SHA-256, verifies exact version 1.17.20, builds the wheel, checks its OpenCode
+by SHA-256, verifies exact version 1.18.31, builds the wheel, checks its OpenCode
 modules, and runs only the OpenCode unit and real-process cohort.
 
 The separate `opencode-editor-e2e` workflow does not substitute a synthetic ACP
@@ -506,7 +513,7 @@ isolation.
 
 ## Source references
 
-- [OpenCode 1.17.20 release](https://github.com/anomalyco/opencode/releases/tag/v1.17.20)
+- [OpenCode 1.18.31 release](https://github.com/anomalyco/opencode/releases/tag/v1.18.31)
 - [OpenCode MCP configuration](https://opencode.ai/docs/mcp-servers/)
 - [OpenCode ACP support](https://opencode.ai/docs/acp/)
 - [OpenCode CLI](https://opencode.ai/docs/cli/)

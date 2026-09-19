@@ -77,7 +77,7 @@ def test_repository_uses_one_complete_immutable_compatibility_contract() -> None
     contract = load_compatibility()
 
     assert contract.repository == "anomalyco/opencode"
-    assert contract.version == "1.17.20"
+    assert contract.version == "1.18.31"
     assert len(contract.artifacts) == 12
     assert sum(artifact.smoke for artifact in contract.artifacts) == 5
     assert len(contract.components) == 11
@@ -302,13 +302,13 @@ def test_upstream_verifier_accepts_all_pinned_assets_and_reports_latest() -> Non
 
     assert verify_upstream(contract, release, latest, tag_ref) == {
         "artifact_count": 12,
-        "latest_tag": "v1.17.20",
-        "pinned_tag": "v1.17.20",
+        "latest_tag": "v1.18.31",
+        "pinned_tag": "v1.18.31",
         "pinned_is_latest": True,
         "update_available": False,
     }
 
-    latest["tag_name"] = "v1.18.0"
+    latest["tag_name"] = "v1.19.0"
     report = verify_upstream(contract, release, latest, tag_ref)
     assert report["pinned_is_latest"] is False
     assert report["update_available"] is True
@@ -422,7 +422,7 @@ def test_upstream_verifier_fails_closed_on_release_drift(mutation: str, message:
 def test_contract_cli_writes_machine_readable_advisory(tmp_path: Path) -> None:
     contract = load_compatibility()
     release, latest, tag_ref = _official_evidence(contract)
-    latest["tag_name"] = "v1.18.0"
+    latest["tag_name"] = "v1.19.0"
     release_path = tmp_path / "release.json"
     latest_path = tmp_path / "latest.json"
     tag_ref_path = tmp_path / "tag-ref.json"
@@ -458,13 +458,13 @@ def test_contract_cli_writes_machine_readable_advisory(tmp_path: Path) -> None:
         "artifact_count": 12,
         "client_count": 4,
         "component_count": 11,
-        "latest_tag": "v1.18.0",
+        "latest_tag": "v1.19.0",
         "pinned_is_latest": False,
-        "pinned_tag": "v1.17.20",
+        "pinned_tag": "v1.18.31",
         "update_available": True,
     }
     assert output_path.read_text(encoding="utf-8").splitlines() == [
-        "pinned_tag=v1.17.20",
-        "latest_tag=v1.18.0",
+        "pinned_tag=v1.18.31",
+        "latest_tag=v1.19.0",
         "update_available=true",
     ]

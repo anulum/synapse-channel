@@ -85,7 +85,11 @@ def test_official_document_parsers_refuse_missing_and_prerelease() -> None:
 def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None:
     """A missing source never appears as unchanged or as a usable latest version."""
     matrix = load_matrix(DEFAULT_MATRIX)
-    same_notes = parse_release("claude-markdown", _source_payload("claude-code", "2.1.273"))[2]
+    assert matrix["surfaces"]["claude-code"]["verified_version"] == "2.1.278"
+    assert matrix["surfaces"]["opencode"]["verified_version"] == "1.18.31"
+    assert matrix["surfaces"]["pi"]["verified_version"] == "0.85.1"
+    matrix["surfaces"]["opencode"]["verified_version"] = "1.17.20"
+    same_notes = parse_release("claude-markdown", _source_payload("claude-code", "2.1.278"))[2]
     matrix["surfaces"]["claude-code"]["reviewed_notes_sha256"] = hashlib.sha256(
         same_notes.encode()
     ).hexdigest()
@@ -96,7 +100,7 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
         if name == "pi":
             raise OSError("offline")
         if name == "claude-code":
-            return _source_payload(name, "2.1.273")
+            return _source_payload(name, "2.1.278")
         if name == "opencode":
             return _source_payload(name, "1.18.31", "Breaking Changes: hook permission")
         if name == "gemini-cli":

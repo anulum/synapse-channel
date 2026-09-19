@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from cli_e2e_helpers import git_repo, isolated_hub, run_cli
+from fixtures.opencode.acp import acp_session_prompt
 from fixtures.opencode.runtime import (
     TEST_MODEL,
     ScriptedLlmServer,
@@ -91,6 +92,31 @@ def test_real_cli_jsonl_emitter_and_acp_handshake(tmp_path: Path) -> None:
         assert result["authMethods"][0]["_meta"]["terminal-auth"]
 
 
+def test_real_acp_session_and_scripted_provider_prompt(tmp_path: Path) -> None:
+    binary = find_opencode()
+    home = tmp_path / "home"
+    home.mkdir()
+    with ScriptedLlmServer() as llm:
+        environment = isolated_environment(home, llm.url, pure=True, disable_project_config=True)
+        configuration = json.loads(environment["OPENCODE_CONFIG_CONTENT"])
+        configuration["model"] = TEST_MODEL
+        environment["OPENCODE_CONFIG_CONTENT"] = json.dumps(configuration)
+        llm.enqueue_text("ACP session response")
+
+        session_id, stop_reason, rendered, stderr = acp_session_prompt(
+            binary,
+            cwd=tmp_path,
+            env=environment,
+            prompt="Return the deterministic response",
+        )
+        assert session_id
+        assert stop_reason == "end_turn"
+        assert rendered == "ACP session response"
+        assert stderr == ""
+        assert len(llm.prompt_requests) == 1
+        assert llm.prompt_requests[0]["model"] == "test-model"
+
+
 def test_real_authenticated_server_attach_and_direct_api(tmp_path: Path) -> None:
     binary = find_opencode()
     home = tmp_path / "home"
@@ -139,7 +165,7 @@ def test_real_authenticated_server_attach_and_direct_api(tmp_path: Path) -> None
                 env=attached_environment,
             )
             _assert_success(attached.returncode, attached.stdout, attached.stderr)
-            # OpenCode 1.17.20 returns from non-interactive attach after the prompt
+            # OpenCode 1.18.31 returns from non-interactive attach after the prompt
             # POST instead of draining its subscribed event stream. Prove the remote
             # execution reached the server; use the direct API path below for results.
             assert attached.stdout == ""

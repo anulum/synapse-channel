@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- Validate Claude Code 2.1.278 and OpenCode 1.18.31 against the packaged
+  integrations. Exact host checks cover plugin onboarding, OpenCode JSONL,
+  ACP sessions, authenticated API and live claim enforcement; older host
+  versions remain documented rollback references.
+
 - Add a pinned pi 0.85.1 RPC Participant with owner-private resumable sessions,
   bounded JSONL correlation and full-run settlement. An optional, separately
   packaged TypeScript extension binds file writes to a live Synapse task,

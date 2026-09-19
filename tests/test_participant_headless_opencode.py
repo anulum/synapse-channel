@@ -23,7 +23,7 @@ from synapse_channel.participants.headless_opencode import (
 
 
 class FakeRunner:
-    def __init__(self, *, version: str = "1.17.20", returncode: int = 0) -> None:
+    def __init__(self, *, version: str = "1.18.31", returncode: int = 0) -> None:
         self.version = version
         self.returncode = returncode
         self.calls: list[tuple[list[str], Mapping[str, str] | None]] = []
@@ -105,7 +105,7 @@ def test_version_drift_refuses_turn_before_prompt_process(tmp_path: Path) -> Non
     participant = OpenCodeParticipant("seat/opencode", directory=tmp_path, runner=runner)
     result = participant.run_turn(TurnRequest("topic", "prompt"))
     assert result["is_error"] is True
-    assert "outside verified schema 1.17.20" in result["reason"]
+    assert "outside verified schema 1.18.31" in result["reason"]
     assert len(runner.calls) == 1
 
 

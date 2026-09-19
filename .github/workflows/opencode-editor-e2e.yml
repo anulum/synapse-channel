@@ -140,15 +140,15 @@ jobs:
           python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
           python -m pip install -e . --no-deps
           python -m pip check
-      - name: Install exact OpenCode 1.17.20
+      - name: Install exact OpenCode 1.18.31
         env:
-          OPENCODE_ARCHIVE_SHA256: b7100c0ad0980fba25d595123b4219a6fdc1fbd456dcb64859236741e199c564
-          OPENCODE_BINARY_SHA256: 373af49ceba30c1b64e964463a64f8065103f942f240933a955f6c461e1a67f6
-          OPENCODE_URL: https://github.com/anomalyco/opencode/releases/download/v1.17.20/opencode-linux-x64.tar.gz
+          OPENCODE_ARCHIVE_SHA256: e9312be75ed803b7415fc2aeabda1f4fe938912a39673762dc0c38c0e11ebde4
+          OPENCODE_BINARY_SHA256: f9dab32248695e9ebd56b16a1921798fd85112cf5a69c7dfd0cabc1e17be4a11
+          OPENCODE_URL: https://github.com/anomalyco/opencode/releases/download/v1.18.31/opencode-linux-x64.tar.gz
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/opencode-linux-x64.tar.gz"
-          bin_dir="$RUNNER_TEMP/opencode-1.17.20/bin"
+          bin_dir="$RUNNER_TEMP/opencode-1.18.31/bin"
           mkdir -p "$bin_dir"
           curl --fail --location --proto '=https' --proto-redir '=https' \
             --tlsv1.2 --retry 3 --output "$archive" "$OPENCODE_URL"
@@ -158,7 +158,7 @@ jobs:
           chmod 0755 "$bin_dir/opencode"
           printf '%s  %s\n' "$OPENCODE_BINARY_SHA256" "$bin_dir/opencode" \
             | sha256sum --check --strict
-          test "$("$bin_dir/opencode" --version)" = "1.17.20"
+          test "$("$bin_dir/opencode" --version)" = "1.18.31"
           echo "OPENCODE_BIN=$bin_dir/opencode" >> "$GITHUB_ENV"
       - name: Install exact editor client and ACP integration
         env:

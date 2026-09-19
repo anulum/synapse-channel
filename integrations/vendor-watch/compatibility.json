@@ -5,12 +5,12 @@
   "review_interval_days": 7,
   "surfaces": {
     "claude-code": {
-      "verified_version": "2.1.273",
+      "verified_version": "2.1.278",
       "reviewed_notes_sha256": "7335f869ffd6fe4417b16b061f8ffbed8d63f6ce588c019dc04271ccaaa9e3df",
-      "verification": "C02 plugin strict host validator and isolated hub/claim test",
+      "verification": "C21 exact 2.1.278 plugin validator, isolated host profile and real hub/claim test",
       "capability_class": "native",
       "owning_adapter": "integrations/claude-code",
-      "migration_decision": "Keep 2.1.273 accepted; validate 2.1.278 before raising the pin."
+      "migration_decision": "Admit 2.1.278 after exact host and plugin journey; retain 2.1.273 as the previous verified rollback version."
     },
     "codex-cli": {
       "verified_version": null,
@@ -29,20 +29,20 @@
       "migration_decision": "No packaged Gemini extension accepted; inspect 0.60.0 for candidate scope."
     },
     "pi": {
-      "verified_version": null,
+      "verified_version": "0.85.1",
       "reviewed_notes_sha256": "49e0d7dd926e0c0ba553f1275bf9dafb0dfb226f0c80dfe8b75543a5a8887e9c",
-      "verification": "C03 participant and extension remain open",
-      "capability_class": "unsupported",
-      "owning_adapter": "C03 pi participant",
-      "migration_decision": "No host binary or accepted extension; evaluate 0.85.1 under C03."
+      "verification": "C03 pinned 0.85.1 RPC, local model, native extension and real hub claim journey",
+      "capability_class": "native",
+      "owning_adapter": "integrations/pi",
+      "migration_decision": "Admit 0.85.1 for the governed participant and optional extension after the C03 local acceptance journey."
     },
     "opencode": {
-      "verified_version": "1.17.20",
+      "verified_version": "1.18.31",
       "reviewed_notes_sha256": "f3147856314d4851990fe246243afaf82c130e8d4d2a7de22ad57b45f89d695a",
-      "verification": "Pinned OpenCode JSONL emitter and CI compatibility contract",
+      "verification": "C21 exact 1.18.31 JSONL, ACP, authenticated server and real hub claim-guard journeys",
       "capability_class": "native",
       "owning_adapter": "integrations/opencode",
-      "migration_decision": "Keep 1.17.20 accepted; validate 1.18.31 before changing pin."
+      "migration_decision": "Admit 1.18.31 after exact local journeys; retain 1.17.20 as the previous verified rollback version."
     },
     "mcp-spec": {
       "verified_version": null,

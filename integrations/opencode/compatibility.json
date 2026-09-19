@@ -4,84 +4,84 @@
       "binary": "opencode",
       "name": "opencode-darwin-arm64.zip",
       "runner": "macos-15",
-      "sha256": "dc42114bb7a312e0c61c71456fed00d1e6d8b7647d279233125090804dc0218b",
+      "sha256": "caf7f31fa1aec2353ea859d4ef9ab824c6273d941b016e88d51193fa3028d34e",
       "smoke": true
     },
     "darwin-x64": {
       "binary": "opencode",
       "name": "opencode-darwin-x64.zip",
       "runner": "macos-15-intel",
-      "sha256": "ffd981d3c65a2787aa14f4d48317f1d44fc14f73907090fdb7bd55239fea11c2",
+      "sha256": "f8510eaf400f07c3a2014e3a517e3650c705bcd6ac3e6740351b723ee685042f",
       "smoke": true
     },
     "darwin-x64-baseline": {
       "binary": "opencode",
       "name": "opencode-darwin-x64-baseline.zip",
       "runner": "",
-      "sha256": "b61f2602019dab9a0dd98daf846dc47abf6cd010de6be4d1814a6e97c230e59f",
+      "sha256": "ef4dcd35aa2dda0068680140922cb502c4d160bf305b54d7c620153a71f244bb",
       "smoke": false
     },
     "linux-arm64": {
       "binary": "opencode",
       "name": "opencode-linux-arm64.tar.gz",
       "runner": "ubuntu-24.04-arm",
-      "sha256": "0a41572e83a896eb008683589dfe09e17b941d06122608510f3e5f16d86d9afc",
+      "sha256": "d4e332f46b227448582c0d9fc75f6f826dfe95c9f751bc2011fc4d937a042be6",
       "smoke": true
     },
     "linux-arm64-musl": {
       "binary": "opencode",
       "name": "opencode-linux-arm64-musl.tar.gz",
       "runner": "",
-      "sha256": "cc24a56310d44a459c8a4a4d45d3bb1ea2920c65e3bde1e711a1a9f6497d8209",
+      "sha256": "20f548107dd3307437594ad4344f9dac2e2264c26ea03d946db461f73c2d1bf0",
       "smoke": false
     },
     "linux-x64": {
       "binary": "opencode",
       "name": "opencode-linux-x64.tar.gz",
       "runner": "ubuntu-24.04",
-      "sha256": "b7100c0ad0980fba25d595123b4219a6fdc1fbd456dcb64859236741e199c564",
+      "sha256": "e9312be75ed803b7415fc2aeabda1f4fe938912a39673762dc0c38c0e11ebde4",
       "smoke": true
     },
     "linux-x64-baseline": {
       "binary": "opencode",
       "name": "opencode-linux-x64-baseline.tar.gz",
       "runner": "",
-      "sha256": "527c5d61ddff27a5d140d80f4e1fac8bebd2805c20400dc99693cb3c761e9f40",
+      "sha256": "b283e8dbe9e6fc224bb4b79992ce3bd2174b8b7b0c3e7d1b4e6024a1d11edc84",
       "smoke": false
     },
     "linux-x64-baseline-musl": {
       "binary": "opencode",
       "name": "opencode-linux-x64-baseline-musl.tar.gz",
       "runner": "",
-      "sha256": "c9e8bc99609f96d60631576e9933497d61bd3bc5f6bcf5982a7e6b34c283e3d7",
+      "sha256": "3fbb8f38168c059d8e9685e14332d4a229d8193e6ac904f9fb932c38a09c5714",
       "smoke": false
     },
     "linux-x64-musl": {
       "binary": "opencode",
       "name": "opencode-linux-x64-musl.tar.gz",
       "runner": "",
-      "sha256": "0e897fac4e29175eae33ba2f8d65bd8ae7f67c1234ce2aeb01fbfd6ec8e4d213",
+      "sha256": "408bfbcae7d8760b4fa15f11d4b342afef25a2ea64c4807706f8180bacdb4008",
       "smoke": false
     },
     "windows-arm64": {
       "binary": "opencode.exe",
       "name": "opencode-windows-arm64.zip",
       "runner": "",
-      "sha256": "e1d33374eb1b6cd3abd609ae2feb0572214a68fd2a2bdcfd1003cc38b41d14b2",
+      "sha256": "1b20c559ac53e342046a0080bacb89cb3d40997943ecf18a2bc4d1b0398e33b2",
       "smoke": false
     },
     "windows-x64": {
       "binary": "opencode.exe",
       "name": "opencode-windows-x64.zip",
       "runner": "windows-2025",
-      "sha256": "1d7438cf9b4c6b45fee325003b4452b06f4c14be29977ea81595a705165ec646",
+      "sha256": "0ecd7ffc7f26390ce7799e7bcd409e4f11c410144308a6a5b0fcdce63d871006",
       "smoke": true
     },
     "windows-x64-baseline": {
       "binary": "opencode.exe",
       "name": "opencode-windows-x64-baseline.zip",
       "runner": "",
-      "sha256": "c6231de3f830fcd3dbdbff4ef5686753b519997ee3773b6f5d091255814d5164",
+      "sha256": "7c4fc9be7124df5e7c42184b99e8d8540fb0863bb0378b0c4219d9567b2d8434",
       "smoke": false
     }
   },
@@ -191,8 +191,8 @@
   "upstream": {
     "release_api": "https://api.github.com/repos/anomalyco/opencode/releases",
     "repository": "anomalyco/opencode",
-    "tag": "v1.17.20",
-    "tag_commit": "4473fc3c9055046183990a965d68df3db7ea6f62",
-    "version": "1.17.20"
+    "tag": "v1.18.31",
+    "tag_commit": "014614d35b397775e5d397a490fc72368c894ec2",
+    "version": "1.18.31"
   }
 }

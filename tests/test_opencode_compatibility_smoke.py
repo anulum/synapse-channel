@@ -310,7 +310,7 @@ def test_official_artifact_url_is_immutable() -> None:
     artifact = contract.artifact("windows-x64")
 
     assert artifact_url(contract, artifact) == (
-        "https://github.com/anomalyco/opencode/releases/download/v1.17.20/opencode-windows-x64.zip"
+        "https://github.com/anomalyco/opencode/releases/download/v1.18.31/opencode-windows-x64.zip"
     )
 
     with pytest.raises(SmokeError, match="official repository"):
@@ -363,5 +363,5 @@ def test_real_pinned_opencode_negotiates_the_expected_acp_face() -> None:
         "mcp_sse": True,
         "protocol_version": 1,
         "terminal_auth": True,
-        "version": "1.17.20",
+        "version": "1.18.31",
     }

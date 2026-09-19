@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — pinned OpenCode run JSONL parser
-"""Parse the source-verified OpenCode 1.17.20 ``run --format json`` stream."""
+"""Parse the source-verified OpenCode 1.18.31 ``run --format json`` stream."""
 
 from __future__ import annotations
 
@@ -15,9 +15,9 @@ from typing import Any
 
 from synapse_channel.participants.stream_json import StreamOutcome
 
-OPENCODE_SCHEMA_VERSION = "1.17.20"
+OPENCODE_SCHEMA_VERSION = "1.18.31"
 OPENCODE_SCHEMA_VERIFIED = True
-"""True only for the source and real-process captured 1.17.20 emitter contract."""
+"""True only for the source and real-process captured 1.18.31 emitter contract."""
 
 _KNOWN_TYPES = frozenset({"step_start", "tool_use", "text", "reasoning", "step_finish", "error"})
 
