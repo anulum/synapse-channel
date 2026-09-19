@@ -59,6 +59,7 @@ def registered_mcp_tool_names() -> frozenset[str]:
             "synapse_route_task",
             "synapse_resource_bids",
             "synapse_memory_recall",
+            "synapse_entitlements",
         }
     )
 
@@ -248,6 +249,11 @@ def build_mcp_server(
             since_seq,
             event_store_key_file=event_store_key_file,
         )
+
+    @server.tool()
+    async def synapse_entitlements() -> str:
+        """Return a redacted local account-ledger overview without spending authority."""
+        return await bridge.entitlements()
 
     @server.resource("synapse://board")
     async def board_resource() -> str:

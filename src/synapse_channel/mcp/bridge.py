@@ -18,6 +18,7 @@ from typing import Any
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.mcp.advisory_actions import McpAdvisoryActions
 from synapse_channel.mcp.claim_actions import McpClaimActions
+from synapse_channel.mcp.entitlement_actions import read_entitlement_overview
 from synapse_channel.mcp.inbox import DEFAULT_MCP_INBOX_LIMIT, McpFeedInbox
 from synapse_channel.mcp.plan_actions import McpPlanActions
 from synapse_channel.mcp.snapshot_queries import McpSnapshotQueries
@@ -256,6 +257,10 @@ class SynapseHubBridge:
     async def directory(self) -> str:
         """Return the discovery-only capability directory through the query facade."""
         return await self.snapshot_queries.directory()
+
+    async def entitlements(self) -> str:
+        """Return only the label-free local ledger overview to MCP callers."""
+        return read_entitlement_overview()
 
     async def task_resource(self, task_id: str) -> str:
         """Return one board-task resource through the query facade."""

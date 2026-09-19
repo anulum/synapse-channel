@@ -66,6 +66,7 @@ everything, since they need the whole command table.
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse trust-graph` | Query the evidence trust graph (receipts, stale claims, conflicts) as text, JSON, or Graphviz DOT. |
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
+| `synapse entitlements` | Record private account/pool/window facts and inspect advisory quota evidence in an owner-local SQLite ledger. |
 | `synapse fleet-scorecard` | Compose causality spans, opt-in accounting, live-claim contention, reliability findings, and optional benchmark history into an owner-only JSON bundle or a two-signal OTLP/HTTP collector push. |
 | `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
 | `synapse ttl-advice` | Build read-only lease TTL advice from a hub SQLite event store. |
@@ -2053,6 +2054,19 @@ cost from tokens, and `--budget budget.json` (agent → ceiling) for budget
 evidence. Budgets are evidence, not an enforcement gate: the report states spend
 against a ceiling, it does not block work. Non-Python clients can record usage by
 posting the identical note body.
+
+`synapse entitlements record --file event.json` reads one owner-only JSON file
+and appends a validated account, pool, product surface, window, usage or balance
+event to `$XDG_STATE_HOME/synapse-channel/entitlements/ledger.sqlite3` (or
+`~/.local/state/synapse-channel/entitlements/ledger.sqlite3`). `show` returns current private
+account, pool and forecast evidence; `history` retains superseded records.
+`observe-ollama --file response.json --window-id ID --window-event-id REVISION`
+imports token counts from one final Ollama generate or chat response into an
+existing token window without retaining its content.
+`--store PATH` selects another owner-only ledger. This ledger is separate from
+the hub's shared accounting notes, and no command reserves or authorises spend.
+See [Local account and quota ledger](entitlements.md) for the exact event fields,
+privacy boundary and correction syntax.
 
 `synapse fleet-scorecard ./synapse.db --out fleet-scorecard.json` composes the
 existing causality, accounting, contention, and reliability reports into one

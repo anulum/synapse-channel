@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- Add an owner-local, versioned account and quota ledger with auditable
+  corrections, shared-pool deduplication, advisory window forecasts, a private
+  CLI and a redacted MCP overview. Account labels and balances stay out of the
+  hub event stream; forecasts cannot authorise spending.
+  Final Ollama generate/chat responses can be imported as local token usage
+  without retaining prompt or response content.
+
 - Add negotiated version-3 delivery intents for interrupt, steer, follow-up and
   next-turn work with durable request/status replay, explicit boundary and
   acknowledgement evidence, cancellation, expiry and supersession. Older peers

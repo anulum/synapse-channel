@@ -79,3 +79,8 @@ current quotes. To preserve an intentionally free local route, declare
 verified cost, set `max_estimated_cost` and populate current price and currency
 evidence. Callers that need rejection diagnostics should migrate from
 `select_provider` to `route_candidates` or read the orchestration transcript.
+
+The [local account and quota ledger](entitlements.md) retains account, pool and
+window evidence separately. This router does not consume that ledger or treat
+its advisory forecast as a spending reservation. Cross-hub hard limits require
+an authoritative Fleet allocation contract.

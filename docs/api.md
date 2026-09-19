@@ -221,3 +221,32 @@ Check source and field statuses before interpreting missing values.
       members: [render_host_observation, format_runtime]
       show_root_heading: true
       show_source: false
+
+## Local account and quota evidence
+
+These APIs operate on an owner-local ledger, separate from hub events. See the
+[operator guide](entitlements.md) for event fields and privacy boundaries.
+
+::: synapse_channel.core.entitlements
+    options:
+      members: [EntitlementError, parse_time, parse_quantity, event_target, validate_event, active_events]
+      show_root_heading: true
+      show_source: false
+
+::: synapse_channel.core.entitlement_store
+    options:
+      members: [EntitlementStoreError, default_entitlement_store, append_event, read_events]
+      show_root_heading: true
+      show_source: false
+
+::: synapse_channel.core.entitlement_forecast
+    options:
+      members: [WindowForecast, forecast_window]
+      show_root_heading: true
+      show_source: false
+
+::: synapse_channel.core.entitlement_view
+    options:
+      members: [entitlement_view]
+      show_root_heading: true
+      show_source: false

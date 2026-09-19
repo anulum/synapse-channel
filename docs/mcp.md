@@ -165,9 +165,16 @@ tools wait for the hub's grant or denial; query tools return JSON.
 | `synapse_route_task(task_id, limit?, include_zero?, event_store?)` | Return advisory route recommendations for a board task as JSON. |
 | `synapse_resource_bids(task_id, resource_kind?, limit?, include_zero?)` | Return advisory resource bids for a board task as JSON. |
 | `synapse_memory_recall(event_store, query, limit?, since_seq?)` | Return deterministic local memory recall hits as JSON. |
+| `synapse_entitlements()` | Return a redacted local account-ledger overview with counts only; no labels, pool ids, balances or spend authority. |
 
 When the hub does not answer within the request window the tool returns a clear
 "no response from the hub" line rather than hanging.
+
+`synapse_entitlements` reads the owner-local [account and quota
+ledger](entitlements.md) independently of the hub. An MCP client identity does
+not prove account-owner authority, so the tool always withholds private details.
+If the private store is unavailable or corrupt, it returns a generic unavailable
+state without disclosing its path or contents.
 
 `synapse_inbox` reads the hub host's local durable relay file (default
 `$SYN_HOME/feed.ndjson`) through an owner-only per-identity cursor. It consumes
