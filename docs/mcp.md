@@ -60,6 +60,13 @@ an explicit distinct name such as `my-repo/codex` or `my-repo/claude`.
 
 ### Claude Code
 
+For a separately versioned plugin that combines this MCP face with the
+claim-aware edit hook, see [Claude Code plugin](claude-plugin.md). The plugin
+installer preserves unrelated Claude settings and supports an owner-only
+`--token-file` path; `synapse mcp --token-file PATH` reads that token at process
+startup without putting its value in argv. `--token` and `--token-file` are
+mutually exclusive.
+
 The shortest local-scope registration derives `<git-project>/mcp`:
 
 ```bash

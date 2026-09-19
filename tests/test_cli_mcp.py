@@ -9,7 +9,8 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -56,12 +57,18 @@ def test_parser_mcp_inbox_and_role_overrides() -> None:
     assert args.inbox_cursor == "/state/cursor"
 
 
+def test_parser_mcp_accepts_owner_only_token_file() -> None:
+    args = cli.build_parser().parse_args(["mcp", "--token-file", "/private/hub.token"])
+    assert args.token_file == "/private/hub.token"
+
+
 def _mcp_ns(**overrides: Any) -> argparse.Namespace:
     port = _free_port()
     base: dict[str, Any] = {
         "uri": f"ws://localhost:{port}",
         "name": "bridge",
         "token": None,
+        "token_file": None,
         "request_timeout": DEFAULT_REQUEST_TIMEOUT,
         "ready_timeout": 0.1,
     }
@@ -108,3 +115,26 @@ def test_cmd_mcp_stops_cleanly_on_interrupt(
     monkeypatch.setattr(cli_mcp, "serve_stdio", interrupted)
     assert cli_mcp._cmd_mcp(_mcp_ns(name="bridge")) == 0
     assert "[bridge] MCP server stopped." in capsys.readouterr().out
+
+
+def test_mcp_token_file_is_read_without_echoing_its_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    secret = tmp_path / "hub-token"
+    secret.write_text("test-secret-value\n", encoding="utf-8")
+    secret.chmod(0o600)
+    received: list[str | None] = []
+
+    async def capture(**options: object) -> int:
+        received.append(cast(str | None, options["token"]))
+        return 0
+
+    monkeypatch.setattr(cli_mcp, "serve_stdio", capture)
+    assert cli_mcp._cmd_mcp(_mcp_ns(token_file=str(secret))) == 0
+    assert received == ["test-secret-value"]
+    assert "test-secret-value" not in capsys.readouterr().err
+
+
+def test_mcp_refuses_ambiguous_token_sources(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli_mcp._cmd_mcp(_mcp_ns(token="x", token_file="/no/file")) == 2
+    assert "either --token or --token-file" in capsys.readouterr().err

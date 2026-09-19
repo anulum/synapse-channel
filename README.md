@@ -583,6 +583,10 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   codex mcp add synapse -- synapse mcp --name my-repo/codex
   ```
 
+  Claude Code can instead use the optional, separately versioned
+  [Synapse plugin](docs/claude-plugin.md), which packages this MCP face with
+  the existing claim-aware edit hook and reversible profile onboarding.
+
   Cursor and Claude Desktop can reuse the secret-free
   [`examples/mcp/.mcp.json`](examples/mcp/.mcp.json) template. MCP does not wake
   an idle provider in this adapter; call `synapse_inbox` at turn start and keep
@@ -1655,13 +1659,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.26 |
 | Public API exports | 70 |
-| Package modules | 560 |
-| Classes | 849 |
+| Package modules | 562 |
+| Classes | 851 |
 | Wire message types | 80 |
-| CLI subcommands | 202 |
-| Test functions | 9745 |
+| CLI subcommands | 203 |
+| Test functions | 9764 |
 | Benchmark harnesses | 6 |
-| Documentation pages | 64 |
+| Documentation pages | 65 |
 | GitHub Actions workflows | 25 |
 | Optional-dependency groups | 14 |
 

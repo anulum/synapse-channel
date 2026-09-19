@@ -22,6 +22,7 @@ import sys
 from collections.abc import Callable, Sequence
 
 from synapse_channel.client.agent import default_hub_uri
+from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.mcp.onboarding import resolve_mcp_identity
 from synapse_channel.mcp.server import DEFAULT_REQUEST_TIMEOUT, serve_stdio
 
@@ -47,11 +48,20 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
         file=sys.stderr,
     )
     try:
+        token_file = getattr(args, "token_file", None)
+        if args.token is not None and token_file is not None:
+            print("synapse mcp: use either --token or --token-file", file=sys.stderr)
+            return 2
+        token = (
+            read_secret_file(token_file, flag="--token-file")
+            if token_file is not None
+            else args.token
+        )
         return asyncio.run(
             serve_stdio(
                 uri=args.uri,
                 name=identity.name,
-                token=args.token,
+                token=token,
                 request_timeout=args.request_timeout,
                 ready_timeout=args.ready_timeout,
                 roles=tuple(getattr(args, "role", None) or ()),
@@ -59,7 +69,7 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
                 inbox_cursor=getattr(args, "inbox_cursor", None),
             )
         )
-    except RuntimeError as exc:
+    except (RuntimeError, SecretFileError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
     except KeyboardInterrupt:
@@ -83,6 +93,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         ),
     )
     mcp.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    mcp.add_argument(
+        "--token-file",
+        default=None,
+        help="Owner-only shared-secret token file path; keeps the token out of argv.",
+    )
     mcp.add_argument(
         "--role",
         action="append",

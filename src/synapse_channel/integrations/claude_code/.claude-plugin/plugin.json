@@ -1,0 +1,8 @@
+{
+  "name": "synapse-channel",
+  "description": "Synapse coordination tools and claim-aware edit guard for Claude Code",
+  "version": "0.1.0",
+  "author": {"name": "Miroslav Šotek"},
+  "homepage": "https://github.com/anulum/synapse-channel",
+  "license": "AGPL-3.0-or-later"
+}

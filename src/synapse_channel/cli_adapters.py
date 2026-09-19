@@ -41,6 +41,7 @@ from synapse_channel.adapters import (
     tool_for,
 )
 from synapse_channel.cli_claude_claim_hook import add_parser as add_claude_claim_hook_parser
+from synapse_channel.cli_claude_plugin import add_parser as add_claude_plugin_parser
 from synapse_channel.cli_codex_claim_hook import add_parser as add_codex_claim_hook_parser
 from synapse_channel.cli_gemini_claim_hook import add_parser as add_gemini_claim_hook_parser
 from synapse_channel.cli_grok_claim_hook import add_parser as add_grok_claim_hook_parser
@@ -272,6 +273,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     group = parser.add_subparsers(dest="adapters_command", required=True)
 
     add_claude_claim_hook_parser(group)
+    add_claude_plugin_parser(group)
     add_codex_claim_hook_parser(group)
     add_gemini_claim_hook_parser(group)
     add_grok_claim_hook_parser(group)

@@ -187,6 +187,8 @@ synapse_channel = [
   "dashboard_assets/*.js",
   "dashboard_assets/fonts/*.md",
   "dashboard_assets/fonts/*.woff2",
+  "integrations/claude_code/.claude-plugin/plugin.json",
+  "integrations/claude_code/README.md",
 ]
 
 [tool.ruff]

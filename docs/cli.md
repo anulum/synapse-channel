@@ -54,6 +54,7 @@ everything, since they need the whole command table.
 | `synapse event-query` | Query a hub SQLite event store for temporal task and coordination history. |
 | `synapse multihub` | Observe/follow a peer log read-only, or explicitly recover a stopped local watcher's durable quarantine (see [Multi-hub sync](multi-hub-sync.md)). |
 | `synapse participant` | Probe or drive Participant Fabric providers: `list` reports each driver's readiness, `ask` runs one turn, `exchange` and `convene` run multi-party deliberations, `costs` reports per-session spend and telemetry from a hub event store. |
+| `synapse adapters claude-plugin` | Inspect, preview, install, upgrade, diagnose and remove the optional [Claude Code plugin](claude-plugin.md) in one Claude profile. |
 | `synapse deliberate` | Conclude a council into a sealed, verifiable export package (`conclude`/`verify`). |
 | `synapse federation` | Exchange, import, list, and revoke operator-confirmed peer-domain bundles (`offer`/`fetch`/`import`/`list`/`revoke`); fetch displays fingerprints and never imports. |
 | `synapse compact` | Apply event-store retention and optionally write an HTML archive report. |

@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- Add an optional, separately versioned Claude Code plugin with reversible
+  profile onboarding, strict host validation, the existing MCP/claim guard
+  surfaces, and owner-only token-file support for the MCP CLI.
+
 - Participant routing now exposes price/quota freshness, source metadata, operator
   uncertainty policy, and per-candidate rejection reasons. Missing price is unknown
   rather than free; bounded estimated cost refuses an unverified quote. Routed
