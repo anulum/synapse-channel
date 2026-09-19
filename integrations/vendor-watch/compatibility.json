@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "review_owner": "SYNAPSE-CHANNEL/codex-2970473",
+  "reviewed_at": "2026-09-19",
+  "review_interval_days": 7,
+  "surfaces": {
+    "claude-code": {
+      "verified_version": "2.1.273",
+      "reviewed_notes_sha256": "7335f869ffd6fe4417b16b061f8ffbed8d63f6ce588c019dc04271ccaaa9e3df",
+      "verification": "C02 plugin strict host validator and isolated hub/claim test",
+      "capability_class": "native",
+      "owning_adapter": "integrations/claude-code",
+      "migration_decision": "Keep 2.1.273 accepted; validate 2.1.278 before raising the pin."
+    },
+    "codex-cli": {
+      "verified_version": null,
+      "reviewed_notes_sha256": "7c8dc2fb9dd92f1dfec2b24d1ab8815df314973c18c6761b9189d797d6ddeec7",
+      "verification": "Current product integration version requires a fresh real host test",
+      "capability_class": "manual",
+      "owning_adapter": "src/synapse_channel/adapters",
+      "migration_decision": "Current CLI version observed only; test 0.155.1 before acceptance."
+    },
+    "gemini-cli": {
+      "verified_version": null,
+      "reviewed_notes_sha256": "20c2e57f5bbfc671fce8376a8208c2b406c22dc7bcd309994d71647e700ead0c",
+      "verification": "No packaged Gemini extension acceptance yet",
+      "capability_class": "unsupported",
+      "owning_adapter": "C15 integration catalog",
+      "migration_decision": "No packaged Gemini extension accepted; inspect 0.60.0 for candidate scope."
+    },
+    "pi": {
+      "verified_version": null,
+      "reviewed_notes_sha256": "49e0d7dd926e0c0ba553f1275bf9dafb0dfb226f0c80dfe8b75543a5a8887e9c",
+      "verification": "C03 participant and extension remain open",
+      "capability_class": "unsupported",
+      "owning_adapter": "C03 pi participant",
+      "migration_decision": "No host binary or accepted extension; evaluate 0.85.1 under C03."
+    },
+    "opencode": {
+      "verified_version": "1.17.20",
+      "reviewed_notes_sha256": "f3147856314d4851990fe246243afaf82c130e8d4d2a7de22ad57b45f89d695a",
+      "verification": "Pinned OpenCode JSONL emitter and CI compatibility contract",
+      "capability_class": "native",
+      "owning_adapter": "integrations/opencode",
+      "migration_decision": "Keep 1.17.20 accepted; validate 1.18.31 before changing pin."
+    },
+    "mcp-spec": {
+      "verified_version": null,
+      "reviewed_notes_sha256": "84c12ccaf10a6a674c706a7bbb9b9a74af19e683928c1238d40c9b2387efaa43",
+      "verification": "Versioned remote MCP admission remains C09; local stdio is separate",
+      "capability_class": "manual",
+      "owning_adapter": "src/synapse_channel/mcp_server",
+      "migration_decision": "Local stdio only; C09 owns remote transport admission."
+    }
+  }
+}

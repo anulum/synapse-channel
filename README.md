@@ -586,6 +586,8 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   Claude Code can instead use the optional, separately versioned
   [Synapse plugin](docs/claude-plugin.md), which packages this MCP face with
   the existing claim-aware edit hook and reversible profile onboarding.
+  The [vendor compatibility watch](docs/vendor-watch.md) checks official
+  releases daily and records which host versions have actually been verified.
 
   Cursor and Claude Desktop can reuse the secret-free
   [`examples/mcp/.mcp.json`](examples/mcp/.mcp.json) template. MCP does not wake
@@ -1663,10 +1665,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 851 |
 | Wire message types | 80 |
 | CLI subcommands | 203 |
-| Test functions | 9764 |
+| Test functions | 9770 |
 | Benchmark harnesses | 7 |
-| Documentation pages | 66 |
-| GitHub Actions workflows | 25 |
+| Documentation pages | 67 |
+| GitHub Actions workflows | 26 |
 | Optional-dependency groups | 14 |
 
 This snapshot is a static inventory generated from the source tree. Performance and coverage claims have their own committed evidence — see `VALIDATION.md` and `benchmarks/`.

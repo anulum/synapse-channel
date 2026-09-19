@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- Add a read-only daily official-source vendor watch with a dated compatibility
+  matrix, installed-version observations, stale-review and source-failure
+  handling, and a scheduled report. New releases require real host validation
+  before Synapse marks them supported.
+
 - Add an optional, separately versioned Claude Code plugin with reversible
   profile onboarding, strict host validation, the existing MCP/claim guard
   surfaces, and owner-only token-file support for the MCP CLI.

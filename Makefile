@@ -13,7 +13,7 @@ SRC := src tests benchmarks
 .DEFAULT_GOAL := help
 
 .PHONY: help install install-hooks lint fmt typecheck test cov preflight \
-	preflight-fast reuse manifest manifest-check build docs docs-build bench clean
+	preflight-fast reuse manifest manifest-check build docs docs-build bench vendor-watch clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -72,6 +72,9 @@ bench: ## Run the committed benchmark harnesses
 	$(PY) benchmarks/sustained_write_benchmark.py
 	$(PY) benchmarks/a2a_bridge_benchmark.py
 	$(PY) benchmarks/coding_fleet_benchmark.py
+
+vendor-watch: ## Check official vendor releases against verified host versions
+	$(PY) tools/vendor_watch.py --strict --report build/vendor-watch-report.json
 
 clean: ## Remove build artefacts and caches
 	rm -rf build dist *.egg-info src/*.egg-info .pytest_cache .ruff_cache \
