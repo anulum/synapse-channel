@@ -15,6 +15,8 @@ on an unroutable round, an over-budget signal, an empty roster, or a non-positiv
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from synapse_channel.core.accounting import ModelPrice
 from synapse_channel.participants.auto_action import (
     AutoAction,
@@ -35,6 +37,7 @@ from synapse_channel.participants.orchestration import (
 )
 from synapse_channel.participants.participant import ParticipantChannel, ParticipantHealth
 from synapse_channel.participants.provider_route import ModelCandidate, TaskProfile
+from synapse_channel.participants.provider_route_policy import PriceKind, RoutingPolicy
 from synapse_channel.participants.session_advisor import AdvisorThresholds, SessionSignal
 from synapse_channel.participants.session_metric_note import parse_session_metric_note
 
@@ -189,8 +192,8 @@ async def test_routes_away_from_a_rate_limited_provider_and_persists() -> None:
 
     # 'a' wins the first round (tie on zero headroom, roster order) and reports high utilisation;
     # the second round must steer to 'b', which still has headroom.
-    seat_a = _seat("a", [_result(rate_limit_utilisation=0.9)])
-    seat_b = _seat("b", [_result(rate_limit_utilisation=0.2)])
+    seat_a = _seat("a", [_result(rate_limit_utilisation=0.9)], util=0.0)
+    seat_b = _seat("b", [_result(rate_limit_utilisation=0.2)], util=0.0)
     transcript = await orchestrate_session(
         "q",
         [seat_a, seat_b],
@@ -254,6 +257,49 @@ async def test_unroutable_round_stops() -> None:
     )
     assert transcript.stopped == STOPPED_UNROUTABLE
     assert transcript.rounds == ()
+    assert transcript.route_decisions[0].rejected[0].code == "quota_exhausted"
+
+
+async def test_bounded_route_dispatches_only_eligible_free_local_seat() -> None:
+    local = _seat("local", [_result(answer="local answer")], util=0.0)
+    local = OrchestrationSeat(
+        participant=local.participant,
+        candidate=replace(
+            local.candidate,
+            price_kind=PriceKind.FREE,
+            data_classes=frozenset({"private"}),
+            tags=frozenset({"text"}),
+        ),
+    )
+    remote = _seat("remote", [_result(answer="should not run")], util=0.0)
+    remote = OrchestrationSeat(
+        participant=remote.participant,
+        candidate=replace(
+            remote.candidate,
+            data_classes=frozenset({"private"}),
+            tags=frozenset({"text"}),
+        ),
+    )
+    transcript = await orchestrate_session(
+        "q",
+        [remote, local],
+        rounds=1,
+        topic_id="private-task",
+        task=TaskProfile(
+            data_classification="private",
+            required_tags=frozenset({"text"}),
+            max_estimated_cost=0.0,
+            policy=RoutingPolicy(unknown_price="refuse"),
+        ),
+        thresholds=AdvisorThresholds(),
+    )
+    assert transcript.stopped == STOPPED_COMPLETED
+    assert transcript.rounds[0].result["answer"] == "local answer"
+    assert transcript.rounds[0].choice.estimated_cost == 0.0
+    assert [(item.candidate, item.code) for item in transcript.route_decisions[0].rejected] == [
+        ("remote", "cost_unverified")
+    ]
+    assert not remote.participant.requests  # type: ignore[attr-defined]
 
 
 async def test_over_budget_signal_halts_the_run() -> None:

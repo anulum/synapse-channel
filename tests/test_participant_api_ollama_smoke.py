@@ -22,7 +22,12 @@ import shutil
 import pytest
 
 from synapse_channel.participants.api_ollama import OllamaApiParticipant
+from synapse_channel.participants.channel_select import ProviderCapabilities
 from synapse_channel.participants.envelope import TurnRequest
+from synapse_channel.participants.orchestration import OrchestrationSeat, orchestrate_session
+from synapse_channel.participants.provider_route import ModelCandidate, TaskProfile
+from synapse_channel.participants.provider_route_policy import PriceKind
+from synapse_channel.participants.session_advisor import AdvisorThresholds
 
 _REAL_SMOKE_ENABLED = (
     bool(shutil.which("ollama")) and os.environ.get("SYNAPSE_PARTICIPANT_REAL_SMOKE") == "1"
@@ -55,3 +60,31 @@ async def test_real_ollama_api_turn_returns_an_answer_and_tokens() -> None:
     assert result["input_tokens"] > 0
     assert result["output_tokens"] > 0
     assert result["cost_usd"] == 0.0
+
+
+async def test_bounded_routing_dispatches_a_real_local_ollama_turn() -> None:
+    seat = OrchestrationSeat(
+        participant=OllamaApiParticipant("SC/c01-routing-smoke", model=_MODEL, timeout=120.0),
+        candidate=ModelCandidate(
+            name="local",
+            model=_MODEL,
+            capabilities=ProviderCapabilities(api_reachable=True),
+            price_kind=PriceKind.FREE,
+            data_classes=frozenset({"private"}),
+            rate_limit_utilisation=0.0,
+        ),
+    )
+    transcript = await orchestrate_session(
+        "Reply with exactly the single word: pong",
+        [seat],
+        rounds=1,
+        topic_id="c01-routing-smoke",
+        task=TaskProfile(data_classification="private", max_estimated_cost=0.0),
+        thresholds=AdvisorThresholds(),
+    )
+    assert transcript.stopped == "completed"
+    assert transcript.route_decisions[0].choice is not None
+    assert transcript.rounds[0].choice.estimated_cost == 0.0
+    assert transcript.rounds[0].result["is_error"] is False
+    assert "pong" in transcript.rounds[0].result["answer"].lower()
+    assert transcript.rounds[0].result["input_tokens"] > 0

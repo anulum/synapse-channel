@@ -22,6 +22,7 @@ from synapse_channel.participants.provider_route import (
     TaskProfile,
     select_provider,
 )
+from synapse_channel.participants.provider_route_policy import PriceKind
 
 
 def _present(name: str) -> str | None:
@@ -63,7 +64,7 @@ def test_picks_the_only_eligible_candidate() -> None:
     assert choice is not None
     assert choice.candidate.name == "solo"
     assert choice.channel is ParticipantChannel.HEADLESS
-    assert choice.estimated_cost == 0.0
+    assert choice.estimated_cost is None
     assert "solo" in choice.reason
 
 
@@ -124,9 +125,12 @@ def test_required_tags_subset_is_satisfied() -> None:
     assert choice.candidate.name == "coder"
 
 
-def test_local_unpriced_candidate_ranks_as_free() -> None:
+def test_explicitly_free_local_candidate_ranks_as_free() -> None:
     local = ModelCandidate(
-        name="local", model="gemma3:1b", capabilities=ProviderCapabilities(api_reachable=True)
+        name="local",
+        model="gemma3:1b",
+        capabilities=ProviderCapabilities(api_reachable=True),
+        price_kind=PriceKind.FREE,
     )
     priced = ModelCandidate(
         name="cloud",

@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- Participant routing now exposes price/quota freshness, source metadata, operator
+  uncertainty policy, and per-candidate rejection reasons. Missing price is unknown
+  rather than free; bounded estimated cost refuses an unverified quote. Routed
+  orchestration retains each decision for audit. See the migration note in
+  `docs/participant-routing.md`.
+
 ## [0.99.26] - 2026-09-05
 
 - Dashboard feeds return unconfigured-store responses without starting report

@@ -99,6 +99,11 @@ everything, since they need the whole command table.
 | `synapse task` | Declare and update the shared task plan. |
 | `synapse workflow` | Validate and compile a declarative workflow into blackboard tasks (`validate`/`compile`/`plan`/`run`); `contention` weighs overlapping live claims involving the workflow's tasks. |
 
+Programmatic provider selection and the routed deliberation loop use the
+[participant routing policy](participant-routing.md). Its cost ceiling checks an
+estimated quote for one turn; `synapse participant` does not enforce a billing
+reservation.
+
 ## First 60 seconds
 
 The installed CLI has a source-checkout-free validation path:

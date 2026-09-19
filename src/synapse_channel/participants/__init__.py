@@ -163,9 +163,17 @@ from synapse_channel.participants.peer_boundary import (
 )
 from synapse_channel.participants.provider_route import (
     ModelCandidate,
+    RouteRejection,
     RoutingChoice,
+    RoutingDecision,
     TaskProfile,
+    route_candidates,
     select_provider,
+)
+from synapse_channel.participants.provider_route_policy import (
+    EvidenceStatus,
+    PriceKind,
+    RoutingPolicy,
 )
 from synapse_channel.participants.pty_participant import PtyParticipant
 from synapse_channel.participants.remanentia_http import RemanentiaHttpRecall
@@ -231,6 +239,7 @@ __all__ = [
     "ConversationTranscript",
     "ConvocationTranscript",
     "ExchangeTranscript",
+    "EvidenceStatus",
     "GrokParticipant",
     "KimiParticipant",
     "McpParticipant",
@@ -259,12 +268,16 @@ __all__ = [
     "ParticipantChannel",
     "ParticipantHealth",
     "ProviderCapabilities",
+    "PriceKind",
     "PtyParticipant",
     "Recommendation",
     "RemanentiaHttpRecall",
     "RelaySettings",
     "ResponderSettings",
+    "RouteRejection",
     "RoutingChoice",
+    "RoutingDecision",
+    "RoutingPolicy",
     "SessionAdvice",
     "SessionMetricRecord",
     "SessionMetricReport",
@@ -316,6 +329,7 @@ __all__ = [
     "parse_session_metric_note",
     "react_to_advice",
     "relay_turn",
+    "route_candidates",
     "render_session_metric_report",
     "render_memory_context",
     "render_memory_unavailable",

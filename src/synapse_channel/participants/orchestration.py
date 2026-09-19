@@ -47,8 +47,9 @@ from synapse_channel.participants.peer_boundary import frame_peer_contribution
 from synapse_channel.participants.provider_route import (
     ModelCandidate,
     RoutingChoice,
+    RoutingDecision,
     TaskProfile,
-    select_provider,
+    route_candidates,
 )
 from synapse_channel.participants.session_advisor import (
     AdvisorThresholds,
@@ -147,6 +148,8 @@ class OrchestrationTranscript:
     stopped : str
         Why the deliberation ended: :data:`STOPPED_COMPLETED`, :data:`STOPPED_BUDGET`,
         :data:`STOPPED_UNROUTABLE`, or :data:`STOPPED_EMPTY`.
+    route_decisions : tuple[RoutingDecision, ...]
+        Every evaluated round, including exclusions when no participant could run.
     """
 
     topic_id: str
@@ -154,6 +157,7 @@ class OrchestrationTranscript:
     rounds: tuple[OrchestrationRound, ...]
     metrics: SessionMetrics
     stopped: str
+    route_decisions: tuple[RoutingDecision, ...] = ()
 
 
 async def orchestrate_session(
@@ -232,17 +236,20 @@ async def orchestrate_session(
     seat_by_name = {seat.candidate.name: seat for seat in roster}
     observed_utilisation: dict[str, float] = {}
     records: list[OrchestrationRound] = []
+    route_decisions: list[RoutingDecision] = []
     metrics = SessionMetrics()
     previous: TurnResult | None = None
     stopped = STOPPED_COMPLETED
 
     for index in range(rounds):
         candidates = _route_candidates(roster, observed_utilisation)
-        choice = (
-            select_provider(task, candidates, which=which)
+        decision = (
+            route_candidates(task, candidates, which=which)
             if which is not None
-            else select_provider(task, candidates)
+            else route_candidates(task, candidates)
         )
+        route_decisions.append(decision)
+        choice = decision.choice
         if choice is None:
             stopped = STOPPED_UNROUTABLE
             break
@@ -303,6 +310,7 @@ async def orchestrate_session(
         rounds=tuple(records),
         metrics=metrics,
         stopped=stopped,
+        route_decisions=tuple(route_decisions),
     )
 
 
@@ -320,7 +328,15 @@ def _route_candidates(
         if observed is None:
             candidates.append(seat.candidate)
         else:
-            candidates.append(replace(seat.candidate, rate_limit_utilisation=observed))
+            candidates.append(
+                replace(
+                    seat.candidate,
+                    rate_limit_utilisation=observed,
+                    quota_source="turn_result",
+                    quota_observed_at=time.time(),
+                    quota_valid_until=None,
+                )
+            )
     return candidates
 
 
