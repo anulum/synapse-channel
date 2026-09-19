@@ -1,9 +1,9 @@
 {
   "metrics": {
-    "benchmark_harnesses": 6,
+    "benchmark_harnesses": 7,
     "classes": 851,
     "cli_subcommands": 203,
-    "documentation_pages": 65,
+    "documentation_pages": 66,
     "optional_dependency_groups": 14,
     "package_modules": 562,
     "public_api_exports": 70,

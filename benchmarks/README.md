@@ -13,6 +13,15 @@ Runnable, committed measurements for SYNAPSE CHANNEL. Every number quoted in the
 docs comes from a script here run against a committed fixture, with the JSON
 output checked in under `results/` — nothing is estimated by hand.
 
+## `coordination_wire_benchmark.py`
+
+Measures six fixed current JSON coordination frames, including claim, directed
+chat, mailbox ACK and delivery receipt. It checks each production bounded-JSON
+round trip and records default-wire versus compact bytes plus local median
+encode/decode time. Run `PYTHONPATH=src python benchmarks/coordination_wire_benchmark.py`.
+The committed result is `results/coordination_wire_benchmark.json`. It is a
+synthetic codec baseline, not a network or provider benchmark.
+
 ## `relay_token_benchmark.py`
 
 Measures how much the lite relay encoding shrinks a channel feed for a

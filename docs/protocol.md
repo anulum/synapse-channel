@@ -32,6 +32,11 @@ negotiate to the lowest common wire version, warn the operator when the peer is
 older, newer, or did not advertise a usable version, and gate optional features
 against that effective version.
 
+The [delivery compatibility decision](protocol-compatibility-plan.md) records
+a reviewed candidate for a later wire revision. Its new delivery modes and
+outcome stages are design requirements only; version 2 retains the behavior
+specified here.
+
 The [per-message authentication runtime](per-message-authentication.md) keeps
 the same envelope shape and adds an `auth` object for selected mutating frames
 after WebSocket connect authentication. It is opt-in: `--message-auth-key`

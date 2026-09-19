@@ -24,6 +24,10 @@ one hub's authority and a federation of observing hubs. It deliberately does not
 restate the identity, ACL, encryption, or interop layers, which have their own
 documents.
 
+The [delivery compatibility decision](protocol-compatibility-plan.md) is a
+reviewed prospective delta for later implementation. It does not add a current
+invariant or change the version-2 delivery guarantees below.
+
 ## Conventions
 
 The key words **MUST**, **MUST NOT**, **SHOULD**, **MAY**, and **REQUIRED** are

@@ -17,6 +17,17 @@ evidence rather than an isolated-core claim. See the
 [CLI reference](cli.md) for flags (`--probe`, `--iterations`, `--json`,
 `--results`).
 
+## Coordination wire baseline
+
+`coordination_wire_benchmark.py` measures six fixed, synthetic current-wire
+coordination frames using standard JSON encoding and the production bounded
+decoder. Its [committed result](../benchmarks/results/coordination_wire_benchmark.json)
+records per-frame bytes and local median codec time for 1,000 iterations.
+The 2026-09-19 Python 3.12.3 shared-host run measured 1,168 bytes total with
+current spacing and 1,080 bytes minified (7.5% less). These small control
+frames do not establish network throughput or justify a new wire encoding;
+the [compatibility decision](protocol-compatibility-plan.md) keeps JSON.
+
 ## Relay token benchmark
 
 `relay_token_benchmark.py` measures how much the lite relay encoding shrinks a

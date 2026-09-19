@@ -65,6 +65,7 @@ docs-build: ## Build the documentation site (strict)
 	$(PY) -m mkdocs build --strict
 
 bench: ## Run the committed benchmark harnesses
+	$(PY) benchmarks/coordination_wire_benchmark.py
 	$(PY) benchmarks/relay_token_benchmark.py
 	$(PY) benchmarks/routing_benchmark.py
 	$(PY) benchmarks/scalability_benchmark.py

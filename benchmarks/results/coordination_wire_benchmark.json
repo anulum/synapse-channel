@@ -1,0 +1,45 @@
+{
+  "iterations_per_frame": 1000,
+  "method": "stdlib json.dumps default spacing; production loads_bounded; synthetic fixed frames",
+  "python": "3.12.3",
+  "rows": {
+    "claim": {
+      "compact_bytes": 192,
+      "decode_median_us": 21.219,
+      "encode_median_us": 7.801,
+      "wire_bytes": 211
+    },
+    "delivery_receipt": {
+      "compact_bytes": 242,
+      "decode_median_us": 12.111,
+      "encode_median_us": 3.775,
+      "wire_bytes": 261
+    },
+    "directed_chat": {
+      "compact_bytes": 206,
+      "decode_median_us": 16.32,
+      "encode_median_us": 5.593,
+      "wire_bytes": 219
+    },
+    "error": {
+      "compact_bytes": 188,
+      "decode_median_us": 14.72,
+      "encode_median_us": 5.149,
+      "wire_bytes": 201
+    },
+    "heartbeat": {
+      "compact_bytes": 117,
+      "decode_median_us": 14.627,
+      "encode_median_us": 5.881,
+      "wire_bytes": 128
+    },
+    "mailbox_ack": {
+      "compact_bytes": 135,
+      "decode_median_us": 9.562,
+      "encode_median_us": 3.901,
+      "wire_bytes": 148
+    }
+  },
+  "total_compact_bytes": 1080,
+  "total_wire_bytes": 1168
+}
