@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- Add negotiated version-3 delivery intents for interrupt, steer, follow-up and
+  next-turn work with durable request/status replay, explicit boundary and
+  acknowledgement evidence, cancellation, expiry and supersession. Older peers
+  retain their existing wire contract. A recipient bridge exercises real
+  OpenCode and local Ollama turns; external provider effects have no exactly-once
+  guarantee.
+
+- Classify Claude plugin installation and claim-proposal failures under the
+  frozen error taxonomy while retaining their existing `ValueError` behavior;
+  document the opt-in `claim-parse` command in the CLI reference.
+
 - Add bounded public vendor/provider discovery for model APIs, MCP servers and
   agent host candidates, with provenance, manual alias review and a weekly
   report. Discovery never activates a provider or changes support claims.

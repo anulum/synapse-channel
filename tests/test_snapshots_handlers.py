@@ -78,6 +78,12 @@ class _Manifester:
         return self._value
 
 
+class _LegacyClients:
+    def protocol_version_of(self, name: str) -> int:
+        """Model a version-two snapshot requester without delivery discovery."""
+        return 2
+
+
 class _FakeHub:
     """A read-only SynapseHub stand-in exposing the snapshot data sources."""
 
@@ -102,6 +108,7 @@ class _FakeHub:
         self.blackboard = _Snapshotter({"tasks": []})
         self.board_task_cap = board_task_cap
         self.capabilities = _Manifester({"tools": []})
+        self.clients = _LegacyClients()
         self.sent: list[dict[str, Any]] = []
 
     def roster_liveness(self) -> dict[str, Any]:

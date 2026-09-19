@@ -61,6 +61,57 @@ def frames() -> dict[str, dict[str, Any]]:
             "reason": "no_online_recipient",
             "receipt_notification_id": "receipt-1",
         },
+        "delivery_request_v3": build_envelope(
+            sender,
+            "delivery_request",
+            target=target,
+            now=now,
+            protocol_version=3,
+            request_id="request-1",
+            idempotency_key="idem-1",
+            target_incarnation="a" * 64,
+            mode="follow_up",
+            allowed_fallbacks=["next_turn"],
+            task_id="TASK-1",
+            body="Review the committed change.",
+            deadline=now + 300,
+        ),
+        "delivery_offer_v3": build_envelope(
+            "SynapseHub",
+            "delivery_offer",
+            target=target,
+            now=now,
+            hub_id="hub-a",
+            protocol_version=3,
+            operation_key="b" * 64,
+            notification_id="delivery:request-1:1",
+            request_id="request-1",
+            task_id="TASK-1",
+            target_incarnation="a" * 64,
+            selected_mode="follow_up",
+            quality="native",
+            body="Review the committed change.",
+            deadline=now + 300,
+        ),
+        "delivery_status_v3": build_envelope(
+            "SynapseHub",
+            "delivery_status",
+            target=sender,
+            now=now,
+            hub_id="hub-a",
+            protocol_version=3,
+            operation_key="b" * 64,
+            request_id="request-1",
+            task_id="TASK-1",
+            selected_mode="follow_up",
+            quality="native",
+            stage="acknowledged",
+            receiver_reachable=True,
+            active_session=True,
+            boundary_delivered=True,
+            explicitly_acknowledged=True,
+            task_completed=False,
+        ),
         "error": {
             "sender": "SynapseHub",
             "target": sender,
@@ -99,6 +150,14 @@ def measure(iterations: int) -> dict[str, Any]:
             "encode_median_us": round(statistics.median(encode_times) / 1000, 3),
             "decode_median_us": round(statistics.median(decode_times) / 1000, 3),
         }
+    baseline_names = (
+        "heartbeat",
+        "claim",
+        "directed_chat",
+        "mailbox_ack",
+        "delivery_receipt",
+        "error",
+    )
     return {
         "method": (
             "stdlib json.dumps default spacing; production loads_bounded; synthetic fixed frames"
@@ -108,6 +167,10 @@ def measure(iterations: int) -> dict[str, Any]:
         "rows": rows,
         "total_wire_bytes": sum(row["wire_bytes"] for row in rows.values()),
         "total_compact_bytes": sum(row["compact_bytes"] for row in rows.values()),
+        "v2_baseline_wire_bytes": sum(rows[name]["wire_bytes"] for name in baseline_names),
+        "v3_delivery_wire_bytes": sum(
+            row["wire_bytes"] for name, row in rows.items() if name.endswith("_v3")
+        ),
     }
 
 

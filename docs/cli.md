@@ -733,6 +733,14 @@ TASK-1 --paths src`) or as a named field (`synapse git-claim --task-id TASK-1
 is hook-invoked and does not take a task id; when a manual drop is needed, use
 `synapse release <task> --name <owner>`.
 
+`synapse claim-parse --from-text "fix the parser" --provider ollama-api
+--model gemma3:1b --name PROJECT/agent` asks the explicitly selected provider
+to draft a structured claim and prints the exact `synapse git-claim` command
+for operator review. Add `--json` for a machine-readable proposal. This command
+does not contact the hub or submit a claim. The provider can still consume its
+configured credits and retain its own tool and filesystem permissions; use an
+isolated provider profile when those effects matter.
+
 `synapse git-claim` also accepts semantic selector flags for the same local
 resolver exposed by `tools/semantic_claims.py`: `--module`, `--symbol`, `--api`,
 `--source`, `--test`, `--generated`, and `--migration`. The command resolves the

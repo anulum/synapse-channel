@@ -677,7 +677,7 @@ fails if any row disagrees with the implementation.
 | `DEFAULT_MESSAGE_AUTH_FUTURE_SKEW_SECONDS` | `1.0` (future) | `core/message_auth.py` |
 | `DEFAULT_LEASE_OFFLINE_TTL` | `3600.0` | `core/name_ownership.py` |
 | `DEFAULT_RESOURCE_TTL_SECONDS` | `300.0` | `core/state_resources.py` |
-| `WIRE_PROTOCOL_VERSION` | `2` | `core/protocol.py` |
+| `WIRE_PROTOCOL_VERSION` | `3` | `core/protocol.py` |
 | `NAME_OWNED_CLOSE_CODE` | `4016` | `connect_failures.py` |
 
 ## The machine-checkable model

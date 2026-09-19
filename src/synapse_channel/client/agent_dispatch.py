@@ -34,6 +34,8 @@ class _DispatchAgent(Protocol):
     callback: MessageCallback | None
     hub_id: str
     hub_protocol_version: int | None
+    delivery_incarnation: str
+    delivery_ready_event: Any
     mailbox: bool
     mailbox_advance: Callable[[dict[str, Any]], bool] | None
     mailbox_for: str
@@ -92,11 +94,25 @@ class AgentDispatchMixin:
             if self.verbose:
                 print(f"[{self.name}] Received malformed JSON from hub.")
             return
+        if not isinstance(data, dict):
+            if self.verbose:
+                print(f"[{self.name}] Received a non-object frame from hub.")
+            return
 
         if data.get("type") == MessageType.WELCOME:
             self.hub_id = str(data.get("hub_id", "unknown"))
             self.hub_protocol_version = read_protocol_version(data.get("protocol_version"))
             self.ready_event.set()
+
+        if data.get("type") == MessageType.DELIVERY_SESSION:
+            incarnation = data.get("incarnation")
+            if (
+                isinstance(incarnation, str)
+                and len(incarnation) == 64
+                and all(character in "0123456789abcdef" for character in incarnation)
+            ):
+                self.delivery_incarnation = incarnation
+                self.delivery_ready_event.set()
 
         if data.get("type") == MessageType.LEASE_GRANTED:
             # The hub granted an ownership lease on the bound name. Record the

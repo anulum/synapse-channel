@@ -12,7 +12,7 @@ Contact: www.anulum.li | protoscience@anulum.li
 The read-only vendor watch compares official release evidence with the exact
 versions accepted by Synapse integrations. It does not install a host, run a
 model, change an account or widen support. The tracked
-[`compatibility.json`](../integrations/vendor-watch/compatibility.json) names
+`integrations/vendor-watch/compatibility.json` names
 the review owner, review date and individually verified surfaces. `null`
 means no accepted host version has been proven. An installed CLI version is an
 observation, not a compatibility verdict.
@@ -33,7 +33,7 @@ flag possible security or breaking changes. Release-note keyword
 priority is an advisory triage hint, not proof of a security vulnerability.
 The report stores no release body, credentials or provider text.
 
-The [daily scheduled workflow](../.github/workflows/vendor-watch.yml) publishes
+The daily `.github/workflows/vendor-watch.yml` workflow publishes
 the same report as a short-lived Actions artifact and job summary. The Core
 maintenance seat reviews the report at least weekly and before each integration
 release. A breaking, permission, hook or security change gets immediate

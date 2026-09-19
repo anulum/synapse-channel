@@ -32,6 +32,14 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from synapse_channel.core.delivery_persistence import (
+    DELIVERY_ACCEPTED,
+    DELIVERY_QUEUED,
+    DELIVERY_TRANSITION,
+)
+from synapse_channel.core.delivery_persistence import (
+    DELIVERY_CANCEL_REQUESTED as DELIVERY_CANCEL_REQUESTED_KIND,
+)
 from synapse_channel.core.event_row_recovery import CORRUPT_EVENT_KIND, CorruptEventRow
 from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS,
@@ -82,6 +90,10 @@ class EventKind:
     DELIVERY_RECEIPT_IMMEDIATE = "delivery_receipt_immediate"
     DELIVERY_RECEIPT_DEFERRED = "delivery_receipt_deferred"
     DELIVERY_RECEIPT_EXPIRED = "delivery_receipt_expired"
+    DELIVERY_INTENT_ACCEPTED = DELIVERY_ACCEPTED
+    DELIVERY_INTENT_QUEUED = DELIVERY_QUEUED
+    DELIVERY_INTENT_TRANSITION = DELIVERY_TRANSITION
+    DELIVERY_CANCEL_REQUESTED = DELIVERY_CANCEL_REQUESTED_KIND
     MAILBOX_WATERMARK = "mailbox_watermark"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
     MULTIHUB_PARTITION = "multihub_partition"

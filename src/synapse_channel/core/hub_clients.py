@@ -9,10 +9,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
+from synapse_channel.core.delivery_modes import MODES, QUALITIES, DeliveryRefusal
 from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL, NameOwnership
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
@@ -23,6 +26,14 @@ logger = logging.getLogger("synapse.hub")
 
 _RESERVED_AGENT_NAMES = frozenset({SENDER_HUB.casefold(), "synapse", "system"})
 """Global names reserved for hub and protocol provenance."""
+
+
+@dataclass(frozen=True)
+class DeliverySession:
+    """Capabilities bound to one live, named socket and opaque incarnation."""
+
+    incarnation: str
+    capabilities: dict[str, str]
 
 
 class HubClientRegistry:
@@ -73,6 +84,8 @@ class HubClientRegistry:
         self.socket_agent: dict[Any, str] = {}
         self.agent_roles: dict[str, tuple[str, ...]] = {}
         self.agent_wake_capabilities: dict[str, str] = {}
+        self.agent_delivery_sessions: dict[str, DeliverySession] = {}
+        self.agent_protocol_versions: dict[str, int] = {}
         self.socket_quota_principals: dict[Any, str] = {}
         self._socket_hosts: dict[Any, str] = {}
         self._host_counts: dict[str, int] = {}
@@ -116,6 +129,8 @@ class HubClientRegistry:
             self.agent_sockets.pop(name, None)
             self.agent_roles.pop(name, None)
             self.agent_wake_capabilities.pop(name, None)
+            self.agent_delivery_sessions.pop(name, None)
+            self.agent_protocol_versions.pop(name, None)
             self.ownership.mark_offline(name)
             return name
         return None
@@ -147,6 +162,8 @@ class HubClientRegistry:
             self.socket_agent.pop(websocket, None)
         self.agent_roles.pop(name, None)
         self.agent_wake_capabilities.pop(name, None)
+        self.agent_delivery_sessions.pop(name, None)
+        self.agent_protocol_versions.pop(name, None)
         self.ownership.release(name)
         return websocket
 
@@ -202,6 +219,70 @@ class HubClientRegistry:
         is_new_agent = sender not in self.agent_sockets
         self.agent_sockets[sender] = websocket
         return is_new_agent
+
+    def bind_protocol_version(self, name: str, websocket: Any, version: int | None) -> int:
+        """Bind a peer's advertised wire version to its currently owned socket."""
+        if (
+            self.agent_sockets.get(name) is not websocket
+            or self.socket_agent.get(websocket) != name
+        ):
+            raise DeliveryRefusal("unauthorised_requester", "socket is not bound to the identity")
+        effective = version if version is not None and version >= 1 else 1
+        self.agent_protocol_versions[name] = effective
+        return effective
+
+    def protocol_version_of(self, name: str) -> int:
+        """Return the bound peer version, or legacy version one when absent."""
+        return self.agent_protocol_versions.get(name, 1)
+
+    def bind_delivery_session(
+        self,
+        name: str,
+        websocket: Any,
+        *,
+        token: object,
+        capabilities: object,
+        hub_id: str,
+    ) -> DeliverySession:
+        """Bind a verified version-three session to its current authenticated socket.
+
+        The caller must have completed the hub's name and identity gates. The
+        256-bit process token is never stored: only a hub/name-separated digest
+        is public. Reconnect with the same in-memory token retains the
+        incarnation; a fresh process receives a different one.
+        """
+        if (
+            self.agent_sockets.get(name) is not websocket
+            or self.socket_agent.get(websocket) != name
+        ):
+            raise DeliveryRefusal("unauthorised_requester", "socket is not bound to the identity")
+        if (
+            not isinstance(token, str)
+            or len(token) != 64
+            or any(char not in "0123456789abcdef" for char in token)
+        ):
+            raise DeliveryRefusal("invalid_shape", "delivery session token is malformed")
+        if not isinstance(capabilities, dict) or len(capabilities) > len(MODES):
+            raise DeliveryRefusal("invalid_shape", "delivery capabilities are malformed")
+        if any(
+            not isinstance(mode, str)
+            or not isinstance(quality, str)
+            or mode not in MODES
+            or quality not in QUALITIES
+            for mode, quality in capabilities.items()
+        ):
+            raise DeliveryRefusal("invalid_shape", "delivery capability is unsupported")
+        digest = hashlib.sha256(f"{hub_id}\0{name}\0{token}".encode()).hexdigest()
+        session = DeliverySession(digest, dict(capabilities))
+        self.agent_delivery_sessions[name] = session
+        return session
+
+    def delivery_session(self, name: str) -> DeliverySession | None:
+        """Return a copy of the current socket's advertised delivery contract."""
+        session = self.agent_delivery_sessions.get(name)
+        if session is None:
+            return None
+        return DeliverySession(session.incarnation, dict(session.capabilities))
 
     def set_roles(self, name: str, roles: tuple[str, ...]) -> None:
         """Bind the roles ``name`` answers to, replacing any previous set.

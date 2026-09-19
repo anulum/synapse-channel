@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 
 from synapse_channel.cli_claim_hook_common import resolve_synapse_binary
 from synapse_channel.cli_claude_claim_hook import render_hook_config
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secret_files import read_secret_file
 
 PLUGIN_NAME = "synapse-channel"
@@ -33,8 +34,10 @@ _MARKER = ".synapse-install.json"
 _FILES = (".claude-plugin/plugin.json", "README.md", "hooks/hooks.json", ".mcp.json")
 
 
-class ClaudePluginInstallError(ValueError):
+class ClaudePluginInstallError(SynapseError, ValueError):
     """An installation path or owned file failed a reversible-operation check."""
+
+    code = "claude_plugin_install"
 
 
 @dataclass(frozen=True)

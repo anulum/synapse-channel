@@ -19,12 +19,15 @@ evidence rather than an isolated-core claim. See the
 
 ## Coordination wire baseline
 
-`coordination_wire_benchmark.py` measures six fixed, synthetic current-wire
-coordination frames using standard JSON encoding and the production bounded
-decoder. Its [committed result](../benchmarks/results/coordination_wire_benchmark.json)
+`coordination_wire_benchmark.py` measures six fixed version-two baseline frames
+and three representative version-three delivery frames using standard JSON
+encoding and the production bounded decoder. The committed result in
+`benchmarks/results/coordination_wire_benchmark.json`
 records per-frame bytes and local median codec time for 1,000 iterations.
-The 2026-09-19 Python 3.12.3 shared-host run measured 1,168 bytes total with
-current spacing and 1,080 bytes minified (7.5% less). These small control
+The 2026-09-19 Python 3.12.3 shared-host run measured 1,168 bytes for the
+unchanged six-frame baseline and 1,498 bytes for the three new delivery frames
+(request 441, offer 546, status 511). The nine frames total 2,666 bytes with
+default spacing and 2,485 bytes minified. These small control
 frames do not establish network throughput or justify a new wire encoding;
 the [compatibility decision](protocol-compatibility-plan.md) keeps JSON.
 

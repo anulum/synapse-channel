@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from synapse_channel.client.agent_delivery import AgentDeliveryMixin
 from synapse_channel.client.agent_outbound_base import AgentSendMixin
 from synapse_channel.client.agent_outbound_capability import AgentCapabilityMixin
 from synapse_channel.client.agent_outbound_ledger import AgentLedgerMixin
@@ -25,6 +26,7 @@ __all__ = [
 
 class AgentOutboundMixin(
     AgentSendMixin,
+    AgentDeliveryMixin,
     AgentMemoryMixin,
     AgentTaskMutationMixin,
     AgentLedgerMixin,

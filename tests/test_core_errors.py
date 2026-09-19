@@ -49,6 +49,16 @@ _SRC = Path(__file__).resolve().parent.parent / "src" / "synapse_channel"
 # A row may be ADDED for a new error class; an existing row must never change.
 # ---------------------------------------------------------------------------
 FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
+    "ClaudePluginInstallError": (
+        "synapse_channel.claude_plugin_install",
+        "claude_plugin_install",
+        ValueError,
+    ),
+    "ProposalError": (
+        "synapse_channel.participants.claim_parse",
+        "claim_proposal",
+        ValueError,
+    ),
     "MirrorVersionError": ("synapse_channel.fleet_mirror_contract", "mirror_version", ValueError),
     "SetupAuthorizationError": (
         "synapse_channel.setup_authorization",

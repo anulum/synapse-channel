@@ -24,9 +24,9 @@ python tools/vendor_discovery.py --strict \
   --next-catalog build/vendor-catalog-proposal.json
 ```
 
-The tracked [`sources.json`](../integrations/vendor-discovery/sources.json)
+The tracked `integrations/vendor-discovery/sources.json`
 names the weekly owner and manual alias decisions. The tracked
-[`catalog.json`](../integrations/vendor-discovery/catalog.json) is the committed
+`integrations/vendor-discovery/catalog.json` is the committed
 observation baseline. Its records are unreviewed signals, not admitted
 integrations. The command leaves both untouched and writes a dated
 report plus a proposed next catalog. A maintainer reviews the report before
@@ -51,7 +51,7 @@ Models.dev snapshot, a complete small GitHub result, or an explicit registry
 `stale`; it never becomes an empty snapshot. HTTPS source hosts, query shapes,
 response sizes and timeouts are fixed. No linked candidate URL is fetched.
 
-The [weekly workflow](../.github/workflows/vendor-discovery.yml) publishes the
+The weekly `.github/workflows/vendor-discovery.yml` workflow publishes the
 report and proposed baseline as seven-day artifacts. The Core maintenance
 seat reviews them weekly and before adding a new integration. To promote a
 candidate, create an owned C15 host-package or C07 provider task. Review its

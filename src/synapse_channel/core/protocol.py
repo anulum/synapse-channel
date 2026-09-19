@@ -30,7 +30,7 @@ from typing import Any
 SENDER_HUB = "SynapseHub"
 """Reserved sender name stamped on every hub-originated message."""
 
-WIRE_PROTOCOL_VERSION = 2
+WIRE_PROTOCOL_VERSION = 3
 """The version of the hub's wire protocol.
 
 Advertised in the ``WELCOME`` handshake so a client — including an out-of-tree
@@ -50,7 +50,9 @@ to the lowest common version through :func:`negotiate_protocol_version`, warn on
 an absent, older, or newer peer version, and gate optional capabilities against
 the effective version. The multi-hub network fetcher records that decision and
 the follower exposes it per peer; the hub itself does not reject a connection
-solely for version skew.
+solely for version skew. Version ``3`` adds session-bound delivery intents,
+explicit recipient stages and cancellation; version-two ``ACK`` remains a
+transport-only mailbox acknowledgement.
 """
 
 MIN_ACK_PROTOCOL_VERSION = 2
@@ -62,6 +64,9 @@ fixed capability floor, not the moving :data:`WIRE_PROTOCOL_VERSION`, so a futur
 hub at a higher version still qualifies while a pre-``2`` hub that never learnt the
 verb is never sent it.
 """
+
+MIN_DELIVERY_PROTOCOL_VERSION = 3
+"""Lowest negotiated wire version admitted for session-bound delivery intents."""
 
 
 @dataclass(frozen=True)
@@ -297,6 +302,12 @@ class MessageType:
     # Agent -> hub.
     CHAT = "chat"
     ACK = "ack"
+    DELIVERY_REQUEST = "delivery_request"
+    DELIVERY_BOUNDARY = "delivery_boundary"
+    DELIVERY_ACK = "delivery_ack"
+    DELIVERY_OUTCOME = "delivery_outcome"
+    DELIVERY_CANCEL = "delivery_cancel"
+    DELIVERY_STATUS_REQUEST = "delivery_status_request"
     DELIVERY_RECEIPT = "delivery_receipt"
     HEARTBEAT = "heartbeat"
     CLAIM = "claim"
@@ -358,6 +369,10 @@ class MessageType:
     LEDGER_PROGRESS_POSTED = "ledger_progress_posted"
     BOARD_SNAPSHOT = "board_snapshot"
     CAPABILITY_ADVERTISED = "capability_advertised"
+    DELIVERY_SESSION = "delivery_session"
+    DELIVERY_OFFER = "delivery_offer"
+    DELIVERY_STATUS = "delivery_status"
+    DELIVERY_REFUSED = "delivery_refused"
     RECALL_LOGGED = "recall_logged"
     FINDING_RECORDED = "finding_recorded"
     FINDING_REJECTED = "finding_rejected"

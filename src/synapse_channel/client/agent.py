@@ -18,6 +18,7 @@ the CLI, and any embedding application use to appear on the channel.
 from __future__ import annotations
 
 import asyncio
+import secrets
 from collections.abc import Callable
 from typing import Any
 
@@ -37,6 +38,7 @@ from synapse_channel.client.agent_queries import AgentQueryMixin
 from synapse_channel.core.capability_card_signing import (
     DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
 )
+from synapse_channel.core.delivery_modes import MODES, QUALITIES
 from synapse_channel.core.identity_keys import load_signing_key
 from synapse_channel.core.message_auth import MessageAuthKey
 from synapse_channel.core.wake_capability import WAKE_DIRECT, normalize_wake_capability
@@ -164,6 +166,10 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
     ping_timeout : float, optional
         Seconds to wait for a ping reply before dropping the connection. Defaults
         to ``20.0``.
+    delivery_capabilities : dict[str, str] or None, optional
+        Version-three modes this process can actually execute. ``None`` means
+        sender-only compatibility; a mapping creates a fresh in-memory session
+        token and advertises only those native or emulated modes.
     """
 
     def __init__(
@@ -196,6 +202,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         machine_identity: bool = True,
         ping_interval: float = 20.0,
         ping_timeout: float = 20.0,
+        delivery_capabilities: dict[str, str] | None = None,
     ) -> None:
         if identity_key_path is None and machine_identity:
             # Present the zero-config machine identity by default. Every verb
@@ -222,6 +229,19 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         self.last_close_reason: str = ""
         self.hub_id = "unknown"
         self.hub_protocol_version: int | None = None
+        self.delivery_incarnation = ""
+        self.delivery_ready_event = asyncio.Event()
+        if delivery_capabilities is not None and any(
+            mode not in MODES or quality not in QUALITIES
+            for mode, quality in delivery_capabilities.items()
+        ):
+            raise ValueError("delivery capabilities must name supported modes and qualities")
+        self.delivery_capabilities = (
+            None if delivery_capabilities is None else dict(delivery_capabilities)
+        )
+        self._delivery_session_token = (
+            None if delivery_capabilities is None else secrets.token_hex(32)
+        )
         self.verbose = bool(verbose)
         self.token = token
         self.takeover = bool(takeover)

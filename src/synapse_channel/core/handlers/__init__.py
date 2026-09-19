@@ -30,6 +30,12 @@ from synapse_channel.core.handlers.channels import (
     handle_channel_list_request,
 )
 from synapse_channel.core.handlers.dead_letter_forwarding import handle_dead_letter_forwarding
+from synapse_channel.core.handlers.delivery_modes import (
+    handle_delivery_cancel,
+    handle_delivery_request,
+    handle_delivery_stage,
+    handle_delivery_status_request,
+)
 from synapse_channel.core.handlers.federation_offer import handle_federation_offer_request
 from synapse_channel.core.handlers.guard_evidence import handle_guard_denial
 from synapse_channel.core.handlers.identity_pins import handle_identity_pin_reclaim
@@ -71,6 +77,12 @@ Handler = Callable[["SynapseHub", str, dict[str, Any], Any], Awaitable[None]]
 DISPATCH: dict[str, Handler] = {
     MessageType.CHAT: handle_chat,
     MessageType.ACK: handle_ack,
+    MessageType.DELIVERY_REQUEST: handle_delivery_request,
+    MessageType.DELIVERY_BOUNDARY: handle_delivery_stage,
+    MessageType.DELIVERY_ACK: handle_delivery_stage,
+    MessageType.DELIVERY_OUTCOME: handle_delivery_stage,
+    MessageType.DELIVERY_CANCEL: handle_delivery_cancel,
+    MessageType.DELIVERY_STATUS_REQUEST: handle_delivery_status_request,
     MessageType.HEARTBEAT: handle_heartbeat,
     MessageType.CLAIM: handle_claim,
     MessageType.RELEASE: handle_release,

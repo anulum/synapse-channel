@@ -46,6 +46,7 @@ from types import TracebackType
 from typing import Any, Literal, NamedTuple
 
 from synapse_channel.core.atomic_operations import OperationRecord
+from synapse_channel.core.delivery_persistence import DeliveryPersistence
 from synapse_channel.core.event_row_recovery import CorruptEventRow, decode_event_row
 
 BUSY_TIMEOUT_MS = 5000
@@ -249,12 +250,18 @@ class EventStore:
             ).fetchone()
             is not None
         )
+        self.delivery = DeliveryPersistence(self._conn, self._lock)
         self._conn.commit()
         # WAL mode creates ``-wal`` and ``-shm`` sidecars on the first write (the
         # ``CREATE TABLE`` commit above). They mirror the same content as the main
         # file but are born under the process umask, so lock them down once they exist.
         self._restrict(f"{self.path}-wal")
         self._restrict(f"{self.path}-shm")
+        try:
+            self.delivery.verify_replay()
+        except BaseException:
+            self._conn.close()
+            raise
 
     @property
     def encrypted(self) -> bool:

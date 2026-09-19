@@ -70,6 +70,8 @@ from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
 from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_letter
 from synapse_channel.core.dead_letters import DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS, DeadLetterLedger
 from synapse_channel.core.deadlock import prune_waits
+from synapse_channel.core.delivery_modes import DeliveryRefusal
+from synapse_channel.core.delivery_registration import bind_delivery_registration
 from synapse_channel.core.durable_ingress import DurableIngressQuota
 from synapse_channel.core.federation import FederationBundle
 from synapse_channel.core.handlers import DISPATCH
@@ -156,6 +158,7 @@ from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
 from synapse_channel.core.protocol import (
     MessageType,
     loads_bounded,
+    read_protocol_version,
     system_message,
 )
 from synapse_channel.core.ratelimit import RateLimiter
@@ -694,6 +697,7 @@ class SynapseHub:
             online_agents=self.online_agents,
         )
         self.hub_id = hub_id or f"syn-{uuid.uuid4().hex[:8]}"
+        self.stable_delivery_hub_id = hub_id
         # A fingerprint of the configuration posture this hub was built from,
         # for a cockpit's pinning indicator. Empty for an ad-hoc construction;
         # :meth:`from_config` sets it from the grouped record (the production path).
@@ -1404,6 +1408,52 @@ class SynapseHub:
             )
             return
         is_new_agent = self.clients.set_agent_socket(sender, websocket)
+        if not was_bound:
+            self.clients.bind_protocol_version(
+                sender, websocket, read_protocol_version(data.get("protocol_version"))
+            )
+        try:
+            delivery_session = bind_delivery_registration(
+                self.clients,
+                sender=sender,
+                websocket=websocket,
+                data=data,
+                msg_type=msg_type,
+                was_bound=was_bound,
+                durable=self.journal is not None,
+                stable_hub_id=self.stable_delivery_hub_id,
+            )
+        except DeliveryRefusal as exc:
+            await self._send_json(
+                websocket,
+                self._system(
+                    str(exc),
+                    msg_type=MessageType.ERROR,
+                    target=sender,
+                    reason_code=exc.code,
+                ),
+            )
+            await self._close_socket(websocket, code=4020, reason="delivery registration refused")
+            return
+        if delivery_session is not None:
+            from synapse_channel.core.handlers.delivery_modes import (
+                supersede_old_delivery_sessions,
+            )
+
+            await supersede_old_delivery_sessions(
+                self, target=sender, incarnation=delivery_session.incarnation
+            )
+            await self._send_json(
+                websocket,
+                self._system(
+                    "Delivery session registered.",
+                    msg_type=MessageType.DELIVERY_SESSION,
+                    target=sender,
+                    incarnation=delivery_session.incarnation,
+                    capabilities=delivery_session.capabilities,
+                    protocol_version=3,
+                ),
+            )
         if not was_bound and self.journal is not None:
             # Receipt notifications are a durable at-least-once outbox. A sender
             # that was offline for an ACK or a prior transport failure receives
@@ -1413,6 +1463,11 @@ class SynapseHub:
             )
 
             await deliver_pending_receipt_notifications(self, sender=sender, websocket=websocket)
+            from synapse_channel.core.handlers.delivery_modes import (
+                deliver_pending_delivery_notifications,
+            )
+
+            await deliver_pending_delivery_notifications(self, sender=sender, websocket=websocket)
         if not was_bound or msg_type != MessageType.HEARTBEAT:
             self.dead_letters.clear(sender)
         if is_new_agent:
@@ -1714,6 +1769,7 @@ class SynapseHub:
         stop = asyncio.Event()
         self._install_signal_handlers(asyncio.get_running_loop(), stop)
         started = False
+        delivery_sweeper: asyncio.Task[None] | None = None
         try:
             async with (
                 self._dark_seats.running(),
@@ -1746,7 +1802,16 @@ class SynapseHub:
                     host,
                     self._bind_port,
                 )
+                if self.journal is not None and self.stable_delivery_hub_id:
+                    from synapse_channel.core.handlers.delivery_modes import (
+                        delivery_expiry_loop,
+                    )
+
+                    delivery_sweeper = asyncio.create_task(delivery_expiry_loop(self))
+                    delivery_sweeper.add_done_callback(lambda _task: stop.set())
                 await stop.wait()
+                if delivery_sweeper is not None and delivery_sweeper.done():
+                    delivery_sweeper.result()
         except BaseException:
             if not started:
                 # Unblock a startup waiter so it reports the failed bind
@@ -1754,6 +1819,9 @@ class SynapseHub:
                 self._serving.set()
             raise
         finally:
+            if delivery_sweeper is not None:
+                delivery_sweeper.cancel()
+                await asyncio.gather(delivery_sweeper, return_exceptions=True)
             self._bound_address = None
             if started:
                 self._serving.clear()

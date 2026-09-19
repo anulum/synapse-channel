@@ -18,7 +18,7 @@ from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosedError
 
 from synapse_channel.core.identity_keys import public_key_b64
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION, MessageType
 
 DEFAULT_HUB_URI = "ws://localhost:8876"
 """Default hub URI; matches the hub's default bind port."""
@@ -91,6 +91,10 @@ class _LifecycleAgent(Protocol):
     uri: str
     verbose: bool
     wake_capability: str
+    delivery_capabilities: dict[str, str] | None
+    delivery_incarnation: str
+    delivery_ready_event: asyncio.Event
+    _delivery_session_token: str | None
     _connect_active: bool
     _heartbeat_task: asyncio.Task[None] | None
     _identity_key: Any
@@ -154,6 +158,8 @@ class AgentLifecycleMixin:
         self._connect_active = True
         self.running = True
         self.ready_event.clear()
+        self.delivery_incarnation = ""
+        self.delivery_ready_event.clear()
         self.last_close_code, self.last_close_reason = None, ""
         heartbeat: asyncio.Task[None] | None = None
         try:
@@ -173,6 +179,10 @@ class AgentLifecycleMixin:
                 if self.takeover:
                     extra["takeover"] = True
                 extra["wake_capability"] = self.wake_capability
+                extra["protocol_version"] = WIRE_PROTOCOL_VERSION
+                if self._delivery_session_token is not None:
+                    extra["delivery_session_token"] = self._delivery_session_token
+                    extra["delivery_capabilities"] = self.delivery_capabilities
                 if self._identity_key is not None:
                     # Carry the public half of the signing key so a first-use
                     # hub can verify the registration self-contained and pin
@@ -233,6 +243,8 @@ class AgentLifecycleMixin:
         finally:
             self.running = False
             self.ready_event.clear()
+            self.delivery_ready_event.clear()
+            self.delivery_incarnation = ""
             self.connection = None
             if heartbeat is not None:
                 heartbeat.cancel()

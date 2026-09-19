@@ -79,6 +79,7 @@ GATED_MUTATIONS = (
     frozenset(
         {
             MessageType.CHAT,
+            MessageType.DELIVERY_REQUEST,
             MessageType.CLAIM,
             MessageType.TASK_UPDATE,
             MessageType.HANDOFF,
@@ -151,7 +152,7 @@ def required_accesses(msg_type: str, data: dict[str, Any]) -> list[tuple[str, Ta
     list[tuple[str, Target]]
         One ``(permission, target)`` per access the frame needs.
     """
-    if msg_type == MessageType.CHAT:
+    if msg_type in (MessageType.CHAT, MessageType.DELIVERY_REQUEST):
         channel = str(data.get("channel") or "").strip()
         if channel:
             return [(MESSAGE, Target("channel", channel))]

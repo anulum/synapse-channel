@@ -67,6 +67,17 @@ async def handle_who_request(
     }
     if wake_capabilities:
         extra["wake_capabilities"] = wake_capabilities
+    if hub.clients.protocol_version_of(sender) >= 3:
+        delivery_sessions = {
+            name: {
+                "incarnation": session.incarnation,
+                "capabilities": session.capabilities,
+                "hub_id": hub.hub_id,
+            }
+            for name in hub.online_agents()
+            if (session := hub.clients.delivery_session(name)) is not None
+        }
+        extra["delivery_sessions"] = delivery_sessions
 
     await hub._send_json(
         websocket,

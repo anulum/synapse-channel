@@ -9,16 +9,16 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # Delivery protocol compatibility decision
 
-Status: **reviewed design delta, not an implemented wire version** (2026-09-19).
-The current wire is version 2. This record specifies the contract C05 must
-implement and F06 must admit before any version bump, release or external
-compatibility claim. Existing behavior is defined by [the wire protocol](protocol.md)
+Status: **reviewed C06 decision record, followed by local C05 implementation**
+(2026-09-19). At the C06 decision checkpoint, the wire was version 2. C05
+implements a gated version 3 in Core; F06 Fleet compatibility and a release
+remain separate work. Current behavior is defined by [the wire protocol](protocol.md)
 and [the coordination invariants](coordination-spec.md). AEF receipts prove the
 events they bind; they do not prove a recipient's model executed an instruction.
 
 ## Baseline and decision
 
-The shipped JSON/WebSocket envelope has `sender`, `target`, `type`, `payload`
+At the C06 checkpoint, the JSON/WebSocket envelope had `sender`, `target`, `type`, `payload`
 and `timestamp`; hub frames also have `hub_id`. The welcome handshake advertises
 integer `protocol_version=2`. A missing or malformed version negotiates as
 legacy version 1; an older or newer advertised version gives an operator
@@ -28,16 +28,16 @@ journal, and `ack` advances a receiver watermark. Immediate and deferred
 receipts show transport reachability and acceptance only. The stable durable
 `seq` is a mailbox attempt identity; `msg_id` resets on hub restart.
 
-**Decision:** keep JSON/WebSocket and wire version 2 while C05 is developed.
+**Decision at C06:** keep JSON/WebSocket and wire version 2 while C05 is developed.
 Add no new delivery mode to a version-2 frame and do not reinterpret its
 `delivery_receipt`, `ack`, `delivered` or `deferred` fields. A future delivery
 vocabulary requires a new negotiated feature profile and a version bump after
 the real two-adapter test matrix passes. The candidate revision is **version 3**;
-that number is a design target, not a shipped constant. C05 must freeze exact
-field names and public schemas with conformance fixtures before implementation
-is called stable. Internal task labels such as C05/C06/F06 never enter the wire.
+that number was the design target and is now the locally implemented Core wire
+constant. C05 freezes exact field names and public schemas with conformance
+fixtures. Internal task labels such as C05/C06/F06 never enter the wire.
 
-The committed [coordination wire benchmark](../benchmarks/coordination_wire_benchmark.py)
+The committed `benchmarks/coordination_wire_benchmark.py`
 measures six fixed current-wire control and coordination frames with the
 production bounded JSON decoder. The local Python 3.12.3 run used 1,000 codec
 iterations per frame: 1,168 bytes with the current `json.dumps` spacing and
@@ -50,10 +50,17 @@ no reason to add CBOR/Protobuf or change JSON framing now. F06 may revisit
 encoding only with measured real coordination traces, canonicalization and
 mixed-version evidence; byte saving alone cannot justify a second decoder.
 
+The C05 rerun keeps the six baseline examples unchanged at 1,168 wire bytes
+and adds three version-three examples: request 441, offer 546, and acknowledged
+status 511 bytes. The nine-frame total is 2,666 bytes with default spacing and
+2,485 minified. These are local codec samples, not network latency or a maximum
+frame-size proof; the per-mode 8,192-byte body cap is enforced separately.
+
 ## Candidate normative delta for C05
 
-The following MUST/SHOULD statements govern implementation review. They are
-**prospective** and do not describe current runtime support.
+The following MUST/SHOULD statements were prospective at the C06 checkpoint.
+They govern C05's local Core implementation review; the runtime contract and
+remaining limitations are stated in [the wire protocol](protocol.md).
 
 1. **Session incarnation.** A recipient session MUST have an opaque incarnation
    issued or verified by its owning hub at authenticated registration. A delivery
@@ -129,9 +136,9 @@ The following MUST/SHOULD statements govern implementation review. They are
 | v1 client ↔ v2 hub | Existing chat/claim flow; no client mailbox ACK. | Immediate receipt only where previously supported; no new mode or outcome claim. |
 | v2 client ↔ v1 or absent-version hub | Effective v1, warning, no ACK emission. | No deferred receipt assumption; no new mode. |
 | v2 client ↔ v2 hub | Current version-2 mailbox and receipt behavior. | `ack` is transport-only; explicit outcome absent. |
-| Candidate v3 client ↔ v2 hub | Downgrade to v2 only when sender explicitly permits transport-only fallback. | Otherwise `unsupported_protocol`; no v3 frame sent. |
-| v2 client ↔ candidate v3 hub | Hub retains v2 behavior for that connection. | No v3 stage or outcome inferred from legacy `ack`. |
-| Candidate v3 client ↔ candidate v3 hub, recipient adapter lacks mode | Hub may accept transport request only under explicit sender fallback. | `unsupported_mode` or `stale_incarnation` with durable correlation. |
+| v3 client ↔ v2 hub | Version-three delivery methods refuse locally; ordinary v2 chat remains available only through the separate chat API. | `unsupported_protocol`; no v3 frame sent. |
+| v2 client ↔ v3 hub | Hub retains v2 behavior for that connection. | No v3 stage or outcome inferred from legacy `ack`. |
+| v3 client ↔ v3 hub, recipient adapter lacks mode | Hub accepts only a supported mode from the sender's explicit fallback list. | `unsupported_mode` or `stale_incarnation` with request correlation. |
 | Fleet forwarding between different hub profiles | Lowest common admitted profile, origin retained; no capability invented at relay. | F06 refuses unsupported semantics and reports exact profile gap. |
 
 Rollout order: introduce an additive capability advertisement and explicit

@@ -5,41 +5,61 @@
   "rows": {
     "claim": {
       "compact_bytes": 192,
-      "decode_median_us": 21.219,
-      "encode_median_us": 7.801,
+      "decode_median_us": 8.906,
+      "encode_median_us": 3.019,
       "wire_bytes": 211
+    },
+    "delivery_offer_v3": {
+      "compact_bytes": 515,
+      "decode_median_us": 16.58,
+      "encode_median_us": 4.191,
+      "wire_bytes": 546
     },
     "delivery_receipt": {
       "compact_bytes": 242,
-      "decode_median_us": 12.111,
-      "encode_median_us": 3.775,
+      "decode_median_us": 9.763,
+      "encode_median_us": 3.025,
       "wire_bytes": 261
+    },
+    "delivery_request_v3": {
+      "compact_bytes": 414,
+      "decode_median_us": 14.389,
+      "encode_median_us": 3.87,
+      "wire_bytes": 441
+    },
+    "delivery_status_v3": {
+      "compact_bytes": 476,
+      "decode_median_us": 15.935,
+      "encode_median_us": 4.104,
+      "wire_bytes": 511
     },
     "directed_chat": {
       "compact_bytes": 206,
-      "decode_median_us": 16.32,
-      "encode_median_us": 5.593,
+      "decode_median_us": 8.414,
+      "encode_median_us": 2.748,
       "wire_bytes": 219
     },
     "error": {
       "compact_bytes": 188,
-      "decode_median_us": 14.72,
-      "encode_median_us": 5.149,
+      "decode_median_us": 7.874,
+      "encode_median_us": 2.647,
       "wire_bytes": 201
     },
     "heartbeat": {
       "compact_bytes": 117,
-      "decode_median_us": 14.627,
-      "encode_median_us": 5.881,
+      "decode_median_us": 6.294,
+      "encode_median_us": 2.437,
       "wire_bytes": 128
     },
     "mailbox_ack": {
       "compact_bytes": 135,
-      "decode_median_us": 9.562,
-      "encode_median_us": 3.901,
+      "decode_median_us": 7.035,
+      "encode_median_us": 2.658,
       "wire_bytes": 148
     }
   },
-  "total_compact_bytes": 1080,
-  "total_wire_bytes": 1168
+  "total_compact_bytes": 2485,
+  "total_wire_bytes": 2666,
+  "v2_baseline_wire_bytes": 1168,
+  "v3_delivery_wire_bytes": 1498
 }

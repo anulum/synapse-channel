@@ -22,6 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.terminal_text import terminal_text
 
 MAX_PATHS = 64
@@ -43,8 +44,10 @@ PROPOSAL_INSTRUCTION = (
 )
 
 
-class ProposalError(ValueError):
+class ProposalError(SynapseError, ValueError):
     """A request or provider response cannot safely become a claim draft."""
+
+    code = "claim_proposal"
 
 
 def _line(value: object, field: str, limit: int) -> str:

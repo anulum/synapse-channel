@@ -61,6 +61,11 @@ DEFAULT_SIGNED_MESSAGE_TYPES = (
             MessageType.TASK_UPDATE,
             MessageType.HANDOFF,
             MessageType.CHECKPOINT,
+            MessageType.DELIVERY_REQUEST,
+            MessageType.DELIVERY_BOUNDARY,
+            MessageType.DELIVERY_ACK,
+            MessageType.DELIVERY_OUTCOME,
+            MessageType.DELIVERY_CANCEL,
         }
     )
     | RESOURCE_TYPE_ALIASES

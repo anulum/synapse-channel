@@ -44,6 +44,7 @@ ROLE_CLAIM = "role-claim"
 PIN_RECLAIM = "identity-pin-reclaim"
 EVIDENCE = "evidence"
 RECALL = "recall"
+DELIVERY_CONTROL = "delivery-control"
 
 PERMISSIONS = frozenset(
     {
@@ -62,6 +63,7 @@ PERMISSIONS = frozenset(
         PIN_RECLAIM,
         EVIDENCE,
         RECALL,
+        DELIVERY_CONTROL,
     }
 )
 """The auditable permission vocabulary an ACL rule may grant.
@@ -104,6 +106,10 @@ kind is ``history``; the shipped target is ``history:global``. Consulted only wh
 or open hub is unchanged), matching the proportionate-to-exposure posture. It is
 the read counterpart to the channel-history membership gate, so a secured
 deny-by-default hub no longer leaks its full history to every authenticated agent.
+
+``DELIVERY_CONTROL`` grants a cryptographically admitted sender the right to
+interrupt or steer a claimed recipient task. The version-three delivery handler
+enforces this permission even when ordinary ACL enforcement is disabled.
 """
 
 WOULD_ALLOW = "would_allow"

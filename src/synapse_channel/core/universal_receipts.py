@@ -72,10 +72,19 @@ NON_RECEIPT_EVENT_KINDS = frozenset(
         EventKind.FINDING,
         EventKind.IDEMPOTENCY,
         EventKind.MAILBOX_WATERMARK,
+        EventKind.DELIVERY_INTENT_ACCEPTED,
+        EventKind.DELIVERY_INTENT_QUEUED,
+        EventKind.DELIVERY_INTENT_TRANSITION,
+        EventKind.DELIVERY_CANCEL_REQUESTED,
         EventKind.CORRUPT,
     }
 )
-"""Explicitly classified event kinds that do not themselves carry receipt semantics."""
+"""Event kinds outside the universal receipt projection.
+
+Delivery intent lifecycle events have their own correlated status and durable
+notification view; projecting them as legacy transport receipts would conflate
+queue admission, boundary acknowledgement, and task execution.
+"""
 
 
 @dataclass(frozen=True, slots=True)

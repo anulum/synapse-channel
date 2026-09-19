@@ -13,6 +13,7 @@ from typing import Any, cast
 
 import pytest
 
+from synapse_channel.core.delivery_modes import DeliveryRefusal
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.wake_capability import WAKE_DIRECT, WAKE_UNKNOWN
 
@@ -134,6 +135,84 @@ def test_drop_client_removes_only_active_agent_bindings() -> None:
     registry.socket_agent[current_socket] = "agent"
 
     assert registry.drop_client(current_socket) == "agent"
+
+
+def test_delivery_session_is_socket_bound_and_changes_for_a_new_process() -> None:
+    """Reconnect retains one process token; a new token cannot inherit its incarnation."""
+    registry = _registry()
+    first = _Socket()
+    registry.add_client(first)
+    registry.socket_agent[first] = "P/recipient"
+    registry.set_agent_socket("P/recipient", first)
+    session = registry.bind_delivery_session(
+        "P/recipient",
+        first,
+        token="a" * 64,
+        capabilities={"follow_up": "native"},
+        hub_id="hub-1",
+    )
+    assert session.capabilities == {"follow_up": "native"}
+    observed = registry.delivery_session("P/recipient")
+    assert observed is not None
+    observed.capabilities["interrupt"] = "native"
+    assert registry.delivery_session("P/recipient") == session
+    assert registry.drop_client(first) == "P/recipient"
+    assert registry.delivery_session("P/recipient") is None
+
+    second = _Socket()
+    registry.add_client(second)
+    registry.socket_agent[second] = "P/recipient"
+    registry.set_agent_socket("P/recipient", second)
+    resumed = registry.bind_delivery_session(
+        "P/recipient", second, token="a" * 64, capabilities={}, hub_id="hub-1"
+    )
+    assert resumed.incarnation == session.incarnation
+    fresh = registry.bind_delivery_session(
+        "P/recipient", second, token="b" * 64, capabilities={}, hub_id="hub-1"
+    )
+    assert fresh.incarnation != session.incarnation
+    registry.revoke_name("P/recipient")
+    assert registry.delivery_session("P/recipient") is None
+
+
+@pytest.mark.parametrize(
+    ("token", "capabilities", "code"),
+    [
+        ("short", {}, "invalid_shape"),
+        ("G" * 64, {}, "invalid_shape"),
+        ("a" * 64, [], "invalid_shape"),
+        ("a" * 64, {"interrupt": "unsupported"}, "invalid_shape"),
+        ("a" * 64, {"unrecognised": "native"}, "invalid_shape"),
+        ("a" * 64, {"interrupt": []}, "invalid_shape"),
+        ("a" * 64, {str(i): "native" for i in range(5)}, "invalid_shape"),
+    ],
+)
+def test_delivery_session_rejects_malformed_advertisement(
+    token: object, capabilities: object, code: str
+) -> None:
+    """A malformed advertisement cannot create a positive capability record."""
+    registry = _registry()
+    socket = _Socket()
+    registry.add_client(socket)
+    registry.socket_agent[socket] = "P/recipient"
+    registry.set_agent_socket("P/recipient", socket)
+    with pytest.raises(DeliveryRefusal) as failure:
+        registry.bind_delivery_session(
+            "P/recipient", socket, token=token, capabilities=capabilities, hub_id="hub-1"
+        )
+    assert failure.value.code == code
+    assert registry.delivery_session("P/recipient") is None
+
+
+def test_delivery_session_rejects_a_socket_without_the_live_name_binding() -> None:
+    """Possession of a token cannot bypass the hub's authenticated socket binding."""
+    registry = _registry()
+    socket = _Socket()
+    with pytest.raises(DeliveryRefusal) as failure:
+        registry.bind_delivery_session(
+            "P/recipient", socket, token="a" * 64, capabilities={}, hub_id="hub-1"
+        )
+    assert failure.value.code == "unauthorised_requester"
 
 
 def test_quota_principal_binding_is_first_write_and_dropped_with_socket() -> None:

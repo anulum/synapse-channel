@@ -17,7 +17,7 @@ applied once. On a secured hub, the first message of a connection must carry a
 `token`.
 
 The hub advertises its wire-protocol version in the `welcome` handshake as
-`protocol_version` (an integer; the current wire is version `2`), and it is also
+`protocol_version` (an integer; the current wire is version `3`), and it is also
 reported by `/health` as `protocol_version`. It is decoupled from the package
 version on purpose — a patch or feature release that leaves the wire shapes
 unchanged does not bump it, so it is a stable compatibility signal a client can
@@ -32,10 +32,11 @@ negotiate to the lowest common wire version, warn the operator when the peer is
 older, newer, or did not advertise a usable version, and gate optional features
 against that effective version.
 
-The [delivery compatibility decision](protocol-compatibility-plan.md) records
-a reviewed candidate for a later wire revision. Its new delivery modes and
-outcome stages are design requirements only; version 2 retains the behavior
-specified here.
+Version `3` adds session-bound delivery requests, explicit recipient stages,
+cancellation and durable outcome evidence. The version `2` `ack` remains a
+transport-only mailbox receipt. The
+[delivery compatibility decision](protocol-compatibility-plan.md) records the
+reviewed migration and mixed-version boundaries.
 
 The [per-message authentication runtime](per-message-authentication.md) keeps
 the same envelope shape and adds an `auth` object for selected mutating frames
@@ -78,7 +79,9 @@ does not add agent grades to protocol envelopes.
 - **Presence and chat:** `chat`, `heartbeat` (sent automatically by clients).
 - **Directed delivery:** `ack` (acknowledges a mailbox-accepted live or replayed
   directed message by its durable `seq`, optionally naming `mailbox_for`; see
-  [Directed delivery and the mailbox](#directed-delivery-and-the-mailbox)).
+  [Directed delivery and the mailbox](#directed-delivery-and-the-mailbox));
+  version-three `delivery_request`, `delivery_status_request`, `delivery_cancel`,
+  `delivery_boundary`, `delivery_ack` and `delivery_outcome`.
 - **Claims and leases:** `claim`, `release`, `task_update`, `handoff`,
   `checkpoint`, `wait_request`.
 - **Resources:** `resource`.
@@ -469,6 +472,68 @@ and never represents human or model consumption.
 Mailbox watermarks are separate `mailbox_watermark` events: losing the newest
 normal-durability watermark in a power failure can cause safe replay/recount, not
 loss of an unseen message body.
+
+## Session-bound delivery (wire version 3)
+
+A durable hub with an explicit stable `hub_id` admits version-three delivery.
+The receiver registers `delivery_session_token` (a 64-character random hex value)
+and a map of `delivery_capabilities` on its first authenticated heartbeat. The
+hub publishes only a SHA-256 incarnation digest. A version-three `who_snapshot`
+lists live `delivery_sessions` with incarnation, capabilities (`native` or
+`emulated`) and hub ID. Older peers do not receive this field. The recipient
+receives `delivery_session` after registration.
+
+The sender submits `delivery_request` with an exact target and incarnation,
+`request_id`, `idempotency_key`, `mode`, optional ordered `allowed_fallbacks`,
+`task_id`, `body`, and an absolute Unix `deadline`. Modes are `interrupt`,
+`steer`, `follow_up`, and `next_turn`. The body is limited to 8,192 UTF-8 bytes;
+ids to 128 bytes, and fallbacks to three. The hub selects only an advertised
+capability and reports `selected_mode` and `quality`. Interrupt and steer also
+require an authenticated hub, an explicit `DELIVERY_CONTROL` ACL grant, and a
+live exact-target claim. A request with no safe match receives
+`delivery_refused` with a stable `reason_code`; it never becomes chat. The
+hub caps unfinished requests at 128 per recipient incarnation and returns
+`recipient_queue_full` before appending another request. The
+`SynapseAgent.request_delivery()` API refuses an old hub before sending a v3
+frame. A v2 peer retains the mailbox `ack` contract.
+
+Admission commits `delivery_intent_accepted`, `delivery_intent_queued`, the
+aggregate, and a stable `delivery_offer` notification before socket delivery.
+Retries with the same sender, request ID, idempotency key and content return the
+original operation; changed content returns `id_conflict`. The recipient's
+`delivery_boundary`, `delivery_ack`, and `delivery_outcome` frames must name the
+operation, request, task, and stable mutation ID. `completed` and `failed`
+outcomes also require an executor reference and outcome code. The hub commits
+each transition and notification atomically. The status view reports receiver
+reachability, active session, boundary delivery, explicit ACK, cancellation
+request, and task completion as separate facts. Socket delivery or ACK alone
+does not prove execution.
+
+`delivery_cancel` records a sender request; it is not a terminal executor
+decision. A completion racing that request retains both facts. A deadline sweep
+commits `expired`; replacement of the recipient's process token commits
+`superseded` for unfinished older-incarnation work. Reconnect with the same
+token may replay a queued offer with the same `notification_id`; a fresh token
+cannot inherit it. Sender notifications missed while offline replay by stable
+ID. The hub promises at-least-once notification and recipient deduplication,
+not exactly-once external provider effects. `DeliveryParticipantBridge` executes
+follow-up and next-turn offers in an ordered queue through a `Participant` and
+keeps a local duplicate ledger; it does not advertise interrupt or steer.
+
+The Python entrypoint is `SynapseAgent.request_who()` followed by
+`SynapseAgent.request_delivery(...)` using the exact incarnation from the
+returned `who_snapshot`. The same client exposes `request_delivery_status`,
+`cancel_delivery`, and `report_delivery_stage`; their replies arrive through
+the normal message callback. A provider process can compose
+`DeliveryParticipantBridge(agent, participant, ledger_path=...)`, set the
+agent's callback to `bridge.on_message`, call `bridge.start()`, and supervise
+`agent.connect()`. The bridge checks provider health before starting and waits
+for the hub's boundary and ACK status before taking a model turn. A supervisor
+must reconnect the same agent instance after a socket loss to preserve the
+in-memory process token; creating a new instance starts a new incarnation and
+supersedes unfinished old work. Configure the provider's own edit, shell and
+network permissions before advertising a native capability. The bridge does
+not grant tool permissions or override provider approval prompts.
 
 ## Release receipts
 

@@ -212,6 +212,21 @@ def test_every_durable_event_kind_has_an_explicit_receipt_disposition() -> None:
     assert UNIVERSAL_RECEIPT_EVENT_KINDS | NON_RECEIPT_EVENT_KINDS == event_kinds
 
 
+def test_delivery_intent_events_do_not_masquerade_as_transport_receipts() -> None:
+    """Queue, stage and cancel events belong to the correlated status view."""
+    kinds = (
+        EventKind.DELIVERY_INTENT_ACCEPTED,
+        EventKind.DELIVERY_INTENT_QUEUED,
+        EventKind.DELIVERY_INTENT_TRANSITION,
+        EventKind.DELIVERY_CANCEL_REQUESTED,
+    )
+    events = tuple(
+        _event(index, kind, {"operation_key": "op"}) for index, kind in enumerate(kinds, 1)
+    )
+    assert set(kinds) <= NON_RECEIPT_EVENT_KINDS
+    assert universal_receipts_from_events(events) == ()
+
+
 def test_multihub_partition_and_heal_project_as_federation_receipts() -> None:
     partition = _event(
         30,

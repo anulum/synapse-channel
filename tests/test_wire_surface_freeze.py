@@ -61,7 +61,17 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "DEAD_LETTER_ESCALATION": "dead_letter_escalation",
     "DEAD_LETTER_FORWARDING": "dead_letter_forwarding",
     "DARK_SEAT_ALERT": "dark_seat_alert",
+    "DELIVERY_ACK": "delivery_ack",
+    "DELIVERY_BOUNDARY": "delivery_boundary",
+    "DELIVERY_CANCEL": "delivery_cancel",
+    "DELIVERY_OFFER": "delivery_offer",
+    "DELIVERY_OUTCOME": "delivery_outcome",
     "DELIVERY_RECEIPT": "delivery_receipt",
+    "DELIVERY_REFUSED": "delivery_refused",
+    "DELIVERY_REQUEST": "delivery_request",
+    "DELIVERY_SESSION": "delivery_session",
+    "DELIVERY_STATUS": "delivery_status",
+    "DELIVERY_STATUS_REQUEST": "delivery_status_request",
     "ERROR": "error",
     "FEDERATION_OFFER": "federation_offer",
     "FEDERATION_OFFER_REQUEST": "federation_offer_request",
@@ -159,6 +169,6 @@ def test_wire_envelope_carries_the_reserved_keys() -> None:
 
 
 def test_wire_protocol_version_is_frozen_at_the_current_baseline() -> None:
-    # The wire is at version 2 (the ACK verb and its deferred delivery receipt); a
+    # The wire is at version 3 (session-bound delivery and recipient stages); a
     # bump is a wire vocabulary change and a deliberate edit, not an accident.
-    assert WIRE_PROTOCOL_VERSION == 2
+    assert WIRE_PROTOCOL_VERSION == 3
