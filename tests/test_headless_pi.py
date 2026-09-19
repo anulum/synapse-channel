@@ -26,7 +26,7 @@ from synapse_channel.participants.headless_pi import (
 _FAKE_PI = r"""#!/usr/bin/env python3
 import json,os,sys
 if '--version' in sys.argv:
-    print('0.85.1')
+    print('0.86.0')
     raise SystemExit
 session=sys.argv[sys.argv.index('--session-id')+1]
 session_dir=sys.argv[sys.argv.index('--session-dir')+1]
@@ -171,7 +171,7 @@ async def test_missing_model_binary_and_bad_version_refuse_turn(tmp_path: Path) 
     result = await no_model.take_turn(request)
     assert result["is_error"] and "model must be explicit" in result["reason"]
 
-    binary.write_text(_FAKE_PI.replace("print('0.85.1')", "print('0.85.2')"), encoding="utf-8")
+    binary.write_text(_FAKE_PI.replace("print('0.86.0')", "print('0.86.1')"), encoding="utf-8")
     wrong = PiParticipant("project/pi", directory=tmp_path, model="local", binary=str(binary))
     assert not wrong.health().available
     assert "not verified" in (await wrong.take_turn(request))["reason"]

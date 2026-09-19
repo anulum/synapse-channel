@@ -13,6 +13,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- Admit pi 0.86.0 for the pinned RPC participant and optional claim-guard
+  extension after local host, model, session and extension checks. Pi 0.85.1
+  remains the previous verified rollback version.
+
 - Validate Claude Code 2.1.278 and OpenCode 1.18.31 against the packaged
   integrations. Exact host checks cover plugin onboarding, OpenCode JSONL,
   ACP sessions, authenticated API and live claim enforcement; older host

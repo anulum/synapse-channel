@@ -29,12 +29,12 @@
       "migration_decision": "No packaged Gemini extension accepted; inspect 0.60.0 for candidate scope."
     },
     "pi": {
-      "verified_version": "0.85.1",
-      "reviewed_notes_sha256": "49e0d7dd926e0c0ba553f1275bf9dafb0dfb226f0c80dfe8b75543a5a8887e9c",
-      "verification": "C03 pinned 0.85.1 RPC, local model, native extension and real hub claim journey",
+      "verified_version": "0.86.0",
+      "reviewed_notes_sha256": "1dbc65e460c5556a52bd6ca590eb4ed4920400f430648360d4db30b244cc767a",
+      "verification": "C21 Pi 0.86.0 RPC, local model and resume; native extension typecheck, test and host load",
       "capability_class": "native",
       "owning_adapter": "integrations/pi",
-      "migration_decision": "Admit 0.85.1 for the governed participant and optional extension after the C03 local acceptance journey."
+      "migration_decision": "Admit 0.86.0 on the verified Linux local-model and extension paths; retain 0.85.1 as rollback. New provider stream and user_bash APIs are outside this adapter."
     },
     "opencode": {
       "verified_version": "1.18.31",

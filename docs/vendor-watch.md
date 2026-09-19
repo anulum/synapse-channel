@@ -72,3 +72,12 @@ subject to the documented cooperative hook boundary.
 The OpenCode macOS, Windows and Linux arm64 release assets have official
 digests in the compatibility manifest; their executable workflow tests are
 separate platform gates when the local change is published.
+
+On 2026-09-20, Pi 0.86.0 was reviewed immediately after its official release.
+Its provider stream context, JSON value types and `user_bash` handler contract
+changed; this adapter does not implement those APIs. The exact npm host passed
+the TypeScript guard check and test, loaded the extension through its RPC
+command catalog, and completed two local Ollama turns across an exact session
+resume. The compatibility matrix now accepts 0.86.0 for these paths and keeps
+0.85.1 as the verified rollback reference. A model-driven claim mutation on
+0.86.0 and other operating systems remain separate verification work.

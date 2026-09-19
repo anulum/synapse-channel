@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — pinned pi RPC record framing and turn settlement
-"""Read pi 0.85.1 RPC as bounded LF-delimited JSON records.
+"""Read pi 0.86.0 RPC as bounded LF-delimited JSON records.
 
 The protocol treats U+2028 and U+2029 as ordinary string characters. A command
 response acknowledges receipt only; ``turn_end`` closes one assistant/tool
@@ -20,7 +20,7 @@ import math
 from collections.abc import Mapping
 from typing import Any, Final, cast
 
-PI_RPC_VERSION: Final = "0.85.1"
+PI_RPC_VERSION: Final = "0.86.0"
 MAX_RECORD_BYTES: Final = 1_048_576
 MAX_PENDING_BYTES: Final = 2_097_152
 

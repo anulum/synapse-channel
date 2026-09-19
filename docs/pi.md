@@ -10,10 +10,10 @@ Contact: www.anulum.li | protoscience@anulum.li
 # pi participant and claim guard
 
 The optional pi participant runs the exact verified
-`@earendil-works/pi-coding-agent` **0.85.1** RPC host as a child process. Node.js
+`@earendil-works/pi-coding-agent` **0.86.0** RPC host as a child process. Node.js
 22.19 or later is required. Install the separately packaged extension from the
 source checkout with `cd integrations/pi && npm ci --ignore-scripts`. Use its
-`node_modules/.bin/pi` executable or another exact 0.85.1 binary. The Python
+`node_modules/.bin/pi` executable or another exact 0.86.0 binary. The Python
 participant refuses a different version.
 
 Without an explicit claim binding, pi runs with **no tools**. This is useful for

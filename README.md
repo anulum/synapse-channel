@@ -597,7 +597,7 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   [Vendor and provider discovery](docs/vendor-discovery.md) reviews bounded
   public candidate feeds weekly before an integration is considered.
 
-  The optional [pi participant](docs/pi.md) uses pinned pi 0.85.1 RPC. Its
+  The optional [pi participant](docs/pi.md) uses pinned pi 0.86.0 RPC. Its
   separate extension checks live claims before supported file writes; the
   default participant runs without tools.
 

@@ -87,7 +87,7 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
     matrix = load_matrix(DEFAULT_MATRIX)
     assert matrix["surfaces"]["claude-code"]["verified_version"] == "2.1.278"
     assert matrix["surfaces"]["opencode"]["verified_version"] == "1.18.31"
-    assert matrix["surfaces"]["pi"]["verified_version"] == "0.85.1"
+    assert matrix["surfaces"]["pi"]["verified_version"] == "0.86.0"
     matrix["surfaces"]["opencode"]["verified_version"] = "1.17.20"
     same_notes = parse_release("claude-markdown", _source_payload("claude-code", "2.1.278"))[2]
     matrix["surfaces"]["claude-code"]["reviewed_notes_sha256"] = hashlib.sha256(
