@@ -56,12 +56,12 @@ A receiver reassembles the frames it sees:
 from synapse_channel.core.streaming import StreamConsumer, parse_stream_frame
 
 consumer = StreamConsumer(stream_id)
-for message in received_messages:        # the agent's inbound chat frames
+for message in received_messages:  # the agent's inbound chat frames
     frame = parse_stream_frame(message)
     if frame is not None and frame.stream_id == stream_id:
-        consumer.accept(frame)           # raises on a bound/order violation
+        consumer.accept(frame)  # raises on a bound/order violation
 if consumer.closed and not consumer.aborted:
-    use(consumer.text)                   # the reassembled body
+    use(consumer.text)  # the reassembled body
 ```
 
 ## Retention is shallow and explicit

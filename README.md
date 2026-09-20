@@ -1604,6 +1604,7 @@ the claims, the plan, and the audit trail across them.
 import asyncio
 from synapse_channel import SynapseHub, SynapseAgent
 
+
 async def main() -> None:
     hub = SynapseHub()
     asyncio.create_task(hub.serve("localhost", 8876))

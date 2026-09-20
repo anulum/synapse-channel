@@ -13,6 +13,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Advance every pinned pre-commit hook to the version this repository already
+  relies on or to the newest verified release: ruff `v0.15.18` to `v0.16.8`,
+  matching the `ruff==0.16.8` pin in both hash-locked requirement files; typos
+  `v1.46.1` to `v1.50.2`; pre-commit-hooks `v5.0.0` to `v6.0.0`. Gitleaks was
+  already current at `v8.30.1`. The ruff hook had not moved since pre-commit was
+  introduced on 2026-06-21 while the generated requirement pin advanced
+  independently, so the local hook and CI ran two ruff generations apart.
+  Reformat five documentation files whose fenced Python examples ruff 0.16
+  formats and ruff 0.15 did not; the changes are comment spacing, blank lines
+  and one import list, with no effect on any executed code.
+
 - Admit pi 0.86.0 for the pinned RPC participant and optional claim-guard
   extension after local host, model, session and extension checks. Pi 0.85.1
   remains the previous verified rollback version.

@@ -104,7 +104,7 @@ loss or duplication across hub restarts:
 from synapse_channel import EventStore, MEMORY_KINDS
 
 store = EventStore("~/synapse/hub.db")
-batch = store.read_since(last_seq, kinds=MEMORY_KINDS, limit=500)   # poll forward in batches
+batch = store.read_since(last_seq, kinds=MEMORY_KINDS, limit=500)  # poll forward in batches
 # ... process, then advance last_seq = batch[-1].seq
 ```
 

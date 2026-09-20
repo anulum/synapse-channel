@@ -38,7 +38,11 @@ model; the default data class is only `public`.
 
 ```python
 from synapse_channel.participants import (
-    ModelCandidate, PriceKind, RoutingPolicy, TaskProfile, route_candidates,
+    ModelCandidate,
+    PriceKind,
+    RoutingPolicy,
+    TaskProfile,
+    route_candidates,
 )
 
 task = TaskProfile(
@@ -48,8 +52,10 @@ task = TaskProfile(
     max_estimated_cost=0.50,
     currency="USD",
     policy=RoutingPolicy(
-        unknown_price="refuse", stale_price="refuse",
-        unknown_quota="refuse", stale_quota="refuse",
+        unknown_price="refuse",
+        stale_price="refuse",
+        unknown_quota="refuse",
+        stale_quota="refuse",
     ),
 )
 decision = route_candidates(task, candidates)

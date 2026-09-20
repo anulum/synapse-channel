@@ -40,6 +40,7 @@ can hold a strict lease on its behalf.
     import asyncio
     from synapse_channel import SynapseAgent
 
+
     async def work() -> None:
         agent = SynapseAgent("api-dev", uri="ws://localhost:8876")
         conn = asyncio.create_task(agent.connect())
