@@ -395,7 +395,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if hasattr(args, "token"):
         try:
+            if args.command == "mcp" and args.token is not None and args.token_file is not None:
+                print("synapse mcp: use either --token or --token-file", file=sys.stderr)
+                return 2
             args.token = _resolve_token(args)
+            if args.command == "mcp":
+                args.token_file = None
         except (OSError, SecretFileError) as exc:
             print(f"cannot read token file: {exc}", file=sys.stderr)
             return 2

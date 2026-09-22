@@ -15,6 +15,11 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Admit Codex CLI 0.156.0 for manual local stdio MCP on Linux after isolated
+  app-server tool discovery and live hub state, claim, conflict and release
+  calls. Fix top-level `synapse mcp --token-file` dispatch so token-gated MCP
+  servers complete their handshake.
+
 - Move VS Code extension packaging and cockpit tests to Node 22.23.2 in CI.
   Admit Vitest 5 in both clients, jsdom 30 in the cockpit, and the current VS
   Code packaging tools; require VS Code 1.101+ for the extension's Node 22 host.

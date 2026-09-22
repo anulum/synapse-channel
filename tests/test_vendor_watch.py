@@ -86,6 +86,8 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
     """A missing source never appears as unchanged or as a usable latest version."""
     matrix = load_matrix(DEFAULT_MATRIX)
     assert matrix["surfaces"]["claude-code"]["verified_version"] == "2.1.280"
+    assert matrix["surfaces"]["codex-cli"]["verified_version"] == "0.156.0"
+    assert matrix["surfaces"]["codex-cli"]["capability_class"] == "manual"
     assert matrix["surfaces"]["opencode"]["verified_version"] == "1.18.32"
     assert matrix["surfaces"]["pi"]["verified_version"] == "0.87.1"
     matrix["surfaces"]["opencode"]["verified_version"] = "1.17.20"

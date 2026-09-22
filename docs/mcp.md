@@ -94,6 +94,10 @@ codex mcp list
 Codex stores the stdio server in its MCP configuration. Use `--env
 SYN_PROJECT=my-repo --env SYN_IDENTITY=my-repo/codex` before the `--` separator
 if the server also needs those environment values.
+The manual local stdio path was exercised with Codex CLI 0.156.0 on Linux.
+For a token-gated hub, add `--token-file /path/to/owner-only-token` to the
+`synapse mcp` command; Synapse reads that file before starting the stdio
+server. Use one active bridge process per identity.
 
 ### OpenCode
 

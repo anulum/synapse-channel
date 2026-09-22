@@ -135,6 +135,29 @@ def test_mcp_token_file_is_read_without_echoing_its_value(
     assert "test-secret-value" not in capsys.readouterr().err
 
 
+def test_top_level_mcp_token_file_reaches_stdio_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    secret = tmp_path / "hub-token"
+    secret.write_text("test-secret-value\n", encoding="utf-8")
+    secret.chmod(0o600)
+    received: list[str | None] = []
+
+    async def capture(**options: object) -> int:
+        received.append(cast(str | None, options["token"]))
+        return 0
+
+    monkeypatch.setattr(cli_mcp, "serve_stdio", capture)
+    assert cli.main(["mcp", "--name", "PROJ/codex", "--token-file", str(secret)]) == 0
+    assert received == ["test-secret-value"]
+    assert "test-secret-value" not in capsys.readouterr().err
+
+
+def test_top_level_mcp_rejects_both_token_sources(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["mcp", "--token", "one", "--token-file", "/no/file"]) == 2
+    assert "either --token or --token-file" in capsys.readouterr().err
+
+
 def test_mcp_refuses_ambiguous_token_sources(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli_mcp._cmd_mcp(_mcp_ns(token="x", token_file="/no/file")) == 2
     assert "either --token or --token-file" in capsys.readouterr().err

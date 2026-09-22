@@ -96,8 +96,13 @@ version checks, the compatibility contract, and real JSONL, ACP, authenticated
 server and claim journeys. All twelve archive digests in its manifest match the
 immutable release metadata; the other operating systems still require their
 own executable workflow runs. OpenCode 1.18.31 remains the previous verified
-rollback version. Codex CLI 0.156.0 has no accepted host version for the manual
-stdio MCP path; its changed notes were reviewed, and that path still requires
-an isolated host journey before acceptance. Gemini CLI has no accepted
-packaged extension; its 0.60.0 release does not change that classification.
-Remote MCP admission remains with C09.
+rollback version. On 2026-09-22, an isolated Codex CLI 0.156.0 Linux
+app-server discovered the manual stdio Synapse tools, read live state from a
+local hub, acquired and released a claim, and received a refusal when a second
+Codex host identity claimed the same path. The global CLI and active profile
+were unchanged. A local Ollama model turn timed out, so this acceptance covers
+the Codex host tool API, not model-directed tool selection. Post-thread
+`mcpServerStatus/list` returned a handshake error while direct tool calls
+worked; pre-thread inventory listed the enabled tools. Gemini CLI has no
+accepted packaged extension; its 0.60.0 release does not change that
+classification. Remote MCP admission remains with C09.
