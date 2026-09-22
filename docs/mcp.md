@@ -99,6 +99,10 @@ For a token-gated hub, add `--token-file /path/to/owner-only-token` to the
 `synapse mcp` command; Synapse reads that file before starting the stdio
 server. Use one active bridge process per identity.
 
+The same local stdio server exposes the [human app task queue](app-tasks.md)
+with redacted task replies. Its private prompt and returned content remain in
+the owner-local queue.
+
 ### OpenCode
 
 Install a local stdio MCP entry together with the native fail-closed mutation
@@ -170,6 +174,12 @@ tools wait for the hub's grant or denial; query tools return JSON.
 | `synapse_resource_bids(task_id, resource_kind?, limit?, include_zero?)` | Return advisory resource bids for a board task as JSON. |
 | `synapse_memory_recall(event_store, query, limit?, since_seq?)` | Return deterministic local memory recall hits as JSON. |
 | `synapse_entitlements()` | Return a redacted local account-ledger overview with counts only; no labels, pool ids, balances or spend authority. |
+| `synapse_app_task_offer(bundle)` | Offer a human app task against a current private allowance window; return redacted state. |
+| `synapse_app_task_status(task_id)` | Read redacted state for one app task. |
+| `synapse_app_task_advance(task_id, action)` | Accept, start, decline or cancel a task. |
+| `synapse_app_task_attach(task_id, result)` | Bind an untrusted result envelope to its task without echoing content. |
+| `synapse_app_task_verify(task_id)` | Run the offer-time result predicate before marking a task verified. |
+| `synapse_app_task_correct_usage(task_id, amount, reason)` | Record an explicit manual correction after verification. |
 
 When the hub does not answer within the request window the tool returns a clear
 "no response from the hub" line rather than hanging.

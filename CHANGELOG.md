@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Add an owner-local human app task queue with C04 allowance snapshots,
+  explicit CLI and stdio MCP handoff states, result provenance, fixed
+  task-specific verification and manual usage correction.
+
 - Admit Codex CLI 0.156.0 for manual local stdio MCP on Linux after isolated
   app-server tool discovery and live hub state, claim, conflict and release
   calls. Fix top-level `synapse mcp --token-file` dispatch so token-gated MCP
