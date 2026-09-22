@@ -165,7 +165,7 @@ def test_real_authenticated_server_attach_and_direct_api(tmp_path: Path) -> None
                 env=attached_environment,
             )
             _assert_success(attached.returncode, attached.stdout, attached.stderr)
-            # OpenCode 1.18.31 returns from non-interactive attach after the prompt
+            # OpenCode 1.18.32 returns from non-interactive attach after the prompt
             # POST instead of draining its subscribed event stream. Prove the remote
             # execution reached the server; use the direct API path below for results.
             assert attached.stdout == ""

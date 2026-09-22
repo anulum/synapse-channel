@@ -40,7 +40,7 @@ def test_headless_cli_options_select_attach_auth_binary_and_thinking(tmp_path: P
         "--opencode-password-file",
         str(password),
         "--opencode-binary",
-        "/opt/opencode-1.18.31",
+        "/opt/opencode-1.18.32",
         "--opencode-thinking",
     )
     participant = build_cli_participant(
@@ -57,7 +57,7 @@ def test_headless_cli_options_select_attach_auth_binary_and_thinking(tmp_path: P
     assert participant._attach == "https://opencode.example"
     assert participant._username == "agent"
     assert participant._password_file == str(password)
-    assert participant._binary == "/opt/opencode-1.18.31"
+    assert participant._binary == "/opt/opencode-1.18.32"
     assert participant._thinking is True
     assert participant._timeout == 7
 

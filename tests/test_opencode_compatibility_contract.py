@@ -77,7 +77,7 @@ def test_repository_uses_one_complete_immutable_compatibility_contract() -> None
     contract = load_compatibility()
 
     assert contract.repository == "anomalyco/opencode"
-    assert contract.version == "1.18.31"
+    assert contract.version == "1.18.32"
     assert len(contract.artifacts) == 12
     assert sum(artifact.smoke for artifact in contract.artifacts) == 5
     assert len(contract.components) == 11
@@ -302,8 +302,8 @@ def test_upstream_verifier_accepts_all_pinned_assets_and_reports_latest() -> Non
 
     assert verify_upstream(contract, release, latest, tag_ref) == {
         "artifact_count": 12,
-        "latest_tag": "v1.18.31",
-        "pinned_tag": "v1.18.31",
+        "latest_tag": "v1.18.32",
+        "pinned_tag": "v1.18.32",
         "pinned_is_latest": True,
         "update_available": False,
     }
@@ -460,11 +460,11 @@ def test_contract_cli_writes_machine_readable_advisory(tmp_path: Path) -> None:
         "component_count": 11,
         "latest_tag": "v1.19.0",
         "pinned_is_latest": False,
-        "pinned_tag": "v1.18.31",
+        "pinned_tag": "v1.18.32",
         "update_available": True,
     }
     assert output_path.read_text(encoding="utf-8").splitlines() == [
-        "pinned_tag=v1.18.31",
+        "pinned_tag=v1.18.32",
         "latest_tag=v1.19.0",
         "update_available=true",
     ]

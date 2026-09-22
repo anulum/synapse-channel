@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "review_owner": "SYNAPSE-CHANNEL/codex-2970473",
-  "reviewed_at": "2026-09-19",
+  "reviewed_at": "2026-09-22",
   "review_interval_days": 7,
   "surfaces": {
     "claude-code": {
-      "verified_version": "2.1.278",
-      "reviewed_notes_sha256": "7335f869ffd6fe4417b16b061f8ffbed8d63f6ce588c019dc04271ccaaa9e3df",
-      "verification": "C21 exact 2.1.278 plugin validator, isolated host profile and real hub/claim test",
+      "verified_version": "2.1.280",
+      "reviewed_notes_sha256": "d091773ef99df3894ff11b5554c681bc5caf9afe301d8349ee367e3edf0a2f86",
+      "verification": "Exact 2.1.280 Linux host validator, isolated plugin load, MCP hub/claim and allowed/denied hook test",
       "capability_class": "native",
       "owning_adapter": "integrations/claude-code",
-      "migration_decision": "Admit 2.1.278 after exact host and plugin journey; retain 2.1.273 as the previous verified rollback version."
+      "migration_decision": "Admit 2.1.280 on the exercised Linux plugin path; retain 2.1.278 as the previous verified rollback version."
     },
     "codex-cli": {
       "verified_version": null,
-      "reviewed_notes_sha256": "7c8dc2fb9dd92f1dfec2b24d1ab8815df314973c18c6761b9189d797d6ddeec7",
-      "verification": "Current product integration version requires a fresh real host test",
+      "reviewed_notes_sha256": "cd1adf210be767eb92ed3922903e3343a4ca015dbc899feb3a40f60909baf816",
+      "verification": "0.156.0 official notes reviewed; manual local stdio MCP path has no accepted version pending isolated host journey",
       "capability_class": "manual",
       "owning_adapter": "src/synapse_channel/adapters",
-      "migration_decision": "Current CLI version observed only; test 0.155.1 before acceptance."
+      "migration_decision": "Keep manual and unverified; 0.156.0 MCP OAuth recovery and sandbox changes do not establish local stdio compatibility."
     },
     "gemini-cli": {
       "verified_version": null,
@@ -26,23 +26,23 @@
       "verification": "No packaged Gemini extension acceptance yet",
       "capability_class": "unsupported",
       "owning_adapter": "C15 integration catalog",
-      "migration_decision": "No packaged Gemini extension accepted; inspect 0.60.0 for candidate scope."
+      "migration_decision": "No packaged Gemini extension accepted; 0.60.0 extension and MCP OAuth changes remain outside a supported adapter."
     },
     "pi": {
-      "verified_version": "0.86.0",
-      "reviewed_notes_sha256": "1dbc65e460c5556a52bd6ca590eb4ed4920400f430648360d4db30b244cc767a",
-      "verification": "C21 Pi 0.86.0 RPC, local model and resume; native extension typecheck, test and host load",
+      "verified_version": "0.87.1",
+      "reviewed_notes_sha256": "457f7d01c8cc0eb8159b1541c07d0b2a21fb3c6abbabc6a5ef9d188130555260",
+      "verification": "Exact 0.87.1 RPC, local Ollama turn and resume; native extension typecheck, host load, focused live-hub guard suite",
       "capability_class": "native",
       "owning_adapter": "integrations/pi",
-      "migration_decision": "Admit 0.86.0 on the verified Linux local-model and extension paths; retain 0.85.1 as rollback. New provider stream and user_bash APIs are outside this adapter."
+      "migration_decision": "Admit 0.87.1 on the exercised Linux RPC and extension paths; retain 0.86.0 as rollback. New context-edit and finishTurn APIs are outside this adapter."
     },
     "opencode": {
-      "verified_version": "1.18.31",
-      "reviewed_notes_sha256": "f3147856314d4851990fe246243afaf82c130e8d4d2a7de22ad57b45f89d695a",
-      "verification": "C21 exact 1.18.31 JSONL, ACP, authenticated server and real hub claim-guard journeys",
+      "verified_version": "1.18.32",
+      "reviewed_notes_sha256": "5f56b4285f471ef732e6c33313e9902c353dc8712960bd039f076ea7a1604a65",
+      "verification": "Exact 1.18.32 Linux JSONL, ACP, authenticated server, compatibility smoke and real hub claim-guard journeys",
       "capability_class": "native",
       "owning_adapter": "integrations/opencode",
-      "migration_decision": "Admit 1.18.31 after exact local journeys; retain 1.17.20 as the previous verified rollback version."
+      "migration_decision": "Admit 1.18.32 on the exercised Linux paths; retain 1.18.31 as the previous verified rollback version. Other platform archives are digest-bound pending workflow execution."
     },
     "mcp-spec": {
       "verified_version": null,

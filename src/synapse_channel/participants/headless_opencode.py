@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — pinned OpenCode headless participant
-"""Drive source-verified OpenCode 1.18.31 locally or through ``run --attach``."""
+"""Drive source-verified OpenCode 1.18.32 locally or through ``run --attach``."""
 
 from __future__ import annotations
 

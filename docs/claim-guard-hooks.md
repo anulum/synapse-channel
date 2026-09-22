@@ -326,5 +326,5 @@ agents must claim their scope explicitly.
   fail-open contracts above were read from the installed user guide
 - [Kimi Code hooks](https://moonshotai.github.io/kimi-code/en/customization/hooks)
 - [OpenCode plugins](https://opencode.ai/docs/plugins/) — native
-  `tool.execute.before` contract pinned to 1.18.31
+  `tool.execute.before` contract pinned to 1.18.32
 - [Git-native claims](git-claims.md)

@@ -81,3 +81,23 @@ command catalog, and completed two local Ollama turns across an exact session
 resume. The compatibility matrix now accepts 0.86.0 for these paths and keeps
 0.85.1 as the verified rollback reference. A model-driven claim mutation on
 0.86.0 and other operating systems remain separate verification work.
+
+On 2026-09-22, Claude Code 2.1.280 passed its official strict plugin validator,
+isolated plugin load, local MCP hub claim journey and allowed/denied write hook
+checks on Linux. The installed binary identified itself as 2.1.280; the matrix
+accepts that version for the exercised plugin path and retains 2.1.278 as the
+previous verified rollback version. The same review admitted Pi 0.87.1 after
+an exact RPC host load, TypeScript extension check, local Ollama turn and
+resume, and the focused live hub guard suite. Pi 0.86.0 remains its previous
+verified rollback version.
+
+OpenCode 1.18.32 passed the official Linux x64 archive digest and binary
+version checks, the compatibility contract, and real JSONL, ACP, authenticated
+server and claim journeys. All twelve archive digests in its manifest match the
+immutable release metadata; the other operating systems still require their
+own executable workflow runs. OpenCode 1.18.31 remains the previous verified
+rollback version. Codex CLI 0.156.0 has no accepted host version for the manual
+stdio MCP path; its changed notes were reviewed, and that path still requires
+an isolated host journey before acceptance. Gemini CLI has no accepted
+packaged extension; its 0.60.0 release does not change that classification.
+Remote MCP admission remains with C09.

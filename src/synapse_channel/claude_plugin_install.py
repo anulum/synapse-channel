@@ -29,7 +29,7 @@ from synapse_channel.core.secret_files import read_secret_file
 PLUGIN_NAME = "synapse-channel"
 PLUGIN_VERSION = "0.1.0"
 MIN_CORE_VERSION = "0.99.26"
-TESTED_HOST_VERSION = "2.1.278"
+TESTED_HOST_VERSION = "2.1.280"
 _MARKER = ".synapse-install.json"
 _FILES = (".claude-plugin/plugin.json", "README.md", "hooks/hooks.json", ".mcp.json")
 

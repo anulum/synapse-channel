@@ -8,10 +8,10 @@
     "node": ">=22.19.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "0.86.0"
+    "@earendil-works/pi-coding-agent": "0.87.1"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.86.0",
+    "@earendil-works/pi-coding-agent": "0.87.1",
     "@types/node": "^22.20.4",
     "typescript": "^7.0.2"
   },

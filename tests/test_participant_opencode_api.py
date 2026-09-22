@@ -25,7 +25,7 @@ from synapse_channel.participants.opencode_api import (
 
 
 class FakeRequester:
-    def __init__(self, *, version: str = "1.18.31") -> None:
+    def __init__(self, *, version: str = "1.18.32") -> None:
         self.version = version
         self.calls: list[tuple[str, str, bytes | None, Mapping[str, str]]] = []
 
@@ -123,7 +123,7 @@ def test_api_version_drift_and_invalid_model_fail_closed(tmp_path: Path) -> None
         "seat/api", directory=tmp_path, requester=FakeRequester(version="1.18.0")
     ).run_turn(TurnRequest("topic", "prompt"))
     assert drift["is_error"] is True
-    assert "verified schema 1.18.31" in drift["reason"]
+    assert "verified schema 1.18.32" in drift["reason"]
 
     invalid = OpenCodeApiParticipant(
         "seat/api", directory=tmp_path, model="invalid", requester=FakeRequester()

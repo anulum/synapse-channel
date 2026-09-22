@@ -12,17 +12,17 @@ Contact: www.anulum.li | protoscience@anulum.li
 The optional `synapse-channel` Claude Code plugin packages the existing
 Synapse MCP bridge and the `PreToolUse` claim guard. The plugin is versioned
 separately at **0.1.0**. It requires Synapse Channel **0.99.26 or newer** with
-the `mcp` extra; this package was validated with Claude Code **2.1.278**.
+the `mcp` extra; this package was validated with Claude Code **2.1.280**.
 Other host versions need their own validation before installation. The plugin
 adds one MCP server and one `Edit|Write|Bash` hook. It does not grant permissions
 or change Claude Code's model, account, or project settings.
 
-The 2.1.278 review used the exact published Linux host, its strict plugin
+The 2.1.280 review used the exact installed Linux host, its strict plugin
 validator, an isolated host profile and a local Synapse hub. The profile loaded
 the MCP server and hook; a live claim allowed the covered write and an unclaimed
 write was denied. No model turn or user profile change was required. Older
-2.1.273 remains the previous verified rollback version; installer acceptance
-is pinned to 2.1.278.
+2.1.278 remains the previous verified rollback version; installer acceptance
+is pinned to 2.1.280.
 
 ## Inspect and preview
 

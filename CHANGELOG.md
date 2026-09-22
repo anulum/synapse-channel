@@ -15,6 +15,19 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Validate OpenCode 1.18.32 with the official Linux release binary, JSONL,
+  ACP, authenticated server and live claim integration tests. Twelve platform
+  archive digests and the local acceptance workflows now pin the immutable
+  release; OpenCode 1.18.31 remains the prior verified rollback version.
+
+- Admit pi 0.87.1 for the pinned RPC participant and optional native extension
+  after exact host load, local Ollama turn and resume, and live hub claim tests
+  on Linux. Pi 0.86.0 remains the previous verified rollback version.
+
+- Validate Claude Code 2.1.280 with its strict plugin validator, isolated
+  profile load, local MCP hub and live allowed/denied claim guard checks on
+  Linux. Claude Code 2.1.278 remains the previous verified rollback version.
+
 - Advance every pinned pre-commit hook to the version this repository already
   relies on or to the newest verified release: ruff `v0.15.18` to `v0.16.8`,
   matching the `ruff==0.16.8` pin in both hash-locked requirement files; typos

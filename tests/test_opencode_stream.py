@@ -37,7 +37,7 @@ def test_source_pinned_jsonl_success_is_normalized() -> None:
         ]
     )
     assert OPENCODE_SCHEMA_VERIFIED is True
-    assert OPENCODE_SCHEMA_VERSION == "1.18.31"
+    assert OPENCODE_SCHEMA_VERSION == "1.18.32"
     assert outcome.answer == "hello"
     assert outcome.rationale == "why"
     assert outcome.session_id == "ses-1"

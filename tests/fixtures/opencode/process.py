@@ -20,7 +20,7 @@ import pytest
 
 from fixtures.opencode.llm import provider_config
 
-OPENCODE_VERSION = "1.18.31"
+OPENCODE_VERSION = "1.18.32"
 TEST_MODEL = "test/test-model"
 
 
@@ -34,7 +34,7 @@ def isolated_environment(
     """Return a filesystem-isolated OpenCode environment for real processes."""
     # OpenCode installs its plugin SDK in every discovered configuration directory,
     # even when the test plugin is a dependency-free local file.  A fresh acceptance
-    # home must not turn startup into a registry availability test.  OpenCode 1.18.31
+    # home must not turn startup into a registry availability test.  OpenCode 1.18.32
     # explicitly skips dependency installation for a non-writable config directory.
     config_dir = home / ".config" / "opencode"
     config_dir.mkdir(mode=0o500, parents=True, exist_ok=True)
@@ -98,7 +98,7 @@ def find_opencode() -> str:
     """Return the exact pinned OpenCode binary, or skip when it is unavailable.
 
     These are real-process acceptance tests: they need the pinned ``opencode``
-    ``1.18.31`` binary installed (the dedicated ``opencode-integration`` workflow
+    ``1.18.32`` binary installed (the dedicated ``opencode-integration`` workflow
     provides it via ``OPENCODE_BIN``). When the binary is absent or the wrong
     version — the general test matrix, where OpenCode is not installed — the test
     skips rather than failing, so acceptance stays gated on the real binary

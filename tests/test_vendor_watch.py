@@ -85,11 +85,11 @@ def test_official_document_parsers_refuse_missing_and_prerelease() -> None:
 def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None:
     """A missing source never appears as unchanged or as a usable latest version."""
     matrix = load_matrix(DEFAULT_MATRIX)
-    assert matrix["surfaces"]["claude-code"]["verified_version"] == "2.1.278"
-    assert matrix["surfaces"]["opencode"]["verified_version"] == "1.18.31"
-    assert matrix["surfaces"]["pi"]["verified_version"] == "0.86.0"
+    assert matrix["surfaces"]["claude-code"]["verified_version"] == "2.1.280"
+    assert matrix["surfaces"]["opencode"]["verified_version"] == "1.18.32"
+    assert matrix["surfaces"]["pi"]["verified_version"] == "0.87.1"
     matrix["surfaces"]["opencode"]["verified_version"] = "1.17.20"
-    same_notes = parse_release("claude-markdown", _source_payload("claude-code", "2.1.278"))[2]
+    same_notes = parse_release("claude-markdown", _source_payload("claude-code", "2.1.280"))[2]
     matrix["surfaces"]["claude-code"]["reviewed_notes_sha256"] = hashlib.sha256(
         same_notes.encode()
     ).hexdigest()
@@ -100,9 +100,9 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
         if name == "pi":
             raise OSError("offline")
         if name == "claude-code":
-            return _source_payload(name, "2.1.278")
+            return _source_payload(name, "2.1.280")
         if name == "opencode":
-            return _source_payload(name, "1.18.31", "Breaking Changes: hook permission")
+            return _source_payload(name, "1.18.32", "Breaking Changes: hook permission")
         if name == "gemini-cli":
             return _source_payload(name, "0.60.0", "Security fix for extension validation")
         if name == "mcp-spec":
@@ -113,7 +113,7 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
         matrix,
         fetch=fetch,
         probe=lambda command: "2.1.273" if command and command[0] == "claude" else None,
-        now=datetime(2026, 9, 19, tzinfo=timezone.utc),
+        now=datetime(2026, 9, 22, tzinfo=timezone.utc),
     )
     rows = report["surfaces"]
     assert rows["claude-code"]["status"] == "current"
@@ -134,7 +134,7 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
         matrix,
         fetch=fetch,
         probe=lambda command: None,
-        now=datetime(2026, 9, 27, tzinfo=timezone.utc),
+        now=datetime(2026, 9, 30, tzinfo=timezone.utc),
     )
     assert overdue["review_overdue"] is True
     matrix["surfaces"]["claude-code"]["reviewed_notes_sha256"] = "0" * 64
@@ -142,11 +142,11 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
         matrix,
         fetch=fetch,
         probe=lambda command: None,
-        now=datetime(2026, 9, 19, tzinfo=timezone.utc),
+        now=datetime(2026, 9, 22, tzinfo=timezone.utc),
     )
     assert changed_notes["surfaces"]["claude-code"]["status"] == "needs_review"
     with pytest.raises(VendorWatchError):
-        build_report(matrix, fetch=fetch, now=datetime(2026, 9, 19))
+        build_report(matrix, fetch=fetch, now=datetime(2026, 9, 22))
 
 
 def test_matrix_validation_and_network_allowlist(tmp_path: Path) -> None:
@@ -274,7 +274,7 @@ def test_installed_probe_and_strict_report_cli(
             next(name for name, source in SOURCES.items() if source[1] == url), "0.0.1"
         ),
         probe=lambda command: None,
-        now=datetime(2026, 9, 27, tzinfo=timezone.utc),
+        now=datetime(2026, 9, 30, tzinfo=timezone.utc),
     )
     target = tmp_path / "report.json"
     monkeypatch.setattr(watch, "build_report", lambda matrix: report)

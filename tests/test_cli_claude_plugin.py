@@ -152,7 +152,7 @@ def test_real_host_validates_install_upgrade_and_removal(
     assert _invoke(root, "diagnose") == 0
     diagnosed = json.loads(capsys.readouterr().out)
     assert diagnosed["host_valid"] is True
-    assert "2.1.278" in diagnosed["host_version"]
+    assert "2.1.280" in diagnosed["host_version"]
     assert _invoke(root, "upgrade") == 0
     assert json.loads(capsys.readouterr().out)["state"] == "owned"
     assert _invoke(root, "uninstall") == 0

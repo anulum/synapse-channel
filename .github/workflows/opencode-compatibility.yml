@@ -119,11 +119,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api repos/anomalyco/opencode/releases/tags/v1.18.31 \
+          gh api repos/anomalyco/opencode/releases/tags/v1.18.32 \
             > "$RUNNER_TEMP/opencode-release.json"
           gh api repos/anomalyco/opencode/releases/latest \
             > "$RUNNER_TEMP/opencode-latest.json"
-          gh api repos/anomalyco/opencode/git/ref/tags/v1.18.31 \
+          gh api repos/anomalyco/opencode/git/ref/tags/v1.18.32 \
             > "$RUNNER_TEMP/opencode-tag-ref.json"
           python -m tools.opencode_compatibility_contract \
             --release-json "$RUNNER_TEMP/opencode-release.json" \
