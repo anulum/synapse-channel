@@ -88,6 +88,10 @@ JSON, query parameter, source file, or workspace file.
 
 ## Install the reviewed VSIX
 
+Use VS Code 1.101 or newer (or an editor with a Node 22 extension host).
+Build with Node 22.12 or newer from the extension directory; the dedicated CI
+workflow uses Node 22.23.2. The VSIX contains no development dependencies.
+
 Build from the extension directory:
 
 ```bash

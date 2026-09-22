@@ -86,7 +86,8 @@ function validateManifest(manifest) {
   requireCondition(manifest.pricing === "Free", "Marketplace pricing label must be explicit.");
   requireCondition(manifest.galleryBanner?.color === "#0c1118", "Marketplace banner colour drifted.");
   requireCondition(manifest.galleryBanner?.theme === "dark", "Marketplace banner theme drifted.");
-  requireCondition(manifest.engines?.vscode === "^1.90.0", "VS Code compatibility floor drifted.");
+  requireCondition(manifest.engines?.vscode === "^1.101.0", "VS Code compatibility floor drifted.");
+  requireCondition(manifest.engines?.node === ">=22.12.0", "Node extension runtime floor drifted.");
   requireCondition(manifest.main === "./out/extension.js", "Extension entry point drifted.");
   requireCondition(Array.isArray(manifest.extensionKind) && manifest.extensionKind.length === 1 && manifest.extensionKind[0] === "workspace", "Extension must run beside the canonical workspace filesystem.");
   requireCondition(manifest.capabilities?.virtualWorkspaces?.supported === false, "Virtual workspace support must fail closed.");

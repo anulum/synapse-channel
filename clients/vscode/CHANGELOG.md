@@ -11,6 +11,8 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 ## Unreleased
 
+- Require VS Code 1.101 or newer for its Node 22 extension host; build with
+  Node 22.12 or newer and the current VSIX packaging tools.
 - Add a read-only coordination evidence view that distinguishes self-attested
   approval and release-receipt claims, pending relay quorum, mailbox backlog,
   consume-liveness, retained delivery failures, and connection freshness.

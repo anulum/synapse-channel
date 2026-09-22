@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Move VS Code extension packaging and cockpit tests to Node 22.23.2 in CI.
+  Admit Vitest 5 in both clients, jsdom 30 in the cockpit, and the current VS
+  Code packaging tools; require VS Code 1.101+ for the extension's Node 22 host.
+
 - Validate OpenCode 1.18.32 with the official Linux release binary, JSONL,
   ACP, authenticated server and live claim integration tests. Twelve platform
   archive digests and the local acceptance workflows now pin the immutable

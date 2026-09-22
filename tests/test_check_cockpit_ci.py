@@ -29,6 +29,7 @@ def _package() -> dict[str, object]:
         "name": "cockpit",
         "version": "1.0.0",
         "license": "AGPL-3.0-or-later",
+        "engines": {"node": ">=22.22.2"},
         "scripts": {name: name for name in guard.REQUIRED_SCRIPTS},
         "dependencies": {"react": "1"},
         "devDependencies": {"@playwright/test": "1"},
@@ -38,7 +39,7 @@ def _package() -> dict[str, object]:
 def _lock(package: dict[str, object]) -> dict[str, object]:
     root = {
         key: package[key]
-        for key in ("name", "version", "license", "dependencies", "devDependencies")
+        for key in ("name", "version", "license", "engines", "dependencies", "devDependencies")
     }
     return {
         "lockfileVersion": 3,
@@ -77,6 +78,24 @@ def test_lock_guard_accepts_aligned_v3_integrity(tmp_path: Path) -> None:
     _write_json(lock_path, _lock(package))
 
     assert guard.audit_lockfile(package_path, lock_path) == ()
+
+
+def test_lock_guard_reports_node_engine_drift(tmp_path: Path) -> None:
+    package = _package()
+    lock = _lock(package)
+    packages = lock["packages"]
+    assert isinstance(packages, dict)
+    root = packages[""]
+    assert isinstance(root, dict)
+    root["engines"] = {"node": ">=20"}
+    package_path = tmp_path / "package.json"
+    lock_path = tmp_path / "package-lock.json"
+    _write_json(package_path, package)
+    _write_json(lock_path, lock)
+
+    assert [finding.code for finding in guard.audit_lockfile(package_path, lock_path)] == [
+        "lock-root-drift"
+    ]
 
 
 def test_lock_guard_reports_drift_scripts_version_and_integrity(tmp_path: Path) -> None:

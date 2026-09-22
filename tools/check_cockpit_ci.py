@@ -36,6 +36,7 @@ REQUIRED_WORKFLOW_MARKERS = (
     "src/synapse_channel/cli_dashboard.py",
     ".github/workflows/clients-cockpit.yml",
     "cache-dependency-path: clients/cockpit/package-lock.json",
+    'node-version: "22.23.2"',
     "npm ci",
     "npm run typecheck",
     "npm run coverage",
@@ -135,7 +136,7 @@ def audit_lockfile(package_path: Path, lockfile_path: Path) -> tuple[Finding, ..
         findings.append(Finding("lock-root-missing", lockfile_path, "packages[''] is absent"))
         return tuple(findings)
     root = cast(dict[str, object], root_raw)
-    for field in ("name", "version", "license", "dependencies", "devDependencies"):
+    for field in ("name", "version", "license", "engines", "dependencies", "devDependencies"):
         if package.get(field) != root.get(field):
             findings.append(
                 Finding("lock-root-drift", lockfile_path, f"root field {field} differs")

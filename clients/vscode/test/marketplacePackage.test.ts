@@ -42,7 +42,7 @@ function manifest(overrides: Record<string, unknown> = {}) {
     homepage: "https://github.com/anulum/synapse-channel/tree/main/clients/vscode#readme",
     repository: { url: "https://github.com/anulum/synapse-channel.git" },
     bugs: { url: "https://github.com/anulum/synapse-channel/issues" },
-    engines: { vscode: "^1.90.0" },
+    engines: { vscode: "^1.101.0", node: ">=22.12.0" },
     extensionKind: ["workspace"],
     categories: ["SCM Providers"],
     keywords: ["coordination"],
