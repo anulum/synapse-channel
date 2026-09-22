@@ -1453,6 +1453,14 @@ gate). It is advisory evidence and an audit trail, not a hard runtime gate; an
 approved subject can be cited in a release receipt via `synapse release
 --approval`.
 
+Use [`synapse attention`](docs/attention.md) to project pending approvals,
+failed delivery, recovery and optional private quota freshness into one
+owner-local queue. `synapse attention list` distinguishes a quiet queue from
+a missing observer; snooze and resolution affect only the alert, never the
+underlying approval or delivery. The authenticated cockpit can read the same
+queue when `synapse dashboard --attention-store` names its database. Generic
+desktop summaries require an explicit `--desktop` opt-in.
+
 The [agent trust graph](docs/agent-trust-graph.md) connects those reliability
 signals, positive release receipts, handoff outcomes, and conflict history
 into an inspectable evidence graph: `synapse trust-graph ./synapse.db` prints
@@ -1674,13 +1682,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.26 |
 | Public API exports | 70 |
-| Package modules | 587 |
-| Classes | 881 |
+| Package modules | 591 |
+| Classes | 883 |
 | Wire message types | 90 |
-| CLI subcommands | 212 |
-| Test functions | 9961 |
+| CLI subcommands | 216 |
+| Test functions | 9978 |
 | Benchmark harnesses | 7 |
-| Documentation pages | 73 |
+| Documentation pages | 74 |
 | GitHub Actions workflows | 27 |
 | Optional-dependency groups | 14 |
 

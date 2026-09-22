@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { Kpi } from "../components/Hud";
+import { createAttentionStore, type AttentionFeedState } from "../lib/attentionFeed";
 import {
   createOperatorActionsStore,
   createReceiptsStore,
@@ -79,6 +80,12 @@ const INITIAL_OPERATOR_ACTIONS: OperatorActionsState = {
   fetchedAt: null,
   error: null,
 };
+const INITIAL_ATTENTION: AttentionFeedState = {
+  data: null,
+  status: "connecting",
+  fetchedAt: null,
+  error: null,
+};
 
 /** Start the legacy high-frequency feeds only after a sustained stream outage. */
 export const LIVE_TRANSPORT_FALLBACK_MS = 6_000;
@@ -101,6 +108,7 @@ export interface CockpitFeeds {
   readonly anomalyReport: HealthAnomaliesState;
   readonly receipts: ReceiptsState;
   readonly operatorActions: OperatorActionsState;
+  readonly attention: AttentionFeedState;
   readonly transport: LiveConnectionState;
 }
 
@@ -122,12 +130,24 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
   const [receipts, setReceipts] = useState<ReceiptsState>(INITIAL_RECEIPTS);
   const [operatorActions, setOperatorActions] =
     useState<OperatorActionsState>(INITIAL_OPERATOR_ACTIONS);
+  const [attention, setAttention] = useState<AttentionFeedState>(INITIAL_ATTENTION);
   const [transportState, setTransportState] = useState<LiveConnectionState>({
     status: "connecting",
     attempt: 0,
     detail: null,
   });
   const previous = useRef<HeadlineMetrics>(ZERO_HEADLINE_METRICS);
+
+  useEffect(() => {
+    setAttention(INITIAL_ATTENTION);
+    if (blocked) return;
+    const store = createAttentionStore();
+    const unsubscribe = store.subscribe(setAttention);
+    return () => {
+      unsubscribe();
+      store.stop();
+    };
+  }, [blocked, credentialRevision]);
 
   useEffect(() => {
     setSnap(INITIAL_SNAPSHOT);
@@ -374,6 +394,7 @@ export function useCockpitFeeds(blocked: boolean, credentialRevision: number): C
     anomalyReport: auxiliary.anomalyReport,
     receipts,
     operatorActions,
+    attention,
     transport: transportState,
   };
 }

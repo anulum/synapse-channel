@@ -94,6 +94,7 @@ nav:
   - Bounded streaming responses: streaming.md
   - Declarative workflows: workflows.md
   - Cockpit user guide: cockpit.md
+  - Local attention queue: attention.md
   - Studio: studio.md
   - CLI reference: cli.md
   - Participant memory recall: participant-memory.md

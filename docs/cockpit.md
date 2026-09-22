@@ -428,8 +428,16 @@ does not alter transport acknowledgement state.
 Open **attention** for one live, read-only queue of branch conflicts, unread
 dead letters, failed or deferred routes, stale claims, missing waiters, blocked
 tasks, pending relay approvals, and coordination waits. Filter the queue by
-critical or warning evidence, then open the exact agent, task, or route named by
+critical, warning or information evidence, then open the exact agent, task, or route named by
 a row.
+
+With `synapse dashboard --attention-store /path/to/queue.sqlite3`, the same
+panel also shows owner-local approval, delivery, recovery and quota alerts
+from [`synapse attention`](attention.md). Their snooze and resolution state is
+shared with the CLI. A missing observer, absent feed or failed feed is shown
+explicitly; none is interpreted as a quiet queue. The browser reads a
+bearer-gated, bounded projection and never receives task bodies or account
+labels from this feed. Use the CLI to change the local alert state.
 
 The order is deterministic, not an opaque score: critical rows precede warning
 rows, evidence kinds have a documented fixed rank, older available timestamps

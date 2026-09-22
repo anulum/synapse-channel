@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { deriveAttentionQueue, type AttentionInputs } from "../src/lib/attention";
+import { deriveAttentionQueue, mergeStoredAttention, type AttentionInputs } from "../src/lib/attention";
 
 const EMPTY: AttentionInputs = {
   conflicts: [],
@@ -280,5 +280,22 @@ describe("deriveAttentionQueue", () => {
     expect(items[0]?.observedAt).toBeNull();
     expect(items[1]?.evidence).toBe("2 deferred receipts across 2 retained messages");
     expect(items[2]?.subject).toBe("fleet");
+  });
+});
+
+describe("mergeStoredAttention", () => {
+  it("shows the owner-local approval and recovery in one severity-ranked queue", () => {
+    const merged = mergeStoredAttention([], {
+      state: "active",
+      remaining: 0,
+      snoozedCount: 0,
+      alerts: [
+        { key: "delivery:2", kind: "recovery", subject: "2", severity: "info", state: "open", action: "Inspect acknowledgement", observedAt: 5, expiresAt: null },
+        { key: "approval:TASK-1", kind: "approval", subject: "TASK-1", severity: "critical", state: "expired", action: "Review approval", observedAt: 4, expiresAt: 10 },
+      ],
+    });
+    expect(merged.map((item) => item.id)).toEqual(["stored:approval:TASK-1", "stored:delivery:2"]);
+    expect(merged[0]?.evidence).toContain("Review overdue");
+    expect(merged[0]?.action).toEqual({ kind: "task", id: "TASK-1" });
   });
 });

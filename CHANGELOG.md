@@ -15,6 +15,11 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Add an owner-local attention queue over approval, delivery and optional C04
+  quota evidence, with observer freshness, deduplicated alert revisions,
+  snooze/resolution, bounded generic desktop previews, a CLI and an
+  authenticated cockpit feed.
+
 - Add an owner-local human app task queue with C04 allowance snapshots,
   explicit CLI and stdio MCP handoff states, result provenance, fixed
   task-specific verification and manual usage correction.

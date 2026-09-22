@@ -69,6 +69,7 @@ everything, since they need the whole command table.
 | `synapse entitlements` | Record private account/pool/window facts and inspect advisory quota evidence in an owner-local SQLite ledger. |
 | `synapse fleet-scorecard` | Compose causality spans, opt-in accounting, live-claim contention, reliability findings, and optional benchmark history into an owner-only JSON bundle or a two-signal OTLP/HTTP collector push. |
 | `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
+| `synapse attention` | Observe source-backed alerts in one owner-local queue; list, snooze, resolve and opt in to generic desktop previews. See [Local attention queue](attention.md). |
 | `synapse ttl-advice` | Build read-only lease TTL advice from a hub SQLite event store. |
 | `synapse auto-action` | Introspect the opt-in auto-action reactor and manage the durable armed policy the orchestration loop reads (`show`/`arm`/`disarm`/`clear`). |
 | `synapse board` | Print the shared task/progress blackboard. |

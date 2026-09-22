@@ -12,6 +12,7 @@ import { lazy, Suspense } from "react";
 import { useCockpitI18n } from "../context/CockpitI18n";
 import type { OperatorActionsState, ReceiptsState } from "../lib/auditFeeds";
 import type { AttentionItem } from "../lib/attention";
+import type { AttentionFeedState } from "../lib/attentionFeed";
 import type { TimeWindow } from "../lib/brush";
 import type { BranchConflictView, ClaimView } from "../lib/claims";
 import type { CommunicationFilter } from "../lib/communicationFilters";
@@ -53,6 +54,7 @@ export interface InspectorPanelProps {
   readonly selection?: CockpitSelection | null;
   readonly onSelectionChange?: ((selection: CockpitSelection | null) => void) | undefined;
   readonly attention?: readonly AttentionItem[];
+  readonly attentionFeed?: AttentionFeedState;
   readonly onInspectAgent?: ((identity: string) => void) | undefined;
   readonly onInspectTask?: ((taskId: string) => void) | undefined;
   readonly events: readonly CockpitEvent[];
@@ -91,7 +93,7 @@ export interface InspectorPanelProps {
 export function InspectorPanel(props: InspectorPanelProps): JSX.Element {
   const { t } = useCockpitI18n();
   const {
-    tab, events, provenance = "derived", coverage, attention = [], connected = false,
+    tab, events, provenance = "derived", coverage, attention = [], attentionFeed, connected = false,
     onInspectAgent, onInspectTask, onFleetSelectionChange, window = null, onClearWindow,
     onSelectTask, selection = null, onSelectionChange, query, onQueryChange,
     claims = [], agents = [], canMessagePeer = false, onMessagePeer, communicationFilter,
@@ -108,7 +110,7 @@ export function InspectorPanel(props: InspectorPanelProps): JSX.Element {
       <div className="inspector__body" id="inspector-panel" role="tabpanel" aria-labelledby={`inspector-tab-${tab}`}>
         <Suspense fallback={<div className="panel__empty" role="status">{t("tabs.loadingPanel")}</div>}>
           {tab === "attention" ? (
-            <AttentionQueue items={attention} connected={connected} onInspectAgent={onInspectAgent}
+            <AttentionQueue items={attention} stored={attentionFeed} connected={connected} onInspectAgent={onInspectAgent}
               onInspectTask={onInspectTask} onInspectRoute={(source, target) => onFleetSelectionChange({ kind: "route", source, target })} />
           ) : tab === "log" ? (
             <SignalLog events={events} window={window} onClearWindow={onClearWindow} onSelectTask={onSelectTask}

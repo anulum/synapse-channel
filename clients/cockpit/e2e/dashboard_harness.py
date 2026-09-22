@@ -14,13 +14,17 @@ import contextlib
 import json
 import os
 import signal
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from websockets.asyncio.client import connect
 
+from synapse_channel.core.approvals import format_approval_note
+from synapse_channel.core.attention import project_hub_attention
+from synapse_channel.core.attention_store import sync_evidence
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import record_operator_relay
+from synapse_channel.core.journal import EventKind, record_operator_relay
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.dashboard import start_dashboard_server
 
@@ -132,6 +136,28 @@ async def _serve() -> None:
             "detail": "seeded production audit evidence",
         },
     )
+    journal.append(
+        EventKind.LEDGER_PROGRESS,
+        {
+            "task_id": "",
+            "kind": "approval",
+            "author": "operator:cockpit-e2e-seed",
+            "posted_at": time.time() - 172800,
+            "text": format_approval_note(
+                subject="attention-e2e-task", state="requested", reason="private task body"
+            ),
+        },
+        ts=time.time() - 172800,
+        durable=True,
+    )
+    attention_store = Path(scratch.name) / "attention" / "queue.db"
+    observed_at = time.time()
+    sync_evidence(
+        attention_store,
+        source="hub",
+        evidence=project_hub_attention(journal.iter_events(), now=observed_at),
+        now=observed_at,
+    )
     hub = SynapseHub(hub_id="cockpit-e2e", journal=journal)
     hub_task = asyncio.create_task(hub.serve(HOST, hub_port))
     dashboard = None
@@ -151,6 +177,7 @@ async def _serve() -> None:
             dashboard_access_file=access_file,
             cockpit_dist=dist,
             reliability_db=event_db,
+            attention_store=attention_store,
             operator=True,
         )
         stop = asyncio.Event()

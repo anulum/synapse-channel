@@ -43,6 +43,7 @@ from synapse_channel.dashboard_access_http import (
     write_decision,
 )
 from synapse_channel.dashboard_access_store import load_dashboard_access_policy
+from synapse_channel.dashboard_attention import serve_attention
 from synapse_channel.dashboard_bind import (
     _resolve_dashboard_token,
     validate_dashboard_bind,
@@ -429,6 +430,9 @@ OPERATOR_ACTIONS_PATH = "/operator-actions.json"
 RECEIPTS_PATH = "/receipts.json"
 """Read-only endpoint serving universal receipt projections from the event log."""
 
+ATTENTION_PATH = "/attention.json"
+"""Authenticated owner-local alert queue, when explicitly configured."""
+
 COCKPIT_DIST_PREFIX = "/cockpit/"
 """URL prefix under which an operator-named cockpit build directory is served."""
 
@@ -478,6 +482,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     access_policy: ClassVar[DashboardAccessPolicy]
     reliability_db: ClassVar[Path | None]
     reliability_db_key_file: ClassVar[Path | None]
+    attention_store: ClassVar[Path | None]
     federation_store: ClassVar[Path | None]
     cockpit_dist: ClassVar[Path | None]
     operator_rate_limiter: ClassVar[WriteRateLimiter]
@@ -760,6 +765,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return serve_operator_actions(db, query)
         if path == RECEIPTS_PATH:
             return serve_receipts(db, query)
+        if path == ATTENTION_PATH:
+            return serve_attention(self.attention_store)
         if path == POSTMORTEM_PATH:
             return serve_postmortem(db, self.reliability_db_key_file, query)
         if path.startswith(COCKPIT_DIST_PREFIX) or path == COCKPIT_DIST_PREFIX.rstrip("/"):
@@ -916,6 +923,7 @@ def _handler_class(
     access_policy: DashboardAccessPolicy,
     reliability_db: Path | None,
     reliability_db_key_file: Path | None,
+    attention_store: Path | None,
     federation_store: Path | None,
     cockpit_dist: Path | None,
     operator_rate_limiter: WriteRateLimiter,
@@ -936,6 +944,7 @@ def _handler_class(
     bound_access_policy = access_policy
     bound_reliability_db = reliability_db
     bound_reliability_db_key_file = reliability_db_key_file
+    bound_attention_store = attention_store
     bound_federation_store = federation_store
     bound_cockpit_dist = cockpit_dist
     bound_operator_rate_limiter = operator_rate_limiter
@@ -1021,6 +1030,7 @@ def _handler_class(
         access_policy = bound_access_policy
         reliability_db = bound_reliability_db
         reliability_db_key_file = bound_reliability_db_key_file
+        attention_store = bound_attention_store
         federation_store = bound_federation_store
         cockpit_dist = bound_cockpit_dist
         operator_rate_limiter = bound_operator_rate_limiter
@@ -1059,6 +1069,7 @@ def start_dashboard_server(
     host_session_context_root: str | Path | None = None,
     reliability_db: str | Path | None = None,
     reliability_db_key_file: str | Path | None = None,
+    attention_store: str | Path | None = None,
     federation_store: str | Path | None = None,
     cockpit_dist: str | Path | None = None,
     operator: bool = False,
@@ -1117,6 +1128,8 @@ def start_dashboard_server(
         without it each endpoint reports its absence with 404.
     federation_store : str, pathlib.Path, or None, optional
         Operator federation store powering ``/federation.json``.
+    attention_store : str, pathlib.Path, or None, optional
+        Explicit owner-local queue powering authenticated ``/attention.json``.
     cockpit_dist : str, pathlib.Path, or None, optional
         Built cockpit directory served under ``/cockpit/``.
     operator : bool, optional
@@ -1173,6 +1186,7 @@ def start_dashboard_server(
         reliability_db_key_file=(
             Path(reliability_db_key_file) if reliability_db_key_file is not None else None
         ),
+        attention_store=Path(attention_store) if attention_store is not None else None,
         federation_store=Path(federation_store) if federation_store is not None else None,
         cockpit_dist=Path(cockpit_dist) if cockpit_dist is not None else None,
         operator_rate_limiter=WriteRateLimiter(

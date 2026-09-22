@@ -1708,6 +1708,10 @@ body {
   border-left-color: var(--critical);
 }
 
+.attention__row--info {
+  border-left-color: var(--info);
+}
+
 .attention__level {
   color: var(--warn);
   font-family: var(--font-display);
@@ -1719,6 +1723,10 @@ body {
 
 .attention__row--critical .attention__level {
   color: var(--critical);
+}
+
+.attention__row--info .attention__level {
+  color: var(--info);
 }
 
 .attention__evidence {

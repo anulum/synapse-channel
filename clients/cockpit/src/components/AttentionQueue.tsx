@@ -9,12 +9,14 @@
 import type { JSX } from "react";
 import { useMemo, useState } from "react";
 
-import type { AttentionAction, AttentionItem, AttentionLevel } from "../lib/attention";
+import { mergeStoredAttention, type AttentionAction, type AttentionItem, type AttentionLevel } from "../lib/attention";
+import type { AttentionFeedState } from "../lib/attentionFeed";
 
 type AttentionFilter = "all" | AttentionLevel;
 
 interface AttentionQueueProps {
   readonly items: readonly AttentionItem[];
+  readonly stored?: AttentionFeedState | undefined;
   readonly connected: boolean;
   readonly onInspectAgent?: ((identity: string) => void) | undefined;
   readonly onInspectTask?: ((taskId: string) => void) | undefined;
@@ -40,20 +42,26 @@ function timeLabel(ts: number): string {
 
 export function AttentionQueue({
   items,
+  stored,
   connected,
   onInspectAgent,
   onInspectTask,
   onInspectRoute,
 }: AttentionQueueProps): JSX.Element {
   const [filter, setFilter] = useState<AttentionFilter>("all");
+  const combined = useMemo(
+    () => mergeStoredAttention(items, stored?.status === "live" || stored?.status === "error" ? stored.data : null),
+    [items, stored],
+  );
   const counts = useMemo(
     () => ({
-      critical: items.filter((item) => item.level === "critical").length,
-      warning: items.filter((item) => item.level === "warning").length,
+      critical: combined.filter((item) => item.level === "critical").length,
+      warning: combined.filter((item) => item.level === "warning").length,
+      info: combined.filter((item) => item.level === "info").length,
     }),
-    [items],
+    [combined],
   );
-  const filtered = filter === "all" ? items : items.filter((item) => item.level === filter);
+  const filtered = filter === "all" ? combined : combined.filter((item) => item.level === filter);
   const shown = filtered.slice(0, SHOWN_LIMIT);
 
   const runAction = (action: AttentionAction): void => {
@@ -69,8 +77,8 @@ export function AttentionQueue({
         <span className="panel__sub">explicit evidence · deterministic order</span>
       </div>
       <div className="attention__toolbar" role="group" aria-label="Filter attention queue">
-        {(["all", "critical", "warning"] as const).map((candidate) => {
-          const count = candidate === "all" ? items.length : counts[candidate];
+        {(["all", "critical", "warning", "info"] as const).map((candidate) => {
+          const count = candidate === "all" ? combined.length : counts[candidate];
           return (
             <button
               key={candidate}
@@ -85,7 +93,16 @@ export function AttentionQueue({
         })}
       </div>
       <div className="panel__body attention__body">
-        {!connected ? (
+        {stored?.status === "absent" && (
+          <p className="panel__placeholder">Local attention observer is not configured.</p>
+        )}
+        {stored?.status === "error" && (
+          <p className="panel__placeholder">Local attention observer is unavailable; last known alerts may be stale.</p>
+        )}
+        {stored?.status === "live" && stored.data?.state === "missing_observer" && (
+          <p className="panel__placeholder">Local attention observer is late. No new alerts cannot be treated as silence.</p>
+        )}
+        {!connected && shown.length === 0 ? (
           <p className="panel__placeholder">Waiting for the hub.</p>
         ) : shown.length === 0 ? (
           <p className="panel__placeholder">No current signals in this evidence filter.</p>

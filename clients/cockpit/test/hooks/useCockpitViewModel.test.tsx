@@ -130,6 +130,7 @@ function feeds(snapshot: FleetSnapshot | null): CockpitFeeds {
     anomalyReport: ABSENT,
     receipts: ABSENT,
     operatorActions: ABSENT,
+    attention: ABSENT,
     transport: { status: "live", attempt: 1, detail: null },
   };
 }

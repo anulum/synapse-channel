@@ -280,6 +280,7 @@ export function App(): JSX.Element {
                   }
                 }}
                 attention={view.attention}
+                attentionFeed={feeds.attention}
                 onInspectAgent={overlays.inspectAgent}
                 onInspectTask={overlays.inspectTask}
                 events={feeds.log}

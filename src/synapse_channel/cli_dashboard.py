@@ -45,6 +45,7 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
             host_session_context_root=getattr(args, "host_sessions_context_root", None),
             reliability_db=args.reliability_db,
             reliability_db_key_file=getattr(args, "feeds_db_key_file", None),
+            attention_store=args.attention_store,
             federation_store=args.federation_store,
             cockpit_dist=args.cockpit_dist,
             operator=args.operator,
@@ -77,6 +78,8 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
         print("receipts JSON: " + server.url("/receipts.json"))
         print("operator actions JSON: " + server.url("/operator-actions.json"))
         print("sessions JSON: " + server.url("/sessions.json"))
+    if args.attention_store is not None:
+        print("attention JSON: " + server.url("/attention.json"))
     if args.federation_store is not None:
         print("federation JSON: " + server.url("/federation.json"))
     if args.cockpit_dist is not None:
@@ -198,6 +201,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
             "peerings with provenance and bundle fingerprints; namespace "
             "outcomes are hub-runtime state and are not served."
         ),
+    )
+    dashboard.add_argument(
+        "--attention-store",
+        type=Path,
+        default=None,
+        help="Explicit owner-local attention queue for authenticated /attention.json.",
     )
     dashboard.add_argument(
         "--cockpit-dist",

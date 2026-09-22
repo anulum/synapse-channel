@@ -7,13 +7,14 @@
 // SYNAPSE CHANNEL — deterministic evidence-ranked fleet attention queue
 
 import type { PendingApprovalView } from "./approvals";
+import type { AttentionReport } from "./attentionFeed";
 import type { BoardTask } from "./board";
 import type { BranchConflictView, ClaimView } from "./claims";
 import type { CommunicationModel } from "./communications";
 import type { DeadLetterView } from "./deadLetters";
 import type { WaitRow } from "./waits";
 
-export type AttentionLevel = "critical" | "warning";
+export type AttentionLevel = "critical" | "warning" | "info";
 export type AttentionKind =
   | "branch_conflict"
   | "dead_letter"
@@ -23,7 +24,12 @@ export type AttentionKind =
   | "blocked_task"
   | "deferred_route"
   | "pending_approval"
-  | "coordination_wait";
+  | "coordination_wait"
+  | "approval_request"
+  | "failed_delivery"
+  | "delivery_recovery"
+  | "stale_data"
+  | "quota_reset";
 
 export type AttentionAction =
   | { readonly kind: "agent"; readonly id: string }
@@ -62,7 +68,14 @@ const KIND_RANK: Record<AttentionKind, number> = {
   deferred_route: 6,
   pending_approval: 7,
   coordination_wait: 8,
+  approval_request: 9,
+  failed_delivery: 10,
+  delivery_recovery: 11,
+  stale_data: 12,
+  quota_reset: 13,
 };
+
+const LEVEL_RANK: Record<AttentionLevel, number> = { critical: 0, warning: 1, info: 2 };
 
 function conflictEvidence(conflict: BranchConflictView): string {
   if (conflict.description !== "") return conflict.description;
@@ -207,10 +220,41 @@ export function deriveAttentionQueue(input: AttentionInputs): AttentionItem[] {
 
   return items.sort(
     (a, b) =>
-      (a.level === b.level ? 0 : a.level === "critical" ? -1 : 1) ||
+      LEVEL_RANK[a.level] - LEVEL_RANK[b.level] ||
       KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
       (a.observedAt ?? Number.POSITIVE_INFINITY) -
         (b.observedAt ?? Number.POSITIVE_INFINITY) ||
       a.id.localeCompare(b.id),
+  );
+}
+
+/** Place persisted owner-local alerts in the same categorical queue as live fleet evidence. */
+export function mergeStoredAttention(
+  live: readonly AttentionItem[],
+  report: AttentionReport | null,
+): AttentionItem[] {
+  if (report === null) return [...live];
+  const items = [...live];
+  for (const alert of report.alerts) {
+    const kind: AttentionKind =
+      alert.kind === "approval" ? "approval_request" :
+      alert.kind === "recovery" ? "delivery_recovery" :
+      alert.kind === "failed_delivery" ? "failed_delivery" :
+      alert.kind === "stale_data" ? "stale_data" : "quota_reset";
+    items.push({
+      id: `stored:${alert.key}`,
+      level: alert.severity,
+      kind,
+      subject: alert.subject,
+      evidence: `${alert.state === "expired" ? "Review overdue. " : ""}${alert.action}`,
+      observedAt: alert.observedAt,
+      action: kind === "approval_request" ? taskAction(alert.subject) : null,
+    });
+  }
+  return items.sort((a, b) =>
+    LEVEL_RANK[a.level] - LEVEL_RANK[b.level] ||
+    KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
+    (a.observedAt ?? Number.POSITIVE_INFINITY) - (b.observedAt ?? Number.POSITIVE_INFINITY) ||
+    a.id.localeCompare(b.id),
   );
 }
