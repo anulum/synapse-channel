@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import subprocess
+import sysconfig
 from pathlib import Path
 
 import pytest
@@ -289,7 +290,7 @@ def test_public_claude_lifecycle_validates_and_removes_an_isolated_plugin(
     version = subprocess.run([str(host), "--version"], capture_output=True, text=True, timeout=10)
     if version.returncode or version.stdout.strip() != "2.1.280 (Claude Code)":
         pytest.skip("exact Claude Code 2.1.280 host unavailable")
-    synapse = Path(__file__).resolve().parents[1] / ".venv/bin/synapse"
+    synapse = Path(sysconfig.get_path("scripts")) / "synapse"
     assert synapse.is_file()
     profile = tmp_path / "claude"
     profile.mkdir()
