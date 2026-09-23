@@ -48,7 +48,7 @@ The CI-only `integrations/claude-code` test package installs the exact
 `@anthropic-ai/claude-code` 2.1.280 host and its platform-specific native
 package from the integrity-locked npm manifest. The upstream package declares
 its proprietary licence in its README; the native package carries its own
-licence file. The test package manifest and lockfile are included in the source
-distribution; the proprietary CLI and native binaries are not included in the
-SYNAPSE CHANNEL wheel or source distribution and are not redistributed by the
-release workflows.
+licence file. The CI-only test manifest and lockfile live in the Git repository;
+neither they nor the proprietary CLI and native binaries are included in the
+SYNAPSE CHANNEL wheel or source distribution. The release workflows do not
+redistribute them.
