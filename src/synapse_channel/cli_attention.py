@@ -21,10 +21,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from synapse_channel.core.approvals import build_approval_report
 from synapse_channel.core.attention import (
     ATTENTION_EVENT_KINDS,
     project_hub_attention,
     project_quota_attention,
+    project_review_attention,
 )
 from synapse_channel.core.attention_store import (
     AttentionStoreError,
@@ -36,6 +38,8 @@ from synapse_channel.core.attention_store import (
 )
 from synapse_channel.core.entitlement_store import EntitlementStoreError, read_events
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.review_feedback import ReviewFeedbackError, review_subject
+from synapse_channel.core.review_feedback_store import get_binding, list_findings
 
 
 def _store(args: argparse.Namespace) -> Path:
@@ -84,6 +88,11 @@ def _sync(args: argparse.Namespace) -> int:
         raise AttentionStoreError(f"missing hub event store: {db_path}")
     approval_seconds = _bounded_positive(args.approval_hours, "approval deadline") * 3600
     stale_seconds = _bounded_positive(args.stale_hours, "stale-data age") * 3600
+    if args.review_store:
+        if not args.reviewer_seat:
+            raise ReviewFeedbackError("review store requires an exact reviewer seat")
+        if not Path(args.review_store).expanduser().is_file():
+            raise ReviewFeedbackError("review evidence store is missing")
     quota = None
     if args.entitlement_store:
         ledger = Path(args.entitlement_store).expanduser()
@@ -96,11 +105,13 @@ def _sync(args: argparse.Namespace) -> int:
         )
     hub = EventStore(db_path, key_file=args.db_key_file)
     try:
+        hub_events = tuple(hub.iter_events(kinds=ATTENTION_EVENT_KINDS))
         hub_evidence = project_hub_attention(
-            hub.iter_events(kinds=ATTENTION_EVENT_KINDS),
+            hub_events,
             now=now,
             approval_ttl_seconds=approval_seconds,
         )
+        review_approvals = build_approval_report(hub_events) if args.review_store else None
     finally:
         hub.close()
     store = _store(args)
@@ -114,6 +125,37 @@ def _sync(args: argparse.Namespace) -> int:
     }
     if quota is not None:
         counts["quota"] = sync_evidence(store, source="quota", evidence=quota, now=now)
+    if args.review_store:
+        assert review_approvals is not None
+        review_path = Path(args.review_store).expanduser()
+        review_rows = []
+        for finding, receipt in list_findings(review_path):
+            binding = get_binding(
+                review_path, repository=finding.repository, commit=finding.reviewed_commit
+            )
+            status = (
+                review_approvals.by_subject.get(review_subject(finding, binding))
+                if binding is not None
+                else None
+            )
+            current_seq = status.history[-1].seq if status is not None and status.history else 0
+            review_rows.append(
+                (
+                    finding,
+                    binding,
+                    float(receipt["observed_at"]),
+                    current_seq,
+                    current_seq > 0 and receipt["route_decision_seq"] == current_seq,
+                )
+            )
+        counts["review"] = sync_evidence(
+            store,
+            source="review",
+            evidence=project_review_attention(
+                review_rows, review_approvals, reviewer_seat=args.reviewer_seat
+            ),
+            now=now,
+        )
     notified = _notify(store, now=now, maximum=args.desktop_max) if args.desktop else 0
     print(json.dumps({"synced": counts, "desktop_previews": notified}, sort_keys=True))
     return 0
@@ -159,6 +201,7 @@ def _run(args: argparse.Namespace) -> int:
     except (
         AttentionStoreError,
         EntitlementStoreError,
+        ReviewFeedbackError,
         ValueError,
         OSError,
         sqlite3.DatabaseError,
@@ -180,6 +223,8 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     sync.add_argument("db", help="Hub SQLite event store.")
     sync.add_argument("--db-key-file", default=None, help="Owner-only SQLCipher key file.")
     sync.add_argument("--entitlement-store", default=None, help="Owner-only C04 ledger.")
+    sync.add_argument("--review-store", default=None, help="Owner-only review evidence store.")
+    sync.add_argument("--reviewer-seat", default=None, help="Exact independent reviewer identity.")
     sync.add_argument("--approval-hours", type=float, default=24.0)
     sync.add_argument("--stale-hours", type=float, default=24.0)
     sync.add_argument("--desktop", action="store_true", help="Send generic local desktop previews.")

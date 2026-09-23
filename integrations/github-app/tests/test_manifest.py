@@ -35,7 +35,11 @@ def test_manifest_has_only_stage_two_permissions_and_event() -> None:
             "metadata": "read",
             "pull_requests": "read",
         },
-        "default_events": ["pull_request"],
+        "default_events": [
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+        ],
     }
 
 

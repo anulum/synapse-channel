@@ -84,7 +84,11 @@ def build_manifest(base_url: str, *, public: bool = False) -> dict[str, object]:
             "metadata": "read",
             "pull_requests": "read",
         },
-        "default_events": ["pull_request"],
+        "default_events": [
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+        ],
     }
 
 

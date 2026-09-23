@@ -61,6 +61,14 @@ The managed package imports one existing local-core function:
 HTTP, webhooks, secrets, rate limits, and hosting therefore cannot leak into the
 single-dependency local runtime.
 
+The separate `review_webhook.py` decoder verifies the same raw-body HMAC before
+parsing submitted reviews or created inline comments. It returns bounded source
+metadata and untrusted text to the explicit local review-feedback CLI. The
+conflict service does not run on these events. The local workflow stores the
+original bytes, binds an exact author session and consults existing hub
+approvals before routing; no hosted listener or automatic reviewer authority is
+implied.
+
 ## Directory and responsibilities
 
 ```text
@@ -80,6 +88,7 @@ integrations/github-app/
 │   ├── json_boundary.py     strict UTF-8, finite, depth-bounded JSON
 │   ├── manifest.py          least-privilege manifest renderer
 │   ├── models.py            typed webhook/API boundary parsing
+│   ├── review_webhook.py    signed review and inline-comment decoder
 │   ├── service.py           one-event stateless orchestration
 │   └── webhook.py           raw-body HMAC verification and bounded decoding
 └── tests/                   one focused test surface per production module

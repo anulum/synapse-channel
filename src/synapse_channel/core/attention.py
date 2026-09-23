@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -16,12 +17,19 @@ from datetime import datetime
 from synapse_channel.core.approvals import (
     APPROVAL_NOTE_KIND,
     STATE_REQUESTED,
+    ApprovalReport,
     parse_approval_note,
 )
 from synapse_channel.core.entitlement_view import entitlement_view
 from synapse_channel.core.entitlements import parse_time
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import StoredEvent
+from synapse_channel.core.review_feedback import (
+    AuthorBinding,
+    ReviewFinding,
+    independent_decision,
+    review_subject,
+)
 
 
 @dataclass(frozen=True)
@@ -71,6 +79,57 @@ ATTENTION_EVENT_KINDS = frozenset(
     }
 )
 """Hub event kinds needed for an attention projection."""
+
+
+def project_review_attention(
+    rows: Sequence[tuple[ReviewFinding, AuthorBinding | None, float, int, bool]],
+    approvals: ApprovalReport,
+    *,
+    reviewer_seat: str,
+) -> tuple[AttentionEvidence, ...]:
+    """Project private findings into generic, source-backed routing alerts.
+
+    Parameters
+    ----------
+    rows : Sequence[tuple[ReviewFinding, AuthorBinding | None, float, int, bool]]
+        Immutable finding, exact binding, observation time, decision sequence and route receipt.
+    approvals : ApprovalReport
+        Current hub decisions on exact finding subjects.
+    reviewer_seat : str
+        Exact independent review identity configured by the owner.
+
+    Returns
+    -------
+    tuple[AttentionEvidence, ...]
+        Review alerts without free-text or native-session disclosure.
+    """
+    evidence: list[AttentionEvidence] = []
+    for finding, binding, observed_at, decision_seq, routed in rows:
+        decision = independent_decision(finding, binding, approvals, reviewer_seat=reviewer_seat)
+        if binding is None:
+            severity, action = "critical", "Bind the exact author task and session"
+        elif decision in {"awaiting_independent_decision", "not_independent"}:
+            severity, action = "warning", "Request an independent decision on the exact review"
+        else:
+            severity, action = "warning", "Check current diff and route decided feedback"
+        key = "review:" + hashlib.sha256(finding.key.encode()).hexdigest()
+        revision = hashlib.sha256(
+            f"{finding.source_sha256}:{decision}:{decision_seq}:{routed}".encode()
+        ).hexdigest()
+        evidence.append(
+            AttentionEvidence(
+                key=key,
+                kind="review_feedback",
+                subject=review_subject(finding, binding) if binding is not None else finding.key,
+                severity="info" if routed else severity,
+                state="resolved" if routed else "open",
+                action="Inspect the routed review receipt" if routed else action,
+                source_revision=revision,
+                observed_at=observed_at,
+                expires_at=None,
+            )
+        )
+    return tuple(evidence)
 
 
 def _approval_evidence(

@@ -95,6 +95,7 @@ nav:
   - Declarative workflows: workflows.md
   - Cockpit user guide: cockpit.md
   - Local attention queue: attention.md
+  - Review feedback to the author: review-feedback.md
   - Studio: studio.md
   - CLI reference: cli.md
   - Participant memory recall: participant-memory.md

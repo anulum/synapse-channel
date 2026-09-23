@@ -113,8 +113,8 @@ def sync_evidence(
     """
     if not math.isfinite(now) or now <= 0:
         raise AttentionStoreError("observer time must be finite and positive")
-    if source not in {"hub", "quota"}:
-        raise AttentionStoreError("attention source must be hub or quota")
+    if source not in {"hub", "quota", "review"}:
+        raise AttentionStoreError("attention source must be hub, quota or review")
     keys = [item.key for item in evidence]
     if len(keys) != len(set(keys)):
         raise AttentionStoreError("attention evidence contains duplicate keys")

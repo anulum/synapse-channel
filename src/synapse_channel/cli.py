@@ -33,6 +33,7 @@ The ``synapse`` command exposes these subcommands:
 * ``reliability`` — build evidence-only reliability memory from the event log;
 * ``accounting`` — record and report opt-in model cost/token usage from the event log;
 * ``entitlements`` — inspect and correct the owner-local account and quota ledger;
+* ``review-feedback`` — bind and route independently decided review to its author;
 * ``fleet-scorecard`` — compose durable fleet evidence into JSON or an OTLP push;
 * ``approval`` — request, decide, and replay human-in-the-loop approval gates;
 * ``ttl-advice`` — build read-only adaptive lease TTL advice from the event log;
@@ -212,6 +213,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_entitlements:add_parsers", ("entitlements",)),
     ("synapse_channel.cli_app_tasks:add_parsers", ("app-task",)),
     ("synapse_channel.cli_attention:add_parsers", ("attention",)),
+    ("synapse_channel.cli_review_feedback:add_parsers", ("review-feedback",)),
     ("synapse_channel.cli_fleet_scorecard:add_parsers", ("fleet-scorecard",)),
     ("synapse_channel.cli_approvals:add_parsers", ("approval",)),
     ("synapse_channel.cli_adaptive_ttl:add_parsers", ("ttl-advice",)),

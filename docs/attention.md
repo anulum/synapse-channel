@@ -13,7 +13,9 @@ SYNAPSE CHANNEL — owner-local attention queue guide
 `synapse attention` projects approval requests, failed delivery and recovery
 from a hub event store. Optionally, it reads the owner-local [account and quota
 ledger](entitlements.md) for stale observations and exhausted windows with a
-recorded renewal. The queue is advisory: it never decides an approval, retries
+recorded renewal. It can also project owner-local [review feedback](review-feedback.md)
+for missing author bindings, pending independent decisions and route receipts.
+The queue is advisory: it never decides an approval, retries
 a delivery or spends a quota. A late observer is shown as `missing_observer`;
 an empty queue is `quiet` only after a recent successful observation.
 
@@ -27,6 +29,8 @@ unset. Its directory and database file must be owner-only.
 ```bash
 synapse attention sync /path/to/hub.db
 synapse attention sync /path/to/hub.db --entitlement-store /path/to/ledger.sqlite3
+synapse attention sync /path/to/hub.db --review-store /private/reviews.sqlite3 \
+  --reviewer-seat REVIEWER/seat
 synapse attention list
 synapse attention list --json
 synapse attention snooze approval:TASK-7 --hours 2

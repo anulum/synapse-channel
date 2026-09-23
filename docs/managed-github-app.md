@@ -85,8 +85,8 @@ The adoption-signal gate is lifted; the build proceeds smallest-hosting-first:
 The skeleton is deliberately usable without pretending to be a deployment:
 
 - `synapse-github-app-manifest` renders a private-by-default manifest with only
-  `pull_requests:read`, `checks:write`, metadata read, and the `pull_request`
-  event;
+  `pull_requests:read`, `checks:write`, metadata read, and the `pull_request`,
+  `pull_request_review`, and `pull_request_review_comment` events;
 - raw webhook bytes are size-bounded, HMAC-SHA256 verified in constant time,
   strict-UTF-8 decoded, and depth-bounded before typed field extraction;
 - App JWTs use RS256 with a nine-minute expiry and clock-skew backdating;
@@ -104,6 +104,9 @@ The skeleton is deliberately usable without pretending to be a deployment:
 The full component and data-flow contract is in the linked architecture. Source
 installation and the host-adapter seam are in
 [`integrations/github-app/README.md`](https://github.com/anulum/synapse-channel/blob/main/integrations/github-app/README.md).
+The separate [local review-feedback workflow](review-feedback.md) decodes
+signed review events and routes independently decided findings to an exact
+author seat. It does not turn the skeleton into a hosted callback.
 
 ## Boundaries
 

@@ -1529,8 +1529,12 @@ throughout.
 The [managed GitHub App design](docs/managed-github-app.md) pins the boundary for
 hosted cross-PR conflict prediction: the prediction itself reuses the existing
 local-core conflict finder, while everything that makes it managed — webhooks,
-GitHub auth, checks API, hosting — stays out of the local core. Advisory only,
-not implemented, and gated on a local adoption signal.
+GitHub auth, checks API, hosting — stays out of the local core. The independently
+installable App skeleton verifies signed webhooks and writes neutral checks;
+registration and hosting are separate gates. The [local review-feedback
+workflow](docs/review-feedback.md) preserves signed review evidence, requires
+an independent hub decision and routes a notice to the exact author seat and
+native session binding without automatic merge or model execution.
 
 Use `synapse ttl-advice ./synapse.db` for read-only adaptive lease TTL advice.
 It derives completed-task duration samples, active live-claim counts, and stale
@@ -1687,13 +1691,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.26 |
 | Public API exports | 70 |
-| Package modules | 595 |
-| Classes | 887 |
+| Package modules | 598 |
+| Classes | 891 |
 | Wire message types | 90 |
-| CLI subcommands | 219 |
-| Test functions | 9998 |
+| CLI subcommands | 223 |
+| Test functions | 10007 |
 | Benchmark harnesses | 7 |
-| Documentation pages | 75 |
+| Documentation pages | 76 |
 | GitHub Actions workflows | 27 |
 | Optional-dependency groups | 14 |
 

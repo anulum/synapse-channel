@@ -18,7 +18,8 @@ Check Run. Each reported overlap is attributed to the two pull requests' authors
 so a reviewer can identify the source pull requests. Author attribution does
 not establish a SYNAPSE claim, an agent identity, or ownership of the changed
 files. It does not rank, score, or gate any agent. It does not
-register, host, deploy, or persist an App.
+register, host, deploy, or persist an App. It also decodes signed review and
+inline-comment webhooks for the [owner-local review feedback workflow](../../docs/review-feedback.md).
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) before integrating it. The document is
 the contract: GitHub concerns stay here, the local core stays single-dependency,
@@ -34,7 +35,8 @@ synapse-github-app-manifest --base-url https://app.example.org
 ```
 
 The manifest requests only pull-request read and Checks write access, subscribes
-only to `pull_request`, and points the webhook and manifest callback at the given
+to `pull_request`, `pull_request_review`, and `pull_request_review_comment`,
+and points the webhook and manifest callback at the given
 base URL. Do not submit it until the stage 3 host implements the callback and
 provides approved secret custody.
 
@@ -60,7 +62,7 @@ or reads secrets from ambient environment variables.
 
 ## Stage 2 limits
 
-- pull-request events only;
+- pull-request conflict evaluation only; signed review intake is a separate decoder;
 - 1 MiB webhook and 64-level JSON-depth bounds;
 - up to 100 open pull requests and 3,000 changed files per pull request;
 - 4 MiB per REST response, no redirects, and HTTPS except explicit loopback test

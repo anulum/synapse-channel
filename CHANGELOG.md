@@ -105,6 +105,11 @@ All notable changes to this project are documented here.
   project/data eligibility and idle rates; suggest only digest-approved work
   against current account, balance, expiry and full-cost evidence.
 
+- Preserve signed GitHub review and inline-comment evidence against an exact
+  Git diff, task and author session; require an independent hub decision and
+  route content-minimised feedback through owner-local attention and directed
+  delivery without treating review text as authority.
+
 - Add a read-only daily official-source vendor watch with a dated compatibility
   matrix, installed-version observations, stale-review and source-failure
   handling, and a scheduled report. New releases require real host validation
