@@ -211,7 +211,7 @@ class DeliveryParticipantBridge:
             except DeliveryRefusal as exc:
                 if exc.code != "unavailable_hub":
                     raise
-            except (ConnectionError, ConnectionClosed, OSError, TimeoutError):
+            except (ConnectionError, ConnectionClosed, OSError, TimeoutError, asyncio.TimeoutError):
                 pass
             finally:
                 self._stage_waiter = None

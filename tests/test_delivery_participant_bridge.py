@@ -347,6 +347,62 @@ class _DeterministicParticipant:
         return result
 
 
+async def test_late_delivery_status_retries_without_stopping_later_offers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A late status frame must not kill the ordered bridge on Python 3.10."""
+    agent = SynapseAgent(
+        "P/receiver", delivery_capabilities={"follow_up": "native"}, machine_identity=False
+    )
+    participant = _DeterministicParticipant("error")
+    bridge = DeliveryParticipantBridge(agent, participant, ledger_path=tmp_path / "bridge.db")
+    first_key, second_key = "a" * 64, "b" * 64
+    stages: list[tuple[str, str]] = []
+    second_finished = asyncio.Event()
+
+    async def report_status(key: str, *, stage: str, **_kwargs: Any) -> None:
+        stages.append((key, stage))
+        if (
+            key == first_key
+            and stage == "boundary_delivered"
+            and stages.count((first_key, stage)) == 1
+        ):
+            return
+        await bridge.on_message(
+            {
+                "type": MessageType.DELIVERY_STATUS,
+                "target": agent.name,
+                "operation_key": key,
+                "stage": stage,
+            }
+        )
+        if key == second_key and stage == "failed":
+            second_finished.set()
+
+    monkeypatch.setattr(agent, "report_delivery_stage", report_status)
+    bridge.start()
+    try:
+        for key in (first_key, second_key):
+            await bridge.on_message(
+                {
+                    "type": MessageType.DELIVERY_OFFER,
+                    "target": agent.name,
+                    "target_incarnation": agent.delivery_incarnation,
+                    "operation_key": key,
+                    "request_id": f"request-{key[0]}",
+                    "task_id": "late-status-task",
+                    "body": "Review the queued work.",
+                    "deadline": time.time() + 30,
+                    "selected_mode": "follow_up",
+                }
+            )
+        await asyncio.wait_for(second_finished.wait(), 12)
+        assert stages.count((first_key, "boundary_delivered")) == 2
+        assert participant.calls == 2
+    finally:
+        await bridge.close()
+
+
 class _BlockingParticipant(_DeterministicParticipant):
     """Hold one accepted turn so a second queued offer can be cancelled."""
 

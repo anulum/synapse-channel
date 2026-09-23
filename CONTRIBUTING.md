@@ -134,6 +134,12 @@ Cutting a release is owner-gated and runs the mandatory release gate:
    install smoke, release mechanics, post-tag plan). For this public repository
    the heavy phases are the push-then-CI matrix at the exact head SHA, and the GO
    report cites CI-green there. Any blocker is a NO-GO.
+   For 0.99.27, also install the released 0.99.26 wheel into an isolated Python
+   environment and run the manual pre-tag rollback check:
+   `python tools/verify_delivery_rollback.py /path/to/old-venv/bin/python`.
+   Record its output in the private release dossier. It proves that the old hub
+   leaves queued v3 work untouched and the new hub can resume its deadline sweep;
+   it does not claim that the old hub drains v3 work.
 3. **Tag.** Only after the GO report, a distinct-terminal second eye, and the
    owner's explicit publish-go, cut an **annotated** tag at the exact release
    commit: `git tag -a vX.Y.Z <commit>`. The tag is tag-triggered — pushing it

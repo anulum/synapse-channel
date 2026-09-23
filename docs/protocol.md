@@ -475,6 +475,10 @@ loss of an unseen message body.
 
 ## Session-bound delivery (wire version 3)
 
+As of 2026-09-23, this section describes the 0.99.27 source candidate. The
+published 0.99.26 package still speaks wire version 2; do not downgrade a hub
+with unresolved v3 work without the rollback procedure below.
+
 A durable hub with an explicit stable `hub_id` admits version-three delivery.
 Registering a delivery-capable recipient on a non-durable hub closes that whole
 connection with code 4020, including ordinary chat on that connection; use a
@@ -507,6 +511,12 @@ sender within that recipient incarnation. Both limits return
 `SynapseAgent.request_delivery()` API refuses an old hub before sending a v3
 frame. A v2 peer retains the mailbox `ack` contract.
 
+The local recipient bridge also queues at most 128 offers. A nonconforming hub
+that sends beyond that cap can hold its socket reader while it tries to report
+`queue_full`; the reader then cannot consume the status reply. The hub admission
+cap prevents that state for a conforming recipient incarnation. Operators must
+restore a conforming hub or restart the bridge if this failure is observed.
+
 Admission commits `delivery_intent_accepted`, `delivery_intent_queued`, the
 aggregate, and a stable `delivery_offer` notification before socket delivery.
 Retries with the same sender, request ID, idempotency key and content return the
@@ -537,6 +547,13 @@ follow-up and next-turn offers in an ordered queue through a `Participant` and
 keeps a local duplicate ledger; it does not advertise interrupt or steer.
 If a terminal hub status races a stage report, the bridge stops that queued
 turn before invoking the provider rather than retrying the old stage forever.
+
+Version 0.99.27 has no delivery-journal compaction. Terminal delivery rows,
+event history and audit notifications accumulate with use, so durable storage
+and restart replay work grow with retained history. Monitor the journal and
+plan capacity for that growth; deleting rows by hand would break replay and
+idempotency evidence. An operator compaction procedure needs a separately
+reviewed archive and hash-chain checkpoint before it can be used.
 
 The Python entrypoint is `SynapseAgent.request_who()` followed by
 `SynapseAgent.request_delivery(...)` using the exact incarnation from the
