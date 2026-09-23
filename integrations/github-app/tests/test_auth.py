@@ -20,6 +20,7 @@ from synapse_github_app.errors import AuthenticationError, PayloadError
 
 
 def test_app_jwt_has_real_rs256_signature_and_bounded_claims() -> None:
+    """Verify the signed JWT claims against the generated public key."""
     private_pem, public_pem = rsa_pem_pair()
     now = datetime(2026, 7, 11, 14, 0, tzinfo=timezone.utc)
 
@@ -40,12 +41,14 @@ def test_app_jwt_has_real_rs256_signature_and_bounded_claims() -> None:
 
 @pytest.mark.parametrize("issuer", ["", "x\n", "x" * 256])
 def test_app_jwt_rejects_invalid_issuer(issuer: str) -> None:
+    """Reject empty, multiline and oversized GitHub App issuers."""
     private_pem, _ = rsa_pem_pair()
     with pytest.raises(AuthenticationError, match="issuer"):
         create_app_jwt(issuer=issuer, private_key_pem=private_pem)
 
 
 def test_app_jwt_rejects_empty_invalid_key_and_naive_clock() -> None:
+    """Refuse unusable signing keys and a clock without a timezone."""
     with pytest.raises(AuthenticationError, match="must not be empty"):
         create_app_jwt(issuer="app", private_key_pem=b"")
     with pytest.raises(AuthenticationError, match="unable to sign"):
@@ -60,6 +63,7 @@ def test_app_jwt_rejects_empty_invalid_key_and_naive_clock() -> None:
 
 
 def test_installation_token_is_opaque_and_expiry_is_normalized() -> None:
+    """Preserve the opaque token and normalise its UTC expiry."""
     token = "future_format_" + "x" * 91
     parsed = parse_installation_token({"token": token, "expires_at": "2026-07-11T15:00:00Z"})
 
@@ -80,5 +84,6 @@ def test_installation_token_is_opaque_and_expiry_is_normalized() -> None:
     ],
 )
 def test_installation_token_rejects_malformed_responses(payload: object) -> None:
+    """Refuse malformed token, expiry and response shapes."""
     with pytest.raises(PayloadError):
         parse_installation_token(payload)

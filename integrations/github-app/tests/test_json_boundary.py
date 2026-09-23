@@ -17,6 +17,7 @@ from synapse_github_app.json_boundary import loads_strict_bounded
 
 
 def test_valid_nested_json_ignores_brackets_and_escapes_inside_strings() -> None:
+    """Count nesting from JSON structure rather than escaped string text."""
     raw = b'{"text":"[{}] \\" still text", "items":[{"n":1}]}'
     assert loads_strict_bounded(raw, max_depth=3) == {
         "text": '[{}] " still text',
@@ -25,6 +26,7 @@ def test_valid_nested_json_ignores_brackets_and_escapes_inside_strings() -> None
 
 
 def test_decoder_refuses_depth_nonfinite_utf8_and_bad_limit() -> None:
+    """Reject excessive depth, nonfinite numbers, bad UTF-8 and limits."""
     with pytest.raises(json.JSONDecodeError, match="exceeds"):
         loads_strict_bounded(b'[[["deep"]]]', max_depth=2)
     with pytest.raises(json.JSONDecodeError, match="non-finite"):

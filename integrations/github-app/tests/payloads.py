@@ -22,7 +22,8 @@ def pull_request_record(
     head_sha: str | None = None,
     login: str | None = "octo-dev",
 ) -> dict[str, object]:
-    """Return one GitHub REST-shaped pull-request record.
+    """
+    Return one GitHub REST-shaped pull-request record.
 
     When ``login`` is ``None`` the ``user`` object is omitted so tests can drive
     the unattributed pull-request path GitHub emits for deleted accounts.

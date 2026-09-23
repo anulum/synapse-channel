@@ -26,6 +26,7 @@ SECRET = b"It's a Secret to Everybody"
 
 
 def test_github_published_hmac_known_answer_vector() -> None:
+    """Match GitHub's HMAC vector and detect body tampering."""
     body = b"Hello, World!"
     signature = "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17"
 
@@ -34,11 +35,13 @@ def test_github_published_hmac_known_answer_vector() -> None:
 
 
 def test_signature_requires_a_nonempty_secret() -> None:
+    """Refuse signature verification without a configured secret."""
     with pytest.raises(WebhookError, match="must not be empty"):
         verify_signature(secret=b"", body=b"{}", signature=None)
 
 
 def test_valid_signed_pull_request_decodes_after_authentication() -> None:
+    """Decode a signed pull request after authentication succeeds."""
     body = encoded_payload(action="synchronize")
     event = decode_pull_request(headers=signed_headers(body, SECRET), body=body, secret=SECRET)
 
@@ -48,6 +51,7 @@ def test_valid_signed_pull_request_decodes_after_authentication() -> None:
 
 
 def test_non_pull_event_and_unsupported_action_are_ignored() -> None:
+    """Ignore unrelated events and unsupported pull actions."""
     body = encoded_payload()
     assert (
         decode_pull_request(
@@ -65,6 +69,7 @@ def test_non_pull_event_and_unsupported_action_are_ignored() -> None:
 
 
 def test_invalid_signature_is_rejected_before_json_parse() -> None:
+    """Reject a bad HMAC before parsing even malformed JSON."""
     body = b"not-json"
     bad = "sha256=" + hmac.new(SECRET, b"different", hashlib.sha256).hexdigest()
     with pytest.raises(WebhookError, match="signature"):
@@ -80,6 +85,7 @@ def test_invalid_signature_is_rejected_before_json_parse() -> None:
 
 
 def test_authenticated_invalid_or_deep_json_is_rejected() -> None:
+    """Reject malformed, invalid UTF-8 and excessively nested bodies."""
     for body in (
         b"{",
         b'{"value":"\xff"}',
@@ -90,12 +96,14 @@ def test_authenticated_invalid_or_deep_json_is_rejected() -> None:
 
 
 def test_oversized_body_is_refused_before_hmac_work() -> None:
+    """Reject an oversized webhook body before HMAC processing."""
     body = b"x" * (MAX_WEBHOOK_BYTES + 1)
     with pytest.raises(WebhookError, match="exceeds"):
         decode_pull_request(headers={}, body=body, secret=b"")
 
 
 def test_authenticated_payload_validation_error_is_redacted() -> None:
+    """Keep invalid payload fields out of webhook errors."""
     body = b'{"action":"opened"}'
     with pytest.raises(WebhookError, match="payload is invalid") as raised:
         decode_pull_request(headers=signed_headers(body, SECRET), body=body, secret=SECRET)

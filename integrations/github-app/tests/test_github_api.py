@@ -38,6 +38,7 @@ def _check() -> CheckRunRequest:
 
 
 def test_client_exercises_token_pull_file_and_check_endpoints() -> None:
+    """Exercise token, pull, file and check requests against local HTTP."""
     plans = {
         ("POST", "/app/installations/42/access_tokens"): [
             ResponseSpec(
@@ -73,6 +74,7 @@ def test_client_exercises_token_pull_file_and_check_endpoints() -> None:
 
 
 def test_pull_and_file_pagination_report_conservative_completeness() -> None:
+    """Report a full pull page as truncated and collect later file pages."""
     hundred_pulls = [pull_request_record(number) for number in range(1, 101)]
     first_files = [{"filename": f"src/file-{index:03d}.py"} for index in range(100)]
     plans = {
@@ -91,6 +93,7 @@ def test_pull_and_file_pagination_report_conservative_completeness() -> None:
 
 
 def test_file_inventory_marks_the_three_thousand_path_ceiling() -> None:
+    """Mark the file inventory truncated at GitHub's path ceiling."""
     plans: dict[tuple[str, str], list[ResponseSpec]] = {}
     for page in range(1, 31):
         start = (page - 1) * 100
@@ -118,17 +121,20 @@ def test_file_inventory_marks_the_three_thousand_path_ceiling() -> None:
     ],
 )
 def test_api_origin_refuses_unsafe_configuration(url: str, allow_loopback: bool) -> None:
+    """Refuse unsafe origins and unauthorised insecure loopback."""
     with pytest.raises(GitHubApiError):
         GitHubApi(api_url=url, allow_insecure_loopback=allow_loopback)
 
 
 @pytest.mark.parametrize("timeout", [0.0, -1.0, 120.1])
 def test_api_timeout_is_bounded(timeout: float) -> None:
+    """Reject nonpositive and excessive API timeouts."""
     with pytest.raises(GitHubApiError, match="timeout"):
         GitHubApi(timeout_seconds=timeout)
 
 
 def test_redirect_http_error_invalid_json_and_response_bounds_are_fail_visible() -> None:
+    """Expose transport and decoding failures without accepting bad data."""
     cases = [
         ResponseSpec(status=302, headers={"Location": "/elsewhere"}),
         ResponseSpec(status=503, body={"message": "secret upstream detail"}),
@@ -147,6 +153,7 @@ def test_redirect_http_error_invalid_json_and_response_bounds_are_fail_visible()
 
 
 def test_public_methods_reject_invalid_ids_tokens_and_response_shapes() -> None:
+    """Refuse invalid inputs and malformed GitHub response records."""
     plans = {
         ("POST", "/app/installations/42/access_tokens"): [ResponseSpec(body={"token": "bad"})],
         ("GET", PULLS_PATH): [
@@ -185,6 +192,7 @@ def test_public_methods_reject_invalid_ids_tokens_and_response_shapes() -> None:
 
 
 def test_api_error_never_includes_upstream_body_or_token() -> None:
+    """Keep upstream response text and credentials out of API errors."""
     plans = {("GET", PULLS_PATH): [ResponseSpec(status=403, body={"message": "token-secret"})]}
     with serve_api(plans) as server:
         api = GitHubApi(api_url=server.url, allow_insecure_loopback=True)
@@ -196,6 +204,7 @@ def test_api_error_never_includes_upstream_body_or_token() -> None:
 
 
 def test_loopback_ipv6_and_localhost_origins_are_explicitly_accepted() -> None:
+    """Accept HTTPS and explicitly allowed local HTTP origins."""
     for url in (
         "https://api.github.com/api/v3/",
         "http://localhost:1234",

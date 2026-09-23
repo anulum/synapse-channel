@@ -18,6 +18,7 @@ from synapse_github_app.manifest import APP_NAME, build_manifest, canonical_base
 
 
 def test_manifest_has_only_stage_two_permissions_and_event() -> None:
+    """Constrain the generated App manifest to reviewed permissions and events."""
     manifest = build_manifest("https://app.example.org/root/")
 
     assert manifest == {
@@ -44,6 +45,7 @@ def test_manifest_has_only_stage_two_permissions_and_event() -> None:
 
 
 def test_manifest_cli_renders_public_deterministic_json(capsys: pytest.CaptureFixture[str]) -> None:
+    """Render sorted public manifest JSON through the CLI."""
     assert main(["--base-url", "https://app.example.org", "--public"]) == 0
 
     rendered = capsys.readouterr().out
@@ -65,11 +67,13 @@ def test_manifest_cli_renders_public_deterministic_json(capsys: pytest.CaptureFi
     ],
 )
 def test_manifest_refuses_unsafe_base_urls(value: str) -> None:
+    """Reject origins that cannot safely anchor GitHub callbacks."""
     with pytest.raises(ManifestError):
         canonical_base_url(value)
 
 
 def test_manifest_cli_reports_invalid_url(capsys: pytest.CaptureFixture[str]) -> None:
+    """Return CLI usage failure for an insecure callback origin."""
     with pytest.raises(SystemExit) as raised:
         main(["--base-url", "http://insecure.example.org"])
     assert raised.value.code == 2

@@ -52,6 +52,7 @@ def _decode(payload: dict[str, Any], *, event: str = "pull_request_review") -> R
 
 
 def test_submitted_review_retains_source_and_untrusted_body() -> None:
+    """Preserve signed review provenance without promoting its text."""
     review = _decode(_payload())
     assert review is not None
     assert review.repository.full_name == "anulum/synapse-channel"
@@ -66,6 +67,7 @@ def test_submitted_review_retains_source_and_untrusted_body() -> None:
 
 
 def test_non_review_event_and_edited_action_are_ignored() -> None:
+    """Ignore unrelated events and unsupported review edits."""
     body = json.dumps(_payload()).encode()
     assert (
         decode_review_webhook(
@@ -79,6 +81,7 @@ def test_non_review_event_and_edited_action_are_ignored() -> None:
 
 
 def test_bad_signature_and_malformed_review_fail_closed() -> None:
+    """Reject invalid signatures and malformed review commit identity."""
     body = json.dumps(_payload()).encode()
     with pytest.raises(WebhookError, match="signature"):
         decode_review_webhook(
@@ -93,6 +96,7 @@ def test_bad_signature_and_malformed_review_fail_closed() -> None:
 
 
 def test_review_body_and_delivery_are_bounded() -> None:
+    """Bound reviewer text and require a valid delivery identifier."""
     payload = _payload()
     payload["review"] = {**payload["review"], "body": "x" * 32769}
     with pytest.raises(WebhookError, match="invalid"):
@@ -114,6 +118,7 @@ def test_review_body_and_delivery_are_bounded() -> None:
     ],
 )
 def test_malformed_review_fields_are_refused(field: str, value: object) -> None:
+    """Refuse malformed review fields before creating evidence."""
     payload = _payload()
     payload["review"] = {**payload["review"], field: value}
     with pytest.raises(WebhookError, match="invalid"):
@@ -121,6 +126,7 @@ def test_malformed_review_fields_are_refused(field: str, value: object) -> None:
 
 
 def test_missing_author_and_null_body_remain_explicit() -> None:
+    """Retain absent author identity and normalise an empty review body."""
     payload = _payload()
     payload["pull_request"] = {**payload["pull_request"], "user": None}
     payload["review"] = {**payload["review"], "body": None}
@@ -131,6 +137,7 @@ def test_missing_author_and_null_body_remain_explicit() -> None:
 
 
 def test_nonprintable_reviewer_and_bad_root_are_refused() -> None:
+    """Refuse invalid reviewer names and nonobject signed payloads."""
     payload = _payload()
     payload["review"] = {**payload["review"], "user": {"login": "bad\nlogin"}}
     with pytest.raises(WebhookError, match="invalid"):
@@ -148,11 +155,13 @@ def test_nonprintable_reviewer_and_bad_root_are_refused() -> None:
 
 
 def test_webhook_body_size_is_checked_before_decoding() -> None:
+    """Reject an oversized body before signature or JSON work."""
     with pytest.raises(WebhookError, match="exceeds"):
         decode_review_webhook(headers={}, body=b"x" * (1024 * 1024 + 1), secret=SECRET)
 
 
 def test_created_inline_comment_retains_exact_path_line_and_commit() -> None:
+    """Bind inline findings to their exact diff location and commit."""
     payload = _payload()
     payload["action"] = "created"
     payload["comment"] = {
@@ -177,6 +186,7 @@ def test_created_inline_comment_retains_exact_path_line_and_commit() -> None:
 
 
 def test_inline_comment_refuses_traversal_and_invalid_line() -> None:
+    """Refuse path traversal and invalid inline comment positions."""
     payload = _payload()
     payload["action"] = "created"
     payload["comment"] = {
