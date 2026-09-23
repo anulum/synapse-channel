@@ -195,10 +195,12 @@ async def test_close_kills_descendant_after_rpc_leader_exits(tmp_path: Path) -> 
     """An exited pi leader cannot strand a process in its owned process group."""
     pid_file = tmp_path / "descendant.pid"
     parent = r"""
-import subprocess,sys
+import os,subprocess,sys
 child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'],
     stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-with open(sys.argv[1],'w',encoding='ascii') as target:target.write(str(child.pid))
+pending=sys.argv[1]+'.pending'
+with open(pending,'w',encoding='ascii') as target:target.write(str(child.pid))
+os.replace(pending,sys.argv[1])
 """
     running = PiRpcProcess(
         [sys.executable, "-u", "-c", parent, str(pid_file)],
