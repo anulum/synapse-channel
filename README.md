@@ -595,7 +595,9 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   The [vendor compatibility watch](docs/vendor-watch.md) checks official
   releases daily and records which host versions have actually been verified.
   [Vendor and provider discovery](docs/vendor-discovery.md) reviews bounded
-  public candidate feeds weekly before an integration is considered.
+  public candidate feeds weekly before an integration is considered. Its host
+  intake rejects the reviewed Pages download lure and does not rank cron pushes
+  as code provenance.
 
   The optional [pi participant](docs/pi.md) uses pinned pi 0.86.0 RPC. Its
   separate extension checks live claims before supported file writes; the
@@ -1686,7 +1688,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 883 |
 | Wire message types | 90 |
 | CLI subcommands | 216 |
-| Test functions | 9978 |
+| Test functions | 9982 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 74 |
 | GitHub Actions workflows | 27 |

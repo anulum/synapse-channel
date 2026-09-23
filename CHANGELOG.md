@@ -93,6 +93,10 @@ All notable changes to this project are documented here.
   agent host candidates, with provenance, manual alias review and a weekly
   report. Discovery never activates a provider or changes support claims.
 
+- Harden vendor discovery against the reviewed GitHub Pages download lure:
+  inspect bounded source trees and workflows, reject matched hosts, rank source
+  and owner provenance above push recency, and hold unreachable MCP repositories.
+
 - Add a read-only daily official-source vendor watch with a dated compatibility
   matrix, installed-version observations, stale-review and source-failure
   handling, and a scheduled report. New releases require real host validation

@@ -21,6 +21,19 @@ from typing import Any, cast
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools import vendor_host_inspection as host_inspection  # noqa: E402
+
+InspectionError = host_inspection.InspectionError
+RepositoryMissing = host_inspection.RepositoryMissing
+fetch_github_json = host_inspection.fetch_github_json
+host_provenance = host_inspection.host_provenance
+inspect_host = host_inspection.inspect_host
+needs_lure_inspection = host_inspection.needs_lure_inspection
+repository_reachability = host_inspection.repository_reachability
+
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "integrations" / "vendor-discovery" / "sources.json"
 DEFAULT_CATALOG = ROOT / "integrations" / "vendor-discovery" / "catalog.json"
@@ -30,6 +43,8 @@ HOST_URL = "https://api.github.com/search/repositories"
 MAX_BYTES = {MODEL_URL: 8_000_000, MCP_URL: 2_000_000, HOST_URL: 2_000_000}
 MAX_MCP_PAGES = 3
 MAX_CANDIDATES = 1000
+MAX_HOST_INSPECTIONS = 40
+MAX_MCP_REPOSITORY_CHECKS = 25
 _KEY = re.compile(r"^[a-z0-9][a-z0-9._:/-]{0,180}$")
 
 
@@ -39,7 +54,18 @@ class DiscoveryError(ValueError):
 
 def _digest(value: Mapping[str, Any]) -> str:
     """Hash stable candidate claims, excluding a source's volatile update time."""
-    stable = {key: item for key, item in value.items() if key != "updated_at"}
+    stable = {
+        key: item
+        for key, item in value.items()
+        if key
+        not in {
+            "updated_at",
+            "pushed_at",
+            "owner_age_days",
+            "review_score",
+            "repository_reachability",
+        }
+    }
     return hashlib.sha256(json.dumps(stable, sort_keys=True).encode()).hexdigest()
 
 
@@ -96,15 +122,19 @@ def _allowed_mcp_query(query: str) -> bool:
 
 
 def _allowed_host_query(query: str) -> bool:
-    """Fix GitHub's unauthenticated search to one public topic and page."""
+    """Allow relevance and recency views of one bounded public topic."""
     from urllib.parse import parse_qs
 
-    return parse_qs(query) == {
-        "q": ["topic:ai-coding-agent"],
-        "sort": ["updated"],
-        "order": ["desc"],
-        "per_page": ["100"],
-    }
+    parsed = parse_qs(query)
+    return parsed in (
+        {"q": ["topic:ai-coding-agent"], "per_page": ["100"]},
+        {
+            "q": ["topic:ai-coding-agent"],
+            "sort": ["updated"],
+            "order": ["desc"],
+            "per_page": ["100"],
+        },
+    )
 
 
 def load_inputs(config_path: Path, catalog_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -258,6 +288,12 @@ def parse_mcp(raw: Mapping[str, Any]) -> tuple[list[dict[str, Any]], str | None]
             "auth": None,
             "privacy": None,
             "cost": None,
+            "repository_url": _text(
+                server["repository"].get("url")
+                if isinstance(server.get("repository"), dict)
+                else None
+            ),
+            "repository_reachability": "not_checked",
         }
         result.append(_candidate("mcp", name, name.split("/", 1)[0], MCP_URL, evidence))
     return result, cursor
@@ -267,7 +303,7 @@ def parse_hosts(raw: Mapping[str, Any]) -> tuple[list[dict[str, Any]], bool]:
     """Treat GitHub topic search as a candidate signal, never a trusted host list."""
     items = raw.get("items")
     count = raw.get("total_count")
-    if not isinstance(items, list) or len(items) > 100 or not isinstance(count, int):
+    if not isinstance(items, list) or len(items) > 200 or not isinstance(count, int):
         raise DiscoveryError("GitHub host search response is invalid")
     result = []
     for repo in items:
@@ -287,6 +323,17 @@ def parse_hosts(raw: Mapping[str, Any]) -> tuple[list[dict[str, Any]], bool]:
             "name": _text(repo.get("name")),
             "documentation": _text(repo.get("html_url")),
             "updated_at": _text(repo.get("updated_at")),
+            "pushed_at": _text(repo.get("pushed_at")),
+            "created_at": _text(repo.get("created_at")),
+            "language": _text(repo.get("language")),
+            "has_pages": repo.get("has_pages") is True,
+            "fork_count": repo.get("forks_count") if type(repo.get("forks_count")) is int else None,
+            "inspection": "not_checked",
+            "code_file_count": None,
+            "owner_age_days": None,
+            "owner_public_repos": None,
+            "release_digest_present": False,
+            "review_score": 0,
             "interface": None,
             "license": _text(license_id),
             "auth": None,
@@ -297,38 +344,124 @@ def parse_hosts(raw: Mapping[str, Any]) -> tuple[list[dict[str, Any]], bool]:
     return result, count == len(items) and raw.get("incomplete_results") is False
 
 
+def _host_score(evidence: Mapping[str, Any]) -> int:
+    """Prioritise source, release, owner and licence evidence over push time."""
+    if evidence.get("inspection") == "rejected_lure":
+        return -100
+    score = 50 if evidence.get("inspection") == "code_present" else 0
+    score += 20 if evidence.get("release_digest_present") is True else 0
+    score += (
+        10
+        if isinstance(evidence.get("owner_age_days"), int) and evidence["owner_age_days"] >= 365
+        else 0
+    )
+    score += (
+        5
+        if isinstance(evidence.get("owner_public_repos"), int)
+        and evidence["owner_public_repos"] >= 3
+        else 0
+    )
+    score += 10 if evidence.get("license") not in {None, "NOASSERTION"} else 0
+    score += 3 if isinstance(evidence.get("fork_count"), int) and evidence["fork_count"] > 0 else 0
+    return score
+
+
 def collect(
     *,
     fetch: Callable[[str], dict[str, Any]] = fetch_json,
     now: datetime,
     fixture: Mapping[str, Any] | None = None,
+    previous: Mapping[str, Any] | None = None,
+    github_fetch: Callable[[str], Mapping[str, Any]] = fetch_github_json,
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, str], dict[str, bool]]:
     """Use the same parsers for live bounded sources and offline feed fixtures."""
     stamp = now.astimezone(timezone.utc).date()
     since = stamp - timedelta(days=7)
-    urls = {
-        "models_dev": MODEL_URL,
-        "github_hosts": HOST_URL
-        + "?"
-        + urlencode(
-            {"q": "topic:ai-coding-agent", "sort": "updated", "order": "desc", "per_page": 100}
-        ),
-    }
     rows: dict[str, list[dict[str, Any]]] = {}
     errors: dict[str, str] = {}
     complete: dict[str, bool] = {}
-    for source, url in urls.items():
-        try:
-            raw = fixture[source] if fixture is not None else fetch(url)
-            if not isinstance(raw, dict):
-                raise DiscoveryError("feed fixture is invalid")
-            if source == "models_dev":
-                rows[source], complete[source] = parse_models(raw), True
-            else:
-                rows[source], complete[source] = parse_hosts(raw)
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            errors[source] = type(exc).__name__
-            complete[source] = False
+    github_reader: Callable[[str], Mapping[str, Any]]
+    if fixture is not None:
+        api_fixture = fixture.get("github_api", {})
+        if not isinstance(api_fixture, dict):
+            raise DiscoveryError("GitHub API fixture is invalid")
+
+        def fixture_github_fetch(url: str) -> Mapping[str, Any]:
+            value = api_fixture.get(url)
+            if isinstance(value, dict) and value.get("_http_status") == 404:
+                raise RepositoryMissing("fixture repository absent")
+            if not isinstance(value, dict):
+                raise InspectionError("fixture GitHub metadata unavailable")
+            return value
+
+        github_reader = fixture_github_fetch
+    else:
+        github_reader = github_fetch
+    try:
+        models = fixture["models_dev"] if fixture is not None else fetch(MODEL_URL)
+        if not isinstance(models, dict):
+            raise DiscoveryError("model feed is invalid")
+        rows["models_dev"], complete["models_dev"] = parse_models(models), True
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        errors["models_dev"] = type(exc).__name__
+        complete["models_dev"] = False
+    best_url = HOST_URL + "?" + urlencode({"q": "topic:ai-coding-agent", "per_page": 100})
+    recent_url = (
+        HOST_URL
+        + "?"
+        + urlencode(
+            {"q": "topic:ai-coding-agent", "sort": "updated", "order": "desc", "per_page": 100}
+        )
+    )
+    try:
+        best = (
+            fixture.get("github_hosts_best_match", fixture["github_hosts"])
+            if fixture is not None
+            else fetch(best_url)
+        )
+        recent = fixture["github_hosts"] if fixture is not None else fetch(recent_url)
+        if not isinstance(best, dict) or not isinstance(recent, dict):
+            raise DiscoveryError("host feed is invalid")
+        _, best_complete = parse_hosts(best)
+        _, recent_complete = parse_hosts(recent)
+        merged: dict[str, dict[str, Any]] = {}
+        for repo in (*best["items"], *recent["items"]):
+            if not isinstance(repo, dict) or not isinstance(repo.get("full_name"), str):
+                raise DiscoveryError("GitHub repository entry is invalid")
+            merged.setdefault(repo["full_name"].casefold(), repo)
+        count = max(best["total_count"], recent["total_count"], len(merged))
+        raw = {
+            "items": list(merged.values()),
+            "total_count": count,
+            "incomplete_results": not (best_complete and recent_complete),
+        }
+        rows["github_hosts"], complete["github_hosts"] = parse_hosts(raw)
+        ordered = sorted(
+            rows["github_hosts"],
+            key=lambda item: not needs_lure_inspection(merged[item["product_id"].casefold()]),
+        )
+        inspected = ordered[:MAX_HOST_INSPECTIONS]
+        inspection_failed = False
+        for item in inspected:
+            repository = merged[item["product_id"].casefold()]
+            evidence = item["evidence"]
+            try:
+                evidence.update(inspect_host(repository, fetch=github_reader))
+                if evidence["inspection"] == "code_present":
+                    evidence.update(host_provenance(repository, fetch=github_reader))
+            except InspectionError:
+                evidence["inspection"] = "unavailable"
+                inspection_failed = True
+            evidence["review_score"] = _host_score(evidence)
+            item["evidence_sha256"] = _digest(evidence)
+        errors.update({"github_host_inspection": "InspectionError"} if inspection_failed else {})
+        complete["github_host_inspection"] = (
+            not inspection_failed and len(ordered) <= MAX_HOST_INSPECTIONS
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        errors["github_hosts"] = type(exc).__name__
+        complete["github_hosts"] = False
+        complete["github_host_inspection"] = False
     try:
         all_mcp: list[dict[str, Any]] = []
         cursor: str | None = None
@@ -358,9 +491,32 @@ def collect(
             seen_cursors.add(cursor)
         rows["mcp_registry"] = all_mcp
         complete["mcp_registry"] = cursor is None
+        prior_candidates = previous.get("candidates", {}) if previous is not None else {}
+        new_repositories = [
+            item
+            for item in all_mcp
+            if item["key"] not in prior_candidates
+            and item["evidence"]["repository_url"] is not None
+        ]
+        repository_check_failed = False
+        for item in new_repositories[:MAX_MCP_REPOSITORY_CHECKS]:
+            evidence = item["evidence"]
+            evidence["repository_reachability"] = repository_reachability(
+                evidence["repository_url"], fetch=github_reader
+            )
+            if evidence["repository_reachability"] == "unavailable":
+                repository_check_failed = True
+            item["evidence_sha256"] = _digest(evidence)
+        errors.update(
+            {"mcp_repository_check": "InspectionError"} if repository_check_failed else {}
+        )
+        complete["mcp_repository_check"] = (
+            not repository_check_failed and len(new_repositories) <= MAX_MCP_REPOSITORY_CHECKS
+        )
     except (OSError, ValueError, KeyError, IndexError, TypeError) as exc:
         errors["mcp_registry"] = type(exc).__name__
         complete["mcp_registry"] = False
+        complete["mcp_repository_check"] = False
     return rows, errors, complete
 
 
@@ -438,9 +594,45 @@ def reconcile(
         )
         was_withdrawn = prior is not None and prior.get("status") == "withdrawn"
         deleted = any(item["evidence"].get("status") == "deleted" for item in sightings)
+        rejected = any(
+            item["evidence"].get("inspection") == "rejected_lure" for item in sightings
+        ) or (
+            prior is not None
+            and prior.get("status") == "rejected"
+            and all(
+                item["evidence"].get("inspection") in {"not_checked", "unavailable"}
+                for item in sightings
+            )
+        )
+        broken_provenance = any(
+            item["evidence"].get("repository_reachability") == "unreachable" for item in sightings
+        ) or (
+            prior is not None
+            and prior.get("status") == "hold_broken_provenance"
+            and all(
+                item["evidence"].get("repository_reachability") in {"not_checked", "unavailable"}
+                for item in sightings
+            )
+        )
+        host_unverified = any(
+            item["kind"] == "host"
+            and item["evidence"].get("inspection")
+            in {"not_checked", "unavailable", "source_absent"}
+            for item in sightings
+        )
+        mcp_unverified = any(
+            item["kind"] == "mcp"
+            and item["evidence"].get("repository_reachability") in {"not_checked", "unavailable"}
+            and item["evidence"].get("repository_url") is not None
+            for item in sightings
+        )
         status = (
             "publisher_conflict"
             if conflict
+            else "rejected"
+            if rejected
+            else "hold_broken_provenance"
+            if broken_provenance
             else "withdrawn"
             if deleted
             else "reappeared"
@@ -466,18 +658,33 @@ def reconcile(
             and prior.get("status") == "withdrawn"
             and not changed
         )
-        if status != "seen" and not repeated_withdrawal:
+        repeated_security_hold = (
+            status in {"rejected", "hold_broken_provenance"}
+            and prior is not None
+            and prior.get("status") == status
+            and not changed
+        )
+        if status != "seen" and not repeated_withdrawal and not repeated_security_hold:
+            score = max(
+                (_host_score(item["evidence"]) for item in sightings if item["kind"] == "host"),
+                default=0,
+            )
             queue.append(
                 {
                     "key": key,
                     "status": status,
                     "kind": sightings[0]["kind"],
-                    "suggested_lane": {
+                    "suggested_lane": None
+                    if status in {"rejected", "hold_broken_provenance"}
+                    or host_unverified
+                    or mcp_unverified
+                    else {
                         "provider": "C07",
                         "host": "C15",
                         "mcp": "C09/C15",
                     }[sightings[0]["kind"]],
                     "publisher": sightings[0]["publisher"],
+                    "review_score": score,
                     "evidence": [
                         {
                             "source": item["source"],
@@ -487,7 +694,13 @@ def reconcile(
                         }
                         for item in sightings
                     ],
-                    "action": "verify publisher and official docs"
+                    "action": "exclude from admission; retain evidence for owner review"
+                    if rejected
+                    else "hold; repository provenance is unreachable"
+                    if broken_provenance
+                    else "verify repository source and provenance"
+                    if host_unverified or mcp_unverified
+                    else "verify publisher and official docs"
                     if conflict
                     else "review candidate evidence",
                 }
@@ -505,6 +718,9 @@ def reconcile(
             queue.append(
                 {"key": key, "status": "withdrawn", "action": "confirm removal with publisher"}
             )
+    queue.sort(key=lambda item: (-item.get("review_score", 0), item["key"]))
+    host_rows = feeds.get("github_hosts", [])
+    mcp_rows = feeds.get("mcp_registry", [])
     report = {
         "schema": 1,
         "checked_at": stamp,
@@ -516,6 +732,32 @@ def reconcile(
             "observed": len(observed),
             "review_queue": len(queue),
             "persisted": len(candidates),
+        },
+        "inspection": {
+            "host_checked": sum(
+                item["evidence"].get("inspection") not in {"not_checked", "unavailable"}
+                for item in host_rows
+            ),
+            "host_unchecked": sum(
+                item["evidence"].get("inspection") in {"not_checked", "unavailable"}
+                for item in host_rows
+            ),
+            "host_rejected": sum(
+                item["evidence"].get("inspection") == "rejected_lure" for item in host_rows
+            ),
+            "mcp_repository_unreachable": sum(
+                item["evidence"].get("repository_reachability") == "unreachable"
+                for item in mcp_rows
+            ),
+            "complete": {
+                name: complete.get(name, False)
+                for name in ("github_host_inspection", "mcp_repository_check")
+            },
+            "errors": {
+                name: errors[name]
+                for name in ("github_host_inspection", "mcp_repository_check")
+                if name in errors
+            },
         },
         "review_queue": queue,
         "admission": (
@@ -545,7 +787,7 @@ def main() -> int:
         if fixture is not None and not isinstance(fixture, dict):
             raise DiscoveryError("feed fixture root must be an object")
         now = datetime.now(timezone.utc)
-        feeds, errors, complete = collect(now=now, fixture=fixture)
+        feeds, errors, complete = collect(now=now, fixture=fixture, previous=previous)
         report, next_state = reconcile(config, previous, feeds, errors, complete, now=now)
         for path, data in ((args.report, report), (args.next_catalog, next_state)):
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -566,8 +808,15 @@ def main() -> int:
     bad_source = any(
         row["status"] in {"stale", "unavailable"} for row in report["sources"].values()
     )
+    bad_inspection = any(
+        name in errors for name in ("github_host_inspection", "mcp_repository_check")
+    )
     conflict = any(row["status"] == "publisher_conflict" for row in report["review_queue"])
-    return 1 if args.strict and (bad_source or conflict or report["review_overdue"]) else 0
+    return (
+        1
+        if args.strict and (bad_source or bad_inspection or conflict or report["review_overdue"])
+        else 0
+    )
 
 
 if __name__ == "__main__":

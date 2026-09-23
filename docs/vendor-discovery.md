@@ -44,12 +44,23 @@ rename. A publisher mismatch after aliasing becomes `publisher_conflict`, not
 an automatic merge.
 
 The MCP scan reads at most three 100-record pages of updates from the last
-seven days. GitHub topic search reads at most 100 results. These partial
+seven days. GitHub topic search reads at most 100 best-match and 100 recently
+updated results. The scanner inspects at most 40 host trees, prioritising
+Pages repositories without detected code or licence, and checks at most 25
+new MCP repository URLs. It reads bounded GitHub API metadata, README and
+workflow text; it never follows Pages or download links. A host with source
+code, release asset digest, older owner history and detected licence ranks
+above a recent push. A README/Pages download lure paired with a tiny source-free
+tree and a five-minute write-and-commit workflow is rejected. Uninspected hosts
+have no suggested integration lane. An unreachable MCP repository is held for
+broken provenance. Inspection limits and unavailable metadata are visible in
+the report. These partial
 sources never prove that an absent candidate was removed. Only a complete
 Models.dev snapshot, a complete small GitHub result, or an explicit registry
 `deleted` status can propose withdrawal. A failed feed is `unavailable` or
 `stale`; it never becomes an empty snapshot. HTTPS source hosts, query shapes,
-response sizes and timeouts are fixed. No linked candidate URL is fetched.
+response sizes and timeouts are fixed. Only canonical GitHub repository API
+URLs are fetched for candidate inspection; no candidate website is fetched.
 
 The weekly `.github/workflows/vendor-discovery.yml` workflow publishes the
 report and proposed baseline as seven-day artifacts. The Core maintenance

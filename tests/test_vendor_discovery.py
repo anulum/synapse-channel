@@ -75,10 +75,29 @@ def _fixture(
                     "owner": {"login": name.split("/")[0]},
                     "html_url": f"https://github.com/{name}",
                     "updated_at": "2026-09-19T12:00:00Z",
+                    "default_branch": "main",
                     "license": {"spdx_id": "MIT"},
                 }
                 for name in host_names
             ],
+        },
+        "github_api": {
+            f"https://api.github.com/repos/{name}/git/trees/main?recursive=1": {
+                "tree": [{"path": "src/agent.py", "type": "blob"}],
+                "truncated": False,
+            }
+            for name in host_names
+        }
+        | {
+            f"https://api.github.com/users/{name.split('/')[0]}": {
+                "created_at": "2020-01-01T00:00:00Z",
+                "public_repos": 4,
+            }
+            for name in host_names
+        }
+        | {
+            f"https://api.github.com/repos/{name}/releases/latest": {"draft": False, "assets": []}
+            for name in host_names
         },
     }
 
@@ -434,9 +453,13 @@ def test_live_fetch_path_uses_fixed_queries_and_rejects_bad_roots(
         assert discovery._allowed_mcp_query(url.split("?", 1)[1])
         return cast(dict[str, Any], fixture["mcp_registry"][0])
 
-    rows, errors, complete = discovery.collect(fetch=fetch, now=now)
+    rows, errors, complete = discovery.collect(
+        fetch=fetch,
+        github_fetch=lambda url: cast(dict[str, Any], fixture["github_api"][url]),
+        now=now,
+    )
     assert errors == {}
-    assert len(requested) == 3
+    assert len(requested) == 4
     assert len(rows["models_dev"]) == 1 and complete["mcp_registry"] is True
     monkeypatch.setattr(
         discovery, "urlopen", lambda request, timeout: _Response(discovery.MODEL_URL, b"[]")
