@@ -16,6 +16,7 @@ import re
 import sys
 from collections.abc import Callable, Mapping
 from datetime import date, datetime, timedelta, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode, urlsplit
@@ -28,11 +29,13 @@ from tools import vendor_host_inspection as host_inspection  # noqa: E402
 
 InspectionError = host_inspection.InspectionError
 RepositoryMissing = host_inspection.RepositoryMissing
+RepositoryRedirected = host_inspection.RepositoryRedirected
 fetch_github_json = host_inspection.fetch_github_json
 host_provenance = host_inspection.host_provenance
 inspect_host = host_inspection.inspect_host
 needs_lure_inspection = host_inspection.needs_lure_inspection
 repository_reachability = host_inspection.repository_reachability
+retry_inspection = host_inspection.retry_inspection
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "integrations" / "vendor-discovery" / "sources.json"
@@ -446,9 +449,16 @@ def collect(
             repository = merged[item["product_id"].casefold()]
             evidence = item["evidence"]
             try:
-                evidence.update(inspect_host(repository, fetch=github_reader))
+                evidence.update(
+                    retry_inspection(partial(inspect_host, repository, fetch=github_reader))
+                )
                 if evidence["inspection"] == "code_present":
-                    evidence.update(host_provenance(repository, fetch=github_reader))
+                    evidence.update(
+                        retry_inspection(partial(host_provenance, repository, fetch=github_reader))
+                    )
+            except RepositoryRedirected:
+                evidence["inspection"] = "redirected"
+                evidence["repository_reachability"] = "unreachable"
             except InspectionError:
                 evidence["inspection"] = "unavailable"
                 inspection_failed = True

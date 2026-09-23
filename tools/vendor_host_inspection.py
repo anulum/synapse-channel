@@ -14,10 +14,11 @@ import binascii
 import json
 import os
 import re
+import time
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from email.message import Message
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 from urllib.error import HTTPError
 from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -60,6 +61,27 @@ class RepositoryMissing(InspectionError):
     """GitHub returned 404 for an exact public repository or metadata object."""
 
 
+class RepositoryRedirected(InspectionError):
+    """The exact declared GitHub metadata URL now resolves elsewhere."""
+
+
+_InspectionResult = TypeVar("_InspectionResult")
+
+
+def retry_inspection(operation: Callable[[], _InspectionResult]) -> _InspectionResult:
+    """Retry transient public metadata errors without retrying broken provenance."""
+    for attempt in range(3):
+        try:
+            return operation()
+        except (RepositoryMissing, RepositoryRedirected):
+            raise
+        except InspectionError:
+            if attempt == 2:
+                raise
+            time.sleep(0.2 * (attempt + 1))
+    raise AssertionError("unreachable retry state")
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(
         self,
@@ -70,7 +92,7 @@ class _NoRedirect(HTTPRedirectHandler):
         headers: Message,
         newurl: str,
     ) -> None:
-        raise InspectionError("GitHub metadata redirect refused")
+        raise RepositoryRedirected("GitHub metadata redirect refused")
 
 
 def _api_url(path: str) -> str:
@@ -155,15 +177,17 @@ def repository_reachability(
     except InspectionError:
         return "unsupported_url"
     try:
-        result = fetch(_api_url(f"/repos/{name}"))
-    except RepositoryMissing:
+        result = retry_inspection(lambda: fetch(_api_url(f"/repos/{name}")))
+    except (RepositoryMissing, RepositoryRedirected):
         return "unreachable"
     except InspectionError:
         return "unavailable"
+    # GitHub can resolve an old repository URL to its renamed destination.
+    # That destination does not prove provenance for the exact declared URL.
     return (
         "reachable"
         if str(result.get("full_name", "")).casefold() == name.casefold()
-        else "unavailable"
+        else "unreachable"
     )
 
 

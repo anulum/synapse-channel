@@ -172,6 +172,13 @@ def test_positive_source_and_broken_repository_are_distinct() -> None:
         == "unreachable"
     )
     assert (
+        inspection.repository_reachability(
+            "https://github.com/a2awire/old-name",
+            fetch=lambda _url: {"full_name": "a2awire/new-name"},
+        )
+        == "unreachable"
+    )
+    assert (
         inspection.repository_reachability("https://other.example/a2awire/nonexistent")
         == "unsupported_url"
     )
