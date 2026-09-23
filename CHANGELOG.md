@@ -15,6 +15,8 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Update the GitHub Action policy-check example to the released 0.99.27 pair and
+  show the checkout needed for a committed policy file.
 - Report an oversized provider HTTP response through the stable, redacted
   provider error API instead of leaking the lower-level bounded-read exception.
 - Refuse query-bearing hub URLs before writing an isolated Codex MCP profile.

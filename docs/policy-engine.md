@@ -36,8 +36,11 @@ same command, so a repository can gate its pipeline on a receipt without
 writing the install-and-invoke boilerplate:
 
 ```yaml
+- name: Check out the policy file
+  uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
 - name: Check the release receipt against policy
-  uses: anulum/synapse-channel@v0.89.0
+  uses: anulum/synapse-channel@v0.99.27
   with:
     task: release-1.4
     policy: .synapse/policy.json
@@ -47,7 +50,7 @@ writing the install-and-invoke boilerplate:
     trusted-signing-keys: |
       .synapse/hub-a.pub
       .synapse/hub-b.pub
-    version: "0.89.0"   # pin the checker itself for reproducible gating
+    version: "0.99.27"  # pin the installed checker to the action release
 ```
 
 The action installs `synapse-channel` (pin it with `version:`), runs
@@ -57,6 +60,8 @@ exactly when the CLI exits non-zero. Set `enforce: "false"` for an advisory,
 report-only run that never fails the job. Inputs reach the shell through
 environment variables — never interpolated into the script — so untrusted
 values cannot inject commands; paths with spaces survive intact.
+Create or download the receipt before this step; checkout supplies the committed
+policy file, not a release receipt.
 
 ## The SYNAPSE-protected badge
 
