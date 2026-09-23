@@ -43,3 +43,12 @@ The runtime depends only on the
 benchmark extra additionally uses [`tiktoken`](https://pypi.org/project/tiktoken/)
 (MIT). All other functionality is built on the Python standard library. Each
 dependency remains under its own licence.
+
+The CI-only `integrations/claude-code` test package installs the exact
+`@anthropic-ai/claude-code` 2.1.280 host and its platform-specific native
+package from the integrity-locked npm manifest. The upstream package declares
+its proprietary licence in its README; the native package carries its own
+licence file. The test package manifest and lockfile are included in the source
+distribution; the proprietary CLI and native binaries are not included in the
+SYNAPSE CHANNEL wheel or source distribution and are not redistributed by the
+release workflows.

@@ -103,6 +103,9 @@ jobs:
       - name: Install exact Claude Code host for real plugin coverage
         if: matrix.python-version == '3.12'
         working-directory: integrations/claude-code
+        env:
+          DISABLE_TELEMETRY: "1"
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         run: |
           npm ci --ignore-scripts
           mkdir -p "$RUNNER_TEMP/claude-bin"
@@ -116,6 +119,8 @@ jobs:
       - name: Run the full suite with the exact coverage gate
         if: matrix.python-version == '3.12'
         env:
+          DISABLE_TELEMETRY: "1"
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
           SYNAPSE_TEST_CODEX_BIN: ${{ github.workspace }}/integrations/codex-cli/node_modules/.bin/codex
           SYNAPSE_TEST_PI_BIN: ${{ github.workspace }}/integrations/pi/node_modules/.bin/pi
         run: python -m pytest --cov=synapse_channel --cov-report=term-missing --cov-report=xml
