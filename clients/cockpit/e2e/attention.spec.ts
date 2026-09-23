@@ -18,7 +18,8 @@ test("built cockpit renders an overdue local approval without its task body", as
   const queue = page.getByRole("region", { name: "Fleet attention queue" });
   await expect(queue.getByText("attention-e2e-task")).toBeVisible();
   await expect(queue.getByText(/Review overdue/)).toBeVisible();
-  await expect(queue.getByText("critical", { exact: true })).toBeVisible();
+  const approval = queue.getByRole("listitem").filter({ hasText: "attention-e2e-task" });
+  await expect(approval.getByText("critical", { exact: true })).toBeVisible();
   await expect(queue).not.toContainText("private task body");
   await expect(queue).not.toContainText("Local attention observer is late");
 });
