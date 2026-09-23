@@ -101,6 +101,10 @@ All notable changes to this project are documented here.
   for the reviewed Claude Code, Codex and OpenCode packages; validate Pi guard
   loading through offline RPC and keep Gemini CLI/Claude Desktop unsupported.
 
+- Extend the private entitlement ledger with unit-checked compute credits,
+  project/data eligibility and idle rates; suggest only digest-approved work
+  against current account, balance, expiry and full-cost evidence.
+
 - Add a read-only daily official-source vendor watch with a dated compatibility
   matrix, installed-version observations, stale-review and source-failure
   handling, and a scheduled report. New releases require real host validation

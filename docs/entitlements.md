@@ -128,3 +128,62 @@ distributed limits and federated projections require Fleet's separate
 admission and review gates. Operator-entered vendor figures must be refreshed
 from current official evidence; Synapse does not infer plan allowances or
 prices from product names.
+
+## Compute credits and approved work
+
+A pool may declare `resource_kind` as `gpu_time` (`gpu_seconds`),
+`quantum_shots` (`shots`), `quantum_credits` (`quantum_credits`), `ci_minutes`
+(`ci_minutes`) or `cloud_grant` (`USD`, `CHF` or `EUR`). A classified pool must
+also declare non-empty `capabilities`, `data_classes` and `eligible_projects`
+lists. They are exact identifiers, so `restricted` data or another project
+cannot borrow a general pool by name similarity. An optional `idle_cost`
+object has `amount_per_hour` as a decimal string and `currency` as USD, CHF or
+EUR. It is an operator-supplied rate, shown separately from quota remaining;
+Synapse does not invent a charge or add currencies. The account's existing
+`active`/`suspended`/`expired` status still governs pool usability.
+
+Use a new non-overlapping window for each recurring grant/reset. Its `ends_at`
+is the grant expiry. `show` reports `expires_in_seconds` and an
+`upcoming_expiry` flag for current windows ending within seven days; expired
+windows have no usable remaining balance. Usage and manual balance corrections
+retain their source events and exact window revision. A suggestion requires a
+known, recent balance and subtracts later recorded usage; a usage-only
+estimate never authorises a suggestion. Unit types are never converted or
+summed together.
+
+To request advisory matching, put at most 128 candidate work specifications in
+an owner-only JSON file of the form `{"tasks": [...]}`. Each task needs the
+exact `task_id`, `project`, `resource_kind`, `capability`, `data_class`, `unit`,
+positive `required_amount`, `estimated_total_cost`, `max_total_cost`,
+`cost_currency`, `price_revision`, integer `priority` (1–5), the current
+`board_version` and
+`authorisation_expires_at`. Amounts and costs are decimal strings. The cost
+estimate is operator evidence, not a provider quote. Its approved maximum must
+cover the estimate. For each task, obtain the exact digest-bound approval
+subject and route it through the existing hub approval workflow:
+
+```sh
+synapse entitlements compute-subjects --file private-tasks.json
+synapse approval request --name PROJECT/seat --subject compute-credit:SHA256
+synapse approval decide --name REVIEWER/seat --subject compute-credit:SHA256 --approve
+synapse entitlements suggest-compute --file private-tasks.json \
+  --hub-db /path/to/hub.db --reviewer REVIEWER/seat
+```
+
+The task must already exist on the same hub board as an open, dependency-ready
+task with matching project and version. The subject includes every task field,
+including its data class, required amount, full cost ceiling, board version,
+price revision and authorisation expiry. A changed
+file needs a new approval. The selected reviewer identity must match the
+latest approved hub decision. Local suggestions refuse stale account or
+balance evidence (default maximum age seven days), suspended/expired accounts,
+expired grants, missing or old approvals, wrong project/data/capability, price
+revision mismatch, insufficient remaining units and cost over the approved
+limit. `--max-evidence-age-hours` can tighten the age bound. Every refusal is
+shown as an excluded task; matching pool/window options show their own unit,
+expiry and separately declared idle rate.
+
+This is an owner-only advisory read. An approval note is audit evidence, not a
+provider authorisation token. The command does not reserve a grant, activate a
+billing account, buy capacity, launch a job or change the hub task state. Fleet
+F08 owns any later authorised provider lifecycle.

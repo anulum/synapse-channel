@@ -29,6 +29,15 @@ CONFIDENCE: Final = frozenset({"official", "operator", "inferred"})
 ACCOUNT_STATUS: Final = frozenset({"active", "suspended", "expired"})
 """Account states relevant to advisory availability."""
 
+COMPUTE_UNITS: Final = {
+    "gpu_time": frozenset({"gpu_seconds"}),
+    "quantum_shots": frozenset({"shots"}),
+    "quantum_credits": frozenset({"quantum_credits"}),
+    "ci_minutes": frozenset({"ci_minutes"}),
+    "cloud_grant": frozenset({"USD", "CHF", "EUR"}),
+}
+"""Exact units accepted for explicitly classified compute-credit pools."""
+
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _REQUIRED: Final[dict[str, frozenset[str]]] = {
     "account": frozenset({"account_id", "label", "status"}),
@@ -46,7 +55,9 @@ _REQUIRED: Final[dict[str, frozenset[str]]] = {
 }
 _OPTIONAL: Final[dict[str, frozenset[str]]] = {
     "account": frozenset({"credential_ref", "expires_at"}),
-    "pool": frozenset(),
+    "pool": frozenset(
+        {"resource_kind", "capabilities", "data_classes", "eligible_projects", "idle_cost"}
+    ),
     "surface": frozenset(),
     "window": frozenset({"renewal_at"}),
     "usage": frozenset(),
@@ -123,6 +134,16 @@ def _text(value: object, field: str) -> str:
     return value
 
 
+def _identifiers(value: object, field: str) -> tuple[str, ...]:
+    """Validate a non-empty bounded set of opaque eligibility identifiers."""
+    if not isinstance(value, list) or not 1 <= len(value) <= 32:
+        raise EntitlementError(f"{field} must be a non-empty list of at most 32 identifiers")
+    names = tuple(_identifier(item, field) for item in value)
+    if len(names) != len(set(names)):
+        raise EntitlementError(f"{field} must not contain duplicates")
+    return names
+
+
 def event_target(event: Mapping[str, object]) -> str:
     """Return the logical id whose revisions must form one correction chain."""
     kind = event["kind"]
@@ -181,6 +202,28 @@ def validate_event(event: Mapping[str, object]) -> dict[str, object]:
             parse_time(event["expires_at"], "expires_at")
     if kind in {"pool", "window"}:
         _identifier(event["unit"], "unit")
+    if kind == "pool" and "resource_kind" in event:
+        resource_kind = _identifier(event["resource_kind"], "resource_kind")
+        if resource_kind not in COMPUTE_UNITS or event["unit"] not in COMPUTE_UNITS[resource_kind]:
+            raise EntitlementError("compute resource kind and unit are incompatible")
+        for field in ("capabilities", "data_classes", "eligible_projects"):
+            _identifiers(event.get(field), field)
+        if "idle_cost" in event:
+            idle = event["idle_cost"]
+            if not isinstance(idle, dict) or set(idle) != {"amount_per_hour", "currency"}:
+                raise EntitlementError("idle_cost requires amount_per_hour and currency")
+            parse_quantity(idle["amount_per_hour"], "idle_cost amount_per_hour")
+            if not isinstance(idle["currency"], str) or idle["currency"] not in {
+                "USD",
+                "CHF",
+                "EUR",
+            }:
+                raise EntitlementError("idle_cost currency must be USD, CHF or EUR")
+    elif kind == "pool" and any(
+        field in event
+        for field in ("capabilities", "data_classes", "eligible_projects", "idle_cost")
+    ):
+        raise EntitlementError("compute pool metadata requires resource_kind")
     if kind == "surface":
         _text(event["product"], "product")
         _identifier(event["channel"], "channel")

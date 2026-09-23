@@ -46,6 +46,9 @@ def _balance(
             "observation_age_seconds": (
                 as_of - parse_time(latest["observed_at"], "observed_at")
             ).total_seconds(),
+            "balance_observation_age_seconds": (
+                as_of - parse_time(last["observed_at"], "observed_at")
+            ).total_seconds(),
             "observation_source": latest["source"],
             "observation_confidence": latest["confidence"],
             "observation_time": latest["observed_at"],
@@ -80,6 +83,7 @@ def _balance(
             "observation_age_seconds": (
                 as_of - parse_time(latest["observed_at"], "observed_at")
             ).total_seconds(),
+            "balance_observation_age_seconds": None,
             "observation_source": latest["source"],
             "observation_confidence": latest["confidence"],
             "observation_time": latest["observed_at"],
@@ -89,6 +93,7 @@ def _balance(
         "remaining": None,
         "balance_samples": 0,
         "observation_age_seconds": None,
+        "balance_observation_age_seconds": None,
         "observation_source": None,
         "observation_confidence": None,
         "observation_time": None,
@@ -142,6 +147,9 @@ def entitlement_view(
                 "account_id": account["account_id"],
                 "label": account["label"],
                 "status": "expired" if expired else account["status"],
+                "record_age_seconds": (
+                    as_of - parse_time(account["recorded_at"], "recorded_at")
+                ).total_seconds(),
                 "source": account["source"],
                 "confidence": account["confidence"],
                 "recorded_at": account["recorded_at"],
@@ -179,6 +187,8 @@ def entitlement_view(
                     "confidence": window["confidence"],
                     "recorded_at": window["recorded_at"],
                     "current": current,
+                    "expires_in_seconds": (end - as_of).total_seconds() if current else None,
+                    "upcoming_expiry": current and (end - as_of).total_seconds() <= 7 * 86400,
                     **balance,
                     **(
                         {} if current else {"remaining": None, "balance_evidence": "outside_window"}
@@ -200,6 +210,11 @@ def entitlement_view(
                 "pool_id": pool["pool_id"],
                 "account_id": pool["account_id"],
                 "unit": pool["unit"],
+                "resource_kind": pool.get("resource_kind"),
+                "capabilities": pool.get("capabilities", []),
+                "data_classes": pool.get("data_classes", []),
+                "eligible_projects": pool.get("eligible_projects", []),
+                "idle_cost": pool.get("idle_cost"),
                 "account_usable": usable,
                 "surfaces": sorted(surfaces, key=lambda row: str(row["surface_id"])),
                 "windows": sorted(windows, key=lambda row: str(row["starts_at"])),

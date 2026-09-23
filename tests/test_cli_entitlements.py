@@ -15,6 +15,14 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
+from synapse_channel.core.approvals import APPROVAL_NOTE_KIND, format_approval_note
+from synapse_channel.core.compute_credit import approval_subject
+from synapse_channel.core.journal import EventKind
+from synapse_channel.core.ledger import Blackboard
+from synapse_channel.core.persistence import EventStore
+
 
 def _run(store: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -126,6 +134,230 @@ def test_real_cli_rejects_corrupt_and_world_readable_input(tmp_path: Path) -> No
     assert denied.returncode == 2
     assert "owner-only" in denied.stderr
     assert not store.exists()
+
+
+@pytest.mark.parametrize(
+    ("resource_kind", "unit", "capability"),
+    [
+        ("gpu_time", "gpu_seconds", "cuda"),
+        ("quantum_shots", "shots", "qpu"),
+        ("quantum_credits", "quantum_credits", "quantum-simulator"),
+        ("ci_minutes", "ci_minutes", "ci-runner"),
+        ("cloud_grant", "USD", "cloud-compute"),
+    ],
+)
+def test_real_cli_compute_credit_reset_approval_and_suspension(
+    tmp_path: Path, resource_kind: str, unit: str, capability: str
+) -> None:
+    store = tmp_path / "private" / "ledger.sqlite3"
+    hub = tmp_path / "hub.db"
+    now = datetime.now(timezone.utc)
+    first_start = now - timedelta(days=2)
+    reset = now - timedelta(hours=1)
+    second_end = now + timedelta(days=1)
+    records = [
+        _event("account", "a1", account_id="a", label="Private compute grant", status="active"),
+        _event(
+            "pool",
+            "p1",
+            pool_id="p",
+            account_id="a",
+            unit=unit,
+            resource_kind=resource_kind,
+            capabilities=[capability],
+            data_classes=["internal"],
+            eligible_projects=["SYNAPSE-CHANNEL"],
+            idle_cost={"amount_per_hour": "0.40", "currency": "USD"},
+        ),
+        _event(
+            "window",
+            "w1",
+            window_id="old",
+            pool_id="p",
+            starts_at=first_start.isoformat(),
+            ends_at=reset.isoformat(),
+            grant="100",
+            unit=unit,
+            price_revision="r1",
+        ),
+        _event(
+            "window",
+            "w2",
+            window_id="new",
+            pool_id="p",
+            starts_at=reset.isoformat(),
+            ends_at=second_end.isoformat(),
+            grant="100",
+            unit=unit,
+            price_revision="r2",
+        ),
+        _event(
+            "balance",
+            "b1",
+            window_id="new",
+            window_event_id="w2",
+            source_event_id="snapshot-1",
+            remaining="80",
+            observed_at=(now - timedelta(minutes=30)).isoformat(),
+        ),
+        _event(
+            "usage",
+            "u1",
+            window_id="new",
+            window_event_id="w2",
+            source_event_id="job-1",
+            amount="10",
+            observed_at=(now - timedelta(minutes=15)).isoformat(),
+        ),
+    ]
+    for record in records:
+        result = _record(store, record, tmp_path)
+        assert result.returncode == 0, result.stderr
+    shown = json.loads(_run(store, "show").stdout)
+    current = [row for row in shown["pools"][0]["windows"] if row["current"]]
+    assert len(current) == 1 and current[0]["window_id"] == "new"
+    assert current[0]["remaining"] == "70"
+    assert shown["pools"][0]["idle_cost"]["currency"] == "USD"
+    assert current[0]["expires_in_seconds"] > 0
+    task = {
+        "task_id": "TASK-1",
+        "project": "SYNAPSE-CHANNEL",
+        "resource_kind": resource_kind,
+        "capability": capability,
+        "data_class": "internal",
+        "unit": unit,
+        "required_amount": "30",
+        "estimated_total_cost": "2",
+        "max_total_cost": "3",
+        "cost_currency": "USD",
+        "price_revision": "r2",
+        "priority": 1,
+        "board_version": 1,
+        "authorisation_expires_at": second_end.isoformat(),
+    }
+    task_file = tmp_path / "tasks.json"
+    task_file.write_text(json.dumps({"tasks": [task]}), encoding="utf-8")
+    task_file.chmod(0o600)
+    subject_result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "synapse_channel.cli",
+            "entitlements",
+            "compute-subjects",
+            "--file",
+            str(task_file),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert subject_result.returncode == 0, subject_result.stderr
+    subject = json.loads(subject_result.stdout)["subjects"]["TASK-1"]
+    approvals = EventStore(hub)
+    board = Blackboard()
+    accepted, _ = board.post_task(
+        task_id="TASK-1",
+        title="Approved compute work",
+        author="operator",
+        project="SYNAPSE-CHANNEL",
+        now=now.timestamp(),
+    )
+    assert accepted
+    approvals.append(EventKind.LEDGER_TASK, board.tasks["TASK-1"].as_dict(), durable=True)
+    for state, author in (("requested", "SYNAPSE-CHANNEL/codex"), ("approved", "CEO/claude")):
+        approvals.append(
+            EventKind.LEDGER_PROGRESS,
+            {
+                "author": author,
+                "kind": APPROVAL_NOTE_KIND,
+                "task_id": subject,
+                "text": format_approval_note(subject=subject, state=state),
+            },
+            durable=True,
+        )
+    approvals.close()
+    suggest = _run(
+        store,
+        "suggest-compute",
+        "--file",
+        str(task_file),
+        "--hub-db",
+        str(hub),
+        "--reviewer",
+        "CEO/claude",
+    )
+    assert suggest.returncode == 0, suggest.stderr
+    result = json.loads(suggest.stdout)
+    assert result["suggestions"][0]["options"][0]["remaining"] == "70"
+    assert result["no_job_launched"] is True
+    invalid_pool = _event(
+        "pool",
+        "p-invalid",
+        pool_id="other",
+        account_id="a",
+        unit="tokens",
+        resource_kind=resource_kind,
+        capabilities=[capability],
+        data_classes=["internal"],
+        eligible_projects=["SYNAPSE-CHANNEL"],
+    )
+    rejected_unit = _record(store, invalid_pool, tmp_path)
+    assert rejected_unit.returncode == 2
+    assert "incompatible" in rejected_unit.stderr
+    restricted = {**task, "data_class": "restricted"}
+    task_file.write_text(json.dumps({"tasks": [restricted]}), encoding="utf-8")
+    restricted_subject = approval_subject(restricted)
+    approvals = EventStore(hub)
+    approvals.append(
+        EventKind.LEDGER_PROGRESS,
+        {
+            "author": "CEO/claude",
+            "kind": APPROVAL_NOTE_KIND,
+            "task_id": restricted_subject,
+            "text": format_approval_note(subject=restricted_subject, state="approved"),
+        },
+        durable=True,
+    )
+    approvals.close()
+    restricted_result = _run(
+        store,
+        "suggest-compute",
+        "--file",
+        str(task_file),
+        "--hub-db",
+        str(hub),
+        "--reviewer",
+        "CEO/claude",
+    )
+    assert restricted_result.returncode == 0, restricted_result.stderr
+    assert json.loads(restricted_result.stdout)["excluded"] == [
+        {"task_id": "TASK-1", "reason": "no_current_eligible_pool"}
+    ]
+    task_file.write_text(json.dumps({"tasks": [task]}), encoding="utf-8")
+    correction = {
+        **records[0],
+        "event_id": "a2",
+        "recorded_at": (now + timedelta(seconds=1)).isoformat(),
+        "status": "suspended",
+        "supersedes": "a1",
+    }
+    assert _record(store, correction, tmp_path).returncode == 0
+    refused = json.loads(
+        _run(
+            store,
+            "suggest-compute",
+            "--file",
+            str(task_file),
+            "--hub-db",
+            str(hub),
+            "--reviewer",
+            "CEO/claude",
+        ).stdout
+    )
+    assert refused["suggestions"] == []
+    assert refused["excluded"][0]["reason"] == "no_current_eligible_pool"
 
 
 def test_real_cli_correction_and_suspended_account(tmp_path: Path) -> None:

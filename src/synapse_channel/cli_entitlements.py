@@ -17,6 +17,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
+from synapse_channel.core.approvals import build_approval_report
+from synapse_channel.core.compute_credit import (
+    ComputeCreditError,
+    approval_subject,
+    suggest_compute_work,
+    validate_compute_task,
+)
 from synapse_channel.core.entitlement_store import (
     EntitlementStoreError,
     append_event,
@@ -30,6 +37,8 @@ from synapse_channel.core.entitlements import (
     parse_time,
     validate_event,
 )
+from synapse_channel.core.journal import EventKind, replay
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.secure_path import SecurePathError, read_owner_only_file_bytes
 
 
@@ -157,6 +166,77 @@ def _history(args: argparse.Namespace) -> int:
     return 0
 
 
+def _compute_tasks(path: str) -> list[dict[str, object]]:
+    """Read a private, bounded list of exact candidate work specifications."""
+    raw = read_owner_only_file_bytes(path, purpose="compute tasks", max_bytes=65536)
+    try:
+        decoded = json.loads(raw)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ComputeCreditError("compute task input must be UTF-8 JSON") from exc
+    if not isinstance(decoded, dict) or set(decoded) != {"tasks"}:
+        raise ComputeCreditError("compute task input must contain only tasks")
+    tasks = decoded["tasks"]
+    if not isinstance(tasks, list) or len(tasks) > 128:
+        raise ComputeCreditError("compute task input must list at most 128 tasks")
+    if not all(isinstance(item, dict) for item in tasks):
+        raise ComputeCreditError("each compute task must be a JSON object")
+    return [validate_compute_task(item) for item in tasks]
+
+
+def _compute_subjects(args: argparse.Namespace) -> int:
+    """Show approval subjects bound to the exact private task file."""
+    try:
+        tasks = _compute_tasks(args.file)
+    except (ComputeCreditError, EntitlementError, SecurePathError) as exc:
+        print(f"entitlements: {exc}", file=sys.stderr)
+        return 2
+    print(
+        json.dumps({"subjects": {str(item["task_id"]): approval_subject(item) for item in tasks}})
+    )
+    return 0
+
+
+def _suggest_compute(args: argparse.Namespace) -> int:
+    """Match approved private work to fresh eligible ledger windows."""
+    try:
+        tasks = _compute_tasks(args.file)
+        hub_path = Path(args.hub_db)
+        if not hub_path.is_file():
+            raise ComputeCreditError("hub event store is unavailable")
+        board_store = EventStore(hub_path)
+        try:
+            observed = tuple(board_store.read_all())
+            approvals = build_approval_report(observed)
+            through_seq = observed[-1].seq if observed else 0
+            board = replay(
+                board_store,
+                up_to_seq=through_seq,
+                event_kinds=(EventKind.LEDGER_TASK,),
+            ).blackboard
+        finally:
+            board_store.close()
+        report = suggest_compute_work(
+            read_events(_store_path(args)),
+            tasks,
+            approvals,
+            board,
+            reviewer=args.reviewer,
+            as_of=datetime.now(timezone.utc),
+            max_evidence_age_seconds=args.max_evidence_age_hours * 3600,
+        )
+    except (
+        ComputeCreditError,
+        EntitlementError,
+        EntitlementStoreError,
+        SecurePathError,
+        ValueError,
+    ) as exc:
+        print(f"entitlements: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register owner-local entitlement record, show and history commands."""
     root = subparsers.add_parser(
@@ -190,3 +270,17 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     history.add_argument("--store", help="Private SQLite ledger path.")
     history.set_defaults(func=_history)
+    subjects = commands.add_parser(
+        "compute-subjects", help="Print exact approval subjects for private compute tasks."
+    )
+    subjects.add_argument("--file", required=True, help="Owner-only compute task JSON file.")
+    subjects.set_defaults(func=_compute_subjects)
+    suggest = commands.add_parser(
+        "suggest-compute", help="Advisory approved work matching private compute credits."
+    )
+    suggest.add_argument("--file", required=True, help="Owner-only compute task JSON file.")
+    suggest.add_argument("--hub-db", required=True, help="Hub event store containing approvals.")
+    suggest.add_argument("--reviewer", required=True, help="Exact authorised reviewer identity.")
+    suggest.add_argument("--max-evidence-age-hours", type=int, default=168)
+    suggest.add_argument("--store", help="Private SQLite entitlement ledger path.")
+    suggest.set_defaults(func=_suggest_compute)

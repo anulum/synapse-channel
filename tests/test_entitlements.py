@@ -250,3 +250,38 @@ def test_observation_revision_and_balance_conflicts_are_enforced() -> None:
         active_events([*events, balance, second])
     with pytest.raises(EntitlementError, match="duplicate event id"):
         active_events([*events, {**balance, "event_id": "a1"}])
+
+
+@pytest.mark.parametrize(
+    ("resource_kind", "unit"),
+    [
+        ("gpu_time", "gpu_seconds"),
+        ("quantum_shots", "shots"),
+        ("quantum_credits", "quantum_credits"),
+        ("ci_minutes", "ci_minutes"),
+        ("cloud_grant", "USD"),
+    ],
+)
+def test_compute_pool_units_and_restrictions(resource_kind: str, unit: str) -> None:
+    pool = _event(
+        "pool",
+        "p-compute",
+        pool_id="compute",
+        account_id="account-1",
+        unit=unit,
+        resource_kind=resource_kind,
+        capabilities=["run"],
+        data_classes=["internal"],
+        eligible_projects=["SYNAPSE-CHANNEL"],
+        idle_cost={"amount_per_hour": "0.25", "currency": "CHF"},
+    )
+    assert validate_event(pool)["resource_kind"] == resource_kind
+    assert len(active_events([_ledger()[0], pool])) == 2
+    with pytest.raises(EntitlementError, match="incompatible"):
+        validate_event({**pool, "unit": "tokens"})
+    with pytest.raises(EntitlementError, match="duplicates"):
+        validate_event({**pool, "eligible_projects": ["A", "A"]})
+    with pytest.raises(EntitlementError, match="idle_cost currency"):
+        validate_event({**pool, "idle_cost": {"amount_per_hour": "1", "currency": "BTC"}})
+    with pytest.raises(EntitlementError, match="requires resource_kind"):
+        validate_event({key: value for key, value in pool.items() if key != "resource_kind"})
