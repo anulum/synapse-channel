@@ -100,6 +100,19 @@ jobs:
         if: matrix.python-version == '3.12'
         working-directory: integrations/pi
         run: npm ci --ignore-scripts
+      - name: Install exact Claude Code host for real plugin coverage
+        if: matrix.python-version == '3.12'
+        working-directory: integrations/claude-code
+        run: |
+          npm ci --ignore-scripts
+          mkdir -p "$RUNNER_TEMP/claude-bin"
+          cat > "$RUNNER_TEMP/claude-bin/claude" <<'SH'
+          #!/usr/bin/env bash
+          exec node "$GITHUB_WORKSPACE/integrations/claude-code/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs" "$@"
+          SH
+          chmod 755 "$RUNNER_TEMP/claude-bin/claude"
+          test "$("$RUNNER_TEMP/claude-bin/claude" --version)" = '2.1.280 (Claude Code)'
+          echo "$RUNNER_TEMP/claude-bin" >> "$GITHUB_PATH"
       - name: Run the full suite with the exact coverage gate
         if: matrix.python-version == '3.12'
         env:
