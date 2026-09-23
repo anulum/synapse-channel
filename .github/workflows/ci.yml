@@ -105,13 +105,13 @@ jobs:
         env:
           SYNAPSE_TEST_CODEX_BIN: ${{ github.workspace }}/integrations/codex-cli/node_modules/.bin/codex
           SYNAPSE_TEST_PI_BIN: ${{ github.workspace }}/integrations/pi/node_modules/.bin/pi
-        run: pytest --cov=synapse_channel --cov-report=term-missing --cov-report=xml
+        run: python -m pytest --cov=synapse_channel --cov-report=term-missing --cov-report=xml
       - name: Run the full version-compatibility suite
         if: matrix.python-version != '3.12'
-        run: pytest
+        run: python -m pytest
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml

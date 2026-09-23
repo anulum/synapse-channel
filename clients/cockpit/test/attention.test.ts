@@ -298,4 +298,25 @@ describe("mergeStoredAttention", () => {
     expect(merged[0]?.evidence).toContain("Review overdue");
     expect(merged[0]?.action).toEqual({ kind: "task", id: "TASK-1" });
   });
+
+  it("orders all stored alert kinds by severity, kind, age and stable key", () => {
+    const report = {
+      state: "active" as const,
+      remaining: 0,
+      snoozedCount: 0,
+      alerts: [
+        { key: "z", kind: "quota_reset" as const, subject: "z", severity: "warning" as const, state: "open" as const, action: "Reset quota", observedAt: 20, expiresAt: null },
+        { key: "a", kind: "quota_reset" as const, subject: "a", severity: "warning" as const, state: "open" as const, action: "Reset quota", observedAt: 20, expiresAt: null },
+        { key: "old", kind: "quota_reset" as const, subject: "old", severity: "warning" as const, state: "open" as const, action: "Reset quota", observedAt: 10, expiresAt: null },
+        { key: "stale", kind: "stale_data" as const, subject: "stale", severity: "warning" as const, state: "open" as const, action: "Refresh source", observedAt: 30, expiresAt: null },
+        { key: "failed", kind: "failed_delivery" as const, subject: "failed", severity: "critical" as const, state: "open" as const, action: "Inspect receipt", observedAt: 30, expiresAt: null },
+      ],
+    };
+    const merged = mergeStoredAttention([], report);
+    expect(merged.map((item) => item.id)).toEqual([
+      "stored:failed", "stored:stale", "stored:old", "stored:a", "stored:z",
+    ]);
+    expect(merged[0]?.action).toBeNull();
+    expect(mergeStoredAttention(merged, null)).toEqual(merged);
+  });
 });

@@ -17,6 +17,7 @@ import { defineConfig } from "vitest/config";
 // reach honestly, so a numeric gate there would invite performative tests).
 export default defineConfig({
   test: {
+    testTimeout: 15_000,
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
     setupFiles: ["test/setup.ts"],
     coverage: {

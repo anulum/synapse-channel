@@ -93,6 +93,7 @@ jobs:
               "json_boundary.py",
               "manifest.py",
               "models.py",
+              "review_webhook.py",
               "service.py",
               "webhook.py",
           }
