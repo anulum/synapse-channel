@@ -20,13 +20,17 @@ import math
 from collections.abc import Mapping
 from typing import Any, Final, cast
 
+from synapse_channel.core.errors import SynapseError
+
 PI_RPC_VERSION: Final = "0.87.1"
 MAX_RECORD_BYTES: Final = 1_048_576
 MAX_PENDING_BYTES: Final = 2_097_152
 
 
-class PiRpcError(ValueError):
+class PiRpcError(SynapseError, ValueError):
     """The pinned host emitted an invalid or incomplete RPC record."""
+
+    code = "pi_rpc"
 
 
 class PiRpcDecoder:

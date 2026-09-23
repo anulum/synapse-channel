@@ -33,6 +33,17 @@ _RUN_42 = wasmtime.wat2wasm('(module (func (export "run") (result i32) i32.const
 _SPIN = wasmtime.wat2wasm('(module (func (export "run") (result i32) (loop $l br $l) i32.const 0))')
 _UNREACHABLE = wasmtime.wat2wasm('(module (func (export "run") (result i32) unreachable))')
 _NO_RUN = wasmtime.wat2wasm('(module (func (export "other") (result i32) i32.const 1))')
+_CREATE_FILE = wasmtime.wat2wasm(
+    """(module
+      (import "wasi_snapshot_preview1" "path_open"
+        (func $open (param i32 i32 i32 i32 i32 i64 i64 i32 i32) (result i32)))
+      (memory (export "memory") 1)
+      (data (i32.const 16) "created")
+      (func (export "run") (result i32)
+        i32.const 3 i32.const 0 i32.const 16 i32.const 7 i32.const 1
+        i64.const 64 i64.const 0 i32.const 0 i32.const 0
+        call $open))"""
+)
 
 
 def _manifest(*, fuel: int = 1_000_000, wall_clock_ms: int = 2_000) -> CapabilityManifest:
@@ -179,3 +190,18 @@ def test_filesystem_grants_are_preopened(tmp_path: Path) -> None:
     assert receipt["exit"] == EXIT_OK
     assert "fs:/ro:read" in receipt["granted_capabilities"]
     assert "fs:/rw:read_write" in receipt["granted_capabilities"]
+
+
+def test_read_only_preopen_refuses_guest_file_creation(tmp_path: Path) -> None:
+    """A guest write must fail on a read-only grant and work on a writable one."""
+    for write in (False, True):
+        manifest = CapabilityManifest(
+            tool_id="writer",
+            content_digest=_DIGEST,
+            filesystem=(FilesystemGrant(str(tmp_path), "/data", write=write),),
+            resources=ResourceGrant(memory_bytes=1 << 20, fuel=1_000_000, wall_clock_ms=2_000),
+        )
+        receipt = run_sandboxed(manifest, _CREATE_FILE, b"")
+        assert receipt["exit"] == EXIT_OK
+        assert (tmp_path / "created").exists() is write
+        (tmp_path / "created").unlink(missing_ok=True)

@@ -22,7 +22,7 @@ from typing import Any
 from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.client.agent import SynapseAgent
-from synapse_channel.core.delivery_modes import DeliveryRefusal
+from synapse_channel.core.delivery_modes import TERMINAL_STAGES, DeliveryRefusal
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.participants.envelope import TurnRequest
 from synapse_channel.participants.participant import Participant
@@ -61,7 +61,7 @@ class DeliveryParticipantBridge:
         self._cancel_requested: set[str] = set()
         self._runner: asyncio.Task[None] | None = None
         self._provider_session = ""
-        self._stage_waiter: tuple[str, str, str, asyncio.Future[None]] | None = None
+        self._stage_waiter: tuple[str, str, str, asyncio.Future[str]] | None = None
 
     def start(self) -> None:
         """Start the ordered executor before connecting the agent to the hub."""
@@ -108,13 +108,19 @@ class DeliveryParticipantBridge:
         waiter = self._stage_waiter
         if waiter is not None and frame.get("target") == self.agent.name:
             key, stage, request_id, future = waiter
+            observed = frame.get("stage")
             if (
                 frame.get("type") == MessageType.DELIVERY_STATUS
                 and frame.get("operation_key") == key
-                and frame.get("stage") == stage
+                and isinstance(observed, str)
+                and (
+                    observed == stage
+                    or observed in TERMINAL_STAGES
+                    or (stage == "boundary_delivered" and observed == "acknowledged")
+                )
                 and not future.done()
             ):
-                future.set_result(None)
+                future.set_result(observed)
             elif (
                 frame.get("type") == MessageType.DELIVERY_REFUSED
                 and frame.get("request_id") == request_id
@@ -185,7 +191,7 @@ class DeliveryParticipantBridge:
             evidence = {"reason_code": code}
         delay = 0.25
         while True:
-            future: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+            future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
             self._stage_waiter = (key, stage, frame["request_id"], future)
             try:
                 await self.agent.report_delivery_stage(
@@ -196,7 +202,11 @@ class DeliveryParticipantBridge:
                     stage=stage,
                     evidence=evidence,
                 )
-                await asyncio.wait_for(future, 5.0)
+                observed = await asyncio.wait_for(future, 5.0)
+                if observed in TERMINAL_STAGES and observed != stage:
+                    raise DeliveryRefusal(
+                        "terminal_delivery", "delivery became terminal before the reported stage"
+                    )
                 return
             except DeliveryRefusal as exc:
                 if exc.code != "unavailable_hub":

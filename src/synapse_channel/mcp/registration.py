@@ -62,10 +62,7 @@ def registered_mcp_tool_names() -> frozenset[str]:
             "synapse_entitlements",
             "synapse_app_task_offer",
             "synapse_app_task_status",
-            "synapse_app_task_advance",
             "synapse_app_task_attach",
-            "synapse_app_task_verify",
-            "synapse_app_task_correct_usage",
         }
     )
 
@@ -272,24 +269,9 @@ def build_mcp_server(
         return await bridge.app_task_status(task_id)
 
     @server.tool()
-    async def synapse_app_task_advance(task_id: str, action: str) -> str:
-        """Accept, start, decline or cancel a human app task."""
-        return await bridge.app_task_advance(task_id, action)
-
-    @server.tool()
     async def synapse_app_task_attach(task_id: str, result: dict[str, Any]) -> str:
         """Attach an untrusted result envelope to its offered task."""
         return await bridge.app_task_attach(task_id, result)
-
-    @server.tool()
-    async def synapse_app_task_verify(task_id: str) -> str:
-        """Complete a task only if its offer-time result verifier passes."""
-        return await bridge.app_task_verify(task_id)
-
-    @server.tool()
-    async def synapse_app_task_correct_usage(task_id: str, amount: str, reason: str) -> str:
-        """Record a manual usage correction for a verified task."""
-        return await bridge.app_task_correct_usage(task_id, amount, reason)
 
     @server.resource("synapse://board")
     async def board_resource() -> str:

@@ -166,7 +166,7 @@ class PiRpcProcess:
                 raise PiRpcError("pi RPC command could not reach the child") from exc
         try:
             response = await asyncio.wait_for(future, timeout=self._timeout)
-        except TimeoutError as exc:
+        except (TimeoutError, asyncio.TimeoutError) as exc:
             await self.close()
             raise PiRpcError("pi RPC command response timed out") from exc
         except asyncio.CancelledError:
@@ -196,7 +196,7 @@ class PiRpcProcess:
         while True:
             try:
                 record = await asyncio.wait_for(self._events.get(), timeout=self._timeout)
-            except TimeoutError as exc:
+            except (TimeoutError, asyncio.TimeoutError) as exc:
                 await self.close()
                 raise PiRpcError("pi RPC turn did not settle before timeout") from exc
             if isinstance(record, PiRpcError):
@@ -250,7 +250,7 @@ class PiRpcProcess:
             pass
         try:
             await asyncio.wait_for(process.wait(), timeout=3.0)
-        except TimeoutError:
+        except (TimeoutError, asyncio.TimeoutError):
             if process.returncode is None:
                 process.kill()
             await process.wait()

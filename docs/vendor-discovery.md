@@ -27,10 +27,13 @@ python tools/vendor_discovery.py --strict \
 The tracked `integrations/vendor-discovery/sources.json`
 names the weekly owner and manual alias decisions. The tracked
 `integrations/vendor-discovery/catalog.json` is the committed
-observation baseline. Its records are unreviewed signals, not admitted
-integrations. The command leaves both untouched and writes a dated
+observation baseline for provider and MCP signals. Raw unreviewed GitHub host
+names are kept in the owner-private review record, not this public baseline.
+Its records are unreviewed signals, not admitted integrations. The command
+leaves both tracked inputs untouched and writes a dated
 report plus a proposed next catalog. A maintainer reviews the report before
-replacing the baseline; the proposal contains identifiers, publishers, first
+replacing the baseline; unreviewed host search hits must stay out of a public
+catalog until source and publisher review is recorded. The proposal contains identifiers, publishers, first
 and last sighting times and per-source SHA-256 digests. The report contains
 the small source claims that produced each review item. Raw model lists,
 credential names and release bodies are not retained in the baseline.
@@ -76,5 +79,7 @@ The 2026-09-19 first scan recorded 622 unreviewed observations: 222 provider
 entries from a complete Models.dev response, 300 MCP entries from the bounded
 incremental pages and 100 GitHub topic results. The latter two feeds were
 partial. The first report queued all 622 for triage; a repeat against the
-saved baseline queued no unchanged entries. These counts describe the
-specific dated snapshot, not available or supported Synapse integrations.
+saved baseline queued no unchanged entries. The 0.99.27 public baseline omits
+the 100 host names; their original record is retained privately for review.
+These counts describe the specific dated snapshot, not available or supported
+Synapse integrations.

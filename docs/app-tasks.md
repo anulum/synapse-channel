@@ -79,9 +79,11 @@ provenance and the CLI or MCP bridge identity that submitted it. It does not
 include returned content.
 
 The local stdio MCP server exposes `synapse_app_task_offer`,
-`synapse_app_task_status`, `synapse_app_task_advance`,
-`synapse_app_task_attach`, `synapse_app_task_verify`, and
-`synapse_app_task_correct_usage`. MCP replies contain task state and redacted
+`synapse_app_task_status`, and `synapse_app_task_attach`. An MCP offer is bound
+to that bridge identity; only the same identity can attach a result through
+MCP. Accept, start, decline, cancel, verify and usage correction are owner-local
+CLI operations. The CLI is an operator interface under the local OS account;
+it is not a cryptographic human identity proof. MCP replies contain task state and redacted
 allowance evidence; they omit prompt text, returned content and private account
-source. The CLI is the owner view. Remote MCP is a separate transport with its
+source. Remote MCP is a separate transport with its
 own admission requirements.

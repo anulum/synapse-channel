@@ -25,6 +25,7 @@ from synapse_channel.core.entitlement_store import (
 )
 from synapse_channel.core.entitlement_view import entitlement_view
 from synapse_channel.core.entitlements import parse_quantity, parse_time
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secure_path import (
     SecurePathError,
     apply_owner_only_dir,
@@ -43,8 +44,10 @@ _STEPS: Final = {
 _MAX_JSON: Final = 1_048_576
 
 
-class AppTaskError(ValueError):
+class AppTaskError(SynapseError, ValueError):
     """A task or transition is invalid or its private store is unavailable."""
+
+    code = "app_task"
 
 
 def default_app_task_store() -> Path:
@@ -96,13 +99,21 @@ def _open(path: Path) -> sqlite3.Connection:
             db.executescript(
                 "CREATE TABLE tasks (task_id TEXT PRIMARY KEY, state TEXT NOT NULL, "
                 "bundle TEXT NOT NULL, allowance TEXT NOT NULL, result TEXT, usage TEXT, "
-                "created_at TEXT NOT NULL, updated_at TEXT NOT NULL);"
+                "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+                "offered_by TEXT NOT NULL);"
                 "CREATE TABLE events (event_id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "task_id TEXT NOT NULL REFERENCES tasks(task_id), action TEXT NOT NULL, "
                 "at TEXT NOT NULL, detail TEXT NOT NULL);"
-                "PRAGMA user_version=1;"
+                "PRAGMA user_version=2;"
             )
-        elif version != 1:
+        elif version == 1:
+            with db:
+                db.execute(
+                    "ALTER TABLE tasks ADD COLUMN offered_by TEXT NOT NULL "
+                    "DEFAULT 'operator:legacy'"
+                )
+                db.execute("PRAGMA user_version=2")
+        elif version != 2:
             raise AppTaskError(f"unsupported app task store version {version}")
         if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise AppTaskError("app task store integrity check failed")
@@ -176,6 +187,7 @@ def _task(row: sqlite3.Row) -> dict[str, Any]:
         "allowance": json.loads(row["allowance"]),
         "result": json.loads(row["result"]) if row["result"] else None,
         "usage": json.loads(row["usage"]) if row["usage"] else None,
+        "offered_by": row["offered_by"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -204,11 +216,18 @@ def _load(db: sqlite3.Connection, task_id: str, at: datetime) -> sqlite3.Row:
 
 
 def offer(
-    path: Path, bundle: dict[str, Any], *, ledger: Path | None = None, now: datetime | None = None
+    path: Path,
+    bundle: dict[str, Any],
+    *,
+    ledger: Path | None = None,
+    actor: str = "operator:cli",
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Offer a prompt with a current C04 allowance source and fixed verifier."""
     at = _now() if now is None else now
     task_id, encoded = _validate_bundle(bundle)
+    if not isinstance(actor, str) or not actor.strip() or len(actor) > 128:
+        raise AppTaskError("offer actor must be a bounded identity")
     stamp = at.isoformat()
     with closing(_open(path)) as db, db:
         db.execute("BEGIN IMMEDIATE")
@@ -216,6 +235,8 @@ def offer(
         if previous is not None:
             if previous["bundle"] != encoded:
                 raise AppTaskError("task id already has a different bundle")
+            if previous["offered_by"] != actor:
+                raise AppTaskError("task id belongs to another offerer")
             return _task(_load(db, task_id, at))
         if parse_time(bundle["expires_at"], "expires_at") <= at:
             raise AppTaskError("offer already expired")
@@ -225,12 +246,12 @@ def offer(
             )
         )
         db.execute(
-            "INSERT INTO tasks VALUES(?,?,?,?,?,?,?,?)",
-            (task_id, "offered", encoded, allowance, None, None, stamp, stamp),
+            "INSERT INTO tasks VALUES(?,?,?,?,?,?,?,?,?)",
+            (task_id, "offered", encoded, allowance, None, None, stamp, stamp, actor),
         )
         db.execute(
             "INSERT INTO events(task_id, action, at, detail) VALUES(?,?,?,?)",
-            (task_id, "offer", stamp, allowance),
+            (task_id, "offer", stamp, _json({"allowance": json.loads(allowance), "actor": actor})),
         )
         return _task(db.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone())
 
@@ -287,6 +308,7 @@ def attach(
     result: dict[str, Any],
     *,
     actor: str = "operator:cli",
+    require_offerer: bool = False,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Bind one untrusted result envelope to its task and source."""
@@ -319,6 +341,8 @@ def attach(
     with closing(_open(path)) as db, db:
         db.execute("BEGIN IMMEDIATE")
         row = _load(db, task_id, at)
+        if require_offerer and row["offered_by"] != actor:
+            raise AppTaskError("only the task offerer may attach through MCP")
         if row["state"] == "result_attached" and row["result"] == encoded:
             return _task(row)
         if row["state"] != "running":

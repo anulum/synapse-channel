@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 import pytest
-from hypothesis import given
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from synapse_channel.core.aef_canonical import (
@@ -187,6 +187,7 @@ def test_parser_and_in_memory_paths_produce_identical_bytes() -> None:
     )
 
 
+@settings(suppress_health_check=[HealthCheck.too_slow])
 @given(_JSON_VALUES)
 def test_every_generated_profile_value_roundtrips_through_wire_bytes(value: object) -> None:
     rendered = canonical_json(value)

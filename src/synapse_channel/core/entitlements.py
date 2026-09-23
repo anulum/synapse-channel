@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Final
 
+from synapse_channel.core.errors import SynapseError
+
 KINDS: Final = frozenset({"account", "pool", "surface", "window", "usage", "balance"})
 """Accepted ledger event kinds."""
 
@@ -68,8 +70,10 @@ _COMMON: Final = frozenset(
 )
 
 
-class EntitlementError(ValueError):
+class EntitlementError(SynapseError, ValueError):
     """Raised for invalid entitlement evidence or inconsistent revisions."""
+
+    code = "entitlement"
 
 
 def parse_time(value: object, field: str) -> datetime:

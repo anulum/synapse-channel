@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -72,6 +73,22 @@ def _text(result: Any) -> str:
     return str(content[0].text)
 
 
+def _operator(action: str, task_id: str, *options: str) -> dict[str, Any]:
+    """Exercise the owner-local CLI for human attestation transitions."""
+    result = subprocess.run(
+        [sys.executable, "-m", "synapse_channel.cli", "app-task", action, task_id, *options],
+        env=dict(os.environ),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    value = json.loads(result.stdout)
+    assert isinstance(value, dict)
+    return value
+
+
 async def test_real_stdio_mcp_task_journey(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     now = datetime.now(timezone.utc)
@@ -102,9 +119,17 @@ async def test_real_stdio_mcp_task_journey(tmp_path: Path, monkeypatch: pytest.M
                 tools = {tool.name for tool in (await session.list_tools()).tools}
                 assert {
                     "synapse_app_task_offer",
+                    "synapse_app_task_status",
                     "synapse_app_task_attach",
-                    "synapse_app_task_verify",
                 } <= tools
+                assert (
+                    not {
+                        "synapse_app_task_advance",
+                        "synapse_app_task_verify",
+                        "synapse_app_task_correct_usage",
+                    }
+                    & tools
+                )
                 offered = await session.call_tool("synapse_app_task_offer", {"bundle": bundle})
                 assert json.loads(_text(offered))["state"] == "offered"
                 denied = await session.call_tool(
@@ -113,10 +138,7 @@ async def test_real_stdio_mcp_task_journey(tmp_path: Path, monkeypatch: pytest.M
                 )
                 assert denied.isError
                 for action, expected in (("accept", "accepted"), ("start", "running")):
-                    reply = await session.call_tool(
-                        "synapse_app_task_advance", {"task_id": "mcp-human-1", "action": action}
-                    )
-                    assert json.loads(_text(reply))["state"] == expected
+                    assert _operator(action, "mcp-human-1")["state"] == expected
                 attached = await session.call_tool(
                     "synapse_app_task_attach", {"task_id": "mcp-human-1", "result": result}
                 )
@@ -125,15 +147,18 @@ async def test_real_stdio_mcp_task_journey(tmp_path: Path, monkeypatch: pytest.M
                     "synapse_app_task_attach", {"task_id": "mcp-human-1", "result": result}
                 )
                 assert not repeated.isError
-                verified = await session.call_tool(
-                    "synapse_app_task_verify", {"task_id": "mcp-human-1"}
+                assert _operator("verify", "mcp-human-1")["state"] == "verified"
+                assert (
+                    _operator(
+                        "correct-usage",
+                        "mcp-human-1",
+                        "--amount",
+                        "2",
+                        "--reason",
+                        "receipt correction",
+                    )["usage"]["amount"]
+                    == "2"
                 )
-                assert json.loads(_text(verified))["state"] == "verified"
-                corrected = await session.call_tool(
-                    "synapse_app_task_correct_usage",
-                    {"task_id": "mcp-human-1", "amount": "2", "reason": "receipt correction"},
-                )
-                assert json.loads(_text(corrected))["usage"]["amount"] == "2"
                 status = _text(
                     await session.call_tool("synapse_app_task_status", {"task_id": "mcp-human-1"})
                 )
@@ -163,4 +188,4 @@ def test_missing_private_allowance_does_not_expose_store_path(
         "verifier": {"field": "approved", "equals": True},
     }
     with pytest.raises(AppTaskError, match="^private allowance unavailable$"):
-        app_task_actions.offer(bundle)
+        app_task_actions.offer(bundle, "TEST/app-task")

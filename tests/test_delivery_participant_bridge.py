@@ -264,6 +264,54 @@ class _NeverRunParticipant:
         raise AssertionError("expired delivery reached the provider")
 
 
+async def test_terminal_status_unblocks_bridge_before_provider_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A concurrent hub expiry ends the queued bridge turn without retrying forever."""
+    agent = SynapseAgent(
+        "P/receiver", delivery_capabilities={"follow_up": "native"}, machine_identity=False
+    )
+    participant = _NeverRunParticipant()
+    ledger_path = tmp_path / "bridge.db"
+    bridge = DeliveryParticipantBridge(agent, participant, ledger_path=ledger_path)
+    key = "a" * 64
+
+    async def report_expired(*_args: Any, **_kwargs: Any) -> None:
+        await bridge.on_message(
+            {
+                "type": MessageType.DELIVERY_STATUS,
+                "target": agent.name,
+                "operation_key": key,
+                "stage": "expired",
+            }
+        )
+
+    monkeypatch.setattr(agent, "report_delivery_stage", report_expired)
+    bridge.start()
+    try:
+        await bridge.on_message(
+            {
+                "type": MessageType.DELIVERY_OFFER,
+                "target": agent.name,
+                "target_incarnation": agent.delivery_incarnation,
+                "operation_key": key,
+                "request_id": "req-1",
+                "task_id": "task-1",
+                "body": "Answer the reviewed question.",
+                "deadline": time.time() + 30,
+                "selected_mode": "follow_up",
+            }
+        )
+        await asyncio.wait_for(bridge._queue.join(), 2)
+        assert participant.calls == 0
+    finally:
+        await bridge.close()
+    with sqlite3.connect(ledger_path) as connection:
+        assert connection.execute(
+            "SELECT stage, outcome_code FROM delivery_bridge WHERE operation_key = ?", (key,)
+        ).fetchone() == ("hub_refused", "terminal_delivery")
+
+
 class _DeterministicParticipant:
     """Return controlled provider outcomes through a real hub and bridge."""
 

@@ -16,7 +16,11 @@ from typing import Any
 
 import pytest
 
-from synapse_channel.core.delivery_modes import DeliveryRefusal, parse_delivery_intent
+from synapse_channel.core.delivery_modes import (
+    DeliveryRefusal,
+    DeliveryStage,
+    parse_delivery_intent,
+)
 from synapse_channel.core.persistence import EventStore
 
 
@@ -127,8 +131,10 @@ def test_unmodified_delivery_history_reopens(tmp_path: Path) -> None:
         (1, "request.sender", ""),
         (1, "request.origin_hub", ""),
         (1, "request.request_id", ""),
+        (1, "request.request_id", "forged-request"),
         (1, "request.idempotency_key", ""),
         (1, "request.deadline", True),
+        (1, "request.deadline", 10**400),
         (1, "request.deadline", float("nan")),
         (1, "request.mode", "unknown"),
         (1, "request.extra", "unexpected"),
@@ -175,6 +181,19 @@ def test_reopen_refuses_non_object_delivery_event(tmp_path: Path, raw: str) -> N
     assert failure.value.code == "replay_incompatible"
 
 
+def test_reopen_refuses_duplicate_admission_event(tmp_path: Path) -> None:
+    """A second accepted event cannot replay as a new request or overwrite the first."""
+    path = tmp_path / "hub.db"
+    _seed(path)
+    with sqlite3.connect(path) as connection:
+        accepted = connection.execute("SELECT kind, payload FROM events WHERE seq = 1").fetchone()
+        assert accepted is not None
+        connection.execute("INSERT INTO events (ts, kind, payload) VALUES (1.0, ?, ?)", accepted)
+    with pytest.raises(DeliveryRefusal) as failure:
+        EventStore(path)
+    assert failure.value.code == "replay_incompatible"
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -207,6 +226,73 @@ def test_reopen_refuses_tampered_stage_evidence(tmp_path: Path, field: str, valu
             evidence={"boundary": "turn-1"},
         )
     _change_event(path, 3, {field: value})
+    with pytest.raises(DeliveryRefusal) as failure:
+        EventStore(path)
+    assert failure.value.code == "replay_incompatible"
+
+
+@pytest.mark.parametrize(
+    ("stage", "changes"),
+    [
+        ("expired", {"source": "recipient"}),
+        ("expired", {"source": "unknown"}),
+        ("expired", {"actor": "P/attacker"}),
+        ("cancel_requested", {"actor": "P/attacker"}),
+        ("cancel_requested", {"source": "recipient"}),
+    ],
+)
+def test_reopen_refuses_forged_deadline_or_cancellation_authority(
+    tmp_path: Path, stage: str, changes: dict[str, str]
+) -> None:
+    """Hub deadline and sender cancellation records retain their exact authority."""
+    path = tmp_path / "hub.db"
+    key = _seed(path)
+    with EventStore(path) as store:
+        if stage == "expired":
+            store.delivery.advance(
+                key,
+                stage="expired",
+                mutation_id="deadline-1",
+                mutation_digest="d" * 64,
+                actor="hub-1",
+                source="hub",
+                evidence={"reason_code": "deadline_elapsed"},
+            )
+        else:
+            store.delivery.request_cancel(
+                key,
+                mutation_id="cancel-1",
+                mutation_digest="c" * 64,
+                actor="P/author",
+            )
+    _change_event(path, 3, changes)
+    with pytest.raises(DeliveryRefusal) as failure:
+        EventStore(path)
+    assert failure.value.code == "replay_incompatible"
+
+
+def test_reopen_refuses_reused_mutation_identity_after_a_real_ack(tmp_path: Path) -> None:
+    """Two committed recipient transitions cannot share an id after tampering."""
+    path = tmp_path / "hub.db"
+    key = _seed(path)
+    with EventStore(path) as store:
+        transitions: tuple[tuple[DeliveryStage, str], ...] = (
+            ("boundary_delivered", "boundary-1"),
+            ("acknowledged", "ack-1"),
+        )
+        for stage, mutation_id in transitions:
+            store.delivery.advance(
+                key,
+                stage=stage,
+                mutation_id=mutation_id,
+                mutation_digest=("b" if stage == "boundary_delivered" else "a") * 64,
+                actor="P/receiver",
+                source="recipient",
+                evidence={"boundary": "turn-1"}
+                if stage == "boundary_delivered"
+                else {"receipt_id": "ack-1"},
+            )
+    _change_event(path, 4, {"mutation_id": "boundary-1"})
     with pytest.raises(DeliveryRefusal) as failure:
         EventStore(path)
     assert failure.value.code == "replay_incompatible"

@@ -176,10 +176,10 @@ tools wait for the hub's grant or denial; query tools return JSON.
 | `synapse_entitlements()` | Return a redacted local account-ledger overview with counts only; no labels, pool ids, balances or spend authority. |
 | `synapse_app_task_offer(bundle)` | Offer a human app task against a current private allowance window; return redacted state. |
 | `synapse_app_task_status(task_id)` | Read redacted state for one app task. |
-| `synapse_app_task_advance(task_id, action)` | Accept, start, decline or cancel a task. |
-| `synapse_app_task_attach(task_id, result)` | Bind an untrusted result envelope to its task without echoing content. |
-| `synapse_app_task_verify(task_id)` | Run the offer-time result predicate before marking a task verified. |
-| `synapse_app_task_correct_usage(task_id, amount, reason)` | Record an explicit manual correction after verification. |
+| `synapse_app_task_attach(task_id, result)` | Bind an untrusted result envelope to a task offered by this MCP identity without echoing content. |
+
+Accept, start, decline, cancel, verify and usage correction are owner-local
+`synapse app-task` CLI operations. The MCP process cannot mark a task verified.
 
 When the hub does not answer within the request window the tool returns a clear
 "no response from the hub" line rather than hanging.

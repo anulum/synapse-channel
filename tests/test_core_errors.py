@@ -49,6 +49,19 @@ _SRC = Path(__file__).resolve().parent.parent / "src" / "synapse_channel"
 # A row may be ADDED for a new error class; an existing row must never change.
 # ---------------------------------------------------------------------------
 FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
+    "AppTaskError": ("synapse_channel.core.app_tasks", "app_task", ValueError),
+    "AttentionStoreError": ("synapse_channel.core.attention_store", "attention_store", ValueError),
+    "CodexPackageError": ("synapse_channel.codex_mcp_package", "codex_package", ValueError),
+    "ComputeCreditError": ("synapse_channel.core.compute_credit", "compute_credit", ValueError),
+    "EntitlementError": ("synapse_channel.core.entitlements", "entitlement", ValueError),
+    "EntitlementStoreError": (
+        "synapse_channel.core.entitlement_store",
+        "entitlement_store",
+        ValueError,
+    ),
+    "PiRpcError": ("synapse_channel.participants.pi_rpc", "pi_rpc", ValueError),
+    "ProviderHTTPError": ("synapse_channel.client.provider_http", "provider_http", RuntimeError),
+    "ReviewFeedbackError": ("synapse_channel.core.review_feedback", "review_feedback", ValueError),
     "ClaudePluginInstallError": (
         "synapse_channel.claude_plugin_install",
         "claude_plugin_install",

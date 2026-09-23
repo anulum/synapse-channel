@@ -30,7 +30,7 @@ from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 
 
-def _intent(**changes: Any) -> DeliveryIntent:
+def _intent(*, sender: str = "P/author", **changes: Any) -> DeliveryIntent:
     """Create a valid parsed intent while varying its durable identity or body."""
     frame: dict[str, Any] = {
         "sender": "spoofed",
@@ -47,7 +47,7 @@ def _intent(**changes: Any) -> DeliveryIntent:
         "deadline": 160.0,
     }
     frame.update(changes)
-    return parse_delivery_intent(frame, sender="P/author", origin_hub="hub-1", now=100.0)
+    return parse_delivery_intent(frame, sender=sender, origin_hub="hub-1", now=100.0)
 
 
 def _offer(intent: DeliveryIntent, **changes: Any) -> dict[str, Any]:
@@ -150,6 +150,59 @@ def test_live_delivery_read_refuses_corrupt_aggregate(
         with pytest.raises(DeliveryRefusal) as caught:
             store.delivery.get(intent.operation_key)
         assert caught.value.code == "replay_incompatible"
+
+
+def test_reopen_migrates_legacy_notification_retirement_column(tmp_path: Path) -> None:
+    """A durable pre-retirement outbox gains the new column on real reopen."""
+    path = tmp_path / "hub.db"
+    with sqlite3.connect(path) as legacy:
+        legacy.execute(
+            "CREATE TABLE delivery_notifications ("
+            "notification_id TEXT PRIMARY KEY, operation_key TEXT NOT NULL, "
+            "audience TEXT NOT NULL, frame_json TEXT NOT NULL, "
+            "attempts INTEGER NOT NULL DEFAULT 0, delivered_at REAL)"
+        )
+    with EventStore(path):
+        with sqlite3.connect(path) as migrated:
+            columns = {
+                row[1] for row in migrated.execute("PRAGMA table_info(delivery_notifications)")
+            }
+    assert "retired_at" in columns
+
+
+def test_hub_identity_check_refuses_malformed_durable_request(tmp_path: Path) -> None:
+    """A corrupt persisted request fails the public hub identity check."""
+    path = tmp_path / "hub.db"
+    intent = _intent()
+    with EventStore(path) as store:
+        _create(store, intent)
+        with sqlite3.connect(path) as damaged:
+            damaged.execute(
+                "UPDATE delivery_requests SET request_json = ? WHERE operation_key = ?",
+                ("{", intent.operation_key),
+            )
+        with pytest.raises(DeliveryRefusal) as caught:
+            store.delivery.verify_origin_hub("hub-1")
+        assert caught.value.code == "replay_incompatible"
+
+
+def test_quarantine_write_rolls_back_on_storage_refusal(tmp_path: Path) -> None:
+    """A SQLite refusal leaves no partial quarantine row or open transaction."""
+    path = tmp_path / "hub.db"
+    with EventStore(path) as store:
+        with sqlite3.connect(path) as damaged:
+            damaged.execute(
+                "CREATE TRIGGER refuse_quarantine BEFORE INSERT ON delivery_quarantine "
+                "BEGIN SELECT RAISE(ABORT, 'storage refusal'); END"
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="storage refusal"):
+            store.delivery.quarantine("hub-1:operation", "replay_incompatible")
+        with sqlite3.connect(path) as checked:
+            assert checked.execute("SELECT count(*) FROM delivery_quarantine").fetchone() == (0,)
+            checked.execute("DROP TRIGGER refuse_quarantine")
+        store.delivery.quarantine("hub-1:operation", "replay_incompatible")
+        with sqlite3.connect(path) as checked:
+            assert checked.execute("SELECT count(*) FROM delivery_quarantine").fetchone() == (1,)
 
 
 def test_request_id_and_idempotency_key_conflicts_leave_original_intact(tmp_path: Path) -> None:
@@ -388,15 +441,21 @@ def test_recipient_queue_limit_refuses_without_partial_admission(tmp_path: Path)
     """An unbounded sender cannot grow one live recipient incarnation indefinitely."""
     with EventStore(tmp_path / "hub.db") as store:
         for index in range(128):
-            intent = _intent(request_id=f"req-{index}", idempotency_key=f"idem-{index}")
+            intent = _intent(
+                sender=f"P/author-{index // 16}",
+                request_id=f"req-{index}",
+                idempotency_key=f"idem-{index}",
+            )
             assert _create(store, intent).disposition == "inserted"
-        overflow = _intent(request_id="req-overflow", idempotency_key="idem-overflow")
+        overflow = _intent(
+            sender="P/author-overflow", request_id="req-overflow", idempotency_key="idem-overflow"
+        )
         with pytest.raises(DeliveryRefusal) as failure:
             _create(store, overflow)
         assert failure.value.code == "recipient_queue_full"
         assert store.delivery.get(overflow.operation_key) is None
         assert len(tuple(store.iter_events())) == 256
-        first = _intent(request_id="req-0", idempotency_key="idem-0")
+        first = _intent(sender="P/author-0", request_id="req-0", idempotency_key="idem-0")
         store.delivery.advance(
             first.operation_key,
             stage="expired",
@@ -407,3 +466,64 @@ def test_recipient_queue_limit_refuses_without_partial_admission(tmp_path: Path)
             evidence={"reason_code": "deadline_elapsed"},
         )
         assert _create(store, overflow).disposition == "inserted"
+
+
+def test_sender_queue_share_refuses_without_using_every_recipient_slot(tmp_path: Path) -> None:
+    """One sender cannot occupy all 128 slots of a recipient incarnation."""
+    with EventStore(tmp_path / "hub.db") as store:
+        for index in range(16):
+            intent = _intent(request_id=f"req-{index}", idempotency_key=f"idem-{index}")
+            assert _create(store, intent).disposition == "inserted"
+        overflow = _intent(request_id="req-17", idempotency_key="idem-17")
+        with pytest.raises(DeliveryRefusal) as failure:
+            _create(store, overflow)
+        assert failure.value.code == "recipient_queue_full"
+        assert store.delivery.get(overflow.operation_key) is None
+        assert (
+            _create(store, _intent(sender="P/other", request_id="other")).disposition == "inserted"
+        )
+
+
+def test_repeated_cancellation_does_not_append_or_notify(tmp_path: Path) -> None:
+    """Changing mutation ids cannot amplify a single cancellation into 100 writes."""
+    with EventStore(tmp_path / "hub.db") as store:
+        intent = _intent()
+        _create(store, intent)
+        first = store.delivery.request_cancel(
+            intent.operation_key,
+            mutation_id="cancel-0",
+            mutation_digest="a" * 64,
+            actor="P/author",
+        )
+        events = len(tuple(store.iter_events()))
+        pending = store.delivery.pending_notifications(intent.target)
+        for index in range(1, 101):
+            repeated = store.delivery.request_cancel(
+                intent.operation_key,
+                mutation_id=f"cancel-{index}",
+                mutation_digest="b" * 64,
+                actor="P/author",
+            )
+            assert repeated.disposition == "replayed"
+            assert repeated.record == first.record
+        assert len(tuple(store.iter_events())) == events
+        assert store.delivery.pending_notifications(intent.target) == pending
+
+
+def test_terminal_transition_retires_stale_recipient_offer(tmp_path: Path) -> None:
+    """A replaced recipient never replays an offer from a terminal intent."""
+    with EventStore(tmp_path / "hub.db") as store:
+        intent = _intent()
+        _create(store, intent)
+        assert len(store.delivery.pending_notifications(intent.target)) == 1
+        store.delivery.advance(
+            intent.operation_key,
+            stage="superseded",
+            mutation_id="superseded-1",
+            mutation_digest="c" * 64,
+            actor="hub-1",
+            source="hub",
+            evidence={"reason_code": "recipient_session_replaced"},
+        )
+        assert store.delivery.pending_notifications(intent.target) == ()
+        assert store.delivery.notification(f"delivery:{intent.operation_key}:1") is not None

@@ -88,8 +88,23 @@ jobs:
         run: >-
           python -m pip install --require-hashes --no-build-isolation
           -r .github/requirements/requirements-ci-tpm.txt
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: matrix.python-version == '3.12'
+        with:
+          node-version: "22.23.2"
+      - name: Install exact Codex CLI host for native package coverage
+        if: matrix.python-version == '3.12'
+        working-directory: integrations/codex-cli
+        run: npm ci --ignore-scripts
+      - name: Install exact Pi host for offline RPC diagnosis coverage
+        if: matrix.python-version == '3.12'
+        working-directory: integrations/pi
+        run: npm ci --ignore-scripts
       - name: Run the full suite with the exact coverage gate
         if: matrix.python-version == '3.12'
+        env:
+          SYNAPSE_TEST_CODEX_BIN: ${{ github.workspace }}/integrations/codex-cli/node_modules/.bin/codex
+          SYNAPSE_TEST_PI_BIN: ${{ github.workspace }}/integrations/pi/node_modules/.bin/pi
         run: pytest --cov=synapse_channel --cov-report=term-missing --cov-report=xml
       - name: Run the full version-compatibility suite
         if: matrix.python-version != '3.12'
@@ -159,13 +174,34 @@ jobs:
           (cd "$scratch" && "$synapse_bin" git-hook test)
           rm -rf "$scratch"
 
+  pi-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.2"
+      - name: Refuse unchecked Pi registry tarballs
+        run: python tools/check_pi_lock_integrity.py
+      - name: Install exact Pi integration dependencies without lifecycle scripts
+        working-directory: integrations/pi
+        run: npm ci --ignore-scripts
+      - name: Type-check and exercise the Pi extension
+        working-directory: integrations/pi
+        run: |
+          npm run typecheck
+          npm test
+
   # Single required status check for branch protection. It always runs (even when an
   # upstream job fails), so the `ci` context posts on every pull request and push,
   # and it fails unless every gated job succeeded — matrix-drift-proof, unlike pinning
   # each individual job as a required context.
   ci:
     name: ci
-    needs: [lint, typecheck, test, reuse, audit, git-hooks]
+    needs: [lint, typecheck, test, reuse, audit, git-hooks, pi-integration]
     if: always()
     runs-on: ubuntu-latest
     steps:

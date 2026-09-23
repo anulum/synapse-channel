@@ -13,16 +13,31 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Report an oversized provider HTTP response through the stable, redacted
+  provider error API instead of leaking the lower-level bounded-read exception.
+- Refuse query-bearing hub URLs before writing an isolated Codex MCP profile.
+- Refuse unpaired Unicode surrogates in version-three delivery identifiers and
+  evidence with a typed `invalid_shape` frame instead of closing the socket.
+- Reject malformed non-stream provider tool-call collections as redacted
+  `invalid_shape` errors before they reach a worker.
+
+## [0.99.27] - 2026-09-23
+
 ### Changed
 
 - Add an owner-local attention queue over approval, delivery and optional C04
   quota evidence, with observer freshness, deduplicated alert revisions,
   snooze/resolution, bounded generic desktop previews, a CLI and an
-  authenticated cockpit feed.
+  authenticated cockpit feed. Long approval subjects and dead-letter targets
+  use bounded digest keys so one durable event cannot stall later sync.
 
 - Add an owner-local human app task queue with C04 allowance snapshots,
   explicit CLI and stdio MCP handoff states, result provenance, fixed
-  task-specific verification and manual usage correction.
+  task-specific verification and manual usage correction. MCP exposes offer,
+  status and same-offerer result attachment; human handoff and verification
+  transitions are local CLI operations.
 
 - Admit Codex CLI 0.156.0 for manual local stdio MCP on Linux after isolated
   app-server tool discovery and live hub state, claim, conflict and release
@@ -41,6 +56,13 @@ All notable changes to this project are documented here.
 - Admit pi 0.87.1 for the pinned RPC participant and optional native extension
   after exact host load, local Ollama turn and resume, and live hub claim tests
   on Linux. Pi 0.86.0 remains the previous verified rollback version.
+  Pi RPC timeouts also close the child on Python 3.10; a turn launches the
+  resolved binary path that passed version admission.
+
+- Keep WASM preopen permissions enforced with Wasmtime 48's `fs_mutable` API
+  while retaining the older permission API; real guest file-creation tests
+  verify read-only refusal and writable grants. Redact malformed provider
+  stream shapes into stable provider errors instead of raw parser exceptions.
 
 - Validate Claude Code 2.1.280 with its strict plugin validator, isolated
   profile load, local MCP hub and live allowed/denied claim guard checks on
@@ -83,7 +105,12 @@ All notable changes to this project are documented here.
   acknowledgement evidence, cancellation, expiry and supersession. Older peers
   retain their existing wire contract. A recipient bridge exercises real
   OpenCode and local Ollama turns; external provider effects have no exactly-once
-  guarantee.
+  guarantee. A changed stable hub ID now refuses a journal with any v3 work
+  before listening; failed per-record hub transitions are quarantined. Repeated
+  cancellation is a no-op, one sender uses at most 16 of a recipient's 128 open
+  slots, and terminal stale offers are retired. A 0.99.26 downgrade silently
+  ignores retained v3 work; drain or explicitly hold unresolved requests before
+  rollback and restore the same stable hub ID on roll-forward.
 
 - Classify Claude plugin installation and claim-proposal failures under the
   frozen error taxonomy while retaining their existing `ValueError` behavior;
@@ -91,7 +118,8 @@ All notable changes to this project are documented here.
 
 - Add bounded public vendor/provider discovery for model APIs, MCP servers and
   agent host candidates, with provenance, manual alias review and a weekly
-  report. Discovery never activates a provider or changes support claims.
+  report. The public catalog excludes unreviewed host search hits. Discovery
+  never activates a provider or changes support claims.
 
 - Harden vendor discovery against the reviewed GitHub Pages download lure:
   inspect bounded source trees and workflows, reject matched hosts, rank source

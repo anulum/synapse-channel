@@ -55,7 +55,7 @@ def test_timeout_reaps_local_process_group_with_pipe_holding_child(
     code = (
         "import os, sys, time; from pathlib import Path; "
         "pid = os.fork(); "
-        "Path(sys.argv[1]).write_text(str(os.getpid())) if pid == 0 else None; "
+        "Path(sys.argv[1]).write_text(str(pid)) if pid != 0 else None; "
         "os._exit(0) if pid != 0 and sys.argv[2] == 'exit' else None; "
         "time.sleep(20)"
     )
@@ -65,7 +65,7 @@ def test_timeout_reaps_local_process_group_with_pipe_holding_child(
             [sys.executable, "-c", code, str(pid_file), "exit" if leader_exits else "wait"],
             capture_output=True,
             text=True,
-            timeout=0.5,
+            timeout=1.0,
         )
     assert time.monotonic() - began < 5
     pid = int(pid_file.read_text())

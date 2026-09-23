@@ -103,6 +103,56 @@ def test_failed_delivery_recovery_uses_exact_message_sequence(tmp_path: Path) ->
         store.close()
 
 
+def test_long_subjects_do_not_poison_later_attention_sync(tmp_path: Path) -> None:
+    """A valid long durable identifier cannot make every observer batch fail."""
+    store = EventStore(tmp_path / "hub.db")
+    queue = tmp_path / "private" / "queue.db"
+    subject = "s" * 400
+    target = "t" * 400
+    try:
+        store.append(
+            EventKind.LEDGER_PROGRESS,
+            {
+                "kind": "approval",
+                "author": "operator:one",
+                "text": format_approval_note(subject=subject, state="requested"),
+            },
+            durable=True,
+        )
+        store.append(EventKind.DEAD_LETTER_ESCALATION, {"target": target}, durable=True)
+        store.append(
+            EventKind.LEDGER_PROGRESS,
+            {
+                "kind": "approval",
+                "author": "operator:one",
+                "text": format_approval_note(subject="short", state="requested"),
+            },
+            durable=True,
+        )
+        store.append(
+            EventKind.LEDGER_PROGRESS,
+            {
+                "kind": "approval",
+                "author": "operator:one",
+                "text": format_approval_note(subject="\ud800" * 400, state="requested"),
+            },
+            durable=True,
+        )
+        store.append(
+            EventKind.DEAD_LETTER_ESCALATION,
+            {"target": "\ud800" * 400},
+            durable=True,
+        )
+        evidence = project_hub_attention(store.iter_events(), now=100)
+        assert len(evidence) == 3
+        assert all(len(item.key) <= 256 for item in evidence)
+        assert {item.subject for item in evidence} == {subject, target, "short"}
+        assert sync_evidence(queue, source="hub", evidence=evidence, now=100)["created"] == 3
+        assert sync_evidence(queue, source="hub", evidence=evidence, now=101)["unchanged"] == 3
+    finally:
+        store.close()
+
+
 def test_stale_quota_and_reset_omit_private_account_label(tmp_path: Path) -> None:
     common = {
         "recorded_at": "2026-09-19T00:00:00Z",

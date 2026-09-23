@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import shutil
 import stat
 import uuid
 from pathlib import Path
@@ -177,6 +178,29 @@ async def test_missing_model_binary_and_bad_version_refuse_turn(tmp_path: Path) 
     assert "not verified" in (await wrong.take_turn(request))["reason"]
     with pytest.raises(ValueError, match="timeout"):
         PiParticipant("project/pi", directory=tmp_path, timeout=float("inf"))
+
+
+async def test_pi_binary_disappearing_after_health_refuses_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A removed binary between the version probe and RPC cannot start a turn."""
+    binary = _binary(tmp_path)
+    participant = PiParticipant(
+        "project/pi", directory=tmp_path, model="ollama/local", binary=str(binary)
+    )
+    real_which = shutil.which
+    calls = 0
+
+    def disappearing_which(command: str) -> str | None:
+        nonlocal calls
+        calls += 1
+        return real_which(command) if calls == 1 else None
+
+    monkeypatch.setattr(shutil, "which", disappearing_which)
+    result = await participant.take_turn(TurnRequest(topic_id="topic", prompt="Question"))
+    assert result["is_error"]
+    assert result["reason"] == "pi binary disappeared after version check"
+    assert calls == 2
 
 
 async def test_resume_rejects_symlink_and_public_session_file(tmp_path: Path) -> None:

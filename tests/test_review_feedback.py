@@ -13,6 +13,7 @@ import hashlib
 import subprocess
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -151,6 +152,52 @@ def test_binding_refuses_wrong_seat_and_merge_commit(tmp_path: Path) -> None:
         )
     with pytest.raises(ReviewFeedbackError, match="exactly one parent"):
         inspect_commit(repo, _git(repo, "rev-list", "--max-parents=0", "HEAD"))
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"review_id": 0}, "review_id"),
+        ({"pull_number": True}, "pull_number"),
+        ({"github_author": "bad\nname"}, "github_author"),
+        ({"body": "x" * 32769}, "review body"),
+        ({"severity": "owner-approved"}, "severity"),
+        ({"evidence": "x" * 2049}, "evidence"),
+        ({"expected_verification": "bad\ncommand"}, "expected_verification"),
+        ({"source_kind": "issue_comment"}, "source kind"),
+        ({"source_kind": "pull_request_review_comment"}, "source path"),
+        (
+            {"source_kind": "pull_request_review_comment", "source_path": "../secret"},
+            "repository-relative",
+        ),
+        ({"source_path": "source.txt"}, "summary review"),
+        (
+            {
+                "source_kind": "pull_request_review_comment",
+                "source_path": "source.txt",
+                "source_line": 0,
+            },
+            "source_line",
+        ),
+        ({"source_sha256": "not-a-digest"}, "source_sha256"),
+    ],
+)
+def test_untrusted_review_metadata_is_rejected_before_custody(
+    change: dict[str, Any], message: str
+) -> None:
+    with pytest.raises(ReviewFeedbackError, match=message):
+        replace(_finding("a" * 40), **change)
+
+
+def test_git_review_refuses_nonroot_or_unknown_commit(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _, commit = _repo(repo)
+    child = repo / "child"
+    child.mkdir()
+    with pytest.raises(ReviewFeedbackError, match="Git root"):
+        inspect_commit(child, commit)
+    with pytest.raises(ReviewFeedbackError, match="Git commit evidence"):
+        inspect_commit(repo, "b" * 40)
 
 
 def test_private_store_preserves_original_and_refuses_changed_replay(tmp_path: Path) -> None:

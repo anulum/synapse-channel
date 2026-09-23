@@ -300,12 +300,12 @@ async def test_keyed_relay_replays_exact_verdict_after_restart_and_conflicts_fai
     reopened = EventStore(db)
     restarted = _acting_hub(policy=_serving_policy(pin, der), ownership=_owns(), journal=reopened)
     async with running_hub(restarted) as (_, uri):
-        replayed = await _relay_frame(uri, request)
-        conflict = await _relay_frame(
-            uri,
-            _request(reason="changed payload", idem_key="relay-attempt-7"),
-            reply_type=MessageType.ERROR,
-        )
+        async with await _connect(uri, "peer") as ws:
+            await send_json(ws, sender="peer", type=_REQUEST, **encode_relay_request(request))
+            replayed = await read_until_type(ws, _REPLY)
+            changed = _request(reason="changed payload", idem_key="relay-attempt-7")
+            await send_json(ws, sender="peer", type=_REQUEST, **encode_relay_request(changed))
+            conflict = await read_until_type(ws, MessageType.ERROR)
     assert replayed == first
     assert conflict["error_code"] == "idempotency_conflict"
     assert "relay-attempt-7" not in str(conflict)

@@ -81,6 +81,23 @@ ATTENTION_EVENT_KINDS = frozenset(
 """Hub event kinds needed for an attention projection."""
 
 
+def _bounded_subject_key(kind: str, subject: str) -> str:
+    """Keep one hostile long identifier from invalidating the entire observer batch."""
+    key = f"{kind}:{subject}"
+    if len(key) <= 256 and not subject.startswith("sha256:"):
+        return key
+    return f"{kind}:sha256:{hashlib.sha256(subject.encode()).hexdigest()}"
+
+
+def _valid_utf8_subject(subject: str) -> bool:
+    """Refuse malformed Unicode per item before SQLite sees the identifier."""
+    try:
+        subject.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def project_review_attention(
     rows: Sequence[tuple[ReviewFinding, AuthorBinding | None, float, int, bool]],
     approvals: ApprovalReport,
@@ -141,13 +158,15 @@ def _approval_evidence(
     if fields is None:
         return None
     subject = fields["subject"]
+    if not _valid_utf8_subject(subject):
+        return None
     pending = fields["state"] == STATE_REQUESTED
     deadline = event.ts + ttl_seconds if pending else None
     state = "expired" if pending and deadline is not None and now >= deadline else "open"
     if not pending:
         state = "resolved"
     return AttentionEvidence(
-        key=f"approval:{subject}",
+        key=_bounded_subject_key("approval", subject),
         kind="approval",
         subject=subject,
         severity="critical" if state == "expired" else "warning",
@@ -242,9 +261,9 @@ def project_hub_attention(
             candidate = _delivery_evidence(event)
         elif event.kind == EventKind.DEAD_LETTER_ESCALATION:
             target = event.payload.get("target")
-            if isinstance(target, str) and target:
+            if isinstance(target, str) and target and _valid_utf8_subject(target):
                 candidate = AttentionEvidence(
-                    key=f"dead-letter:{target}",
+                    key=_bounded_subject_key("dead-letter", target),
                     kind="failed_delivery",
                     subject=target,
                     severity="critical",

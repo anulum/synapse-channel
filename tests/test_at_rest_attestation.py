@@ -151,3 +151,96 @@ def test_policy_document_schema(tmp_path: Path) -> None:
 def test_wrong_hmac_key_length() -> None:
     with pytest.raises(ValueError, match="32 bytes"):
         create_hmac_policy(policy_id="x", pcr_digests={}, verification_key=b"short")
+
+
+@pytest.mark.parametrize(
+    ("policy_id", "digests", "reason"),
+    [
+        ("", {}, "policy_id must not be empty"),
+        ("seat", {-1: _pcr0()}, "PCR index must be non-negative"),
+        ("seat", {0: b"short"}, "PCR digest.*32 bytes"),
+    ],
+)
+def test_attestation_policy_refuses_ambiguous_measurement_contract(
+    policy_id: str, digests: dict[int, bytes], reason: str
+) -> None:
+    with pytest.raises(ValueError, match=reason):
+        create_hmac_policy(policy_id=policy_id, pcr_digests=digests)
+
+
+def test_attestation_verifier_rejects_algorithm_substitution() -> None:
+    policy = create_hmac_policy(policy_id="seat", pcr_digests={0: _pcr0()})
+    evidence = create_hmac_evidence(policy, nonce=fresh_nonce())
+    altered = AttestationEvidence(
+        nonce=evidence.nonce,
+        pcr_digests=evidence.pcr_digests,
+        algorithm=ALGORITHM_TPM2_QUOTE,
+        signature=evidence.signature,
+        policy_id=evidence.policy_id,
+    )
+    with pytest.raises(ValueError, match="algorithm mismatch"):
+        verify_attestation(policy, altered)
+    tpm_policy = AttestationPolicy(
+        policy_id=policy.policy_id,
+        pcr_digests=policy.pcr_digests,
+        algorithm=ALGORITHM_TPM2_QUOTE,
+        verification_key=policy.verification_key,
+    )
+    with pytest.raises(ValueError, match="requires hmac-sha256"):
+        create_hmac_evidence(tpm_policy, nonce=fresh_nonce())
+
+
+def test_attestation_verifier_refuses_unadmitted_or_unverifiable_algorithm() -> None:
+    policy = create_hmac_policy(policy_id="seat", pcr_digests={0: _pcr0()})
+    evidence = create_hmac_evidence(policy, nonce=fresh_nonce())
+    unknown = AttestationPolicy(
+        policy_id="seat",
+        pcr_digests=policy.pcr_digests,
+        algorithm="unknown",
+        verification_key=b"short",
+    )
+    with pytest.raises(ValueError, match="unsupported attestation algorithm"):
+        verify_attestation(unknown, evidence)
+    tpm_policy = AttestationPolicy(
+        policy_id="seat",
+        pcr_digests=policy.pcr_digests,
+        algorithm=ALGORITHM_TPM2_QUOTE,
+        verification_key=b"short",
+    )
+    tpm_evidence = AttestationEvidence(
+        nonce=evidence.nonce,
+        pcr_digests=evidence.pcr_digests,
+        algorithm=ALGORITHM_TPM2_QUOTE,
+        signature=evidence.signature,
+        policy_id="seat",
+    )
+    with pytest.raises(ValueError, match="requires a 32-byte trust key"):
+        verify_attestation(tpm_policy, tpm_evidence)
+
+
+@pytest.mark.parametrize(
+    ("kind", "change", "reason"),
+    [
+        ("policy", {"pcr_digests": []}, "malformed attestation policy"),
+        ("policy", {"verification_key": "invalid!"}, "malformed attestation policy"),
+        ("policy", {"algorithm": "unknown"}, "unsupported attestation algorithm"),
+        ("evidence", {"schema": "unknown"}, "not a Synapse"),
+        ("evidence", {"pcr_digests": []}, "malformed attestation evidence"),
+        ("evidence", {"pcr_digests": {"0": "not-hex"}}, "malformed attestation evidence"),
+        ("evidence", {"algorithm": "unknown"}, "unsupported attestation algorithm"),
+    ],
+)
+def test_attestation_file_loader_refuses_tampered_custody_document(
+    tmp_path: Path, kind: str, change: dict[str, object], reason: str
+) -> None:
+    policy = create_hmac_policy(policy_id="seat", pcr_digests={0: _pcr0()})
+    document = (
+        policy.to_document()
+        if kind == "policy"
+        else create_hmac_evidence(policy, nonce=fresh_nonce()).to_document()
+    )
+    document.update(change)
+    path = tmp_path / f"{kind}.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(ValueError, match=reason):
+        (load_policy_file if kind == "policy" else load_evidence_file)(path)

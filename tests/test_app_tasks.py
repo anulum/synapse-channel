@@ -174,9 +174,50 @@ def test_store_refuses_symlink_and_wrong_version(tmp_path: Path) -> None:
     with pytest.raises(AppTaskError, match="symlink"):
         get(alias, "safe", now=at)
     with sqlite3.connect(store) as db:
-        db.execute("PRAGMA user_version=2")
+        db.execute("PRAGMA user_version=3")
     with pytest.raises(AppTaskError, match="unsupported"):
         get(store, "safe", now=at)
+
+
+def test_mcp_offer_binds_its_identity_through_result_attachment(tmp_path: Path) -> None:
+    """A second MCP identity cannot take over a private task's result channel."""
+    at = _at()
+    ledger = tmp_path / "ledger" / "ledger.sqlite3"
+    _ledger(ledger, at)
+    store = tmp_path / "queue" / "queue.sqlite3"
+    bundle = _bundle("bound", at)
+    assert offer(store, bundle, ledger=ledger, actor="TEST/first", now=at)["offered_by"] == (
+        "TEST/first"
+    )
+    assert offer(store, bundle, ledger=ledger, actor="TEST/first", now=at)["state"] == "offered"
+    with pytest.raises(AppTaskError, match="another offerer"):
+        offer(store, bundle, ledger=ledger, actor="TEST/second", now=at)
+    advance(store, "bound", "accept", now=at)
+    advance(store, "bound", "start", now=at)
+    with pytest.raises(AppTaskError, match="only the task offerer"):
+        attach(store, "bound", _result("bound"), actor="TEST/second", require_offerer=True, now=at)
+    assert get(store, "bound", now=at)["state"] == "running"
+    assert (
+        attach(store, "bound", _result("bound"), actor="TEST/first", require_offerer=True, now=at)[
+            "state"
+        ]
+        == "result_attached"
+    )
+
+
+def test_v1_task_store_migrates_with_legacy_operator_custody(tmp_path: Path) -> None:
+    """Existing local tasks remain available without becoming MCP-owned."""
+    at = _at()
+    ledger = tmp_path / "ledger" / "ledger.sqlite3"
+    _ledger(ledger, at)
+    store = tmp_path / "queue" / "queue.sqlite3"
+    offer(store, _bundle("legacy", at), ledger=ledger, now=at)
+    with sqlite3.connect(store) as db:
+        db.execute("ALTER TABLE tasks DROP COLUMN offered_by")
+        db.execute("PRAGMA user_version=1")
+    assert get(store, "legacy", now=at)["offered_by"] == "operator:legacy"
+    with sqlite3.connect(store) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
 
 
 def test_future_dated_allowance_is_not_offered(tmp_path: Path) -> None:
@@ -185,3 +226,113 @@ def test_future_dated_allowance_is_not_offered(tmp_path: Path) -> None:
     _ledger(ledger, at + timedelta(hours=2))
     with pytest.raises(AppTaskError, match="dated in the future"):
         offer(tmp_path / "queue" / "queue.sqlite3", _bundle("future", at), ledger=ledger, now=at)
+
+
+def test_offer_refuses_missing_allowance_and_expired_bundle(tmp_path: Path) -> None:
+    at = _at()
+    store = tmp_path / "queue" / "queue.sqlite3"
+    with pytest.raises(AppTaskError, match="allowance window not found"):
+        offer(store, _bundle("missing-ledger", at), ledger=tmp_path / "absent.db", now=at)
+    with pytest.raises(AppTaskError, match="already expired"):
+        offer(store, _bundle("expired", at, seconds=-1), now=at)
+    with sqlite3.connect(store) as db:
+        assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
+
+
+def test_offer_refuses_corrupt_allowance_ledger_without_accepting_work(tmp_path: Path) -> None:
+    at = _at()
+    ledger = tmp_path / "corrupt.db"
+    ledger.write_bytes(b"not a SQLite entitlement ledger")
+    store = tmp_path / "queue.db"
+    with pytest.raises(AppTaskError, match="allowance ledger unavailable"):
+        offer(store, _bundle("corrupt-ledger", at), ledger=ledger, now=at)
+    with sqlite3.connect(store) as db:
+        assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
+
+
+def test_app_task_rejects_unbounded_offer_and_result_identities(tmp_path: Path) -> None:
+    at = _at()
+    ledger = tmp_path / "ledger" / "ledger.sqlite3"
+    _ledger(ledger, at)
+    store = tmp_path / "queue" / "queue.sqlite3"
+    with pytest.raises(AppTaskError, match="offer actor must be a bounded identity"):
+        offer(store, _bundle("bound", at), ledger=ledger, actor=" ", now=at)
+    offer(store, _bundle("bound", at), ledger=ledger, actor="operator:owner", now=at)
+    advance(store, "bound", "accept", now=at)
+    advance(store, "bound", "start", now=at)
+    with pytest.raises(AppTaskError, match="result actor must be a bounded identity"):
+        attach(store, "bound", _result("bound"), actor="x" * 129, now=at)
+    assert get(store, "bound", now=at)["state"] == "running"
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"task_id": "bad space"}, "bounded opaque id"),
+        ({"prompt": "   "}, "prompt must be nonempty"),
+        ({"input": []}, "input must be a JSON object"),
+        ({"input": {"score": float("nan")}}, "finite JSON"),
+        ({"input": {"payload": "x" * 1_048_576}}, "exceeds one MiB"),
+        ({"verifier": {"field": "bad space", "equals": True}}, "verifier requires"),
+        ({"verifier": {"field": "ok", "equals": []}}, "verifier requires"),
+    ],
+)
+def test_offer_rejects_invalid_or_oversized_work_before_store_creation(
+    tmp_path: Path, change: dict[str, object], message: str
+) -> None:
+    at = _at()
+    store = tmp_path / "queue" / "queue.sqlite3"
+    with pytest.raises(AppTaskError, match=message):
+        offer(store, {**_bundle("bad", at), **change}, now=at)
+    assert not store.exists()
+
+
+def test_offer_refuses_incomplete_bundle_before_any_allowance_lookup(tmp_path: Path) -> None:
+    at = _at()
+    store = tmp_path / "queue.sqlite3"
+    bundle = _bundle("incomplete", at)
+    del bundle["verifier"]
+    with pytest.raises(AppTaskError, match="bundle requires"):
+        offer(store, bundle, ledger=tmp_path / "absent.db", now=at)
+    assert not store.exists()
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"payload": []}, "result requires"),
+        ({"provenance": " "}, "result requires"),
+        ({"usage": {"amount": "1", "measurement": "estimated"}}, "usage requires"),
+        ({"usage": {"amount": "1"}}, "usage requires"),
+    ],
+)
+def test_invalid_result_cannot_replace_running_task(
+    tmp_path: Path, change: dict[str, object], message: str
+) -> None:
+    at = _at()
+    ledger = tmp_path / "ledger" / "ledger.sqlite3"
+    _ledger(ledger, at)
+    store = tmp_path / "queue" / "queue.sqlite3"
+    offer(store, _bundle("bound", at), ledger=ledger, now=at)
+    advance(store, "bound", "accept", now=at)
+    advance(store, "bound", "start", now=at)
+    with pytest.raises(AppTaskError, match=message):
+        attach(store, "bound", {**_result("bound"), **change}, now=at)
+    assert get(store, "bound", now=at)["state"] == "running"
+
+
+def test_unknown_transition_missing_task_and_unverified_correction_refuse(tmp_path: Path) -> None:
+    at = _at()
+    ledger = tmp_path / "ledger" / "ledger.sqlite3"
+    _ledger(ledger, at)
+    store = tmp_path / "queue" / "queue.sqlite3"
+    offer(store, _bundle("bound", at), ledger=ledger, now=at)
+    with pytest.raises(AppTaskError, match="unknown task transition"):
+        advance(store, "bound", "erase", now=at)
+    with pytest.raises(AppTaskError, match="task not found"):
+        get(store, "absent", now=at)
+    with pytest.raises(AppTaskError, match="verified task"):
+        correct_usage(store, "bound", "1", "legitimate reason", now=at)
+    with pytest.raises(AppTaskError, match="bounded reason"):
+        correct_usage(store, "bound", "1", " ", now=at)
+    assert get(store, "bound", now=at)["state"] == "offered"

@@ -248,7 +248,13 @@ def test_scalability_run_writes_results(tmp_path: Path) -> None:
     assert summary["indexing_decision"]["lease_expiry"]["current_index"] == "min_heap"
     scan_decision = summary["indexing_decision"]["scope_conflict_scan"]
     assert scan_decision["current_index"] == "none"
-    assert scan_decision["recommendation"] == "keep_linear_scan_for_local_first_envelope"
+    expected_recommendation = (
+        "keep_linear_scan_for_local_first_envelope"
+        if scan_decision["local_first_scan_microseconds"]
+        <= scan_decision["index_threshold_microseconds"]
+        else "index_scope_conflict_scan"
+    )
+    assert scan_decision["recommendation"] == expected_recommendation
     assert scan_decision["local_first_claim_ceiling"] == 100
     assert scan_decision["local_first_scan_microseconds"] >= 0
     written = json.loads(results.read_text(encoding="utf-8"))
@@ -256,6 +262,23 @@ def test_scalability_run_writes_results(tmp_path: Path) -> None:
     assert len(written["replay"]) == 1
     assert len(written["scan"]) == 2
     assert written["indexing_decision"] == summary["indexing_decision"]
+
+
+@pytest.mark.parametrize(
+    ("scan_microseconds", "expected"),
+    [
+        (9_999.0, "keep_linear_scan_for_local_first_envelope"),
+        (10_000.0, "keep_linear_scan_for_local_first_envelope"),
+        (10_001.0, "index_scope_conflict_scan"),
+    ],
+)
+def test_scalability_indexing_decision_tracks_measured_threshold(
+    scan_microseconds: float, expected: str
+) -> None:
+    """A measured scan crosses the indexing threshold at the exact boundary."""
+    rows = {"scan": [{"active_claims": 100, "claim_scan_microseconds": scan_microseconds}]}
+    decision = scale_bench.indexing_decision(rows)
+    assert decision["scope_conflict_scan"]["recommendation"] == expected
 
 
 def test_scalability_run_without_results_skips_write(tmp_path: Path) -> None:

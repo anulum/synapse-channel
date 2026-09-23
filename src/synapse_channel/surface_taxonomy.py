@@ -81,6 +81,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "a2a-interop-trace": ADAPTER,
     "a2a-serve": ADAPTER,
     "adapters": ADAPTER,
+    "integrations": ADAPTER,
     "mcp": ADAPTER,
     "mcp-call": ADAPTER,
     "mcp-tools": ADAPTER,
@@ -136,6 +137,8 @@ CLI_TAXONOMY: dict[str, str] = {
     "capability-card": GOVERNANCE,
     "encrypt-key": GOVERNANCE,
     "sqlcipher": GOVERNANCE,
+    "entitlements": GOVERNANCE,
+    "review-feedback": GOVERNANCE,
     # newer or advisory surfaces still settling
     "benchmark": EXPERIMENTAL,
     "deliberate": EXPERIMENTAL,
@@ -148,6 +151,8 @@ CLI_TAXONOMY: dict[str, str] = {
     "sandbox": EXPERIMENTAL,
     "ttl-advice": EXPERIMENTAL,
     "auto-action": EXPERIMENTAL,
+    "app-task": EXPERIMENTAL,
+    "attention": EXPERIMENTAL,
     "workflow": EXPERIMENTAL,
 }
 """Every CLI subcommand mapped to exactly one stability tier."""

@@ -34,10 +34,10 @@ def _public(task: dict[str, Any]) -> str:
     )
 
 
-def offer(bundle: dict[str, Any]) -> str:
+def offer(bundle: dict[str, Any], actor: str) -> str:
     """Queue a caller-supplied prompt using the private C04 ledger."""
     try:
-        return _public(app_tasks.offer(app_tasks.default_app_task_store(), bundle))
+        return _public(app_tasks.offer(app_tasks.default_app_task_store(), bundle, actor=actor))
     except app_tasks.AppTaskError as exc:
         if str(exc).startswith("allowance "):
             raise app_tasks.AppTaskError("private allowance unavailable") from None
@@ -49,25 +49,14 @@ def status(task_id: str) -> str:
     return _public(app_tasks.get(app_tasks.default_app_task_store(), task_id))
 
 
-def advance(task_id: str, action: str) -> str:
-    """Move a task through an explicit human handoff transition."""
-    return _public(app_tasks.advance(app_tasks.default_app_task_store(), task_id, action))
-
-
 def attach(task_id: str, result: dict[str, Any], actor: str) -> str:
     """Attach untrusted returned content without echoing it to the model."""
     return _public(
-        app_tasks.attach(app_tasks.default_app_task_store(), task_id, result, actor=actor)
-    )
-
-
-def verify(task_id: str) -> str:
-    """Run the task's fixed verifier before completing it."""
-    return _public(app_tasks.verify(app_tasks.default_app_task_store(), task_id))
-
-
-def correct_usage(task_id: str, amount: str, reason: str) -> str:
-    """Record a manual correction separately from the uploaded result."""
-    return _public(
-        app_tasks.correct_usage(app_tasks.default_app_task_store(), task_id, amount, reason)
+        app_tasks.attach(
+            app_tasks.default_app_task_store(),
+            task_id,
+            result,
+            actor=actor,
+            require_offerer=True,
+        )
     )

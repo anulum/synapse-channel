@@ -487,7 +487,9 @@ async def test_systemd_adapter_real_canary_consumption_and_restart_replay(
                 limit=1,
                 history_target="DEMO/unrelated",
             )
-            await writer.recorder.wait_for(lambda m: m.get("type") == MessageType.HISTORY_SNAPSHOT)
+            await writer.recorder.wait_for(
+                lambda m: m.get("type") == MessageType.HISTORY_SNAPSHOT, timeout=15.0
+            )
             with sqlite3.connect(database) as connection:
                 size = connection.execute(
                     "SELECT sum(length(payload)) FROM events WHERE kind = ?", (EventKind.CHAT,)

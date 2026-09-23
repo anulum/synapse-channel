@@ -34,7 +34,7 @@ as layered:
 | Edge adapters | `adapter` | Optional tool bridges for MCP, A2A, git, tmux/provider seats, shell hooks, ingestion, and workers. |
 | Operator analysis | `analysis` | Diagnostics, dashboards, event queries, causality, multihub views, reliability, accounting, fleet scorecard export, manifests, and trust graph reporting. These commands do not mutate coordination state; explicitly selected export modes may write a file or contact an operator-owned collector. |
 | Governance and integrity | `governance` | Policy, approvals, ACL/role commands, federation, Merkle roots, release evidence, reproduction, compaction, and key operations. |
-| Lab surfaces | `experimental` | Benchmarking, participant fabric, route-task, sandbox, workflow, TTL advice, memory recall, auto-action, and resource bidding. |
+| Lab surfaces | `experimental` | Benchmarking, participant fabric, owner-local app tasks and attention, route-task, sandbox, workflow, TTL advice, memory recall, auto-action, and resource bidding. |
 
 Adapters and lab surfaces are useful, but they remain layers on top of or beside
 the local bus. They do not pull heavy dependencies into the core, replace the
@@ -75,7 +75,7 @@ Bridges to other ecosystems and tools; optional extras, not core. These integrat
 Synapse with A2A, MCP, git, tmux-driven agents, and model workers; some require
 optional extras and none belongs to the single-dependency local core.
 
-`a2a-card`  `a2a-client`  `a2a-conformance`  `a2a-interop-trace`  `a2a-serve`  `adapters`  `agent-tmux`  `codex-tmux`  `git-claim`  `git-claim-check`  `git-hook`  `git-init`  `git-release`  `ingest`  `install-shell-hook`  `mcp`  `mcp-call`  `mcp-tools`  `shell-hook`  `waker`  `worker`  `worker-session`
+`a2a-card`  `a2a-client`  `a2a-conformance`  `a2a-interop-trace`  `a2a-serve`  `adapters`  `agent-tmux`  `codex-tmux`  `git-claim`  `git-claim-check`  `git-hook`  `git-init`  `git-release`  `ingest`  `install-shell-hook`  `integrations`  `mcp`  `mcp-call`  `mcp-tools`  `shell-hook`  `waker`  `worker`  `worker-session`
 
 ### Operator analysis — `analysis`
 
@@ -93,14 +93,14 @@ is consumed by explicit runtime gates — notably `--require-acl` and
 `--federation-store` — but running a governance command does not silently enable
 enforcement or widen trust.
 
-`acl`  `approval`  `capability-card`  `compact`  `encrypt-key`  `federation`  `merkle`  `policy-check`  `postmortem`  `release`  `reproduce`  `role`  `sqlcipher`  `supervisor`  `verify-release`
+`acl`  `approval`  `capability-card`  `compact`  `encrypt-key`  `entitlements`  `federation`  `merkle`  `policy-check`  `postmortem`  `release`  `reproduce`  `review-feedback`  `role`  `sqlcipher`  `supervisor`  `verify-release`
 
 ### Experimental — `experimental`
 
 Newer or advisory surfaces still settling; shape may change before 1.0. Use them,
 but pin to a version if you depend on their exact behaviour.
 
-`auto-action`  `benchmark`  `claim-parse`  `deliberate`  `dispatch`  `memory-recall`  `participant`  `resource-bids`  `route-task`
+`app-task`  `attention`  `auto-action`  `benchmark`  `claim-parse`  `deliberate`  `dispatch`  `memory-recall`  `participant`  `resource-bids`  `route-task`
 `sandbox`  `ttl-advice`  `workflow`
 
 `claim-parse` is an opt-in provider-backed draft, not a reservation. See

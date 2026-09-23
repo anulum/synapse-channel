@@ -39,6 +39,9 @@ EXPECTED_TOOLS = {
     "synapse_memory_recall",
     "synapse_entitlements",
     "synapse_resource_bids",
+    "synapse_app_task_offer",
+    "synapse_app_task_status",
+    "synapse_app_task_attach",
 }
 
 EXPECTED_RESOURCES = {

@@ -461,6 +461,71 @@ def test_cmd_hub_rejects_a_relay_pin_without_a_route(
     assert "--relay-peer-pin requires --relay-peer" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    ("options", "reason"),
+    [
+        (
+            {"relay_peer": ["syn-b=wss://peer.example:8876"]},
+            "--relay-peer requires --namespace-owner",
+        ),
+        (
+            {"claim_peer_pin": ["syn-b=sha256:" + "1" * 64]},
+            "--claim-peer-pin requires --claim-peer",
+        ),
+        ({"multihub_client_certfile": "client.pem"}, "must be configured together"),
+    ],
+)
+def test_cmd_hub_refuses_incomplete_peer_security_configuration(
+    options: dict[str, object], reason: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli_processes._cmd_hub(_hub_ns(**options), runner=_close_runner) == 2
+    assert reason in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("pins", "reason"),
+    [
+        (["missing-equals"], "NAME=sha256"),
+        (["=sha256:" + "1" * 64], "NAME=sha256"),
+        (["syn-b=sha1:" + "1" * 64], "pin must be sha256"),
+        (["syn-b=sha256:" + "1" * 64, "syn-b=sha256:" + "2" * 64], "twice"),
+    ],
+)
+def test_cmd_hub_refuses_ambiguous_claim_peer_pins(
+    pins: list[str], reason: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ns = _hub_ns(
+        hub_id="syn-a",
+        namespace_owner=["THEIRS=syn-b"],
+        claim_peer=["syn-b=wss://peer.example:8876"],
+        claim_peer_pin=pins,
+    )
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
+    assert reason in capsys.readouterr().err
+
+
+def test_cmd_hub_binds_exact_claim_peer_pin_to_route(tmp_path: Path) -> None:
+    from synapse_channel.core.multihub_claim_transport import ClaimForwardPeer
+
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    pin = "sha256:" + "a" * 64
+    ns = _hub_ns(
+        db=str(tmp_path / "hub.db"),
+        hub_id="syn-a",
+        namespace_owner=["THEIRS=syn-b"],
+        claim_peer=["syn-b=wss://peer.example:8876"],
+        claim_peer_pin=[f"syn-b={pin}"],
+    )
+    assert cli_processes._cmd_hub(ns, runner=_close_runner, hub_factory=build_hub) == 0
+    assert captured["claim_peers"] == {"syn-b": ClaimForwardPeer(uri="wss://peer.example:8876")}
+    assert captured["claim_peers"]["syn-b"].connector is not None
+
+
 def test_cmd_hub_wires_claim_peers_forwarding_route(tmp_path: Path) -> None:
     from synapse_channel.core.multihub_claim_transport import ClaimForwardPeer
 

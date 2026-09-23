@@ -24,11 +24,18 @@ from typing import Any
 
 from synapse_channel.client.provider_budget import EstimatedSpendGuard
 from synapse_channel.client.provider_profiles import ProviderProfile
-from synapse_channel.core.http_response import DEFAULT_RESPONSE_LIMIT, read_bounded
+from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.http_response import (
+    DEFAULT_RESPONSE_LIMIT,
+    BoundedReadError,
+    read_bounded,
+)
 
 
-class ProviderHTTPError(RuntimeError):
+class ProviderHTTPError(SynapseError, RuntimeError):
     """An HTTP or response-contract error with no untrusted body or URL text."""
+
+    code = "provider_http"
 
     def __init__(
         self,
@@ -94,6 +101,15 @@ def _text(value: Any) -> str:
     return ""
 
 
+def _validated_calls(value: Any) -> tuple[dict[str, Any], ...]:
+    """Accept only provider tool-call objects at the public reply boundary."""
+    if value is None:
+        return ()
+    if not isinstance(value, list) or any(not isinstance(call, dict) for call in value):
+        raise ProviderHTTPError("invalid_shape")
+    return tuple(value)
+
+
 def _usage(value: Any, family: str) -> dict[str, int]:
     """Normalize usage fields when they are present and nonnegative."""
     if not isinstance(value, dict):
@@ -135,7 +151,7 @@ def _normalize(data: dict[str, Any], family: str, headers: Mapping[str, str]) ->
             message = choice["message"]
             return ProviderReply(
                 text=_text(message.get("content")),
-                tool_calls=tuple(message.get("tool_calls") or ()),
+                tool_calls=_validated_calls(message.get("tool_calls")),
                 usage=_usage(data.get("usage"), family),
                 rate_limits=_rate_headers(headers),
                 finish_reason=str(choice.get("finish_reason") or ""),
@@ -155,7 +171,9 @@ def _normalize(data: dict[str, Any], family: str, headers: Mapping[str, str]) ->
         parts = choice["content"]["parts"]
         return ProviderReply(
             text="".join(str(part.get("text", "")) for part in parts if "text" in part),
-            tool_calls=tuple(part["functionCall"] for part in parts if "functionCall" in part),
+            tool_calls=_validated_calls(
+                [part["functionCall"] for part in parts if "functionCall" in part]
+            ),
             usage=_usage(data.get("usageMetadata"), family),
             rate_limits=_rate_headers(headers),
             finish_reason=str(choice.get("finishReason") or ""),
@@ -279,7 +297,9 @@ def _merge_google(events: list[dict[str, Any]], headers: Mapping[str, str]) -> P
                     text_parts.append(str(part["text"]))
                 if "functionCall" in part:
                     calls.append(part["functionCall"])
-    return ProviderReply("".join(text_parts), tuple(calls), usage, _rate_headers(headers), finish)
+    return ProviderReply(
+        "".join(text_parts), _validated_calls(calls), usage, _rate_headers(headers), finish
+    )
 
 
 class ProviderHTTPClient:
@@ -369,9 +389,12 @@ class ProviderHTTPClient:
                         chunks.append(chunk)
                     raw = b"".join(chunks)
                 else:
-                    raw = read_bounded(
-                        response, limit=DEFAULT_RESPONSE_LIMIT, purpose="provider response"
-                    )
+                    try:
+                        raw = read_bounded(
+                            response, limit=DEFAULT_RESPONSE_LIMIT, purpose="provider response"
+                        )
+                    except BoundedReadError:
+                        raise ProviderHTTPError("response_too_large") from None
                 headers = dict(response.headers.items())
         except urllib.error.HTTPError as exc:
             retry_after = exc.headers.get("Retry-After", "")[:128]
@@ -464,7 +487,10 @@ class ProviderHTTPClient:
                 "anthropic": _merge_anthropic,
                 "google": _merge_google,
             }[family]
-            return merge(events, headers)
+            try:
+                return merge(events, headers)
+            except (KeyError, IndexError, TypeError, AttributeError) as exc:
+                raise ProviderHTTPError("invalid_shape") from exc
         return _normalize(_json_object(raw), family, headers)
 
 

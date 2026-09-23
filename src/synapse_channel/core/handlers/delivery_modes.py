@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -31,11 +32,21 @@ from synapse_channel.core.protocol import MIN_DELIVERY_PROTOCOL_VERSION, Message
 if TYPE_CHECKING:
     from synapse_channel.core.hub import SynapseHub
 
+logger = logging.getLogger("synapse.delivery")
+
+
+def _utf8_size(value: str) -> int | None:
+    """Return the encoded size, or reject an unpaired Unicode surrogate."""
+    try:
+        return len(value.encode("utf-8"))
+    except UnicodeEncodeError:
+        return None
+
 
 def _correlation(data: dict[str, Any]) -> str:
     """Echo only a bounded printable request id in a private refusal."""
     value = data.get("request_id")
-    if not isinstance(value, str) or len(value.encode()) > 128:
+    if not isinstance(value, str) or (size := _utf8_size(value)) is None or size > 128:
         return ""
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
         return ""
@@ -253,7 +264,7 @@ async def handle_delivery_status_request(
 def _mutation_id(data: dict[str, Any]) -> str:
     """Require one printable sender-chosen identity for an idempotent transition."""
     value = data.get("mutation_id")
-    if not isinstance(value, str) or not value or len(value.encode()) > 128:
+    if not isinstance(value, str) or not value or (size := _utf8_size(value)) is None or size > 128:
         raise DeliveryRefusal("invalid_shape", "mutation_id is malformed")
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
         raise DeliveryRefusal("invalid_shape", "mutation_id is malformed")
@@ -276,7 +287,7 @@ def _evidence(data: dict[str, Any]) -> dict[str, str]:
         raise DeliveryRefusal("invalid_shape", "delivery evidence shape is unsupported")
     evidence: dict[str, str] = {}
     for key, value in raw.items():
-        if not isinstance(value, str) or len(value.encode()) > 128:
+        if not isinstance(value, str) or (size := _utf8_size(value)) is None or size > 128:
             raise DeliveryRefusal("invalid_shape", "delivery evidence field is malformed")
         if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
             raise DeliveryRefusal("invalid_shape", "delivery evidence field is malformed")
@@ -339,7 +350,11 @@ async def _notify_record(hub: SynapseHub, record: StoredDelivery, audience: str)
         session = hub.clients.delivery_session(audience)
         if session is None or session.incarnation != record.request["target_incarnation"]:
             return
-    if frame is not None and websocket is not None:
+    if (
+        frame is not None
+        and websocket is not None
+        and hub.clients.protocol_version_of(audience) >= MIN_DELIVERY_PROTOCOL_VERSION
+    ):
         await hub._send_json(websocket, frame)
         ledger.mark_notification_delivered(notification_id)
 
@@ -358,17 +373,24 @@ async def expire_due_deliveries(hub: SynapseHub) -> int:
             cursor = record.operation_key
             evidence = {"reason_code": "deadline_elapsed"}
             mutation_id = "hub-deadline-expired"
-            write = hub.journal.delivery.advance(
-                record.operation_key,
-                stage="expired",
-                mutation_id=mutation_id,
-                mutation_digest=_mutation_digest(
-                    record.operation_key, mutation_id, "expired", evidence
-                ),
-                actor=hub.hub_id,
-                source="hub",
-                evidence=evidence,
-            )
+            try:
+                write = hub.journal.delivery.advance(
+                    record.operation_key,
+                    stage="expired",
+                    mutation_id=mutation_id,
+                    mutation_digest=_mutation_digest(
+                        record.operation_key, mutation_id, "expired", evidence
+                    ),
+                    actor=hub.hub_id,
+                    source="hub",
+                    evidence=evidence,
+                )
+            except DeliveryRefusal as exc:
+                logger.error(
+                    "delivery expiry refused key=%s reason=%s", record.operation_key, exc.code
+                )
+                hub.journal.delivery.quarantine(record.operation_key, exc.code)
+                continue
             if write.disposition == "inserted":
                 expired += 1
                 await _notify_record(hub, write.record, write.record.sender)
@@ -390,17 +412,24 @@ async def supersede_old_delivery_sessions(hub: SynapseHub, *, target: str, incar
             cursor = record.operation_key
             evidence = {"reason_code": "recipient_session_replaced"}
             mutation_id = "hub-session-superseded"
-            write = hub.journal.delivery.advance(
-                record.operation_key,
-                stage="superseded",
-                mutation_id=mutation_id,
-                mutation_digest=_mutation_digest(
-                    record.operation_key, mutation_id, "superseded", evidence
-                ),
-                actor=hub.hub_id,
-                source="hub",
-                evidence=evidence,
-            )
+            try:
+                write = hub.journal.delivery.advance(
+                    record.operation_key,
+                    stage="superseded",
+                    mutation_id=mutation_id,
+                    mutation_digest=_mutation_digest(
+                        record.operation_key, mutation_id, "superseded", evidence
+                    ),
+                    actor=hub.hub_id,
+                    source="hub",
+                    evidence=evidence,
+                )
+            except DeliveryRefusal as exc:
+                logger.error(
+                    "delivery supersession refused key=%s reason=%s", record.operation_key, exc.code
+                )
+                hub.journal.delivery.quarantine(record.operation_key, exc.code)
+                continue
             if write.disposition == "inserted":
                 superseded += 1
                 await _notify_record(hub, write.record, write.record.sender)

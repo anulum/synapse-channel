@@ -13,7 +13,7 @@ import hashlib
 import json
 import os
 import re
-import subprocess
+import subprocess  # nosec B404
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -96,7 +96,7 @@ def _run(host: Path, profile: Path, *args: str) -> subprocess.CompletedProcess[s
     env = dict(os.environ)
     env["CODEX_HOME"] = str(profile.expanduser().absolute())
     try:
-        return subprocess.run(
+        return subprocess.run(  # nosec B603
             [str(host), *args],
             env=env,
             capture_output=True,
@@ -203,6 +203,7 @@ def apply_codex_package(
         or not parsed_uri.hostname
         or parsed_uri.username is not None
         or parsed_uri.password is not None
+        or parsed_uri.query
         or parsed_uri.fragment
     ):
         raise CodexPackageError("hub URI is invalid")

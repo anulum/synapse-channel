@@ -18,6 +18,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from synapse_channel.core.approvals import ApprovalReport
+from synapse_channel.core.errors import SynapseError
 
 _REPOSITORY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}\Z")
 _SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
@@ -27,8 +28,10 @@ _SEVERITIES = frozenset({"critical", "high", "medium", "low", "info"})
 _MAX_PATCH_BYTES = 4 * 1024 * 1024
 
 
-class ReviewFeedbackError(ValueError):
+class ReviewFeedbackError(SynapseError, ValueError):
     """A review source or author binding cannot support safe routing."""
+
+    code = "review_feedback"
 
 
 def _identifier(value: object, field: str, *, pattern: re.Pattern[str] = _IDENTIFIER) -> str:

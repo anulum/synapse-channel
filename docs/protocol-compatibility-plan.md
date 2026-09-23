@@ -136,7 +136,7 @@ remaining limitations are stated in [the wire protocol](protocol.md).
 | v1 client ↔ v2 hub | Existing chat/claim flow; no client mailbox ACK. | Immediate receipt only where previously supported; no new mode or outcome claim. |
 | v2 client ↔ v1 or absent-version hub | Effective v1, warning, no ACK emission. | No deferred receipt assumption; no new mode. |
 | v2 client ↔ v2 hub | Current version-2 mailbox and receipt behavior. | `ack` is transport-only; explicit outcome absent. |
-| v3 client ↔ v2 hub | Version-three delivery methods refuse locally; ordinary v2 chat remains available only through the separate chat API. | `unsupported_protocol`; no v3 frame sent. |
+| v3 client ↔ v2 hub | Version-three delivery methods refuse locally; ordinary v2 chat remains available only through the separate chat API. Harmless version-three heartbeat fields may still appear. | `unsupported_protocol`; no v3 delivery method sent. |
 | v2 client ↔ v3 hub | Hub retains v2 behavior for that connection. | No v3 stage or outcome inferred from legacy `ack`. |
 | v3 client ↔ v3 hub, recipient adapter lacks mode | Hub accepts only a supported mode from the sender's explicit fallback list. | `unsupported_mode` or `stale_incarnation` with request correlation. |
 | Fleet forwarding between different hub profiles | Lowest common admitted profile, origin retained; no capability invented at relay. | F06 refuses unsupported semantics and reports exact profile gap. |
@@ -150,6 +150,24 @@ accepted durable records readable and reconcilable. It MUST NOT discard queued
 work, rewrite receipts or turn a pending cancellation into a success. If a
 new-mode queue cannot be drained by the rollback binary, keep the compatible
 reader/worker or stop the rollback and report the blocker.
+
+### 0.99.27 to 0.99.26 rollback runbook
+
+Before downgrading a durable hub, stop new v3 admission and inspect the
+`delivery_requests` aggregate for nonterminal stages (`queued`,
+`boundary_delivered`, `acknowledged`). Retain the database and an operator-owned
+backup. If any such row exists, keep a 0.99.27-compatible reader/worker until
+it reaches a terminal stage, or stop the rollback and retain the unresolved IDs
+for reconciliation. Do not discard or rewrite their receipts.
+
+The released 0.99.26 binary opens a database containing v3 records, but silently
+ignores those records: it does not process their deadlines, offers, status or
+cancellation, and it does not report them as stalled. `PRAGMA user_version`
+remains zero, so successful SQLite opening is not compatibility evidence. If an
+emergency downgrade proceeds with unresolved v3 work, keep that work explicitly
+pending and unavailable, then roll forward to a compatible hub with the same
+stable `hub_id` and reconcile before resuming v3 admission. Never report the
+0.99.26 interval as delivered or recovered merely because the old hub ran.
 
 ## Acceptance matrix delegated to implementation
 

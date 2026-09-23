@@ -99,6 +99,45 @@ def test_zero_price_cannot_implicitly_authorize_paid_calls(tmp_path: Path) -> No
         ProviderQuote.load(path)
 
 
+@pytest.mark.parametrize(
+    ("change", "reason"),
+    [
+        ({"provider": ""}, "requires identity"),
+        ({"currency": "EUR"}, "only USD"),
+        ({"source_url": "http://example.test/pricing"}, "HTTPS source"),
+        ({"source_date": "not-a-date"}, "ISO source date"),
+        ({"source_date": "2999-01-01"}, "in the future"),
+        ({"cache_read_per_million": -1}, "invalid price"),
+        ({"reasoning_per_million": True}, "invalid price"),
+        ({"observed_at": "yesterday"}, "timestamps must be numeric"),
+        ({"observed_at": 0}, "invalid validity interval"),
+        ({"valid_until": time.time() + 8 * 86400}, "invalid validity interval"),
+    ],
+)
+def test_paid_quote_rejects_unverifiable_price_or_provenance(
+    tmp_path: Path, change: dict[str, object], reason: str
+) -> None:
+    path = tmp_path / "quote.json"
+    _quote(path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data.update(change)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match=reason):
+        ProviderQuote.load(path)
+
+
+def test_local_spend_guard_refuses_invalid_budget_and_forecast(tmp_path: Path) -> None:
+    quote = _quote(tmp_path / "quote.json")
+    with pytest.raises(ValueError, match="positive and finite"):
+        EstimatedSpendGuard(quote, budget_usd=float("inf"))
+    with pytest.raises(ValueError, match="nonnegative"):
+        quote.estimate(-1, 1)
+    guard = EstimatedSpendGuard(quote, budget_usd=1)
+    with pytest.raises(ValueError, match="invalid request budget inputs"):
+        guard.reserve(provider="openai", model="model-one", input_bytes=1, max_output_tokens=0)
+    assert guard.reserved_usd == 0
+
+
 def test_paid_remote_endpoint_requires_https() -> None:
     """A customer key must not be sent over remote cleartext HTTP."""
     with pytest.raises(ValueError, match="HTTPS"):

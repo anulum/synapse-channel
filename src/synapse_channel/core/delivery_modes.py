@@ -73,7 +73,11 @@ def _bounded_text(value: object, field: str, maximum: int, *, allow_empty: bool 
     """Require a printable UTF-8 string with a bounded encoded length."""
     if not isinstance(value, str):
         raise DeliveryRefusal("invalid_shape", f"{field} must be a string")
-    if (not value and not allow_empty) or len(value.encode("utf-8")) > maximum:
+    try:
+        encoded_size = len(value.encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise DeliveryRefusal("invalid_shape", f"{field} must be valid UTF-8") from exc
+    if (not value and not allow_empty) or encoded_size > maximum:
         raise DeliveryRefusal("invalid_shape", f"{field} length is outside its limit")
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
         raise DeliveryRefusal("invalid_shape", f"{field} contains a control character")

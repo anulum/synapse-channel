@@ -265,27 +265,15 @@ class SynapseHubBridge:
 
     async def app_task_offer(self, bundle: dict[str, Any]) -> str:
         """Offer a human app task using the local private queue."""
-        return app_task_actions.offer(bundle)
+        return app_task_actions.offer(bundle, self.name)
 
     async def app_task_status(self, task_id: str) -> str:
         """Read the task's redacted MCP state."""
         return app_task_actions.status(task_id)
 
-    async def app_task_advance(self, task_id: str, action: str) -> str:
-        """Advance an explicit human handoff."""
-        return app_task_actions.advance(task_id, action)
-
     async def app_task_attach(self, task_id: str, result: dict[str, Any]) -> str:
         """Bind an untrusted result envelope to its task."""
         return app_task_actions.attach(task_id, result, self.name)
-
-    async def app_task_verify(self, task_id: str) -> str:
-        """Run the task's offer-time result verifier."""
-        return app_task_actions.verify(task_id)
-
-    async def app_task_correct_usage(self, task_id: str, amount: str, reason: str) -> str:
-        """Record a manual correction after verification."""
-        return app_task_actions.correct_usage(task_id, amount, reason)
 
     async def task_resource(self, task_id: str) -> str:
         """Return one board-task resource through the query facade."""

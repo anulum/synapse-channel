@@ -161,6 +161,14 @@ class PiParticipant:
                 request=request,
                 reason=health.detail,
             )
+        resolved_binary = shutil.which(self._binary)
+        if resolved_binary is None:
+            return error_turn_result(
+                participant=self._identity,
+                channel=self.channel,
+                request=request,
+                reason="pi binary disappeared after version check",
+            )
         model = request.model or self._model
         if not model:
             return error_turn_result(
@@ -177,7 +185,7 @@ class PiParticipant:
             if request.resume_session:
                 _require_resume_file(session_dir, session_id)
             argv = [
-                self._binary,
+                resolved_binary,
                 "--mode",
                 "rpc",
                 "--model",

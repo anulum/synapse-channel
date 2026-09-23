@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Final, cast
 
 from synapse_channel.core.entitlements import EntitlementError, active_events, validate_event
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secure_path import (
     SecurePathError,
     apply_owner_only_dir,
@@ -49,8 +50,10 @@ _CREATE_EVENTS = """CREATE TABLE events (
 )"""
 
 
-class EntitlementStoreError(ValueError):
+class EntitlementStoreError(SynapseError, ValueError):
     """Raised when private ledger storage is invalid or unavailable."""
+
+    code = "entitlement_store"
 
 
 def _prepare_directory(path: Path) -> None:

@@ -24,6 +24,7 @@ from synapse_channel.core.entitlements import (
     parse_quantity,
     parse_time,
 )
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.ledger import Blackboard
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
@@ -48,8 +49,10 @@ _TASK_FIELDS = frozenset(
 )
 
 
-class ComputeCreditError(ValueError):
+class ComputeCreditError(SynapseError, ValueError):
     """A task or ledger fact cannot support an advisory compute suggestion."""
+
+    code = "compute_credit"
 
 
 def validate_compute_task(raw: Mapping[str, object]) -> dict[str, object]:

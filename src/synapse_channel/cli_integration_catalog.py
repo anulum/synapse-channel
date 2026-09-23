@@ -15,7 +15,7 @@ import json
 import os
 import shutil
 import stat
-import subprocess
+import subprocess  # nosec B404
 import sys
 import tempfile
 import uuid
@@ -62,7 +62,7 @@ def _host_version(binary: Path | None) -> str | None:
     if binary is None:
         return None
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             [str(binary), "--version"],
             capture_output=True,
             text=True,
@@ -106,7 +106,9 @@ def _child_adapter(args: argparse.Namespace, capability: HostCapability) -> tupl
         if args.token_file:
             command.extend(["--token-file", args.token_file])
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=45, check=False)
+        result = subprocess.run(  # nosec B603
+            command, capture_output=True, text=True, timeout=45, check=False
+        )
     except (OSError, subprocess.TimeoutExpired):
         return 2, "native adapter command failed"
     output = result.stdout.strip() if result.returncode == 0 else result.stderr.strip()

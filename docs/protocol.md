@@ -476,6 +476,12 @@ loss of an unseen message body.
 ## Session-bound delivery (wire version 3)
 
 A durable hub with an explicit stable `hub_id` admits version-three delivery.
+Registering a delivery-capable recipient on a non-durable hub closes that whole
+connection with code 4020, including ordinary chat on that connection; use a
+separate legacy chat connection or deploy a durable hub. On an unauthenticated
+hub, anyone able to claim a recipient name can supersede its open work. That
+denial-of-service exposure follows the existing name-trust model; use hub
+authentication and identity binding for protected delivery.
 The receiver registers `delivery_session_token` (a 64-character random hex value)
 and a map of `delivery_capabilities` on its first authenticated heartbeat. The
 hub publishes only a SHA-256 incarnation digest. A version-three `who_snapshot`
@@ -488,11 +494,15 @@ The sender submits `delivery_request` with an exact target and incarnation,
 `task_id`, `body`, and an absolute Unix `deadline`. Modes are `interrupt`,
 `steer`, `follow_up`, and `next_turn`. The body is limited to 8,192 UTF-8 bytes;
 ids to 128 bytes, and fallbacks to three. The hub selects only an advertised
-capability and reports `selected_mode` and `quality`. Interrupt and steer also
+capability and reports `selected_mode` and `quality`. Unpaired Unicode
+surrogates in bounded delivery text, mutation IDs or evidence fields receive
+`invalid_shape`; an invalid request ID is not echoed in the refusal.
+Interrupt and steer also
 require an authenticated hub, an explicit `DELIVERY_CONTROL` ACL grant, and a
 live exact-target claim. A request with no safe match receives
 `delivery_refused` with a stable `reason_code`; it never becomes chat. The
-hub caps unfinished requests at 128 per recipient incarnation and returns
+hub caps unfinished requests at 128 per recipient incarnation and 16 per
+sender within that recipient incarnation. Both limits return
 `recipient_queue_full` before appending another request. The
 `SynapseAgent.request_delivery()` API refuses an old hub before sending a v3
 frame. A v2 peer retains the mailbox `ack` contract.
@@ -510,15 +520,23 @@ request, and task completion as separate facts. Socket delivery or ACK alone
 does not prove execution.
 
 `delivery_cancel` records a sender request; it is not a terminal executor
-decision. A completion racing that request retains both facts. A deadline sweep
+decision. Repeated cancellation of the same open intent returns its current
+status without appending another event or notifying the recipient again. A
+completion racing the original request retains both facts. A deadline sweep
 commits `expired`; replacement of the recipient's process token commits
 `superseded` for unfinished older-incarnation work. Reconnect with the same
 token may replay a queued offer with the same `notification_id`; a fresh token
-cannot inherit it. Sender notifications missed while offline replay by stable
-ID. The hub promises at-least-once notification and recipient deduplication,
+cannot inherit it. Terminal work retires undelivered offers to the old recipient
+while retaining their audit rows. A durable hub refuses to open a delivery
+journal under a changed stable `hub_id`; restore the original identity or use
+an explicit, separately reviewed migration. Sender notifications missed while
+offline replay by stable ID. The hub promises at-least-once notification and
+recipient deduplication,
 not exactly-once external provider effects. `DeliveryParticipantBridge` executes
 follow-up and next-turn offers in an ordered queue through a `Participant` and
 keeps a local duplicate ledger; it does not advertise interrupt or steer.
+If a terminal hub status races a stage report, the bridge stops that queued
+turn before invoking the provider rather than retrying the old stage forever.
 
 The Python entrypoint is `SynapseAgent.request_who()` followed by
 `SynapseAgent.request_delivery(...)` using the exact incarnation from the

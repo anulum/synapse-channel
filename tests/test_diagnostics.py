@@ -394,6 +394,20 @@ def test_a2a_bind_posture_warn_endpoint_scheme_mismatch() -> None:
     assert "https://" in diagnosis.detail or "advertise" in diagnosis.detail
 
 
+@pytest.mark.parametrize("override", [False, True])
+def test_a2a_bind_posture_reports_scheme_and_exposure_together(override: bool) -> None:
+    diagnosis = check_a2a_bind_posture(
+        host="0.0.0.0",
+        bearer_auth=True,
+        tls_active=False,
+        insecure_off_loopback=override,
+        endpoint_url="https://peer.example/a2a",
+    )
+    assert diagnosis.status == ("warn" if override else "fail")
+    assert "scheme:" in diagnosis.detail
+    assert "plaintext HTTP" in diagnosis.detail
+
+
 # --- check_mcp_posture --------------------------------------------------------
 
 
@@ -434,6 +448,13 @@ def test_mcp_posture_warns_when_worktree_missing() -> None:
     )
     assert diagnosis.status == "warn"
     assert "worktree not resolvable" in diagnosis.detail
+
+
+def test_mcp_posture_probes_the_real_checkout_and_installed_extra() -> None:
+    diagnosis = check_mcp_posture(cwd=Path(__file__).resolve().parents[1])
+    assert diagnosis.status == "pass"
+    assert "mcp extra importable" in diagnosis.detail
+    assert "git worktree resolvable" in diagnosis.detail
 
 
 # --- check_multi_seat_posture -------------------------------------------------
@@ -598,6 +619,18 @@ def test_sqlcipher_check_fails_when_key_file_missing(tmp_path: Path) -> None:
     diagnosis = check_sqlcipher_event_store(tmp_path / "hub.db", tmp_path / "absent.key")
     assert diagnosis.status == "fail"
     assert "missing" in diagnosis.detail
+
+
+def test_sqlcipher_check_requires_a_store_path_after_key_file(tmp_path: Path) -> None:
+    key = tmp_path / "hub.key"
+    key.write_text("local diagnostic key\n", encoding="utf-8")
+    key.chmod(0o600)
+    missing_path = check_sqlcipher_event_store(None, key)
+    assert missing_path.status == "fail"
+    assert "without an event-store path" in missing_path.detail
+    missing_store = check_sqlcipher_event_store(tmp_path / "absent.db", key)
+    assert missing_store.status == "warn"
+    assert "not found yet" in missing_store.detail
 
 
 def test_sqlcipher_check_opens_real_encrypted_store(tmp_path: Path) -> None:

@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from a2a_server_helpers import RecordingAgent, _default_bridge, _free_port
+from synapse_channel.a2a_client import A2AOutboundClient
 from synapse_channel.a2a_http import A2AHTTPServer, make_a2a_http_server
 from synapse_channel.a2a_interop_trace import RECEIPT_SCHEMA, run_local_interop_trace
 from synapse_channel.a2a_server import A2ABridge
@@ -134,3 +135,30 @@ def test_https_interop_trace_twice_with_consistent_observables(tmp_path: Path) -
     assert ids[0] != ids[1]
     assert any("https-probe-1" in text for _t, text in bridge.agent.messages)
     assert any("https-probe-2" in text for _t, text in bridge.agent.messages)
+
+
+def test_outbound_client_accepts_explicit_ca_and_local_tls_drill(tmp_path: Path) -> None:
+    """The shipped client performs the complete task journey over both TLS modes."""
+    certfile, keyfile = _write_server_tls_pair(tmp_path)
+    bridge = A2ABridge(
+        agent=RecordingAgent(),
+        agent_card=_default_bridge().agent_card,
+        target="WORKER",
+        store=A2ATaskStore(),
+    )
+    server, port, thread = _serve_https(bridge, certfile, keyfile)
+    endpoint = f"https://127.0.0.1:{port}"
+    try:
+        verified = A2AOutboundClient(endpoint, ca_file=certfile, timeout=5)
+        receipt = verified.discover_send_get("trusted-ca", message_id="tls-ca-1")
+        assert receipt["task_id"] == receipt["task"]["id"]
+        local_drill = A2AOutboundClient(endpoint, tls_insecure=True, timeout=5)
+        drill = local_drill.discover_send_get("local-drill", message_id="tls-drill-1")
+        assert drill["task_id"] == drill["task"]["id"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert any("trusted-ca" in body for _target, body in bridge.agent.messages)
+    assert any("local-drill" in body for _target, body in bridge.agent.messages)

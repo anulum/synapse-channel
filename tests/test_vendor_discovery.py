@@ -552,3 +552,13 @@ def test_query_contract_rejects_broadened_registry_reads() -> None:
     )
     assert not discovery._allowed_mcp_query(base.replace("2026-09-12", "yesterday"))
     assert not discovery._allowed_mcp_query(base + "&cursor=" + "a" * 301)
+
+
+def test_public_catalog_excludes_unreviewed_host_names() -> None:
+    """Raw search hits cannot become a versioned public host list."""
+    _, catalog = discovery.load_inputs(discovery.DEFAULT_CONFIG, discovery.DEFAULT_CATALOG)
+    assert not [
+        key
+        for key, row in catalog["candidates"].items()
+        if row["kind"] == "host" and row["status"] in {"new", "changed", "seen"}
+    ]

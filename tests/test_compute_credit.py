@@ -127,7 +127,9 @@ def _board(*, project: str = "SYNAPSE-CHANNEL") -> Blackboard:
 def _approve(path: Path, task: dict[str, object], *, author: str = "CEO/claude") -> None:
     subject = approval_subject(task)
     store = EventStore(path)
-    for state, actor in (("requested", "SYNAPSE-CHANNEL/codex"), ("approved", author)):
+    for index, (state, actor) in enumerate(
+        (("requested", "SYNAPSE-CHANNEL/codex"), ("approved", author))
+    ):
         store.append(
             EventKind.LEDGER_PROGRESS,
             {
@@ -136,6 +138,7 @@ def _approve(path: Path, task: dict[str, object], *, author: str = "CEO/claude")
                 "task_id": subject,
                 "text": format_approval_note(subject=subject, state=state),
             },
+            ts=AS_OF.timestamp() - 20 + index * 10,
             durable=True,
         )
     store.close()

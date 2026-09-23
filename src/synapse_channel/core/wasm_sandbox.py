@@ -134,9 +134,12 @@ def _execute(
     store.set_epoch_deadline(1)
     wasi = wasm.WasiConfig()
     for host, guest, write in config.preopens:
-        dir_perms = wasm.DirPerms.READ_WRITE if write else wasm.DirPerms.READ_ONLY
-        file_perms = wasm.FilePerms.READ_WRITE if write else wasm.FilePerms.READ_ONLY
-        wasi.preopen_dir(host, guest, dir_perms, file_perms)
+        if hasattr(wasm, "DirPerms") and hasattr(wasm, "FilePerms"):
+            dir_perms = wasm.DirPerms.READ_WRITE if write else wasm.DirPerms.READ_ONLY
+            file_perms = wasm.FilePerms.READ_WRITE if write else wasm.FilePerms.READ_ONLY
+            wasi.preopen_dir(host, guest, dir_perms, file_perms)
+        else:
+            wasi.preopen_dir(host, guest, fs_mutable=write)
     store.set_wasi(wasi)
     linker = wasm.Linker(engine)
     linker.define_wasi()

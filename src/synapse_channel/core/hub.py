@@ -1762,6 +1762,8 @@ class SynapseHub:
         """
         self._guard_exposure(host, tls_active=ssl_context is not None)
         self._guard_at_rest(host)
+        if self.journal is not None and self.stable_delivery_hub_id:
+            self.journal.delivery.verify_origin_hub(self.hub_id)
         self._bind_host = host
         self._bind_port = int(port)
         self._bound_address = None

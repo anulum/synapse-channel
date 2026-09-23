@@ -24,6 +24,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 from synapse_channel.core.delivery_modes import (
+    TERMINAL_STAGES,
     DeliveryIntent,
     DeliveryLifecycle,
     DeliveryQuality,
@@ -53,6 +54,7 @@ DELIVERY_EVENT_KINDS = frozenset(
     {DELIVERY_ACCEPTED, DELIVERY_QUEUED, DELIVERY_TRANSITION, DELIVERY_CANCEL_REQUESTED}
 )
 MAX_OPEN_DELIVERIES_PER_RECIPIENT = 128
+MAX_OPEN_DELIVERIES_PER_SENDER_RECIPIENT = 16
 
 
 def _encode(value: Mapping[str, Any]) -> str:
@@ -146,12 +148,57 @@ class DeliveryPersistence:
             "CREATE TABLE IF NOT EXISTS delivery_notifications ("
             "notification_id TEXT PRIMARY KEY, operation_key TEXT NOT NULL, "
             "audience TEXT NOT NULL, frame_json TEXT NOT NULL, "
-            "attempts INTEGER NOT NULL DEFAULT 0, delivered_at REAL)"
+            "attempts INTEGER NOT NULL DEFAULT 0, delivered_at REAL, retired_at REAL)"
         )
+        columns = {
+            str(row[1]) for row in self._conn.execute("PRAGMA table_info(delivery_notifications)")
+        }
+        if "retired_at" not in columns:
+            self._conn.execute("ALTER TABLE delivery_notifications ADD COLUMN retired_at REAL")
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS delivery_notification_pending_idx "
             "ON delivery_notifications(audience, delivered_at)"
         )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS delivery_quarantine ("
+            "operation_key TEXT PRIMARY KEY, reason_code TEXT NOT NULL, observed_at REAL NOT NULL)"
+        )
+
+    def verify_origin_hub(self, hub_id: str) -> None:
+        """Refuse a delivery journal opened under another stable hub identity."""
+        with self._lock:
+            for (raw,) in self._conn.execute("SELECT request_json FROM delivery_requests"):
+                try:
+                    request = json.loads(raw)
+                except (TypeError, ValueError) as exc:
+                    raise DeliveryRefusal(
+                        "replay_incompatible", "stored delivery request is malformed"
+                    ) from exc
+                if not isinstance(request, dict) or request.get("origin_hub") != hub_id:
+                    raise DeliveryRefusal(
+                        "hub_identity_mismatch",
+                        "delivery journal belongs to a different stable hub id",
+                    )
+
+    def quarantine(self, operation_key: str, reason_code: str) -> None:
+        """Retain a refused record for operator recovery without repeated retries."""
+        with self._lock:
+            committed = False
+            try:
+                self._begin()
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO delivery_quarantine "
+                    "(operation_key, reason_code, observed_at) VALUES (?, ?, ?)",
+                    (operation_key, reason_code, time.time()),
+                )
+                self._conn.commit()
+                committed = True
+            except BaseException:
+                if not committed:
+                    self._conn.rollback()
+                raise
+            finally:
+                self._finish(committed)
 
     def verify_replay(self) -> None:
         """Fail closed when the indexed state disagrees with its event stream."""
@@ -233,6 +280,7 @@ class DeliveryPersistence:
                 "explicitly_acknowledged, ordinal, latest_event_seq "
                 "FROM delivery_requests WHERE operation_key > ? AND deadline <= ? "
                 "AND stage IN ('queued', 'boundary_delivered', 'acknowledged') "
+                "AND operation_key NOT IN (SELECT operation_key FROM delivery_quarantine) "
                 "ORDER BY operation_key LIMIT ?",
                 (after_key, now, limit),
             ).fetchall()
@@ -253,6 +301,7 @@ class DeliveryPersistence:
                 "FROM delivery_requests WHERE target = ? AND target_incarnation != ? "
                 "AND operation_key > ? AND stage IN "
                 "('queued', 'boundary_delivered', 'acknowledged') "
+                "AND operation_key NOT IN (SELECT operation_key FROM delivery_quarantine) "
                 "ORDER BY operation_key LIMIT ?",
                 (target, incarnation, after_key, limit),
             ).fetchall()
@@ -267,7 +316,8 @@ class DeliveryPersistence:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT rowid, notification_id, frame_json FROM delivery_notifications "
-                "WHERE audience = ? AND delivered_at IS NULL AND rowid > ? "
+                "WHERE audience = ? AND delivered_at IS NULL AND retired_at IS NULL "
+                "AND rowid > ? "
                 "ORDER BY rowid LIMIT ?",
                 (audience, after_rowid, limit),
             ).fetchall()
@@ -365,6 +415,16 @@ class DeliveryPersistence:
                     (intent.target, intent.target_incarnation),
                 ).fetchone()[0]
                 if int(open_count) >= MAX_OPEN_DELIVERIES_PER_RECIPIENT:
+                    raise DeliveryRefusal(
+                        "recipient_queue_full", "recipient delivery queue is full"
+                    )
+                sender_open_count = self._conn.execute(
+                    "SELECT COUNT(*) FROM delivery_requests WHERE target = ? "
+                    "AND target_incarnation = ? AND sender = ? AND stage IN "
+                    "('queued', 'boundary_delivered', 'acknowledged')",
+                    (intent.target, intent.target_incarnation, intent.sender),
+                ).fetchone()[0]
+                if int(sender_open_count) >= MAX_OPEN_DELIVERIES_PER_SENDER_RECIPIENT:
                     raise DeliveryRefusal(
                         "recipient_queue_full", "recipient delivery queue is full"
                     )
@@ -527,6 +587,9 @@ class DeliveryPersistence:
                     lifecycle = DeliveryLifecycle(
                         current.stage, current.cancel_requested
                     ).request_cancel()
+                    if current.cancel_requested:
+                        self._conn.rollback()
+                        return DeliveryWrite("replayed", current)
                     kind = DELIVERY_CANCEL_REQUESTED
                     audience = target
                 else:
@@ -629,6 +692,12 @@ class DeliveryPersistence:
                     "protocol_version": 3,
                 }
                 self._notification(notification_id, operation_key, str(audience), frame)
+                if lifecycle.stage in TERMINAL_STAGES:
+                    self._conn.execute(
+                        "UPDATE delivery_notifications SET retired_at = COALESCE(retired_at, ?) "
+                        "WHERE operation_key = ? AND audience = ? AND delivered_at IS NULL",
+                        (stamp, operation_key, target),
+                    )
                 self._conn.commit()
                 committed = True
                 stored = self._fetch("key", (operation_key,))

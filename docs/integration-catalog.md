@@ -56,6 +56,8 @@ checksum marker for the resulting `mcp_servers.synapse` entry. A foreign or
 changed entry is refused on uninstall; other MCP entries remain in place.
 The selected Synapse executable must expose `mcp`. For an authenticated hub,
 use an owner-only `--token-file`; token contents never enter the configuration.
+The `--uri` value accepts a `ws://` or `wss://` hub endpoint without embedded
+credentials, a query or a fragment; keep authentication in the token file.
 The configured file path is visible to the host, so keep it outside the working
 repository. Codex profile changes require a new session to load.
 

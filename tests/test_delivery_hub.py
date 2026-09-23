@@ -22,7 +22,7 @@ from websockets.asyncio.client import ClientConnection, connect
 from hub_e2e_helpers import read_until_type, running_hub
 from synapse_channel.core.acl import CLAIM, DELIVERY_CONTROL, MESSAGE, AclPolicy, AclRule
 from synapse_channel.core.auth import TokenAuthenticator
-from synapse_channel.core.delivery_modes import parse_delivery_intent
+from synapse_channel.core.delivery_modes import DeliveryRefusal, parse_delivery_intent
 from synapse_channel.core.handlers.delivery_modes import expire_due_deliveries
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
@@ -275,7 +275,7 @@ async def test_malformed_delivery_mutations_leave_queued_work_unchanged(tmp_path
                 "reason_code"
             ] == "invalid_shape"
 
-            for unsafe_id in ("bad\nrequest", "x" * 129):
+            for unsafe_id in ("bad\nrequest", "x" * 129, "bad\ud800request"):
                 await sender.send(
                     json.dumps(_intent(session["incarnation"]) | {"request_id": unsafe_id})
                 )
@@ -316,6 +316,7 @@ async def test_malformed_delivery_mutations_leave_queued_work_unchanged(tmp_path
                 "evidence": {"executor_ref": "run-1", "outcome_code": "success"},
             }
             bad_mutations: tuple[tuple[dict[str, object], str], ...] = (
+                ({"operation_key": "0" * 64}, "unknown_request"),
                 ({"request_id": "other"}, "invalid_shape"),
                 ({"stage": "unknown"}, "invalid_shape"),
                 ({"evidence": {}}, "invalid_shape"),
@@ -340,8 +341,13 @@ async def test_malformed_delivery_mutations_leave_queued_work_unchanged(tmp_path
                     "invalid_shape",
                 ),
                 ({"mutation_id": "bad\nmutation"}, "invalid_shape"),
+                ({"mutation_id": "bad\ud800mutation"}, "invalid_shape"),
                 ({"mutation_id": ""}, "invalid_shape"),
                 ({"evidence": {"executor_ref": "run-1", "outcome_code": 1}}, "invalid_shape"),
+                (
+                    {"evidence": {"executor_ref": "bad\ud800ref", "outcome_code": "success"}},
+                    "invalid_shape",
+                ),
                 (
                     {
                         "evidence": {
@@ -552,6 +558,16 @@ async def test_new_process_supersedes_old_queued_intent(tmp_path: Path) -> None:
             assert superseded["stage"] == "superseded"
             record = store.delivery.get(queued["operation_key"])
             assert record is not None and record.stage == "superseded"
+            await _stage(
+                receiver,
+                msg_type=MessageType.DELIVERY_BOUNDARY,
+                operation_key=queued["operation_key"],
+                mutation_id="replacement-boundary",
+                evidence={"boundary": "new-turn"},
+            )
+            assert (await read_until_type(receiver, MessageType.DELIVERY_REFUSED))[
+                "reason_code"
+            ] == "stale_incarnation"
             stale = _intent(session["incarnation"])
             stale["request_id"] = "req-stale"
             stale["idempotency_key"] = "idem-stale"
@@ -982,3 +998,36 @@ async def test_committed_queue_replays_when_hub_crashed_before_offer(tmp_path: P
                 assert len(tuple(restored.iter_events())) == 2
             finally:
                 await receiver.close()
+
+
+@pytest.mark.real_hub
+async def test_changed_hub_id_refuses_expired_open_delivery_before_listen(tmp_path: Path) -> None:
+    """A restarted hub refuses a foreign delivery journal before its sweeper starts."""
+    path = tmp_path / "hub.db"
+    frame = _intent("a" * 64)
+    frame["deadline"] = 160.0
+    intent = parse_delivery_intent(frame, sender="P/author", origin_hub="hub-1", now=100.0)
+    offer = {
+        "operation_key": intent.operation_key,
+        "notification_id": f"delivery:{intent.operation_key}:1",
+        "target": intent.target,
+        "target_incarnation": intent.target_incarnation,
+    }
+    with EventStore(path) as first:
+        async with running_hub(SynapseHub(journal=first, hub_id="hub-1")):
+            pass
+        first.delivery.create(intent, selected_mode="follow_up", quality="native", offer=offer)
+
+    with EventStore(path) as restored:
+        changed = SynapseHub(journal=restored, hub_id="hub-2")
+        with pytest.raises(DeliveryRefusal, match="different stable hub id") as refusal:
+            await changed.serve("localhost", 0)
+        assert refusal.value.code == "hub_identity_mismatch"
+        record = restored.delivery.get(intent.operation_key)
+        assert record is not None and record.stage == "queued"
+
+        changed.stable_delivery_hub_id = "hub-2"
+        assert await expire_due_deliveries(changed) == 0
+        assert restored.delivery.due_for_expiry(time.time()) == ()
+        record = restored.delivery.get(intent.operation_key)
+        assert record is not None and record.stage == "queued"

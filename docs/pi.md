@@ -33,6 +33,10 @@ cost, stop reason and an exact UUID resume token. Use `--pi-resume-session UUID`
 for a later CLI turn. Sessions live under the owner's XDG state directory by
 default; `--pi-session-dir` selects another owner-private directory. An unknown
 resume UUID is refused rather than silently starting a new session.
+The pi child currently inherits the launching process's environment, including
+any provider keys or hub tokens stored there. Launch it from an environment
+containing only the credentials the chosen provider needs; the claim guard is
+not an environment-secret boundary.
 
 ## Enable claim-checked coding tools
 

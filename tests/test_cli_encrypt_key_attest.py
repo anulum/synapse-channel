@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -60,3 +61,89 @@ def test_attest_cli_policy_create_and_verify(
     )
     assert cli_encrypt_key_attest._cmd_attest_verify(verify_args) == 0
     assert "attestation ok" in capsys.readouterr().out
+
+
+def test_public_attest_cli_refuses_bad_policy_and_existing_destination(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy = tmp_path / "policy.json"
+    root = ["encrypt-key", "attest-policy-create", "--policy-id", "seat"]
+    assert cli.main([*root, "--pcr", "broken", str(policy)]) == 2
+    assert "invalid --pcr" in capsys.readouterr().out
+    assert cli.main([*root, "--pcr=-1=" + "0" * 64, str(policy)]) == 2
+    assert "non-negative" in capsys.readouterr().out
+    assert cli.main([*root, "--pcr", "0=" + hashlib.sha256(b"boot").hexdigest(), str(policy)]) == 0
+    assert cli.main(root + [str(policy)]) == 1
+    assert "refusing to overwrite" in capsys.readouterr().out
+
+
+def test_public_attest_cli_rejects_wrong_measurement_and_missing_custody(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy = tmp_path / "policy.json"
+    evidence = tmp_path / "evidence.json"
+    expected = hashlib.sha256(b"trusted-boot").hexdigest()
+    other = hashlib.sha256(b"different-boot").hexdigest()
+    assert (
+        cli.main(
+            [
+                "encrypt-key",
+                "attest-policy-create",
+                "--policy-id",
+                "seat",
+                "--pcr",
+                f"0={expected}",
+                str(policy),
+            ]
+        )
+        == 0
+    )
+    assert (
+        cli.main(
+            [
+                "encrypt-key",
+                "attest-create",
+                "--policy",
+                str(policy),
+                "--nonce",
+                "ab" * 16,
+                "--pcr",
+                f"0={other}",
+                str(evidence),
+            ]
+        )
+        == 0
+    )
+    assert (
+        cli.main(
+            ["encrypt-key", "attest-verify", "--policy", str(policy), "--evidence", str(evidence)]
+        )
+        == 2
+    )
+    assert "PCR 0 digest mismatch" in capsys.readouterr().out
+    assert cli.main(["encrypt-key", "attest-create", "--policy", str(policy), str(evidence)]) == 1
+    assert (
+        cli.main(
+            [
+                "encrypt-key",
+                "attest-create",
+                "--policy",
+                str(tmp_path / "missing.json"),
+                str(tmp_path / "new.json"),
+            ]
+        )
+        == 2
+    )
+    assert (
+        cli.main(
+            [
+                "encrypt-key",
+                "attest-verify",
+                "--policy",
+                str(policy),
+                "--evidence",
+                str(tmp_path / "absent.json"),
+            ]
+        )
+        == 2
+    )

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.core.attention import AttentionEvidence
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secure_path import (
     SecurePathError,
     apply_owner_only_dir,
@@ -27,8 +28,10 @@ from synapse_channel.core.secure_path import (
 )
 
 
-class AttentionStoreError(ValueError):
+class AttentionStoreError(SynapseError, ValueError):
     """An alert transition or owner-local store is invalid."""
+
+    code = "attention_store"
 
 
 def default_attention_store() -> Path:

@@ -68,6 +68,7 @@ everything, since they need the whole command table.
 | `synapse trust-graph` | Query the evidence trust graph (receipts, stale claims, conflicts) as text, JSON, or Graphviz DOT. |
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |
 | `synapse entitlements` | Record private account/pool/window facts, inspect quota evidence, and match digest-approved compute work through `compute-subjects` and `suggest-compute` in the owner-local ledger; see [entitlements](entitlements.md). |
+| `synapse app-task` | Offer, accept, start, attach, verify and correct owner-local human app work with a private allowance snapshot; see [Human app tasks](app-tasks.md). |
 | `synapse fleet-scorecard` | Compose causality spans, opt-in accounting, live-claim contention, reliability findings, and optional benchmark history into an owner-only JSON bundle or a two-signal OTLP/HTTP collector push. |
 | `synapse approval` | Request, decide, and replay human-in-the-loop approval gates from a hub SQLite event store. |
 | `synapse attention` | Observe source-backed alerts in one owner-local queue; list, snooze, resolve and opt in to generic desktop previews. See [Local attention queue](attention.md). |
