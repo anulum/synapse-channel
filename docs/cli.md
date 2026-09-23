@@ -30,6 +30,7 @@ everything, since they need the whole command table.
 | `synapse mcp-tools` / `synapse mcp-call` | List and call allowlisted tools on an external MCP server (outbound). Stable taxonomy codes distinguish invalid config (exit `2`), deny-by-default access refusal (exit `3`), and tool failure (exit `1`). |
 | `synapse sandbox` | Validate a capability manifest and pre-flight or run a `.wasm` tool against it (`validate`/`test`/`run`). |
 | `synapse adapters` | Detect coding tools, wire claim-aware adapters, and inspect mutation posture (`list`/`install`/`uninstall`/`mutation-status`). |
+| `synapse integrations` | List accepted host versions and run supported `inspect`/`install`/`diagnose`/`uninstall` operations in an isolated profile; see the [host integration catalog](integration-catalog.md). |
 | `synapse a2a-card` | Print an Agent2Agent Agent Card projected from the live capability manifest. |
 | `synapse a2a-conformance` | Print the local Agent2Agent conformance matrix. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge; an optional default-off gRPC subset has a separate security boundary described below. |

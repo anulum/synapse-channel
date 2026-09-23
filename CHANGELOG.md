@@ -97,6 +97,10 @@ All notable changes to this project are documented here.
   inspect bounded source trees and workflows, reject matched hosts, rank source
   and owner provenance above push recency, and hold unreachable MCP repositories.
 
+- Add an explicit host integration catalog and an isolated-profile lifecycle
+  for the reviewed Claude Code, Codex and OpenCode packages; validate Pi guard
+  loading through offline RPC and keep Gemini CLI/Claude Desktop unsupported.
+
 - Add a read-only daily official-source vendor watch with a dated compatibility
   matrix, installed-version observations, stale-review and source-failure
   handling, and a scheduled report. New releases require real host validation

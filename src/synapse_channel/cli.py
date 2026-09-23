@@ -185,6 +185,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     ("synapse_channel.cli_a2a_conformance:add_parsers", ("a2a-conformance",)),
     ("synapse_channel.cli_adapters:add_parsers", ("adapters",)),
+    ("synapse_channel.cli_integration_catalog:add_parsers", ("integrations",)),
     (
         "synapse_channel.cli_git:add_parsers",
         ("git-claim", "git-hook", "git-init", "git-release", "conflicts"),
