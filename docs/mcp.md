@@ -292,7 +292,7 @@ work, or change the hub protocol.
 The repository ships [`server.json`](https://github.com/anulum/synapse-channel/blob/main/server.json) for
 `io.github.anulum/synapse-channel`. It follows the official 2025-12-11 schema,
 points at the PyPI package and stdio transport, and supplies a `uvx --with
-mcp==1.28.1` runtime hint. The exact pin matches the package extra and prevents
+mcp==1.30.0` runtime hint. The exact pin matches the package extra and prevents
 an unreviewed MCP-major upgrade. The `synapse-channel` console entry starts this
 MCP face directly for package launchers; humans can keep using `synapse mcp`.
 
@@ -503,7 +503,7 @@ boundary. The synthesized CLI error never reflects raw exception-group text.
 Configured server stderr remains attached to the operator's stderr and is not
 sanitized, so treat it as trusted server output.
 
-The `mcp` extra installs the audited `mcp==1.28.1` SDK and Ed25519 verification
+The `mcp` extra installs the audited `mcp==1.30.0` SDK and Ed25519 verification
 dependency. Runtime startup also verifies that SDK's inherited-environment list
 before spawning, so dependency drift fails closed rather than exposing a newly
 inherited name.

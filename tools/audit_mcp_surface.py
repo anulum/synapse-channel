@@ -46,7 +46,7 @@ DEFAULT_README = REPO_ROOT / "README.md"
 
 REGISTRY_NAME = "io.github.anulum/synapse-channel"
 REGISTRY_SCHEMA = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
-VERIFIED_MCP_REQUIREMENT = Requirement("mcp==1.28.1")
+VERIFIED_MCP_REQUIREMENT = Requirement("mcp==1.30.0")
 MCP_PACKAGE_EXTRAS = ("dev", "mcp", "all")
 
 REQUIRED_ONBOARDING_TOOLS = frozenset(
@@ -68,7 +68,7 @@ REQUIRED_DOC_PHRASES = (
     "no MCP `synapse_lock(command)` tool",
     "the vendor `claude/channel` extension",
     "examples/mcp/.mcp.json",
-    "mcp==1.28.1` runtime hint",
+    "mcp==1.30.0` runtime hint",
 )
 """Boundary phrases that must stay present in the MCP guide."""
 
@@ -291,7 +291,7 @@ def _audit_onboarding_artifacts(
         elif project_mcp is not None and registry_mcp != project_mcp:
             errors.append(
                 "server.json MCP runtime requirement must match pyproject.toml "
-                "exactly (mcp==1.28.1)"
+                "exactly (mcp==1.30.0)"
             )
 
     servers = template.get("mcpServers")
@@ -363,7 +363,7 @@ def _project_mcp_requirement(project: dict[str, object], errors: list[str]) -> R
             and canonicalize_name(requirement.name) == "mcp"
         )
         if len(requirements) != 1 or requirements[0] != VERIFIED_MCP_REQUIREMENT:
-            errors.append(f"pyproject.toml {extra} extra must declare exactly mcp==1.28.1")
+            errors.append(f"pyproject.toml {extra} extra must declare exactly mcp==1.30.0")
             continue
         if extra == "mcp":
             canonical_requirement = requirements[0]

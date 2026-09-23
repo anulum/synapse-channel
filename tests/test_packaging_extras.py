@@ -120,7 +120,7 @@ def test_all_extra_unions_the_feature_extras() -> None:
 
 
 def test_mcp_extra_installs_manifest_signature_verification() -> None:
-    assert set(_extras()["mcp"]) == {"mcp==1.28.1", "cryptography>=42.0"}
+    assert set(_extras()["mcp"]) == {"mcp==1.30.0", "cryptography>=42.0"}
 
 
 @pytest.mark.parametrize("module_name", _FEATURE_MODULES)

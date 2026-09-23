@@ -74,7 +74,7 @@ def test_mcp_surface_audit_detects_missing_documented_template(tmp_path: Path) -
 
 @pytest.mark.parametrize(
     "runtime_requirement",
-    ("mcp>=1.28.0", "mcp>=1.28.1", "mcp==2.0.0"),
+    ("mcp>=1.28.0", "mcp>=1.30.0", "mcp==2.0.0"),
 )
 def test_mcp_surface_audit_rejects_registry_runtime_constraint_drift(
     tmp_path: Path,
@@ -95,7 +95,7 @@ def test_mcp_surface_audit_accepts_semantically_equal_registry_requirement(
     tmp_path: Path,
 ) -> None:
     registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
-    registry["packages"][0]["runtimeArguments"][0]["value"] = "MCP == 1.28.1"
+    registry["packages"][0]["runtimeArguments"][0]["value"] = "MCP == 1.30.0"
     equivalent_registry = tmp_path / "server.json"
     equivalent_registry.write_text(json.dumps(registry), encoding="utf-8")
 
@@ -109,7 +109,7 @@ def test_mcp_surface_audit_rejects_malformed_registry_runtime_constraint(
     tmp_path: Path,
 ) -> None:
     registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
-    registry["packages"][0]["runtimeArguments"][0]["value"] = "mcp=>1.28.1"
+    registry["packages"][0]["runtimeArguments"][0]["value"] = "mcp=>1.30.0"
     drifted_registry = tmp_path / "server.json"
     drifted_registry.write_text(json.dumps(registry), encoding="utf-8")
 
@@ -126,21 +126,21 @@ def test_mcp_surface_audit_rejects_package_extra_constraint_drift(
 ) -> None:
     pyproject = PYPROJECT.read_text(encoding="utf-8")
     positions = tuple(
-        index for index in range(len(pyproject)) if pyproject.startswith('"mcp==1.28.1"', index)
+        index for index in range(len(pyproject)) if pyproject.startswith('"mcp==1.30.0"', index)
     )
     assert len(positions) == 3
     start = positions[extra_occurrence]
-    exact_requirement = '"mcp==1.28.1"'
+    exact_requirement = '"mcp==1.30.0"'
     drifted_pyproject = tmp_path / "pyproject.toml"
     drifted_pyproject.write_text(
-        pyproject[:start] + '"mcp>=1.28.1"' + pyproject[start + len(exact_requirement) :],
+        pyproject[:start] + '"mcp>=1.30.0"' + pyproject[start + len(exact_requirement) :],
         encoding="utf-8",
     )
 
     result = _run_audit("--check", "--pyproject", str(drifted_pyproject))
 
     assert result.returncode == 1
-    assert "extra must declare exactly mcp==1.28.1" in result.stderr
+    assert "extra must declare exactly mcp==1.30.0" in result.stderr
 
 
 def test_mcp_surface_audit_rejects_documented_runtime_constraint_drift(
@@ -149,7 +149,7 @@ def test_mcp_surface_audit_rejects_documented_runtime_constraint_drift(
     drifted_docs = tmp_path / "mcp.md"
     drifted_docs.write_text(
         DOCS.read_text(encoding="utf-8").replace(
-            "mcp==1.28.1` runtime hint", "mcp>=1.28.0` runtime hint"
+            "mcp==1.30.0` runtime hint", "mcp>=1.28.0` runtime hint"
         ),
         encoding="utf-8",
     )

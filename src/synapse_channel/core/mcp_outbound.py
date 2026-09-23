@@ -52,7 +52,7 @@ from synapse_channel.core.mcp_config_launch import (
 from synapse_channel.core.mcp_config_trust import load_trusted_mcp_config
 
 MCP_EXTRA_HINT = "outbound MCP calls need the optional extra: pip install 'synapse-channel[mcp]'"
-MCP_SDK_VERSION = "1.28.1"
+MCP_SDK_VERSION = "1.30.0"
 """Exact SDK release whose stdio environment merge contract is enforced."""
 
 MCP_SDK_TERMINATION_TIMEOUT = 2.0

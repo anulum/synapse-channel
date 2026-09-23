@@ -68,15 +68,15 @@ def test_onboarding_audit_requires_exact_mcp_constraint_in_every_installing_extr
     pyproject = tmp_path / "pyproject.toml"
     source = DEFAULT_PYPROJECT.read_text(encoding="utf-8")
     section_start = source.index(f"{extra} = [")
-    requirement_start = source.index('"mcp==1.28.1"', section_start)
+    requirement_start = source.index('"mcp==1.30.0"', section_start)
     pyproject.write_text(
         source[:requirement_start]
-        + '"mcp>=1.28.1"'
-        + source[requirement_start + len('"mcp==1.28.1"') :],
+        + '"mcp>=1.30.0"'
+        + source[requirement_start + len('"mcp==1.30.0"') :],
         encoding="utf-8",
     )
 
-    assert f"pyproject.toml {extra} extra must declare exactly mcp==1.28.1" in _audit(
+    assert f"pyproject.toml {extra} extra must declare exactly mcp==1.30.0" in _audit(
         pyproject=pyproject
     )
 
@@ -114,7 +114,7 @@ def test_onboarding_audit_requires_every_mcp_installing_extra(
     )
 
 
-@pytest.mark.parametrize("invalid_requirement", (42, "mcp=>1.28.1"))
+@pytest.mark.parametrize("invalid_requirement", (42, "mcp=>1.30.0"))
 def test_onboarding_audit_rejects_invalid_registry_requirements(
     tmp_path: Path,
     invalid_requirement: object,
@@ -134,10 +134,10 @@ def test_onboarding_audit_rejects_ambiguous_registry_runtime_arguments(
 ) -> None:
     registry = json.loads(DEFAULT_REGISTRY.read_text(encoding="utf-8"))
     registry["packages"][0]["runtimeArguments"] = [
-        {"type": "positional", "value": "mcp==1.28.1"},
+        {"type": "positional", "value": "mcp==1.30.0"},
         {"type": "named", "name": "--with", "value": "cryptography>=42.0"},
-        {"type": "named", "name": "--with", "value": "mcp==1.28.1"},
-        {"type": "named", "name": "--with", "value": "MCP == 1.28.1"},
+        {"type": "named", "name": "--with", "value": "mcp==1.30.0"},
+        {"type": "named", "name": "--with", "value": "MCP == 1.30.0"},
     ]
     drifted = tmp_path / "server.json"
     drifted.write_text(json.dumps(registry), encoding="utf-8")

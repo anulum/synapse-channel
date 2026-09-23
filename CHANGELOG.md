@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Admit MCP SDK 1.30.0 across the package extras, runtime environment guard,
+  registry launch hint and MCP checks. Refresh the hash-locked Python profiles
+  to one compatible dependency set.
+
 ### Fixed
 
 - Update the GitHub Action policy-check example to the released 0.99.27 pair and
