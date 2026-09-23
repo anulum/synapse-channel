@@ -257,7 +257,9 @@ class PiRpcProcess:
         if os.name == "posix":
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
+                # The group may disappear after TERM and its id may be reused
+                # before the final sweep (observed on macOS runners).
                 pass
         tasks = tuple(task for task in (self._reader, self._stderr) if task is not None)
         for task in tasks:

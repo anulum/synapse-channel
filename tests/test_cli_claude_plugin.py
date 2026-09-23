@@ -160,6 +160,7 @@ def test_real_host_validates_install_upgrade_and_removal(
     assert settings.read_bytes() == original
 
 
+@pytest.mark.skipif(shutil.which("claude") is None, reason="Claude Code host unavailable")
 async def test_installed_plugin_reads_real_hub_and_enforces_live_claim(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
