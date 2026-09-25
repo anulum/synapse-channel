@@ -9,12 +9,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
+from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 
+from synapse_channel.core.atomic_operations import OperationDraft, OperationRecord
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.handlers import (
     guard_evidence,
@@ -26,11 +29,17 @@ from synapse_channel.core.handlers import (
 )
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind, record_claim_denial
+from synapse_channel.core.message_auth import MessageReplayCache, sign_frame
 from synapse_channel.core.operator_relay_wire import RelayActionRequest
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.protected_write_request import protected_write_operation_key
+from synapse_channel.core.protected_write_session_auth import authenticate_protected_request
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.task_causality import TASK_CAUSAL_PARENT_FIELD, TaskCausalParent
 from synapse_channel.guard_evidence import guard_denial_digests
+from test_protected_write_proposal import LIMITS
+from test_protected_write_request import _request as protected_request
+from test_protected_write_session_auth import KEY, NOW, enrollment
 
 
 class _RecordingHub(SynapseHub):
@@ -83,6 +92,329 @@ def _finding_frame(key: str, statement: str) -> dict[str, Any]:
             "source_ref": "tests/test_atomic_operation_handlers.py",
         },
     )
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_hub_atomic_finalizer_publishes_only_durable_candidate(
+    tmp_path: Path, cancelled: bool
+) -> None:
+    store = EventStore(tmp_path / "finalized-hub.db")
+    hub = _RecordingHub(store)
+    started = threading.Event()
+    finish = threading.Event()
+    finalized: list[tuple[int, ...]] = []
+    request = _frame("A", "claim", "finalized-claim", task_id="T-finalized")
+    draft_response: dict[str, Any] = {"body": {"admission_seq": None}}
+
+    def finalize(response: dict[str, Any], sequences: tuple[int, ...]) -> dict[str, Any]:
+        finalized.append(sequences)
+        started.set()
+        assert finish.wait(timeout=2)
+        response["body"]["admission_seq"] = sequences[0]
+        return response
+
+    def prepare(_result: Any) -> OperationDraft:
+        return OperationDraft(
+            response=draft_response,
+            events=((EventKind.CLAIM, {"task_id": "T-finalized"}),),
+            intent={"family": "claim"},
+            finalize_response=finalize,
+        )
+
+    async def execute(frame: dict[str, Any]) -> Any:
+        return await hub._run_atomic_operation(
+            frame, lambda state: state.claim("A", "T-finalized"), prepare
+        )
+
+    task = asyncio.create_task(execute(request))
+    try:
+        assert await asyncio.to_thread(started.wait, 1)
+        assert "T-finalized" not in hub.state.claims
+        if cancelled:
+            task.cancel()
+    finally:
+        finish.set()
+    if cancelled:
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    else:
+        execution = await task
+        assert execution.outcome == "inserted"
+        assert execution.response == {"body": {"admission_seq": 1}}
+    assert "T-finalized" in hub.state.claims
+    assert draft_response == {"body": {"admission_seq": None}}
+    assert finalized == [(1,)]
+
+    replay = await execute(request)
+    conflict = await execute({**request, "task_id": "other"})
+    assert replay.outcome == "replayed"
+    assert replay.response == {"body": {"admission_seq": 1}}
+    assert conflict.outcome == "conflict"
+    assert finalized == [(1,)]
+    assert len(store.read_operations()) == 1
+    assert len(store.read_all()) == 2
+    store.close()
+
+
+async def test_hub_atomic_finalizer_failure_discards_candidate(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "finalizer-failure-hub.db")
+    hub = _RecordingHub(store)
+
+    def fail(_response: dict[str, Any], _sequences: tuple[int, ...]) -> dict[str, Any]:
+        raise OSError("signer unavailable")
+
+    with pytest.raises(OSError, match="signer unavailable"):
+        await hub._run_atomic_operation(
+            _frame("A", "claim", "finalizer-failed"),
+            lambda state: state.claim("A", "not-published"),
+            lambda _result: OperationDraft(
+                response={"body": {"admission_seq": None}},
+                events=((EventKind.CLAIM, {"task_id": "not-published"}),),
+                intent={"family": "claim"},
+                finalize_response=fail,
+            ),
+        )
+    assert "not-published" not in hub.state.claims
+    assert store.read_operations() == ()
+    assert store.read_all() == []
+    assert store.pending_operation_outbox_count() == 0
+    store.close()
+
+
+@pytest.mark.parametrize("prior_commit", [False, True])
+@pytest.mark.parametrize("change", ["revoked", "rotated", "expired"])
+async def test_authenticated_actor_rechecks_before_mutation_and_cached_reply(
+    tmp_path: Path,
+    prior_commit: bool,
+    change: str,
+) -> None:
+    store = EventStore(tmp_path / "authenticated-actor.db")
+    hub = SynapseHub(journal=store, anti_rollback_checkpoint=False)
+    registry = {"session": enrollment()}
+    raw = json.dumps(
+        sign_frame(
+            protected_request("begin"),
+            key=KEY,
+            nonce="n",
+            sequence=1,
+            timestamp=NOW,
+        )
+    )
+    authenticated = authenticate_protected_request(
+        raw,
+        limits=LIMITS,
+        enrollments=registry,
+        authenticated_principal="EXAMPLE/author",
+        replay_cache=MessageReplayCache(window_seconds=10, max_entries=32),
+        now=NOW,
+    )
+    clock = [NOW]
+    mutations: list[str] = []
+
+    def mutate(state: Any) -> Any:
+        mutations.append("called")
+        return state.claim("EXAMPLE/author", "guarded-claim")
+
+    async def execute() -> Any:
+        return await hub.run_authenticated_protected_write_operation(
+            authenticated,
+            mutate,
+            lambda _result: OperationDraft(
+                response={"type": "test-actor-result"},
+                events=((EventKind.CLAIM, {"task_id": "guarded-claim"}),),
+                intent={"family": "test-actor"},
+            ),
+            limits=LIMITS,
+            current_enrollments=lambda: registry,
+            current_principal=lambda: "EXAMPLE/author",
+            clock=lambda: clock[0],
+            conflict=lambda _existing: {"type": "test-conflict"},
+        )
+
+    started = threading.Event()
+    finish = threading.Event()
+
+    def persist(_result: object) -> None:
+        started.set()
+        if not finish.wait(3):
+            raise TimeoutError("test actor was not released")
+
+    def change_enrollment(_result: object) -> None:
+        if change == "revoked":
+            registry["session"] = replace(registry["session"], revoked=True)
+        elif change == "rotated":
+            registry["session"] = replace(
+                registry["session"],
+                key=replace(KEY, secret=b"b" * 32),
+            )
+        else:
+            clock[0] = NOW + 11
+
+    try:
+        if prior_commit:
+            assert (await execute()).outcome == "inserted"
+            assert (await execute()).outcome == "replayed"
+        events_before = store.read_all()
+        operations_before = store.read_operations()
+        ordering = asyncio.create_task(
+            hub.state_mutations.run(
+                hub.state,
+                lambda _state: None,
+                persist=persist,
+                publish=change_enrollment,
+            )
+        )
+        queued: asyncio.Task[Any] | None = None
+        try:
+            assert await asyncio.to_thread(started.wait, 1)
+            queued = asyncio.create_task(execute())
+            await asyncio.sleep(0)
+            assert not queued.done()
+        finally:
+            finish.set()
+            await ordering
+        assert queued is not None
+        with pytest.raises(ValueError):
+            await queued
+        assert mutations == (["called"] if prior_commit else [])
+        assert store.read_all() == events_before
+        assert store.read_operations() == operations_before
+        assert ("guarded-claim" in hub.state.claims) == prior_commit
+    finally:
+        finish.set()
+        store.close()
+
+
+async def test_protected_boundary_durable_replay_changed_verb_and_authority(tmp_path: Path) -> None:
+    path = tmp_path / "protected-keyed.db"
+    store = EventStore(path)
+    hub = _RecordingHub(store)
+    mutations: list[str] = []
+
+    async def execute(active: SynapseHub, request: dict[str, object]) -> Any:
+        def mutate(state: Any) -> Any:
+            task = str(request["authority_continuity"])
+            mutations.append(task)
+            return state.claim("EXAMPLE/author", task)
+
+        return await active._run_protected_write_operation(
+            json.dumps(request),
+            mutate,
+            lambda _result: OperationDraft(
+                response={
+                    "type": "test-boundary-receipt",
+                    "continuity": request["authority_continuity"],
+                },
+                events=(
+                    ("protected-test-mutation", {"continuity": request["authority_continuity"]}),
+                ),
+                intent={"family": "protected-test"},
+            ),
+            limits=LIMITS,
+            authenticated_principal="EXAMPLE/author",
+            authority_id="authority",
+            authority_continuity=str(request["authority_continuity"]),
+            conflict=lambda _record: {"error_code": "request_conflict"},
+        )
+
+    request = protected_request("begin")
+    first = await execute(hub, request)
+    replay = await execute(hub, request)
+    changed = await execute(hub, protected_request("revoke"))
+    assert first.outcome == "inserted"
+    assert replay.outcome == "replayed"
+    assert replay.response == first.response
+    assert changed.outcome == "conflict"
+    assert changed.response == {"error_code": "request_conflict"}
+    assert mutations == ["continuity"]
+    assert "continuity" in hub.state.claims
+    assert len(store.read_all()) == 2
+    store.close()
+
+    reopened = EventStore(path)
+    restarted = _RecordingHub(reopened)
+    durable = await execute(restarted, request)
+    assert durable.outcome == "replayed"
+    assert durable.response == first.response
+    other = await execute(restarted, {**request, "authority_continuity": "new-continuity"})
+    assert other.outcome == "inserted"
+    assert mutations == ["continuity", "new-continuity"]
+    assert len(reopened.read_operations()) == 2
+    assert len(reopened.read_all()) == 4
+    reopened.close()
+
+
+@pytest.mark.parametrize(
+    "case", ["digestless", "no-journal", "prepare", "status", "wrong-principal"]
+)
+async def test_protected_boundary_refuses_before_mutation(tmp_path: Path, case: str) -> None:
+    store = EventStore(tmp_path / "protected-refusal.db")
+    hub = _RecordingHub(store)
+    request = protected_request(case if case in ("prepare", "status") else "begin")
+
+    def unexpected(*_args: object) -> NoReturn:
+        raise AssertionError("refused protected request must not mutate or prepare")
+
+    if case == "digestless":
+        key = protected_write_operation_key(
+            json.dumps(request),
+            limits=LIMITS,
+            authenticated_principal="EXAMPLE/author",
+            authority_id="authority",
+            authority_continuity="continuity",
+        )
+        hub._ledger.remember_operation(OperationRecord(key, None, {"type": "legacy"}))
+    if case == "no-journal":
+        hub.journal = None
+
+    async def execute() -> Any:
+        return await hub._run_protected_write_operation(
+            json.dumps(request),
+            unexpected,
+            unexpected,
+            limits=LIMITS,
+            authenticated_principal="other" if case == "wrong-principal" else "EXAMPLE/author",
+            authority_id="authority",
+            authority_continuity="continuity",
+            conflict=lambda _record: {"error_code": "request_conflict"},
+        )
+
+    if case == "digestless":
+        result = await execute()
+        assert result.outcome == "conflict"
+        assert result.response == {"error_code": "request_conflict"}
+    else:
+        with pytest.raises(ValueError):
+            await execute()
+    assert hub.state.claims == {}
+    assert store.read_operations() == ()
+    assert store.read_all() == []
+    store.close()
+
+
+async def test_protected_boundary_cannot_publish_a_missing_draft(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "protected-missing-draft.db")
+    hub = _RecordingHub(store)
+
+    def missing_draft(_result: Any) -> Any:
+        return None
+
+    with pytest.raises(ValueError, match="durable response draft"):
+        await hub._run_protected_write_operation(
+            json.dumps(protected_request("begin")),
+            lambda state: state.claim("EXAMPLE/author", "not-published"),
+            missing_draft,
+            limits=LIMITS,
+            authenticated_principal="EXAMPLE/author",
+            authority_id="authority",
+            authority_continuity="continuity",
+            conflict=lambda _record: {"error_code": "request_conflict"},
+        )
+    assert hub.state.claims == {}
+    assert store.read_operations() == ()
+    assert store.read_all() == []
+    assert store.pending_operation_outbox_count() == 0
+    store.close()
 
 
 async def test_memory_families_commit_once_conflict_and_resume(tmp_path: Path) -> None:

@@ -13,10 +13,12 @@ from pathlib import Path
 import pytest
 
 from synapse_channel.core.hub_state_seed import SeededHubState, seed_hub_state
-from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal import EventKind, UnsupportedProtectedWriteHistoryError
 from synapse_channel.core.ledger import Blackboard
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.protected_write_admission_journal import ProtectedAdmissionReplayPolicy
 from synapse_channel.core.state import SynapseState
+from test_protected_write_admission_journal import POLICIES, _committed
 
 
 def _seed(
@@ -24,6 +26,7 @@ def _seed(
     *,
     max_history: int = 100,
     compact_hint_threshold: int = 1000,
+    protected_write_policies: dict[str, ProtectedAdmissionReplayPolicy] | None = None,
 ) -> SeededHubState:
     return seed_hub_state(
         journal,
@@ -36,6 +39,7 @@ def _seed(
         max_offers_per_agent=8,
         max_paths_per_claim=8,
         compact_hint_threshold=compact_hint_threshold,
+        protected_write_policies=protected_write_policies,
     )
 
 
@@ -44,6 +48,18 @@ def _populated_store(tmp_path: Path) -> EventStore:
     store.append("message", {"sender": "A", "target": "all", "payload": "hi", "type": "chat"})
     store.append("message", {"sender": "B", "target": "all", "payload": "yo", "type": "chat"})
     return store
+
+
+def test_seed_protected_history_requires_retained_policy(tmp_path: Path) -> None:
+    store = _committed(tmp_path)
+    try:
+        with pytest.raises(UnsupportedProtectedWriteHistoryError):
+            _seed(store)
+        restored = _seed(store, protected_write_policies=POLICIES)
+        assert "reservation" in restored.state.protected_write_reservations
+        assert restored.state.protected_claim_custody["reservation"]
+    finally:
+        store.close()
 
 
 def test_seed_starts_fresh_without_a_journal() -> None:

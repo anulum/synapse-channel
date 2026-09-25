@@ -861,9 +861,79 @@ class EventStore:
         events: Iterable[tuple[str, Mapping[str, Any]]],
         intent: Mapping[str, Any],
         response_event_seq_field: str | None = None,
+        finalize_response: Callable[[dict[str, Any], tuple[int, ...]], Mapping[str, Any]]
+        | None = None,
+        max_retained_operations: int | None = None,
+        required_predecessor: OperationRecord | None = None,
         stage_hook: Callable[[str], None] | None = None,
     ) -> OperationCommitResult:
-        """Atomically commit a keyed mutation, exact response, and evidence intent."""
+        """Atomically commit a keyed mutation, exact response, and evidence intent.
+
+        Parameters
+        ----------
+        operation_key:
+            Already authenticated and namespaced idempotency key.
+        request_digest:
+            Exact semantic request SHA-256.
+        response:
+            JSON response draft, unchanged by this method.
+        events:
+            Nonempty ordered mutation events committed with the response.
+        intent:
+            Evidence-outbox payload committed in the same transaction.
+        response_event_seq_field:
+            Legacy top-level response field receiving the first event sequence.
+        finalize_response:
+            Optional trusted synchronous builder called with a private JSON copy
+            of the draft and actual mutation-event sequences. It can bind nested
+            fields and sign the final response before persistence. It must not
+            perform external I/O, re-enter this store or mutate live state.
+            Exceptions roll back all pending rows. It is never called on replay
+            or conflict and cannot accompany ``response_event_seq_field``.
+        stage_hook:
+            Optional transaction-boundary observer used by failure tests.
+        max_retained_operations:
+            Optional explicit store-wide cap checked under BEGIN IMMEDIATE before
+            inserting new history. Existing replay/conflict remains readable when
+            the cap is full; no retained operation is evicted to make room.
+        required_predecessor:
+            Optional exact completed operation required for a new insertion.
+            Key, non-legacy digest, canonical response and hash are checked in
+            the same transaction before any event insertion. Replay remains a
+            historical response, not renewed authorization under this condition.
+
+        Returns
+        -------
+        OperationCommitResult
+            Inserted, replayed or conflicting durable response and sequence IDs.
+
+        Raises
+        ------
+        ValueError
+            For invalid identities, empty events, incompatible response builders
+            or a response that is not serialisable as finite JSON.
+        """
+        if max_retained_operations is not None and (
+            type(max_retained_operations) is not int or not 0 < max_retained_operations < 2**53
+        ):
+            raise ValueError("invalid retained operation budget")
+        predecessor_response: str | None = None
+        predecessor_response_sha256: str | None = None
+        if required_predecessor is not None:
+            predecessor_digest = required_predecessor.request_digest
+            if (
+                not required_predecessor.key
+                or predecessor_digest is None
+                or len(predecessor_digest) != 64
+                or any(char not in "0123456789abcdef" for char in predecessor_digest)
+            ):
+                raise ValueError("invalid required predecessor identity")
+            predecessor_response = self._json_object(required_predecessor.response)
+            predecessor_response_sha256 = hashlib.sha256(
+                predecessor_response.encode("ascii")
+            ).hexdigest()
+        if finalize_response is not None and response_event_seq_field is not None:
+            raise ValueError("choose one atomic response sequence builder")
         if not operation_key:
             raise ValueError("atomic operation key must be non-empty")
         if len(request_digest) != 64 or any(
@@ -923,6 +993,23 @@ class EventStore:
                     )
                     return OperationCommitResult(outcome, stored)
 
+                if required_predecessor is not None:
+                    predecessor = self._conn.execute(
+                        "SELECT request_digest, response_json, response_sha256 FROM operations "
+                        "WHERE operation_key = ?",
+                        (required_predecessor.key,),
+                    ).fetchone()
+                    if (
+                        predecessor is None
+                        or predecessor[0] != required_predecessor.request_digest
+                        or predecessor[1] != predecessor_response
+                        or predecessor[2] != predecessor_response_sha256
+                    ):
+                        raise ValueError("required predecessor operation mismatch")
+                if max_retained_operations is not None:
+                    count = self._conn.execute("SELECT COUNT(*) FROM operations").fetchone()[0]
+                    if count >= max_retained_operations:
+                        raise ValueError("retained operation budget exhausted")
                 sequences: list[int] = []
                 for row in event_rows:
                     cursor = self._conn.execute(
@@ -939,6 +1026,17 @@ class EventStore:
 
                 if response_event_seq_field is not None:
                     response_value[response_event_seq_field] = sequences[0]
+                    response_json = json.dumps(
+                        response_value,
+                        ensure_ascii=True,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    )
+                elif finalize_response is not None:
+                    response_value = dict(
+                        finalize_response(json.loads(response_json), tuple(sequences))
+                    )
                     response_json = json.dumps(
                         response_value,
                         ensure_ascii=True,
@@ -1340,7 +1438,17 @@ class EventStore:
         seq_list = [int(s) for s in seqs]
         if not seq_list:
             return 0
-        sql = "DELETE FROM events WHERE seq = ?"
+        # Until protected custody has an explicit settled-retention contract,
+        # ordinary deletion must not erase the history that blocks unsafe replay.
+        sql = (
+            "DELETE FROM events WHERE seq = ? "
+            "AND kind <> 'protected_write' "
+            "AND substr(kind, 1, 16) <> 'protected_write_'"
+            " AND NOT (kind IN ('claim', 'task_update', 'checkpoint', 'handoff', 'release') "
+            "AND EXISTS (SELECT 1 FROM events AS protected_history "
+            "WHERE protected_history.kind = 'protected_write' "
+            "OR protected_history.kind GLOB 'protected_write_*'))"
+        )
         if self._has_aef_outbox:
             # The outbox is the recovery boundary between the authoritative
             # legacy commit and its native receipt. Compaction may remove a

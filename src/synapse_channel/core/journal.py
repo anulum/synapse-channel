@@ -53,6 +53,19 @@ from synapse_channel.core.multihub_equivocation import FederationQuarantine, val
 from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.path_identity import parse_optional_claim_scope_identity
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.protected_write_admission_journal import (
+    ADMISSION_EVENT_KIND,
+    ProtectedAdmissionReplayPolicy,
+    restore_protected_admission,
+)
+from synapse_channel.core.protected_write_recovery_journal import (
+    RECOVERY_EVENT_KIND,
+    restore_protected_recovery,
+)
+from synapse_channel.core.protected_write_transition_journal import (
+    TRANSITION_EVENT_KIND,
+    restore_protected_transition,
+)
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import (
     MAX_CLAIMS_PER_AGENT,
@@ -101,6 +114,10 @@ class EventKind:
     MULTIHUB_EQUIVOCATION = "multihub_equivocation"
     MULTIHUB_EQUIVOCATION_RECOVERY = "multihub_equivocation_recovery"
     CORRUPT = CORRUPT_EVENT_KIND
+
+
+class UnsupportedProtectedWriteHistoryError(RuntimeError):
+    """Replay cannot reconstruct custody from a protected-write history event."""
 
 
 _UNVERIFIED_PARTITION_CONTESTER = "<unverified-persisted-contester>"
@@ -765,6 +782,7 @@ def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
         paths=paths,
         path_identity=path_identity,
         epoch=int(payload.get("epoch", 0)),
+        version=int(payload.get("version", 0)),
         checkpoint=str(payload.get("checkpoint", "")),
         git=git,
     )
@@ -783,6 +801,7 @@ def replay(
     now: float | None = None,
     up_to_seq: int | None = None,
     event_kinds: Iterable[str] | None = None,
+    protected_write_policies: Mapping[str, ProtectedAdmissionReplayPolicy] | None = None,
 ) -> ReplayResult:
     """Rebuild coordination state by replaying the whole event log.
 
@@ -816,14 +835,25 @@ def replay(
         Ask the event store to decode only these kinds. ``None`` preserves full
         restart replay. Read-side projections may use a proven subset when they
         do not expose chat, idempotency, or memory counters.
+    protected_write_policies:
+        Explicit retained enrollment policies. Omitted means protected history
+        is unsupported. Authority reconstruction requires unfiltered event kinds.
 
     Returns
     -------
     ReplayResult
         The reconstructed state, chat history, highest chat message id, and
-        shared blackboard. Unknown event kinds are skipped so the log can evolve
-        forwards.
+        shared blackboard. Unknown ordinary event kinds are skipped so the log
+        can evolve forwards; unsupported protected-write custody is never skipped.
+
+    Raises
+    ------
+    UnsupportedProtectedWriteHistoryError
+        If the selected prefix contains protected-write history this version
+        cannot restore. No partially reconstructed authority state is returned.
     """
+    if protected_write_policies is not None and event_kinds is not None:
+        raise ValueError("protected authority replay requires unfiltered history")
     state = SynapseState(
         default_ttl_seconds=default_ttl_seconds,
         max_claims_per_agent=max_claims_per_agent,
@@ -845,6 +875,38 @@ def replay(
 
     for event in store.iter_events(through_seq=up_to_seq, kinds=event_kinds):
         payload = event.payload
+        if event.kind == RECOVERY_EVENT_KIND and protected_write_policies is not None:
+            restore_protected_recovery(
+                event,
+                store=store,
+                state=state,
+                policies=protected_write_policies,
+                through_seq=up_to_seq,
+            )
+            continue
+        if event.kind == TRANSITION_EVENT_KIND and protected_write_policies is not None:
+            restore_protected_transition(
+                event,
+                store=store,
+                state=state,
+                policies=protected_write_policies,
+                through_seq=up_to_seq,
+            )
+            continue
+        if event.kind == ADMISSION_EVENT_KIND and protected_write_policies is not None:
+            restore_protected_admission(
+                event,
+                store=store,
+                state=state,
+                policies=protected_write_policies,
+                through_seq=up_to_seq,
+            )
+            continue
+        if event.kind == "protected_write" or event.kind.startswith("protected_write_"):
+            raise UnsupportedProtectedWriteHistoryError(
+                f"unsupported protected-write history at sequence {event.seq}; "
+                "custody reconciliation is required before authority can resume"
+            )
         if event.kind == EventKind.CORRUPT:
             corrupt_rows.append(CorruptEventRow.from_payload(event.seq, payload))
             continue
@@ -859,6 +921,16 @@ def replay(
             EventKind.HANDOFF,
         ):
             claim = _claim_from_payload(payload)
+            if state._protected_task_held(claim.task_id) or (
+                event.kind in (EventKind.CLAIM, EventKind.HANDOFF)
+                and state._protected_scope_held(
+                    claim.task_id, claim.worktree, claim.paths, claim.path_identity
+                )
+            ):
+                raise UnsupportedProtectedWriteHistoryError(
+                    "legacy claim mutation conflicts with protected custody "
+                    f"at sequence {event.seq}"
+                )
             state.claims[claim.task_id] = claim
             state.last_seen[claim.owner] = claim.claimed_at
             epoch_seq = max(epoch_seq, claim.epoch)
@@ -868,6 +940,10 @@ def replay(
         elif event.kind == EventKind.LEDGER_PROGRESS:
             blackboard.restore_progress(_progress_from_payload(payload))
         elif event.kind == EventKind.RELEASE:
+            if state._protected_task_held(str(payload["task_id"])):
+                raise UnsupportedProtectedWriteHistoryError(
+                    f"legacy release conflicts with protected custody at sequence {event.seq}"
+                )
             state.claims.pop(str(payload["task_id"]), None)
         elif event.kind == EventKind.RESOURCE:
             offer = ResourceOffer(

@@ -11,16 +11,30 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
 from websockets.asyncio.client import ClientConnection, connect
 
 from hub_e2e_helpers import collect_available, read_until_type, running_hub, send_json
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.hub_ledger_guard import HubLedgerGuard
-from synapse_channel.core.journal import EventKind
+from synapse_channel.core.journal import EventKind, UnsupportedProtectedWriteHistoryError
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.ratelimit import RateLimiter
 
 # --- durable persistence -----------------------------------------------------
+
+
+def test_hub_startup_refuses_unsupported_protected_history(tmp_path: Path) -> None:
+    path = tmp_path / "unsupported-protected.db"
+    original = EventStore(path)
+    original.append("protected_write_admission", {"private": "retained-custody-evidence"})
+    original.close()
+    reopened = EventStore(path)
+    with pytest.raises(UnsupportedProtectedWriteHistoryError, match="sequence 1"):
+        SynapseHub(hub_id="must-not-start", journal=reopened, anti_rollback_checkpoint=False)
+    assert reopened.count() == 1
+    assert reopened.read_all()[0].payload == {"private": "retained-custody-evidence"}
+    reopened.close()
 
 
 async def _connect_agent(uri: str, name: str) -> ClientConnection:

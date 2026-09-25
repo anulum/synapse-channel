@@ -851,6 +851,33 @@ def test_latest_at_or_before_handles_empty_prefixes_and_retention_gaps(tmp_path:
     store.close()
 
 
+def test_delete_retains_protected_history_even_without_an_operation_row(tmp_path: Path) -> None:
+    path = tmp_path / "protected-retention.db"
+    store = EventStore(path)
+    kinds = ["protected_write", "protected_write_admission", "protected_write_future"]
+    protected = [store.append(kind, {"custody": "unresolved"}) for kind in kinds]
+    ordinary = store.append("ordinary_unknown", {"removable": True})
+    assert store.delete([*protected, ordinary]) == 1
+    assert [event.kind for event in store.read_all()] == kinds
+    store.close()
+    reopened = EventStore(path)
+    assert [event.seq for event in reopened.read_all()] == protected
+    assert reopened.delete(protected) == 0
+    reopened.close()
+
+
+@pytest.mark.parametrize("kind", ["claim", "task_update", "checkpoint", "handoff", "release"])
+def test_delete_retains_claim_history_needed_by_protected_custody(
+    tmp_path: Path, kind: str
+) -> None:
+    store = EventStore(tmp_path / "custody-claim-history.db")
+    witness = store.append(kind, {"task_id": "held"})
+    store.append("protected_write_future", {"custody": "unknown"})
+    assert store.delete([witness]) == 0
+    assert store.read_all()[0].seq == witness
+    store.close()
+
+
 def test_delete_removes_named_sequences_and_returns_the_count(tmp_path: Path) -> None:
     store = _seeded(tmp_path)
     events = store.read_all()

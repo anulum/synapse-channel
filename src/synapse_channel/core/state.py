@@ -20,11 +20,16 @@ injected timestamps via the ``now`` parameters.
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from typing import Any
 
 from synapse_channel.core.lifecycle import can_transition
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.path_identity import ClaimScopeIdentity
+from synapse_channel.core.protected_write_admission import ProtectedWriteAdmission
+from synapse_channel.core.protected_write_custody import ProtectedClaimCustody
+from synapse_channel.core.protected_write_lifecycle import ProtectedWriteReservation
+from synapse_channel.core.protected_write_recovery import ProtectedRecoveryAdmission
 from synapse_channel.core.scoping import (
     DEFAULT_WORKTREE,
     MAX_DECLARED_PATHS,
@@ -135,6 +140,10 @@ class SynapseState:
         )
         self.last_seen: dict[str, float] = {}
         self.claims: dict[str, TaskClaim] = {}
+        self.protected_claim_custody: dict[str, tuple[ProtectedClaimCustody, ...]] = {}
+        self.protected_write_admissions: dict[str, ProtectedWriteAdmission] = {}
+        self.protected_write_reservations: dict[str, ProtectedWriteReservation] = {}
+        self.protected_write_recoveries: dict[str, str] = {}
         self._resource_registry = ResourceRegistry(max_offers_per_agent=self.max_offers_per_agent)
         self.resources: dict[str, ResourceOffer] = self._resource_registry.resources
         self.max_offers_per_agent = self._resource_registry.max_offers_per_agent
@@ -182,6 +191,10 @@ class SynapseState:
         self.last_seen.clear()
         self.last_seen.update(candidate.last_seen)
         self.claims = candidate.claims
+        self.protected_claim_custody = candidate.protected_claim_custody
+        self.protected_write_admissions = candidate.protected_write_admissions
+        self.protected_write_reservations = candidate.protected_write_reservations
+        self.protected_write_recoveries = candidate.protected_write_recoveries
         self._resource_registry = candidate._resource_registry
         self.resources = self._resource_registry.resources
         self.expired_checkpoints = candidate.expired_checkpoints
@@ -307,6 +320,8 @@ class SynapseState:
         self.heartbeat(agent, ts)
 
         existing = self.claims.get(task)
+        if self._protected_scope_held(task, worktree, norm_paths, path_identity):
+            return False, f"Task '{task}' conflicts with outstanding protected custody."
         if existing and existing.owner != agent and existing.lease_expires_at > ts:
             return False, f"Task '{task}' is already claimed by {existing.owner}."
 
@@ -365,6 +380,192 @@ class SynapseState:
         self.claims[task] = claim
         self._track_lease(claim)
         return True, f"Task '{task}' claimed by {agent}."
+
+    def install_protected_write_admission(
+        self, admission: ProtectedWriteAdmission, *, max_reservations: int
+    ) -> None:
+        """Install trusted admission evidence and its custody in a private candidate.
+
+        Parameters
+        ----------
+        admission:
+            Record freshly bound by the trusted admission finalizer. This method
+            must never accept a DTO supplied directly by a client.
+        max_reservations:
+            Explicit enrolled limit, including retained admission records.
+
+        Raises
+        ------
+        ValueError
+            If the budget, identity, current witnesses or overlap checks fail.
+
+        Notes
+        -----
+        Use inside the existing actor/journal transaction. Publish the candidate
+        only after commit. Historical replay must reconstruct claims and validate
+        the same record before installation; this is not an authentication API.
+        """
+        if type(max_reservations) is not int or max_reservations <= 0:
+            raise ValueError("invalid protected reservation budget")
+        reservation_id = admission.reservation_id
+        if (
+            reservation_id in self.protected_write_admissions
+            or reservation_id in self.protected_claim_custody
+            or reservation_id in self.protected_write_reservations
+        ):
+            raise ValueError("protected reservation identity already exists")
+        retained_ids = (
+            self.protected_write_admissions.keys()
+            | self.protected_claim_custody.keys()
+            | self.protected_write_reservations.keys()
+        )
+        if len(retained_ids) >= max_reservations:
+            raise ValueError("protected reservation budget exhausted")
+        if not admission.claim_custody:
+            raise ValueError("protected admission requires claim custody")
+        for witness in admission.claim_custody:
+            claim = self.claims.get(witness.task_id)
+            if claim is None or ProtectedClaimCustody.capture(claim) != witness:
+                raise ValueError("protected admission witness changed before installation")
+            if self._protected_scope_held(
+                witness.task_id, witness.worktree, witness.paths, witness.path_identity
+            ):
+                raise ValueError("protected admission overlaps outstanding custody")
+        self.protected_write_admissions[reservation_id] = admission
+        self.protected_claim_custody[reservation_id] = admission.claim_custody
+        self.protected_write_reservations[reservation_id] = ProtectedWriteReservation.admitted(
+            admission
+        )
+
+    def transfer_protected_write_custody(
+        self, recovery: ProtectedRecoveryAdmission, *, max_reservations: int
+    ) -> None:
+        """Install a verified child and transfer custody in a private candidate.
+
+        Parameters
+        ----------
+        recovery:
+            Freshly bound recovery pair with verified quiescence/domain evidence,
+            never a client DTO. The parent must still be the exact actor value.
+        max_reservations:
+            Enrolled retained-history limit, counting ancestors and children.
+
+        Raises
+        ------
+        ValueError
+            On stale parent, changed witnesses, overlap or exhausted budget.
+
+        Notes
+        -----
+        Commit the parent/child relation in the existing journal before publishing.
+        No lease renewal, independent lock acquisition or live state mutation is
+        performed here. Ancestor custody remains held by the child until verified
+        settlement; the parent remains immutable historical evidence.
+        """
+        parent, admission = recovery.parent, recovery.admission
+        parent_id, child_id = parent.admission.reservation_id, admission.reservation_id
+        if (
+            self.protected_write_reservations.get(parent_id) != parent
+            or self.protected_write_admissions.get(parent_id) != parent.admission
+            or parent_id in self.protected_write_recoveries
+            or not parent.holds_custody
+            or self.protected_claim_custody.get(parent_id) != parent.custody
+        ):
+            raise ValueError("recovery parent or custody changed before transfer")
+        if type(max_reservations) is not int or max_reservations <= 0:
+            raise ValueError("invalid protected reservation budget")
+        retained = (
+            self.protected_write_admissions.keys()
+            | self.protected_write_reservations.keys()
+            | self.protected_claim_custody.keys()
+        )
+        if child_id in retained or len(retained) >= max_reservations:
+            raise ValueError("recovery child identity or reservation budget unavailable")
+        if not admission.claim_custody:
+            raise ValueError("recovery requires fresh service custody")
+        for witness in admission.claim_custody:
+            claim = self.claims.get(witness.task_id)
+            if claim is None or ProtectedClaimCustody.capture(claim) != witness:
+                raise ValueError("recovery witness changed before transfer")
+        child = replace(
+            ProtectedWriteReservation.admitted(admission), inherited_custody=parent.custody
+        )
+        for other_id, witnesses in self.protected_claim_custody.items():
+            if other_id != parent_id and any(
+                held.conflicts(item.task_id, item.worktree, item.paths, item.path_identity)
+                for held in witnesses
+                for item in child.custody
+            ):
+                raise ValueError("recovery overlaps another reservation domain")
+        self.protected_write_admissions[child_id] = admission
+        self.protected_write_reservations[child_id] = child
+        self.protected_claim_custody[child_id] = child.custody
+        self.protected_write_recoveries[parent_id] = child_id
+        del self.protected_claim_custody[parent_id]
+
+    def apply_protected_write_transition(
+        self, previous: ProtectedWriteReservation, updated: ProtectedWriteReservation
+    ) -> None:
+        """Compare-and-swap a trusted transition in the private actor candidate.
+
+        Parameters
+        ----------
+        previous:
+            Exact authoritative predecessor used during transition validation.
+        updated:
+            New value returned by the trusted lifecycle validator, never client JSON.
+
+        Raises
+        ------
+        ValueError
+            On stale predecessor, changed admission, inconsistent custody or
+            an attempt to resurrect settled custody.
+
+        Notes
+        -----
+        Caller must commit the same transition before publishing this candidate.
+        Immutable admission history remains retained after custody is released.
+        """
+        reservation_id = previous.admission.reservation_id
+        if (
+            self.protected_write_reservations.get(reservation_id) != previous
+            or reservation_id in self.protected_write_recoveries
+            or self.protected_write_admissions.get(reservation_id) != previous.admission
+            or updated.admission != previous.admission
+            or updated.inherited_custody != previous.inherited_custody
+            or updated.transition_sequence <= previous.transition_sequence
+        ):
+            raise ValueError("protected transition has a stale or changed predecessor")
+        expected = previous.custody if previous.holds_custody else None
+        if self.protected_claim_custody.get(reservation_id) != expected:
+            raise ValueError("protected transition custody does not match its predecessor")
+        if updated.holds_custody and not previous.holds_custody:
+            raise ValueError("settled custody cannot be resurrected")
+        self.protected_write_reservations[reservation_id] = updated
+        if not updated.holds_custody:
+            self.protected_claim_custody.pop(reservation_id, None)
+
+    def _protected_task_held(self, task: str) -> bool:
+        """Return whether a reservation retains the exact claim witness."""
+        return any(
+            witness.task_id == task
+            for witnesses in self.protected_claim_custody.values()
+            for witness in witnesses
+        )
+
+    def _protected_scope_held(
+        self,
+        task: str,
+        worktree: str,
+        paths: tuple[str, ...],
+        path_identity: ClaimScopeIdentity | None,
+    ) -> bool:
+        """Compare retained scopes without author or lease-expiry exemptions."""
+        return any(
+            witness.conflicts(task, worktree, paths, path_identity)
+            for witnesses in self.protected_claim_custody.values()
+            for witness in witnesses
+        )
 
     def _claims_owned_by(self, quota_principal: str) -> int:
         """Return how many live claims are charged to ``quota_principal``."""
@@ -475,6 +676,8 @@ class SynapseState:
         self.heartbeat(agent, ts)
 
         claim = self.claims.get(task_id)
+        if self._protected_task_held(task_id):
+            return False, f"Task '{task_id}' has outstanding protected custody."
         if claim is None:
             return False, f"Task '{task_id}' not found."
         if claim.owner != agent:
@@ -532,6 +735,8 @@ class SynapseState:
         ts = time.time() if now is None else float(now)
         self.heartbeat(agent, ts)
         claim = self.claims.get(task)
+        if self._protected_task_held(task):
+            return False, f"Task '{task}' has outstanding protected custody."
         if claim is None:
             return False, f"Task '{task}' not found."
         if claim.owner != agent:
@@ -580,6 +785,8 @@ class SynapseState:
         existing = self.claims.get(task)
         if existing is None:
             return False, f"Task '{task}' is not currently claimed."
+        if self._protected_task_held(task):
+            return False, f"Task '{task}' has outstanding protected custody."
         if existing.owner != agent:
             return False, f"Task '{task}' is owned by {existing.owner}, not {agent}."
         if epoch is not None and epoch != existing.epoch:
@@ -625,6 +832,8 @@ class SynapseState:
         existing = self.claims.get(task)
         if existing is None:
             return False, f"Task '{task}' is not currently claimed."
+        if self._protected_task_held(task):
+            return False, f"Task '{task}' has outstanding protected custody."
         previous_owner = existing.owner
         del self.claims[task]
         self.expired_checkpoints.pop(task, None)
@@ -687,12 +896,16 @@ class SynapseState:
         claim = self.claims.get(task)
         if claim is None:
             return False, f"Task '{task}' is not currently claimed."
+        if self._protected_task_held(task):
+            return False, f"Task '{task}' has outstanding protected custody."
         if claim.owner != agent:
             return False, f"Task '{task}' is owned by {claim.owner}, not {agent}."
         if target == agent:
             return False, f"Task '{task}' is already owned by {agent}."
         if epoch is not None and epoch != claim.epoch:
             return False, f"Task '{task}' epoch is stale (current {claim.epoch})."
+        if self._protected_scope_held(task, claim.worktree, claim.paths, claim.path_identity):
+            return False, f"Task '{task}' conflicts with outstanding protected custody."
         # Same live-claim cap as direct acquisition: a handoff must not grow the
         # recipient past max_claims_per_agent (BUG-7). Refuse before mutation so
         # ownership and journal stay consistent.

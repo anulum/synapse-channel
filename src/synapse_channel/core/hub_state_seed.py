@@ -40,6 +40,7 @@ from synapse_channel.core.ledger import Blackboard
 from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.pending_receipts import ReceiptEntry
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.protected_write_admission_journal import ProtectedAdmissionReplayPolicy
 from synapse_channel.core.state import SynapseState
 
 logger = logging.getLogger("synapse.hub")
@@ -98,6 +99,7 @@ def seed_hub_state(
     max_offers_per_agent: int,
     max_paths_per_claim: int,
     compact_hint_threshold: int,
+    protected_write_policies: Mapping[str, ProtectedAdmissionReplayPolicy] | None = None,
 ) -> SeededHubState:
     """Resume the hub's durable state from a journal replay, or start fresh.
 
@@ -117,6 +119,9 @@ def seed_hub_state(
     compact_hint_threshold : int
         Record count past which a resumed hub logs the one-off ``synapse compact``
         hint (already clamped by the caller).
+    protected_write_policies : Mapping or None
+        Explicit retained enrollment policies for protected history. Missing
+        policies preserve the existing fail-closed replay behavior.
 
     Returns
     -------
@@ -133,6 +138,7 @@ def seed_hub_state(
             max_claims_per_agent=max_claims_per_agent,
             max_offers_per_agent=max_offers_per_agent,
             max_paths_per_claim=max_paths_per_claim,
+            protected_write_policies=protected_write_policies,
         )
         # The durable log is append-only and never auto-compacted (pruning is safe
         # only below a sequence the read-side has consumed, which the hub cannot

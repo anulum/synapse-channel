@@ -57,6 +57,7 @@ from synapse_channel.core.at_rest_guard import guard_at_rest
 from synapse_channel.core.atomic_operations import (
     AtomicExecution,
     OperationDraft,
+    OperationRecord,
     canonical_request_digest,
     idempotency_conflict_response,
 )
@@ -155,6 +156,17 @@ from synapse_channel.core.operator_relay_transport import (
 from synapse_channel.core.pending_receipts import PendingReceipts
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
+from synapse_channel.core.protected_write_admission_journal import ProtectedAdmissionReplayPolicy
+from synapse_channel.core.protected_write_proposal import ProtectedWriteProposalLimits
+from synapse_channel.core.protected_write_request import (
+    parse_protected_write_request,
+    protected_write_operation_key,
+)
+from synapse_channel.core.protected_write_session_auth import (
+    AuthenticatedProtectedRequest,
+    ProtectedSessionEnrollment,
+    recheck_authenticated_protected_request,
+)
 from synapse_channel.core.protocol import (
     MessageType,
     loads_bounded,
@@ -451,6 +463,9 @@ class SynapseHub:
         Override for the checkpoint database location; defaults to
         ``<journal path>.checkpoint.db`` beside the event store. The checkpoint
         store must live outside the log it attests.
+    protected_write_policies : Mapping or None, optional
+        Retained enrollment replay policies for protected reservations. Omitting
+        them refuses protected history; supplying them does not enable dispatch.
     """
 
     def __init__(
@@ -496,6 +511,7 @@ class SynapseHub:
         insecure_off_loopback: bool = False,
         insecure_plaintext_at_rest: bool = False,
         clock: Callable[[], float] | None = None,
+        protected_write_policies: Mapping[str, ProtectedAdmissionReplayPolicy] | None = None,
         per_message_auth_keys: Mapping[str, MessageAuthKey] | list[MessageAuthKey] | None = None,
         require_per_message_auth: bool = False,
         per_message_auth_window_seconds: float = DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
@@ -780,6 +796,7 @@ class SynapseHub:
             max_offers_per_agent=max_offers_per_agent,
             max_paths_per_claim=max_paths_per_claim,
             compact_hint_threshold=self.compact_hint_threshold,
+            protected_write_policies=protected_write_policies,
         )
         self.state = seeded.state
         self.relay_approvals = seeded.relay_approvals
@@ -938,11 +955,159 @@ class SynapseHub:
         """Run a keyed journal-backed mutation through the atomic operation actor."""
         if self.journal is None:
             return None
-        journal = self.journal
         operation_key = self._ledger.idempotency_key(data)
         if not operation_key:
             return None
         request_digest = canonical_request_digest(data)
+        return await self._run_keyed_atomic_operation(
+            operation_key,
+            request_digest,
+            mutate,
+            prepare,
+            conflict=lambda existing: idempotency_conflict_response(
+                sender=str(data.get("sender") or ""), reference=existing.response
+            ),
+            subject=subject,
+            publish_candidate=publish_candidate,
+            persist_uncommitted=persist_uncommitted,
+            publish=publish,
+            allow_legacy_digestless_replay=True,
+            require_committed_response=False,
+        )
+
+    async def run_authenticated_protected_write_operation(
+        self,
+        authenticated: AuthenticatedProtectedRequest,
+        mutate: Callable[[Any], Any],
+        prepare: Callable[[Any], OperationDraft],
+        *,
+        limits: ProtectedWriteProposalLimits,
+        current_enrollments: Callable[[], Mapping[str, ProtectedSessionEnrollment]],
+        current_principal: Callable[[], str],
+        clock: Callable[[], float],
+        conflict: Callable[[OperationRecord], dict[str, Any]],
+    ) -> AtomicExecution:
+        """Recheck ingress authority inside the durable mutation actor.
+
+        Parameters
+        ----------
+        authenticated:
+            Server-retained ingress result, never a deserialized client object.
+        mutate:
+            Existing synchronous admission/transition mutation on private state.
+        prepare:
+            Existing durable response/event builder.
+        limits:
+            Explicit enrolled wire limits.
+        current_enrollments:
+            Current protected registry, ordered with mutations by this actor.
+        current_principal:
+            Current authenticated transport principal, not a claimed sender.
+        clock:
+            Fresh trusted server clock.
+        conflict:
+            Existing protected conflict response builder.
+
+        Returns
+        -------
+        AtomicExecution
+            Existing journal-backed outcome, not writer execution or settlement.
+
+        Notes
+        -----
+        Authentication must already have consumed the wire replay nonce.
+        All current-context callbacks are synchronous, trusted and I/O-free.
+        Read-only verbs retain a separate admission path. This method does not
+        install dispatch handlers or prove OS credential/namespace isolation.
+        """
+
+        def authorize() -> None:
+            recheck_authenticated_protected_request(
+                authenticated,
+                enrollments=current_enrollments(),
+                authenticated_principal=current_principal(),
+                now=clock(),
+            )
+
+        enrollment = authenticated.enrollment
+        return await self._run_protected_write_operation(
+            authenticated.parsed.canonical_bytes,
+            mutate,
+            prepare,
+            limits=limits,
+            authenticated_principal=enrollment.principal,
+            authority_id=enrollment.authority_id,
+            authority_continuity=enrollment.authority_continuity,
+            conflict=conflict,
+            authorize=authorize,
+        )
+
+    async def _run_protected_write_operation(
+        self,
+        raw: str | bytes,
+        mutate: Callable[[Any], Any],
+        prepare: Callable[[Any], OperationDraft],
+        *,
+        limits: ProtectedWriteProposalLimits,
+        authenticated_principal: str,
+        authority_id: str,
+        authority_continuity: str,
+        conflict: Callable[[OperationRecord], dict[str, Any]],
+        authorize: Callable[[], None] | None = None,
+    ) -> AtomicExecution:
+        """Commit an already-authorized protected mutation through the sole actor.
+
+        This internal boundary is not a wire handler. The caller must authenticate
+        and enforce current session, replay, enrollment and operation policy before
+        entry. Context parameters must come from server authority, never raw input.
+        The mutation callback must recheck current state witnesses under the actor
+        lock; admission policy checked before waiting for that lock may be stale.
+        Read-only prepare/status do not use this mutation boundary.
+        """
+        operation_key = protected_write_operation_key(
+            raw,
+            limits=limits,
+            authenticated_principal=authenticated_principal,
+            authority_id=authority_id,
+            authority_continuity=authority_continuity,
+        )
+        parsed = parse_protected_write_request(raw, limits=limits)
+        if json.loads(parsed.canonical_bytes)["type"] in (
+            "protected_write_prepare",
+            "protected_write_status",
+        ):
+            raise ValueError("read-only protected requests cannot use the mutation boundary")
+        return await self._run_keyed_atomic_operation(
+            operation_key,
+            parsed.request_digest,
+            mutate,
+            prepare,
+            conflict=conflict,
+            allow_legacy_digestless_replay=False,
+            require_committed_response=True,
+            authorize=authorize,
+        )
+
+    async def _run_keyed_atomic_operation(
+        self,
+        operation_key: str,
+        request_digest: str,
+        mutate: Callable[[Any], Any],
+        prepare: Callable[[Any], OperationDraft | None],
+        *,
+        conflict: Callable[[OperationRecord], dict[str, Any]],
+        allow_legacy_digestless_replay: bool,
+        require_committed_response: bool,
+        authorize: Callable[[], None] | None = None,
+        subject: Any | None = None,
+        publish_candidate: Callable[[Any], None] | None = None,
+        persist_uncommitted: Callable[[Any], None] | None = None,
+        publish: Callable[[Any], None] | None = None,
+    ) -> AtomicExecution:
+        """Share one journal/cache/actor for legacy and protected operation keys."""
+        if self.journal is None:
+            raise ValueError("atomic execution requires a durable journal")
+        journal = self.journal
 
         def commit(draft: OperationDraft) -> Any:
             return journal.commit_operation(
@@ -952,6 +1117,7 @@ class SynapseHub:
                 events=draft.events,
                 intent=draft.intent,
                 response_event_seq_field=draft.response_event_seq_field,
+                finalize_response=draft.finalize_response,
             )
 
         mutation_subject = self.state if subject is None else subject
@@ -971,13 +1137,13 @@ class SynapseHub:
             prepare=prepare,
             commit=commit,
             remember=self._ledger.remember_operation,
-            conflict=lambda existing: idempotency_conflict_response(
-                sender=str(data.get("sender") or ""),
-                reference=existing.response,
-            ),
+            conflict=conflict,
             publish_candidate=candidate_publisher,
             persist_uncommitted=persist_uncommitted,
             publish=publish,
+            allow_legacy_digestless_replay=allow_legacy_digestless_replay,
+            require_committed_response=require_committed_response,
+            authorize=authorize,
         )
         self._record_atomic_outcome(execution.outcome)
         return execution

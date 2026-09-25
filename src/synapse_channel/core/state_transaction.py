@@ -213,8 +213,20 @@ class SerializedStateMutationActor:
         persist_uncommitted: Callable[[MutationResult], None] | None = None,
         publish: Callable[[MutationResult], None] | None = None,
         stage_hook: Callable[[str], None] | None = None,
+        allow_legacy_digestless_replay: bool = False,
+        require_committed_response: bool = False,
+        authorize: Callable[[], None] | None = None,
     ) -> AtomicExecution:
-        """Apply one keyed mutation with a second lookup inside the actor lock."""
+        """Apply one keyed mutation with a second lookup inside the actor lock.
+
+        Digest-less historical records conflict unless a legacy caller explicitly
+        enables compatibility. Protected authority operations must keep the
+        default: an unbound historical response cannot prove request equality.
+        A durable-only caller must require a committed response; a missing draft
+        then fails before the candidate or any uncommitted path can be published.
+        When supplied, authorization runs under the lock before replay/conflict
+        lookup as well as mutation. It must be synchronous and perform no I/O.
+        """
         hook = stage_hook or (lambda _stage: None)
         candidate_publisher: Callable[[MutationSubject], None]
         if publish_candidate is None:
@@ -222,9 +234,13 @@ class SerializedStateMutationActor:
         else:
             candidate_publisher = publish_candidate
         async with self._lock:
+            if authorize is not None:
+                authorize()
             existing = lookup()
             if existing is not None:
-                if existing.request_digest is None or existing.request_digest == request_digest:
+                if existing.request_digest == request_digest or (
+                    existing.request_digest is None and allow_legacy_digestless_replay
+                ):
                     return AtomicExecution("replayed", None, existing.response)
                 return AtomicExecution("conflict", None, conflict(existing))
 
@@ -234,16 +250,21 @@ class SerializedStateMutationActor:
             draft = prepare(result)
             hook("after_candidate_response")
             if draft is None:
+                if require_committed_response:
+                    raise ValueError("this operation requires a durable response draft")
                 cancelled = False
                 if persist_uncommitted is not None:
                     uncommitted_append = asyncio.create_task(
                         asyncio.to_thread(persist_uncommitted, result)
                     )
-                    try:
-                        await asyncio.shield(uncommitted_append)
-                    except asyncio.CancelledError:
-                        cancelled = True
-                        await uncommitted_append
+                    while True:
+                        try:
+                            await asyncio.shield(uncommitted_append)
+                            break
+                        except asyncio.CancelledError:
+                            if uncommitted_append.cancelled():
+                                raise
+                            cancelled = True
                 candidate_publisher(candidate)
                 if publish is not None:
                     publish(result)
@@ -253,11 +274,14 @@ class SerializedStateMutationActor:
 
             operation_append = asyncio.create_task(asyncio.to_thread(commit, draft))
             cancelled = False
-            try:
-                committed = await asyncio.shield(operation_append)
-            except asyncio.CancelledError:
-                cancelled = True
-                committed = await operation_append
+            while True:
+                try:
+                    committed = await asyncio.shield(operation_append)
+                    break
+                except asyncio.CancelledError:
+                    if operation_append.cancelled():
+                        raise
+                    cancelled = True
 
             stored = OperationRecord(
                 key=committed.operation.operation_key,

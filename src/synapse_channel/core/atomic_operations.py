@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -44,12 +44,18 @@ class OperationRecord:
 
 @dataclass(frozen=True)
 class OperationDraft:
-    """Complete material needed to commit one winning operation."""
+    """Complete material needed to commit one winning operation.
+
+    The optional response finalizer runs inside the journal transaction with
+    the actual mutation sequences. It must obey EventStore.commit_operation
+    callback constraints; it is never an external writer or a state publisher.
+    """
 
     response: dict[str, Any]
     events: tuple[tuple[str, Mapping[str, Any]], ...]
     intent: Mapping[str, Any]
     response_event_seq_field: str | None = None
+    finalize_response: Callable[[dict[str, Any], tuple[int, ...]], Mapping[str, Any]] | None = None
 
 
 @dataclass(frozen=True)

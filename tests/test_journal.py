@@ -17,6 +17,7 @@ from synapse_channel.core.journal import (
     MEMORY_KINDS,
     EventKind,
     ReplayResult,
+    UnsupportedProtectedWriteHistoryError,
     record_chat,
     record_checkpoint,
     record_claim,
@@ -510,6 +511,30 @@ def test_replay_expires_stale_claim(tmp_path: Path) -> None:
     result = replay(store, now=2000.0)  # lease already lapsed
     store.close()
     assert "T1" not in result.state.claims
+
+
+@pytest.mark.parametrize(
+    "kind", ["protected_write", "protected_write_admission", "protected_write_future"]
+)
+def test_replay_never_skips_unsupported_protected_custody(tmp_path: Path, kind: str) -> None:
+    store = _store(tmp_path)
+    record_claim(store, _claim())
+    store.append(kind, {"private": "must-not-appear-in-exception"})
+    record_release(store, "T1")
+    with pytest.raises(UnsupportedProtectedWriteHistoryError, match="sequence 2") as caught:
+        replay(store, now=2000.0)
+    assert "must-not-appear" not in str(caught.value)
+    assert store.count() == 3
+    prefix = replay(store, now=2000.0, up_to_seq=1)
+    assert "T1" in prefix.state.claims
+    store.close()
+
+
+def test_replay_preserves_persisted_claim_version(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    record_claim(store, _claim(version=7))
+    assert replay(store, now=2000.0).state.claims["T1"].version == 7
+    store.close()
 
 
 def test_replay_skips_unknown_event_kind(tmp_path: Path) -> None:
