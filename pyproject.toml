@@ -61,6 +61,8 @@ dev = [
   "reuse>=6.0",
   "tomli>=2.4.1; python_version < '3.11'",
   "mcp==1.30.0",
+  "PyJWT>=2.15.0,<3",
+  "uvicorn>=0.54.0,<1; sys_platform != 'emscripten'",
   "grpcio>=1.62.0",
   "sqlcipher3-binary==0.6.0; sys_platform == 'linux'",
   "cryptography>=42.0",
@@ -95,6 +97,8 @@ otel = [
 mcp = [
   "mcp==1.30.0",
   "cryptography>=42.0",
+  "PyJWT>=2.15.0,<3",
+  "uvicorn>=0.54.0,<1; sys_platform != 'emscripten'",
 ]
 a2a-grpc = [
   "grpcio>=1.62.0",
@@ -134,6 +138,8 @@ all = [
   "opentelemetry-exporter-otlp-proto-http>=1.43.0",
   "mcp==1.30.0",
   "cryptography>=42.0",
+  "PyJWT>=2.15.0,<3",
+  "uvicorn>=0.54.0,<1; sys_platform != 'emscripten'",
   "sqlcipher3-binary==0.6.0",
   "python-pkcs11>=0.9",
   "tpm2-pytss>=2.3",

@@ -90,7 +90,8 @@ handoff, and task verbs as MCP tools plus the board, agents, and resources as
 read-only MCP resources. Agents that speak A2A connect through the Agent Card face instead.
 The hub itself stays protocol-agnostic and the core install keeps its single
 dependency — the MCP and A2A adapters are optional extras (`pip install
-'synapse-channel[mcp]'`). See the [MCP guide](docs/mcp.md).
+'synapse-channel[mcp]'`). See the [MCP guide](docs/mcp.md) and the separately
+qualified [authenticated HTTP profile](docs/mcp-http.md).
 
 ```bash
 python -m pip install synapse-channel && synapse demo
@@ -1032,13 +1033,18 @@ claude mcp add synapse -- synapse mcp
 # or: codex mcp add synapse -- synapse mcp --name my-repo/codex
 ```
 
-`synapse mcp` runs a Model Context Protocol server over stdio that is itself a hub
+The default `synapse mcp` runs a Model Context Protocol server over stdio that is itself a hub
 client, exposing send, bounded durable inbox, status, claim, release, handoff,
 and plan updates as MCP tools, with the board, state, and manifest as live
 resources. It also exposes read-only resource templates for a single board task,
 one agent, and one resource kind. The bridge derives a visible project identity
 when `--name` is omitted, but concurrent clients should pin distinct names. It
 does not wake an idle provider; the permanent waiter remains a separate path.
+For a private remote client, `synapse mcp --transport streamable-http` uses
+direct TLS, provisioned subject-to-seat grants and bounded project-scoped
+actions. The [HTTP guide](docs/mcp-http.md) documents the verified Inspector CLI
+surface; this does not establish desktop or cloud application compatibility.
+
 The hub stays MCP-agnostic and the core install keeps its single dependency — see
 the [MCP guide](docs/mcp.md).
 
@@ -1691,13 +1697,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.27 |
 | Public API exports | 70 |
-| Package modules | 629 |
-| Classes | 925 |
+| Package modules | 638 |
+| Classes | 937 |
 | Wire message types | 90 |
 | CLI subcommands | 223 |
-| Test functions | 10366 |
+| Test functions | 10397 |
 | Benchmark harnesses | 7 |
-| Documentation pages | 76 |
+| Documentation pages | 77 |
 | GitHub Actions workflows | 27 |
 | Optional-dependency groups | 14 |
 

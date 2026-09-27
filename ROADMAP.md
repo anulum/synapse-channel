@@ -105,7 +105,8 @@ interfaces, maturity, and release commitments.
 
 ### Agent, protocol, and editor integrations
 
-- An optional **MCP server** over stdio and a fail-closed outbound MCP client
+- An optional **MCP server** over stdio or
+  [authenticated private HTTPS](docs/mcp-http.md) and a fail-closed outbound MCP client
   path, while the hub and core install remain MCP-agnostic. See the
   [MCP guide](docs/mcp.md).
 - An **A2A Agent Card and HTTP+JSON bridge** with a published local support

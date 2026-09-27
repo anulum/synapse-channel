@@ -18,6 +18,8 @@ from synapse_channel.mcp.bridge import SynapseHubBridge
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
+    from synapse_channel.mcp.http_views import ProjectMcpViews
+
 MCP_EXTRA_HINT = "The MCP face needs the optional extra: pip install 'synapse-channel[mcp]'"
 """Message shown when ``synapse mcp`` runs without the ``mcp`` SDK installed."""
 
@@ -97,6 +99,8 @@ def build_mcp_server(
     bridge: SynapseHubBridge,
     *,
     fastmcp_loader: Callable[[], type[FastMCP]] = _require_fastmcp,
+    server: FastMCP | None = None,
+    views: ProjectMcpViews | None = None,
 ) -> FastMCP:
     """Build a FastMCP server whose tools and resources delegate to ``bridge``.
 
@@ -104,6 +108,10 @@ def build_mcp_server(
     ----------
     bridge : SynapseHubBridge
         The translation layer holding the hub connection.
+    server : FastMCP or None, optional
+        Configured transport server. Omission creates the original stdio server.
+    views : ProjectMcpViews or None, optional
+        Project-scoped remote read views; mutations still use the original bridge.
 
     Returns
     -------
@@ -115,8 +123,10 @@ def build_mcp_server(
     RuntimeError
         When the ``mcp`` SDK is not installed.
     """
-    fast_mcp = fastmcp_loader()
-    server = fast_mcp("synapse")
+    if server is None:
+        fast_mcp = fastmcp_loader()
+        server = fast_mcp("synapse")
+    reader = views if views is not None else bridge
 
     @server.tool()
     async def synapse_claim(task_id: str, paths: list[str] | None = None) -> str:
@@ -187,27 +197,27 @@ def build_mcp_server(
     @server.tool()
     async def synapse_board() -> str:
         """Return the shared task/progress blackboard as JSON."""
-        return await bridge.board()
+        return await reader.board()
 
     @server.tool()
     async def synapse_status() -> str:
         """Return live presence, waiter, work, resource, and mailbox counts as JSON."""
-        return await bridge.status()
+        return await reader.status()
 
     @server.tool()
     async def synapse_state() -> str:
         """Return the live claims and checkpoints snapshot as JSON."""
-        return await bridge.state()
+        return await reader.state()
 
     @server.tool()
     async def synapse_manifest() -> str:
         """Return the capability manifest of advertised agents as JSON."""
-        return await bridge.manifest()
+        return await reader.manifest()
 
     @server.tool()
     async def synapse_directory() -> str:
         """Return the discovery-only capability directory as JSON."""
-        return await bridge.directory()
+        return await reader.directory()
 
     @server.tool()
     async def synapse_route_task(
@@ -276,36 +286,36 @@ def build_mcp_server(
     @server.resource("synapse://board")
     async def board_resource() -> str:
         """Live shared task/progress blackboard."""
-        return await bridge.board()
+        return await reader.board()
 
     @server.resource("synapse://state")
     async def state_resource() -> str:
         """Live claims and checkpoints snapshot."""
-        return await bridge.state()
+        return await reader.state()
 
     @server.resource("synapse://manifest")
     async def manifest_resource() -> str:
         """Live capability manifest of advertised agents."""
-        return await bridge.manifest()
+        return await reader.manifest()
 
     @server.resource("synapse://directory")
     async def directory_resource() -> str:
         """Live discovery-only capability directory."""
-        return await bridge.directory()
+        return await reader.directory()
 
     @server.resource("synapse://task/{task_id}")
     async def task_resource(task_id: str) -> str:
         """Read-only board task resource by task id."""
-        return await bridge.task_resource(task_id)
+        return await reader.task_resource(task_id)
 
     @server.resource("synapse://agent/{agent}")
     async def agent_resource(agent: str) -> str:
         """Read-only agent card and resource-offer resource by identity."""
-        return await bridge.agent_resource(agent)
+        return await reader.agent_resource(agent)
 
     @server.resource("synapse://resource-kind/{kind}")
     async def resource_kind_resource(kind: str) -> str:
         """Read-only resource-offer resource by resource kind."""
-        return await bridge.resource_kind_resource(kind)
+        return await reader.resource_kind_resource(kind)
 
     return server

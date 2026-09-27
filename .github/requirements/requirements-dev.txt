@@ -1546,7 +1546,9 @@ pygments==2.21.0 \
 pyjwt==2.15.0 \
     --hash=sha256:7a3742debf6b879e912dbb9819ceec1594be812452b78c5f2e2dfc56564954f8 \
     --hash=sha256:b11c5f9791d7bf51c2b39a81ed669f6b2dbbd669df2942f6c60167e9e3d1abe4
-    # via mcp
+    # via
+    #   synapse-channel (pyproject.toml)
+    #   mcp
 pymdown-extensions==12.1 \
     --hash=sha256:4a254b771acfcddc6c110a7f4590d818f1f849e2d5aacf69b4b07c8dd2a9700d \
     --hash=sha256:fdb8f47f5d7fd069d10ef2a7d8908e613d7865ff0419d544a0ffd3984e884f11
@@ -2501,10 +2503,12 @@ urllib3==2.8.0 \
     --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3 \
     --hash=sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63
     # via requests
-uvicorn==0.53.0 ; sys_platform != 'emscripten' \
-    --hash=sha256:a9356f0cb89b3b8621529c5d5eebd69bfe154f4c3f68b4cf2de47e45fa855c2e \
-    --hash=sha256:e8dca71ec86dce5f04e333f0d56cdedf942446e6643b9cea1af0d6d3a02cb03e
-    # via mcp
+uvicorn==0.54.0 ; sys_platform != 'emscripten' \
+    --hash=sha256:505bdb0f318731d45f1f712071fc781a8981f6847a31c902c9f5e652d4f67faf \
+    --hash=sha256:a2e33cbfaa0306f8e6b0c13e0cb89d7d7a2da3e62b90c66e18c33d9807b28620
+    # via
+    #   synapse-channel (pyproject.toml)
+    #   mcp
 vcs-versioning==2.5.0 \
     --hash=sha256:956a796e31f80fe714d219d6d1df15a6bf247d10f6d851bf4b98279d0a42da55 \
     --hash=sha256:dbf44f6303dc817e5792cb7d0e9cc90e3046ee1e32eaa357b20ad368811313d0

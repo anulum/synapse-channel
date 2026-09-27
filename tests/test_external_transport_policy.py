@@ -84,6 +84,7 @@ def test_contract_enumerates_every_edge_and_dimension_without_implicit_policy() 
         "metrics",
         "webhook",
         "mcp",
+        "mcp-http",
         "federation",
     )
     assert tool.POLICY_DIMENSIONS == (
@@ -175,7 +176,7 @@ def test_in_process_cli_covers_human_json_and_fail_closed_modes(
     tool = _load_tool()
 
     assert tool.main(["--check"]) == 0
-    assert "9 edges x 9 dimensions" in capsys.readouterr().out
+    assert "10 edges x 9 dimensions" in capsys.readouterr().out
     assert tool.main(["--json"]) == 0
     document = json.loads(capsys.readouterr().out)
     assert document["schema_version"] == "synapse-external-transport-policy.v1"

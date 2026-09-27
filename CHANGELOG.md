@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add opt-in authenticated Streamable HTTP MCP with provisioned native seats,
+  project-filtered reads, separately granted mutations, live revocation,
+  stable operation identifiers and bounded TLS loopback admission. Stdio
+  remains the default; desktop and cloud HTTP compatibility is not inferred.
+
 ### Changed
 
 - Admit MCP SDK 1.30.0 across the package extras, runtime environment guard,

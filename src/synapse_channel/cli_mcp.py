@@ -7,11 +7,13 @@
 # SYNAPSE_CHANNEL — Model Context Protocol bridge CLI command (mcp)
 """The Model-Context-Protocol bridge ``synapse`` subcommand.
 
-``mcp`` runs an MCP server over stdio that exposes the hub's coordination verbs
+``mcp`` defaults to stdio and exposes the hub's coordination verbs
 to any MCP client, bridging a stdio transport to a live hub. It depends on the
 optional ``mcp`` extra and on the stdio bridge in :mod:`synapse_channel.mcp`, so
 it is kept apart from the in-process hub-client command flows;
 :func:`add_parsers` registers its subparser on the top-level CLI.
+The explicit ``streamable-http`` transport delegates to the private HTTPS
+profile with operator-provisioned subjects and native hub identities.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ import asyncio
 import sys
 from collections.abc import Callable, Sequence
 
+from synapse_channel.cli_mcp_http import add_http_arguments, run_http
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.mcp.onboarding import resolve_mcp_identity
@@ -36,6 +39,24 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
     Exposes the hub's coordination verbs to any MCP client. Requires the optional
     ``mcp`` extra; a missing extra is reported with the install hint and exit ``1``.
     """
+    if getattr(args, "transport", "stdio") == "streamable-http":
+        return run_http(args)
+    if any(
+        getattr(args, option, None)
+        for option in (
+            "project",
+            "http_auth_file",
+            "tls_cert_file",
+            "tls_key_file",
+            "http_allowed_host",
+            "http_allowed_origin",
+        )
+    ):
+        print(
+            "synapse mcp: HTTPS provisioning requires --transport streamable-http",
+            file=sys.stderr,
+        )
+        return 2
     try:
         identity = resolve_mcp_identity(getattr(args, "name", None))
     except ValueError as exc:
@@ -81,7 +102,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     """Register the ``mcp`` subparser on the top-level CLI."""
     mcp = subparsers.add_parser(
         "mcp",
-        help="Run an MCP server over stdio that bridges to the hub (needs the [mcp] extra).",
+        help="Run an MCP server over stdio or private HTTPS (needs the [mcp] extra).",
     )
     mcp.add_argument("--uri", default=default_hub_uri())
     mcp.add_argument(
@@ -126,6 +147,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=5.0,
         help="Seconds to wait for the hub handshake before reporting it unreachable.",
     )
+    add_http_arguments(mcp)
     mcp.set_defaults(func=_cmd_mcp)
 
 

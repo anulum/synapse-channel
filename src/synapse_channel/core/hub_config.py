@@ -102,6 +102,7 @@ from synapse_channel.core.operator_relay_transport import (
     relay_operator_action,
 )
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.protected_write_admission_journal import ProtectedAdmissionReplayPolicy
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.role_grants import RoleGrants
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
@@ -270,6 +271,10 @@ class HubConfig:
     The direct fields cover the hub's identity and collaborators; the nested
     family records cover the opt-in surfaces. ``HubConfig()`` reproduces a
     bare ``SynapseHub()`` exactly.
+
+    ``protected_write_policies`` retains the constructor's optional enrollment
+    replay policies. Its default is ``None``; supplying replay policy does not
+    register protected-write dispatch or activate a privileged writer.
     """
 
     default_ttl_seconds: float = 3600.0
@@ -277,6 +282,7 @@ class HubConfig:
     journal: EventStore | None = None
     anti_rollback_checkpoint: bool = True
     checkpoint_store_path: str | Path | None = None
+    protected_write_policies: Mapping[str, ProtectedAdmissionReplayPolicy] | None = None
     clock: Callable[[], float] | None = None
     rate_limiter: RateLimiter | None = None
     host_rate_limiter: RateLimiter | None = None

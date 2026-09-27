@@ -303,7 +303,7 @@ python tools/audit_external_transport_policy.py --json
 ```
 
 The versioned JSON contract covers `websocket`, `hub-http`, `a2a-http`,
-`a2a-grpc`, `dashboard`, `metrics`, `webhook`, `mcp`, and `federation`. Every
+`a2a-grpc`, `dashboard`, `metrics`, `webhook`, `mcp`, `mcp-http`, and `federation`. Every
 row explicitly states activation, identity, auth/ACL, encryption, exposure,
 request size, response size, timeout/concurrency, and sanitized-error posture,
 then cites the exact production symbols that enforce that statement. CI resolves
@@ -480,6 +480,20 @@ the fail-closed startup refusal is the control, and a container image binding
 loopback would only break port publishing without adding security.
 
 ## Out of scope / known limitations
+
+The optional `mcp-http` [HTTP MCP profile](docs/mcp-http.md) adds an authenticated resource
+server in front of the existing coordination actions. It binds only to a
+loopback IP with direct TLS, explicit Host/Origin allowlists, current Ed25519
+issuer/audience/expiry/revocation checks and preprovisioned native identities.
+Operator tool grants and bearer mutation scope must both permit a write.
+Project-filtered reads, scoped task references and exact recipients bound the
+HTTP surface; no filesystem, shell or owner-ledger tools are admitted. Request,
+session, body, content and operation bounds limit queued work. HTTP bearers are
+not native hub credentials, and native identity/ACL/TLS policy remains an
+independent operator requirement. This profile does not provide an issuer,
+public deployment, OS containment or denial-of-service immunity. An in-flight
+native mutation may commit before a timeout or disconnect; use stable operation
+identifiers and actual receipts to resolve ambiguous outcomes.
 
 - The connect token is a proportionate shared secret, **not** a cryptographic
   identity system. Machine-key trust-on-first-use, operator identity bundles,

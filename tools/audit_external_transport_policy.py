@@ -47,6 +47,7 @@ EXPECTED_EDGES: Final[tuple[str, ...]] = (
     "metrics",
     "webhook",
     "mcp",
+    "mcp-http",
     "federation",
 )
 
@@ -202,7 +203,7 @@ EXTERNAL_TRANSPORT_POLICIES: Final[tuple[ExternalTransportPolicy, ...]] = (
         identity="declared MCP bridge name and optional roles register through the normal hub client",
         auth_acl="hub token and hub ACL/role policy apply; MCP stdio peer trust is the parent-process boundary",
         encryption="stdio is local process I/O; the bridge URI independently selects ws or wss",
-        exposure="no MCP network listener is opened by the shipped server",
+        exposure="no MCP network listener is opened by the default stdio profile",
         request_size="SDK-owned stdio framing; hub-bound frames retain the hub message/depth ceiling",
         response_size="SDK-owned stdio framing; returned resources derive from bounded hub projections",
         timeout_concurrency="five-second correlated hub request timeout and five-second startup readiness default",
@@ -211,6 +212,24 @@ EXTERNAL_TRANSPORT_POLICIES: Final[tuple[ExternalTransportPolicy, ...]] = (
             "synapse_channel.mcp.stdio:serve_stdio",
             "synapse_channel.mcp.bridge:SynapseHubBridge",
             "synapse_channel.mcp.bridge:DEFAULT_REQUEST_TIMEOUT",
+        ),
+    ),
+    ExternalTransportPolicy(
+        edge="mcp-http",
+        activation="explicit MCP streamable-http command; stdio remains default",
+        identity="fixed project and operator-provisioned issuer subject to native signed seat",
+        auth_acl="Ed25519 issuer, exact audience, expiry and live revocation; tool grants plus mutation scope",
+        encryption="direct HTTPS only; native hub URI independently selects ws or wss",
+        exposure="loopback IP only, explicit Host and Origin allowlists, no forwarded-header trust",
+        request_size="65536-byte default SDK body ceiling; private CLI also bounds HTTP headers",
+        response_size="262144-byte default serialised action/resource content ceiling",
+        timeout_concurrency="15-second operation bound, 32 active requests, 8 sessions per subject by default",
+        sanitized_errors="generic HTTP admission and MCP operation failures; private CLI disables access logs",
+        evidence=(
+            "synapse_channel.cli_mcp_http:run_http",
+            "synapse_channel.mcp.http_application:build_http_mcp_app",
+            "synapse_channel.mcp.http_auth:HttpTokenVerifier",
+            "synapse_channel.mcp.http_server:HttpMcpServer",
         ),
     ),
     ExternalTransportPolicy(

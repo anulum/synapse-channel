@@ -102,6 +102,7 @@ nav:
   - Local account and quota ledger: entitlements.md
   - Public surface and stability: public-surface.md
   - MCP server: mcp.md
+  - HTTP MCP: mcp-http.md
   - Git-native claims: git-claims.md
   - Policy engine: policy-engine.md
   - Agent trust graph: agent-trust-graph.md

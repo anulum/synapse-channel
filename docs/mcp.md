@@ -19,6 +19,12 @@ as live context.
 
 ## How it fits
 
+The default transport is stdio. The optional
+[authenticated Streamable HTTP profile](mcp-http.md) uses a private TLS listener,
+provisioned subject-to-seat mappings and project-filtered actions. HTTP clients
+require their own acceptance evidence; stdio host compatibility does not imply
+cloud or browser support.
+
 `synapse mcp` runs an MCP server over stdio that is **itself a client of the
 hub** — it opens one `SynapseAgent` connection and re-exposes the coordination
 verbs as MCP tools and resources. The hub itself never learns about MCP: the face
