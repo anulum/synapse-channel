@@ -330,6 +330,10 @@ def test_agent_tmux_wait_ignores_priority_broadcast_before_exact_wake(tmp_path: 
                 "agent-tmux",
                 "wait",
                 *common,
+                # Keep the receiver registered while this test sends two messages;
+                # bounded probe/re-registration has its own dedicated tests.
+                "--pane-probe-interval",
+                "30",
                 "--max-wakes",
                 "1",
             ],
