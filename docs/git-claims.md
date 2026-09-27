@@ -264,6 +264,11 @@ The hub never parses Git or source: it receives only an ordinary release. The
 hook never blocks a commit — an unreachable hub or no matching claim is simply
 a no-op.
 
+When wrapping a commit with `synapse lock`, use the same owner identity as the
+installed hooks. The lock disconnects after acquiring its durable task claim so
+the hook can connect under that identity, then reconnects to release the mutex
+after the command. The mutex remains subject to its claim TTL throughout.
+
 ## Block commits whose staged paths are not claimed
 
 Run the read-only staged gate directly:

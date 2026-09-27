@@ -66,6 +66,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            .github/requirements/requirements-dev.txt
+            .github/requirements/requirements-ci-tpm.txt
+            .github/requirements/requirements-legacy-release.txt
       # SoftHSM2 provides a PKCS#11 module and swtpm a software TPM 2.0, so the at-rest hardware
       # key backends run (not skip); libtss2-dev builds tpm2-pytss (sdist-only, no wheel).
       # The runner ships Microsoft/Azure apt sources whose signing intermittently breaks
@@ -82,6 +87,11 @@ jobs:
       # capability fail-closed so the real loopback/TLS/mTLS tests cannot silently skip.
       - name: Require the real gRPC test capability
         run: python -c "import grpc; assert grpc.__version__"
+      - name: Prepare the published no-receipt hub fixture
+        run: >-
+          python -m pip download --require-hashes --no-deps --only-binary=:all:
+          -r .github/requirements/requirements-legacy-release.txt
+          --dest .pytest_cache/legacy-release
       # tpm2-pytss is sdist-only and needs both the TSS2 headers above and build requirements from
       # the dev lock. Disable build isolation so it cannot fetch a second unpinned build cohort.
       - name: Install the hash-locked TPM 2.0 test capability

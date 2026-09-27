@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — published no-receipt hub fixture
+# Download only; never install over the candidate. The fixture extracts this
+# complete release into an isolated subprocess profile using the dev toolchain.
+synapse-channel==0.48.0 \
+    --hash=sha256:d4ee59fa6a32fd6830a3b45c86f206e847a31e2f2fb6c3a398300ce4f6357c01

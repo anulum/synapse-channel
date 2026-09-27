@@ -28,9 +28,10 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.cli_lock_process import run_locked_subprocess
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import describe_connect_failure, explain_silent_outcome
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.protocol import SENDER_HUB, MessageType
 from synapse_channel.core.receipts import build_release_receipt
 from synapse_channel.git.ordinary_claim import (
     OrdinaryClaimScopeError,
@@ -41,6 +42,7 @@ logger = logging.getLogger("synapse.lock")
 
 AgentFactory = Callable[..., SynapseAgent]
 LockRunner = Callable[[list[str]], Awaitable[int]]
+_run_subprocess = run_locked_subprocess
 
 
 def _load_release_receipt(path: str | Path) -> dict[str, Any]:
@@ -68,15 +70,19 @@ def _receipt_list(
 
 
 def _receipt_freshness(payload: dict[str, Any], fallback: float | None) -> float | None:
-    """Return explicit freshness when supplied, otherwise receipt freshness."""
-    if fallback is not None:
-        return fallback
-    raw = payload.get("freshness_seconds")
+    """Validate finite freshness, preferring an explicit value over receipt input."""
+    raw = fallback if fallback is not None else payload.get("freshness_seconds")
     if raw is None:
         return None
-    if not isinstance(raw, int | float):
+    if isinstance(raw, bool) or not isinstance(raw, int | float):
         raise ValueError("receipt field 'freshness_seconds' must be a number")
-    return float(raw)
+    try:
+        freshness = float(raw)
+    except OverflowError as exc:
+        raise ValueError("receipt field 'freshness_seconds' must be finite") from exc
+    if not math.isfinite(freshness):
+        raise ValueError("receipt field 'freshness_seconds' must be finite")
+    return freshness
 
 
 def _validate_release_receipt_identity(
@@ -92,12 +98,6 @@ def _validate_release_receipt_identity(
         raise ValueError(f"receipt task_id {receipt_task!r} does not match {task_id!r}")
     if receipt_owner is not None and receipt_owner != name:
         raise ValueError(f"receipt owner {receipt_owner!r} does not match {name!r}")
-
-
-async def _run_subprocess(command: list[str]) -> int:
-    """Run ``command`` and return its exit code (the default lock runner)."""
-    proc = await asyncio.create_subprocess_exec(*command)
-    return await proc.wait()
 
 
 async def _lock(
@@ -183,6 +183,14 @@ async def _lock(
     outcome: dict[str, Any] = {}
 
     async def collect(data: dict[str, Any]) -> None:
+        """Collect this owner's claim verdict or an addressed hub refusal."""
+        if (
+            data.get("type") == MessageType.ERROR
+            and data.get("sender") == SENDER_HUB
+            and data.get("target") == name
+        ):
+            outcome["error"] = str(data.get("payload") or "hub refused the request")
+            return
         if data.get("task_id") != task_id:
             return
         if data.get("type") == MessageType.CLAIM_GRANTED and data.get("owner") == name:
@@ -219,6 +227,9 @@ async def _lock(
                 if outcome or conn_task.done():
                     break
                 await asyncio.sleep(poll_interval)
+            if outcome.get("error"):
+                print(f"Could not acquire lock '{task_id}': {outcome['error']}")
+                return 1
             if outcome.get("granted"):
                 break
             if conn_task.done() and not outcome:
@@ -247,36 +258,69 @@ async def _lock(
                 )
                 return 1
             await asyncio.sleep(retry_interval)
+        # Task claims survive disconnection. Finish the listener's websocket
+        # teardown before spawning the command, allowing its Git hooks to use
+        # this same authenticated identity without a concurrent-name conflict.
+        conn_task.cancel()
+        await asyncio.gather(conn_task, return_exceptions=True)
         return await runner(command)
     finally:
-        try:
-            outcome.pop("released", None)
-            await agent.release(task_id)
-            # The release frame itself is fire-and-forget on the wire, and the
-            # hub persists the release BEFORE broadcasting the grant — so
-            # waiting boundedly for the confirmation here means that when the
-            # process exits, the lease is gone and the durable log already
-            # carries the release. Without the wait, a follow-up step reading
-            # the log (or contending for the lease) can race the hub. A
-            # missing confirmation only costs this bounded wait: the TTL
-            # remains the backstop, and teardown never hangs the command's
-            # outcome.
-            release_polls = (
-                attempts
-                if release_timeout is None
-                else max(1, math.ceil(release_timeout / poll_interval))
-            )
-            for _ in range(release_polls):
-                if outcome.get("released") or conn_task.done():
-                    break
-                await asyncio.sleep(poll_interval)
-        except Exception:
-            # Teardown must not mask the held command's outcome, but a lease
-            # that could not be dropped stays visible until its TTL — leave a
-            # trace instead of losing the failure entirely.
-            logger.debug("best-effort release of %r failed on teardown", task_id, exc_info=True)
-        agent.running = False
-        conn_task.cancel()
+
+        async def teardown() -> None:
+            """Finish reconnect, release and socket cleanup despite repeated interrupts."""
+            nonlocal conn_task
+            try:
+                if not outcome.get("granted"):
+                    return
+                if conn_task.done():
+                    conn_task = asyncio.create_task(agent.connect())
+                    if not await agent.wait_until_ready(timeout=ready_timeout):
+                        raise ConnectionError("could not reconnect to release the held claim")
+                outcome.pop("released", None)
+                await agent.release(task_id)
+                # The release frame itself is fire-and-forget on the wire, and the
+                # hub persists the release BEFORE broadcasting the grant — so
+                # waiting boundedly for the confirmation here means that when the
+                # process exits, the lease is gone and the durable log already
+                # carries the release. Without the wait, a follow-up step reading
+                # the log (or contending for the lease) can race the hub. A
+                # missing confirmation only costs this bounded wait: the TTL
+                # remains the backstop, and teardown never hangs the command's
+                # outcome.
+                release_polls = (
+                    attempts
+                    if release_timeout is None
+                    else max(1, math.ceil(release_timeout / poll_interval))
+                )
+                for _ in range(release_polls):
+                    if outcome.get("released") or conn_task.done():
+                        break
+                    await asyncio.sleep(poll_interval)
+            except Exception:
+                # Teardown must not mask the held command's outcome, but a lease
+                # that could not be dropped stays visible until its TTL — leave a
+                # trace instead of losing the failure entirely.
+                logger.debug("best-effort release of %r failed on teardown", task_id, exc_info=True)
+            finally:
+                agent.running = False
+                conn_task.cancel()
+                await asyncio.gather(conn_task, return_exceptions=True)
+
+        interrupted = False
+        while True:
+            cleanup = asyncio.create_task(teardown())
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    interrupted = True
+            if cleanup.cancelled():
+                interrupted = True
+                continue
+            cleanup.result()
+            break
+        if interrupted:
+            raise asyncio.CancelledError
 
 
 def _cmd_lock(args: argparse.Namespace) -> int:
@@ -395,6 +439,14 @@ async def _release(
     outcome: dict[str, Any] = {}
 
     async def collect(data: dict[str, Any]) -> None:
+        """Collect this owner's release verdict or an addressed hub refusal."""
+        if (
+            data.get("type") == MessageType.ERROR
+            and data.get("sender") == SENDER_HUB
+            and data.get("target") == name
+        ):
+            outcome["denied"] = str(data.get("payload") or "hub refused the request")
+            return
         if str(data.get("task_id")) != task_id:
             return
         if data.get("type") == MessageType.RELEASE_GRANTED and data.get("owner") == name:

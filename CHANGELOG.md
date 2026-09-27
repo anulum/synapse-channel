@@ -21,6 +21,13 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Report addressed hub errors in lock and release commands instead of hiding
+  ACL refusals behind timeouts; lock cleanup releases only confirmed grants.
+- Reject boolean or non-finite evidence freshness in release receipt files and
+  non-finite explicit CLI freshness before releasing
+  the owned claim.
+- Let Git hooks use the lock owner's identity while a wrapped command runs,
+  retaining the durable mutex claim and reconnecting for confirmed cleanup.
 - Update the GitHub Action policy-check example to the released 0.99.27 pair and
   show the checkout needed for a committed policy file.
 - Report an oversized provider HTTP response through the stable, redacted

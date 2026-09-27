@@ -634,6 +634,38 @@ for the wrapped command and dropped when it exits. A claim that no commit or mer
 will auto-release — a `git-claim --auto-release-on manual` — is dropped by its owner
 with `synapse release <task> --name <owner>`.
 
+After the grant, `lock` closes its hub connection while the command runs; the
+durable task claim remains held until release or its TTL expires. This lets Git
+hooks connect using the same owner identity. After the command, `lock` reconnects
+as that owner and waits boundedly for release confirmation. A reconnect failure
+leaves the claim visible until its TTL; it preserves the command's exit code.
+On cancellation, the command is terminated and reaped before release, with a
+grace period of up to five seconds before forced termination. Shutdown that also
+cancels cleanup work forces termination immediately. On POSIX this also terminates
+descendants remaining in its process group; on Windows it terminates the direct
+child. Processes that deliberately leave the group require their own lifecycle
+control.
+
+Receipt files must contain a JSON object with matching task and owner fields
+when supplied. Receipt freshness must be a finite number; JSON booleans,
+NaN, infinities and values outside the supported numeric range are rejected
+when used. An explicit `--freshness-seconds` overrides receipt freshness and
+must also be finite. An invalid receipt leaves the claim held.
+
+An addressed hub error, such as an ACL refusal, reports the hub's reason and
+returns failure. Lock retries apply to claim contention; a hub error terminates
+the attempt without running the command. Cleanup releases only a claim whose
+grant was confirmed.
+
+A timeout means the CLI did not confirm the result. The hub may already have
+recorded a grant or release, so inspect the live claim before retrying. Lock
+never starts the wrapped command without a confirmed grant.
+
+If an older hub confirms release without a structured receipt, `--receipt-json`
+returns a minimal receipt for that confirmed task and owner with no evidence
+and `epistemic_status: unsupported`. It does not turn an older acknowledgement
+into verified evidence.
+
 Add receipt fields when the release is also the closeout record. The hub echoes
 the receipt on `release_granted`; if any evidence field is present, it records the
 same receipt as an `assessment` progress note on the board. Use `--receipt-json`

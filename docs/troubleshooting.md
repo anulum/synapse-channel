@@ -233,11 +233,17 @@ synapse doctor --disk-path "$XDG_RUNTIME_DIR"
 
 ## `Could not acquire lock 'TASK': …` / `release refused for 'TASK': …`
 
-- **Lock denied or timed out** — another agent holds the lease. Wait, coordinate, or
-  raise `--timeout`. `synapse lock` serialises a command across agents by holding a lease
-  for its duration.
-- **Release refused** — you do not own that claim, or the hub did not answer. Releasing is
-  idempotent; releasing something you do not hold is a no-op, not an error.
+- **Lock denied or timed out** — another agent may hold the lease. Wait, coordinate, or
+  raise `--wait-timeout`. `synapse lock` runs the command after a confirmed grant.
+- **Access denied** — the hub's ACL does not grant this operation. Lock and release
+  report the addressed hub error and return failure. Review the owner's policy;
+  increasing a contention timeout does not change an ACL grant.
+- **Release refused** — you do not own that claim, the claim is absent, or the hub
+  did not confirm the release. The command returns failure and does not report
+  success. Check the live claim before retrying.
+- **Invalid release receipt** — task and owner must match when supplied, repeated
+  fields must contain strings, and freshness must be finite. The CLI rejects
+  invalid receipt input before sending the release, leaving the claim held.
 
 ## A worker never replies on the channel
 

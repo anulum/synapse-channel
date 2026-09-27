@@ -60,6 +60,23 @@ The `Makefile` wraps the common tasks (`make help` lists them):
 
 ## Standards a change must meet
 
+The CLI release compatibility tests run the complete published 0.48.0 hub,
+whose release confirmations predate evidence receipts. Prepare its hash-pinned
+wheel before running the suite:
+
+```bash
+python -m pip download --require-hashes --no-deps --only-binary=:all: \
+  -r .github/requirements/requirements-legacy-release.txt \
+  --dest .pytest_cache/legacy-release
+```
+
+The test fixture verifies the wheel again and extracts it into a temporary
+subprocess profile. It uses the existing dev dependencies and never installs
+the old release over the candidate. For a preloaded wheel directory, set
+`SYNAPSE_LEGACY_WHEEL_DIR`. A missing or altered wheel fails the test prerequisite;
+it does not skip the journey. This historical protocol fixture is not a
+deployment recommendation or a general minor-version compatibility guarantee.
+
 - **Tests.** Every new module, function, and branch ships with tests. Aggregate
   coverage stays above the 98% floor; a change must not lower it.
 - **Test taxonomy.** Reserve the `e2e` name and real-runtime CI mental
