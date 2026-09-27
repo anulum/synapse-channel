@@ -21,6 +21,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Report wrapped-command OS launch failures without a traceback: `synapse lock`
+  returns `127` when an executable or interpreter is missing and `126` for
+  other execution refusals, while completing the usual claim release.
+
 - Report addressed hub errors in lock and release commands instead of hiding
   ACL refusals behind timeouts; lock cleanup releases only confirmed grants.
 - Reject boolean or non-finite evidence freshness in release receipt files and

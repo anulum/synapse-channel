@@ -634,6 +634,13 @@ for the wrapped command and dropped when it exits. A claim that no commit or mer
 will auto-release — a `git-claim --auto-release-on manual` — is dropped by its owner
 with `synapse release <task> --name <owner>`.
 
+If the wrapped executable or its interpreter cannot be found, `lock` reports
+the launch error on stderr and returns `127`. Other OS execution refusals, such
+as permission denial or an invalid executable format, return `126`. The acquired
+claim follows the same bounded release confirmation as a completed command.
+Arguments are passed directly without shell expansion; a normal child exit
+status is preserved.
+
 After the grant, `lock` closes its hub connection while the command runs; the
 durable task claim remains held until release or its TTL expires. This lets Git
 hooks connect using the same owner identity. After the command, `lock` reconnects

@@ -13,6 +13,7 @@ import asyncio
 import contextlib
 import os
 import signal
+import sys
 
 
 async def run_locked_subprocess(command: list[str]) -> int:
@@ -21,6 +22,8 @@ async def run_locked_subprocess(command: list[str]) -> int:
     On POSIX the command owns a new session so cancellation also terminates
     children in that process group. Windows terminates the direct child. After
     five seconds without exit, force termination before propagating cancellation.
+    An OS launch failure prints the executable and reason to stderr, then returns
+    127 for a missing executable or interpreter, or 126 for another refusal.
 
     Parameters
     ----------
@@ -30,14 +33,19 @@ async def run_locked_subprocess(command: list[str]) -> int:
     Returns
     -------
     int
-        The child process's exit status after normal completion.
+        The child process's exit status after normal completion, or the launch
+        failure status 127 (not found) or 126 (cannot execute).
 
     Raises
     ------
     asyncio.CancelledError
         After interrupted process termination and reaping have completed.
     """
-    proc = await asyncio.create_subprocess_exec(*command, start_new_session=os.name != "nt")
+    try:
+        proc = await asyncio.create_subprocess_exec(*command, start_new_session=os.name != "nt")
+    except OSError as exc:
+        print(f"lock: cannot execute {command[0]!r}: {exc.strerror}", file=sys.stderr)
+        return 127 if isinstance(exc, FileNotFoundError) else 126
 
     async def terminate() -> None:
         """Complete bounded termination independently of the caller's cancellation."""

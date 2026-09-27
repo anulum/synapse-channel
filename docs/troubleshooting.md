@@ -231,6 +231,16 @@ synapse doctor --disk-path /media/anulum/GOTM
 synapse doctor --disk-path "$XDG_RUNTIME_DIR"
 ```
 
+## `lock: cannot execute …`
+
+The claim was granted, but the operating system could not start the wrapped
+command. Exit `127` means the executable or its script interpreter was not
+found: check the executable path, `PATH`, and shebang interpreter. Exit `126`
+means another execution refusal: check permissions and executable format.
+The diagnostic names the executable and OS reason; it does not print command
+arguments. Lock cleanup still attempts bounded, confirmed release. Check live
+claims if reconnecting to the hub failed.
+
 ## `Could not acquire lock 'TASK': …` / `release refused for 'TASK': …`
 
 - **Lock denied or timed out** — another agent may hold the lease. Wait, coordinate, or
