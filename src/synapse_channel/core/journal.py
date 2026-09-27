@@ -40,6 +40,7 @@ from synapse_channel.core.delivery_persistence import (
 from synapse_channel.core.delivery_persistence import (
     DELIVERY_CANCEL_REQUESTED as DELIVERY_CANCEL_REQUESTED_KIND,
 )
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.event_row_recovery import CORRUPT_EVENT_KIND, CorruptEventRow
 from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS,
@@ -116,8 +117,16 @@ class EventKind:
     CORRUPT = CORRUPT_EVENT_KIND
 
 
-class UnsupportedProtectedWriteHistoryError(RuntimeError):
-    """Replay cannot reconstruct custody from a protected-write history event."""
+class UnsupportedProtectedWriteHistoryError(SynapseError, RuntimeError):
+    """Replay cannot reconstruct custody from a protected-write history event.
+
+    Attributes
+    ----------
+    code : str
+        Stable classification returned by ``error_code``.
+    """
+
+    code = "unsupported_protected_write_history"
 
 
 _UNVERIFIED_PARTITION_CONTESTER = "<unverified-persisted-contester>"

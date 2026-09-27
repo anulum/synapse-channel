@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 from synapse_channel.core.aef_domain import AEF_LEGACY_EVENT_DOMAIN
 from synapse_channel.core.atomic_operations import canonical_request_digest
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.protected_write_json import decode_protected_write_json
 from synapse_channel.core.protected_write_operations import (
     validate_protected_write_content_reference,
@@ -65,8 +66,16 @@ _BODIES = {
 }
 
 
-class ProtectedWriteRequestError(ValueError):
-    """A protected-write request has malformed or inconsistent declared fields."""
+class ProtectedWriteRequestError(SynapseError, ValueError):
+    """A protected-write request has malformed or inconsistent declared fields.
+
+    Attributes
+    ----------
+    code : str
+        Stable classification returned by ``error_code``.
+    """
+
+    code = "protected_write_request"
 
 
 @dataclass(frozen=True)

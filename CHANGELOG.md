@@ -28,6 +28,14 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Classify protected-write representation and custody-replay refusals, and remote
+  MCP policy loading, through the stable error taxonomy while preserving their
+  historical `ValueError` and `RuntimeError` catches.
+- Keep verification aligned with the complete MCP extra, existing POSIX test
+  guards and exact platform-specific container build dependencies.
+- Give offline discovery CLI tests their own review configuration and exercise
+  overdue-review rejection independently of the production review deadline.
+
 - Report wrapped-command OS launch failures without a traceback: `synapse lock`
   returns `127` when an executable or interpreter is missing and `126` for
   other execution refusals, while completing the usual claim release.

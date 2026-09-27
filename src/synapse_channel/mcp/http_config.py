@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 
 READ_TOOLS = frozenset(
@@ -34,8 +35,16 @@ MUTATION_TOOLS = frozenset(
 )
 
 
-class HttpConfigError(ValueError):
-    """Reject an invalid grant file without including its content in diagnostics."""
+class HttpConfigError(SynapseError, ValueError):
+    """Reject an invalid grant file without including its content in diagnostics.
+
+    Attributes
+    ----------
+    code : str
+        Stable classification returned by ``error_code``.
+    """
+
+    code = "mcp_http_config"
 
 
 class RemoteSeat(BaseModel):

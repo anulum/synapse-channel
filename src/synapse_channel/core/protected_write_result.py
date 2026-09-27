@@ -17,6 +17,7 @@ import json
 from dataclasses import dataclass
 from typing import cast
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.protected_write_operations import (
     validate_protected_write_content_reference,
 )
@@ -50,8 +51,16 @@ _BODY_FIELDS = {
 }
 
 
-class ProtectedWriteResultError(ValueError):
-    """A result is unbound to its request or declares an inconsistent state."""
+class ProtectedWriteResultError(SynapseError, ValueError):
+    """A result is unbound to its request or declares an inconsistent state.
+
+    Attributes
+    ----------
+    code : str
+        Stable classification returned by ``error_code``.
+    """
+
+    code = "protected_write_result"
 
 
 @dataclass(frozen=True)

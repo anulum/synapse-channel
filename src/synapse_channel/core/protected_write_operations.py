@@ -16,9 +16,19 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from synapse_channel.core.errors import SynapseError
 
-class ProtectedWriteOperationsError(ValueError):
-    """A declared effect or executable operation violates its representation."""
+
+class ProtectedWriteOperationsError(SynapseError, ValueError):
+    """A declared effect or executable operation violates its representation.
+
+    Attributes
+    ----------
+    code : str
+        Stable classification returned by ``error_code``.
+    """
+
+    code = "protected_write_operations"
 
 
 @dataclass(frozen=True)

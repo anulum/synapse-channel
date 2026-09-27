@@ -18,6 +18,7 @@ import json
 import re
 from dataclasses import dataclass
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.protected_write_json import (
     ProtectedWriteJsonLimits,
     decode_protected_write_json,
@@ -30,8 +31,16 @@ from synapse_channel.core.protected_write_operations import (
 )
 
 
-class ProtectedWriteProposalError(ValueError):
-    """A proposal lacks exact claim, content or declared operation bindings."""
+class ProtectedWriteProposalError(SynapseError, ValueError):
+    """A proposal lacks exact claim, content or declared operation bindings.
+
+    Attributes
+    ----------
+    code : str
+        Stable classification returned by ``error_code``.
+    """
+
+    code = "protected_write_proposal"
 
 
 @dataclass(frozen=True)

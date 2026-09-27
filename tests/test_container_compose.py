@@ -8,10 +8,12 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, cast
 
 import yaml
+from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "docker-compose.yml"
@@ -177,13 +179,47 @@ def test_container_runtime_lock_matches_the_base_project_dependency() -> None:
 def test_container_build_lock_contains_only_the_required_exact_toolchain() -> None:
     """The throwaway builder installs no unrelated CI or release utilities."""
     lock = CONTAINER_BUILD_REQUIREMENTS.read_text(encoding="utf-8")
-    packages = {
-        line.split("==", maxsplit=1)[0]
-        for line in lock.splitlines()
-        if line and not line.startswith(("#", " "))
+    expected = {
+        "build": "1.6.1",
+        "colorama": "0.4.6",
+        "packaging": "26.3",
+        "pyproject-hooks": "1.3.3",
+        "setuptools": "84.0.0",
+        "wheel": "0.48.0",
     }
-    assert packages == {"build", "packaging", "pyproject-hooks", "setuptools", "wheel"}
-    assert lock.count("--hash=sha256:") == 8
+    requirements: dict[str, Requirement] = {}
+    digests: set[str] = set()
+    for line in lock.replace("\\\n", "").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        declaration, *hashes = line.split(" --hash=sha256:")
+        requirement = Requirement(declaration.strip())
+        assert requirement.name not in requirements
+        assert requirement.name in expected
+        assert str(requirement.specifier) == "==" + expected[requirement.name]
+        assert requirement.url is None and not requirement.extras
+        hashes = [digest.strip() for digest in hashes]
+        assert len(hashes) == len(set(hashes)) == 2
+        assert all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in hashes)
+        digests.update(hashes)
+        requirements[requirement.name] = requirement
+    assert set(requirements) == set(expected)
+    assert len(digests) == 12
+    for name, requirement in requirements.items():
+        if name == "colorama":
+            assert str(requirement.marker) == 'os_name == "nt"'
+        else:
+            assert requirement.marker is None
+    for os_name, names in (
+        ("posix", set(expected) - {"colorama"}),
+        ("nt", set(expected)),
+    ):
+        active = {
+            name
+            for name, requirement in requirements.items()
+            if requirement.marker is None or requirement.marker.evaluate({"os_name": os_name})
+        }
+        assert active == names
 
 
 def test_docker_context_exposes_only_the_two_required_lock_files() -> None:

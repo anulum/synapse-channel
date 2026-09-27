@@ -81,6 +81,23 @@ for the concrete refusal reason used in CLI documents and receipts. This
 instance reason does not change the class-level classification. Constructors,
 exception messages and setup refusal codes remain compatible.
 
+Protected-write representation and replay refusals, and remote MCP policy
+loading, also participate in this classification contract:
+
+| Exception | Stable code | Historical base |
+| --- | --- | --- |
+| `UnsupportedProtectedWriteHistoryError` | `unsupported_protected_write_history` | `RuntimeError` |
+| `ProtectedWriteJsonError` | `protected_write_json` | `ValueError` |
+| `ProtectedWriteOperationsError` | `protected_write_operations` | `ValueError` |
+| `ProtectedWriteProposalError` | `protected_write_proposal` | `ValueError` |
+| `ProtectedWriteRequestError` | `protected_write_request` | `ValueError` |
+| `ProtectedWriteResultError` | `protected_write_result` | `ValueError` |
+| `HttpConfigError` | `mcp_http_config` | `ValueError` |
+
+Protected-write codes classify validation and custody-replay failures; execution
+still requires separately admitted authority. Exception messages, constructor
+arguments and historical built-in catches retain their existing behavior.
+
 Boundary projections are explicit and frozen by focused tests. A2A validation,
 not-found, conflict, quota, and store codes map to HTTP 400, 404, 409, 429, and
 500 respectively. Outbound MCP config, access, and tool codes map to CLI exits

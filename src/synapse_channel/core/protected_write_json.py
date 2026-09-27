@@ -18,9 +18,19 @@ import math
 from dataclasses import dataclass
 from typing import NoReturn
 
+from synapse_channel.core.errors import SynapseError
 
-class ProtectedWriteJsonError(ValueError):
-    """A protected-write document violates its explicit JSON representation limits."""
+
+class ProtectedWriteJsonError(SynapseError, ValueError):
+    """A protected-write document violates its explicit JSON representation limits.
+
+    Attributes
+    ----------
+    code : str
+        Stable classification returned by ``error_code``.
+    """
+
+    code = "protected_write_json"
 
 
 @dataclass(frozen=True)

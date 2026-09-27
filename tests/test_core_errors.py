@@ -49,6 +49,41 @@ _SRC = Path(__file__).resolve().parent.parent / "src" / "synapse_channel"
 # A row may be ADDED for a new error class; an existing row must never change.
 # ---------------------------------------------------------------------------
 FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
+    "UnsupportedProtectedWriteHistoryError": (
+        "synapse_channel.core.journal",
+        "unsupported_protected_write_history",
+        RuntimeError,
+    ),
+    "ProtectedWriteJsonError": (
+        "synapse_channel.core.protected_write_json",
+        "protected_write_json",
+        ValueError,
+    ),
+    "ProtectedWriteOperationsError": (
+        "synapse_channel.core.protected_write_operations",
+        "protected_write_operations",
+        ValueError,
+    ),
+    "ProtectedWriteProposalError": (
+        "synapse_channel.core.protected_write_proposal",
+        "protected_write_proposal",
+        ValueError,
+    ),
+    "ProtectedWriteRequestError": (
+        "synapse_channel.core.protected_write_request",
+        "protected_write_request",
+        ValueError,
+    ),
+    "ProtectedWriteResultError": (
+        "synapse_channel.core.protected_write_result",
+        "protected_write_result",
+        ValueError,
+    ),
+    "HttpConfigError": (
+        "synapse_channel.mcp.http_config",
+        "mcp_http_config",
+        ValueError,
+    ),
     "AppTaskError": ("synapse_channel.core.app_tasks", "app_task", ValueError),
     "AttentionStoreError": ("synapse_channel.core.attention_store", "attention_store", ValueError),
     "CodexPackageError": ("synapse_channel.codex_mcp_package", "codex_package", ValueError),

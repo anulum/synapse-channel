@@ -83,6 +83,11 @@ def _api(name: str) -> dict[str, Any]:
 
 def test_reviewed_hosts_rejected_by_public_cli(tmp_path: Path) -> None:
     """Each reviewed lure is excluded from C15 by its inspectable structure."""
+    config_path = tmp_path / "review.json"
+    config = json.loads(discovery.DEFAULT_CONFIG.read_text(encoding="utf-8"))
+    config["review_owner"] = "fixture/reviewer"
+    config["reviewed_at"] = datetime.now(timezone.utc).date().isoformat()
+    config_path.write_text(json.dumps(config), encoding="utf-8")
     api: dict[str, Any] = {}
     for name in REVIEWED_HOSTS:
         api.update(_api(name))
@@ -106,6 +111,8 @@ def test_reviewed_hosts_rejected_by_public_cli(tmp_path: Path) -> None:
         [
             sys.executable,
             "tools/vendor_discovery.py",
+            "--config",
+            str(config_path),
             "--fixture",
             str(source),
             "--catalog",
@@ -131,6 +138,8 @@ def test_reviewed_hosts_rejected_by_public_cli(tmp_path: Path) -> None:
         [
             sys.executable,
             "tools/vendor_discovery.py",
+            "--config",
+            str(config_path),
             "--fixture",
             str(source),
             "--catalog",

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
 from urllib.request import Request
@@ -113,6 +113,11 @@ def _scan(
 
 def test_real_cli_fixture_persists_first_and_last_seen(tmp_path: Path) -> None:
     """One operator command writes an inspectable report and separate next catalog."""
+    config_path = tmp_path / "review.json"
+    config = json.loads(discovery.DEFAULT_CONFIG.read_text(encoding="utf-8"))
+    config["review_owner"] = "fixture/reviewer"
+    config["reviewed_at"] = datetime.now(timezone.utc).date().isoformat()
+    config_path.write_text(json.dumps(config), encoding="utf-8")
     fixture_path = tmp_path / "fixture.json"
     fixture_path.write_text(json.dumps(_fixture()), encoding="utf-8")
     catalog_path = tmp_path / "initial.json"
@@ -125,6 +130,8 @@ def test_real_cli_fixture_persists_first_and_last_seen(tmp_path: Path) -> None:
         [
             sys.executable,
             "tools/vendor_discovery.py",
+            "--config",
+            str(config_path),
             "--catalog",
             str(catalog_path),
             "--fixture",
@@ -307,6 +314,11 @@ def test_cli_refuses_overwrite_and_fails_strict_on_unavailable_feed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The production entrypoint writes two outputs and protects its inputs."""
+    config_path = tmp_path / "review.json"
+    config = json.loads(discovery.DEFAULT_CONFIG.read_text(encoding="utf-8"))
+    config["review_owner"] = "fixture/reviewer"
+    config["reviewed_at"] = datetime.now(timezone.utc).date().isoformat()
+    config_path.write_text(json.dumps(config), encoding="utf-8")
     fixture_path = tmp_path / "feed.json"
     fixture_path.write_text(json.dumps(_fixture()), encoding="utf-8")
     catalog_path = tmp_path / "initial.json"
@@ -317,6 +329,8 @@ def test_cli_refuses_overwrite_and_fails_strict_on_unavailable_feed(
     state_path = tmp_path / "state.json"
     args = [
         "discovery",
+        "--config",
+        str(config_path),
         "--catalog",
         str(catalog_path),
         "--fixture",
@@ -330,6 +344,14 @@ def test_cli_refuses_overwrite_and_fails_strict_on_unavailable_feed(
     monkeypatch.setattr(sys, "argv", args)
     assert discovery.main() == 0
     assert json.loads(state_path.read_text(encoding="utf-8"))["candidates"]
+    config["reviewed_at"] = (
+        datetime.now(timezone.utc).date() - timedelta(days=config["review_interval_days"] + 1)
+    ).isoformat()
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    assert discovery.main() == 1
+    assert json.loads(report_path.read_text(encoding="utf-8"))["review_overdue"] is True
+    config["reviewed_at"] = datetime.now(timezone.utc).date().isoformat()
+    config_path.write_text(json.dumps(config), encoding="utf-8")
     monkeypatch.setattr(
         sys, "argv", args[:-3] + ["--report", str(report_path), "--next-catalog", str(report_path)]
     )
