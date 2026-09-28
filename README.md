@@ -1518,7 +1518,13 @@ routed by single-owner-per-namespace and fail closed on a partition. The shipped
 surface is operator-managed peering: `synapse multihub follow` and
 `--observed-peer HUB=URI` views observe peer logs as advisory `observed@HUB`
 state; local claim authority remains local or explicitly routed to the owning
-hub. A stopped durable watcher can record explicit recovery with
+hub. Agents on two hubs can talk directly: with `synapse hub --message-peer
+HUB_ID=URI` a chat or delivery intent addressed to `PROJECT/seat@HUB_ID` is
+forwarded over pinned mutual TLS to that peer. The peer must grant the target's
+namespace. Chats are retried from a durable outbox until answered or expired,
+and the peer deduplicates retries so a chat is queued there only once
+([protocol](docs/protocol.md#cross-hub-message-forwarding-wire-version-5)).
+A stopped durable watcher can record explicit recovery with
 `synapse multihub recover` only after an operator accepts a new log generation or
 checkpoint; reconnect alone never clears quarantine. Network observed-peer pulls also carry cursor lag and peer welcome-frame
 clock skew, so operators can see when timestamp-ordered cross-hub evidence
@@ -1702,11 +1708,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.28 |
 | Public API exports | 70 |
-| Package modules | 640 |
-| Classes | 939 |
-| Wire message types | 99 |
+| Package modules | 646 |
+| Classes | 955 |
+| Wire message types | 101 |
 | CLI subcommands | 223 |
-| Test functions | 10420 |
+| Test functions | 10485 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 78 |
 | GitHub Actions workflows | 27 |

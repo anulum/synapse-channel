@@ -13,6 +13,23 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Let agents message seats on another hub as `PROJECT/seat@HUB_ID` (wire
+  version 5). `synapse hub --message-peer HUB_ID=URI` forwards chats,
+  version-three delivery intents and `synapse who --hub` roster requests to a
+  peer that grants this hub the target's namespace under its multi-hub serving
+  policy and pinned mutual TLS. Chats wait in a durable outbox and are retried
+  until answered or expired, and the receiving hub answers each forward once.
+  Forwarded senders appear as `seat@ORIGIN_HUB` and never gain `interrupt` or
+  `steer`. Receipts report the forward's outcome, including to a sender that
+  was offline when it settled.
+
+### Changed
+
+- Reserve every name containing `@` for seats on peer hubs; a local client that
+  registers one is refused as a name conflict.
+
 ## [0.99.28] - 2026-09-28
 
 ### Added

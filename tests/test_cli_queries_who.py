@@ -552,3 +552,32 @@ async def test_who_recovers_from_a_stale_subject_pin_without_replacing_it(
     assert "PEER" in output
     assert "identity proof refused" not in output
     assert "query/who-" not in output
+
+
+async def test_who_hub_prints_a_message_peers_roster_as_hub_qualified_seats(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from message_forward_peer_helpers import result_frame, scripted_peer
+    from synapse_channel.core.message_forward_transport import MessageForwardPeer
+
+    roster = {"online_agents": ["PROJ/bob"], "delivery_sessions": {}}
+    async with scripted_peer(
+        lambda frame: result_frame(frame["forward_id"], result=roster)
+    ) as peer:
+        hub = SynapseHub(
+            hub_id="workstation", message_peers={"laptop": MessageForwardPeer(peer.uri)}
+        )
+        async with running_hub(hub) as (_, uri):
+            code = await cli_queries._who(uri=uri, name="U", remote_hub="laptop")
+    assert code == 0
+    assert "PROJ/bob@laptop" in capsys.readouterr().out
+    assert peer.received[0]["kind"] == "who"
+
+
+async def test_who_hub_surfaces_the_hubs_refusal_for_an_unknown_peer(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async with running_hub(SynapseHub()) as (_, uri):
+        code = await cli_queries._who(uri=uri, name="U", remote_hub="laptop")
+    assert code == 1
+    assert "unknown_hub" in capsys.readouterr().out

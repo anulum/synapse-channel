@@ -17,7 +17,7 @@ applied once. On a secured hub, the first message of a connection must carry a
 `token`.
 
 The hub advertises its wire-protocol version in the `welcome` handshake as
-`protocol_version` (an integer; the current wire is version `4`), and it is also
+`protocol_version` (an integer; the current wire is version `5`), and it is also
 reported by `/health` as `protocol_version`. It is decoupled from the package
 version on purpose — a patch or feature release that leaves the wire shapes
 unchanged does not bump it, so it is a stable compatibility signal a client can
@@ -41,6 +41,11 @@ reviewed migration and mixed-version boundaries.
 Version `4` adds the signed, scoped local attachment verbs. A client sends
 these only after the hub advertises version `4`; version-three delivery
 sessions remain valid on a version-four connection.
+
+Version `5` adds hub-to-hub message forwarding: a chat or delivery addressed to
+`PROJECT/seat@HUB_ID` is forwarded to that configured peer hub. The two new
+frames travel only between hubs, so agent-facing frames keep their earlier
+meaning; see [Cross-hub message forwarding](#cross-hub-message-forwarding-wire-version-5).
 
 The [per-message authentication runtime](per-message-authentication.md) keeps
 the same envelope shape and adds an `auth` object for selected mutating frames
@@ -98,7 +103,8 @@ does not add agent grades to protocol envelopes.
   [Scoped attachments](attachments.md). Each returns a private
   `attachment_result` after bound identity, signature, role and ACL checks.
 - **Queries:** `state_request`, `who_request`, `history_request`,
-  `resume_request`.
+  `resume_request`. A `who_request` carrying `hub` asks that configured message
+  peer for its roster (wire version 5).
 - **Governed operator recovery:** `identity_pin_reclaim` removes one exact TOFU
   pin after the always-on ACL, requester-binding, owner-liveness, expected-key,
   and durable-audit gates pass. It is emitted only by an explicit operator
@@ -578,6 +584,100 @@ in-memory process token; creating a new instance starts a new incarnation and
 supersedes unfinished old work. Configure the provider's own edit, shell and
 network permissions before advertising a native capability. The bridge does
 not grant tool permissions or override provider approval prompts.
+
+## Cross-hub message forwarding (wire version 5)
+
+A hub configured with message peers delivers chats and version-three delivery
+intents to seats on those peers. The agent writes the target as
+`PROJECT/seat@HUB_ID`; everything else about the frame is unchanged. `HUB_ID`
+is 1–64 characters of letters, digits, `.`, `_` and `-`, starting with a letter
+or digit. Every name containing `@` is reserved: a local client that registers
+one receives `name_conflict` and the connection closes with code `4009`, so a
+local seat can never pose as a forwarded sender.
+
+**Configuration.** The origin hub names each peer with
+`synapse hub --message-peer HUB_ID=URI` (repeatable), plus
+`--message-peer-token`/`--message-peer-token-file`, a `--message-peer-pin` per
+`wss://` peer, and the multi-hub client certificate for mutual TLS. The
+receiving hub accepts a forward only from a peer that holds a grant in its
+[multi-hub serving policy](multi-hub-sync.md#boundaries) and presents its pinned
+client certificate on the live connection. The federation peering lists the
+local project namespaces that peer may address; the target seat's namespace must
+be one of them. A hub without a serving policy accepts no forward.
+
+**Chat.** A cross-hub chat names exactly one seat: a comma list, an audience or
+a glob (`*`, `?`, `[`) is refused locally, as is a hub that is not a configured peer. A chat
+sent to a `channel` follows the channel rules and is never forwarded. The origin hub keeps and journals the chat like a local one, writes it to
+a durable outbox, and attempts the forward immediately. An unanswered forward
+is retried after 1, 2, 4 … seconds (at most 300) until the peer answers or the
+forward expires after `--message-forward-ttl` seconds (default 86400).
+Delivery is at least once: a retry carries the same `forward_id`, and the peer
+answers a repeat with `duplicate` instead of queueing a second copy. A reused
+`forward_id` with different content is refused (`forward_id_conflict`). Only
+accepted answers are remembered, so a forward refused for a transient reason,
+such as the peer's ingress quota, succeeds on a later retry.
+
+The peer routes the chat through its normal router — mailbox, private routing,
+dead letters and its own quota for the forwarding connection. Its recipient sees
+`sender` as `seat@ORIGIN_HUB`, taken from the authenticated connection and never
+from the frame, together with `forwarded_from` and `forward_id`.
+
+A sender that set `receipt_requested` receives a `delivery_receipt` with
+`forward_id`, `forwarded_to` and `forward_state` (`pending`, `accepted`,
+`duplicate`, `refused` or `expired`). `recipients` are hub-qualified, and
+`delivered` is true only when the peer reported a consume-live recipient. A
+pending receipt has `reason` `forward_pending` and `deferred` true. When the
+forward settles later, the sender receives a second receipt at once if online,
+or on its next registration. Settlements are reported with `reason`
+`forward_refused` or `forward_expired`. A peer older than version 5 answers the
+frame with an `error`, which settles the forward as refused (`peer_rejected`)
+without further retries. A receipt reports transport facts only. It never means
+the recipient acted on the message.
+
+**Delivery intents.** A `delivery_request` whose `target` is
+`PROJECT/seat@HUB_ID` is forwarded synchronously. The peer admits it against its
+own recipient session, exactly as for a local requester named
+`seat@ORIGIN_HUB`. A forwarded requester is never granted `interrupt` or
+`steer`; such a mode is refused with `unauthorised_requester`. The relayed
+`delivery_status` carries `remote_hub`. Later `delivery_status_request` and
+`delivery_cancel` frames for that operation key are routed to the same peer, and
+only the requesting seat may send them. A forward that cannot complete is
+answered with `delivery_refused` whose `reason_code` is one of the following:
+`unknown_hub`, `peer_unreachable`, `peer_rejected`, `peer_invalid_answer`,
+`invalid_target`, `invalid_shape` or the peer's own refusal code.
+
+**Roster.** A `who_request` with `hub` returns that peer's `who_snapshot` with
+`remote_hub`. Its seats are named `seat@HUB_ID` and limited to namespaces the
+peer lets this hub address. An unreachable or refusing peer yields an `error`
+frame instead. On the command line this is `synapse who --hub HUB_ID`.
+
+**Hub-to-hub frames.** These frames are exchanged only between hubs; a
+receiving hub serves them only to a granted peer. Each forward opens
+one connection, registers under the origin hub's id, sends one
+`multihub_message_forward`, awaits one `multihub_message_result` for up to ten
+seconds, and closes.
+
+| Frame | Fields |
+| --- | --- |
+| `multihub_message_forward` | `forward_id` (at most 128 bytes), `kind` (`chat`, `delivery_request`, `delivery_status`, `delivery_cancel` or `who`), `sender_seat`, `target_seat` (required for `chat` and `delivery_request`, absent otherwise; never hub-qualified), `body` (a JSON object of at most 262144 bytes) |
+| `multihub_message_result` | `forward_id`, `disposition` (`accepted`, `duplicate` or `refused`), `answering_hub`, `reason_code` (lower-case, refusals only), `detail` (at most 512 bytes), `result` (object) |
+
+A receiving hub refuses with one of these codes:
+`invalid_origin`, `peer_not_authorised`, `namespace_not_granted`,
+`invalid_target`, `invalid_shape`, `chat_refused`, `unknown_request`,
+`journal_recovery_required`, `forward_id_conflict` or a delivery refusal code.
+It answers a frame it cannot decode with a plain `error`. The receiving hub
+applies the one-seat rule itself, so a comma list or glob is refused
+(`invalid_target`) even if a modified peer sends it. While startup replay has
+quarantined corrupt journal rows, it refuses forwarded chats, delivery intents
+and cancellations (`journal_recovery_required`), as it refuses local mutations.
+Roster and status reads stay available. The origin also refuses a peer's
+`operation_key` that is not 64 lower-case hex digits or that is already routed
+on the origin hub (`peer_invalid_answer`). Otherwise a peer could redirect
+another delivery's follow-ups.
+
+Forwarding is one hop between configured peers. There is no relay through a
+third hub, no cross-hub broadcast or channel, and no automatic peer discovery.
 
 ## Release receipts
 

@@ -48,6 +48,7 @@ from typing import Any, Literal, NamedTuple
 from synapse_channel.core.atomic_operations import OperationRecord
 from synapse_channel.core.delivery_persistence import DeliveryPersistence
 from synapse_channel.core.event_row_recovery import CorruptEventRow, decode_event_row
+from synapse_channel.core.message_forward_ledger import MessageForwardLedger
 
 BUSY_TIMEOUT_MS = 5000
 
@@ -251,6 +252,7 @@ class EventStore:
             is not None
         )
         self.delivery = DeliveryPersistence(self._conn, self._lock)
+        self.message_forward = MessageForwardLedger(self._conn, self._lock)
         self._conn.commit()
         # WAL mode creates ``-wal`` and ``-shm`` sidecars on the first write (the
         # ``CREATE TABLE`` commit above). They mirror the same content as the main

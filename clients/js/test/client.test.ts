@@ -168,8 +168,13 @@ describe("SynapseClient messaging", () => {
     client.claim("t1", ["src/a.ts/.synapse-symbol/Worker/run"], pathIdentity);
     client.release("t1");
     client.requestBoard();
+    client.requestWho();
+    client.requestWho("laptop");
 
     const envelopes = socket.sentEnvelopes();
+    expect(envelopes.at(-2)).toMatchObject({ type: "who_request" });
+    expect(envelopes.at(-2)).not.toHaveProperty("hub");
+    expect(envelopes.at(-1)).toMatchObject({ type: "who_request", hub: "laptop" });
     expect(envelopes[0]).toMatchObject({ type: "chat", target: "P/bob", payload: "hello", priority: true });
     expect(envelopes[1]).toMatchObject({ type: "chat", channel: "ops", payload: "secret" });
     expect(envelopes[2]).toMatchObject({

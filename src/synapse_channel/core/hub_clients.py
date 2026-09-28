@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from synapse_channel.core.delivery_modes import MODES, QUALITIES, DeliveryRefusal
+from synapse_channel.core.hub_address import is_hub_qualified_name
 from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL, NameOwnership
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
@@ -202,13 +203,16 @@ class HubClientRegistry:
 
     @staticmethod
     def is_reserved_sender(sender: str) -> bool:
-        """Return whether ``sender`` impersonates a global protocol identity.
+        """Return whether ``sender`` impersonates a protocol or peer-hub identity.
 
         Matching is case-insensitive because downstream presentation layers may
         normalise case. Only the complete global name is reserved; a project-scoped
-        identity such as ``PROJ/system`` remains an ordinary agent address.
+        identity such as ``PROJ/system`` remains an ordinary agent address. Every
+        name containing ``@`` is reserved as well: that form denotes a seat on a
+        peer hub (:mod:`synapse_channel.core.hub_address`), so a local client may
+        never present a forwarded sender or a remote target as its own name.
         """
-        return sender.casefold() in _RESERVED_AGENT_NAMES
+        return sender.casefold() in _RESERVED_AGENT_NAMES or is_hub_qualified_name(sender)
 
     def bound_agent(self, websocket: Any) -> str | None:
         """Return the agent name bound to the socket, if any."""
@@ -465,14 +469,16 @@ class HubClientRegistry:
                 sender,
                 self.remote_host(websocket),
             )
+            text = (
+                f"Name '{sender}' uses the '@' form reserved for seats on peer hubs. "
+                "Choose a local agent name without '@'."
+                if is_hub_qualified_name(sender)
+                else f"Name '{sender}' is reserved for hub protocol provenance. "
+                "Choose a non-reserved agent name."
+            )
             await send_json(
                 websocket,
-                system(
-                    f"Name '{sender}' is reserved for hub protocol provenance. "
-                    "Choose a non-reserved agent name.",
-                    msg_type=MessageType.NAME_CONFLICT,
-                    target=sender,
-                ),
+                system(text, msg_type=MessageType.NAME_CONFLICT, target=sender),
             )
             await self.close_socket(websocket, code=4009, reason="reserved identity")
             return None

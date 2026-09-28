@@ -30,7 +30,7 @@ from typing import Any
 SENDER_HUB = "SynapseHub"
 """Reserved sender name stamped on every hub-originated message."""
 
-WIRE_PROTOCOL_VERSION = 4
+WIRE_PROTOCOL_VERSION = 5
 """The version of the hub's wire protocol.
 
 Advertised in the ``WELCOME`` handshake so a client — including an out-of-tree
@@ -55,6 +55,9 @@ explicit recipient stages and cancellation; version-two ``ACK`` remains a
 transport-only mailbox acknowledgement.
 Version ``4`` adds signed, project-scoped local attachment transfers while
 version-three delivery sessions remain valid on newer connections.
+Version ``5`` adds hub-to-hub message forwarding: a hub forwards a chat or delivery
+addressed to ``PROJECT/seat@HUB_ID`` to that peer and relays its answer. The frames
+travel only between hubs; agent-facing frames are unchanged.
 """
 
 MIN_ACK_PROTOCOL_VERSION = 2
@@ -72,6 +75,9 @@ MIN_DELIVERY_PROTOCOL_VERSION = 3
 
 MIN_ATTACHMENT_PROTOCOL_VERSION = 4
 """Lowest negotiated wire version admitted for scoped attachment transfers."""
+
+MIN_MESSAGE_FORWARD_PROTOCOL_VERSION = 5
+"""Lowest wire version at which a hub serves forwarded messages from a peer hub."""
 
 
 @dataclass(frozen=True)
@@ -342,6 +348,7 @@ class MessageType:
     CHANNEL_HISTORY_REQUEST = "channel_history_request"
     MULTIHUB_LOG_REQUEST = "multihub_log_request"
     MULTIHUB_CLAIM_REQUEST = "multihub_claim_request"
+    MULTIHUB_MESSAGE_FORWARD = "multihub_message_forward"
     OPERATOR_RELAY_REQUEST = "operator_relay_request"
     FEDERATION_OFFER_REQUEST = "federation_offer_request"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
@@ -396,6 +403,7 @@ class MessageType:
     CHANNEL_HISTORY = "channel_history"
     MULTIHUB_LOG_SNAPSHOT = "multihub_log_snapshot"
     MULTIHUB_CLAIM_RESULT = "multihub_claim_result"
+    MULTIHUB_MESSAGE_RESULT = "multihub_message_result"
     OPERATOR_RELAY_RESULT = "operator_relay_result"
     FEDERATION_OFFER = "federation_offer"
     IDENTITY_PIN_RECLAIM_RESULT = "identity_pin_reclaim_result"

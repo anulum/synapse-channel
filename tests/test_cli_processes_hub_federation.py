@@ -627,3 +627,46 @@ def test_cmd_hub_accepts_a_pin_for_a_watched_peer() -> None:
     assert cli_processes._cmd_hub(ns, runner=_close_runner, hub_factory=build_hub) == 0
     feed = captured["observed_asserting_hubs"]
     assert isinstance(feed.__self__, MultiHubWatch)
+
+
+def test_cmd_hub_wires_message_peers_with_a_file_token_and_ttl(tmp_path: Path) -> None:
+    from cli_processes_hub_helpers import _owner_only
+
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    token_file = _owner_only(tmp_path / "peer-token", "peer-secret\n")
+    ns = _hub_ns(
+        hub_id="workstation",
+        message_peer=["laptop=ws://laptop.example:8876"],
+        message_peer_token_file=str(token_file),
+        message_forward_ttl=60.0,
+    )
+    assert cli_processes._cmd_hub(ns, runner=_close_runner, hub_factory=build_hub) == 0
+    peer = captured["message_peers"]["laptop"]
+    assert (peer.uri, peer.token, peer.connector) == (
+        "ws://laptop.example:8876",
+        "peer-secret",
+        None,
+    )
+    assert captured["message_forward_ttl"] == 60.0
+
+
+@pytest.mark.parametrize(
+    ("options", "reason"),
+    [
+        (
+            {"message_peer_pin": ["laptop=sha256:" + "1" * 64]},
+            "--message-peer-pin requires --message-peer",
+        ),
+        ({"message_peer": ["laptop"]}, "must use HUB_ID=URI"),
+    ],
+)
+def test_cmd_hub_refuses_incomplete_message_peer_configuration(
+    options: dict[str, object], reason: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli_processes._cmd_hub(_hub_ns(**options), runner=_close_runner) == 2
+    assert reason in capsys.readouterr().err

@@ -42,6 +42,7 @@ async def _who(
     observed_token: str | None = None,
     observed_timeout: float = 10.0,
     observed_pins: dict[str, str] | None = None,
+    remote_hub: str | None = None,
 ) -> int:
     """Connect, print the online roster and bounded mailbox summary, then exit.
 
@@ -67,6 +68,9 @@ async def _who(
         Shared-secret token for a secured hub.
     ready_timeout : float, optional
         Seconds to wait for the welcome handshake.
+    remote_hub : str or None, optional
+        A message peer's hub id: print that peer's roster (as ``seat@hub``) as relayed by
+        the connected hub, and surface the hub's error when the peer cannot be asked.
 
     Returns
     -------
@@ -113,7 +117,7 @@ async def _who(
         agent_factory=agent_factory,
         response_type=MessageType.WHO_SNAPSHOT,
         transform=transform,
-        request=lambda agent: agent.request_who(),
+        request=lambda agent: agent.request_who(hub=remote_hub),
         render=(
             (
                 lambda result: _render_who_me(
@@ -139,6 +143,7 @@ async def _who(
         ),
         ready_timeout=ready_timeout,
         identity_fallback_name=fallback_name,
+        surface_error=remote_hub is not None,
     )
 
 
@@ -163,5 +168,6 @@ def _cmd_who(args: argparse.Namespace) -> int:
             observed_token=getattr(args, "observed_token", None),
             observed_timeout=float(getattr(args, "observed_timeout", 10.0)),
             observed_pins=observed_pins,
+            remote_hub=getattr(args, "hub", None),
         )
     )

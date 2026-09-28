@@ -49,6 +49,7 @@ from synapse_channel.core.handlers.leasing import (
     handle_wait_request,
 )
 from synapse_channel.core.handlers.memory import handle_finding, handle_recall_log
+from synapse_channel.core.handlers.message_forward import handle_multihub_message_forward
 from synapse_channel.core.handlers.messaging import handle_ack, handle_chat, handle_heartbeat
 from synapse_channel.core.handlers.multihub import handle_multihub_log_request
 from synapse_channel.core.handlers.multihub_claim import handle_multihub_claim_request
@@ -119,6 +120,7 @@ DISPATCH: dict[str, Handler] = {
     MessageType.CHANNEL_HISTORY_REQUEST: handle_channel_history_request,
     MessageType.MULTIHUB_LOG_REQUEST: handle_multihub_log_request,
     MessageType.MULTIHUB_CLAIM_REQUEST: handle_multihub_claim_request,
+    MessageType.MULTIHUB_MESSAGE_FORWARD: handle_multihub_message_forward,
     MessageType.OPERATOR_RELAY_REQUEST: handle_operator_relay_request,
     MessageType.DEAD_LETTER_FORWARDING: handle_dead_letter_forwarding,
     MessageType.FEDERATION_OFFER_REQUEST: handle_federation_offer_request,

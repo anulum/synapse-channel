@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl import DELIVERY_CONTROL, WOULD_ALLOW, Target, evaluate_access
@@ -26,7 +27,12 @@ from synapse_channel.core.delivery_modes import (
     select_delivery_mode,
 )
 from synapse_channel.core.delivery_persistence import DeliveryPersistence, StoredDelivery
+from synapse_channel.core.hub_address import HUB_ADDRESS_SEPARATOR
 from synapse_channel.core.lifecycle import TaskStatus
+from synapse_channel.core.message_forward_origin import (
+    forward_delivery_followup,
+    forward_delivery_request,
+)
 from synapse_channel.core.protocol import MIN_DELIVERY_PROTOCOL_VERSION, MessageType
 
 if TYPE_CHECKING:
@@ -72,14 +78,43 @@ async def _refuse(
 
 def _require_profile(hub: SynapseHub, sender: str, data: dict[str, Any]) -> None:
     """Require a durable stable hub and a version-three registered peer."""
-    if (
-        data.get("protocol_version") != MIN_DELIVERY_PROTOCOL_VERSION
-        or isinstance(data.get("protocol_version"), bool)
-        or hub.clients.protocol_version_of(sender) < MIN_DELIVERY_PROTOCOL_VERSION
+    if hub.clients.protocol_version_of(sender) < MIN_DELIVERY_PROTOCOL_VERSION:
+        raise DeliveryRefusal("unsupported_protocol", "peer did not negotiate delivery version 3")
+    require_delivery_profile(hub, data)
+
+
+def require_delivery_profile(hub: SynapseHub, data: dict[str, Any]) -> DeliveryPersistence:
+    """Require a version-three frame and a durable hub with a stable id.
+
+    The connection half of the profile (the sender negotiated version three) is checked by
+    the agent-facing handlers; a request forwarded by a peer hub arrives on the peer's
+    connection and is checked here alone.
+
+    Parameters
+    ----------
+    hub : SynapseHub
+        The hub asked to act on the delivery.
+    data : dict[str, Any]
+        The delivery frame.
+
+    Returns
+    -------
+    DeliveryPersistence
+        The hub's durable delivery store.
+
+    Raises
+    ------
+    DeliveryRefusal
+        ``unsupported_protocol`` for a frame that is not version three;
+        ``unsupported_profile`` for a hub without a durable journal and stable id.
+    """
+    if data.get("protocol_version") != MIN_DELIVERY_PROTOCOL_VERSION or isinstance(
+        data.get("protocol_version"), bool
     ):
         raise DeliveryRefusal("unsupported_protocol", "peer did not negotiate delivery version 3")
     if hub.journal is None or not hub.stable_delivery_hub_id:
         raise DeliveryRefusal("unsupported_profile", "delivery requires a durable stable hub")
+    return hub.journal.delivery
 
 
 def _ledger(hub: SynapseHub) -> DeliveryPersistence:
@@ -187,41 +222,101 @@ async def _publish_queued_offer(hub: SynapseHub, record: StoredDelivery) -> None
 async def handle_delivery_request(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
-    """Admit, deduplicate and offer one session-bound intent through the real hub."""
+    """Admit, deduplicate and offer one session-bound intent through the real hub.
+
+    A target of the form ``PROJECT/seat@HUB_ID`` is forwarded to that message peer by
+    :func:`~synapse_channel.core.message_forward_origin.forward_delivery_request`.
+    """
     try:
         _require_profile(hub, sender, data)
-        intent = parse_delivery_intent(data, sender=sender, origin_hub=hub.hub_id, now=time.time())
-        ledger = _ledger(hub)
-        previous = ledger.find_by_idempotency(sender, intent.idempotency_key)
-        if previous is not None:
-            if (
-                previous.operation_key != intent.operation_key
-                or previous.request_digest != intent.digest
-            ):
-                raise DeliveryRefusal("id_conflict", "request identity was reused with new content")
-            await _publish_queued_offer(hub, previous)
-            await hub._send_json(websocket, _status(hub, previous))
+        if HUB_ADDRESS_SEPARATOR in str(data.get("target") or ""):
+            await hub._send_json(websocket, await forward_delivery_request(hub, sender, data))
             return
-        session = hub.clients.delivery_session(intent.target)
-        if session is None:
-            raise DeliveryRefusal(
-                "unavailable_recipient", "recipient has no active delivery session"
-            )
-        if session.incarnation != intent.target_incarnation:
-            raise DeliveryRefusal("stale_incarnation", "recipient session changed")
-        selected_mode, quality = select_delivery_mode(intent, session.capabilities)
-        if selected_mode in ("interrupt", "steer") and not _control_authorized(hub, intent):
-            raise DeliveryRefusal("unauthorised_requester", "active task control is not granted")
-        offer = _offer(intent, selected_mode, quality)
-        write = ledger.create(intent, selected_mode=selected_mode, quality=quality, offer=offer)
-        if write.disposition == "conflict":
-            raise DeliveryRefusal("id_conflict", "request identity was reused with new content")
-        await _publish_queued_offer(hub, write.record)
-        await hub._send_json(websocket, _status(hub, write.record))
-        if intent.deadline <= time.time():
+        admission = await admit_delivery_request(
+            hub, sender=sender, origin_hub=hub.hub_id, data=data
+        )
+        await hub._send_json(websocket, admission.status)
+        if admission.expire_now:
             await expire_due_deliveries(hub)
     except DeliveryRefusal as refusal:
         await _refuse(hub, websocket, sender, data, refusal)
+
+
+@dataclass(frozen=True)
+class DeliveryAdmission:
+    """The outcome of admitting one delivery intent.
+
+    Attributes
+    ----------
+    status : dict[str, Any]
+        The ``delivery_status`` frame for the requester.
+    expire_now : bool
+        Whether the deadline passed during admission, so due deliveries should be expired
+        right after the status is sent.
+    """
+
+    status: dict[str, Any]
+    expire_now: bool = False
+
+
+async def admit_delivery_request(
+    hub: SynapseHub, *, sender: str, origin_hub: str, data: dict[str, Any]
+) -> DeliveryAdmission:
+    """Admit, deduplicate and offer one intent to a local recipient session.
+
+    Parameters
+    ----------
+    hub : SynapseHub
+        The hub that hosts the recipient.
+    sender : str
+        The requester: a local seat, or ``seat@origin_hub`` for a peer's forward.
+    origin_hub : str
+        The hub the request entered the federation through: this hub's id for a local
+        requester, the authenticated peer's id for a forward.
+    data : dict[str, Any]
+        The version-three request with ``target`` naming a local seat.
+
+    Returns
+    -------
+    DeliveryAdmission
+        The requester's status frame.
+
+    Raises
+    ------
+    DeliveryRefusal
+        For a malformed or conflicting request, an unavailable or changed recipient session,
+        an unsupported mode, or task control that is not granted. A forwarded requester is
+        never granted ``interrupt`` or ``steer``.
+    """
+    intent = parse_delivery_intent(data, sender=sender, origin_hub=origin_hub, now=time.time())
+    ledger = _ledger(hub)
+    previous = ledger.find_by_idempotency(sender, intent.idempotency_key)
+    if previous is not None:
+        if (
+            previous.operation_key != intent.operation_key
+            or previous.request_digest != intent.digest
+        ):
+            raise DeliveryRefusal("id_conflict", "request identity was reused with new content")
+        await _publish_queued_offer(hub, previous)
+        return DeliveryAdmission(status=_status(hub, previous))
+    session = hub.clients.delivery_session(intent.target)
+    if session is None:
+        raise DeliveryRefusal("unavailable_recipient", "recipient has no active delivery session")
+    if session.incarnation != intent.target_incarnation:
+        raise DeliveryRefusal("stale_incarnation", "recipient session changed")
+    selected_mode, quality = select_delivery_mode(intent, session.capabilities)
+    if selected_mode in ("interrupt", "steer") and (
+        origin_hub != hub.hub_id or not _control_authorized(hub, intent)
+    ):
+        raise DeliveryRefusal("unauthorised_requester", "active task control is not granted")
+    offer = _offer(intent, selected_mode, quality)
+    write = ledger.create(intent, selected_mode=selected_mode, quality=quality, offer=offer)
+    if write.disposition == "conflict":
+        raise DeliveryRefusal("id_conflict", "request identity was reused with new content")
+    await _publish_queued_offer(hub, write.record)
+    return DeliveryAdmission(
+        status=_status(hub, write.record), expire_now=intent.deadline <= time.time()
+    )
 
 
 def _operation_key(data: dict[str, Any]) -> str:
@@ -237,28 +332,66 @@ def _operation_key(data: dict[str, Any]) -> str:
 async def handle_delivery_status_request(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
-    """Return a private status without confusing reachability with completion."""
+    """Return a private status without confusing reachability with completion.
+
+    A key issued by a peer hub for a forwarded request is answered by that peer through
+    :func:`~synapse_channel.core.message_forward_origin.forward_delivery_followup`.
+    """
     try:
         _require_profile(hub, sender, data)
         key = _operation_key(data)
-        ledger = _ledger(hub)
-        record = ledger.get(key)
-        if record is None:
-            raise DeliveryRefusal("unknown_request", "delivery request does not exist")
-        if sender not in (record.sender, record.request["target"]):
-            raise DeliveryRefusal("unauthorised_requester", "request is not visible to sender")
-        if record.request["deadline"] <= time.time() and record.stage in (
-            "queued",
-            "boundary_delivered",
-            "acknowledged",
-        ):
-            await expire_due_deliveries(hub)
-            refreshed = ledger.get(key)
-            if refreshed is not None:
-                record = refreshed
-        await hub._send_json(websocket, _status(hub, record, viewer=sender))
+        if hub.message_forward_ledger.remote_delivery(key) is not None:
+            frame = await forward_delivery_followup(hub, sender, data, kind="delivery_status")
+            await hub._send_json(websocket, frame)
+            return
+        await hub._send_json(
+            websocket, await delivery_status_frame(hub, requester=sender, data=data)
+        )
     except DeliveryRefusal as refusal:
         await _refuse(hub, websocket, sender, data, refusal)
+
+
+async def delivery_status_frame(
+    hub: SynapseHub, *, requester: str, data: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the requester's private status for one locally admitted delivery.
+
+    Parameters
+    ----------
+    hub : SynapseHub
+        The hub that admitted the delivery.
+    requester : str
+        The requester; only the delivery's sender or recipient may see it.
+    data : dict[str, Any]
+        The status request carrying ``operation_key``.
+
+    Returns
+    -------
+    dict[str, Any]
+        A ``delivery_status`` frame; an overdue open delivery is expired first.
+
+    Raises
+    ------
+    DeliveryRefusal
+        For a malformed or unknown key, or a requester that is neither party.
+    """
+    key = _operation_key(data)
+    ledger = _ledger(hub)
+    record = ledger.get(key)
+    if record is None:
+        raise DeliveryRefusal("unknown_request", "delivery request does not exist")
+    if requester not in (record.sender, record.request["target"]):
+        raise DeliveryRefusal("unauthorised_requester", "request is not visible to sender")
+    if record.request["deadline"] <= time.time() and record.stage in (
+        "queued",
+        "boundary_delivered",
+        "acknowledged",
+    ):
+        await expire_due_deliveries(hub)
+        refreshed = ledger.get(key)
+        if refreshed is not None:
+            record = refreshed
+    return _status(hub, record, viewer=requester)
 
 
 def _mutation_id(data: dict[str, Any]) -> str:
@@ -556,25 +689,63 @@ async def handle_delivery_stage(
 async def handle_delivery_cancel(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
-    """Record a sender cancellation request and notify the responsible executor."""
+    """Record a sender cancellation request and notify the responsible executor.
+
+    A key issued by a peer hub for a forwarded request is cancelled on that peer through
+    :func:`~synapse_channel.core.message_forward_origin.forward_delivery_followup`.
+    """
     try:
         _require_profile(hub, sender, data)
         key = _operation_key(data)
-        ledger = _ledger(hub)
-        record = ledger.get(key)
-        if record is None:
-            raise DeliveryRefusal("unknown_request", "delivery request does not exist")
-        if record.sender != sender:
-            raise DeliveryRefusal("unauthorised_requester", "only sender can request cancellation")
-        mutation_id = _mutation_id(data)
-        digest = _mutation_digest(key, mutation_id, "cancel_requested", {})
-        write = ledger.request_cancel(
-            key, mutation_id=mutation_id, mutation_digest=digest, actor=sender
-        )
-        if write.disposition == "conflict":
-            raise DeliveryRefusal("id_conflict", "mutation identity was reused with new content")
-        await hub._send_json(websocket, _status(hub, write.record, viewer=sender))
-        if write.disposition == "inserted":
-            await _notify_record(hub, write.record, write.record.request["target"])
+        if hub.message_forward_ledger.remote_delivery(key) is not None:
+            frame = await forward_delivery_followup(hub, sender, data, kind="delivery_cancel")
+            await hub._send_json(websocket, frame)
+            return
+        await hub._send_json(websocket, await cancel_delivery(hub, requester=sender, data=data))
     except DeliveryRefusal as refusal:
         await _refuse(hub, websocket, sender, data, refusal)
+
+
+async def cancel_delivery(
+    hub: SynapseHub, *, requester: str, data: dict[str, Any]
+) -> dict[str, Any]:
+    """Record the sender's cancellation of one locally admitted delivery.
+
+    Parameters
+    ----------
+    hub : SynapseHub
+        The hub that admitted the delivery.
+    requester : str
+        The requester; only the delivery's sender may cancel it.
+    data : dict[str, Any]
+        The cancel request carrying ``operation_key`` and ``mutation_id``.
+
+    Returns
+    -------
+    dict[str, Any]
+        The requester's ``delivery_status`` frame after the cancellation request. A newly
+        recorded request is also offered to the recipient.
+
+    Raises
+    ------
+    DeliveryRefusal
+        For a malformed or unknown key, a requester that is not the sender, or a reused
+        mutation id with different content.
+    """
+    key = _operation_key(data)
+    ledger = _ledger(hub)
+    record = ledger.get(key)
+    if record is None:
+        raise DeliveryRefusal("unknown_request", "delivery request does not exist")
+    if record.sender != requester:
+        raise DeliveryRefusal("unauthorised_requester", "only sender can request cancellation")
+    mutation_id = _mutation_id(data)
+    digest = _mutation_digest(key, mutation_id, "cancel_requested", {})
+    write = ledger.request_cancel(
+        key, mutation_id=mutation_id, mutation_digest=digest, actor=requester
+    )
+    if write.disposition == "conflict":
+        raise DeliveryRefusal("id_conflict", "mutation identity was reused with new content")
+    if write.disposition == "inserted":
+        await _notify_record(hub, write.record, write.record.request["target"])
+    return _status(hub, write.record, viewer=requester)

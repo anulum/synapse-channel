@@ -50,8 +50,20 @@ class AgentQueryMixin:
         """Ask the hub for a full state snapshot."""
         await self.send_message(MessageType.STATE_REQUEST, target="System", payload="snapshot")
 
-    async def request_who(self: _QueryAgent) -> None:
-        """Ask the hub for the list of online agents."""
+    async def request_who(self: _QueryAgent, hub: str | None = None) -> None:
+        """Ask the hub for the list of online agents.
+
+        Parameters
+        ----------
+        hub : str or None, optional
+            A message peer's hub id; the connected hub then answers with that peer's
+            roster, seats named ``seat@hub``. ``None`` asks for the local roster.
+        """
+        if hub:
+            await self.send_message(
+                MessageType.WHO_REQUEST, target="System", payload="who", hub=hub
+            )
+            return
         await self.send_message(MessageType.WHO_REQUEST, target="System", payload="who")
 
     async def request_history(self: _QueryAgent, limit: int | None = 20) -> None:

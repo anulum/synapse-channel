@@ -62,6 +62,10 @@ from synapse_channel.core.message_auth_durable import (
     DurableMessageAuthReplayStore,
     SequenceFloorMode,
 )
+from synapse_channel.core.message_forward_transport import (
+    MessageForwardPeer,
+    parse_message_peers,
+)
 from synapse_channel.core.multihub_claim_transport import ClaimForwardPeer, parse_claim_peers
 from synapse_channel.core.multihub_serving_config import (
     LoadedMultiHubServingConfig,
@@ -225,6 +229,11 @@ def _resolve_file_backed_secrets(args: argparse.Namespace) -> None:
     metrics_token_file = getattr(args, "metrics_token_file", None)
     if metrics_token_file and not args.metrics_token:
         args.metrics_token = read_secret_file(metrics_token_file, flag="--metrics-token-file")
+    peer_token_file = getattr(args, "message_peer_token_file", None)
+    if peer_token_file and not getattr(args, "message_peer_token", None):
+        args.message_peer_token = read_secret_file(
+            peer_token_file, flag="--message-peer-token-file"
+        )
     key_file = getattr(args, "message_auth_key_file", None)
     if key_file:
         entries = read_secret_lines(key_file, flag="--message-auth-key-file")
@@ -734,6 +743,14 @@ def _cmd_hub(
             file=sys.stderr,
         )
         return 2
+    message_peer_values = getattr(args, "message_peer", [])
+    if getattr(args, "message_peer_pin", []) and not message_peer_values:
+        print(
+            "synapse hub: --message-peer-pin requires --message-peer; a pin without a route "
+            "cannot secure any peer connection.",
+            file=sys.stderr,
+        )
+        return 2
     if getattr(args, "claim_peer_pin", []) and not args.claim_peer:
         print(
             "synapse hub: --claim-peer-pin requires --claim-peer; a pin without a route "
@@ -754,6 +771,7 @@ def _cmd_hub(
     watch: MultiHubWatch | None = None
     claim_peers: dict[str, ClaimForwardPeer] | None = None
     relay_peers: dict[str, OperatorRelayPeer] | None = None
+    message_peers: dict[str, MessageForwardPeer] | None = None
     try:
         if args.namespace_owner:
             namespace_ownership = NamespaceOwnership(
@@ -780,6 +798,16 @@ def _cmd_hub(
                 pins=_parse_named_pins(
                     getattr(args, "claim_peer_pin", []),
                     flag="--claim-peer-pin",
+                ),
+                client_certificate_file=client_certfile,
+                client_key_file=client_keyfile,
+            )
+        if message_peer_values:
+            message_peers = parse_message_peers(
+                message_peer_values,
+                token=getattr(args, "message_peer_token", None),
+                pins=_parse_named_pins(
+                    getattr(args, "message_peer_pin", []), flag="--message-peer-pin"
                 ),
                 client_certificate_file=client_certfile,
                 client_key_file=client_keyfile,
@@ -907,6 +935,8 @@ def _cmd_hub(
         "observed_asserting_hubs": (watch.observed_asserting_hubs if watch is not None else None),
         "claim_peers": claim_peers,
         "relay_peers": relay_peers,
+        "message_peers": message_peers,
+        "message_forward_ttl": getattr(args, "message_forward_ttl", 86_400.0),
         "require_relay_reason": getattr(args, "require_relay_reason", False),
         "require_two_person_relay": getattr(args, "require_two_person_relay", False),
         "multihub_serving_policy": (serving_config.policy if serving_config is not None else None),

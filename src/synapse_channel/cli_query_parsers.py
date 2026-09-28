@@ -94,6 +94,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     who.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
     who.add_argument(
+        "--hub",
+        default=None,
+        metavar="HUB_ID",
+        help="Show the roster of this message peer of the connected hub instead; its seats "
+        "are listed as seat@HUB_ID, limited to namespaces the peer lets this hub address.",
+    )
+    who.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )
     _add_observed_peer_flags(who)

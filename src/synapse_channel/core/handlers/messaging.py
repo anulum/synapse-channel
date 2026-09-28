@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl import (
@@ -36,7 +37,10 @@ from synapse_channel.core.dead_letter_escalation import (
 )
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwardError, forwarding_notice
 from synapse_channel.core.dead_letters import is_directed_target
-from synapse_channel.core.directed_delivery_liveness import classify_delivery_liveness
+from synapse_channel.core.directed_delivery_liveness import (
+    DeliveryLiveness,
+    classify_delivery_liveness,
+)
 from synapse_channel.core.handlers.delivery_feedback import (
     commit_delivery_receipt_request,
     commit_delivery_receipt_verdict,
@@ -45,6 +49,7 @@ from synapse_channel.core.handlers.delivery_feedback import (
     settle_delivery_receipt,
     warn_stale_recipients,
 )
+from synapse_channel.core.hub_address import HUB_ADDRESS_SEPARATOR
 from synapse_channel.core.journal import (
     DEAD_LETTER_DIRECTION_OUT,
     EventKind,
@@ -52,6 +57,7 @@ from synapse_channel.core.journal import (
     record_dead_letter_escalation,
     record_dead_letter_forwarding,
 )
+from synapse_channel.core.message_forward_origin import forward_chat
 from synapse_channel.core.message_response import validate_semantic_response
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
@@ -138,7 +144,69 @@ def _stamp_chat_times(data: dict[str, Any], *, now: float | None = None) -> floa
     return hub_now
 
 
+@dataclass(frozen=True)
+class ChatRouting:
+    """What routing one chat through the local hub decided.
+
+    Attributes
+    ----------
+    refusal : str
+        Human-readable reason the chat was refused before it was accepted; empty when it
+        was accepted.
+    delivery : DeliveryLiveness or None
+        The live-recipient verdict for an accepted chat; ``None`` for a refusal, a channel
+        chat, or a chat forwarded to a peer hub.
+    directed : bool
+        Whether the accepted chat named one recipient rather than an audience.
+    """
+
+    refusal: str = ""
+    delivery: DeliveryLiveness | None = None
+    directed: bool = False
+
+    @property
+    def verdict(self) -> DeliveryLiveness:
+        """Return the live-recipient verdict of a chat routed to local seats.
+
+        Returns
+        -------
+        DeliveryLiveness
+            The verdict.
+
+        Raises
+        ------
+        ValueError
+            For a refusal, a channel chat or a forwarded chat, which have no local verdict.
+        """
+        if self.delivery is None:
+            raise ValueError(self.refusal or "chat was not routed to local seats")
+        return self.delivery
+
+
 async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
+    """Route one agent chat; see :func:`route_chat` for the full contract."""
+    await route_chat(hub, sender, data, websocket)
+
+
+async def _refuse_chat(
+    hub: SynapseHub, sender: str, websocket: Any, refusal: str, *, report: bool
+) -> ChatRouting:
+    """Refuse a chat, telling the sender on ``websocket`` when ``report`` is set."""
+    if report:
+        await hub._send_json(
+            websocket, hub._system(refusal, msg_type=MessageType.ERROR, target=sender)
+        )
+    return ChatRouting(refusal=refusal)
+
+
+async def route_chat(
+    hub: SynapseHub,
+    sender: str,
+    data: dict[str, Any],
+    websocket: Any,
+    *,
+    report_refusal: bool = True,
+) -> ChatRouting:
     """Stamp, retain, journal, and broadcast a chat message to every socket.
 
     A message carrying a ``channel`` is audience-scoped instead: it is delivered
@@ -154,6 +222,29 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
     When the hub has a :class:`~synapse_channel.core.durable_ingress.DurableIngressQuota`,
     the chat is charged to the connection's server-derived quota principal and
     refused before history or journal growth when the sliding window is full.
+
+    A target of the form ``PROJECT/seat@HUB_ID`` is handed to
+    :func:`~synapse_channel.core.message_forward_origin.forward_chat` after the quota
+    check, so it is forwarded to that peer hub instead of routed locally.
+
+    Parameters
+    ----------
+    hub : SynapseHub
+        The hub routing the chat.
+    sender : str
+        The authenticated sender, or ``seat@origin_hub`` for a chat forwarded by a peer.
+    data : dict[str, Any]
+        The chat frame; stamped in place.
+    websocket : Any
+        The connection the chat arrived on; refusals and receipts are sent there.
+    report_refusal : bool, optional
+        Send a refusal to ``websocket`` as an ``error`` frame (the agent path). A peer
+        forward passes ``False`` and relays :attr:`ChatRouting.refusal` in its own result.
+
+    Returns
+    -------
+    ChatRouting
+        The refusal, or the delivery verdict of the accepted chat.
     """
     from synapse_channel.core.durable_ingress import chat_frame_bytes
 
@@ -164,11 +255,7 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         hub.roles_of(sender),
     )
     if response_error is not None:
-        await hub._send_json(
-            websocket,
-            hub._system(response_error, msg_type=MessageType.ERROR, target=sender),
-        )
-        return
+        return await _refuse_chat(hub, sender, websocket, response_error, report=report_refusal)
 
     _stamp_chat_times(data)
     client_msg_id = _normalize_client_msg_id(data)
@@ -180,22 +267,23 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
         )
         if reason:
             hub.counters.durable_ingress_refused += 1
-            await hub._send_json(
+            return await _refuse_chat(
+                hub,
+                sender,
                 websocket,
-                hub._system(
-                    f"Durable ingress quota exceeded ({reason}).",
-                    msg_type=MessageType.ERROR,
-                    target=sender,
-                ),
+                f"Durable ingress quota exceeded ({reason}).",
+                report=report_refusal,
             )
-            return
     data["type"] = MessageType.CHAT
     data["hub_id"] = hub.hub_id
     data["msg_id"] = hub._next_msg_id()
     channel = str(data.get("channel") or "").strip()
     if channel:
         await _route_channel_chat(hub, sender, data, websocket, channel)
-        return
+        return ChatRouting()
+    if HUB_ADDRESS_SEPARATOR in str(data.get("target") or ""):
+        await forward_chat(hub, sender, data, websocket)
+        return ChatRouting()
     target = str(data.get("target") or "all")
     logical_target = waiter_owner(target)
     if logical_target != target:
@@ -317,6 +405,7 @@ async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websoc
                 directed=directed,
                 client_msg_id=client_msg_id,
             )
+    return ChatRouting(delivery=delivery, directed=directed)
 
 
 async def _escalate_dead_letter(hub: SynapseHub, *, target: str, count: int, sender: str) -> None:

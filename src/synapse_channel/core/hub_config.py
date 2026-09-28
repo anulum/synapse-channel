@@ -85,6 +85,12 @@ from synapse_channel.core.message_auth_durable import (
     DurableMessageAuthReplayStore,
     SequenceFloorMode,
 )
+from synapse_channel.core.message_forward_origin import DEFAULT_FORWARD_TTL_SECONDS
+from synapse_channel.core.message_forward_transport import (
+    MessageForwarder,
+    MessageForwardPeer,
+    forward_message,
+)
 from synapse_channel.core.multihub_claim_transport import (
     ClaimForwarder,
     ClaimForwardPeer,
@@ -227,7 +233,7 @@ class HubLiveness:
 
 @dataclass(frozen=True, kw_only=True)
 class MultiHubConfig:
-    """Multi-hub routing: serving policy, namespace ownership, claim and relay forwarding."""
+    """Multi-hub routing: serving policy, ownership, claim, relay and message forwarding."""
 
     multihub_serving_policy: MultiHubServingPolicy | None = None
     namespace_ownership: NamespaceOwnership | None = None
@@ -235,6 +241,9 @@ class MultiHubConfig:
     claim_forwarder: ClaimForwarder = forward_claim
     relay_peers: Mapping[str, OperatorRelayPeer] | None = None
     relay_forwarder: RelayForwarder = relay_operator_action
+    message_peers: Mapping[str, MessageForwardPeer] | None = None
+    message_forwarder: MessageForwarder = forward_message
+    message_forward_ttl: float = DEFAULT_FORWARD_TTL_SECONDS
     require_relay_reason: bool = False
     require_two_person_relay: bool = False
     observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None

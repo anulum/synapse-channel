@@ -341,6 +341,48 @@ async def test_resolve_sender_refuses_reserved_protocol_identities(
     assert not registry.ownership.is_leased(reserved_name)
 
 
+@pytest.mark.parametrize(
+    "hub_qualified_name",
+    ["PROJ/alice@laptop", "alice@workstation", "odd@@name", "@laptop", "PROJ/alice@"],
+)
+async def test_resolve_sender_refuses_every_hub_qualified_name(hub_qualified_name: str) -> None:
+    """A local client can never bind the ``@`` form a forwarded sender or remote seat uses."""
+    registry = _registry()
+    socket = _Socket()
+    sent_messages: list[dict[str, Any]] = []
+
+    async def send_json(_websocket: Any, message: dict[str, Any]) -> None:
+        sent_messages.append(message)
+
+    def system(payload: str, *, msg_type: str, target: str) -> dict[str, Any]:
+        return {"payload": payload, "target": target, "type": msg_type}
+
+    assert (
+        await registry.resolve_sender(
+            hub_qualified_name,
+            socket,
+            takeover=True,
+            lease_requested=True,
+            owner_lease="attacker-token",
+            send_json=send_json,
+            system=system,
+        )
+        is None
+    )
+
+    assert socket.close_calls == [(4009, "reserved identity")]
+    assert sent_messages == [
+        {
+            "payload": f"Name '{hub_qualified_name}' uses the '@' form reserved for seats on "
+            "peer hubs. Choose a local agent name without '@'.",
+            "target": hub_qualified_name,
+            "type": "name_conflict",
+        }
+    ]
+    assert hub_qualified_name not in registry.agent_sockets
+    assert not registry.ownership.is_leased(hub_qualified_name)
+
+
 async def test_project_scoped_system_segment_is_not_globally_reserved() -> None:
     registry = _registry()
     socket = _Socket()

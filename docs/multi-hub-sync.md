@@ -371,7 +371,9 @@ connection, and the federation/mTLS gate is now enforced on **both** sides — t
 side before it pulls, and the serving side before it serves (`MultiHubServingPolicy`, see
 [Boundaries](#boundaries)). Opt-in claim forwarding also ships: a hub configured with
 `--namespace-owner` and `--claim-peer HUB_ID=URI` routes a remote-owned claim to that
-namespace's owning hub and relays the owner's verdict. What remains outside this design is
+namespace's owning hub and relays the owner's verdict. Cross-hub messaging ships as well:
+with `--message-peer HUB_ID=URI` agents address seats on a peer as `PROJECT/seat@HUB_ID` (see
+[Messages across hubs](#messages-across-hubs)). What remains outside this design is
 automatic peer discovery, global consensus, and a merge that could turn observed peer state
 into local claim authority.
 
@@ -439,6 +441,35 @@ an `observed_asserting_hubs` feed resolves a namespace a peer is observed contes
 builds that feed from a follower's observed claims. What is **not** yet built is the hub
 auto-discovering peers: the hub populates the feed only from the operator-named standing
 follower configured by repeatable `--multihub-watch PEER=URI` flags.
+
+## Messages across hubs
+
+Messages are not state, so they need no merge. They are forwarded directly to the hub
+that hosts the recipient. An agent addresses a seat on a peer as `PROJECT/seat@HUB_ID`.
+The origin hub forwards a chat, a version-three delivery intent or a roster request over a
+per-forward connection (`core/message_forward_transport.py`) to the peer named by
+`synapse hub --message-peer HUB_ID=URI`. The receiving hub
+(`core/handlers/message_forward.py`) serves it under the same `MultiHubServingPolicy`
+that gates claim forwarding and event-log serving. The peer must hold a grant and present
+its pinned client certificate, and the target's project namespace must be listed in the
+peer's federation peering.
+
+- **Nothing is lost to an outage.** A chat is written to a durable outbox
+  (`core/message_forward_ledger.py`) before its first attempt and retried with backoff
+  until the peer answers or the forward expires (`--message-forward-ttl`, default 24 hours).
+- **Nothing is delivered twice.** A retry carries the same `forward_id`, and the receiving
+  hub answers a repeat from its own record of `(origin_hub, forward_id)`.
+- **Nothing is forged.** A forwarded sender appears as `seat@ORIGIN_HUB`, with the origin
+  taken from the authenticated connection. Local seats may not use `@` names. A forwarded
+  requester never gains active task control (`interrupt` or `steer`).
+- **The sender learns what happened.** A requested receipt reports `pending`,
+  `accepted`, `duplicate`, `refused` or `expired`. A settlement reaches an offline
+  sender on its next registration.
+
+`synapse who --hub HUB_ID` shows a peer's roster as far as the peer lets this hub see it.
+Forwarding is one hop between configured peers, with no relay chain, cross-hub broadcast
+or discovery. The wire contract is in the
+[protocol reference](protocol.md#cross-hub-message-forwarding-wire-version-5).
 
 ## Sync transport
 

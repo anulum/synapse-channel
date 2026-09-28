@@ -103,6 +103,8 @@ test("SDK interoperates with an authenticated Python hub", { timeout: 25000 }, a
   await exchange(alice, MessageType.StateSnapshot, () => alice.requestState());
   await exchange(alice, MessageType.BoardSnapshot, () => alice.requestBoard());
   await exchange(alice, MessageType.WhoSnapshot, () => alice.requestWho());
+  const remote = await exchange(alice, MessageType.Error, () => alice.requestWho("nowhere"));
+  assert.match(remote.payload, /unknown_hub/);
 
   alice.close();
   assert.equal(alice.isReady, false);

@@ -108,6 +108,8 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "MANIFEST_SNAPSHOT": "manifest_snapshot",
     "MULTIHUB_CLAIM_REQUEST": "multihub_claim_request",
     "MULTIHUB_CLAIM_RESULT": "multihub_claim_result",
+    "MULTIHUB_MESSAGE_FORWARD": "multihub_message_forward",
+    "MULTIHUB_MESSAGE_RESULT": "multihub_message_result",
     "MULTIHUB_LOG_REQUEST": "multihub_log_request",
     "MULTIHUB_LOG_SNAPSHOT": "multihub_log_snapshot",
     "NAME_CONFLICT": "name_conflict",
@@ -178,6 +180,6 @@ def test_wire_envelope_carries_the_reserved_keys() -> None:
 
 
 def test_wire_protocol_version_is_frozen_at_the_current_baseline() -> None:
-    # The wire is at version 4 (scoped attachments); a
+    # The wire is at version 5 (hub-to-hub message forwarding); a
     # bump is a wire vocabulary change and a deliberate edit, not an accident.
-    assert WIRE_PROTOCOL_VERSION == 4
+    assert WIRE_PROTOCOL_VERSION == 5

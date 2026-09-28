@@ -31,6 +31,7 @@ from synapse_channel.core.delivery_modes import (
     DeliveryRefusal,
     DeliveryStage,
 )
+from synapse_channel.core.hub_address import parse_hub_qualified
 
 logger = logging.getLogger("synapse.delivery")
 
@@ -165,20 +166,33 @@ class DeliveryPersistence:
         )
 
     def verify_origin_hub(self, hub_id: str) -> None:
-        """Refuse a delivery journal opened under another stable hub identity."""
+        """Refuse a delivery journal opened under another stable hub identity.
+
+        Every stored request must have entered through this hub (``origin_hub`` equals
+        ``hub_id``) or have been forwarded by an authenticated peer, in which case the
+        requester is ``seat@origin_hub`` for that same peer. Local seats cannot hold
+        ``@`` names, so any locally originated row naming another hub fails the check. A
+        journal holding only forwarded rows carries no local identity to compare, and is
+        accepted.
+        """
         with self._lock:
-            for (raw,) in self._conn.execute("SELECT request_json FROM delivery_requests"):
+            for raw, sender in self._conn.execute(
+                "SELECT request_json, sender FROM delivery_requests"
+            ):
                 try:
                     request = json.loads(raw)
                 except (TypeError, ValueError) as exc:
                     raise DeliveryRefusal(
                         "replay_incompatible", "stored delivery request is malformed"
                     ) from exc
-                if not isinstance(request, dict) or request.get("origin_hub") != hub_id:
-                    raise DeliveryRefusal(
-                        "hub_identity_mismatch",
-                        "delivery journal belongs to a different stable hub id",
-                    )
+                origin = request.get("origin_hub") if isinstance(request, dict) else None
+                forwarded = parse_hub_qualified(str(sender))
+                if origin == hub_id or (forwarded is not None and forwarded.hub_id == origin):
+                    continue
+                raise DeliveryRefusal(
+                    "hub_identity_mismatch",
+                    "delivery journal belongs to a different stable hub id",
+                )
 
     def quarantine(self, operation_key: str, reason_code: str) -> None:
         """Retain a refused record for operator recovery without repeated retries."""

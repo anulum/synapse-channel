@@ -277,9 +277,13 @@ export class SynapseClient {
     this.send(MessageType.BoardRequest);
   }
 
-  /** Request the live roster snapshot. */
-  requestWho(): void {
-    this.send(MessageType.WhoRequest);
+  /**
+   * Request the live roster snapshot. With `hub`, the connected hub asks that
+   * message peer for its roster (wire version 5); seats come back as
+   * `seat@hub`, or an `error` frame arrives when the peer cannot be asked.
+   */
+  requestWho(hub?: string): void {
+    this.send(MessageType.WhoRequest, hub ? { extra: { hub } } : {});
   }
 
   /** Request active claims and checkpoints. */

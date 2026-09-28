@@ -135,6 +135,13 @@ from synapse_channel.core.message_auth_durable import (
     DurableMessageAuthReplayStore,
     SequenceFloorMode,
 )
+from synapse_channel.core.message_forward_ledger import MessageForwardLedger
+from synapse_channel.core.message_forward_origin import DEFAULT_FORWARD_TTL_SECONDS
+from synapse_channel.core.message_forward_transport import (
+    MessageForwarder,
+    MessageForwardPeer,
+    forward_message,
+)
 from synapse_channel.core.multihub_claim_transport import (
     ClaimForwarder,
     ClaimForwardPeer,
@@ -419,6 +426,17 @@ class SynapseHub:
         The seam that relays an operator action to an owning hub; defaults to the network
         :func:`~synapse_channel.core.operator_relay_transport.relay_operator_action`. Injected
         in tests.
+    message_peers : Mapping[str, MessageForwardPeer] or None, optional
+        Peer hubs this hub forwards messages to, keyed by hub id. A chat or delivery addressed
+        to ``PROJECT/seat@HUB_ID`` is forwarded to ``HUB_ID`` when it is listed here and
+        refused otherwise. ``None`` (the default) forwards nothing. Receiving forwards is
+        governed separately by ``multihub_serving_policy``.
+    message_forwarder : MessageForwarder, optional
+        The seam that forwards one message; defaults to the network
+        :func:`~synapse_channel.core.message_forward_transport.forward_message`. Injected in
+        tests.
+    message_forward_ttl : float, optional
+        Seconds an unanswered forwarded chat is retried before it expires; at least 1.
     require_relay_reason : bool, optional
         Whether this hub refuses an operator relay that carries no reason. ``False`` (the
         default) records a reason when one is given but does not demand it; a team or production
@@ -539,6 +557,9 @@ class SynapseHub:
         claim_forwarder: ClaimForwarder = forward_claim,
         relay_peers: Mapping[str, OperatorRelayPeer] | None = None,
         relay_forwarder: RelayForwarder = relay_operator_action,
+        message_peers: Mapping[str, MessageForwardPeer] | None = None,
+        message_forwarder: MessageForwarder = forward_message,
+        message_forward_ttl: float = DEFAULT_FORWARD_TTL_SECONDS,
         require_relay_reason: bool = False,
         require_two_person_relay: bool = False,
         observed_asserting_hubs: Callable[[str], Iterable[str]] | None = None,
@@ -660,6 +681,14 @@ class SynapseHub:
         self.claim_forwarder = claim_forwarder
         self.relay_peers = dict(relay_peers) if relay_peers else None
         self.relay_forwarder = relay_forwarder
+        self.message_peers = dict(message_peers) if message_peers else None
+        self.message_forwarder = message_forwarder
+        self.message_forward_ttl = max(
+            1.0, safe_float(message_forward_ttl, default=DEFAULT_FORWARD_TTL_SECONDS)
+        )
+        self.message_forward_ledger = (
+            journal.message_forward if journal is not None else MessageForwardLedger.in_memory()
+        )
         self.require_relay_reason = bool(require_relay_reason)
         self.require_two_person_relay = bool(require_two_person_relay)
         self.observed_asserting_hubs = observed_asserting_hubs
@@ -1659,6 +1688,13 @@ class SynapseHub:
             )
 
             await deliver_pending_delivery_notifications(self, sender=sender, websocket=websocket)
+        if not was_bound and self.message_peers:
+            # A forwarded chat that settled while its sender was offline is reported now.
+            from synapse_channel.core.message_forward_origin import (
+                deliver_pending_forward_receipts,
+            )
+
+            await deliver_pending_forward_receipts(self, sender=sender)
         if not was_bound or msg_type != MessageType.HEARTBEAT:
             self.dead_letters.clear(sender)
         if is_new_agent:
@@ -1967,6 +2003,7 @@ class SynapseHub:
         self._install_signal_handlers(asyncio.get_running_loop(), stop)
         started = False
         delivery_sweeper: asyncio.Task[None] | None = None
+        forward_retrier: asyncio.Task[None] | None = None
         try:
             async with (
                 self._dark_seats.running(),
@@ -2006,9 +2043,17 @@ class SynapseHub:
 
                     delivery_sweeper = asyncio.create_task(delivery_expiry_loop(self))
                     delivery_sweeper.add_done_callback(lambda _task: stop.set())
+                if self.message_peers:
+                    from synapse_channel.core.message_forward_origin import (
+                        message_forward_retry_loop,
+                    )
+
+                    forward_retrier = asyncio.create_task(message_forward_retry_loop(self))
+                    forward_retrier.add_done_callback(lambda _task: stop.set())
                 await stop.wait()
-                if delivery_sweeper is not None and delivery_sweeper.done():
-                    delivery_sweeper.result()
+                for background in (delivery_sweeper, forward_retrier):
+                    if background is not None and background.done():
+                        background.result()
         except BaseException:
             if not started:
                 # Unblock a startup waiter so it reports the failed bind
@@ -2016,9 +2061,10 @@ class SynapseHub:
                 self._serving.set()
             raise
         finally:
-            if delivery_sweeper is not None:
-                delivery_sweeper.cancel()
-                await asyncio.gather(delivery_sweeper, return_exceptions=True)
+            for background in (delivery_sweeper, forward_retrier):
+                if background is not None:
+                    background.cancel()
+                    await asyncio.gather(background, return_exceptions=True)
             self._bound_address = None
             if started:
                 self._serving.clear()

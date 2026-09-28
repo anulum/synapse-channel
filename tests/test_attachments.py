@@ -426,7 +426,7 @@ async def test_python_agent_attachment_entry_point_reaches_secure_hub(tmp_path: 
             task = asyncio.create_task(agent.connect())
             try:
                 assert await agent.wait_until_ready(3)
-                assert agent.hub_protocol_version == 4
+                assert agent.hub_protocol_version == 5
                 await agent.send_attachment(
                     MessageType.ATTACHMENT_BEGIN,
                     scope="proj",

@@ -365,6 +365,21 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "memory_recall_input",
         ValueError,
     ),
+    "MessageForwardRejectedError": (
+        "synapse_channel.core.message_forward_transport",
+        "message_forward_rejected",
+        RuntimeError,
+    ),
+    "MessageForwardTransportError": (
+        "synapse_channel.core.message_forward_transport",
+        "message_forward_transport",
+        RuntimeError,
+    ),
+    "MessageForwardWireError": (
+        "synapse_channel.core.message_forward_wire",
+        "message_forward_wire",
+        ValueError,
+    ),
     "MultiHubEquivocationError": (
         "synapse_channel.core.multihub_equivocation",
         "multihub_equivocation",

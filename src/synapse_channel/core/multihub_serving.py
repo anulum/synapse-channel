@@ -161,6 +161,44 @@ class MultiHubServingPolicy:
             return MultiHubAuthorisation(
                 allowed=False, reason=MTLSVerificationResult.UNKNOWN_PEER.value
             )
+        return self._authorise_grant(grant, websocket, namespace=grant.namespace)
+
+    def authorise_namespace(
+        self, *, sender: str, websocket: Any, namespace: str
+    ) -> MultiHubAuthorisation:
+        """Decide whether ``sender`` may address ``namespace`` on this hub over ``websocket``.
+
+        The same composition as :meth:`authorise`, evaluated for one target namespace
+        instead of the grant's own: the sender needs an operator grant and a live, pinned
+        client certificate, and its federation peering must list ``namespace`` among the
+        local namespaces it may address. Cross-hub message forwarding calls this once per
+        target, so a peer reaches only the projects its peering names.
+
+        Parameters
+        ----------
+        sender : str
+            The requesting peer's registered id.
+        websocket : Any
+            The serving-side connection the request arrived on.
+        namespace : str
+            The local project namespace the request addresses.
+
+        Returns
+        -------
+        MultiHubAuthorisation
+            ``allowed`` is ``True`` only when every layer permits ``namespace``.
+        """
+        grant = self.grants.get(sender)
+        if grant is None:
+            return MultiHubAuthorisation(
+                allowed=False, reason=MTLSVerificationResult.UNKNOWN_PEER.value
+            )
+        return self._authorise_grant(grant, websocket, namespace=namespace)
+
+    def _authorise_grant(
+        self, grant: MultiHubServingGrant, websocket: Any, *, namespace: str
+    ) -> MultiHubAuthorisation:
+        """Check the live certificate and every trust layer for one granted namespace."""
         der = self.cert_source(websocket)
         if der is None:
             return MultiHubAuthorisation(
@@ -177,7 +215,7 @@ class MultiHubServingPolicy:
             mtls=self.mtls,
             certificate_pin=pin,
             domain_id=grant.domain_id,
-            namespace=grant.namespace,
+            namespace=namespace,
             signing_key_id=grant.signing_key_id,
             now=self.clock(),
             signature_ok=self.signature_ok,

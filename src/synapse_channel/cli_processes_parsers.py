@@ -501,6 +501,45 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "every relay route when --multihub-client-certfile is configured.",
     )
     hub.add_argument(
+        "--message-peer",
+        action="append",
+        default=[],
+        metavar="HUB_ID=URI",
+        help="Forward chats and delivery requests addressed to PROJECT/seat@HUB_ID to this "
+        "peer hub (repeatable). A target on an unlisted hub is refused. The peer accepts "
+        "forwards only for namespaces its --multihub-serving-policy grants this hub.",
+    )
+    hub.add_argument(
+        "--message-peer-token",
+        default=None,
+        metavar="TOKEN",
+        help="Connect token sent to every --message-peer that gates its first frame.",
+    )
+    hub.add_argument(
+        "--message-peer-token-file",
+        default=None,
+        metavar="PATH",
+        help="Read the message-peer token from this owner-only (chmod 600) file instead of "
+        "--message-peer-token; an argv value is visible to anyone running `ps`. An "
+        "explicit --message-peer-token wins.",
+    )
+    hub.add_argument(
+        "--message-peer-pin",
+        action="append",
+        default=[],
+        metavar="HUB_ID=sha256:HEX",
+        help="Pin the named message peer's live WSS certificate (repeatable). Required for "
+        "every message peer when --multihub-client-certfile is configured.",
+    )
+    hub.add_argument(
+        "--message-forward-ttl",
+        type=float,
+        default=86_400.0,
+        metavar="SECONDS",
+        help="Retry an unanswered forwarded chat for this long before it expires "
+        "(default 86400; minimum 1).",
+    )
+    hub.add_argument(
         "--require-relay-reason",
         action="store_true",
         help="Refuse governed operator relays that do not carry an auditable reason.",

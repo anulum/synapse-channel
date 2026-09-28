@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import datetime as dt
-import ipaddress
 import json
 import sqlite3
 import ssl
@@ -23,13 +21,13 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives import serialization
 from websockets.asyncio.client import connect
 
 from hub_e2e_helpers import _await_listening, _free_port, read_until_type, send_json
+from multihub_tls_helpers import TLSIdentity as _Identity
+from multihub_tls_helpers import certificate_authority as _certificate_authority
+from multihub_tls_helpers import issue_identity as _issue_identity
 from synapse_channel.core.dead_letter_forwarding import forwarding_notice
 from synapse_channel.core.dead_letter_forwarding_transport import forward_dead_letter
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
@@ -65,12 +63,6 @@ _KEY_ID = "SYNAPSE-CHANNEL:hub:2026-07"
 
 
 @dataclass(frozen=True, slots=True)
-class _Identity:
-    cert: Path
-    key: Path
-
-
-@dataclass(frozen=True, slots=True)
 class _TLSMaterial:
     ca: Path
     server: _Identity
@@ -79,92 +71,6 @@ class _TLSMaterial:
     untrusted_ca: _Identity
     server_pin: str
     authorised_pin: str
-
-
-def _certificate_authority(common_name: str) -> tuple[rsa.RSAPrivateKey, x509.Certificate]:
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
-    now = dt.datetime.now(dt.timezone.utc)
-    certificate = (
-        x509.CertificateBuilder()
-        .subject_name(name)
-        .issuer_name(name)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - dt.timedelta(days=1))
-        .not_valid_after(now + dt.timedelta(days=1))
-        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-        .add_extension(
-            x509.KeyUsage(
-                digital_signature=True,
-                content_commitment=False,
-                key_encipherment=False,
-                data_encipherment=False,
-                key_agreement=False,
-                key_cert_sign=True,
-                crl_sign=True,
-                encipher_only=False,
-                decipher_only=False,
-            ),
-            critical=True,
-        )
-        .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
-        .add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(key.public_key()), critical=False
-        )
-        .sign(key, hashes.SHA256())
-    )
-    return key, certificate
-
-
-def _issue_identity(
-    root: Path,
-    name: str,
-    *,
-    ca_key: rsa.RSAPrivateKey,
-    ca_cert: x509.Certificate,
-    server: bool = False,
-) -> _Identity:
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name)])
-    now = dt.datetime.now(dt.timezone.utc)
-    builder = (
-        x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(ca_cert.subject)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - dt.timedelta(days=1))
-        .not_valid_after(now + dt.timedelta(days=1))
-        .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
-        .add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()), critical=False
-        )
-    )
-    if server:
-        builder = builder.add_extension(
-            x509.SubjectAlternativeName(
-                [
-                    x509.DNSName("localhost"),
-                    x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
-                ]
-            ),
-            critical=False,
-        )
-    certificate = builder.sign(ca_key, hashes.SHA256())
-    cert_path = root / f"{name}.pem"
-    key_path = root / f"{name}.key"
-    cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
-    key_path.write_bytes(
-        key.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.TraditionalOpenSSL,
-            serialization.NoEncryption(),
-        )
-    )
-    cert_path.chmod(0o600)
-    key_path.chmod(0o600)
-    return _Identity(cert=cert_path, key=key_path)
 
 
 def _tls_material(tmp_path: Path) -> _TLSMaterial:

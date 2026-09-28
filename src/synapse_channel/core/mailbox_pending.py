@@ -19,6 +19,7 @@ from typing import Any, cast
 
 from synapse_channel.core.agent_liveness import waiter_owner
 from synapse_channel.core.dead_letters import is_directed_target
+from synapse_channel.core.hub_address import is_hub_qualified_name
 from synapse_channel.core.journal import EventKind, record_mailbox_watermark
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.persistence import EventStore, StoredEvent
@@ -293,12 +294,19 @@ class MailboxPendingTracker:
 
     @staticmethod
     def _target_identities(target: str) -> tuple[str, ...]:
-        """Return exact target parts usable as bounded identity candidates."""
+        """Return exact target parts usable as bounded identity candidates.
+
+        A hub-qualified part (``seat@HUB_ID``) names a seat whose mailbox lives on a peer
+        hub, so it never becomes a local pending identity.
+        """
         return tuple(
             dict.fromkeys(
                 part
                 for part in (raw.strip() for raw in target.split(","))
-                if part and part != "all" and not any(marker in part for marker in _GLOB_MARKERS)
+                if part
+                and part != "all"
+                and not any(marker in part for marker in _GLOB_MARKERS)
+                and not is_hub_qualified_name(part)
             )
         )
 

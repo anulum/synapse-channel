@@ -1031,3 +1031,42 @@ async def test_changed_hub_id_refuses_expired_open_delivery_before_listen(tmp_pa
         assert restored.delivery.due_for_expiry(time.time()) == ()
         record = restored.delivery.get(intent.operation_key)
         assert record is not None and record.stage == "queued"
+
+
+@pytest.mark.real_hub
+async def test_a_status_read_after_the_deadline_expires_the_queued_request(
+    tmp_path: Path,
+) -> None:
+    """A status read never reports ``queued`` past the deadline, even before the sweep runs."""
+    store = EventStore(tmp_path / "hub.db")
+    async with running_hub(SynapseHub(journal=store, hub_id="hub-1")) as (_hub, uri):
+        receiver, session = await _register(uri, "P/receiver", capabilities={"follow_up": "native"})
+        sender, _ = await _register(uri, "P/author")
+        try:
+            assert session is not None
+            request = _intent(session["incarnation"])
+            request["deadline"] = time.time() + 0.2
+            await sender.send(json.dumps(request))
+            queued = await read_until_type(sender, MessageType.DELIVERY_STATUS)
+            assert queued["stage"] == "queued"
+            await asyncio.sleep(0.25)
+            await sender.send(
+                json.dumps(
+                    {
+                        "sender": "P/author",
+                        "type": MessageType.DELIVERY_STATUS_REQUEST,
+                        "target": "System",
+                        "protocol_version": 3,
+                        "operation_key": queued["operation_key"],
+                    }
+                )
+            )
+            for _ in range(5):
+                status = await read_until_type(sender, MessageType.DELIVERY_STATUS)
+                if status["stage"] == "expired":
+                    break
+            assert status["stage"] == "expired"
+        finally:
+            await sender.close()
+            await receiver.close()
+    store.close()

@@ -79,7 +79,7 @@ everything, since they need the whole command table.
 | `synapse supervisor` | Run an LLM-free supervisor that re-offers stalled tasks. |
 | `synapse manifest` | Print the capability manifest of advertised agents. |
 | `synapse directory` | Print a read-only capability directory from live agent cards (discovery only). |
-| `synapse who` | List the agents currently online and hub-authoritative mailbox pending counts, optionally for one project or this identity with `--me`. The full-roster view shows the 20 largest positive mailboxes plus total identities/messages; `--all-mailbox-pending` (alias `--all`) expands every retained positive identity. `--observed-peer HUB=URI` appends advisory `observed@HUB` peer rows. |
+| `synapse who` | List the agents currently online and hub-authoritative mailbox pending counts, optionally for one project or this identity with `--me`. The full-roster view shows the 20 largest positive mailboxes plus total identities/messages; `--all-mailbox-pending` (alias `--all`) expands every retained positive identity. `--observed-peer HUB=URI` appends advisory `observed@HUB` peer rows; `--hub HUB_ID` shows a message peer's roster instead, as `seat@HUB_ID`. |
 | `synapse status` | Print a one-line hub summary (online agents, active claims, this identity's mailbox pending count) for shell prompts and tmux status bars, the counts as JSON with `--json`, or a refreshing operator dashboard with `--watch`; exit non-zero when the hub is down; `--observed-peer HUB=URI` appends advisory peer counters. |
 | `synapse state` | Print active claims and their checkpoints (a resume view); `--observed-peer HUB=URI` appends advisory peer claims marked `observed@HUB`. |
 | `synapse dead-letters` | Print directed messages the hub delivered to no consume-live recipient — no socket, or only stale sockets without a recent reaction/live waiter — worst first with the `syn inbox --as NAME` drain remedy. |
@@ -582,6 +582,7 @@ agent on the project, `quantum/claude-*` for one role), or `all`. List who is li
 synapse who                       # agents online, with -rx waiter sidecars counted apart
 synapse who --project quantum     # only quantum/... instances
 synapse who --observed-peer east=ws://127.0.0.1:8877  # add advisory peer owners
+synapse who --hub laptop          # a message peer's roster, seats named seat@laptop
 synapse who --name quantum/codex-2b40 --me  # this identity plus its -rx waiter status
 syn who --me                      # same check using the resolved syn identity
 syn reap                          # list this identity's shell-hook waiter pidfile
@@ -2264,6 +2265,38 @@ refusal, so a forwarding outage never silently resumes local granting:
 synapse hub --port 8876 --hub-id syn-a \
   --namespace-owner OTHER-PROJECT=syn-b \
   --claim-peer syn-b=ws://peer:8876
+```
+
+`--message-peer HUB_ID=URI` (repeatable) lets agents on this hub message seats on
+that peer as `PROJECT/seat@HUB_ID`. Chats, version-three delivery intents and
+`synapse who --hub HUB_ID` roster requests are forwarded to the peer. Forwarding
+is independent of namespace ownership and needs no `--namespace-owner`. The peer
+must grant this hub's id in its `--multihub-serving-policy`, for the target's
+namespace.
+
+The other message-peer options are:
+
+- `--message-peer-token TOKEN` or `--message-peer-token-file PATH` (owner-only)
+  authenticates to peers that gate the first frame.
+- `--message-peer-pin HUB_ID=sha256:<hex>` pins a `wss://` peer's certificate. It
+  is required for every peer when the multi-hub client certificate is configured,
+  and it must name a configured peer.
+- `--message-forward-ttl SECONDS` (default 86400, minimum 1) bounds how long an
+  unanswered chat is retried. Retries back off from 1 to 300 seconds, and the
+  outbox is durable with `--db`, so a peer outage or a restart does not lose a
+  queued chat.
+
+The full contract is in
+[Cross-hub message forwarding](protocol.md#cross-hub-message-forwarding-wire-version-5).
+
+```bash
+synapse hub --port 8876 --hub-id workstation --db hub.db \
+  --tls-certfile hub.pem --tls-keyfile hub.key \
+  --multihub-serving-policy serving-policy.json \
+  --multihub-client-certfile workstation-client.pem \
+  --multihub-client-keyfile workstation-client.key \
+  --message-peer laptop=wss://laptop.tailnet:8876 \
+  --message-peer-pin laptop=sha256:<hex>
 ```
 
 ## Agent2Agent bridge

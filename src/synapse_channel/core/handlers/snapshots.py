@@ -48,7 +48,18 @@ async def handle_state_request(
 async def handle_who_request(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
-    """Send the requesting agent the online-agent roster and the hub's pinning tag."""
+    """Send the requesting agent the online-agent roster and the hub's pinning tag.
+
+    A request carrying ``hub`` asks a configured message peer for its roster instead
+    (:func:`~synapse_channel.core.message_forward_origin.forward_who`); the answer names
+    remote seats as ``seat@HUB_ID`` and lists only namespaces the peer lets this hub see.
+    """
+    remote_hub = data.get("hub")
+    if isinstance(remote_hub, str) and remote_hub.strip():
+        from synapse_channel.core.message_forward_origin import forward_who
+
+        await hub._send_json(websocket, await forward_who(hub, sender, remote_hub.strip()))
+        return
     # Lazy: the package __init__ pulls in the handler modules, so a top-level
     # import of __version__ would be circular; by call time it is initialised.
     from synapse_channel import __version__
