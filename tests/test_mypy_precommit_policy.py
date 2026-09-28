@@ -9,11 +9,14 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / ".pre-commit-config.yaml"
 WORKFLOW = ROOT / ".github" / "workflows" / "pre-commit.yml"
+DEV_LOCK = ROOT / ".github" / "requirements" / "requirements-dev.txt"
+PKCS11_BOOTSTRAP = ROOT / ".github" / "requirements" / "requirements-pkcs11-bootstrap.txt"
 
 
 def test_mypy_hook_cannot_narrow_to_staged_filenames() -> None:
@@ -36,3 +39,25 @@ def test_precommit_ci_installs_the_whole_tree_type_environment() -> None:
     assert "python -m pip install -e . --no-deps" in text
     assert "python -m pre_commit run --all-files --show-diff-on-failure" in text
     assert "requirements-tools.txt" not in text
+
+
+def test_precommit_pkcs11_bootstrap_matches_the_universal_lock() -> None:
+    """Keep the direct CI artifact aligned with the authoritative dev lock."""
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    dev_lock = DEV_LOCK.read_text(encoding="utf-8")
+    bootstrap = PKCS11_BOOTSTRAP.read_text(encoding="utf-8")
+    dev_pin = re.search(r"(?m)^python-pkcs11==(?P<version>[^ ]+) \\$", dev_lock)
+    wheel_pin = re.search(
+        r"python_pkcs11-(?P<version>[0-9.]+)-cp312-cp312-manylinux[^ ]+\.whl",
+        bootstrap,
+    )
+    wheel_hash = re.search(r"--hash=sha256:(?P<digest>[0-9a-f]{64})", bootstrap)
+
+    assert dev_pin is not None
+    assert wheel_pin is not None
+    assert wheel_hash is not None
+    assert wheel_pin["version"] == dev_pin["version"]
+    assert wheel_hash["digest"] in dev_lock
+    assert "https://files.pythonhosted.org/" in bootstrap
+    assert "--require-hashes --no-deps" in workflow
+    assert "requirements-pkcs11-bootstrap.txt" in workflow

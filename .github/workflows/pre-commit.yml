@@ -24,6 +24,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      - name: Bootstrap hash-verified PKCS#11 wheel
+        run: >
+          python -m pip install --require-hashes --no-deps
+          -r .github/requirements/requirements-pkcs11-bootstrap.txt
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
       - run: python -m pip install -e . --no-deps
       - run: python -m pre_commit run --all-files --show-diff-on-failure
