@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shlex
 import ssl
 import time
 from collections.abc import Coroutine
@@ -525,3 +526,88 @@ def test_cmd_hub_stale_recipient_warning_on_by_default() -> None:
 
     assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner, hub_factory=build_hub) == 0
     assert captured["warn_stale_recipients"] is True
+
+
+def _anchored_then_tampered_log(db: Path, *, tamper: str, key_file: str | None = None) -> None:
+    """Anchor a five-event log through a real hub start, then tamper with it.
+
+    ``truncate`` deletes the newest two events; ``rewrite`` changes one payload
+    in place. Both are what the startup anti-rollback check exists to catch.
+    """
+    from synapse_channel.core.journal import EventKind
+    from synapse_channel.core.persistence import EventStore
+
+    store = EventStore(db, key_file=key_file)
+    try:
+        for seq in range(1, 6):
+            store.append(EventKind.RECALL, {"actor": "alice", "seq": seq}, ts=float(seq))
+        SynapseHub(hub_id="syn-anchor", journal=store)
+        if tamper == "truncate":
+            store._conn.execute("DELETE FROM events WHERE seq > 3")
+        else:
+            store._conn.execute(
+                "UPDATE events SET payload = ? WHERE seq = 2",
+                (json.dumps({"actor": "mallory", "seq": "forged"}),),
+            )
+        store._conn.commit()
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(
+    ("tamper", "detection"),
+    [("truncate", "tail truncation detected"), ("rewrite", "log rewrite")],
+)
+def test_cmd_hub_reports_a_failed_anti_rollback_check_without_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], tamper: str, detection: str
+) -> None:
+    """A detected tamper is an operator refusal with exit 2, never a crash."""
+    from synapse_channel import cli
+    from synapse_channel.core.merkle_checkpoint import checkpoint_path_for
+
+    db = tmp_path / "hub.db"
+    _anchored_then_tampered_log(db, tamper=tamper)
+    checkpoint_before = checkpoint_path_for(db).read_bytes()
+
+    assert cli_processes._cmd_hub(_hub_ns(db=str(db)), runner=_close_runner) == 2
+
+    err = capsys.readouterr().err
+    lines = err.splitlines()
+    assert len(lines) == 3
+    assert all(line.startswith("synapse hub: ") for line in lines)
+    assert "refused to start: durable log failed anti-rollback verification" in lines[0]
+    assert detection in lines[0]
+    assert lines[1] == f"synapse hub: inspect: synapse merkle checkpoint --verify {db}"
+    assert f"move {checkpoint_path_for(db)} aside" in lines[2]
+    assert "Traceback" not in err
+    # The refusal preserves the evidence: no new checkpoint link was anchored,
+    # and the printed inspect command reproduces the detection (exit 2).
+    assert checkpoint_path_for(db).read_bytes() == checkpoint_before
+    assert cli.main(["merkle", "checkpoint", "--verify", str(db)]) == 2
+    assert detection in capsys.readouterr().err
+
+
+def test_cmd_hub_anti_rollback_inspect_command_carries_the_store_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An encrypted store's inspect command includes the key the verifier needs."""
+    pytest.importorskip("sqlcipher3")
+    from synapse_channel import cli
+    from synapse_channel.core.at_rest import generate_key_file
+
+    key = generate_key_file(tmp_path / "hub key")
+    db = tmp_path / "enc.db"
+    _anchored_then_tampered_log(db, tamper="truncate", key_file=str(key))
+
+    assert (
+        cli_processes._cmd_hub(_hub_ns(db=str(db), db_key_file=str(key)), runner=_close_runner) == 2
+    )
+
+    inspect_line = capsys.readouterr().err.splitlines()[1]
+    assert inspect_line == (
+        f"synapse hub: inspect: synapse merkle checkpoint --verify --db-key-file '{key}' {db}"
+    )
+    # The printed command is shell-quoted: parsing it back yields the real key path.
+    argv = shlex.split(inspect_line.removeprefix("synapse hub: inspect: synapse "))
+    assert argv[argv.index("--db-key-file") + 1] == str(key)
+    assert cli.main(argv) == 2

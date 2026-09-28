@@ -26,6 +26,9 @@ Policy summary
   client.
 * Off-loopback binds without an advertised host admit no Host authority until
   the operator configures one — fail closed rather than wildcard trust.
+* A repeated ``Host`` or ``Origin`` header is refused with the same ``403``
+  before either value is interpreted. Duplicate Host is the request-desync probe
+  shape, where a proxy and the hub could each act on a different authority.
 """
 
 from __future__ import annotations
@@ -154,12 +157,30 @@ def handshake_guard_response(
     """Return a ``403`` when the upgrade must not proceed; else ``None``.
 
     Metrics and health paths are not handled here — the hub routes those first.
+
+    Parameters
+    ----------
+    request : Request
+        The parsed upgrade request.
+    allowed_origins : tuple[str, ...]
+        Normalised concrete browser origins the operator allows.
+    trusted_authorities : tuple[str, ...]
+        Normalised Host authorities derived from bind/advertised configuration.
+
+    Returns
+    -------
+    Response or None
+        ``None`` when the upgrade may proceed. Otherwise a ``403`` response: for
+        a request that does not carry exactly one ``Host`` and at most one
+        ``Origin`` header, and for any request :func:`handshake_allowed` refuses.
     """
-    origin = request.headers.get("Origin")
-    # websockets may omit the header entirely; treat missing as origin-less.
-    if origin is not None and origin == "":
-        origin = None
-    host = request.headers.get("Host")
+    host_values = request.headers.get_all("Host")
+    origin_values = request.headers.get_all("Origin")
+    if len(host_values) != 1 or len(origin_values) > 1:
+        return http_forbidden("duplicate or missing origin/host header")
+    host = host_values[0]
+    # An empty Origin value is treated as an origin-less (native) request.
+    origin = origin_values[0] if origin_values and origin_values[0] != "" else None
     if handshake_allowed(
         origin_header=origin,
         host_header=host,

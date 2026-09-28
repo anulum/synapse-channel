@@ -1199,7 +1199,10 @@ via `--allow-origin` (concrete `scheme://host[:port]` only; never `null` or
 wildcards), and every upgrade — browser or native — must present a `Host`
 authority derived from the loopback bind and/or `--advertised-host`. Without
 `--advertised-host`, a bind-all address (`0.0.0.0` / `::`) admits no Host and
-fail-closes. Metrics/health keep their token gates when `--metrics` is on. Open and secured
+fail-closes. A request that repeats `Host` or `Origin` is refused with the same
+`403` before either value is read. Metrics/health keep their token gates when
+`--metrics` is on; a repeated `Authorization` header there counts as no token
+(`401`). Open and secured
 hubs both reap sockets that never bind a name within `--auth-timeout` (default
 10s; close code `4012`). Without `--secure`, disabled flood limits (`--rate` /
 `--burst` / `--host-rate` / `--host-burst` / `--max-connections-per-host` left
@@ -1222,6 +1225,17 @@ time when `--db` is enabled, not deferred to process exit:
 Takeover and identity-conflict paths are logged for auditability without message
 payloads: accepted takeovers, cooldown refusals, name conflicts, and name-switch
 denials include the sender name, remote host, and close reason.
+
+With `--db`, the hub verifies the durable log against its anti-rollback
+checkpoint store (`DB.checkpoint.db`) before serving, then anchors the current
+state as the newest checkpoint link. A truncated tail or a rewritten event
+refuses the start with exit `2` and three `synapse hub:` lines: the detection
+reason, the `synapse merkle checkpoint --verify` command that reproduces it
+(including `--db-key-file` for an encrypted store), and the recovery routes.
+Keep both files as evidence. Restore the log from a trusted copy, or, only when
+the change was authorised, move the checkpoint store aside so the next start
+anchors a new chain. `synapse merkle checkpoint DB` prints the newest link;
+with `--verify` it exits `0` when the log matches and `2` on detection.
 
 ```bash
 synapse health                       # exit 0 if the local hub is reachable

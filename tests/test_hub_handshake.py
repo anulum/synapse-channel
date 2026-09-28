@@ -8,6 +8,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import contextlib
+import os
+
 import pytest
 from websockets.asyncio.client import connect
 from websockets.datastructures import Headers
@@ -217,3 +222,107 @@ def test_parser_allow_origin_and_advertised_host() -> None:
     )
     assert args.allow_origin == ["https://a.example", "https://b.example:8443"]
     assert args.advertised_host == "hub.example:8876"
+
+
+def _upgrade_lines() -> list[str]:
+    """Return the RFC 6455 upgrade headers with a fresh 16-byte client nonce."""
+    nonce = base64.b64encode(os.urandom(16)).decode("ascii")
+    return [
+        "Upgrade: websocket",
+        "Connection: Upgrade",
+        f"Sec-WebSocket-Key: {nonce}",
+        "Sec-WebSocket-Version: 13",
+    ]
+
+
+async def _raw_upgrade(uri: str, header_lines: list[str]) -> tuple[bytes, bytes]:
+    """Send one hand-written upgrade request; return its status line and body.
+
+    The websockets client cannot emit a repeated ``Host`` header, so the request
+    is written byte-for-byte to exercise the server's parser and hook as a
+    request-desync probe would.
+    """
+    port = int(uri.rsplit(":", 1)[1])
+    reader, writer = await asyncio.open_connection("localhost", port)
+    try:
+        request = "\r\n".join(["GET / HTTP/1.1", *header_lines, *_upgrade_lines()])
+        writer.write(f"{request}\r\n\r\n".encode("ascii"))
+        await writer.drain()
+        raw = await asyncio.wait_for(reader.read(4096), timeout=3.0)
+    finally:
+        writer.close()
+        with contextlib.suppress(OSError):
+            await writer.wait_closed()
+    head, _, body = raw.partition(b"\r\n\r\n")
+    return head.split(b"\r\n", 1)[0], body
+
+
+@pytest.mark.parametrize(
+    ("hosts", "origins"),
+    [
+        pytest.param(("localhost", "evil.example"), (), id="trusted-then-foreign-host"),
+        pytest.param(("evil.example", "localhost"), (), id="foreign-then-trusted-host"),
+        pytest.param(("localhost", "localhost"), (), id="identical-repeated-host"),
+        pytest.param(("localhost",), ("https://app.example",) * 2, id="repeated-allowed-origin"),
+        pytest.param((), (), id="missing-host"),
+    ],
+)
+def test_guard_refuses_any_request_without_exactly_one_host_or_one_origin(
+    hosts: tuple[str, ...], origins: tuple[str, ...]
+) -> None:
+    """Header multiplicity is decided before any value is interpreted."""
+    headers = Headers()
+    for host in hosts:
+        headers["Host"] = host
+    for origin in origins:
+        headers["Origin"] = origin
+    response = handshake_guard_response(
+        Request("/", headers),
+        allowed_origins=normalise_allow_origins(("https://app.example",)),
+        trusted_authorities=("localhost",),
+    )
+    assert response is not None
+    assert response.status_code == 403
+    assert response.body == b"duplicate or missing origin/host header\n"
+
+
+def test_guard_treats_an_empty_single_origin_as_origin_less() -> None:
+    """One empty Origin keeps the native-client meaning it had before."""
+    headers = Headers()
+    headers["Host"] = "localhost:8876"
+    headers["Origin"] = ""
+    assert (
+        handshake_guard_response(
+            Request("/", headers),
+            allowed_origins=(),
+            trusted_authorities=("localhost:8876",),
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "extra_lines",
+    [
+        pytest.param(["Host: evil.example"], id="trusted-then-foreign-host"),
+        pytest.param(["Host: {authority}"], id="identical-repeated-host"),
+        pytest.param(
+            ["Origin: https://app.example", "Origin: https://app.example"],
+            id="repeated-allowed-origin",
+        ),
+    ],
+)
+async def test_live_repeated_boundary_header_is_refused_403_not_500(
+    extra_lines: list[str],
+) -> None:
+    """A request-desync probe gets the deterministic refusal, not a server error."""
+    hub = SynapseHub(hub_id="syn-hs", allowed_origins=("https://app.example",))
+    async with running_hub(hub) as (_, uri):
+        authority = uri.removeprefix("ws://")
+        lines = [f"Host: {authority}", *(line.format(authority=authority) for line in extra_lines)]
+        status, body = await _raw_upgrade(uri, lines)
+        assert status == b"HTTP/1.1 403 Forbidden"
+        assert body == b"duplicate or missing origin/host header\n"
+        # The refusal leaves the hub serving: a well-formed upgrade still succeeds.
+        status, _ = await _raw_upgrade(uri, [f"Host: {authority}"])
+        assert status == b"HTTP/1.1 101 Switching Protocols"

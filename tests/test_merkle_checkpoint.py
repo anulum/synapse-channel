@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from _platform_caps import requires_proc
 from synapse_channel import cli
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
@@ -370,3 +372,39 @@ def test_cli_checkpoint_db_override(tmp_path: Path, capsys: pytest.CaptureFixtur
 def test_cli_checkpoint_missing_event_store(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["merkle", "checkpoint", "/nonexistent/hub.db", "--verify"]) == 2
     assert "missing event store" in capsys.readouterr().err
+
+
+def _open_paths() -> set[str]:
+    """Return the resolved targets of this process's open file descriptors."""
+    targets: set[str] = set()
+    for fd in os.listdir("/proc/self/fd"):
+        with contextlib.suppress(OSError):
+            targets.add(os.readlink(f"/proc/self/fd/{fd}"))
+    return targets
+
+
+@requires_proc
+def test_refused_hub_start_releases_the_checkpoint_store(tmp_path: Path) -> None:
+    """A start refused by the check closes the checkpoint connection it opened.
+
+    The assertion runs while the exception (and so its traceback, which still
+    references the half-built hub) is alive, so the release cannot come from
+    garbage collection. The first anchor is written through a closed store so
+    the refused start is the only opener of the checkpoint database.
+    """
+    db = tmp_path / "hub.db"
+    store = _seed(db, 5)
+    anchor = _checkpoint(db)
+    anchor.anchor(store)
+    anchor.close()
+    store.close()
+    _delete_from(db, 3)
+    store = EventStore(db)
+    checkpoint = str(checkpoint_path_for(db).resolve())
+    try:
+        with pytest.raises(AntiRollbackError) as refused:
+            SynapseHub(default_ttl_seconds=300.0, hub_id="syn-test", journal=store)
+        assert refused.value.__traceback__ is not None
+        assert checkpoint not in _open_paths()
+    finally:
+        store.close()

@@ -34,6 +34,15 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Refuse a hub WebSocket upgrade that repeats `Host` or `Origin` with the
+  handshake `403` instead of HTTP 500, treat a repeated `Authorization` header
+  on `/metrics` and `/health` as no token, and require exactly one `Host` at the
+  dashboard boundary instead of acting on the first value.
+
+- Report a hub start refused by the anti-rollback check as a three-line operator
+  message with exit `2` and the reproducing `synapse merkle checkpoint --verify`
+  command instead of a traceback, and close the checkpoint store on that refusal.
+
 - Keep the policy-check Action description within GitHub Marketplace's 125-character
   limit and exclude Action-only releases from Core container publication.
 

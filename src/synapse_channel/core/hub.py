@@ -580,9 +580,14 @@ class SynapseHub:
             self._checkpoint_store = MerkleCheckpointStore(checkpoint_path)
             # Fail closed BEFORE serving: a truncated or rewritten log is a
             # hard error at startup, never a quiet restart. Only then anchor
-            # the current state as the newest chain link.
-            self._checkpoint_store.verify(journal)
-            self._checkpoint_store.anchor(journal)
+            # the current state as the newest chain link. A refused start owns
+            # no hub, so it releases the checkpoint connection it opened.
+            try:
+                self._checkpoint_store.verify(journal)
+                self._checkpoint_store.anchor(journal)
+            except BaseException:
+                self._checkpoint_store.close()
+                raise
         else:
             self._checkpoint_store = None
         self.enable_metrics = bool(enable_metrics)

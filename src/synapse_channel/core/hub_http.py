@@ -47,8 +47,16 @@ def http_unauthorized() -> Response:
 
 
 def request_metrics_token(request: Request, *, query_token_ok: bool) -> str:
-    """Extract the metrics token from the request."""
-    authorization = request.headers.get("Authorization", "")
+    """Extract the metrics token from the request.
+
+    A repeated ``Authorization`` header is ambiguous, so it yields the empty
+    token (a ``401`` when a token is configured) instead of choosing one value;
+    the query-string fallback is not consulted for such a request.
+    """
+    values = request.headers.get_all("Authorization")
+    if len(values) > 1:
+        return ""
+    authorization = values[0] if values else ""
     prefix = "Bearer "
     if authorization.startswith(prefix):
         return authorization[len(prefix) :].strip()

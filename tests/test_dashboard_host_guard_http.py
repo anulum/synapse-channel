@@ -23,18 +23,20 @@ def _request(
     method: str,
     path: str,
     *,
-    host_header: str | None,
+    host_header: str | tuple[str, ...] | None,
 ) -> tuple[int, str]:
     """Send one request with a fully controlled ``Host`` header.
 
     Passing ``host_header=None`` omits the header entirely so the fail-closed
-    path — a request without a ``Host`` — can be exercised.
+    path — a request without a ``Host`` — can be exercised; a tuple sends one
+    ``Host`` line per value, in order.
     """
     connection = http.client.HTTPConnection(server.host, server.port, timeout=3)
     try:
         connection.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
-        if host_header is not None:
-            connection.putheader("Host", host_header)
+        hosts = (host_header,) if isinstance(host_header, str) else host_header or ()
+        for host in hosts:
+            connection.putheader("Host", host)
         connection.putheader("Connection", "close")
         connection.endheaders()
         response = connection.getresponse()
@@ -88,6 +90,30 @@ def test_get_with_the_localhost_name_passes_the_boundary(server: DashboardServer
 def test_get_without_a_host_header_fails_closed(server: DashboardServer) -> None:
     """A GET without any Host header is refused."""
     status, body = _request(server, "GET", "/snapshot.json", host_header=None)
+    assert status == 403
+    assert body == "dashboard host authority not allowed\n"
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+@pytest.mark.parametrize(
+    "order",
+    [
+        pytest.param("trusted-first", id="trusted-then-foreign"),
+        pytest.param("foreign-first", id="foreign-then-trusted"),
+        pytest.param("identical", id="identical-repeat"),
+    ],
+)
+def test_a_repeated_host_header_is_refused_whatever_its_order(
+    server: DashboardServer, method: str, order: str
+) -> None:
+    """The decision never depends on which repeated ``Host`` the parser returns."""
+    trusted = f"127.0.0.1:{server.port}"
+    hosts = {
+        "trusted-first": (trusted, "attacker.example:80"),
+        "foreign-first": ("attacker.example:80", trusted),
+        "identical": (trusted, trusted),
+    }[order]
+    status, body = _request(server, method, "/snapshot.json", host_header=hosts)
     assert status == 403
     assert body == "dashboard host authority not allowed\n"
 

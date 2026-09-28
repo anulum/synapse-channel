@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import shlex
 import sqlite3
 import ssl
 import sys
@@ -55,6 +56,7 @@ from synapse_channel.core.hub_config import HubConfig, config_fingerprint
 from synapse_channel.core.hub_exposure import guard_exposure
 from synapse_channel.core.identity_binding import IdentityBindingError, load_identity_trust_bundle
 from synapse_channel.core.logging_setup import configure_logging
+from synapse_channel.core.merkle_checkpoint import AntiRollbackError, checkpoint_path_for
 from synapse_channel.core.message_auth import MessageAuthKey
 from synapse_channel.core.message_auth_durable import (
     DurableMessageAuthReplayStore,
@@ -259,6 +261,28 @@ def _hub_bridge_exposed(args: argparse.Namespace) -> bool:
     this hub must set it). No silent false positive on pure loopback single-seat.
     """
     return bool(getattr(args, "bridge_exposed", False))
+
+
+def _anti_rollback_refusal_lines(
+    exc: AntiRollbackError, *, db_path: str, db_key_file: str | None
+) -> list[str]:
+    """Return the operator message for a start refused by anti-rollback verification.
+
+    The refusal is a detected integrity failure, not a crash: the operator gets
+    the detection reason, the offline verification command and the two recovery
+    routes. Both files stay in place; the checkpoint store is the tamper evidence.
+    The checkpoint path is the hub's default beside ``db_path``, which is the
+    only location ``synapse hub`` uses.
+    """
+    checkpoint = checkpoint_path_for(db_path)
+    key_flag = f" --db-key-file {shlex.quote(db_key_file)}" if db_key_file else ""
+    return [
+        f"refused to start: durable log failed anti-rollback verification: {exc}",
+        f"inspect: synapse merkle checkpoint --verify{key_flag} {shlex.quote(db_path)}",
+        "keep both files as evidence; restore the log from a trusted copy, or, only if "
+        f"the change was authorised, move {shlex.quote(str(checkpoint))} aside so the "
+        "next start anchors a new checkpoint chain",
+    ]
 
 
 def _apply_auto_rate_policy(args: argparse.Namespace) -> None:
@@ -891,14 +915,20 @@ def _cmd_hub(
     }
     try:
         hub = hub_factory(**hub_kwargs)
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, AntiRollbackError) as exc:
         if attachment_store is not None:
             attachment_store.close()
         if message_auth_replay_store is not None:
             message_auth_replay_store.close()
         if journal is not None:
             journal.close()
-        print(f"synapse hub: could not initialise hub: {exc}", file=sys.stderr)
+        if isinstance(exc, AntiRollbackError):
+            for line in _anti_rollback_refusal_lines(
+                exc, db_path=args.db, db_key_file=db_key_file or None
+            ):
+                print(f"synapse hub: {line}", file=sys.stderr)
+        else:
+            print(f"synapse hub: could not initialise hub: {exc}", file=sys.stderr)
         return 2
     # Direct SynapseHub(...) construction does not run from_config, so config_epoch
     # would stay empty and the hub's pinning indicator inert. Regroup the flat kwargs

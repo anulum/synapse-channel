@@ -504,13 +504,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
         The open loopback read path is a DNS-rebinding target, so the transport
         boundary runs before authentication: a request whose ``Host`` header does
-        not name the loopback, bind, or operator-approved authority is refused
-        with 403 and the caller stops. The boundary is Host-only by design; the
-        rebinding threat is browser-borne and a browser always sends origin-form
-        with its own ``Host``. A wildcard bind is off loopback and mandates a
-        read-protecting token, which already defeats rebinding, so the boundary is
-        relaxed there unless the operator narrowed the admissible hosts. Returns
-        whether the request was rejected.
+        not name the loopback, bind, or operator-approved authority, or that
+        repeats the ``Host`` header, is refused with 403 and the caller stops.
+        The boundary is Host-only by design; the rebinding threat is
+        browser-borne and a browser always sends origin-form with its own
+        ``Host``. A wildcard bind is off loopback and mandates a read-protecting
+        token, which already defeats rebinding, so the boundary is relaxed there
+        unless the operator narrowed the admissible hosts. Returns whether the
+        request was rejected.
         """
         # server_address is typed as a loose union on the base server; a TCP HTTP
         # server always binds a concrete (host, port) pair.
@@ -518,7 +519,10 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if is_unspecified_host(str(bind_host)) and not self.allowed_extra_hosts:
             return False
         allowed = allowed_host_authorities(str(bind_host), int(port), self.allowed_extra_hosts)
-        if host_allowed(self.headers.get("Host"), allowed):
+        # Exactly one Host: with a repeated header the stdlib parser returns the
+        # first value, so the decision would depend on header order.
+        host_values = self.headers.get_all("Host") or []
+        if len(host_values) == 1 and host_allowed(host_values[0], allowed):
             return False
         self._write(
             HTTPStatus.FORBIDDEN,

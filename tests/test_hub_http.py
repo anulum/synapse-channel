@@ -9,12 +9,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 
 import pytest
 from websockets.datastructures import Headers
 from websockets.http11 import Request
 
+from hub_e2e_helpers import http_get, running_hub
 from synapse_channel.core import hub_http
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.metrics import HEALTH_CONTENT_TYPE, PROMETHEUS_CONTENT_TYPE
@@ -162,3 +165,43 @@ def test_endpoint_renders_authorised_metrics_and_health_snapshots() -> None:
     assert snapshot["status"] == "ok"
     assert snapshot["hub_id"] == "syn-http-test"
     assert snapshot["uptime_seconds"] == 0.0
+
+
+@pytest.mark.parametrize(
+    ("path", "query_token_ok"),
+    [
+        pytest.param("/metrics", False, id="header-only"),
+        pytest.param("/metrics?token=secret", True, id="query-fallback-not-consulted"),
+    ],
+)
+def test_repeated_authorization_header_yields_no_token(path: str, query_token_ok: bool) -> None:
+    """Two Authorization values are ambiguous even when both carry the right token."""
+    headers = Headers()
+    headers["Authorization"] = "Bearer secret"
+    headers["Authorization"] = "Bearer secret"
+    request = Request(path, headers)
+    assert hub_http.request_metrics_token(request, query_token_ok=query_token_ok) == ""
+    assert not hub_http.metrics_authorised(
+        request, metrics_token="secret", query_token_ok=query_token_ok
+    )
+
+
+async def test_live_repeated_authorization_on_metrics_is_401_not_500() -> None:
+    """The served probe route refuses the ambiguous request and keeps serving."""
+    hub = SynapseHub(hub_id="syn-http", enable_metrics=True, metrics_token="secret")
+    async with running_hub(hub) as (_, uri):
+        port = int(uri.rsplit(":", 1)[1])
+        lines = ["GET /metrics HTTP/1.1", "Host: localhost", "Connection: close"]
+        lines += ["Authorization: Bearer secret", "Authorization: Bearer secret"]
+        reader, writer = await asyncio.open_connection("localhost", port)
+        writer.write(("\r\n".join(lines) + "\r\n\r\n").encode("ascii"))
+        await writer.drain()
+        raw = await asyncio.wait_for(reader.read(), timeout=3.0)
+        writer.close()
+        with contextlib.suppress(OSError):
+            await writer.wait_closed()
+        assert raw.split(b"\r\n", 1)[0] == b"HTTP/1.1 401 Unauthorized"
+        assert raw.endswith(b"\r\n\r\nunauthorized\n")
+        status, _, body = await http_get(uri, "/metrics", authorization="Bearer secret")
+        assert status == 200
+        assert "synapse_up" in body
