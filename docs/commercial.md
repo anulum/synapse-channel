@@ -26,9 +26,11 @@ core — nothing is ever moved behind a paywall.
 | --- | --- | --- |
 | **Community** — free (AGPL-3.0) | open source, research, personal, internal | the whole product, unlimited; copyleft applies |
 | **Organisation Licence — USD 490/yr** | one legal entity that only needs commercial permission | the copyleft exemption on its own; no hosted service, dashboard, SLA, support, or Fleet entitlement |
-| **Pro — USD 19/mo or 190/yr** | one developer shipping closed-source products or private hosted services | commercial permission for one developer, the mobile app with push, and email support |
-| **Team — USD 39/user/mo or 390/user/yr** | a company owning shared coordination workflows; minimum 3 seats | unlimited projects in one legal entity, hosted dashboard while operational data stays local, security-patch SLA, and onboarding |
+| **Pro — USD 19/mo or 190/yr** | one developer shipping closed-source products or private hosted services | commercial permission for one developer, the mobile app with push *(planned)*, and email support |
+| **Team — USD 39/user/mo or 390/user/yr** | a company owning shared coordination workflows; minimum 3 seats | unlimited projects in one legal entity, hosted dashboard *(planned)* while operational data stays local, security-patch SLA, and onboarding |
 | **FLEET Enterprise — quote** | regulated, multi-hub, or multi-organisation deployments | separately entitled private software with managed federation, SSO, audit exports, compliance support, and a deployment-specific SLA |
+
+Items marked *(planned)* are not available yet; they are not part of what a plan delivers today.
 
 SYNAPSE CHANNEL FLEET is separately entitled private software, not a hidden
 commercial build of the public core.

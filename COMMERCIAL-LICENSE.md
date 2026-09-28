@@ -41,9 +41,11 @@ The current tiers, prices (USD), and what each grants are published at
 | --- | --- | --- |
 | **Community** (free, AGPL-3.0) | OSS, research, personal | full feature set, copyleft applies |
 | **Organisation Licence — USD 490/yr** | one legal entity that only needs commercial permission | AGPL-copyleft exemption only; no hosted service, dashboard, SLA, support, or Fleet entitlement |
-| **Pro — USD 19/mo or 190/yr** | one developer shipping closed-source products or private hosted services | copyleft exemption for **one** developer, mobile app with push, email support |
-| **Team — USD 39/user/mo or 390/user/yr** | a company shipping closed-source or SaaS; minimum 3 seats | exemption for unlimited projects within one legal entity, hosted dashboard while operational data stays local, security-patch SLA, onboarding |
+| **Pro — USD 19/mo or 190/yr** | one developer shipping closed-source products or private hosted services | copyleft exemption for **one** developer, mobile app with push *(planned)*, email support |
+| **Team — USD 39/user/mo or 390/user/yr** | a company shipping closed-source or SaaS; minimum 3 seats | exemption for unlimited projects within one legal entity, hosted dashboard *(planned)* while operational data stays local, security-patch SLA, onboarding |
 | **FLEET Enterprise — quote** | regulated, multi-hub, or multi-organisation deployments | separately entitled private software with managed federation, SSO, audit exports, compliance support, and a deployment-specific SLA |
+
+Items marked *(planned)* are not available yet; they are not part of what a plan delivers today.
 
 There is **no feature difference** between the open-source and commercial builds.
 The package on PyPI *is* the full product; a commercial licence changes only the

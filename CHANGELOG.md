@@ -29,6 +29,8 @@ All notable changes to this project are documented here.
 
 - Reserve every name containing `@` for seats on peer hubs; a local client that
   registers one is refused as a name conflict.
+- Mark the Pro mobile app and the Team hosted dashboard as planned in the price
+  list: neither is available yet, so neither is part of what a plan delivers today.
 
 ## [0.99.28] - 2026-09-28
 
