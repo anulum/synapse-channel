@@ -24,6 +24,8 @@ remote agent's behalf, so the gate is stricter and fails closed at every step:
   :class:`~synapse_channel.core.multihub_serving.MultiHubServingPolicy` — a hub with no policy
   accepts no forwarded claim at all, since accepting a remote mutation from an unauthenticated
   peer is never the safe default;
+* a hub whose startup replay quarantined corrupt journal rows refuses, exactly as its journal
+  recovery gate refuses local mutations;
 * this hub must authoritatively and uncontestedly own the namespace, or it refuses rather than
   granting a claim another hub owns;
 * a malformed request — which carries no namespace or claimant to grant under — is answered with
@@ -170,9 +172,10 @@ def _refuse_claim(
 ) -> ClaimForwardResult | None:
     """Return a denial result when the peer or this hub may not grant the claim, else ``None``.
 
-    The two fail-closed gates a forwarded claim must clear before it is applied: the peer must
-    be an authorised federated hub, and this hub must authoritatively own the namespace. A
-    refusal names this hub so the forwarding side knows who answered.
+    The fail-closed gates a forwarded claim must clear before it is applied: the peer must be
+    an authorised federated hub, this hub's journal must not need recovery, and this hub must
+    authoritatively own the namespace. A refusal names this hub so the forwarding side knows
+    who answered.
     """
     if not _peer_authorised(hub, sender, websocket):
         logger.warning("Refused multi-hub claim from peer %r: peer not authorised", sender)
@@ -182,6 +185,18 @@ def _refuse_claim(
             namespace=request.namespace,
             owner_hub_id=hub.hub_id,
             detail="peer not authorised to forward claims",
+        )
+    if hub.journal_corrupt_rows:
+        # The journal recovery gate refuses every local mutation while startup replay has
+        # quarantined corrupt rows; a forwarded claim is a mutation too. Checked after the
+        # peer is authorised, so an unauthorised peer never learns the recovery state.
+        logger.warning("Refused multi-hub claim from peer %r: journal recovery required", sender)
+        return ClaimForwardResult(
+            granted=False,
+            task_id=request.task_id,
+            namespace=request.namespace,
+            owner_hub_id=hub.hub_id,
+            detail="durable journal recovery is required",
         )
     if not _owns_namespace(hub, request.namespace):
         logger.warning(

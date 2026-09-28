@@ -32,6 +32,12 @@ All notable changes to this project are documented here.
 - Mark the Pro mobile app and the Team hosted dashboard as planned in the price
   list: neither is available yet, so neither is part of what a plan delivers today.
 
+### Fixed
+
+- Refuse claims forwarded by a peer hub while the owning hub needs journal
+  recovery. Local mutations were already refused in that state, but a forwarded
+  claim could still be granted on the degraded hub.
+
 ## [0.99.28] - 2026-09-28
 
 ### Added

@@ -17,6 +17,7 @@ from websockets.asyncio.client import ClientConnection, connect
 from hub_e2e_helpers import read_until_type, running_hub, send_json
 from synapse_channel.core.federation import FederationBundle, FederationPeer, ScopeGrant
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import record_chat
 from synapse_channel.core.multihub_claim_wire import (
     ClaimForwardRequest,
     ClaimForwardResult,
@@ -25,6 +26,7 @@ from synapse_channel.core.multihub_claim_wire import (
 )
 from synapse_channel.core.multihub_serving import MultiHubServingGrant, MultiHubServingPolicy
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.tls import (
     MTLSPeerTrustBundle,
@@ -116,13 +118,24 @@ def _owning_hub(
     *,
     policy: MultiHubServingPolicy | None,
     ownership: NamespaceOwnership | None,
+    journal: EventStore | None = None,
 ) -> SynapseHub:
     """Return an owning hub configured with the given serving policy and ownership map."""
     return SynapseHub(
         hub_id=_OWNER,
         multihub_serving_policy=policy,
         namespace_ownership=ownership,
+        journal=journal,
     )
+
+
+def _corrupted_store(path: Path) -> EventStore:
+    """Return a store whose one durable chat row no longer decodes, as a torn write leaves it."""
+    store = EventStore(path)
+    seq = record_chat(store, {"sender": "SYNAPSE-CHANNEL/x", "target": "all", "payload": "p"})
+    store._conn.execute("UPDATE events SET payload = 'not-json' WHERE seq = ?", (seq,))
+    store._conn.commit()
+    return store
 
 
 def _owns() -> NamespaceOwnership:
@@ -283,3 +296,34 @@ async def test_a_malformed_claim_request_is_answered_with_an_error(tmp_path: Pat
             message = await read_until_type(ws, MessageType.ERROR)
     assert "Malformed multi-hub claim request" in message["payload"]
     assert "t1" not in hub.state.claims
+
+
+async def test_a_hub_needing_journal_recovery_grants_no_forwarded_claim(tmp_path: Path) -> None:
+    """A forwarded claim is a mutation: refused while replay has quarantined corrupt rows."""
+    pin, der = _write_peer_cert(tmp_path)
+    store = _corrupted_store(tmp_path / "owner.db")
+    try:
+        hub = _owning_hub(policy=_serving_policy(pin, der), ownership=_owns(), journal=store)
+        assert hub.journal_corrupt_rows
+        async with running_hub(hub) as (_, uri):
+            result = await _forward(uri, _request())
+        assert result.granted is False
+        assert result.detail == "durable journal recovery is required"
+        assert "t1" not in hub.state.claims
+    finally:
+        store.close()
+
+
+async def test_an_unauthorised_peer_is_not_told_the_recovery_state(tmp_path: Path) -> None:
+    """The peer check comes first, so a stranger learns nothing about the journal."""
+    pin, der = _write_peer_cert(tmp_path)
+    store = _corrupted_store(tmp_path / "owner.db")
+    try:
+        policy = _serving_policy(pin, der, sender="someone-else")
+        hub = _owning_hub(policy=policy, ownership=_owns(), journal=store)
+        async with running_hub(hub) as (_, uri):
+            result = await _forward(uri, _request())
+        assert result.granted is False
+        assert result.detail == "peer not authorised to forward claims"
+    finally:
+        store.close()

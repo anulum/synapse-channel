@@ -295,7 +295,10 @@ Startup found one or more malformed rows in the durable SQLite event log. The hu
 recovers the valid prefix/suffix so health and read-only queries remain available,
 but the reconstructed state may omit an affected claim, release, or other mutation.
 It therefore refuses **all** state-changing frames instead of pretending the partial
-projection is authoritative. `/health` reports `status: degraded` and the
+projection is authoritative. This includes claims and messages forwarded by peer
+hubs. Once the peer is authorised, it receives a refusal instead of a grant or
+delivery: `durable journal recovery is required` for a claim, and reason code
+`journal_recovery_required` for a message. `/health` reports `status: degraded` and the
 `journal_corrupt_rows` count; `/metrics` exposes `synapse_journal_corrupt_rows`.
 
 Do not edit or delete the row ad hoc. First stop the hub and establish the lowest
