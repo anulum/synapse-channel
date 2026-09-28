@@ -58,7 +58,7 @@ def test_link_check_is_fail_visible_without_accepting_server_errors() -> None:
     assert "failIfEmpty: true" in text
     assert "jobSummary: true" in text
     assert "if-no-files-found: error" in text
-    assert "timeout-minutes: 20" in text
+    assert "timeout-minutes: 30" in text
 
 
 def test_link_check_uses_exact_two_attempt_gate_with_conditional_retry() -> None:
