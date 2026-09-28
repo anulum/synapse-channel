@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.28] - 2026-09-28
+
 ### Added
 
 - Add opt-in, wire-version-four project-scoped attachments with signed
