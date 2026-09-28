@@ -223,13 +223,61 @@ jobs:
           npm run typecheck
           npm test
 
+  marketplace-action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Prepare real policy-check inputs
+        run: |
+          mkdir -p action-smoke
+          cat > action-smoke/policy.json <<'JSON'
+          {"version":1,"mode":"enforcement","rules":{"required_tests":{"commands":["pytest"]}}}
+          JSON
+          cat > action-smoke/pass.json <<'JSON'
+          {"task_id":"T1","owner":"ci","evidence":["pytest -q passed"],"changed_files":[]}
+          JSON
+          cat > action-smoke/fail.json <<'JSON'
+          {"task_id":"T1","owner":"ci","evidence":[],"changed_files":[]}
+          JSON
+      - name: Accept a passing receipt through the composite Action
+        id: accepted
+        uses: ./
+        with:
+          task: T1
+          policy: action-smoke/policy.json
+          receipt-json: action-smoke/pass.json
+          version: "0.99.27"
+      - name: Refuse missing evidence through the composite Action
+        id: refused
+        continue-on-error: true
+        uses: ./
+        with:
+          task: T1
+          policy: action-smoke/policy.json
+          receipt-json: action-smoke/fail.json
+          version: "0.99.27"
+      - name: Verify the observed Action reports and exit status
+        env:
+          ACCEPTED_REPORT: ${{ steps.accepted.outputs.report }}
+          REFUSED_REPORT: ${{ steps.refused.outputs.report }}
+          REFUSED_OUTCOME: ${{ steps.refused.outcome }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          assert json.loads(os.environ["ACCEPTED_REPORT"])["overall"] == "pass"
+          assert json.loads(os.environ["REFUSED_REPORT"])["overall"] == "fail"
+          assert os.environ["REFUSED_OUTCOME"] == "failure"
+          PY
+
   # Single required status check for branch protection. It always runs (even when an
   # upstream job fails), so the `ci` context posts on every pull request and push,
   # and it fails unless every gated job succeeded — matrix-drift-proof, unlike pinning
   # each individual job as a required context.
   ci:
     name: ci
-    needs: [lint, typecheck, test, reuse, audit, git-hooks, pi-integration]
+    needs: [lint, typecheck, test, reuse, audit, git-hooks, pi-integration, marketplace-action]
     if: always()
     runs-on: ubuntu-latest
     steps:

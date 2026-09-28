@@ -43,6 +43,7 @@ def _run_steps(action: dict[str, Any]) -> list[dict[str, Any]]:
 def test_action_is_composite_with_required_inputs() -> None:
     action = _action()
     assert action["runs"]["using"] == "composite"
+    assert len(action["description"]) < 125
     inputs = action["inputs"]
     for name in ("task", "policy", "receipt-json"):
         assert inputs[name]["required"] is True, name

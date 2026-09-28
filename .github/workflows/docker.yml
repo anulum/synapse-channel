@@ -69,7 +69,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   release-image:
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v'))
     runs-on: ubuntu-latest
     permissions:
       actions: read

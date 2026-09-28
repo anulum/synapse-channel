@@ -7,9 +7,8 @@
 # SYNAPSE_CHANNEL — composite GitHub Action wrapping `synapse policy-check`
 name: SYNAPSE policy check
 description: >-
-  Check a SYNAPSE release receipt against a policy file in CI — optionally
-  recomputing the receipt's coordination-log Merkle commitment and requiring a
-  trusted hub signature over it.
+  Check a SYNAPSE release receipt against policy in CI, with optional Merkle
+  and signature verification.
 author: ANULUM
 branding:
   icon: shield

@@ -122,6 +122,7 @@ def test_docker_workflow_can_publish_an_immutable_release_tag_after_automation()
     steps = image["steps"]
 
     assert "\n  workflow_dispatch:" in source
+    assert "startsWith(github.event.release.tag_name, 'v')" in image["if"]
     assert "release_tag:" in source
     assert "ref: ${{ inputs.release_tag || github.ref }}" in source
     assert 'git rev-list -n 1 "$release_tag"' in source

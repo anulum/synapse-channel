@@ -34,6 +34,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Keep the policy-check Action description within GitHub Marketplace's 125-character
+  limit and exclude Action-only releases from Core container publication.
+
 - Classify protected-write representation and custody-replay refusals, and remote
   MCP policy loading, through the stable error taxonomy while preserving their
   historical `ValueError` and `RuntimeError` catches.
