@@ -42,7 +42,7 @@ jobs:
     # One full lychee pass plus one bounded retry, reports, and gate.
     # A full pass took 10m41s during a repeated endpoint timeout. Preserve
     # enough budget for the one bounded retry and both report uploads.
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
