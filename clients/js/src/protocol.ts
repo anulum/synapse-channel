@@ -31,6 +31,14 @@ export const MessageType = {
   Advertise: "advertise",
   ManifestRequest: "manifest_request",
   Finding: "finding",
+  AttachmentBegin: "attachment_begin",
+  AttachmentChunk: "attachment_chunk",
+  AttachmentCommit: "attachment_commit",
+  AttachmentAbort: "attachment_abort",
+  AttachmentInfo: "attachment_info",
+  AttachmentRead: "attachment_read",
+  AttachmentRef: "attachment_ref",
+  AttachmentGc: "attachment_gc",
   // Hub -> agent.
   System: "system",
   Welcome: "welcome",
@@ -48,7 +56,11 @@ export const MessageType = {
   LedgerTaskPosted: "ledger_task_posted",
   LedgerProgressPosted: "ledger_progress_posted",
   Error: "error",
+  AttachmentResult: "attachment_result",
 } as const;
+
+/** Optional attachment wire vocabulary first advertised by protocol version four. */
+export const MIN_ATTACHMENT_PROTOCOL_VERSION = 4;
 
 /** A wire message-type string. */
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];

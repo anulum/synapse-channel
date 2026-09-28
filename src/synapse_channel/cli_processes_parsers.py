@@ -128,6 +128,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Path to a durable event-log database; enables crash-safe persistence.",
     )
     hub.add_argument(
+        "--attachment-root",
+        default=None,
+        help=(
+            "Enable private local scoped attachments under an owner-only directory; "
+            "requires bound identity, durable signed frames, ACL, role grants, token, and --db."
+        ),
+    )
+    hub.add_argument(
         "--db-key-file",
         default=None,
         help=(

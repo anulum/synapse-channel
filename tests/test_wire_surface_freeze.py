@@ -36,6 +36,15 @@ from synapse_channel.core.protocol import (
 # peer speaking the old wire and must bump WIRE_PROTOCOL_VERSION; an addition is a
 # reviewed edit (plus a capability-snapshot regen) until 1.0.0 locks the map.
 _FROZEN_WIRE_VALUES: dict[str, str] = {
+    "ATTACHMENT_ABORT": "attachment_abort",
+    "ATTACHMENT_BEGIN": "attachment_begin",
+    "ATTACHMENT_CHUNK": "attachment_chunk",
+    "ATTACHMENT_COMMIT": "attachment_commit",
+    "ATTACHMENT_GC": "attachment_gc",
+    "ATTACHMENT_INFO": "attachment_info",
+    "ATTACHMENT_READ": "attachment_read",
+    "ATTACHMENT_REF": "attachment_ref",
+    "ATTACHMENT_RESULT": "attachment_result",
     "ACK": "ack",
     "ADVERTISE": "advertise",
     "AUTH_DENIED": "auth_denied",
@@ -169,6 +178,6 @@ def test_wire_envelope_carries_the_reserved_keys() -> None:
 
 
 def test_wire_protocol_version_is_frozen_at_the_current_baseline() -> None:
-    # The wire is at version 3 (session-bound delivery and recipient stages); a
+    # The wire is at version 4 (scoped attachments); a
     # bump is a wire vocabulary change and a deliberate edit, not an accident.
-    assert WIRE_PROTOCOL_VERSION == 3
+    assert WIRE_PROTOCOL_VERSION == 4

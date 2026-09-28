@@ -48,6 +48,7 @@ from synapse_channel.core.agent_liveness import (
     DEFAULT_WAITER_LIVENESS_WINDOW,
     DEFAULT_WARN_STALE_RECIPIENTS,
 )
+from synapse_channel.core.attachment_store import AttachmentStore
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
@@ -280,6 +281,7 @@ class HubConfig:
     default_ttl_seconds: float = 3600.0
     hub_id: str | None = None
     journal: EventStore | None = None
+    attachment_store: AttachmentStore | None = None
     anti_rollback_checkpoint: bool = True
     checkpoint_store_path: str | Path | None = None
     protected_write_policies: Mapping[str, ProtectedAdmissionReplayPolicy] | None = None
@@ -374,6 +376,7 @@ def config_fingerprint(config: HubConfig) -> str:
     credential-rotation concern, not a configuration-drift one.
     """
     posture: dict[str, object] = {}
+    posture["attachment_store"] = config.attachment_store is not None
     for family_name in _FAMILY_FIELDS:
         family = getattr(config, family_name)
         for spec in fields(family):

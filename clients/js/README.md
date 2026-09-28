@@ -62,6 +62,12 @@ client.close();
   Git/filesystem resolver; its worktree path is sent automatically. Omit it
   rather than inventing canonical values.
 - `requestBoard()`, `requestWho()`, `requestState()`.
+- `attachment(type, fields)` sends a version-four scoped attachment request.
+  Configure `signRegistration` with an enrolled identity signer and
+  `signAttachment` with the Hub's per-message HMAC signer. The callbacks sign
+  complete envelopes; the client refuses attachment requests to older hubs or
+  without `signAttachment`. Results arrive through `on(MessageType.AttachmentResult, ...)`.
+  See the [wire contract](../../docs/attachments.md).
 - `send(type, { target?, payload?, extra? })` for any other protocol frame.
 - `close()` — closes the socket, stops heartbeats, leaves `isReady` false and rejects a
   `connect()` still awaiting its welcome.

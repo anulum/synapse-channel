@@ -17,7 +17,7 @@ applied once. On a secured hub, the first message of a connection must carry a
 `token`.
 
 The hub advertises its wire-protocol version in the `welcome` handshake as
-`protocol_version` (an integer; the current wire is version `3`), and it is also
+`protocol_version` (an integer; the current wire is version `4`), and it is also
 reported by `/health` as `protocol_version`. It is decoupled from the package
 version on purpose — a patch or feature release that leaves the wire shapes
 unchanged does not bump it, so it is a stable compatibility signal a client can
@@ -37,6 +37,10 @@ cancellation and durable outcome evidence. The version `2` `ack` remains a
 transport-only mailbox receipt. The
 [delivery compatibility decision](protocol-compatibility-plan.md) records the
 reviewed migration and mixed-version boundaries.
+
+Version `4` adds the signed, scoped local attachment verbs. A client sends
+these only after the hub advertises version `4`; version-three delivery
+sessions remain valid on a version-four connection.
 
 The [per-message authentication runtime](per-message-authentication.md) keeps
 the same envelope shape and adds an `auth` object for selected mutating frames
@@ -88,6 +92,11 @@ does not add agent grades to protocol envelopes.
 - **Shared blackboard:** `ledger_task`, `ledger_task_update`, `ledger_progress`,
   `board_request`.
 - **Capabilities:** `advertise`, `manifest_request`.
+- **Scoped attachments (v4):** `attachment_begin`, `attachment_chunk`,
+  `attachment_commit`, `attachment_abort`, `attachment_info`,
+  `attachment_read`, `attachment_ref`, `attachment_gc`; see
+  [Scoped attachments](attachments.md). Each returns a private
+  `attachment_result` after bound identity, signature, role and ACL checks.
 - **Queries:** `state_request`, `who_request`, `history_request`,
   `resume_request`.
 - **Governed operator recovery:** `identity_pin_reclaim` removes one exact TOFU

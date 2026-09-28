@@ -7,7 +7,7 @@
 // SYNAPSE_CHANNEL — tests for the JS/TS WebSocket client
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type ClaimScopeIdentity, MessageType, buildEnvelope } from "../src/protocol.js";
+import { type ClaimScopeIdentity, type Envelope, MessageType, buildEnvelope } from "../src/protocol.js";
 import { SynapseClient, type WebSocketLike } from "../src/client.js";
 
 class FakeSocket implements WebSocketLike {
@@ -69,6 +69,44 @@ describe("buildEnvelope", () => {
 });
 
 describe("SynapseClient connect", () => {
+  it("rejects promptly when an identity signer fails", async () => {
+    const { client, socket } = makeClient({
+      signRegistration: () => { throw new Error("signer unavailable"); },
+    });
+    const pending = client.connect();
+    socket.open();
+    await expect(pending).rejects.toThrow(/signer unavailable/);
+    expect(socket.closed).toBe(true);
+  });
+
+  it("gates attachments on wire v4 and signs both registration and requests", async () => {
+    const { client, socket } = makeClient({
+      signRegistration: (frame: Envelope) => ({ ...frame, signature: { test: true } }),
+      signAttachment: (frame: Envelope) => ({ ...frame, auth: { test: true } }),
+    });
+    const connected = client.connect();
+    socket.open();
+    expect(socket.sentEnvelopes()[0]).toHaveProperty("signature");
+    socket.deliver({ type: MessageType.Welcome, sender: "SynapseHub", protocol_version: 3 });
+    await connected;
+    expect(() => client.attachment(MessageType.AttachmentInfo, { scope: "P", digest: "a" })).toThrow(/version four/);
+    client.close();
+
+    const second = makeClient({
+      signAttachment: (frame: Envelope) => ({ ...frame, auth: { test: true } }),
+    });
+    const ready = second.client.connect();
+    second.socket.open();
+    second.socket.deliver({ type: MessageType.Welcome, sender: "SynapseHub", protocol_version: 4 });
+    await ready;
+    second.client.attachment(MessageType.AttachmentInfo, { scope: "P", digest: "a" });
+    expect(second.socket.sentEnvelopes().at(-1)).toMatchObject({
+      type: "attachment_info", scope: "P", digest: "a", auth: { test: true },
+    });
+    expect(() => second.client.attachment("chat", {})).toThrow(/unknown attachment/);
+    second.client.close();
+  });
+
   it("registers with a token and resolves on welcome", async () => {
     const { client, socket } = makeClient({ token: "secret", takeover: true });
     const connected = client.connect();

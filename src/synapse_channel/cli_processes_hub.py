@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import sqlite3
 import ssl
 import sys
 import threading
@@ -31,6 +32,7 @@ from synapse_channel.core.aef_runtime import (
     run_aef_outbox_worker,
 )
 from synapse_channel.core.at_rest_guard import AtRestBindError, guard_at_rest
+from synapse_channel.core.attachment_store import AttachmentError, AttachmentStore
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability_card_history import PersistentCapabilityCardHistory
 from synapse_channel.core.capability_card_trust import (
@@ -790,8 +792,41 @@ def _cmd_hub(
             f"(sequence_floor={sequence_floor_mode.value})",
             file=sys.stderr,
         )
+    attachment_store: AttachmentStore | None = None
+    if getattr(args, "attachment_root", None):
+        if not (
+            authenticator is not None
+            and args.require_identity_binding
+            and identity_trust_bundle is not None
+            and args.require_message_auth
+            and message_auth_replay_store is not None
+            and args.require_acl
+            and acl_policy is not None
+            and role_grants is not None
+            and journal is not None
+        ):
+            print(
+                "synapse hub: --attachment-root requires token, bound identity, "
+                "durable signed frames, ACL, role grants, and --db",
+                file=sys.stderr,
+            )
+            if message_auth_replay_store is not None:
+                message_auth_replay_store.close()
+            if journal is not None:
+                journal.close()
+            return 2
+        try:
+            attachment_store = AttachmentStore(args.attachment_root)
+        except (AttachmentError, OSError, sqlite3.DatabaseError, ValueError) as exc:
+            print(f"synapse hub: cannot open attachment store: {exc}", file=sys.stderr)
+            if message_auth_replay_store is not None:
+                message_auth_replay_store.close()
+            if journal is not None:
+                journal.close()
+            return 2
     hub_kwargs: dict[str, Any] = {
         "journal": journal,
+        "attachment_store": attachment_store,
         "rate_limiter": limiter,
         "host_rate_limiter": host_limiter,
         "durable_ingress_quota": durable_ingress_quota,
@@ -857,6 +892,8 @@ def _cmd_hub(
     try:
         hub = hub_factory(**hub_kwargs)
     except (OSError, ValueError) as exc:
+        if attachment_store is not None:
+            attachment_store.close()
         if message_auth_replay_store is not None:
             message_auth_replay_store.close()
         if journal is not None:
@@ -890,6 +927,8 @@ def _cmd_hub(
     except KeyboardInterrupt:
         print("\nHub stopped by user.")
     finally:
+        if attachment_store is not None:
+            attachment_store.close()
         if message_auth_replay_store is not None:
             message_auth_replay_store.close()
         if journal is not None:

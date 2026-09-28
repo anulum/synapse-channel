@@ -10,6 +10,7 @@ import {
   type ClaimScopeIdentity,
   type Envelope,
   MessageType,
+  MIN_ATTACHMENT_PROTOCOL_VERSION,
   buildEnvelope,
 } from "./protocol.js";
 
@@ -45,7 +46,17 @@ export interface SynapseClientOptions {
   readyTimeoutMs?: number;
   /** WebSocket factory override, for tests. Defaults to the global `WebSocket`. */
   webSocketFactory?: WebSocketFactory;
+  /** Sign the registration envelope with an enrolled identity key. */
+  signRegistration?: (frame: Envelope) => Envelope;
+  /** Sign each attachment frame with the Hub's configured per-message key. */
+  signAttachment?: (frame: Envelope) => Envelope;
 }
+
+const ATTACHMENT_REQUEST_TYPES = new Set<string>([
+  MessageType.AttachmentBegin, MessageType.AttachmentChunk, MessageType.AttachmentCommit,
+  MessageType.AttachmentAbort, MessageType.AttachmentInfo, MessageType.AttachmentRead,
+  MessageType.AttachmentRef, MessageType.AttachmentGc,
+]);
 
 const MINIMUM_HEARTBEAT_MS = 1000;
 
@@ -74,6 +85,7 @@ export class SynapseClient {
   private readonly handlers = new Map<string, Set<MessageHandler>>();
   private readonly anyHandlers = new Set<MessageHandler>();
   private ready = false;
+  private hubProtocolVersion: number | null = null;
   /** Incremented on every connect and close; callbacks of an older socket are ignored. */
   private generation = 0;
   private pending: PendingAttempt | null = null;
@@ -110,6 +122,7 @@ export class SynapseClient {
     const generation = ++this.generation;
     this.socket = socket;
     this.ready = false;
+    this.hubProtocolVersion = null;
     return new Promise<void>((resolve, reject) => {
       const live = (): boolean => generation === this.generation && this.socket === socket;
       const fail = (error: Error): void => {
@@ -134,8 +147,13 @@ export class SynapseClient {
         if (!live()) {
           return;
         }
-        this.sendRegistration();
-        this.startHeartbeat();
+        try {
+          this.sendRegistration();
+          this.startHeartbeat();
+        } catch (error) {
+          fail(error instanceof Error ? error : new Error("registration signer failed"));
+          socket.close();
+        }
       };
       socket.onmessage = (event) => {
         if (!live()) {
@@ -146,6 +164,8 @@ export class SynapseClient {
           return;
         }
         if (!this.ready && message.type === MessageType.Welcome) {
+          this.hubProtocolVersion = typeof message["protocol_version"] === "number"
+            ? message["protocol_version"] as number : null;
           this.ready = true;
           this.pending = null;
           clearTimeout(timer);
@@ -200,6 +220,23 @@ export class SynapseClient {
     }
     const envelope = buildEnvelope(this.options.name, type, options);
     this.socket.send(JSON.stringify(envelope));
+  }
+
+  /** Send a version-four attachment request through the configured signed boundary. */
+  attachment(type: string, extra: Record<string, unknown>): void {
+    if (!ATTACHMENT_REQUEST_TYPES.has(type)) {
+      throw new Error("unknown attachment request type");
+    }
+    if (!this.ready || this.socket === null || this.hubProtocolVersion === null ||
+        this.hubProtocolVersion < MIN_ATTACHMENT_PROTOCOL_VERSION) {
+      throw new Error("hub does not advertise attachment protocol version four");
+    }
+    const signer = this.options.signAttachment;
+    if (signer === undefined) {
+      throw new Error("attachment frames require a configured per-message signer");
+    }
+    const frame = buildEnvelope(this.options.name, type, { target: "SynapseHub", extra });
+    this.socket.send(JSON.stringify(signer(frame)));
   }
 
   /** Send a chat message to a target agent, `"all"`, or a private channel. */
@@ -271,12 +308,21 @@ export class SynapseClient {
   }
 
   private sendRegistration(): void {
-    const extra: Record<string, unknown> = {};
+    const extra: Record<string, unknown> = { protocol_version: MIN_ATTACHMENT_PROTOCOL_VERSION };
     if (this.options.token) {
       extra["token"] = this.options.token;
     }
     if (this.options.takeover) {
       extra["takeover"] = true;
+    }
+    if (this.options.signRegistration !== undefined) {
+      if (this.socket === null) {
+        throw new Error("client is not connected");
+      }
+      const frame = buildEnvelope(this.options.name, MessageType.Heartbeat,
+        { target: "System", payload: "online", extra });
+      this.socket.send(JSON.stringify(this.options.signRegistration(frame)));
+      return;
     }
     this.send(MessageType.Heartbeat, { target: "System", payload: "online", extra });
   }

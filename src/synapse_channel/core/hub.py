@@ -61,6 +61,7 @@ from synapse_channel.core.atomic_operations import (
     canonical_request_digest,
     idempotency_conflict_response,
 )
+from synapse_channel.core.attachment_store import AttachmentStore
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
@@ -474,6 +475,7 @@ class SynapseHub:
         default_ttl_seconds: float = 3600.0,
         hub_id: str | None = None,
         journal: EventStore | None = None,
+        attachment_store: AttachmentStore | None = None,
         rate_limiter: RateLimiter | None = None,
         host_rate_limiter: RateLimiter | None = None,
         durable_ingress_quota: DurableIngressQuota | None = None,
@@ -546,6 +548,23 @@ class SynapseHub:
         anti_rollback_checkpoint: bool = True,
         checkpoint_store_path: str | Path | None = None,
     ) -> None:
+        if attachment_store is not None and not (
+            authenticator is not None
+            and require_identity_binding
+            and identity_trust_bundle is not None
+            and require_per_message_auth
+            and per_message_auth_keys
+            and per_message_auth_replay_store is not None
+            and require_acl
+            and acl_policy is not None
+            and role_grants is not None
+            and journal is not None
+        ):
+            raise ValueError(
+                "attachments require token, bound identity, durable signed frames, "
+                "ACL, roles, and journal"
+            )
+        self.attachment_store = attachment_store
         self.journal = journal
         self._checkpoint_store: MerkleCheckpointStore | None
         if (
@@ -755,6 +774,7 @@ class SynapseHub:
             broadcast_presence=self._broadcast_presence,
             drop_waits=self._drop_waits,
             forget_liveness=self._recipient_liveness.forget,
+            abort_uploads=(self.attachment_store.abort_sender if self.attachment_store else None),
         )
         self._frame_gates = HubFrameGates(
             require_per_message_auth=self.require_per_message_auth,
@@ -1652,7 +1672,11 @@ class SynapseHub:
         logged_payload = (
             f"<channel {terminal_text(channel_id)!r} body redacted, {len(payload)} chars>"
             if channel_id
-            else terminal_text(self._redact_payload(payload))
+            else (
+                "<attachment body redacted>"
+                if msg_type.startswith("attachment_")
+                else terminal_text(self._redact_payload(payload))
+            )
         )
         # Every field here crosses the untrusted wire boundary: a client controls
         # its own sender/target/type/channel and the payload. Render each one-line

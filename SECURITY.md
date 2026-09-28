@@ -28,6 +28,13 @@ remediation plan with a target timeline based on severity.
 
 ## Threat model and posture
 
+Scoped attachments are disabled unless `--attachment-root` is set with bound
+identity, durable per-message authentication, ACL and role grants. The private
+root stores plaintext bytes; the operator must provide disk encryption when
+needed. Every digest lookup follows authorisation, content is verified before
+read, and neither the Hub's HTTP surfaces nor federation serve attachment
+bytes. See [the attachment security contract](docs/attachments.md).
+
 SYNAPSE CHANNEL is a **local-first** coordination bus. Its default and intended
 deployment is a single operator on one machine, with the hub bound to loopback
 and no authentication — appropriate for that single-owner setting.

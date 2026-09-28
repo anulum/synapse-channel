@@ -30,7 +30,7 @@ from typing import Any
 SENDER_HUB = "SynapseHub"
 """Reserved sender name stamped on every hub-originated message."""
 
-WIRE_PROTOCOL_VERSION = 3
+WIRE_PROTOCOL_VERSION = 4
 """The version of the hub's wire protocol.
 
 Advertised in the ``WELCOME`` handshake so a client — including an out-of-tree
@@ -53,6 +53,8 @@ the follower exposes it per peer; the hub itself does not reject a connection
 solely for version skew. Version ``3`` adds session-bound delivery intents,
 explicit recipient stages and cancellation; version-two ``ACK`` remains a
 transport-only mailbox acknowledgement.
+Version ``4`` adds signed, project-scoped local attachment transfers while
+version-three delivery sessions remain valid on newer connections.
 """
 
 MIN_ACK_PROTOCOL_VERSION = 2
@@ -67,6 +69,9 @@ verb is never sent it.
 
 MIN_DELIVERY_PROTOCOL_VERSION = 3
 """Lowest negotiated wire version admitted for session-bound delivery intents."""
+
+MIN_ATTACHMENT_PROTOCOL_VERSION = 4
+"""Lowest negotiated wire version admitted for scoped attachment transfers."""
 
 
 @dataclass(frozen=True)
@@ -341,6 +346,14 @@ class MessageType:
     FEDERATION_OFFER_REQUEST = "federation_offer_request"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
     GUARD_DENIAL = "guard_denial"
+    ATTACHMENT_BEGIN = "attachment_begin"
+    ATTACHMENT_CHUNK = "attachment_chunk"
+    ATTACHMENT_COMMIT = "attachment_commit"
+    ATTACHMENT_ABORT = "attachment_abort"
+    ATTACHMENT_INFO = "attachment_info"
+    ATTACHMENT_READ = "attachment_read"
+    ATTACHMENT_REF = "attachment_ref"
+    ATTACHMENT_GC = "attachment_gc"
 
     # Hub -> agent.
     SYSTEM = "system"
@@ -349,6 +362,7 @@ class MessageType:
     CLAIM_GRANTED = "claim_granted"
     CLAIM_DENIED = "claim_denied"
     GUARD_DENIAL_RECORDED = "guard_denial_recorded"
+    ATTACHMENT_RESULT = "attachment_result"
     RELEASE_GRANTED = "release_granted"
     RELEASE_DENIED = "release_denied"
     TASK_UPDATED = "task_updated"
@@ -396,6 +410,20 @@ class MessageType:
 
 RESOURCE_TYPE_ALIASES = frozenset({"resource", "resource_offer", "offer_resource"})
 """Inbound ``type`` values the hub accepts as a resource offer."""
+
+ATTACHMENT_REQUEST_TYPES = frozenset(
+    {
+        MessageType.ATTACHMENT_BEGIN,
+        MessageType.ATTACHMENT_CHUNK,
+        MessageType.ATTACHMENT_COMMIT,
+        MessageType.ATTACHMENT_ABORT,
+        MessageType.ATTACHMENT_INFO,
+        MessageType.ATTACHMENT_READ,
+        MessageType.ATTACHMENT_REF,
+        MessageType.ATTACHMENT_GC,
+    }
+)
+"""Signed project-local attachment API verbs, available from wire version four."""
 
 
 def _stamp(now: float | None) -> float:

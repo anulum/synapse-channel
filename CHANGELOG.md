@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Add opt-in, wire-version-four project-scoped attachments with signed
+  upload/read/reference/GC frames, bounded private storage, verified atomic
+  writes, inert text preview, and Python/TypeScript client entry points.
+
 - Add opt-in authenticated Streamable HTTP MCP with provisioned native seats,
   project-filtered reads, separately granted mutations, live revocation,
   stable operation identifiers and bounded TLS loopback admission. Stdio

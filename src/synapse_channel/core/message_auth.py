@@ -66,6 +66,14 @@ DEFAULT_SIGNED_MESSAGE_TYPES = (
             MessageType.DELIVERY_ACK,
             MessageType.DELIVERY_OUTCOME,
             MessageType.DELIVERY_CANCEL,
+            MessageType.ATTACHMENT_BEGIN,
+            MessageType.ATTACHMENT_CHUNK,
+            MessageType.ATTACHMENT_COMMIT,
+            MessageType.ATTACHMENT_ABORT,
+            MessageType.ATTACHMENT_INFO,
+            MessageType.ATTACHMENT_READ,
+            MessageType.ATTACHMENT_REF,
+            MessageType.ATTACHMENT_GC,
         }
     )
     | RESOURCE_TYPE_ALIASES

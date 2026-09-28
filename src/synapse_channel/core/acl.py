@@ -45,6 +45,9 @@ PIN_RECLAIM = "identity-pin-reclaim"
 EVIDENCE = "evidence"
 RECALL = "recall"
 DELIVERY_CONTROL = "delivery-control"
+ATTACHMENT_READ = "attachment-read"
+ATTACHMENT_WRITE = "attachment-write"
+ATTACHMENT_ADMIN = "attachment-admin"
 
 PERMISSIONS = frozenset(
     {
@@ -64,6 +67,9 @@ PERMISSIONS = frozenset(
         EVIDENCE,
         RECALL,
         DELIVERY_CONTROL,
+        ATTACHMENT_READ,
+        ATTACHMENT_WRITE,
+        ATTACHMENT_ADMIN,
     }
 )
 """The auditable permission vocabulary an ACL rule may grant.

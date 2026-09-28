@@ -90,6 +90,8 @@ class HubConnection:
         The hub's recipient-liveness pruning (``hub._recipient_liveness.forget``),
         used to drop a departing agent's last-reaction record so the store stays
         bounded to currently connected identities.
+    abort_uploads : Callable[[str], None] or None
+        Discard private staging for this exact socket incarnation at teardown.
     """
 
     def __init__(
@@ -107,6 +109,7 @@ class HubConnection:
         broadcast_presence: Callable[[str, str | None], Awaitable[None]],
         drop_waits: Callable[[str], None],
         forget_liveness: Callable[[str], None],
+        abort_uploads: Callable[[str], None] | None = None,
     ) -> None:
         self._clients = clients
         self._capabilities = capabilities
@@ -120,6 +123,7 @@ class HubConnection:
         self._broadcast_presence = broadcast_presence
         self._drop_waits = drop_waits
         self._forget_liveness = forget_liveness
+        self._abort_uploads = abort_uploads
 
     async def register(self, websocket: Any) -> None:
         """Record a new socket; welcome it now only on an open hub.
@@ -143,6 +147,11 @@ class HubConnection:
         """Drop a socket, releasing its agent name and broadcasting departure."""
         name = self._clients.drop_client(websocket)
         if name is not None:
+            if self._abort_uploads is not None:
+                try:
+                    self._abort_uploads(f"{name}@{id(websocket)}")
+                except Exception:
+                    logger.exception("cannot discard disconnected attachment upload")
             self._drop_waits(name)
             self._capabilities.forget(name)
             self._forget_liveness(name)

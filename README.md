@@ -1097,6 +1097,11 @@ protocol — chat, claims, releases, board reads, presence, and receipts — and
 unchanged in the browser and in Node 20+ with no runtime dependencies. See the
 [TypeScript/JavaScript client guide](docs/js-client.md).
 
+The opt-in [scoped attachment API](docs/attachments.md) transfers small
+project-local evidence through signed, bounded WebSocket frames. The Hub keeps
+bytes in private local storage; hashes alone grant no access, and large
+datasets or weights remain on owner-controlled artifact storage.
+
 ### A2A HTTP bridge
 
 `synapse a2a-serve --endpoint-url ...` runs the Agent2Agent edge directly — an
@@ -1697,13 +1702,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.27 |
 | Public API exports | 70 |
-| Package modules | 638 |
-| Classes | 937 |
-| Wire message types | 90 |
+| Package modules | 640 |
+| Classes | 939 |
+| Wire message types | 99 |
 | CLI subcommands | 223 |
-| Test functions | 10397 |
+| Test functions | 10410 |
 | Benchmark harnesses | 7 |
-| Documentation pages | 77 |
+| Documentation pages | 78 |
 | GitHub Actions workflows | 27 |
 | Optional-dependency groups | 14 |
 

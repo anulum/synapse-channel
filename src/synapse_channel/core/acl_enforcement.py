@@ -33,6 +33,9 @@ from __future__ import annotations
 from typing import Any
 
 from synapse_channel.core.acl import (
+    ATTACHMENT_ADMIN,
+    ATTACHMENT_READ,
+    ATTACHMENT_WRITE,
     BOARD,
     CLAIM,
     EVIDENCE,
@@ -74,6 +77,16 @@ authenticated agent. With enforcement off they stay ungated like every other rea
 _TASK_PAYLOAD_FALLBACK = frozenset(
     {MessageType.CLAIM, MessageType.TASK_UPDATE, MessageType.HANDOFF}
 )
+_ATTACHMENT_ACCESS = {
+    MessageType.ATTACHMENT_BEGIN: ATTACHMENT_WRITE,
+    MessageType.ATTACHMENT_CHUNK: ATTACHMENT_WRITE,
+    MessageType.ATTACHMENT_COMMIT: ATTACHMENT_WRITE,
+    MessageType.ATTACHMENT_ABORT: ATTACHMENT_WRITE,
+    MessageType.ATTACHMENT_REF: ATTACHMENT_WRITE,
+    MessageType.ATTACHMENT_INFO: ATTACHMENT_READ,
+    MessageType.ATTACHMENT_READ: ATTACHMENT_READ,
+    MessageType.ATTACHMENT_GC: ATTACHMENT_ADMIN,
+}
 
 GATED_MUTATIONS = (
     frozenset(
@@ -92,6 +105,7 @@ GATED_MUTATIONS = (
     )
     | _BOARD_TYPES
     | _CHANNEL_TYPES
+    | frozenset(_ATTACHMENT_ACCESS)
     | RESOURCE_TYPE_ALIASES
 )
 """Every agent->hub frame type that mutates or broadcasts state and is ACL-gated.
@@ -152,6 +166,8 @@ def required_accesses(msg_type: str, data: dict[str, Any]) -> list[tuple[str, Ta
     list[tuple[str, Target]]
         One ``(permission, target)`` per access the frame needs.
     """
+    if msg_type in _ATTACHMENT_ACCESS:
+        return [(_ATTACHMENT_ACCESS[msg_type], Target("attachment", str(data.get("scope") or "")))]
     if msg_type in (MessageType.CHAT, MessageType.DELIVERY_REQUEST):
         channel = str(data.get("channel") or "").strip()
         if channel:

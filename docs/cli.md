@@ -112,6 +112,11 @@ reservation.
 
 ## First 60 seconds
 
+The Hub's optional `--attachment-root PATH` enables the
+[scoped attachment API](attachments.md). It requires the governed token,
+identity-binding, durable message-authentication, ACL, role-grant and journal
+posture described there. No attachment directory is created by default.
+
 The installed CLI has a source-checkout-free validation path:
 
 ```bash

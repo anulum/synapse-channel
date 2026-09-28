@@ -65,6 +65,14 @@ already open or pending rejects; `close()` it first.
 
 ## Scope and boundaries
 
+The optional [scoped attachment API](attachments.md) uses wire version four.
+Configure `signRegistration` with a bound identity signer and `signAttachment`
+with a per-message signer, then call `attachment(MessageType.AttachmentBegin,
+fields)` and subscribe to `MessageType.AttachmentResult`. The client refuses
+these requests without a version-four welcome or an attachment signer. The
+caller supplies the credential-backed signing callbacks; the dependency-free
+client does not manage private keys.
+
 The client implements the agent-side envelope and the connection lifecycle:
 registration, keepalive heartbeats, typed send helpers, and inbound dispatch by
 `MessageType`. It does not run the hub, does not enforce ACLs, and does not verify

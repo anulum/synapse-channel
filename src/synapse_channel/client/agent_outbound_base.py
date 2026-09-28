@@ -17,13 +17,33 @@ from typing import Any
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
 from synapse_channel.core.identity_keys import sign_registration
 from synapse_channel.core.message_auth import DEFAULT_SIGNED_MESSAGE_TYPES, sign_frame
-from synapse_channel.core.protocol import MIN_ACK_PROTOCOL_VERSION, MessageType, build_envelope
+from synapse_channel.core.protocol import (
+    ATTACHMENT_REQUEST_TYPES,
+    MIN_ACK_PROTOCOL_VERSION,
+    MIN_ATTACHMENT_PROTOCOL_VERSION,
+    MessageType,
+    build_envelope,
+)
 
 __all__ = ["AgentSendMixin"]
 
 
 class AgentSendMixin:
     """Send raw envelopes and chat messages."""
+
+    async def send_attachment(self: _OutboundAgent, msg_type: str, **fields: Any) -> None:
+        """Send one signed attachment request only to a version-four hub.
+
+        Results arrive through the agent's ordinary callback as private
+        ``attachment_result`` frames. A per-message HMAC key is mandatory.
+        """
+        if msg_type not in ATTACHMENT_REQUEST_TYPES:
+            raise ValueError("unknown attachment request type")
+        if (self.hub_protocol_version or 0) < MIN_ATTACHMENT_PROTOCOL_VERSION:
+            raise ValueError("hub does not advertise attachment protocol version four")
+        if self._message_auth_key is None:
+            raise ValueError("attachment requests require a per-message key")
+        await self.send_message(msg_type, target="SynapseHub", **fields)
 
     async def send_message(
         self: _OutboundAgent,

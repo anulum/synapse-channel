@@ -40,7 +40,8 @@ def bind_delivery_registration(
         return None
     if was_bound or msg_type != MessageType.HEARTBEAT:
         raise DeliveryRefusal("invalid_shape", "delivery session belongs on registration")
-    if data.get("protocol_version") != 3 or isinstance(data.get("protocol_version"), bool):
+    version = data.get("protocol_version")
+    if isinstance(version, bool) or not isinstance(version, int) or version < 3:
         raise DeliveryRefusal("unsupported_protocol", "delivery session requires wire version 3")
     if not durable or not stable_hub_id:
         raise DeliveryRefusal("unsupported_profile", "delivery requires a durable stable hub")
