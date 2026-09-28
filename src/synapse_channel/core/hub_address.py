@@ -46,7 +46,7 @@ class HubQualifiedAddress:
     Attributes
     ----------
     seat : str
-        The seat's local name on its hub, for example ``SYNAPSE-CHANNEL/claude-a7c2``.
+        The seat's local name on its hub, for example ``SYNAPSE-CHANNEL/agent-a7c2``.
     hub_id : str
         The stable id of the hub that hosts the seat.
     """

@@ -24,7 +24,7 @@ from synapse_channel.core.hub_address import (
 @pytest.mark.parametrize(
     ("value", "seat", "hub_id"),
     [
-        ("SYNAPSE-CHANNEL/claude-a7c2@laptop", "SYNAPSE-CHANNEL/claude-a7c2", "laptop"),
+        ("SYNAPSE-CHANNEL/agent-a7c2@laptop", "SYNAPSE-CHANNEL/agent-a7c2", "laptop"),
         ("agent@hub.example_1-2", "agent", "hub.example_1-2"),
         ("PROJ/seat@9hub", "PROJ/seat", "9hub"),
     ],
