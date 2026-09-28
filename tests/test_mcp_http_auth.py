@@ -72,22 +72,22 @@ async def initialize(client: httpx.AsyncClient, token: str | None) -> httpx.Resp
 
 
 @pytest.mark.parametrize(
-    "changes",
+    ("claim", "value"),
     [
-        {"aud": "https://other.example.test/mcp"},
-        {"iss": "https://other.example.test"},
-        {"sub": "unprovisioned"},
-        {"exp": int(time.time()) - 5},
-        {"iat": int(time.time()) + 100},
-        {"scope": "synapse:mutate"},
-        {"scope": "synapse:read administrator"},
-        {"exp": int(time.time()) + 7200},
-        {"iat": True},
-        {"client_id": ""},
+        pytest.param("aud", "https://other.example.test/mcp", id="wrong-audience"),
+        pytest.param("iss", "https://other.example.test", id="wrong-issuer"),
+        pytest.param("sub", "unprovisioned", id="unknown-subject"),
+        pytest.param("exp_offset", -5, id="expired"),
+        pytest.param("iat_offset", 100, id="future-issued-at"),
+        pytest.param("scope", "synapse:mutate", id="missing-read-scope"),
+        pytest.param("scope", "synapse:read administrator", id="unrecognised-scope"),
+        pytest.param("exp_offset", 7200, id="overlong-lifetime"),
+        pytest.param("iat", True, id="boolean-issued-at"),
+        pytest.param("client_id", "", id="empty-client-id"),
     ],
 )
 async def test_invalid_identity_refused_over_https(
-    tmp_path: Path, changes: dict[str, object]
+    tmp_path: Path, claim: str, value: object
 ) -> None:
     """Wrong audience, issuer, expiry, scopes and grant identities yield uniform 401."""
     key = Ed25519PrivateKey.generate()
@@ -97,6 +97,13 @@ async def test_invalid_identity_refused_over_https(
         async with httpx.AsyncClient(
             base_url=url, verify=tls, timeout=5, trust_env=False
         ) as client:
+            if claim in {"exp_offset", "iat_offset"}:
+                assert isinstance(value, int)
+                changes: dict[str, object] = {
+                    claim.removesuffix("_offset"): int(time.time()) + value
+                }
+            else:
+                changes = {claim: value}
             token = access_token(key, **changes)
             response = await initialize(client, token)
             assert response.status_code == 401
