@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / ".pre-commit-config.yaml"
@@ -52,12 +53,20 @@ def test_precommit_pkcs11_bootstrap_matches_the_universal_lock() -> None:
         bootstrap,
     )
     wheel_hash = re.search(r"--hash=sha256:(?P<digest>[0-9a-f]{64})", bootstrap)
+    artifact_match = re.search(r"python-pkcs11 @ (?P<url>https://\S+)", bootstrap)
 
     assert dev_pin is not None
     assert wheel_pin is not None
     assert wheel_hash is not None
+    assert artifact_match is not None
     assert wheel_pin["version"] == dev_pin["version"]
     assert wheel_hash["digest"] in dev_lock
-    assert "https://files.pythonhosted.org/" in bootstrap
+    artifact = urlsplit(artifact_match["url"])
+    assert artifact.scheme == "https"
+    assert artifact.hostname == "files.pythonhosted.org"
+    assert artifact.path.endswith(wheel_pin.group(0))
+    assert not any((artifact.username, artifact.password, artifact.port))
+    assert not artifact.query
+    assert not artifact.fragment
     assert "--require-hashes --no-deps" in workflow
     assert "requirements-pkcs11-bootstrap.txt" in workflow
