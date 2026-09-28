@@ -25,6 +25,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
+
 MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
 MAX_SCOPE_BYTES = 256 * 1024 * 1024
 MAX_CHUNK_BYTES = 32 * 1024
@@ -36,8 +38,10 @@ _REFERENCE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
 _PROVENANCE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/#@-]{0,255}\Z")
 
 
-class AttachmentError(ValueError):
+class AttachmentError(SynapseError, ValueError):
     """A bounded attachment request failed without disclosing stored content."""
+
+    code = "attachment"
 
 
 def _private_dir(path: Path) -> None:

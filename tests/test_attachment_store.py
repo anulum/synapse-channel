@@ -251,6 +251,7 @@ def test_private_storage_rejects_symlinks_and_recovers_orphans(tmp_path: Path) -
         AttachmentStore(link)
     root = tmp_path / "private"
     root.mkdir(mode=0o755)
+    root.chmod(0o755)
     with pytest.raises(AttachmentError, match="owner-only"):
         AttachmentStore(root)
     root.chmod(0o700)
