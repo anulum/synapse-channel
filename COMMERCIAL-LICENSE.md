@@ -35,7 +35,7 @@ AGPL-3.0 licence already covers you.
 ## Tiers
 
 The current tiers, prices (USD), and what each grants are published at
-**<https://www.remanentia.com/synapse/pricing.html>** and sold through Polar.sh. In summary:
+**<https://anulum.github.io/synapse-channel/commercial/>**. In summary:
 
 | Tier | Who it is for | Grant |
 | --- | --- | --- |
@@ -94,8 +94,7 @@ opening a pull request.
 
 ## Buy / contact
 
-- Buy a licence: **<https://www.remanentia.com/synapse/pricing.html>** (Polar.sh, USD; local
-  currency shown at checkout, CHF invoicing on request).
+- Plans and purchase contact: **<https://anulum.github.io/synapse-channel/commercial/>**.
 - Custom, OEM, academic, or non-profit terms: **protoscience@anulum.li**.
 - For custom evaluation, include the legal entity, product/service name,
   deployment shape, source availability, support expectations, compliance needs,

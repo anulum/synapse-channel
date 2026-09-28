@@ -33,7 +33,7 @@ SYNAPSE CHANNEL — repository overview
   <a href="https://pepy.tech/project/synapse-channel"><img src="https://static.pepy.tech/badge/synapse-channel" alt="Total downloads"></a>
   <a href="https://github.com/sponsors/anulum"><img src="https://img.shields.io/badge/GitHub-Sponsors-ea4aaa?logo=githubsponsors" alt="Sponsor SYNAPSE CHANNEL on GitHub"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
-  <a href="https://www.remanentia.com/synapse/pricing.html"><img src="https://img.shields.io/badge/commercial%20licence-available-0a7d3c" alt="Commercial licence available"></a>
+  <a href="https://anulum.github.io/synapse-channel/commercial/"><img src="https://img.shields.io/badge/commercial%20licence-available-0a7d3c" alt="Commercial licence available"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
   <a href="https://codecov.io/gh/anulum/synapse-channel"><img src="https://codecov.io/gh/anulum/synapse-channel/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://api.reuse.software/info/github.com/anulum/synapse-channel"><img src="https://api.reuse.software/badge/github.com/anulum/synapse-channel" alt="REUSE status"></a>
@@ -1955,10 +1955,10 @@ SYNAPSE CHANNEL FLEET is separately entitled private software, not a hidden
 commercial build of the public core.
 
 <p align="center">
-  <a href="https://www.remanentia.com/synapse/pricing.html"><img src="https://img.shields.io/badge/View_plans_%26_buy-remanentia.com%2Fsynapse-0a7d3c?style=for-the-badge" alt="View plans and buy a commercial licence"></a>
+  <a href="https://anulum.github.io/synapse-channel/commercial/"><img src="https://img.shields.io/badge/View_plans_%26_contact-commercial-0a7d3c?style=for-the-badge" alt="View plans and buy a commercial licence"></a>
 </p>
 
-Plans and checkout are at **[remanentia.com/synapse/pricing.html](https://www.remanentia.com/synapse/pricing.html)** (Polar.sh, USD; each buyer sees their local currency at checkout, CHF invoicing on request). For enterprise, OEM, academic, non-profit, managed-hosting, or co-ownership terms, write to [protoscience@anulum.li](mailto:protoscience@anulum.li) with the evaluation details listed in [`docs/commercial.md`](docs/commercial.md). The full terms are in [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md).
+Current plans and purchase contact are on the **[commercial information page](https://anulum.github.io/synapse-channel/commercial/)**. For enterprise, OEM, academic, non-profit, managed-hosting, or co-ownership terms, write to [protoscience@anulum.li](mailto:protoscience@anulum.li) with the evaluation details listed in [`docs/commercial.md`](docs/commercial.md). The full terms are in [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md).
 
 ## How to cite
 
@@ -1980,7 +1980,7 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
 
 Dual-licensed: **AGPL-3.0-or-later**, with a commercial licence available — see
 [Commercial use](#commercial-use) for the plans and
-[pricing](https://www.remanentia.com/synapse/pricing.html). [`LICENSE`](LICENSE) holds the full
+[commercial plans](https://anulum.github.io/synapse-channel/commercial/). [`LICENSE`](LICENSE) holds the full
 AGPL text, [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md) the commercial terms, and
 [`NOTICE.md`](NOTICE.md) the licensing boundary. The repository is
 [REUSE](https://reuse.software/) 3.x compliant.

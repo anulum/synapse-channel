@@ -36,12 +36,10 @@ commercial build of the public core.
 An optional **Supporter** (name-your-price) contribution funds the research and lists you
 in `BACKERS`; it grants no extra rights, because the free core already holds none back.
 
-[![View plans and buy a commercial licence](https://img.shields.io/badge/View_plans_%26_buy-remanentia.com%2Fsynapse-0a7d3c?style=for-the-badge)](https://www.remanentia.com/synapse/pricing.html)
+[![View plans and buy a commercial licence](https://img.shields.io/badge/View_plans_%26_contact-commercial-0a7d3c?style=for-the-badge)](https://anulum.github.io/synapse-channel/commercial/)
 
-Plans, current prices, and checkout are at
-[**remanentia.com/synapse/pricing.html**](https://www.remanentia.com/synapse/pricing.html) (handled by
-Polar.sh in **USD**; each buyer sees their local currency at checkout, CHF invoicing on
-request). For enterprise, OEM, academic, non-profit, managed-hosting, or co-ownership
+Plans, current prices, and purchase contact are on
+[the public commercial information page](https://anulum.github.io/synapse-channel/commercial/). For enterprise, OEM, academic, non-profit, managed-hosting, or co-ownership
 terms, write to [protoscience@anulum.li](mailto:protoscience@anulum.li).
 
 The full commercial terms are in
