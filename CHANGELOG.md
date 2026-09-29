@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.30] - 2026-09-29
+
 ### Added
 
 - Report the cross-hub forward backlog. `/metrics` gains
