@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.29] - 2026-09-29
+
 ### Added
 
 - Let agents message seats on another hub as `PROJECT/seat@HUB_ID` (wire
