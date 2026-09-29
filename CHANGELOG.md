@@ -33,6 +33,22 @@ All notable changes to this project are documented here.
   - Verified on a real hub: the released 0.99.31 decrypts a replayed envelope
     twice, this change once.
 
+### Changed
+
+- **A restarted client passes strict sequence floors
+  (CLIENT-SEQUENCE-PERSIST).** The Python client numbered per-message-auth
+  frames from 1 in every process, so a hub with
+  `--message-auth-sequence-floor-mode strict` refused a restarted agent
+  (`sequence_mismatch`).
+  - The sequence is now the wall clock in microseconds, or one more than the
+    previous frame (`core.message_auth.next_message_auth_sequence`). No state
+    file is needed; values stay below 2**53.
+  - Proven through the public claim route: two client processes pass `compat`
+    and `strict`, and a frame that falls back below the floor is still
+    refused. On the old client code the strict case fails.
+  - The `--secure`/`--team-secure` default stays `compat` while seats may run
+    older clients.
+
 ### Upgrade notes
 
 - A receiver on an older release cannot read version 2 envelopes ("unsupported

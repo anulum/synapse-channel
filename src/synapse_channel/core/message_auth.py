@@ -523,6 +523,33 @@ def canonical_event_frame(frame: Mapping[str, Any]) -> bytes:
     ).encode("utf-8")
 
 
+def next_message_auth_sequence(previous: int, *, now_ns: int | None = None) -> int:
+    """Return the next per-message-auth sequence for one client.
+
+    The sequence is time-derived: the wall clock in microseconds, or one more
+    than the previous value when the clock has not advanced. A restarted client
+    process therefore continues above everything it signed before, so a hub
+    with a ``strict`` durable sequence floor admits it without any client-side
+    state (CLIENT-SEQUENCE-PERSIST). Hub names are exclusive per live socket, so
+    one sender has one live process. Values stay below 2**53 and remain exact
+    in JSON clients until the year 2255.
+
+    Parameters
+    ----------
+    previous : int
+        The last sequence this client signed (``0`` before the first frame).
+    now_ns : int or None, optional
+        Wall clock in nanoseconds; ``None`` reads :func:`time.time_ns`.
+
+    Returns
+    -------
+    int
+        A positive sequence greater than ``previous``.
+    """
+    clock = time.time_ns() if now_ns is None else now_ns
+    return max(previous + 1, clock // 1_000)
+
+
 def sign_frame(
     frame: Mapping[str, Any],
     *,

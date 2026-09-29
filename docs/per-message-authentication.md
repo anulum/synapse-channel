@@ -193,6 +193,15 @@ through `--message-auth-sequence-floor-mode`:
 | `compat` | Floor advances on accept; a lower sequence with a **new** nonce is still admitted (reconnect-safe). Same nonce remains `replayed`. |
 | `strict` | `sequence <= floor` for that `(key_id, sender)` is refused as `sequence_mismatch`. Clients must keep counters monotonic across restarts. |
 
+The Python client keeps its sequence monotonic across restarts without state.
+Each frame's sequence is the wall clock in microseconds, or one more than the
+previous frame if the clock has not advanced
+(`core.message_auth.next_message_auth_sequence`). A restarted agent therefore
+passes `strict`. Clients up to Core 0.99.31 numbered frames from 1 in every
+process and are refused by `strict` after a restart. A custom client must also
+keep its sequence increasing across restarts, for example by using the same
+rule.
+
 Durable I/O faults fail closed (verification refuses the frame). Capacity-full
 behaviour matches the in-memory cache. `compat` and `strict` are refused at
 startup unless a durable replay path exists; an in-memory sequence floor would

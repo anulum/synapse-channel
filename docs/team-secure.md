@@ -38,10 +38,12 @@ same multi-seat hub is also network-exposed.
    `--require-message-auth` and a durable replay ledger (`--db` or
    `--message-auth-replay-db`), an unset `--message-auth-sequence-floor-mode`
    becomes `compat`: each key's high-water sequence is recorded, and nothing is
-   refused on that basis. `strict` stays an explicit choice. The shipped client
-   numbers its frames from 1 in every process, so a strict floor refuses a
-   restarted agent's first frames (`sequence_mismatch`). This was tested through
-   the public claim route.
+   refused on that basis. `strict` stays an explicit choice. Clients up to Core
+   0.99.31 number their frames from 1 in every process, so a strict floor
+   refuses such a restarted agent's first frames (`sequence_mismatch`). Later
+   clients derive the sequence from the clock and pass `strict` after a
+   restart. Choose `strict` once every seat runs such a client. Both behaviours
+   are tested through the public claim route.
 
 On startup the hub prints what was enforced and a short **recommended next**
 list (message-auth, ACL, TLS/`--paranoid`, durable `--db`) when those are still

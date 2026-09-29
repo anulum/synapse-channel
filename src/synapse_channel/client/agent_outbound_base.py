@@ -16,7 +16,11 @@ from typing import Any
 
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
 from synapse_channel.core.identity_keys import sign_registration
-from synapse_channel.core.message_auth import DEFAULT_SIGNED_MESSAGE_TYPES, sign_frame
+from synapse_channel.core.message_auth import (
+    DEFAULT_SIGNED_MESSAGE_TYPES,
+    next_message_auth_sequence,
+    sign_frame,
+)
 from synapse_channel.core.protocol import (
     ATTACHMENT_REQUEST_TYPES,
     MIN_ACK_PROTOCOL_VERSION,
@@ -77,7 +81,7 @@ class AgentSendMixin:
         msg = build_envelope(self.name, msg_type, target=target, payload=payload, **extra)
         if self._message_auth_key is not None and msg_type in DEFAULT_SIGNED_MESSAGE_TYPES:
             msg.setdefault("idem_key", secrets.token_urlsafe(18))
-            self._message_auth_sequence += 1
+            self._message_auth_sequence = next_message_auth_sequence(self._message_auth_sequence)
             msg = sign_frame(
                 msg,
                 key=self._message_auth_key,
