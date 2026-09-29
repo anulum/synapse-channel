@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from contextvars import ContextVar
 from typing import Any
 
@@ -29,6 +30,34 @@ KEYED_MUTATIONS = frozenset(
 )
 
 
+MAX_OPERATION_EPOCHS = 1024
+"""Most recent keyed operations whose lease epoch is kept for an exact replay."""
+
+
+class OperationEpochs:
+    """Remember the lease epoch each keyed operation was first sent with.
+
+    A retried operation must be byte-for-byte the same request, or the hub
+    refuses the reused key. The client forgets a lease's epoch once the release
+    is granted, so a retried release would otherwise go out without it. This
+    bounded map keeps the first epoch per operation and re-applies it.
+    """
+
+    def __init__(self, limit: int = MAX_OPERATION_EPOCHS) -> None:
+        self._limit = max(1, int(limit))
+        self._epochs: OrderedDict[str, object] = OrderedDict()
+
+    def apply(self, key: str, extra: dict[str, Any]) -> None:
+        """Record ``extra``'s epoch under ``key``, or restore the recorded one."""
+        if "epoch" in extra:
+            self._epochs[key] = extra["epoch"]
+            self._epochs.move_to_end(key)
+            while len(self._epochs) > self._limit:
+                self._epochs.popitem(last=False)
+        elif key in self._epochs:
+            extra["epoch"] = self._epochs[key]
+
+
 class HttpHubAgent(SynapseAgent):
     """Preserve native signing and give remote mutations their stable retry key.
 
@@ -36,6 +65,10 @@ class HttpHubAgent(SynapseAgent):
     material never enters this client. Chat retains native at-least-once delivery
     with receiver deduplication; board and lease operations use hub idempotency.
     """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._operation_epochs = OperationEpochs()
 
     async def send_message(
         self,
@@ -62,6 +95,7 @@ class HttpHubAgent(SynapseAgent):
         operation = HTTP_OPERATION_ID.get()
         if operation and msg_type in KEYED_MUTATIONS:
             extra["idem_key"] = operation
+            self._operation_epochs.apply(f"{msg_type}\0{operation}", extra)
         if operation and msg_type == MessageType.CHAT:
             extra["client_msg_id"] = operation
         if operation and msg_type == MessageType.LEDGER_TASK:
