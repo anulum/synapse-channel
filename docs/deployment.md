@@ -643,6 +643,17 @@ path unless the intended peer pin is the proxy certificate and the deployment ha
 a separate policy for client identity at the proxy. For the hub certificate to
 remain the pinned object, use direct native WSS/mTLS or TCP/TLS passthrough.
 
+The example shows the transport only. An internet-exposed hub also needs
+provisioned identity (see the posture table in `SECURITY.md`). Enrol each seat
+(`synapse identity machine-key --sender NAME --trust FILE`) and start the hub
+with `--expect-multi-seat --identity-trust FILE --require-identity-binding`. The
+hub binds loopback here, so without `--expect-multi-seat` the start-up identity
+check does not apply. Seat clients sign their registration inside the
+WebSocket frame, so their proof passes through the proxy. A peer hub or Fleet
+follower proves its id only with its client certificate, which stops at the
+proxy, so an identity-bound hub behind this shape refuses it. Use direct
+native WSS/mTLS or TCP/TLS passthrough for those peers.
+
 ## Persistence and backups
 
 With `--db`, every authoritative mutation (claims, releases, task updates, chat)
