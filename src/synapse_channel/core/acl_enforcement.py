@@ -102,6 +102,7 @@ GATED_MUTATIONS = (
             MessageType.ADVERTISE,
             MessageType.IDENTITY_PIN_RECLAIM,
             MessageType.IDENTITY_ENROLL,
+            MessageType.IDENTITY_REVOKE,
             MessageType.GUARD_DENIAL,
         }
     )
@@ -192,7 +193,7 @@ def required_accesses(msg_type: str, data: dict[str, Any]) -> list[tuple[str, Ta
         return [(BOARD, Target("capability", str(data.get("agent") or "*")))]
     if msg_type == MessageType.IDENTITY_PIN_RECLAIM:
         return [(PIN_RECLAIM, Target("agent", str(data.get("pin_name") or "")))]
-    if msg_type == MessageType.IDENTITY_ENROLL:
+    if msg_type in (MessageType.IDENTITY_ENROLL, MessageType.IDENTITY_REVOKE):
         return [(IDENTITY_ENROLL, Target("agent", str(data.get("name") or "")))]
     if msg_type == MessageType.GUARD_DENIAL:
         return [(EVIDENCE, Target("evidence", "guard-denial"))]

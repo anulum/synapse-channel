@@ -221,6 +221,26 @@ def enrollment_denial(
     The requester's authority is checked before anything about the target is
     revealed: whether the name is covered, enrolled, or the key id taken.
     """
+    return authority_denial(
+        enabled=enabled,
+        requester_bound=requester_bound,
+        acl_allowed=acl_allowed,
+        role_granted=role_granted,
+        namespace_allowed=namespace_allowed,
+        rate_allowed=rate_allowed,
+    ) or _request_denial(request, static=static, enrolled=enrolled, now=now)
+
+
+def authority_denial(
+    *,
+    enabled: bool,
+    requester_bound: bool,
+    acl_allowed: bool,
+    role_granted: bool,
+    namespace_allowed: bool,
+    rate_allowed: bool,
+) -> str:
+    """Return the first failed authority gate shared by enrol and revoke, or ``""``."""
     if not enabled:
         return "online enrolment is disabled on this hub"
     if not requester_bound:
@@ -233,7 +253,39 @@ def enrollment_denial(
         return "this hub does not allow enrolment in the name's namespace"
     if not rate_allowed:
         return "enrolment rate limit reached; try again later"
-    return _request_denial(request, static=static, enrolled=enrolled, now=now)
+    return ""
+
+
+def revocation_denial(
+    *,
+    name: str,
+    key_id: str,
+    reason: str,
+    static: Mapping[str, EventSignatureKey],
+    enrolled: Mapping[str, EventSignatureKey],
+) -> str:
+    """Return why an authorised revocation of ``key_id`` for ``name`` cannot run, or ``""``.
+
+    Only the hub-owned store is revocable online; a key in the operator's trust
+    file is revoked by editing that file.
+    """
+    if "/" not in name or not name.split("/", 1)[1]:
+        return "the name must be <project>/<id>"
+    clean_reason = reason.strip()
+    if not clean_reason:
+        return "a non-empty operator reason is required"
+    if len(clean_reason) > MAX_ENROLLMENT_REASON_LENGTH:
+        return f"reason exceeds {MAX_ENROLLMENT_REASON_LENGTH} characters"
+    if key_id in static:
+        return "keys in the identity trust bundle are revoked by editing that file"
+    key = enrolled.get(key_id)
+    if key is None:
+        return "no enrolled key has this id"
+    if name not in key.senders:
+        return "the enrolled key does not prove this name"
+    if key.revoked:
+        return "the enrolled key is already revoked"
+    return ""
 
 
 def _request_denial(
@@ -304,6 +356,8 @@ __all__ = [
     "DEFAULT_ENROLLMENT_RATE",
     "DEFAULT_ENROLLMENT_WINDOW_SECONDS",
     "ENROLLER_ROLE",
+    "authority_denial",
+    "revocation_denial",
     "EnrollmentRateLimiter",
     "EnrollmentRequest",
     "IdentityEnrollmentError",

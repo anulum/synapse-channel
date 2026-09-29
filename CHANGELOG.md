@@ -52,7 +52,10 @@ All notable changes to this project are documented here.
     4018).
   - **Audit.** Each change writes an `identity_enrollment` audit trail
     (`approved`, then `applied` or `not_applied`) that feeds AEF receipts.
-  - **Wire.** New wire types `identity_enroll` and `identity_enroll_result`.
+  - **Revocation.** `synapse identity revoke` revokes an enrolled key without
+    a replacement, behind the same gates, and closes its live socket.
+  - **Wire.** New wire types `identity_enroll`, `identity_revoke` and their
+    `_result` verdicts.
 
 - **Opt-in strict lease fencing (FENCE-01 narrow slice).**
   - `synapse hub --require-fencing-epoch` refuses a task update, release,

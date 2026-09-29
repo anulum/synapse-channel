@@ -2849,6 +2849,7 @@ synapse identity audit --identities ./identities.json --json
 synapse identity machine-key --sender proj/alice --sender proj/alice-rx   # print this machine's key as a trust-bundle entry
 synapse identity machine-key --sender proj/alice --trust ./trust.json     # or enrol it directly (once per bundle)
 synapse identity enroll proj/bob --operator ops/admin --key-id machine-… --public-key … --reason "new laptop"  # governed online enrolment on a hub with --identity-enrollments
+synapse identity revoke proj/bob --operator ops/admin --key-id machine-… --reason "laptop lost"  # revoke an enrolled key
 synapse acl shadow --policy ./acl.json --requests ./requests.json   # non-blocking deny-by-default evaluation
 synapse policy-check --policy ./policy.json --receipt-json ./receipt.json   # advisory; --enforce to gate
 synapse federation offer ./my-domain.json                      # validate own material; print fingerprints

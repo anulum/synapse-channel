@@ -370,3 +370,82 @@ async def test_a_store_that_cannot_be_written_changes_nothing(tmp_path: Path) ->
     assert result["applied"] is False
     assert "could not persist the enrolment store" in result["payload"]
     assert [entry["status"] for entry in _audit(tmp_path)] == ["approved", "not_applied"]
+
+
+async def _revoke(recorder: Recorder, agent: SynapseAgent, **fields: Any) -> dict[str, Any]:
+    recorder.messages.clear()
+    await agent.send_message(MessageType.IDENTITY_REVOKE, target="System", **fields)
+    return await recorder.wait_for(lambda m: m.get("type") == MessageType.IDENTITY_REVOKE_RESULT)
+
+
+async def test_a_revoked_key_is_refused_and_its_socket_closed(tmp_path: Path) -> None:
+    machines = Machines(tmp_path / "machines")
+    hub = _hub(tmp_path, machines, static=(("operator", OPERATOR), ("fixed", "PROJ/fixed")))
+    seat_key_id, _ = machines.public("seat")
+    fixed_key_id, _ = machines.public("fixed")
+    async with running_hub(hub) as (_hub_ref, uri):
+        async with _connected(OPERATOR, uri, machines.kwargs("operator")) as (operator, inbox):
+            assert (await _enrol(inbox, operator, **_seat_request(machines)))["applied"]
+            revoke = {"name": SEAT, "key_id": seat_key_id, "reason": "laptop stolen"}
+            refusals = [
+                await _revoke(inbox, operator, **{**revoke, "name": "OTHER/x"}),
+                await _revoke(inbox, operator, **{**revoke, "name": "PROJ/"}),
+                await _revoke(inbox, operator, **{**revoke, "reason": " "}),
+                await _revoke(inbox, operator, **{**revoke, "reason": "x" * 501}),
+                await _revoke(inbox, operator, **{**revoke, "key_id": fixed_key_id}),
+                await _revoke(inbox, operator, **{**revoke, "key_id": "unknown"}),
+                await _revoke(inbox, operator, **{**revoke, "name": "PROJ/else"}),
+            ]
+            async with _connected(SEAT, uri, machines.kwargs("seat")) as (seat, _seat_inbox):
+                revoked = await _revoke(inbox, operator, **revoke)
+                loop = asyncio.get_running_loop()
+                deadline = loop.time() + 3.0
+                while loop.time() < deadline and seat.last_close_code is None:
+                    await asyncio.sleep(0.01)
+                assert seat.last_close_code == KEY_ROTATED_CLOSE_CODE
+            again = await _revoke(inbox, operator, **revoke)
+        assert "identity binding failed" in await _refused(SEAT, uri, machines.kwargs("seat"))
+    assert hub.journal is not None
+    hub.journal.close()
+    expected = [
+        "not authorised",
+        "<project>/<id>",
+        "non-empty operator reason",
+        "exceeds 500",
+        "revoked by editing that file",
+        "no enrolled key has this id",
+        "does not prove this name",
+    ]
+    for refusal, detail in zip(refusals, expected, strict=True):
+        assert refusal["applied"] is False and detail in refusal["payload"], refusal["payload"]
+    assert revoked["applied"] is True and "revoked" in revoked["payload"]
+    assert "already revoked" in again["payload"]
+    stored = json.loads((tmp_path / "enrolled.json").read_text(encoding="utf-8"))
+    assert [(entry["key_id"], entry["revoked"]) for entry in stored["keys"]] == [
+        (seat_key_id, True)
+    ]
+    applied = [entry for entry in _audit(tmp_path) if entry["status"] == "applied"]
+    assert [entry["action"] for entry in applied] == ["enroll", "revoke"]
+    assert applied[-1]["evicted_live_socket"] is True
+
+
+async def test_an_enroller_revoking_its_own_key_stays_connected(tmp_path: Path) -> None:
+    machines = Machines(tmp_path / "machines")
+    roles = {
+        "OPS/identity-enroller": frozenset({OPERATOR}),
+        "PROJ/identity-enroller": frozenset({SEAT}),
+    }
+    hub = _hub(tmp_path, machines, roles=roles, acl_pattern="*", acl_namespace="")
+    seat_key_id, _ = machines.public("seat")
+    async with running_hub(hub) as (_hub_ref, uri):
+        async with _connected(OPERATOR, uri, machines.kwargs("operator")) as (operator, inbox):
+            assert (await _enrol(inbox, operator, **_seat_request(machines)))["applied"]
+        async with _connected(SEAT, uri, machines.kwargs("seat")) as (seat, seat_inbox):
+            own = await _revoke(
+                seat_inbox, seat, name=SEAT, key_id=seat_key_id, reason="retiring this key"
+            )
+            assert seat.last_close_code is None
+    assert hub.journal is not None
+    hub.journal.close()
+    assert own["applied"] is True
+    assert _audit(tmp_path)[-1]["evicted_live_socket"] is False

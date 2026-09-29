@@ -4,16 +4,19 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — handle the governed identity-key enrolment verb (SOL4-ID-01)
-"""Handle ``identity_enroll``: add or rotate an identity key under a proven operator.
+# SYNAPSE_CHANNEL — handle the governed identity-key enrolment verbs (SOL4-ID-01)
+"""Handle ``identity_enroll`` and ``identity_revoke`` under a proven operator.
 
 The order of gates and the pure policy live in
-:mod:`synapse_channel.core.identity_enrollments`. This handler collects the
-observations the policy needs from the hub, writes the durable audit before the
-store changes, persists the hub-owned enrolment store, swaps the effective trust
-bundle into the identity gate, and answers the operator privately. A new key is
-usable at the next registration, with no restart. Rotating another name's key
-detaches that name's live socket, which proved the superseded key.
+:mod:`synapse_channel.core.identity_enrollments`. These handlers collect the
+observations the policy needs from the hub, write the durable audit before the
+store changes, persist the hub-owned enrolment store, swap the effective trust
+bundle into the identity gate, and answer the operator privately.
+
+- An enrolled key is usable at the next registration, with no restart.
+- Rotating or revoking another name's key detaches that name's live socket,
+  which proved the superseded key. An operator acting on its own key stays
+  connected.
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -30,9 +33,11 @@ from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.identity_enrollments import (
     ENROLLER_ROLE,
     EnrollmentRequest,
+    authority_denial,
     decode_public_key,
     enrollment_denial,
     merge_enrolled_keys,
+    revocation_denial,
     write_enrolled_keys,
 )
 from synapse_channel.core.journal import EventKind, record_identity_enrollment
@@ -46,7 +51,57 @@ if TYPE_CHECKING:
 logger = logging.getLogger("synapse.hub")
 
 KEY_ROTATED_CLOSE_CODE = 4018
-"""Close code sent to a live socket whose identity key an operator rotated."""
+"""Close code sent to a live socket whose identity key an operator rotated or revoked."""
+
+
+@dataclass(frozen=True)
+class _Authority:
+    """What the hub observed about a requester before any request field is read."""
+
+    enabled: bool
+    requester_bound: bool
+    acl_allowed: bool
+    role_granted: bool
+    namespace_allowed: bool
+    rate_allowed: bool
+    operator_key_id: str
+    moment: float
+
+    @property
+    def authorised(self) -> bool:
+        """Whether the requester passed every gate that proves who it is."""
+        return self.enabled and self.requester_bound and self.acl_allowed and self.role_granted
+
+    def denial(self) -> str:
+        """Return the first failed authority gate, or ``""``."""
+        return authority_denial(
+            enabled=self.enabled,
+            requester_bound=self.requester_bound,
+            acl_allowed=self.acl_allowed,
+            role_granted=self.role_granted,
+            namespace_allowed=self.namespace_allowed,
+            rate_allowed=self.rate_allowed,
+        )
+
+
+def _authority(hub: SynapseHub, sender: str, name: str) -> _Authority:
+    requester_pin = hub._identity_pins.pinned(sender)
+    moment = hub._clock()
+    return _Authority(
+        enabled=(
+            hub.identity_enrollment_path is not None
+            and hub.journal is not None
+            and hub._static_identity_trust is not None
+        ),
+        requester_bound=hub.require_identity_binding or requester_pin is not None,
+        acl_allowed=_acl_allows(hub, sender, name),
+        role_granted=hub.role_grants is not None
+        and hub.role_grants.may_claim(sender, f"{project_of(sender)}/{ENROLLER_ROLE}"),
+        namespace_allowed=project_of(name) in hub.identity_enrollment_namespaces,
+        rate_allowed=hub._enrollment_rate.allows(sender, now=moment),
+        operator_key_id=requester_pin.key_id if requester_pin is not None else "bundle",
+        moment=moment,
+    )
 
 
 async def handle_identity_enroll(
@@ -63,33 +118,24 @@ async def handle_identity_enroll(
         expected_key_id=str(data.get("expected_key_id") or "").strip(),
         expires_at=expires_at,
     )
+    authority = _authority(hub, sender, request.name)
     static = hub._static_identity_trust
-    enabled = (
-        hub.identity_enrollment_path is not None and hub.journal is not None and static is not None
-    )
-    requester_pin = hub._identity_pins.pinned(sender)
-    requester_bound = hub.require_identity_binding or requester_pin is not None
-    acl_allowed = _acl_allows(hub, sender, request.name)
-    role_granted = hub.role_grants is not None and hub.role_grants.may_claim(
-        sender, f"{project_of(sender)}/{ENROLLER_ROLE}"
-    )
-    moment = hub._clock()
     denial = enrollment_denial(
         request,
-        enabled=enabled,
-        requester_bound=requester_bound,
-        acl_allowed=acl_allowed,
-        role_granted=role_granted,
-        namespace_allowed=project_of(request.name) in hub.identity_enrollment_namespaces,
-        rate_allowed=hub._enrollment_rate.allows(sender, now=moment),
+        enabled=authority.enabled,
+        requester_bound=authority.requester_bound,
+        acl_allowed=authority.acl_allowed,
+        role_granted=authority.role_granted,
+        namespace_allowed=authority.namespace_allowed,
+        rate_allowed=authority.rate_allowed,
         static=static.keys if static is not None else {},
         enrolled=hub._enrolled_identity_keys,
         now=time.time(),
     )
-    authorised = enabled and requester_bound and acl_allowed and role_granted
     provenance: dict[str, Any] = {
+        "action": "rotate" if request.expected_key_id else "enroll",
         "operator": sender,
-        "operator_key_id": requester_pin.key_id if requester_pin is not None else "bundle",
+        "operator_key_id": authority.operator_key_id,
         "name": request.name,
         "key_id": request.key_id,
         "public_key_sha256": (
@@ -98,29 +144,10 @@ async def handle_identity_enroll(
         "expected_key_id": request.expected_key_id,
         "reason": request.reason.strip(),
     }
+    result = _Result(MessageType.IDENTITY_ENROLL_RESULT, request.name, request.key_id)
     if denial:
-        logger.warning(
-            "identity enrolment denied operator=%s name=%s key_id=%s detail=%s",
-            sender,
-            request.name,
-            request.key_id,
-            denial,
-        )
-        audit_seq = None
-        if authorised:
-            # Only an authorised operator's refusals are journalled, so an unproven
-            # socket cannot fill the durable audit trail.
-            audit_seq = record_identity_enrollment(
-                cast(EventStore, hub.journal),
-                {**provenance, "status": "denied", "applied": False, "detail": denial},
-            )
-        await _send_result(hub, websocket, sender, request, False, denial, audit_seq)
+        await _refuse(hub, websocket, sender, authority, provenance, result, denial)
         return
-
-    journal = cast(EventStore, hub.journal)  # availability is part of ``enabled``
-    approved_seq = record_identity_enrollment(
-        journal, {**provenance, "status": "approved", "applied": False}
-    )
     updated = dict(hub._enrolled_identity_keys)
     if request.expected_key_id:
         updated[request.expected_key_id] = replace(updated[request.expected_key_id], revoked=True)
@@ -130,10 +157,125 @@ async def handle_identity_enroll(
         senders=frozenset({request.name}),
         expires_at=float(expires_at) if isinstance(expires_at, (int, float)) else None,
     )
+    detail = (
+        f"identity key for {request.name!r} rotated to {request.key_id!r}"
+        if request.expected_key_id
+        else f"identity key {request.key_id!r} enrolled for {request.name!r}"
+    )
+    await _apply(
+        hub,
+        websocket,
+        sender,
+        authority,
+        provenance,
+        result,
+        updated,
+        evict=bool(request.expected_key_id),
+        detail=detail,
+    )
+
+
+async def handle_identity_revoke(
+    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+) -> None:
+    """Revoke one enrolled identity key, without a replacement, after every gate passes."""
+    name = str(data.get("name") or "").strip()
+    key_id = str(data.get("key_id") or "").strip()
+    reason = str(data.get("reason") or "")
+    authority = _authority(hub, sender, name)
+    static = hub._static_identity_trust
+    denial = authority.denial() or revocation_denial(
+        name=name,
+        key_id=key_id,
+        reason=reason,
+        static=static.keys if static is not None else {},
+        enrolled=hub._enrolled_identity_keys,
+    )
+    provenance: dict[str, Any] = {
+        "action": "revoke",
+        "operator": sender,
+        "operator_key_id": authority.operator_key_id,
+        "name": name,
+        "key_id": key_id,
+        "reason": reason.strip(),
+    }
+    result = _Result(MessageType.IDENTITY_REVOKE_RESULT, name, key_id)
+    if denial:
+        await _refuse(hub, websocket, sender, authority, provenance, result, denial)
+        return
+    updated = dict(hub._enrolled_identity_keys)
+    updated[key_id] = replace(updated[key_id], revoked=True)
+    await _apply(
+        hub,
+        websocket,
+        sender,
+        authority,
+        provenance,
+        result,
+        updated,
+        evict=True,
+        detail=f"identity key {key_id!r} for {name!r} revoked",
+    )
+
+
+@dataclass(frozen=True)
+class _Result:
+    """The private verdict frame a request is answered with."""
+
+    msg_type: str
+    name: str
+    key_id: str
+
+
+async def _refuse(
+    hub: SynapseHub,
+    websocket: Any,
+    sender: str,
+    authority: _Authority,
+    provenance: dict[str, Any],
+    result: _Result,
+    denial: str,
+) -> None:
+    logger.warning(
+        "identity %s denied operator=%s name=%s key_id=%s detail=%s",
+        provenance["action"],
+        sender,
+        result.name,
+        result.key_id,
+        denial,
+    )
+    audit_seq = None
+    if authority.authorised:
+        # Only an authorised operator's refusals are journalled, so an unproven
+        # socket cannot fill the durable audit trail.
+        audit_seq = record_identity_enrollment(
+            cast(EventStore, hub.journal),
+            {**provenance, "status": "denied", "applied": False, "detail": denial},
+        )
+    await _send_result(hub, websocket, sender, result, False, denial, audit_seq)
+
+
+async def _apply(
+    hub: SynapseHub,
+    websocket: Any,
+    sender: str,
+    authority: _Authority,
+    provenance: dict[str, Any],
+    result: _Result,
+    updated: dict[str, EventSignatureKey],
+    *,
+    evict: bool,
+    detail: str,
+) -> None:
+    """Audit, persist, swap the trust bundle, evict, and answer one approved change."""
+    journal = cast(EventStore, hub.journal)  # availability is part of the authority
+    approved_seq = record_identity_enrollment(
+        journal, {**provenance, "status": "approved", "applied": False}
+    )
     try:
         write_enrolled_keys(cast(Path, hub.identity_enrollment_path), updated)
     except OSError as exc:
-        detail = f"could not persist the enrolment store: {exc}"
+        failure = f"could not persist the enrolment store: {exc}"
         record_identity_enrollment(
             journal,
             {
@@ -141,21 +283,19 @@ async def handle_identity_enroll(
                 "status": "not_applied",
                 "applied": False,
                 "approved_seq": approved_seq,
-                "detail": detail,
+                "detail": failure,
             },
         )
-        await _send_result(hub, websocket, sender, request, False, detail, approved_seq)
+        await _send_result(hub, websocket, sender, result, False, failure, approved_seq)
         return
-    bundle = merge_enrolled_keys(cast(EventSignatureTrustBundle, static), updated)
+    bundle = merge_enrolled_keys(
+        cast(EventSignatureTrustBundle, hub._static_identity_trust), updated
+    )
     hub._enrolled_identity_keys = updated
     hub.identity_trust_bundle = bundle
     hub._identity_gate.replace_trust_bundle(bundle)
-    hub._enrollment_rate.record(sender, now=moment)
-    rotated_socket = (
-        hub.clients.revoke_name(request.name)
-        if request.expected_key_id and request.name != sender
-        else None
-    )
+    hub._enrollment_rate.record(sender, now=authority.moment)
+    evicted = hub.clients.revoke_name(result.name) if evict and result.name != sender else None
     applied_seq = record_identity_enrollment(
         journal,
         {
@@ -163,37 +303,32 @@ async def handle_identity_enroll(
             "status": "applied",
             "applied": True,
             "approved_seq": approved_seq,
-            "evicted_live_socket": rotated_socket is not None,
+            "evicted_live_socket": evicted is not None,
         },
     )
     logger.warning(
-        "identity enrolment applied operator=%s name=%s key_id=%s rotated=%s audit_seq=%d",
+        "identity %s applied operator=%s name=%s key_id=%s audit_seq=%d",
+        provenance["action"],
         sender,
-        request.name,
-        request.key_id,
-        request.expected_key_id or "-",
+        result.name,
+        result.key_id,
         applied_seq,
     )
-    if rotated_socket is not None:
+    if evicted is not None:
         await hub.clients.close_socket(
-            rotated_socket, code=KEY_ROTATED_CLOSE_CODE, reason="identity key rotated"
+            evicted, code=KEY_ROTATED_CLOSE_CODE, reason="identity key rotated or revoked"
         )
-    detail = (
-        f"identity key {request.key_id!r} enrolled for {request.name!r}"
-        if not request.expected_key_id
-        else f"identity key for {request.name!r} rotated to {request.key_id!r}"
-    )
-    await _send_result(hub, websocket, sender, request, True, detail, applied_seq)
+    await _send_result(hub, websocket, sender, result, True, detail, applied_seq)
     await hub._broadcast(
         hub._system(
-            f"Identity key {request.key_id!r} for {request.name!r} was enrolled by "
-            f"operator {sender!r}.",
+            f"Identity key change ({provenance['action']}) for {result.name!r} by operator "
+            f"{sender!r}.",
             msg_type=MessageType.SYSTEM,
             event_kind=EventKind.IDENTITY_ENROLLMENT,
+            action=provenance["action"],
             operator=sender,
-            name=request.name,
-            key_id=request.key_id,
-            previous_key_id=request.expected_key_id,
+            name=result.name,
+            key_id=result.key_id,
             audit_seq=applied_seq,
         )
     )
@@ -217,21 +352,20 @@ async def _send_result(
     hub: SynapseHub,
     websocket: Any,
     sender: str,
-    request: EnrollmentRequest,
+    result: _Result,
     applied: bool,
     detail: str,
     audit_seq: int | None,
 ) -> None:
-    """Send one private typed enrolment verdict to the requesting operator."""
+    """Send one private typed verdict to the requesting operator."""
     await hub._send_json(
         websocket,
         hub._system(
             detail,
-            msg_type=MessageType.IDENTITY_ENROLL_RESULT,
+            msg_type=result.msg_type,
             target=sender,
-            name=request.name,
-            key_id=request.key_id,
-            expected_key_id=request.expected_key_id,
+            name=result.name,
+            key_id=result.key_id,
             applied=applied,
             audit_seq=audit_seq,
         ),

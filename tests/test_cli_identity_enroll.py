@@ -20,7 +20,12 @@ from cli_processes_hub_helpers import _close_runner
 from hub_e2e_helpers import running_hub
 from synapse_channel import cli_processes
 from synapse_channel.cli import build_parser
-from synapse_channel.cli_identity import _cmd_identity_enroll, _identity_enroll
+from synapse_channel.cli_identity import (
+    _cmd_identity_enroll,
+    _cmd_identity_revoke,
+    _identity_enroll,
+    _identity_revoke,
+)
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.hub import SynapseHub
 from test_hub_identity_enrollment import OPERATOR, SEAT, Machines, _hub, _trust
@@ -166,3 +171,57 @@ def test_the_hub_refuses_enrolment_without_a_journal(
     )
     assert cli_processes._cmd_hub(namespace, runner=_close_runner) == 2
     assert "--identity-trust and --db" in capsys.readouterr().err
+
+
+async def test_the_operator_cli_revokes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    machines = Machines(tmp_path / "machines")
+    hub = _hub(tmp_path, machines)
+    operator = machines.kwargs("operator")
+    key_id, _ = machines.public("seat")
+    common: dict[str, Any] = {
+        "uri": "",
+        "operator": OPERATOR,
+        "name": SEAT,
+        "key_id": key_id,
+        "reason": "retire",
+        "token": None,
+        "ready_timeout": 3.0,
+        "result_timeout": 3.0,
+        "json_output": False,
+        "agent_factory": _factory(operator),
+    }
+    async with running_hub(hub) as (_hub_ref, uri):
+        common["uri"] = uri
+        assert await _enroll(uri, operator, machines) == 0
+        capsys.readouterr()
+        assert await _identity_revoke(**common) == 0
+        applied = capsys.readouterr().out
+        assert await _identity_revoke(**common) == 1
+        refused = capsys.readouterr().out
+    assert hub.journal is not None
+    hub.journal.close()
+    assert "revoked" in applied and "(audit seq " in applied
+    assert refused.startswith("identity revocation refused:") and "already revoked" in refused
+
+
+def test_the_revoke_command_parses_and_dispatches() -> None:
+    args = build_parser().parse_args(
+        [
+            "identity",
+            "revoke",
+            SEAT,
+            "--operator",
+            OPERATOR,
+            "--key-id",
+            "k1",
+            "--reason",
+            "r",
+            "--uri",
+            "ws://127.0.0.1:9",
+            "--ready-timeout",
+            "0.2",
+        ]
+    )
+    assert args.func is _cmd_identity_revoke
+    assert (args.name, args.key_id, args.reason) == (SEAT, "k1", "r")
+    assert _cmd_identity_revoke(args) == 2  # nothing listens on port 9

@@ -131,6 +131,11 @@ The ACL model and its evaluation are implemented in
     is a compare-and-swap. The old key is kept as revoked history, and a live
     socket that proved it is closed with code 4018. An operator may rotate only
     its own key, never add a second one for itself.
+  - **Revocation:** `synapse identity revoke <name> --operator <identity>
+    --key-id <id> --reason <text>` revokes an enrolled key without a
+    replacement, for example after a lost laptop. It passes the same authority
+    gates. The key is kept as revoked history and its live socket is closed
+    (4018). Keys in the trust file are revoked by editing that file.
   - **Storage:** the enrolled keys live in the hub-owned, owner-only store, in
     the trust-bundle format. A restarted hub loads it on top of the trust file.
   - **Audit:** every change writes an `identity_enrollment` audit trail
@@ -251,7 +256,7 @@ permission vocabulary should stay small and auditable:
 | `mailbox` | Replay another identity's directed backlog via a mailbox heartbeat (`mailbox_for`). Target kind `agent`. Self and `-rx` sidecars do not need a grant. |
 | `role-claim` | Bind a role on the heartbeat when `--require-role-claim` is on. Target kind `role` (`<project>/<role>`). Complements the role-grant store. |
 | `identity-pin-reclaim` | Remove one exact stale TOFU pin after the liveness, expected-key, requester-binding, and durable-audit gates pass. Target kind `agent`. Always enforced for this verb. |
-| `identity-enroll` | Enrol or rotate an identity key for a name on a hub with `--identity-enrollments`, together with the `identity-enroller` role grant and the namespace allow-list. Target kind `agent`. Always enforced for this verb. |
+| `identity-enroll` | Enrol, rotate or revoke an identity key for a name on a hub with `--identity-enrollments`, together with the `identity-enroller` role grant and the namespace allow-list. Target kind `agent`. Always enforced for these verbs. |
 | `evidence` | Append authenticated, content-minimized enforcement evidence. The shipped `guard_denial` target is `evidence:guard-denial`; the handler additionally requires connect-token provenance and a durable journal. |
 | `recall` | Pull the hub's global chat history and cursor-based resume backlog (`history_request` / `resume_request`). Target kind `history`; the shipped target is `history:global`. Consulted only under `--require-acl` — without enforcement the recall reads stay open, matching the proportionate-to-exposure posture. |
 

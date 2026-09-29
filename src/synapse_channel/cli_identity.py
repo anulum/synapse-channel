@@ -297,10 +297,50 @@ async def _identity_enroll(
     authoritative verdict arrived. The operator connects with its ordinary
     machine identity, which the hub must be able to prove.
     """
+    fields: dict[str, Any] = {
+        "name": name,
+        "key_id": key_id,
+        "public_key": public_key,
+        "reason": reason,
+    }
+    if expected_key_id:
+        fields["expected_key_id"] = expected_key_id
+    if expires_at is not None:
+        fields["expires_at"] = expires_at
+    return await _governed_identity_request(
+        MessageType.IDENTITY_ENROLL,
+        MessageType.IDENTITY_ENROLL_RESULT,
+        fields,
+        uri=uri,
+        operator=operator,
+        token=token,
+        ready_timeout=ready_timeout,
+        result_timeout=result_timeout,
+        json_output=json_output,
+        agent_factory=agent_factory,
+        verb="identity enrolment",
+    )
+
+
+async def _governed_identity_request(
+    msg_type: str,
+    result_type: str,
+    fields: dict[str, Any],
+    *,
+    uri: str,
+    operator: str,
+    token: str | None,
+    ready_timeout: float,
+    result_timeout: float,
+    json_output: bool,
+    agent_factory: AgentFactory,
+    verb: str,
+) -> int:
+    """Send one governed identity-key request as ``operator`` and print the verdict."""
     replies: list[dict[str, Any]] = []
 
     async def collect(data: dict[str, Any]) -> None:
-        if data.get("type") in {MessageType.IDENTITY_ENROLL_RESULT, MessageType.ERROR}:
+        if data.get("type") in {result_type, MessageType.ERROR}:
             replies.append(data)
 
     agent = agent_factory(operator, collect, uri=uri, verbose=False, token=token)
@@ -320,26 +360,16 @@ async def _identity_enroll(
                 )
             )
             return 2
-        fields: dict[str, Any] = {
-            "name": name,
-            "key_id": key_id,
-            "public_key": public_key,
-            "reason": reason,
-        }
-        if expected_key_id:
-            fields["expected_key_id"] = expected_key_id
-        if expires_at is not None:
-            fields["expires_at"] = expires_at
-        await agent.send_message(MessageType.IDENTITY_ENROLL, target="System", **fields)
+        await agent.send_message(msg_type, target="System", **fields)
         result = await _await_reclaim_result(replies, timeout=result_timeout)
         if result is None:
-            print("identity enrolment failed: the hub returned no authoritative verdict")
+            print(f"{verb} failed: the hub returned no authoritative verdict")
             return 2
         rendered = {
             "applied": bool(result.get("applied")),
-            "name": name,
-            "key_id": key_id,
-            "expected_key_id": expected_key_id,
+            "name": fields["name"],
+            "key_id": fields["key_id"],
+            "expected_key_id": fields.get("expected_key_id", ""),
             "audit_seq": result.get("audit_seq"),
             "detail": str(result.get("payload") or "hub refused the request"),
         }
@@ -349,13 +379,63 @@ async def _identity_enroll(
             suffix = f" (audit seq {rendered['audit_seq']})" if rendered.get("audit_seq") else ""
             print(f"{terminal_text(rendered['detail'])}{suffix}")
         else:
-            print(f"identity enrolment refused: {terminal_text(rendered['detail'])}")
+            print(f"{verb} refused: {terminal_text(rendered['detail'])}")
         return 0 if rendered["applied"] else 1
     finally:
         agent.running = False
         connection.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await connection
+
+
+async def _identity_revoke(
+    *,
+    uri: str,
+    operator: str,
+    name: str,
+    key_id: str,
+    reason: str,
+    token: str | None,
+    ready_timeout: float,
+    result_timeout: float,
+    json_output: bool,
+    agent_factory: AgentFactory = SynapseAgent,
+) -> int:
+    """Request one governed identity-key revocation and print the hub's verdict.
+
+    Returns ``0`` when applied, ``1`` when policy refused it, and ``2`` when no
+    authoritative verdict arrived.
+    """
+    return await _governed_identity_request(
+        MessageType.IDENTITY_REVOKE,
+        MessageType.IDENTITY_REVOKE_RESULT,
+        {"name": name, "key_id": key_id, "reason": reason},
+        uri=uri,
+        operator=operator,
+        token=token,
+        ready_timeout=ready_timeout,
+        result_timeout=result_timeout,
+        json_output=json_output,
+        agent_factory=agent_factory,
+        verb="identity revocation",
+    )
+
+
+def _cmd_identity_revoke(args: argparse.Namespace) -> int:
+    """Dispatch ``synapse identity revoke`` to the one-shot async client."""
+    return asyncio.run(
+        _identity_revoke(
+            uri=args.uri,
+            operator=args.operator,
+            name=args.name,
+            key_id=args.key_id,
+            reason=args.reason,
+            token=args.token,
+            ready_timeout=args.ready_timeout,
+            result_timeout=args.timeout,
+            json_output=args.json,
+        )
+    )
 
 
 def _cmd_identity_enroll(args: argparse.Namespace) -> int:
@@ -553,3 +633,33 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     enroll.add_argument("--json", action="store_true", help="Emit the verdict as JSON.")
     enroll.set_defaults(func=_cmd_identity_enroll)
+
+    revoke = nested.add_parser(
+        "revoke",
+        help="Revoke one online-enrolled identity key through the hub's governed operator path.",
+    )
+    revoke.add_argument("name", help="Agent identity the key proves (<project>/<id>).")
+    revoke.add_argument(
+        "--operator",
+        required=True,
+        help="Cryptographically bound requester identity holding the enrolment grants.",
+    )
+    revoke.add_argument("--key-id", required=True, help="Enrolled key id to revoke.")
+    revoke.add_argument(
+        "--reason", required=True, help="Operator reason written to the durable audit event."
+    )
+    revoke.add_argument("--uri", default=default_hub_uri())
+    revoke.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    revoke.add_argument(
+        "--token-file",
+        default=None,
+        help="Read the shared-secret token from this file instead of --token.",
+    )
+    revoke.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
+    revoke.add_argument(
+        "--timeout", type=float, default=5.0, help="Seconds to await the governed verdict."
+    )
+    revoke.add_argument("--json", action="store_true", help="Emit the verdict as JSON.")
+    revoke.set_defaults(func=_cmd_identity_revoke)
