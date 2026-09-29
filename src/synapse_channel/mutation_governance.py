@@ -27,6 +27,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
+from synapse_channel.claude_plugin_install import plugin_path
 from synapse_channel.kimi_hook_config_file import (
     KimiHookConfigFileError,
     read_config_snapshot,
@@ -423,7 +424,13 @@ def inspect_mutation_governance(
             "claude",
             "claude",
             "claude-claim-hook",
-            (home / ".claude" / "settings.json", project / ".claude" / "settings.json"),
+            (
+                home / ".claude" / "settings.json",
+                project / ".claude" / "settings.json",
+                project / ".claude" / "settings.local.json",
+                # The Synapse Claude plugin ships the same guard in its own hooks file.
+                plugin_path(home / ".claude") / "hooks" / "hooks.json",
+            ),
             ("Edit", "Write", "Bash"),
             ("MCP, custom, and future write-capable tools", "host-dependent crash or timeout"),
         ),

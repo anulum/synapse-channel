@@ -47,6 +47,7 @@ from synapse_channel.cli_doctor_mcp_config import (
     diagnose_mcp_config,
     validate_mcp_config_doctor_args,
 )
+from synapse_channel.cli_doctor_mcp_hosts import default_project, diagnose_mcp_hosts
 from synapse_channel.cli_queries import AgentFactory
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.client.diagnostics import (
@@ -278,6 +279,8 @@ async def _diagnose(
     mcp_config_trust_bundle: str | Path | None = None,
     allow_repo_mcp_config: bool = False,
     token_file: str | Path | None = None,
+    mcp_home: Path | None = None,
+    mcp_project: Path | None = None,
 ) -> tuple[int, list[str], list[Diagnosis]]:
     """Resolve the identity, run every check, and return the summarised verdicts.
 
@@ -287,6 +290,9 @@ async def _diagnose(
     paths) feed the team-secure checklist; deaf-agent detection uses the live
     roster. The structured diagnoses ride along with the exit code and report
     lines so ``--fix`` can decide which findings the local service install repairs.
+    ``mcp_home`` and ``mcp_project`` locate the host MCP configuration the
+    ``mcp-host-sources`` and ``mcp-claim-guard`` checks read; they default to
+    ``$HOME`` and the Git top level of the working directory.
     """
     from synapse_channel.ergonomics import resolve_identity
 
@@ -394,6 +400,13 @@ async def _diagnose(
                 allow_repo_config=allow_repo_mcp_config,
             )
         )
+    diagnoses.extend(
+        diagnose_mcp_hosts(
+            home=Path(env.get("HOME") or str(Path.home())) if mcp_home is None else mcp_home,
+            project=default_project(Path.cwd()) if mcp_project is None else mcp_project,
+            env=env,
+        )
+    )
     diagnoses.append(
         check_unread_addressees(
             feed_lines=feed_tail_reader(env),

@@ -156,6 +156,32 @@ contains no secret. Add `"--token-file", "/owner-only/path/to/token"` to
 `args`, or provide `SYNAPSE_TOKEN` through the host's private environment, when
 the hub requires authentication. Never commit a raw token.
 
+## Which server the host starts
+
+An MCP client trusts whatever process its configuration names. A server that
+reports itself as `synapse` and offers the same tools can answer
+`claim granted` while the hub holds no claim; nothing in the MCP handshake tells
+the two apart. Two defences follow from that:
+
+- **The claim guard enforces, the MCP reply does not.** The Claude Code and Codex
+  claim guards ([claim guard hooks](claim-guard-hooks.md)) ask the hub itself
+  before an edit, so a false grant is refused at edit time. Install the guard
+  wherever the Synapse MCP server runs.
+- **`synapse doctor` shows what the host is set up to start.** The
+  `mcp-host-sources` check lists every server whose name contains `synapse` in
+  Claude Code's user and local scope (`~/.claude.json`, or
+  `$CLAUDE_CONFIG_DIR/.claude.json`), the project's `.mcp.json`, the Synapse
+  Claude plugin, and the Codex profile (`$CODEX_HOME/config.toml`). It warns about
+  any that does not launch this installation's `synapse mcp`: a different
+  command, a different `synapse` executable, a missing command, a modified plugin,
+  or a file it cannot read. The `mcp-claim-guard` check warns when a host has
+  such a server but no claim guard configured.
+
+Both checks read configuration only. They do not prove what the host loaded, and
+servers named without `synapse`, a replaced `synapse` executable, and hosts other
+than Claude Code and Codex are outside them. Remote endpoints are listed but not
+opened; their TLS certificate and bearer grant authenticate them.
+
 ## Tools
 
 Each tool maps to one coordination verb and returns a short text result. Action

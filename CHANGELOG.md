@@ -15,6 +15,21 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Add two `synapse doctor` checks against MCP server impersonation. An MCP
+  client cannot tell the genuine `synapse mcp` from a server that reports the
+  same name and tools. Such a server can answer `claim granted` while the hub
+  holds nothing (reproduced).
+  - `mcp-host-sources` lists every server whose name contains `synapse` in the
+    documented host sources and warns about any that does not launch this
+    installation's `synapse mcp`. The sources are Claude Code's user and local
+    scope, the project `.mcp.json`, the Synapse Claude plugin and the Codex
+    profile.
+  - `mcp-claim-guard` warns when a host has such a server but no claim guard.
+    The guard asks the hub itself before an edit, so it stops a false grant.
+  - Both checks are read-only and warn rather than fail.
+  - `synapse adapters mutation-status` now also counts `.claude/settings.local.json` and
+    the Synapse plugin's hooks as a configured Claude guard.
+
 - Let `synapse health` sign its registration. `--identity-key-file` and
   `--identity-key-id` name an Ed25519 key enrolled in the hub's
   `--identity-trust` bundle for the probe's `--name` (default `HEALTH`), so a
