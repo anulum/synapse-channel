@@ -93,7 +93,7 @@ is consumed by explicit runtime gates — notably `--require-acl` and
 `--federation-store` — but running a governance command does not silently enable
 enforcement or widen trust.
 
-`acl`  `approval`  `capability-card`  `compact`  `encrypt-key`  `entitlements`  `federation`  `merkle`  `policy-check`  `postmortem`  `release`  `reproduce`  `review-feedback`  `role`  `sqlcipher`  `supervisor`  `verify-release`
+`acl`  `aef`  `approval`  `capability-card`  `compact`  `encrypt-key`  `entitlements`  `federation`  `merkle`  `policy-check`  `postmortem`  `release`  `reproduce`  `review-feedback`  `role`  `sqlcipher`  `supervisor`  `verify-release`
 
 ### Experimental — `experimental`
 

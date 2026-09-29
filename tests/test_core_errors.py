@@ -199,6 +199,12 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "aef_emission",
         ValueError,
     ),
+    "AefInputError": ("synapse_channel.cli_aef", "aef_input", ValueError),
+    "AefTrustFileError": (
+        "synapse_channel.core.aef_trust_file",
+        "aef_trust_file",
+        ValueError,
+    ),
     "AefLegacyMappingError": (
         "synapse_channel.core.aef_legacy_mapping",
         "aef_legacy_mapping",

@@ -127,6 +127,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "postmortem": GOVERNANCE,
     "reproduce": GOVERNANCE,
     "merkle": GOVERNANCE,
+    "aef": GOVERNANCE,
     "acl": GOVERNANCE,
     "role": GOVERNANCE,
     "federation": GOVERNANCE,

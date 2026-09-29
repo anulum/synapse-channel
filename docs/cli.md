@@ -64,6 +64,7 @@ everything, since they need the whole command table.
 | `synapse reproduce` | Fingerprint a task's authoritative history into a deterministic digest. |
 | `synapse causality` | Trace coordination causes, effects, or counterfactuals over the event log — federated across hubs with `--peer`; `contention` weighs overlapping live claims and advises who yields; `otel` exports the graph as OpenTelemetry spans; `health` flags orphaned claims, dangling dependencies, and stale claims. |
 | `synapse merkle` | Commit the event log to a Merkle root, prove event inclusion, and generate the receipt-signing keypair (`keygen`). |
+| `synapse aef` | Verify a hub's AEF evidence receipts offline, without the hub: write the trust file (`trust`), export receipts (`export`), verify them (`verify`) and check inclusion in a signed tree head (`inclusion`); see [Verifying AEF evidence offline](aef-verification.md). |
 | `synapse reliability` | Build evidence-only reliability memory from a hub SQLite event store. |
 | `synapse trust-graph` | Query the evidence trust graph (receipts, stale claims, conflicts) as text, JSON, or Graphviz DOT. |
 | `synapse accounting` | Record and report opt-in model cost/token usage from a hub SQLite event store. |

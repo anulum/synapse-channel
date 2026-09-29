@@ -13,6 +13,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **`synapse aef`: offline AEF evidence verification (K4-AEF-SURFACE).**
+  Anyone can verify a hub's native AEF receipts from files, without the hub.
+  - `aef trust` writes the trust file from the hub's public key and hub id.
+    `aef-trust-v0.1` is a strict, documented contract: keys with revocation,
+    validity window and sender scope, and logs bound to keys.
+  - `aef export` copies the stored receipts, read-only, to JSON Lines.
+  - `aef verify` runs the AEF verifier under one clock with a shared replay
+    index (`REPLAYED`, `CHAIN_CONFLICT`). It exits `0` only if every receipt
+    is `VALID`.
+  - `aef inclusion` checks a receipt against a signed tree head.
+  - Guide: `docs/aef-verification.md`, including what verification does not
+    establish.
+  - The normative verdict fixtures run through the command.
+
 ### Security
 
 - **Encrypted payloads are opened once (K3-F5).** Before this change, an
