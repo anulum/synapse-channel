@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- Apply the WebSocket handshake's Host and Origin guard to the `/metrics` and
+  `/health` probes before they answer. An open loopback hub with `--metrics` and
+  no metrics token answered any `Host`, so a DNS-rebinding page could read its
+  metrics and health (reproduced: a foreign Host got `200`). Scrapers that reach
+  the hub by a name other than the loopback names must now pass it with
+  `--advertised-host`.
+
 ## [0.99.30] - 2026-09-29
 
 ### Added

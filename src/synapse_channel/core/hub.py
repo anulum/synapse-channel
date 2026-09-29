@@ -1900,37 +1900,42 @@ class SynapseHub:
         HubConnection.install_signal_handlers(loop, stop)
 
     def _process_request(self, _connection: Any, request: Request) -> Response | None:
-        """``websockets`` request hook: metrics/health HTTP plus handshake Origin/Host guard.
+        """``websockets`` request hook: handshake Origin/Host guard, then metrics/health HTTP.
 
         Always installed so browser Origin/Host enforcement runs even when metrics
-        are disabled. Metrics and health paths still delegate to
+        are disabled. Every path, the ``/metrics`` and ``/health`` probes included,
+        must pass the handshake boundary first: a DNS-rebinding page names its own
+        host, so an open loopback probe would otherwise answer it. Scrapers that
+        reach the hub by another name are admitted through ``advertised_host``.
+        The probes then delegate to
         :func:`~synapse_channel.core.hub_http.http_endpoint_response` (only when
-        :attr:`enable_metrics` is set); every other path must pass the handshake
-        boundary before the WebSocket upgrade proceeds.
+        :attr:`enable_metrics` is set); other paths proceed to the WebSocket upgrade.
         """
         from synapse_channel.core.hub_handshake import (
             handshake_guard_response,
+            http_forbidden,
             trusted_host_authorities,
         )
 
-        route = request.path.split("?", 1)[0]
-        if self.enable_metrics and route in ("/metrics", "/health"):
-            return http_endpoint_response(self, request)
-        if not self.enable_metrics and route in ("/metrics", "/health"):
-            # Metrics off: do not upgrade probe paths to WebSocket either.
-            from synapse_channel.core.hub_handshake import http_forbidden
-
-            return http_forbidden("metrics disabled")
         authorities = trusted_host_authorities(
             bind_host=self._bind_host,
             bind_port=self._bind_port,
             advertised_host=self.advertised_host,
         )
-        return handshake_guard_response(
+        refusal = handshake_guard_response(
             request,
             allowed_origins=self.allowed_origins,
             trusted_authorities=authorities,
         )
+        if refusal is not None:
+            return refusal
+        route = request.path.split("?", 1)[0]
+        if route in ("/metrics", "/health"):
+            if self.enable_metrics:
+                return http_endpoint_response(self, request)
+            # Metrics off: do not upgrade probe paths to WebSocket either.
+            return http_forbidden("metrics disabled")
+        return None
 
     @property
     def bound_address(self) -> tuple[str, int] | None:

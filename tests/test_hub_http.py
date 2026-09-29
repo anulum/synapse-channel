@@ -205,3 +205,25 @@ async def test_live_repeated_authorization_on_metrics_is_401_not_500() -> None:
         status, _, body = await http_get(uri, "/metrics", authorization="Bearer secret")
         assert status == 200
         assert "synapse_up" in body
+
+
+@pytest.mark.parametrize("path", ["/metrics", "/health"])
+async def test_probe_routes_refuse_a_foreign_host_like_the_handshake(path: str) -> None:
+    """A DNS-rebinding page names its own host; an open loopback probe must not answer it."""
+    async with running_hub(SynapseHub(hub_id="syn-probe", enable_metrics=True)) as (_hub, uri):
+        port = int(uri.rsplit(":", 1)[1])
+        trusted, _, _ = await http_get(uri, path, host=f"localhost:{port}")
+        foreign, _, body = await http_get(uri, path, host=f"attacker.example:{port}")
+    assert trusted == 200
+    assert foreign == 403
+    assert "synapse" not in body and "hub_id" not in body
+
+
+async def test_an_advertised_host_admits_a_scraper_that_uses_that_name() -> None:
+    """Scrapers reaching the hub by another name are admitted through --advertised-host."""
+    hub = SynapseHub(hub_id="syn-probe", enable_metrics=True, advertised_host="scraper.internal")
+    async with running_hub(hub) as (_hub, uri):
+        port = int(uri.rsplit(":", 1)[1])
+        status, _, body = await http_get(uri, "/health", host=f"scraper.internal:{port}")
+    assert status == 200
+    assert json.loads(body)["hub_id"] == "syn-probe"

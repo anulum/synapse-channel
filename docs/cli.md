@@ -1201,9 +1201,12 @@ wildcards), and every upgrade — browser or native — must present a `Host`
 authority derived from the loopback bind and/or `--advertised-host`. Without
 `--advertised-host`, a bind-all address (`0.0.0.0` / `::`) admits no Host and
 fail-closes. A request that repeats `Host` or `Origin` is refused with the same
-`403` before either value is read. Metrics/health keep their token gates when
-`--metrics` is on; a repeated `Authorization` header there counts as no token
-(`401`). Open and secured
+`403` before either value is read. The `/metrics` and `/health` probes pass the
+same Host and Origin guard first, so a DNS-rebinding page that names its own host
+gets `403` even from an open loopback hub. A scraper that reaches the hub by
+another name needs that name in `--advertised-host`. The probes then keep their
+token gates when `--metrics` is on; a repeated `Authorization` header there
+counts as no token (`401`). Open and secured
 hubs both reap sockets that never bind a name within `--auth-timeout` (default
 10s; close code `4012`). Without `--secure`, disabled flood limits (`--rate` /
 `--burst` / `--host-rate` / `--host-burst` / `--max-connections-per-host` left

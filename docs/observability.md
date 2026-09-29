@@ -39,7 +39,11 @@ Two planes, deliberately separate:
 2. **Scrape.** Merge
    [`integrations/observability/prometheus-scrape.yml`](https://github.com/anulum/synapse-channel/blob/main/integrations/observability/prometheus-scrape.yml)
    into your `prometheus.yml` `scrape_configs:`. With a metrics token, use
-   `credentials_file` — never inline the secret in the config.
+   `credentials_file` — never inline the secret in the config. The probes
+   pass the hub's Host guard, so scrape the hub by a name it trusts:
+   `localhost` or the loopback address for a loopback bind. Any other target
+   name (a container or service name) must be given to the hub with
+   `--advertised-host`; otherwise the scrape gets `403`.
 
 3. **Import the dashboard.** In Grafana: Dashboards → Import → upload
    [`grafana-dashboard-synapse-hub.json`](https://github.com/anulum/synapse-channel/blob/main/integrations/observability/grafana-dashboard-synapse-hub.json)

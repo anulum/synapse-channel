@@ -63,11 +63,16 @@ async def _await_listening(port: int, timeout: float = 3.0) -> None:
 
 
 async def http_get(
-    uri: str, path: str, *, authorization: str | None = None, timeout: float = 3.0
+    uri: str,
+    path: str,
+    *,
+    authorization: str | None = None,
+    timeout: float = 3.0,
+    host: str = "localhost",
 ) -> tuple[int, dict[str, str], str]:
     port = int(uri.rsplit(":", 1)[1])
     reader, writer = await asyncio.open_connection("localhost", port)
-    headers = [f"GET {path} HTTP/1.1", "Host: localhost", "Connection: close"]
+    headers = [f"GET {path} HTTP/1.1", f"Host: {host}", "Connection: close"]
     if authorization is not None:
         headers.append(f"Authorization: {authorization}")
     writer.write(("\r\n".join(headers) + "\r\n\r\n").encode("utf-8"))

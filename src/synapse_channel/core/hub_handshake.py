@@ -156,7 +156,8 @@ def handshake_guard_response(
 ) -> Response | None:
     """Return a ``403`` when the upgrade must not proceed; else ``None``.
 
-    Metrics and health paths are not handled here — the hub routes those first.
+    The hub applies it to every path, the metrics and health probes included,
+    before routing.
 
     Parameters
     ----------
