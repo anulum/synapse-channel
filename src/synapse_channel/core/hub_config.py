@@ -198,6 +198,7 @@ class HubAuthConfig:
     require_acl: bool = False
     role_grants: RoleGrants | None = None
     require_role_claim: bool = False
+    require_fencing_epoch: bool = False
     identity_trust_bundle: EventSignatureTrustBundle | None = None
     require_identity_binding: bool = False
     identity_pin_path: str | Path | None = None

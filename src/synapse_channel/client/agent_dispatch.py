@@ -42,6 +42,7 @@ class _DispatchAgent(Protocol):
     name: str
     on_lease_granted: Callable[[str], None] | None
     owner_lease: str
+    lease_epochs: dict[str, int]
     ready_event: Any
     verbose: bool
     _mailbox_since_seq: int
@@ -51,6 +52,9 @@ class _DispatchAgent(Protocol):
 
     async def _track_mailbox_frame(self, data: dict[str, Any]) -> None:
         """Advance the mailbox cursor and ack an accepted chat frame."""
+
+    def _track_lease_epoch(self, data: dict[str, Any]) -> None:
+        """Remember or forget a task lease's fencing epoch from a grant frame."""
 
 
 async def invoke_message_callback(
@@ -125,6 +129,13 @@ class AgentDispatchMixin:
                 if self.on_lease_granted is not None:
                     self.on_lease_granted(token)
 
+        if data.get("type") in (
+            MessageType.CLAIM_GRANTED,
+            MessageType.HANDOFF_GRANTED,
+            MessageType.RELEASE_GRANTED,
+        ):
+            self._track_lease_epoch(data)
+
         if self.mailbox and data.get("type") == MessageType.CHAT:
             await self._track_mailbox_frame(data)
 
@@ -133,6 +144,28 @@ class AgentDispatchMixin:
             return
         if self.callback is not None:
             await invoke_message_callback(self.callback, data)
+
+    def _track_lease_epoch(self: _DispatchAgent, data: dict[str, Any]) -> None:
+        """Remember the fencing epoch of each lease this agent holds (FENCE-01).
+
+        A claim or handoff granted to this agent records the lease epoch, so a
+        later update, release, handoff or checkpoint carries it without the
+        caller naming it. A release, or a handoff to another agent, forgets
+        it, so the map holds only leases this agent still owns.
+        """
+        task_id = data.get("task_id")
+        if not isinstance(task_id, str):
+            return
+        epoch = data.get("epoch")
+        if (
+            data.get("type") != MessageType.RELEASE_GRANTED
+            and data.get("owner") == self.name
+            and isinstance(epoch, int)
+            and not isinstance(epoch, bool)
+        ):
+            self.lease_epochs[task_id] = epoch
+        elif data.get("type") != MessageType.CLAIM_GRANTED:
+            self.lease_epochs.pop(task_id, None)
 
     async def _track_mailbox_frame(self: _DispatchAgent, data: dict[str, Any]) -> None:
         """Advance the mailbox cursor and ack an accepted chat frame.

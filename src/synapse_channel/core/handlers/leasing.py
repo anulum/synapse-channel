@@ -103,6 +103,43 @@ class ClaimApplication:
     reason_code: str = ""
 
 
+FENCING_EPOCH_REQUIRED = (
+    "Fencing epoch required: this hub runs with --require-fencing-epoch, so a lease "
+    "mutation must carry the 'epoch' from your claim_granted frame."
+)
+"""Refusal for a covered lease mutation that carries no fencing epoch (FENCE-01)."""
+
+
+async def _refuse_unfenced(
+    hub: SynapseHub,
+    sender: str,
+    data: dict[str, Any],
+    websocket: Any,
+    *,
+    task_id: str,
+    msg_type: str,
+) -> bool:
+    """Refuse a lease mutation without an epoch when the hub requires fencing.
+
+    With ``require_fencing_epoch`` off the epoch stays optional, as before.
+    With it on, a task update, release, handoff or checkpoint must name the
+    lease epoch it acts under, so a writer holding a superseded lease is
+    refused by the state's epoch check instead of acting unchecked.
+
+    Returns
+    -------
+    bool
+        ``True`` when the frame was refused and the caller must stop.
+    """
+    if not hub.require_fencing_epoch or hub._optional_int(data, "epoch") is not None:
+        return False
+    await hub._send_json(
+        websocket,
+        hub._system(FENCING_EPOCH_REQUIRED, msg_type=msg_type, target=sender, task_id=task_id),
+    )
+    return True
+
+
 def _claim_denial_reason(message: str) -> str:
     """Map the closed set of state refusal messages to stable evidence codes."""
     if message == "Task ID is required.":
@@ -466,6 +503,10 @@ async def handle_task_update(
 ) -> None:
     """Apply an owner's status/note/data-ref update and broadcast it."""
     task_id = str(data.get("task_id") or data.get("id") or "").strip()
+    if await _refuse_unfenced(
+        hub, sender, data, websocket, task_id=task_id, msg_type=MessageType.ERROR
+    ):
+        return
     status = data.get("status")
     note = data.get("note")
     data_ref = data.get("data_ref")
@@ -554,6 +595,10 @@ async def handle_release(
 ) -> None:
     """Release a task and broadcast it, or deny the sender."""
     task_id = str(data.get("task_id") or data.get("payload") or "").strip()
+    if await _refuse_unfenced(
+        hub, sender, data, websocket, task_id=task_id, msg_type=MessageType.RELEASE_DENIED
+    ):
+        return
     journal = hub.journal
 
     def mutate(state: SynapseState) -> tuple[bool, str]:
@@ -701,6 +746,10 @@ async def handle_handoff(
     the shared blackboard, so the supervisor sees who handed what to whom.
     """
     task_id = str(data.get("task_id") or "").strip()
+    if await _refuse_unfenced(
+        hub, sender, data, websocket, task_id=task_id, msg_type=MessageType.HANDOFF_DENIED
+    ):
+        return
     to_agent = str(data.get("to_agent") or data.get("target") or "").strip()
     note = data.get("note")
     journal = hub.journal
@@ -862,6 +911,10 @@ async def handle_checkpoint(
     of the same task resumes from it. The ack is private to the owner.
     """
     task_id = str(data.get("task_id") or "").strip()
+    if await _refuse_unfenced(
+        hub, sender, data, websocket, task_id=task_id, msg_type=MessageType.CHECKPOINT_DENIED
+    ):
+        return
     checkpoint = str(data.get("checkpoint") or data.get("payload") or "")
     journal = hub.journal
 

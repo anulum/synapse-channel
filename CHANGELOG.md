@@ -13,6 +13,24 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Opt-in strict lease fencing (FENCE-01 narrow slice).**
+  - `synapse hub --require-fencing-epoch` refuses a task update, release,
+    handoff or checkpoint that names no lease epoch. Previously such a
+    mutation was checked only against the owner name, so a writer holding a
+    superseded lease could still act by leaving the epoch out.
+  - The shipped client now remembers the epoch of its own `claim_granted` and
+    `handoff_granted` frames. It sends that epoch when the caller names none,
+    so it passes the flag unchanged. It forgets an epoch when the release is
+    granted or the task is handed to another agent.
+  - Proven on real hubs: an epoch-less release from a superseded writer
+    succeeds by default and is refused under the flag.
+  - Normative text: INV-EF-2 now states the epoch-less case; the new INV-EF-4
+    covers strict fencing. The invariant registry is updated.
+  - `expected_version` stays optional. Direct file writes remain outside hub
+    fencing.
+
 ## [0.99.32] - 2026-09-29
 
 ### Upgrade notes

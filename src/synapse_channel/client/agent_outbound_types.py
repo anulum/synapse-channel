@@ -29,6 +29,7 @@ class _OutboundAgent(Protocol):
     hub_protocol_version: int | None
     _message_auth_key: MessageAuthKey | None
     _message_auth_sequence: int
+    lease_epochs: dict[str, int]
     _identity_key: Ed25519PrivateKey | None
     _identity_key_id: str
     _identity_sequence: int

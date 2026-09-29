@@ -44,20 +44,24 @@ evidence_modes = [
 id = "immediate-effect-fencing"
 title = "Immediate-effect fencing"
 status = "partial"
-guarantee = "Hub-mediated mutations reject stale epochs and stale optimistic-concurrency versions."
+guarantee = "Hub-mediated mutations reject stale epochs and stale optimistic-concurrency versions; with --require-fencing-epoch, lease mutations that name no epoch are refused too."
 scope = "State mutations submitted through the authoritative hub protocol."
 limitations = [
   "Repository or external side effects performed outside hub mediation cannot be fenced immediately.",
   "Universal write mediation is not implemented.",
+  "Without --require-fencing-epoch, a lease mutation that names no epoch is checked against the owner name only.",
+  "expected_version stays optional, even under --require-fencing-epoch.",
 ]
-spec_invariants = ["INV-EF-1", "INV-EF-2", "INV-EF-3", "INV-CR-1"]
+spec_invariants = ["INV-EF-1", "INV-EF-2", "INV-EF-3", "INV-EF-4", "INV-CR-1"]
 sources = [
+  "src/synapse_channel/core/handlers/leasing.py",
   "src/synapse_channel/core/state.py",
   "src/synapse_channel/core/state_transaction.py",
 ]
 tests = [
   "tests/test_coordination_spec_model.py",
   "tests/test_exhaustive_coordination_model.py",
+  "tests/test_fencing_epoch.py",
   "tests/test_state_properties.py",
 ]
 evidence_modes = ["state-machine", "bounded-exhaustive", "property"]

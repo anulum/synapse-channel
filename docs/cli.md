@@ -1198,7 +1198,15 @@ synapse hub --host 0.0.0.0 --token-file ./tok      # token from a file, not argv
 synapse hub --host 0.0.0.0 --insecure-off-loopback # bind off-loopback WITHOUT a token (refused otherwise)
 synapse hub --expect-multi-seat                    # multi-seat intent for flood auto-enable (default off)
 synapse hub --bridge-exposed                       # declare A2A/MCP bridge for flood auto-enable (default off)
+synapse hub --require-fencing-epoch                # refuse lease mutations that name no lease epoch (default off)
 ```
+
+`--require-fencing-epoch` makes the lease epoch mandatory on a task update,
+release, handoff or checkpoint, so a writer holding a superseded lease is always
+refused rather than checked only by name. The shipped client sends the epoch of
+its own grant automatically. A custom client must copy `epoch` from its
+`claim_granted` or `handoff_granted` frame. See INV-EF-4 in the
+[coordination spec](coordination-spec.md).
 
 Binding a non-loopback host without a token (and, with `--metrics`, a metrics
 token) is **refused** by default — the hub will not start exposed by accident.

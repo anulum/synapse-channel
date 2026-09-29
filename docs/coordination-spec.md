@@ -149,7 +149,9 @@ before it by that hub. Epochs MUST NOT be reused.
 **Normative.** When a `release`, `update_task`, `handoff`, or `save_checkpoint`
 supplies an `epoch`, the operation MUST be refused unless it equals the claim's
 current epoch. A superseded owner therefore cannot drop, mutate, hand off, or
-checkpoint a lease that has since been renewed or moved.
+checkpoint a lease that has since been renewed or moved. An operation that
+supplies no epoch is checked only against the owner name. The epoch fences it
+only when the hub requires fencing (INV-EF-4).
 
 **Implementation.** `core/state.py` — the `epoch is stale` guard in `release`,
 `update_task`, `handoff`, and `save_checkpoint`.
@@ -168,6 +170,25 @@ mutation MUST increment `version`; a fresh claim or a handoff MUST reset it.
 bump); reset in the `TaskClaim` constructed by `claim`/`handoff`.
 
 **Pinned by.** `tests/test_state_lifecycle_handoff.py`. `[model]`
+
+### INV-EF-4 — strict fencing requires the epoch (opt-in)
+
+**Normative.** A hub started with `--require-fencing-epoch`
+(`require_fencing_epoch=True`) MUST refuse, before any state change, a
+`release`, `update_task`, `handoff` or `save_checkpoint` that supplies no
+`epoch`. INV-EF-2 then covers every lease mutation, including one from a writer
+that names no epoch at all. The shipped client MUST send the epoch of its own
+current grant (`claim_granted` or `handoff_granted`) when the caller names none.
+`expected_version` (INV-EF-3) stays optional even under this flag. Neither
+check can fence a process that writes repository files directly.
+
+**Implementation.** `core/handlers/leasing.py:_refuse_unfenced`;
+`client/agent_dispatch.py` (the `lease_epochs` memory) and
+`client/agent_outbound_tasks.py`.
+
+**Pinned by.** `tests/test_fencing_epoch.py`: on real hubs, an epoch-less
+release from a superseded writer succeeds by default and is refused under the
+flag, and the shipped client passes the flag.
 
 ## 3. Lease liveness
 

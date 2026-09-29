@@ -74,8 +74,9 @@ class AgentTaskMutationMixin:
     ) -> None:
         """Release a task lease, optionally attaching closeout evidence."""
         extra: dict[str, Any] = {"task_id": task_id.strip()}
-        if epoch is not None:
-            extra["epoch"] = int(epoch)
+        fence = epoch if epoch is not None else self.lease_epochs.get(task_id.strip())
+        if fence is not None:
+            extra["epoch"] = int(fence)
         if idem_key:
             extra["idem_key"] = idem_key
         receipt = build_release_receipt(
@@ -127,8 +128,9 @@ class AgentTaskMutationMixin:
             extra["note"] = note
         if data_ref is not None:
             extra["data_ref"] = data_ref
-        if epoch is not None:
-            extra["epoch"] = int(epoch)
+        fence = epoch if epoch is not None else self.lease_epochs.get(task_id.strip())
+        if fence is not None:
+            extra["epoch"] = int(fence)
         if expected_version is not None:
             extra["expected_version"] = int(expected_version)
         if idem_key:
@@ -150,8 +152,9 @@ class AgentTaskMutationMixin:
         extra: dict[str, Any] = {"task_id": task_id.strip(), "to_agent": to_agent.strip()}
         if note is not None:
             extra["note"] = note
-        if epoch is not None:
-            extra["epoch"] = int(epoch)
+        fence = epoch if epoch is not None else self.lease_epochs.get(task_id.strip())
+        if fence is not None:
+            extra["epoch"] = int(fence)
         if idem_key:
             extra["idem_key"] = idem_key
         await self.send_message(
@@ -168,8 +171,9 @@ class AgentTaskMutationMixin:
     ) -> None:
         """Save a resume checkpoint on an owned task."""
         extra: dict[str, Any] = {"task_id": task_id.strip(), "checkpoint": checkpoint}
-        if epoch is not None:
-            extra["epoch"] = int(epoch)
+        fence = epoch if epoch is not None else self.lease_epochs.get(task_id.strip())
+        if fence is not None:
+            extra["epoch"] = int(fence)
         if idem_key:
             extra["idem_key"] = idem_key
         await self.send_message(MessageType.CHECKPOINT, target="System", **extra)

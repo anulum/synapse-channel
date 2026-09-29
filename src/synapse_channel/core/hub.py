@@ -558,6 +558,7 @@ class SynapseHub:
         require_acl: bool = False,
         role_grants: RoleGrants | None = None,
         require_role_claim: bool = False,
+        require_fencing_epoch: bool = False,
         identity_trust_bundle: EventSignatureTrustBundle | None = None,
         require_identity_binding: bool = False,
         identity_pin_path: str | Path | None = None,
@@ -665,6 +666,7 @@ class SynapseHub:
         self.require_acl = bool(require_acl)
         self.role_grants = role_grants
         self.require_role_claim = bool(require_role_claim)
+        self.require_fencing_epoch = bool(require_fencing_epoch)
         self.identity_trust_bundle = identity_trust_bundle
         self.require_identity_binding = bool(require_identity_binding)
         self.identity_pin_path = Path(identity_pin_path).expanduser() if identity_pin_path else None

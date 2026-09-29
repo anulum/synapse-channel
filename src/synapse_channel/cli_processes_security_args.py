@@ -209,6 +209,14 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
         "an exposed hub.",
     )
     hub.add_argument(
+        "--require-fencing-epoch",
+        action="store_true",
+        help="Refuse a task update, release, handoff or checkpoint that does not carry "
+        "the lease epoch from its claim_granted frame, so a writer holding a superseded "
+        "lease is always checked. Off by default; the shipped client sends the epoch of "
+        "its own grants automatically.",
+    )
+    hub.add_argument(
         "--identity-trust",
         default="",
         metavar="FILE",

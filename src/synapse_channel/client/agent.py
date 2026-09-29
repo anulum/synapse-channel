@@ -265,6 +265,7 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
                 key_id=str(per_message_auth_key_id), secret=secret, senders=frozenset({name})
             )
         self._message_auth_sequence = 0
+        self.lease_epochs: dict[str, int] = {}
         self._identity_key = load_signing_key(identity_key_path) if identity_key_path else None
         self._identity_key_id = str(identity_key_id)
         self._identity_sequence = 0

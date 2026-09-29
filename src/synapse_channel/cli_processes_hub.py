@@ -973,6 +973,7 @@ def _cmd_hub(
         "require_acl": args.require_acl,
         "role_grants": role_grants,
         "require_role_claim": args.require_role_claim,
+        "require_fencing_epoch": bool(getattr(args, "require_fencing_epoch", False)),
         "identity_trust_bundle": identity_trust_bundle,
         "require_identity_binding": args.require_identity_binding,
         "identity_pin_path": args.identity_pins or None,
