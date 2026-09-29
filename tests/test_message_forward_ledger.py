@@ -198,3 +198,22 @@ def test_a_corrupt_row_is_refused_rather_than_trusted() -> None:
         ledger.outbox_entry("bad-state")
     with pytest.raises(ValueError, match="not a JSON object"):
         ledger.outbox_entry("bad-json")
+
+
+def test_pending_summary_reports_depth_and_oldest_age_per_peer() -> None:
+    """Only unanswered forwards count; ages are measured from local acceptance."""
+    ledger = MessageForwardLedger.in_memory()
+    _enqueue(ledger, "a1", peer_hub="laptop", now=100.0)
+    _enqueue(ledger, "a2", peer_hub="laptop", now=130.0)
+    _enqueue(ledger, "b1", peer_hub="server", now=150.0)
+    _enqueue(ledger, "done", peer_hub="server", now=90.0)
+    ledger.settle("done", "accepted", {})
+    summary = ledger.pending_summary(160.0)
+    assert {
+        peer: (item.pending, item.oldest_pending_seconds) for peer, item in summary.items()
+    } == {
+        "laptop": (2, 60.0),
+        "server": (1, 10.0),
+    }
+    assert ledger.pending_summary(0.0)["laptop"].oldest_pending_seconds == 0.0
+    assert MessageForwardLedger.in_memory().pending_summary(1.0) == {}

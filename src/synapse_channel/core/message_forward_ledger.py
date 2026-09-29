@@ -156,6 +156,22 @@ class RemoteDelivery:
     target: str
 
 
+@dataclass(frozen=True, slots=True)
+class PendingPeerSummary:
+    """Outbox backlog towards one peer hub.
+
+    Attributes
+    ----------
+    pending : int
+        Forwarded chats not yet answered by the peer.
+    oldest_pending_seconds : float
+        Age of the oldest of them, measured from when the chat was accepted locally.
+    """
+
+    pending: int
+    oldest_pending_seconds: float
+
+
 class MessageForwardLedger:
     """Durable outbox, inbound dedupe and remote-delivery routes for message forwarding.
 
@@ -505,6 +521,31 @@ class MessageForwardLedger:
                 "WHERE state = 'pending' GROUP BY peer_hub"
             ).fetchall()
         return {str(peer): int(count) for peer, count in rows}
+
+    def pending_summary(self, now: float) -> dict[str, PendingPeerSummary]:
+        """Return the pending backlog per peer hub, for health and metrics.
+
+        Parameters
+        ----------
+        now : float
+            Current wall-clock time; ages are measured against it and never negative.
+
+        Returns
+        -------
+        dict[str, PendingPeerSummary]
+            Peer hub id to its backlog; peers with nothing pending are omitted.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT peer_hub, COUNT(*), MIN(created_at) FROM message_forward_outbox "
+                "WHERE state = 'pending' GROUP BY peer_hub"
+            ).fetchall()
+        return {
+            str(peer): PendingPeerSummary(
+                pending=int(count), oldest_pending_seconds=max(0.0, now - float(oldest))
+            )
+            for peer, count, oldest in rows
+        }
 
     # --- receiving side: inbound dedupe ----------------------------------------------------
 

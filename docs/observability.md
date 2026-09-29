@@ -69,6 +69,15 @@ happened. The signals that matter operationally:
   value means replay quarantined malformed durable rows: queries remain live,
   mutations fail closed, and the operator must follow the archived
   `synapse compact --drop-corrupt` recovery runbook in the CLI reference.
+- `synapse_message_forward_pending` counts chats this hub forwarded to peer
+  hubs that the peer has not answered yet, across all peers.
+  `synapse_message_forward_oldest_pending_seconds` is the age of the oldest
+  of them, or 0 when none wait. A pending forward is retried until the peer
+  answers or its TTL expires, so a value that keeps rising means a peer is
+  unreachable. The `message_forward` field of `/health` gives the same backlog
+  for each peer hub (`pending` and `oldest_pending_seconds`), so the operator
+  can see which peer it is. Both read the durable outbox and never a message
+  body.
 - `synapse_dead_letters` climbing means someone writes to a name nobody
   holds — `synapse doctor` names the unread addressee, `syn inbox --as`
   drains it, and the gauge falls when the addressee connects. Its companion

@@ -424,3 +424,25 @@ async def test_a_peer_key_may_not_shadow_a_local_delivery_or_another_route(
                     await carol.close()
     finally:
         store.close()
+
+
+async def test_the_forward_backlog_is_visible_in_metrics_and_health() -> None:
+    """Operators see unanswered forwards per peer without reading the database."""
+    from synapse_channel.core.metrics import collect_hub_metrics, health_snapshot
+
+    hub = SynapseHub(hub_id="workstation", message_peers={"laptop": _unreachable()})
+    assert health_snapshot(hub)["message_forward"] == {}
+    async with _served(hub) as uri:
+        alice = await _agent(uri, "PROJ/alice")
+        try:
+            await _chat(alice, "PROJ/bob@laptop")
+            assert (await _receipt(alice))["forward_state"] == "pending"
+        finally:
+            await alice.close()
+    by_name = {metric.name: metric.value for metric in collect_hub_metrics(hub)}
+    assert by_name["synapse_message_forward_pending"] == 1
+    assert 0.0 <= by_name["synapse_message_forward_oldest_pending_seconds"] < 60.0
+    backlog = health_snapshot(hub)["message_forward"]
+    assert list(backlog) == ["laptop"]
+    assert backlog["laptop"]["pending"] == 1
+    assert 0.0 <= backlog["laptop"]["oldest_pending_seconds"] < 60.0

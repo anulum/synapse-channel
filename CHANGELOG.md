@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Report the cross-hub forward backlog. `/metrics` gains
+  `synapse_message_forward_pending` and
+  `synapse_message_forward_oldest_pending_seconds`, and `/health` gains a
+  `message_forward` field with the pending count and oldest age for each peer
+  hub. An operator can then see a peer that stopped answering without reading
+  the event store.
+
 ## [0.99.29] - 2026-09-29
 
 ### Added

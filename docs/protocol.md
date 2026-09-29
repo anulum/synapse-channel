@@ -679,6 +679,12 @@ Roster and status reads stay available. The origin also refuses a peer's
 on the origin hub (`peer_invalid_answer`). Otherwise a peer could redirect
 another delivery's follow-ups.
 
+The origin hub reports its unanswered forwards on `/metrics`
+(`synapse_message_forward_pending` and
+`synapse_message_forward_oldest_pending_seconds`) and gives a per-peer
+breakdown in the `message_forward` field of `/health`. See
+[observability](observability.md).
+
 Forwarding is one hop between configured peers. There is no relay through a
 third hub, no cross-hub broadcast or channel, and no automatic peer discovery.
 

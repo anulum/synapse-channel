@@ -17,6 +17,7 @@ metric and its formatting is unit-testable against a plain hub instance.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -88,8 +89,9 @@ def render_prometheus(metrics: Iterable[Metric]) -> str:
 def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
     """Read the hub's live counters into a list of metrics.
 
-    Only the hub's in-memory state is inspected — no I/O — so this is safe to call
-    from the event loop on every scrape.
+    The hub's in-memory state is inspected, plus one bounded read of the cross-hub
+    forward outbox (pending rows only, grouped per peer), so this stays cheap enough
+    to call from the event loop on every scrape.
 
     Parameters
     ----------
@@ -105,9 +107,11 @@ def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
         hub's decision counters — claims granted/denied, releases, directed and
         broadcast chat, auth failures, rate-limit rejections, federation
         denials, forwarded-claim outcomes, takeovers and their quarantines —
-        everything a Grafana panel or an alert rule needs to see the hub deciding,
-        not just existing.
+        and the cross-hub forward backlog (pending chats and the oldest one's
+        age) — everything a Grafana panel or an alert rule needs to see the hub
+        deciding, not just existing.
     """
+    forward_backlog = hub.message_forward_ledger.pending_summary(time.time())
     return [
         Metric("synapse_up", "Whether the hub is serving (always 1).", "gauge", 1),
         Metric(
@@ -163,6 +167,18 @@ def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
             "Connected -rx waiter sidecars.",
             "gauge",
             sum(1 for name in hub.agent_sockets if name.endswith("-rx")),
+        ),
+        Metric(
+            "synapse_message_forward_pending",
+            "Chats forwarded to peer hubs and not yet answered, across all peers.",
+            "gauge",
+            sum(item.pending for item in forward_backlog.values()),
+        ),
+        Metric(
+            "synapse_message_forward_oldest_pending_seconds",
+            "Age of the oldest unanswered forwarded chat across all peers (0 when none).",
+            "gauge",
+            max((item.oldest_pending_seconds for item in forward_backlog.values()), default=0.0),
         ),
         Metric(
             "synapse_dead_letter_targets",
@@ -317,6 +333,9 @@ def health_snapshot(hub: SynapseHub) -> dict[str, Any]:
         online-agent and active-claim counts. ``version`` and ``config_epoch``
         together are the hub's pinning indicator: a change in either is a deploy or
         a config drift; ``protocol_version`` changes only on a wire-incompatible one.
+        ``message_forward`` maps each peer hub with unanswered forwarded chats to its
+        ``pending`` count and ``oldest_pending_seconds``; it is empty when nothing
+        waits.
     """
     # Imported lazily: the package __init__ imports this module, so a top-level
     # import would be circular; by call time the package is fully initialised.
@@ -334,4 +353,13 @@ def health_snapshot(hub: SynapseHub) -> dict[str, Any]:
         "online_agents": len(hub.agent_sockets),
         "active_claims": len(hub.state.claims),
         "operation_outbox_pending": (hub.counters.operation_outbox_pending),
+        "message_forward": {
+            peer: {
+                "pending": item.pending,
+                "oldest_pending_seconds": round(item.oldest_pending_seconds, 3),
+            }
+            for peer, item in sorted(
+                hub.message_forward_ledger.pending_summary(time.time()).items()
+            )
+        },
     }
