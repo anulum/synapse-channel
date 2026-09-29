@@ -7,8 +7,8 @@
 # SYNAPSE_CHANNEL — composite GitHub Action wrapping `synapse policy-check`
 name: SYNAPSE policy check
 description: >-
-  Check a SYNAPSE release receipt against policy in CI, with optional Merkle
-  and signature verification.
+  Deprecated: use anulum/synapse-policy-check-action, which installs a pinned,
+  hash-verified release.
 author: ANULUM
 branding:
   icon: shield
@@ -63,6 +63,11 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Deprecation notice
+      shell: bash
+      run: |
+        echo "::warning title=Deprecated action::anulum/synapse-channel as an action is deprecated. Use anulum/synapse-policy-check-action, which installs a pinned, hash-verified synapse-channel release (optionally attestation-verified) instead of the latest one."
+
     - name: Set up Python
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:

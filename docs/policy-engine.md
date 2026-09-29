@@ -31,16 +31,17 @@ hook enforcement remain design targets described below.
 
 ## CI gating with the GitHub Action
 
-The repository root ships a composite GitHub Action (`action.yml`) wrapping the
-same command, so a repository can gate its pipeline on a receipt without
-writing the install-and-invoke boilerplate:
+The Action lives in its own repository,
+[`anulum/synapse-policy-check-action`](https://github.com/anulum/synapse-policy-check-action).
+It wraps the same command, so a repository can gate its pipeline on a receipt
+without writing the install-and-invoke boilerplate:
 
 ```yaml
 - name: Check out the policy file
   uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
 - name: Check the release receipt against policy
-  uses: anulum/synapse-channel@v0.99.27
+  uses: anulum/synapse-policy-check-action@<commit sha>  # pin by commit
   with:
     task: release-1.4
     policy: .synapse/policy.json
@@ -50,10 +51,22 @@ writing the install-and-invoke boilerplate:
     trusted-signing-keys: |
       .synapse/hub-a.pub
       .synapse/hub-b.pub
-    version: "0.99.27"  # pin the installed checker to the action release
+    # optional: verify the checker's GitHub build attestation before installing it
+    verify-attestation: "true"
 ```
 
-The action installs `synapse-channel` (pin it with `version:`), runs
+- **Pinned checker.** The Action installs one exact `synapse-channel` release,
+  hash-verified against its lock file, into an isolated environment. The Action's
+  own version decides which release.
+- **Attestation.** With `verify-attestation: "true"` it also verifies the wheel's
+  GitHub build attestation against this repository's release workflow, tag and
+  commit.
+- **Deprecated root Action.** The composite Action at this repository's root
+  (`uses: anulum/synapse-channel@<tag>`) still works, but it is deprecated and
+  warns on every run. With an empty `version` it installs the latest release
+  without a hash.
+
+The Action runs
 `synapse policy-check --json --enforce` with the given inputs, prints the
 decision report, exposes it as the `report` step output, and fails the job
 exactly when the CLI exits non-zero. Set `enforce: "false"` for an advisory,
@@ -78,7 +91,8 @@ A repository whose pipeline gates on the action may say so with a badge:
 ```
 
 **What the badge claims.** Adding it declares that the repository's CI runs
-the `anulum/synapse-channel` action (or `synapse policy-check --enforce`
+the `anulum/synapse-policy-check-action` action (or the deprecated `anulum/synapse-channel`
+root action, or `synapse policy-check --enforce`
 directly) as a **gating** step — a failing enforcement-mode rule fails the
 pipeline — on the workflows that release or merge its code. It claims
 nothing else: not that the policy is strict, not that the coordination it
@@ -86,7 +100,8 @@ gates was correct, and not that any third party audited it.
 
 **Wear it only when it is true.** The badge is eligible when all three hold:
 
-1. a workflow runs `uses: anulum/synapse-channel@<tag>` (or invokes
+1. a workflow runs `uses: anulum/synapse-policy-check-action@<ref>` or
+   `uses: anulum/synapse-channel@<tag>` (or invokes
    `synapse policy-check` itself) with enforcement on — the action's
    default; `enforce: "false"` is an advisory run and does not qualify;
 2. that workflow gates the protected path — releases, or PRs into the
@@ -97,7 +112,8 @@ gates was correct, and not that any third party audited it.
 **How a reader verifies it.** The badge is a static image and a
 self-declaration — there is no attestation service behind it. Verification
 is one look at the repository itself: open `.github/workflows/`, find the
-workflow with `uses: anulum/synapse-channel@`, and confirm it runs on the
+workflow with `uses: anulum/synapse-policy-check-action@` (or
+`uses: anulum/synapse-channel@`), and confirm it runs on the
 protected path with enforcement on and a committed policy file. A badge on
 a repository where that search comes up empty is a false claim, and the
 linked page — this one — tells every reader exactly how to check. A

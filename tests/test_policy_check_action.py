@@ -129,3 +129,13 @@ def test_action_forwards_each_trusted_key_line_as_its_own_flag() -> None:
     check = next(step for step in _run_steps(_action()) if step.get("id") == "check")
     assert 'args+=(--trusted-signing-key "$key")' in check["run"]
     assert "while IFS= read -r key" in check["run"]
+
+
+def test_action_warns_that_it_is_deprecated_before_installing() -> None:
+    """The first step points users at the pinned, hash-verified stand-alone Action."""
+    action = _action()
+    assert action["description"].startswith("Deprecated: use anulum/synapse-policy-check-action")
+    first = action["runs"]["steps"][0]
+    assert first["name"] == "Deprecation notice"
+    assert first["run"].startswith('echo "::warning title=Deprecated action::')
+    assert "anulum/synapse-policy-check-action" in first["run"]

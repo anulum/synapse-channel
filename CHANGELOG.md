@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Deprecated
+
+- **The composite Action at the repository root** (`uses: anulum/synapse-channel@<tag>`) is
+  deprecated and warns on every run. With an empty `version` it installs the latest release without
+  a hash.
+  - Use [`anulum/synapse-policy-check-action`](https://github.com/anulum/synapse-policy-check-action)
+    instead. It installs one exact, hash-verified release into an isolated environment and can
+    verify the release's GitHub build attestation.
+  - The root Action keeps its inputs and behaviour for existing workflows.
+
 ### Added
 
 - **Opt-in strict lease fencing (FENCE-01 narrow slice).**
