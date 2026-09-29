@@ -43,21 +43,57 @@ class McpClaimActions:
         self.agent = agent
         self.await_reply = await_reply
 
-    async def claim(self, task_id: str, paths: list[str] | None = None) -> str:
-        """Claim a task lease, optionally scoped to ordinary paths."""
+    async def claim(
+        self, task_id: str, paths: list[str] | None = None, *, task_only: bool = False
+    ) -> str:
+        """Claim a task lease: file paths, the whole current worktree, or the task alone.
+
+        Parameters
+        ----------
+        task_id : str
+            The task to lease.
+        paths : list[str] or None, optional
+            Repository-relative paths the claim covers. Without paths, a claim made
+            inside a Git worktree covers that whole worktree; outside one it is
+            refused unless ``task_only`` is set.
+        task_only : bool, optional
+            Lease the task id alone with no file scope, keyed by the task id as
+            ``synapse lock`` does; it contends only with the same task. Cannot be
+            combined with ``paths``.
+
+        Returns
+        -------
+        str
+            The grant or refusal, naming the scope actually sent to the hub.
+        """
         scope = list(paths or [])
+        if task_only:
+            if scope:
+                return "claim refused: task_only cannot be combined with paths"
+            return await self._claim(
+                task_id,
+                paths=[],
+                worktree=task_id,
+                path_identity=None,
+                git=None,
+                where="no file scope, task-only lock",
+            )
         worktree = ""
         path_identity: dict[str, object] | None = None
-        if scope:
-            try:
-                resolved_scope = resolve_ordinary_claim_scope(scope)
-            except OrdinaryClaimScopeError as exc:
-                return f"claim refused: {exc}"
-            if resolved_scope is not None:
-                scope = list(resolved_scope.paths)
-                worktree = resolved_scope.worktree
-                path_identity = resolved_scope.path_identity
-        where = ", ".join(scope) if scope else "the whole worktree"
+        try:
+            resolved_scope = resolve_ordinary_claim_scope(scope, whole_worktree=not scope)
+        except OrdinaryClaimScopeError as exc:
+            return f"claim refused: {exc}"
+        if resolved_scope is not None:
+            scope = list(resolved_scope.paths)
+            worktree = resolved_scope.worktree
+            path_identity = resolved_scope.path_identity
+        elif not scope:
+            return (
+                "claim refused: outside a Git worktree a claim needs paths, or "
+                "task_only=true for a task lock with no file scope"
+            )
+        where = ", ".join(scope) if scope else f"the whole worktree {worktree}"
         return await self._claim(
             task_id,
             paths=scope,

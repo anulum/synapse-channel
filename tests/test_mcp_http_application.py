@@ -170,9 +170,17 @@ async def test_native_identities_mutations_resources_and_reconnect(tmp_path: Pat
                                         {"task_id": "ALPHA/task"},
                                     )
                                 ).isError
+                                # A remote pathless claim would cover the server's worktree.
+                                assert (
+                                    await session.call_tool(
+                                        "synapse_claim",
+                                        {"task_id": "ALPHA/task"},
+                                        meta={"synapse/operation-id": "claim-task-pathless"},
+                                    )
+                                ).isError
                                 claimed = await session.call_tool(
                                     "synapse_claim",
-                                    {"task_id": "ALPHA/task"},
+                                    {"task_id": "ALPHA/task", "task_only": True},
                                     meta={"synapse/operation-id": "claim-task"},
                                 )
                                 assert not claimed.isError
@@ -226,7 +234,7 @@ async def test_native_identities_mutations_resources_and_reconnect(tmp_path: Pat
                                     ),
                                     (
                                         "synapse_claim",
-                                        {"task_id": "ALPHA/next"},
+                                        {"task_id": "ALPHA/next", "task_only": True},
                                         "claim-next",
                                     ),
                                     (

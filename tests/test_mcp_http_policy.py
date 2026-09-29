@@ -65,7 +65,7 @@ def build_policy_server(path: Path, bridge: SynapseHubBridge) -> FastMCP:
     async def scoped_claim(task_id: str) -> str:
         """Claim through the existing business action only after mutation admission."""
         await policy.authorize("synapse_claim")
-        return await bridge.claim(task_id)
+        return await bridge.claim(task_id, task_only=True)
 
     return server
 

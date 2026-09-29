@@ -71,6 +71,7 @@ def resolve_ordinary_claim_scope(
     paths: Sequence[str],
     *,
     runner: GitRunner = _default_git_runner,
+    whole_worktree: bool = False,
 ) -> OrdinaryClaimScope | None:
     """Resolve a file claim against the current Git worktree when one exists.
 
@@ -78,9 +79,13 @@ def resolve_ordinary_claim_scope(
     ----------
     paths : Sequence[str]
         Explicit repository-relative display paths. Empty input represents a
-        caller-owned named mutex and is never rewritten.
+        caller-owned named mutex and is never rewritten, unless
+        ``whole_worktree`` asks for the current checkout instead.
     runner : GitRunner, optional
         Git command runner, injectable for tests.
+    whole_worktree : bool, optional
+        With empty ``paths``, resolve the current Git worktree so the claim covers
+        all of it. Outside Git the result is ``None`` and the caller decides.
 
     Returns
     -------
@@ -96,7 +101,7 @@ def resolve_ordinary_claim_scope(
         namespace.
     """
     requested = tuple(paths)
-    if not requested:
+    if not requested and not whole_worktree:
         return None
     try:
         raw_root = resolve_repo(runner=runner)

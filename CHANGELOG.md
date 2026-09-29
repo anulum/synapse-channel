@@ -13,6 +13,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Make the scope of a claim without paths explicit. MCP `synapse_claim` without
+  paths now claims the MCP process's whole Git worktree, and the reply names it.
+  Outside Git it is refused. The new `task_only=true` form locks the task id alone
+  with no file scope, like a keyless `synapse lock`. Previously such a claim was
+  sent with an empty worktree, which made it a lock over the hub's shared default
+  namespace while the reply said "the whole worktree". Remote (HTTP) MCP claims
+  must use `task_only=true`. The JavaScript SDK's `claim` gains a
+  `{ taskOnly: true }` option and throws on a claim with neither paths nor a
+  worktree identity.
+
 ### Security
 
 - Apply the WebSocket handshake's Host and Origin guard to the `/metrics` and

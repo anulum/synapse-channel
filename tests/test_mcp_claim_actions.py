@@ -124,3 +124,117 @@ async def test_release_action_refuses_missing_or_mismatched_receipts(
     )
 
     assert message in await release
+
+
+def _repo_with_source(root: Path) -> Path:
+    repo = git_repo(root)
+    source = repo / "src" / "owned.py"
+    source.parent.mkdir()
+    source.write_text("owned = True\n", encoding="utf-8")
+    git_run(repo, "add", "src/owned.py")
+    git_run(repo, "commit", "-q", "-m", "add owned source")
+    return repo
+
+
+async def test_a_pathless_claim_inside_git_holds_and_contends_for_the_whole_worktree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inside a checkout a pathless claim is exactly the whole worktree the reply names."""
+    repo = _repo_with_source(tmp_path / "repo")
+    monkeypatch.chdir(repo)
+    async with running_hub() as (hub, uri):
+        whole = await start_bridge(uri, name="whole-seat")
+        filer = await start_bridge(uri, name="file-seat")
+        try:
+            held = await whole.bridge.claim("WHOLE")
+            blocked = await filer.bridge.claim("FILE", ["src/owned.py"])
+            released = await whole.bridge.release("WHOLE")
+            granted_after = await filer.bridge.claim("FILE", ["src/owned.py"])
+            blocked_whole = await whole.bridge.claim("WHOLE-AGAIN")
+        finally:
+            await whole.close()
+            await filer.close()
+    root = repo.resolve().as_posix()
+    assert held == f"claim granted: 'WHOLE' (the whole worktree {root})"
+    assert "claim denied" in blocked and "file scope conflicts" in blocked
+    assert "released 'WHOLE'" in released
+    assert "claim granted" in granted_after
+    assert "claim denied" in blocked_whole
+    assert hub.state.claims["FILE"].worktree == root
+
+
+async def test_a_pathless_claim_outside_git_is_refused_unless_task_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Outside a checkout there is no worktree to claim, so only an explicit task lock goes."""
+    outside = tmp_path / "plain"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+    async with running_hub() as (hub, uri):
+        seat = await start_bridge(uri, name="loose-seat")
+        try:
+            refused = await seat.bridge.claim("LOOSE")
+            mixed = await seat.bridge.claim("MIXED", ["a.py"], task_only=True)
+            task_lock = await seat.bridge.claim("LOOSE", task_only=True)
+        finally:
+            await seat.close()
+    assert refused == (
+        "claim refused: outside a Git worktree a claim needs paths, or "
+        "task_only=true for a task lock with no file scope"
+    )
+    assert mixed == "claim refused: task_only cannot be combined with paths"
+    assert task_lock == "claim granted: 'LOOSE' (no file scope, task-only lock)"
+    assert "MIXED" not in hub.state.claims
+    assert (hub.state.claims["LOOSE"].worktree, hub.state.claims["LOOSE"].paths) == ("LOOSE", ())
+
+
+async def test_a_task_only_lock_never_contends_with_file_claims(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A task lock has no file scope: it blocks only the same task id, like ``synapse lock``."""
+    repo = _repo_with_source(tmp_path / "repo")
+    monkeypatch.chdir(repo)
+    async with running_hub() as (_hub, uri):
+        locker = await start_bridge(uri, name="lock-seat")
+        whole = await start_bridge(uri, name="whole-seat")
+        try:
+            locked = await locker.bridge.claim("DEPLOY", task_only=True)
+            other_lock = await locker.bridge.claim("MIGRATE", task_only=True)
+            whole_tree = await whole.bridge.claim("WHOLE")
+            same_task = await whole.bridge.claim("DEPLOY", task_only=True)
+        finally:
+            await locker.close()
+            await whole.close()
+    assert "claim granted" in locked
+    assert "claim granted" in other_lock
+    assert "claim granted" in whole_tree
+    assert "claim denied" in same_task
+
+
+async def test_path_claims_keep_their_rules_inside_and_outside_git(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inside Git a traversal path is refused; outside Git paths keep the legacy namespace."""
+    repo = _repo_with_source(tmp_path / "repo")
+    outside = tmp_path / "plain"
+    outside.mkdir()
+    async with running_hub() as (hub, uri):
+        seat = await start_bridge(uri, name="path-seat")
+        try:
+            monkeypatch.chdir(repo)
+            escaped = await seat.bridge.claim("ESCAPE", ["../outside"])
+            monkeypatch.chdir(outside)
+            legacy = await seat.bridge.claim("LEGACY", ["notes.txt"])
+        finally:
+            await seat.close()
+    assert escaped.startswith("claim refused: ")
+    assert "ESCAPE" not in hub.state.claims
+    assert legacy == "claim granted: 'LEGACY' (notes.txt)"
+    assert (hub.state.claims["LEGACY"].worktree, hub.state.claims["LEGACY"].paths) == (
+        "",
+        ("notes.txt",),
+    )

@@ -93,7 +93,10 @@ The read defaults are `synapse_board`, `synapse_state`, `synapse_manifest`,
 `synapse_directory` and `synapse_status`. To admit a mutation, add its exact
 tool to the provisioned grant and issue a token with `synapse:mutate`. Supported
 mutations are `synapse_task_declare`, `synapse_task_update`, `synapse_claim`,
-`synapse_release`, `synapse_handoff` and `synapse_send`.
+`synapse_release`, `synapse_handoff` and `synapse_send`. A remote
+`synapse_claim` must pass `task_only=true` and no `paths`. A file claim needs
+local workspace authority, and a pathless claim would otherwise cover the
+server's own worktree.
 
 The process reloads current issuer keys, disabled subjects, revoked tokens and
 tool removals on each request and again at operation dispatch. Replacing the

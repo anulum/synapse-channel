@@ -100,6 +100,8 @@ test("SDK interoperates with an authenticated Python hub", { timeout: 25000 }, a
   await exchange(alice, MessageType.ReleaseGranted, () => alice.release("alice-task"));
   await exchange(bob, MessageType.ClaimGranted, () => bob.claim("bob-task", ["shared.py"]));
   await exchange(bob, MessageType.ReleaseGranted, () => bob.release("bob-task"));
+  await exchange(alice, MessageType.ClaimGranted, () =>
+    alice.claim("alice-lock", [], undefined, { taskOnly: true }));
   await exchange(alice, MessageType.StateSnapshot, () => alice.requestState());
   await exchange(alice, MessageType.BoardSnapshot, () => alice.requestBoard());
   await exchange(alice, MessageType.WhoSnapshot, () => alice.requestWho());

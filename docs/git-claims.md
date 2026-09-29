@@ -126,7 +126,10 @@ path identity before contacting the hub. An overlapping ordinary, MCP, or
 `git-claim` scope therefore contends in one physical checkout, while linked Git
 worktrees remain isolated. Outside Git, ordinary claims retain the historical
 shared worktree namespace. A keyless `synapse lock` remains a deliberately
-separate named mutex keyed by its task id and never probes Git.
+separate named mutex keyed by its task id and never probes Git. MCP
+`synapse_claim` without paths covers the whole resolved worktree inside Git and
+is refused outside it. Its `task_only=true` form is the same task-keyed named
+mutex as a keyless `synapse lock`, with no file scope.
 
 For `lock`, repeat `--paths` once per path, for example
 `synapse lock --paths src/a.py --paths src/b.py build -- make`.

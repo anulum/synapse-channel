@@ -129,9 +129,15 @@ def build_mcp_server(
     reader = views if views is not None else bridge
 
     @server.tool()
-    async def synapse_claim(task_id: str, paths: list[str] | None = None) -> str:
-        """Claim a task lease, optionally scoped to file paths."""
-        return await bridge.claim(task_id, paths)
+    async def synapse_claim(
+        task_id: str, paths: list[str] | None = None, task_only: bool = False
+    ) -> str:
+        """Claim a task lease on file paths, the whole current Git worktree, or the task alone.
+
+        Without paths the claim covers the MCP process's whole Git worktree, and is
+        refused outside one; ``task_only`` leases the task id alone with no file scope.
+        """
+        return await bridge.claim(task_id, paths, task_only=task_only)
 
     @server.tool()
     async def synapse_git_claim(

@@ -75,8 +75,13 @@ class HttpArgumentPolicy:
             or task.strip() != task
         ):
             raise PermissionError("remote MCP operation denied")
-        if name == "synapse_claim" and arguments.get("paths"):
-            raise PermissionError("remote MCP file claims require local workspace authority")
+        if name == "synapse_claim" and (
+            arguments.get("paths") or arguments.get("task_only") is not True
+        ):
+            # Without task_only, a pathless claim would cover the server's own worktree.
+            raise PermissionError(
+                "remote MCP claims must be task_only; file claims require local workspace authority"
+            )
         if name == "synapse_release" and arguments.get("changed_files"):
             raise PermissionError("remote MCP file receipts require local workspace authority")
         if name == "synapse_handoff":

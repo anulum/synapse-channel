@@ -57,10 +57,12 @@ client.close();
   or pending rejects.
 - `on(type, handler)` / `onMessage(handler)` — subscribe by `MessageType` or to every frame; each returns an unsubscribe function.
 - `chat(payload, { target?, channel?, priority? })`,
-  `claim(taskId, paths?, pathIdentity?)`, `release(taskId)`. The optional
-  `ClaimScopeIdentity` is for bridges carrying output from the trusted Python
-  Git/filesystem resolver; its worktree path is sent automatically. Omit it
-  rather than inventing canonical values.
+  `claim(taskId, paths?, pathIdentity?, { taskOnly? })`, `release(taskId)`. The
+  optional `ClaimScopeIdentity` is for bridges carrying output from the trusted
+  Python Git/filesystem resolver; its worktree path is sent automatically. Omit
+  it rather than inventing canonical values. A claim without paths covers the
+  whole worktree named by `pathIdentity`. `{ taskOnly: true }` locks the task id
+  alone with no file scope, like `synapse lock`. A claim with neither throws.
 - `requestBoard()`, `requestWho()`, `requestState()`.
 - `attachment(type, fields)` sends a version-four scoped attachment request.
   Configure `signRegistration` with an enrolled identity signer and

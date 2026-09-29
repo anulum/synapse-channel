@@ -163,7 +163,7 @@ tools wait for the hub's grant or denial; query tools return JSON.
 
 | Tool | Effect |
 |---|---|
-| `synapse_claim(task_id, paths?)` | Take a work lease. Inside Git, an explicit file scope carries the same canonical worktree/path identity as `synapse_git_claim`; outside Git it retains the legacy shared namespace. |
+| `synapse_claim(task_id, paths?, task_only?)` | Take a work lease. Inside Git, an explicit file scope carries the same canonical worktree/path identity as `synapse_git_claim`, and a claim without paths covers the MCP process's whole worktree (the reply names it). Outside Git a claim with paths keeps the legacy shared namespace, and a claim without paths is refused. `task_only=true` locks the task id alone with no file scope, like `synapse lock`; it contends only with the same task and cannot be combined with `paths`. |
 | `synapse_git_claim(task_id, paths?, base?, auto_release_on?, whole_worktree?)` | Resolve the MCP process's real Git worktree, branch, Git-index spelling, filesystem aliases, case policy, and existing object identities, then take a mutation-compatible canonical claim. Bounded paths are mandatory unless `whole_worktree=true` is explicit. |
 | `synapse_release(task_id, evidence?, changed_files?, confidence?)` | Release a lease you hold and validate the hub-attested receipt; supplied evidence is persisted as an assessment note. |
 | `synapse_send(target, message)` | Send a chat to an agent, a group glob, or `all`. |

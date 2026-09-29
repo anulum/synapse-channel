@@ -170,11 +170,22 @@ describe("SynapseClient messaging", () => {
     client.requestBoard();
     client.requestWho();
     client.requestWho("laptop");
+    client.claim("lock", [], undefined, { taskOnly: true });
+    expect(() => client.claim("loose")).toThrow(/taskOnly/);
+    expect(() => client.claim("mixed", ["a.ts"], undefined, { taskOnly: true })).toThrow(
+      /cannot be combined/,
+    );
 
     const envelopes = socket.sentEnvelopes();
-    expect(envelopes.at(-2)).toMatchObject({ type: "who_request" });
-    expect(envelopes.at(-2)).not.toHaveProperty("hub");
-    expect(envelopes.at(-1)).toMatchObject({ type: "who_request", hub: "laptop" });
+    expect(envelopes.at(-3)).toMatchObject({ type: "who_request" });
+    expect(envelopes.at(-3)).not.toHaveProperty("hub");
+    expect(envelopes.at(-2)).toMatchObject({ type: "who_request", hub: "laptop" });
+    expect(envelopes.at(-1)).toMatchObject({
+      type: "claim",
+      task_id: "lock",
+      paths: [],
+      worktree: "lock",
+    });
     expect(envelopes[0]).toMatchObject({ type: "chat", target: "P/bob", payload: "hello", priority: true });
     expect(envelopes[1]).toMatchObject({ type: "chat", channel: "ops", payload: "secret" });
     expect(envelopes[2]).toMatchObject({

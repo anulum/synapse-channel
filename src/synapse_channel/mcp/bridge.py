@@ -159,9 +159,11 @@ class SynapseHubBridge:
             with contextlib.suppress(ValueError):
                 self._waiters.remove(waiter)
 
-    async def claim(self, task_id: str, paths: list[str] | None = None) -> str:
-        """Claim a task lease, optionally scoped to ordinary paths."""
-        return await self.claim_actions.claim(task_id, paths)
+    async def claim(
+        self, task_id: str, paths: list[str] | None = None, *, task_only: bool = False
+    ) -> str:
+        """Claim a task lease: file paths, the whole current worktree, or the task alone."""
+        return await self.claim_actions.claim(task_id, paths, task_only=task_only)
 
     async def git_claim(
         self,

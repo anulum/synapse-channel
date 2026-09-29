@@ -252,13 +252,34 @@ export class SynapseClient {
   }
 
   /**
-   * Claim a task, optionally scoped to display paths and a client-derived identity.
+   * Claim a task on display paths, a whole worktree, or the task alone.
    *
    * The identity is an additive wire field. Callers that cannot derive it may
    * omit it and retain legacy literal-path comparison. Git-aware callers should
-   * use the Python resolver rather than inventing canonical values.
+   * use the Python resolver rather than inventing canonical values. With no
+   * paths, pass the worktree's `pathIdentity` to claim that whole worktree, or
+   * `{ taskOnly: true }` for a lock on the task id with no file scope; a claim
+   * with neither is refused, because the hub would treat it as a lock over its
+   * shared default namespace.
    */
-  claim(taskId: string, paths: string[] = [], pathIdentity?: ClaimScopeIdentity): void {
+  claim(
+    taskId: string,
+    paths: string[] = [],
+    pathIdentity?: ClaimScopeIdentity,
+    options: { taskOnly?: boolean } = {},
+  ): void {
+    if (options.taskOnly === true) {
+      if (paths.length > 0 || pathIdentity !== undefined) {
+        throw new Error("taskOnly cannot be combined with paths or a path identity");
+      }
+      this.send(MessageType.Claim, { extra: { task_id: taskId, paths: [], worktree: taskId } });
+      return;
+    }
+    if (paths.length === 0 && pathIdentity === undefined) {
+      throw new Error(
+        "a claim without paths needs the worktree pathIdentity or { taskOnly: true }",
+      );
+    }
     const extra: Record<string, unknown> = { task_id: taskId, paths };
     if (pathIdentity !== undefined) {
       extra["worktree"] = pathIdentity.worktree_path;
