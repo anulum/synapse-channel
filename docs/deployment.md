@@ -649,10 +649,21 @@ provisioned identity (see the posture table in `SECURITY.md`). Enrol each seat
 with `--expect-multi-seat --identity-trust FILE --require-identity-binding`. The
 hub binds loopback here, so without `--expect-multi-seat` the start-up identity
 check does not apply. Seat clients sign their registration inside the
-WebSocket frame, so their proof passes through the proxy. A peer hub or Fleet
-follower proves its id only with its client certificate, which stops at the
-proxy, so an identity-bound hub behind this shape refuses it. Use direct
-native WSS/mTLS or TCP/TLS passthrough for those peers.
+WebSocket frame, so their proof passes through the proxy.
+
+A peer hub's client certificate stops at the proxy. A peer hub can instead sign
+its frames the same way:
+- Start it with `--peer-identity-key FILE --peer-identity-key-id ID`.
+- Enrol that key on this hub for the peer's `--hub-id`, for example with
+  `synapse identity machine-key --sender PEER-HUB-ID --trust FILE`.
+
+What a signature carries through the proxy:
+- It proves the peer's id, so its multi-hub log pulls (the watch, and a Fleet
+  follower) are admitted.
+- Forwarded claims, operator relays and forwarded messages mutate this hub's
+  state. They still need a `--multihub-serving-policy` grant, which is bound to
+  the peer's live client certificate. For those, use direct native WSS/mTLS or
+  TCP/TLS passthrough.
 
 ## Persistence and backups
 

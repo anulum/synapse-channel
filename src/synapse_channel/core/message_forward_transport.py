@@ -47,6 +47,7 @@ from synapse_channel.core.message_forward_wire import (
     encode_message_forward_request,
 )
 from synapse_channel.core.multihub_transport import pinned_connector
+from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
 from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
 
 DEFAULT_FORWARD_TIMEOUT = 10.0
@@ -86,11 +87,14 @@ class MessageForwardPeer:
     connector : Connector or None
         Pinned, optionally client-authenticated connection factory; ``None`` keeps the
         default system-CA transport.
+    signer : PeerRegistrationSigner or None
+        Signs forwarded messages with this hub's identity key; ``None`` sends them unsigned.
     """
 
     uri: str
     token: str | None = None
     connector: Connector | None = field(default=None, repr=False, compare=False)
+    signer: PeerRegistrationSigner | None = field(default=None, repr=False, compare=False)
 
 
 def parse_message_peers(
@@ -100,6 +104,7 @@ def parse_message_peers(
     pins: Mapping[str, str] | None = None,
     client_certificate_file: str | None = None,
     client_key_file: str | None = None,
+    signer: PeerRegistrationSigner | None = None,
 ) -> dict[str, MessageForwardPeer]:
     """Parse repeatable ``HUB_ID=URI`` values into the message-peer route map.
 
@@ -115,6 +120,9 @@ def parse_message_peers(
         Paired owner-only client identity presented to peers for mutual TLS. When set, every
         peer must also be pinned, so client authentication never weakens server
         authentication.
+
+    signer : PeerRegistrationSigner or None, optional
+        Signs every route's requests with this hub's identity key; ``None`` sends them unsigned.
 
     Returns
     -------
@@ -159,7 +167,7 @@ def parse_message_peers(
                 ),
             )
         )
-        peers[hub_id] = MessageForwardPeer(uri=uri, token=token, connector=connector)
+        peers[hub_id] = MessageForwardPeer(uri=uri, token=token, connector=connector, signer=signer)
     if pins is not None:
         unknown = sorted(set(pins) - set(peers))
         if unknown:
@@ -235,7 +243,9 @@ async def forward_message(
     fields: dict[str, Any] = dict(encode_message_forward_request(request))
     if peer.token is not None:
         fields["token"] = peer.token
-    envelope = build_envelope(local_id, MessageType.MULTIHUB_MESSAGE_FORWARD, **fields)
+    envelope = signed(
+        build_envelope(local_id, MessageType.MULTIHUB_MESSAGE_FORWARD, **fields), peer.signer
+    )
     connector = peer.connector if peer.connector is not None else _default_connector
     try:
         async with connector(peer.uri) as socket:

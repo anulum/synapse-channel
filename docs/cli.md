@@ -1199,6 +1199,7 @@ synapse hub --host 0.0.0.0 --insecure-off-loopback # bind off-loopback WITHOUT a
 synapse hub --expect-multi-seat                    # multi-seat intent for flood auto-enable (default off)
 synapse hub --bridge-exposed                       # declare A2A/MCP bridge for flood auto-enable (default off)
 synapse hub --require-fencing-epoch                # refuse lease mutations that name no lease epoch (default off)
+synapse hub --hub-id syn-a --peer-identity-key ./hub.pem --peer-identity-key-id syn-a-key  # sign frames to multi-hub peers (works through a TLS-terminating proxy)
 ```
 
 `--require-fencing-epoch` makes the lease epoch mandatory on a task update,

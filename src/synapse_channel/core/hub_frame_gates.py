@@ -321,6 +321,8 @@ class HubFrameGates:
             }
             if peer.connector is not None:
                 forward_kwargs["connector"] = peer.connector
+            if peer.signer is not None:
+                forward_kwargs["signer"] = peer.signer
             result = await self._claim_forwarder(request, **forward_kwargs)
         except ClaimForwardTimeoutError:
             self._counters.forwarded_claim_timeouts += 1

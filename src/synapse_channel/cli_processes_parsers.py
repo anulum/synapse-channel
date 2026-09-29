@@ -464,6 +464,22 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Seconds between watch poll rounds (floor 1.0).",
     )
     hub.add_argument(
+        "--peer-identity-key",
+        default=None,
+        metavar="FILE",
+        help="Owner-only Ed25519 identity key (PEM) that signs this hub's first frame to "
+        "every multi-hub peer: watch pulls, forwarded claims and messages, operator relays "
+        "and dead-letter forwards. A peer that requires identity binding then admits this "
+        "hub without a client certificate, for example behind a TLS-terminating proxy. "
+        "Enrol the key on each peer for this hub's --hub-id. Needs --peer-identity-key-id.",
+    )
+    hub.add_argument(
+        "--peer-identity-key-id",
+        default=None,
+        metavar="KEY_ID",
+        help="Key id the peers' identity trust bundles know --peer-identity-key by.",
+    )
+    hub.add_argument(
         "--multihub-watch-token",
         default=None,
         metavar="TOKEN",

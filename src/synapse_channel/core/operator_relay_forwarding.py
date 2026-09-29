@@ -222,6 +222,8 @@ class OperatorRelayForwarding:
             }
             if peer.connector is not None:
                 kwargs["connector"] = peer.connector
+            if peer.signer is not None:
+                kwargs["signer"] = peer.signer
             result = await self._relay_forwarder(forwarded, **kwargs)
         except RelayTransportError:
             logger.warning(

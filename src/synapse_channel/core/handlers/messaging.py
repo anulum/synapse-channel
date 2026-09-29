@@ -530,6 +530,8 @@ async def _forward_dead_letter_to_peer(hub: SynapseHub, *, target: str, count: i
         }
         if route.peer.connector is not None:
             kwargs["connector"] = route.peer.connector
+        if route.peer.signer is not None:
+            kwargs["signer"] = route.peer.signer
         await hub.dead_letter_forwarder(notice, **kwargs)
     except DeadLetterForwardError as exc:
         # Best-effort over the already-durable audit: a peer we could not reach degrades to

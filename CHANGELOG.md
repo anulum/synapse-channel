@@ -42,6 +42,21 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- **Peer hubs can prove their id with a signature (PEER-SIGNED-REGISTRATION).**
+  - `synapse hub --peer-identity-key FILE --peer-identity-key-id ID` signs
+    every first frame this hub sends to a multi-hub peer: watch pulls,
+    forwarded claims and messages, operator relays and dead-letter forwards.
+    The signature is the same one a seat puts on its registration.
+  - An identity-bound peer that trusts the key admits these frames without a
+    client certificate. The certificate does not survive a TLS-terminating
+    proxy; the signature does.
+  - Read-only log pulls therefore work behind such a proxy. Mutating forwards
+    still need the peer's certificate-bound serving grant.
+  - The transports gain an optional `signer`: `network_fetcher`,
+    `forward_claim`, `relay_operator_action`, `forward_dead_letter`, the
+    `*Peer` route records and `MultiHubWatch`. It is keyword-only with a
+    `None` default, so existing callers are unchanged.
+
 - **Governed online identity enrolment (SOL4-ID-01).**
   - `synapse hub --identity-enrollments FILE` lets an operator add or rotate
     identity keys on a live hub with `synapse identity enroll`, instead of

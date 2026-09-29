@@ -57,6 +57,7 @@ from synapse_channel.core.multihub_wire import (
     decode_log_snapshot,
     encode_log_request,
 )
+from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
 from synapse_channel.core.persistence import StoredEvent
 from synapse_channel.core.protocol import (
     MessageType,
@@ -218,6 +219,7 @@ def network_fetcher(
     connector: _Connector = _default_connector,
     protocol_warning_sink: Callable[[ProtocolNegotiation], None] | None = None,
     clock: Callable[[], float] = time.time,
+    signer: PeerRegistrationSigner | None = None,
 ) -> EventFetcher:
     """Return an :data:`~synapse_channel.core.multihub_follower.EventFetcher` over a connection.
 
@@ -249,6 +251,10 @@ def network_fetcher(
     clock : Callable[[], float], optional
         Wall-clock source used to measure local-minus-peer skew from the peer
         welcome timestamp. Injected by tests; defaults to :func:`time.time`.
+    signer : PeerRegistrationSigner or None
+        Signs the frame with this hub's identity key, so a peer that requires identity
+        binding admits it without a client certificate (for example behind a
+        TLS-terminating proxy). ``None`` sends it unsigned.
 
     Returns
     -------
@@ -266,6 +272,7 @@ def network_fetcher(
         connector=connector,
         protocol_warning_sink=protocol_warning_sink,
         clock=clock,
+        signer=signer,
     )
 
 
@@ -284,6 +291,7 @@ class _NetworkFetcher:
         connector: _Connector,
         protocol_warning_sink: Callable[[ProtocolNegotiation], None] | None,
         clock: Callable[[], float],
+        signer: PeerRegistrationSigner | None = None,
     ) -> None:
         self._uri = uri
         self._local_id = local_id
@@ -294,6 +302,7 @@ class _NetworkFetcher:
         self._connector = connector
         self._protocol_warning_sink = protocol_warning_sink
         self._clock = clock
+        self._signer = signer
         self.last_protocol_negotiation: ProtocolNegotiation | None = None
         self.last_log_end_seq: int | None = None
         self.last_clock_skew: ClockSkew | None = None
@@ -310,7 +319,10 @@ class _NetworkFetcher:
         )
         if self._token is not None:
             fields["token"] = self._token
-        request = build_envelope(self._local_id, MessageType.MULTIHUB_LOG_REQUEST, **fields)
+        request = signed(
+            build_envelope(self._local_id, MessageType.MULTIHUB_LOG_REQUEST, **fields),
+            self._signer,
+        )
         try:
             async with self._connector(self._uri) as socket:
                 await socket.send(json.dumps(request))

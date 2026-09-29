@@ -50,6 +50,7 @@ from synapse_channel.core.multihub_transport import (
     pinned_connector,
 )
 from synapse_channel.core.namespace_ownership import NamespaceOwnership, OwnershipOutcome
+from synapse_channel.core.peer_identity import PeerRegistrationSigner
 from synapse_channel.core.persistence import EventStore
 
 logger = logging.getLogger(__name__)
@@ -181,6 +182,10 @@ class MultiHubWatch:
         Durable audit store.  When both this and ``namespace_ownership`` are
         present, entering, changing, and healing a contested namespace is
         committed at ``FULL`` durability.
+    signer : PeerRegistrationSigner or None, optional
+        Signs every pull with this hub's identity key, so a peer that requires identity
+        binding admits it without a client certificate (for example behind a
+        TLS-terminating proxy). ``None`` pulls unsigned.
     """
 
     def __init__(
@@ -198,6 +203,7 @@ class MultiHubWatch:
         client_key_file: str | None = None,
         namespace_ownership: NamespaceOwnership | None = None,
         journal: EventStore | None = None,
+        signer: PeerRegistrationSigner | None = None,
     ) -> None:
         self.interval = max(float(interval), MIN_WATCH_INTERVAL)
         self._namespace_of = namespace_of
@@ -230,6 +236,8 @@ class MultiHubWatch:
                     client_certificate_file=client_certificate_file,
                     client_key_file=client_key_file,
                 )
+            if signer is not None:
+                extra["signer"] = signer
             self._fetchers[peer] = fetcher_factory(uri, local_id=local_id, token=token, **extra)
         self._partitioned = (
             restore_active_multihub_partitions(journal)

@@ -68,6 +68,7 @@ from synapse_channel.core.identity_enrollments import (
     DEFAULT_ENROLLMENT_RATE,
     DEFAULT_ENROLLMENT_WINDOW_SECONDS,
 )
+from synapse_channel.core.identity_keys import IdentityKeyError
 from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.merkle_checkpoint import AntiRollbackError, checkpoint_path_for
 from synapse_channel.core.message_auth import MessageAuthKey
@@ -89,6 +90,10 @@ from synapse_channel.core.multihub_watch import MultiHubWatch, parse_watch_peers
 from synapse_channel.core.namespace_ownership import NamespaceOwnership
 from synapse_channel.core.operator_relay_transport import OperatorRelayPeer, parse_relay_peers
 from synapse_channel.core.paranoid import ParanoidModeError, apply_paranoid_hub_profile
+from synapse_channel.core.peer_identity import (
+    PeerRegistrationSigner,
+    load_peer_registration_signer,
+)
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
 from synapse_channel.core.rate_policy import (
@@ -822,6 +827,22 @@ def _cmd_hub(
             file=sys.stderr,
         )
         return 2
+    peer_key = getattr(args, "peer_identity_key", None)
+    peer_key_id = getattr(args, "peer_identity_key_id", None)
+    peer_signer: PeerRegistrationSigner | None = None
+    if (peer_key is None) != (peer_key_id is None):
+        print(
+            "synapse hub: --peer-identity-key and --peer-identity-key-id must be "
+            "configured together.",
+            file=sys.stderr,
+        )
+        return 2
+    if peer_key is not None and peer_key_id is not None:
+        try:
+            peer_signer = load_peer_registration_signer(peer_key, peer_key_id)
+        except (IdentityKeyError, ValueError) as exc:
+            print(f"synapse hub: --peer-identity-key: {exc}", file=sys.stderr)
+            return 2
     namespace_ownership: NamespaceOwnership | None = None
     watch: MultiHubWatch | None = None
     claim_peers: dict[str, ClaimForwardPeer] | None = None
@@ -845,6 +866,7 @@ def _cmd_hub(
                 client_key_file=client_keyfile,
                 namespace_ownership=namespace_ownership,
                 journal=journal,
+                signer=peer_signer,
             )
         if args.claim_peer:
             claim_peers = parse_claim_peers(
@@ -856,6 +878,7 @@ def _cmd_hub(
                 ),
                 client_certificate_file=client_certfile,
                 client_key_file=client_keyfile,
+                signer=peer_signer,
             )
         if message_peer_values:
             message_peers = parse_message_peers(
@@ -866,6 +889,7 @@ def _cmd_hub(
                 ),
                 client_certificate_file=client_certfile,
                 client_key_file=client_keyfile,
+                signer=peer_signer,
             )
         if relay_peer_values:
             relay_peers = parse_relay_peers(
@@ -876,6 +900,7 @@ def _cmd_hub(
                 ),
                 client_certificate_file=client_certfile,
                 client_key_file=client_keyfile,
+                signer=peer_signer,
             )
     except ValueError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)

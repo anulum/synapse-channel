@@ -46,6 +46,7 @@ from synapse_channel.core.multihub_claim_wire import (
     encode_claim_forward_request,
 )
 from synapse_channel.core.multihub_transport import pinned_connector
+from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
 from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
 
 DEFAULT_FORWARD_TIMEOUT = 10.0
@@ -94,11 +95,14 @@ class ClaimForwardPeer:
     connector : Connector or None
         Pinned, optionally client-authenticated connection factory.  ``None``
         keeps the default system-CA transport.
+    signer : PeerRegistrationSigner or None
+        Signs forwarded requests with this hub's identity key; ``None`` sends them unsigned.
     """
 
     uri: str
     token: str | None = None
     connector: Connector | None = field(default=None, repr=False, compare=False)
+    signer: PeerRegistrationSigner | None = field(default=None, repr=False, compare=False)
 
 
 def parse_claim_peers(
@@ -108,6 +112,7 @@ def parse_claim_peers(
     pins: Mapping[str, str] | None = None,
     client_certificate_file: str | None = None,
     client_key_file: str | None = None,
+    signer: PeerRegistrationSigner | None = None,
 ) -> dict[str, ClaimForwardPeer]:
     """Parse repeatable ``HUB_ID=URI`` CLI values into a claim-forwarding route map.
 
@@ -132,6 +137,9 @@ def parse_claim_peers(
     client_certificate_file, client_key_file : str or None, optional
         Paired owner-only identity.  When configured every route must also be
         pinned, so client authentication never weakens server authentication.
+
+    signer : PeerRegistrationSigner or None, optional
+        Signs every route's requests with this hub's identity key; ``None`` sends them unsigned.
 
     Returns
     -------
@@ -170,7 +178,7 @@ def parse_claim_peers(
                 ),
             )
         )
-        peers[hub_id] = ClaimForwardPeer(uri=uri, token=token, connector=connector)
+        peers[hub_id] = ClaimForwardPeer(uri=uri, token=token, connector=connector, signer=signer)
     if pins is not None:
         unknown = sorted(set(pins) - set(peers))
         if unknown:
@@ -235,6 +243,7 @@ async def forward_claim(
     token: str | None = None,
     timeout: float = DEFAULT_FORWARD_TIMEOUT,
     connector: _Connector = _default_connector,
+    signer: PeerRegistrationSigner | None = None,
 ) -> ClaimForwardResult:
     """Forward a claim to the owning hub at ``uri`` and return its authoritative result.
 
@@ -254,6 +263,10 @@ async def forward_claim(
         Seconds the forward waits for the result before failing closed.
     connector : _Connector, optional
         Opens the owner connection; injected for testing. Defaults to a real websocket client.
+    signer : PeerRegistrationSigner or None
+        Signs the frame with this hub's identity key, so a peer that requires identity
+        binding admits it without a client certificate (for example behind a
+        TLS-terminating proxy). ``None`` sends it unsigned.
 
     Returns
     -------
@@ -270,7 +283,9 @@ async def forward_claim(
     fields: dict[str, Any] = dict(encode_claim_forward_request(request))
     if token is not None:
         fields["token"] = token
-    envelope = build_envelope(local_id, MessageType.MULTIHUB_CLAIM_REQUEST, **fields)
+    envelope = signed(
+        build_envelope(local_id, MessageType.MULTIHUB_CLAIM_REQUEST, **fields), signer
+    )
     try:
         async with connector(uri) as socket:
             await socket.send(json.dumps(envelope))

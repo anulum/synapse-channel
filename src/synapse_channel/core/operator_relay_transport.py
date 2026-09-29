@@ -43,6 +43,7 @@ from synapse_channel.core.operator_relay_wire import (
     decode_relay_result,
     encode_relay_request,
 )
+from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
 from synapse_channel.core.protocol import MessageType, build_envelope, loads_bounded
 
 DEFAULT_RELAY_TIMEOUT = 10.0
@@ -87,11 +88,14 @@ class OperatorRelayPeer:
         so the operator relaying through it never needs the peer's credentials directly.
     connector : Connector or None
         Pinned, optionally client-authenticated connection factory.
+    signer : PeerRegistrationSigner or None
+        Signs relayed requests with this hub's identity key; ``None`` sends them unsigned.
     """
 
     uri: str
     token: str | None = None
     connector: Connector | None = field(default=None, repr=False, compare=False)
+    signer: PeerRegistrationSigner | None = field(default=None, repr=False, compare=False)
 
 
 def parse_relay_peers(
@@ -101,6 +105,7 @@ def parse_relay_peers(
     pins: Mapping[str, str] | None = None,
     client_certificate_file: str | None = None,
     client_key_file: str | None = None,
+    signer: PeerRegistrationSigner | None = None,
 ) -> dict[str, OperatorRelayPeer]:
     """Parse fail-closed ``HUB_ID=URI`` relay routes and their secure connectors."""
     if (client_certificate_file is None) != (client_key_file is None):
@@ -130,7 +135,7 @@ def parse_relay_peers(
                 ),
             )
         )
-        peers[hub_id] = OperatorRelayPeer(uri=uri, token=token, connector=connector)
+        peers[hub_id] = OperatorRelayPeer(uri=uri, token=token, connector=connector, signer=signer)
     if pins is not None:
         unknown = sorted(set(pins) - set(peers))
         if unknown:
@@ -196,6 +201,7 @@ async def relay_operator_action(
     token: str | None = None,
     timeout: float = DEFAULT_RELAY_TIMEOUT,
     connector: _Connector = _default_connector,
+    signer: PeerRegistrationSigner | None = None,
 ) -> RelayActionResult:
     """Relay an operator action to the peer hub at ``uri`` and return its verdict.
 
@@ -217,6 +223,10 @@ async def relay_operator_action(
     connector : _Connector, optional
         Opens the peer connection; injected for testing. Defaults to a real websocket client.
 
+    signer : PeerRegistrationSigner or None, optional
+        Signs the frame with this hub's identity key, so a peer that requires identity
+        binding admits it without a client certificate. ``None`` sends it unsigned.
+
     Returns
     -------
     RelayActionResult
@@ -231,7 +241,9 @@ async def relay_operator_action(
     fields: dict[str, Any] = dict(encode_relay_request(request))
     if token is not None:
         fields["token"] = token
-    envelope = build_envelope(local_id, MessageType.OPERATOR_RELAY_REQUEST, **fields)
+    envelope = signed(
+        build_envelope(local_id, MessageType.OPERATOR_RELAY_REQUEST, **fields), signer
+    )
     try:
         async with connector(uri) as socket:
             await socket.send(json.dumps(envelope))

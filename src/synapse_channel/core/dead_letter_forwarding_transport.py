@@ -38,6 +38,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.core.dead_letter_forwarding import FORWARDING_FIELD, DeadLetterForwardError
+from synapse_channel.core.peer_identity import PeerRegistrationSigner, signed
 from synapse_channel.core.protocol import MessageType, build_envelope
 
 DEFAULT_FORWARD_TIMEOUT = 10.0
@@ -79,6 +80,7 @@ async def forward_dead_letter(
     token: str | None = None,
     timeout: float = DEFAULT_FORWARD_TIMEOUT,
     connector: _Connector = _default_connector,
+    signer: PeerRegistrationSigner | None = None,
 ) -> None:
     """Transmit a dead-letter forwarding pointer to the owning peer hub at ``uri``, fire-and-forget.
 
@@ -101,6 +103,10 @@ async def forward_dead_letter(
     connector : _Connector, optional
         Opens the peer connection; injected for testing. Defaults to a real websocket client.
 
+    signer : PeerRegistrationSigner or None, optional
+        Signs the frame with this hub's identity key, so a peer that requires identity
+        binding admits it without a client certificate. ``None`` sends it unsigned.
+
     Raises
     ------
     DeadLetterForwardError
@@ -112,7 +118,9 @@ async def forward_dead_letter(
     fields: dict[str, Any] = {FORWARDING_FIELD: dict(notice)}
     if token is not None:
         fields["token"] = token
-    envelope = build_envelope(local_id, MessageType.DEAD_LETTER_FORWARDING, **fields)
+    envelope = signed(
+        build_envelope(local_id, MessageType.DEAD_LETTER_FORWARDING, **fields), signer
+    )
     try:
         await asyncio.wait_for(_transmit(envelope, uri, connector), timeout)
     except (OSError, ConnectionClosed, asyncio.TimeoutError) as exc:
