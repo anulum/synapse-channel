@@ -13,15 +13,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-### Changed
-
-- **Claude Code plugin validated with Claude Code 2.1.284.**
-  - The installer's tested host, the CI host (integrity-locked npm package),
-    the integration catalog and the vendor-watch matrix all move from 2.1.280.
-  - 2.1.280 stays the rollback version.
-  - The exact host passed the strict plugin validator, the isolated plugin
-    install/upgrade/removal and the live hub claim hook journey.
-  - Its 2.1.281 to 2.1.284 release notes change no surface the plugin uses.
+## [0.99.33] - 2026-09-29
 
 ### Upgrade notes
 
@@ -29,16 +21,6 @@ All notable changes to this project are documented here.
   - Upgrade every seat's client before upgrading a team-secure hub.
   - Clients up to 0.99.32 keep the lease epoch only in the process that claimed. On an upgraded
     team-secure hub, their `synapse release` or commit-hook release from a new process is refused.
-
-### Deprecated
-
-- **The composite Action at the repository root** (`uses: anulum/synapse-channel@<tag>`) is
-  deprecated and warns on every run. With an empty `version` it installs the latest release without
-  a hash.
-  - Use [`anulum/synapse-policy-check-action`](https://github.com/anulum/synapse-policy-check-action)
-    instead. It installs one exact, hash-verified release into an isolated environment and can
-    verify the release's GitHub build attestation.
-  - The root Action keeps its inputs and behaviour for existing workflows.
 
 ### Added
 
@@ -130,6 +112,26 @@ All notable changes to this project are documented here.
     - **VS Code extension:** the release of the active file names the epoch.
     - Both take the epoch from their own grant. Their real-hub acceptance
       tests now run against a strict hub, and both fail without the change.
+
+### Changed
+
+- **Claude Code plugin validated with Claude Code 2.1.284.**
+  - The installer's tested host, the CI host (integrity-locked npm package),
+    the integration catalog and the vendor-watch matrix all move from 2.1.280.
+  - 2.1.280 stays the rollback version.
+  - The exact host passed the strict plugin validator, the isolated plugin
+    install/upgrade/removal and the live hub claim hook journey.
+  - Its 2.1.281 to 2.1.284 release notes change no surface the plugin uses.
+
+### Deprecated
+
+- **The composite Action at the repository root** (`uses: anulum/synapse-channel@<tag>`) is
+  deprecated and warns on every run. With an empty `version` it installs the latest release without
+  a hash.
+  - Use [`anulum/synapse-policy-check-action`](https://github.com/anulum/synapse-policy-check-action)
+    instead. It installs one exact, hash-verified release into an isolated environment and can
+    verify the release's GitHub build attestation.
+  - The root Action keeps its inputs and behaviour for existing workflows.
 
 ## [0.99.32] - 2026-09-29
 
