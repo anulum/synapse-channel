@@ -15,6 +15,15 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Bound how long a disconnected holder keeps its claims. A claim survives its
+  holder's disconnect for the hub's lease window (`--lease-offline-ttl`, default
+  3600 s). During that window `synapse state` marks it `holder-offline=<s>`, and
+  the state snapshot carries `holder_online` and `holder_offline_seconds`. After
+  the window the next claim attempt releases the claim, journals the release and
+  announces it with `released_by: "hub:holder-offline"`. Before, such a claim
+  stayed locked until its lease TTL even when its holder never came back. The new
+  metric is `synapse_claims_released_abandoned_total`.
+
 - Turn the durable-ingress chat quota on by default for `synapse hub`. The limit
   is 100 chats and 1 MiB of serialized chat frames per quota principal per 60
   seconds; zero values for the size flags keep these defaults.

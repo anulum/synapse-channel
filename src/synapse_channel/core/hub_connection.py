@@ -110,6 +110,7 @@ class HubConnection:
         drop_waits: Callable[[str], None],
         forget_liveness: Callable[[str], None],
         abort_uploads: Callable[[str], None] | None = None,
+        agent_left: Callable[[str], None] | None = None,
     ) -> None:
         self._clients = clients
         self._capabilities = capabilities
@@ -124,6 +125,7 @@ class HubConnection:
         self._drop_waits = drop_waits
         self._forget_liveness = forget_liveness
         self._abort_uploads = abort_uploads
+        self._agent_left = agent_left
 
     async def register(self, websocket: Any) -> None:
         """Record a new socket; welcome it now only on an open hub.
@@ -153,6 +155,8 @@ class HubConnection:
                 except Exception:
                     logger.exception("cannot discard disconnected attachment upload")
             self._drop_waits(name)
+            if self._agent_left is not None:
+                self._agent_left(name)
             self._capabilities.forget(name)
             self._forget_liveness(name)
             if self._rate_limiter is not None:

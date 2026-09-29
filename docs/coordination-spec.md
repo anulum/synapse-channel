@@ -415,6 +415,25 @@ nothing. (Cross-host safety is stated fully in §9.)
 **Pinned by.** `tests/test_namespace_ownership.py`,
 `tests/test_hub_claim_forwarding.py`.
 
+### INV-CR-5 — a disconnected holder keeps its claims only for the lease window
+
+**Normative.** A claim MUST survive its holder's disconnect. While the holder has
+been offline for less than the hub's lease window (`lease_offline_ttl`, default
+3600 s, the window name-ownership leases use), a conflicting claim MUST be refused.
+The state snapshot MUST mark the claim with `holder_online: false` and
+`holder_offline_seconds`. Once the holder has been offline for the whole window,
+the next claim attempt on the hub MUST release all of that holder's claims first.
+Each release MUST be journalled as an ordinary release, so replay agrees, and
+MUST be announced with `released_by: "hub:holder-offline"`. A holder that
+reconnects inside the window resets it. After a hub restart the window runs from
+hub start. The lease TTL remains the upper bound.
+
+**Implementation.** `core/claim_holder_presence.py`, called from
+`handlers/leasing.py:handle_claim` and `handlers/multihub_claim.py`; departures from
+`hub_connection.py:unregister`; state marks in `handlers/snapshots.py`.
+
+**Pinned by.** `tests/test_claim_holder_presence.py`.
+
 ## 7. Per-verb delivery guarantees
 
 Delivery guarantees differ by verb, on purpose, and the difference is normative.

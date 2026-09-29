@@ -73,6 +73,11 @@ happened. The signals that matter operationally:
   value means replay quarantined malformed durable rows: queries remain live,
   mutations fail closed, and the operator must follow the archived
   `synapse compact --drop-corrupt` recovery runbook in the CLI reference.
+- `synapse_claims_released_abandoned_total` counts claims the hub released
+  because their holder stayed offline for the whole lease window
+  (`--lease-offline-ttl`). A rising value means seats crash or disconnect while
+  holding work; `synapse state` marks such claims `holder-offline=<s>` before
+  the window ends.
 - `synapse_message_forward_pending` counts chats this hub forwarded to peer
   hubs that the peer has not answered yet, across all peers.
   `synapse_message_forward_oldest_pending_seconds` is the age of the oldest

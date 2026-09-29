@@ -29,7 +29,20 @@ if TYPE_CHECKING:
 async def handle_state_request(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
-    """Send the requesting agent a full state snapshot."""
+    """Send the requesting agent a full state snapshot.
+
+    Each active claim carries ``holder_online`` and ``holder_offline_seconds`` (``None``
+    while connected), so a claim whose holder disconnected is visible as such before the
+    lease window releases it.
+    """
+    snapshot = hub.state.snapshot()
+    now = hub.claim_holders.clock()
+    online = hub.clients.agent_sockets
+    for claim in snapshot["active_claims"]:
+        owner = str(claim.get("owner") or "")
+        away = hub.claim_holders.offline_seconds(owner, online=owner in online, now=now)
+        claim["holder_online"] = away is None
+        claim["holder_offline_seconds"] = None if away is None else round(away, 3)
     await hub._send_json(
         websocket,
         hub._system(
@@ -37,7 +50,7 @@ async def handle_state_request(
             msg_type=MessageType.STATE_SNAPSHOT,
             target=sender,
             snapshot={
-                **hub.state.snapshot(),
+                **snapshot,
                 "dead_letters": hub.dead_letters.snapshot(),
                 "pending_relay_approvals": hub.relay_approvals.pending(),
             },

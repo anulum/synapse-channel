@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from synapse_channel.core.atomic_operations import OperationDraft
+from synapse_channel.core.claim_holder_presence import release_abandoned_claims
 from synapse_channel.core.deadlock import prune_waits, would_create_cycle
 from synapse_channel.core.journal import (
     EventKind,
@@ -357,7 +358,13 @@ def claim_grant_fields(claim: TaskClaim) -> dict[str, Any]:
 
 
 async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
-    """Apply a scoped claim request and broadcast the grant, or deny the sender."""
+    """Apply a scoped claim request and broadcast the grant, or deny the sender.
+
+    Claims of holders that have stayed offline past the lease window are released first
+    (:func:`~synapse_channel.core.claim_holder_presence.release_abandoned_claims`), so an
+    abandoned lock never outlives that window; a holder still inside it keeps its claims.
+    """
+    await release_abandoned_claims(hub)
     quota_principal = hub.clients.quota_principal(websocket, fallback_agent=sender)
 
     def mutate(state: SynapseState) -> ClaimApplication:

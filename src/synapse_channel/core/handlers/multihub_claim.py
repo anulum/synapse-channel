@@ -43,6 +43,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.claim_holder_presence import release_abandoned_claims
 from synapse_channel.core.handlers.leasing import apply_claim_async, claim_grant_fields
 from synapse_channel.core.multihub_claim_wire import (
     ClaimForwardRequest,
@@ -114,6 +115,7 @@ async def handle_multihub_claim_request(
         )
         return
 
+    await release_abandoned_claims(hub)
     # The serving policy has authenticated the peer, but the nested claimant is
     # still a peer assertion. Charge every alias forwarded by one peer to that
     # peer's stable bucket so name rotation cannot multiply the owning hub's cap.

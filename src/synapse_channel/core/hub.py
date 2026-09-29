@@ -66,6 +66,7 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
 from synapse_channel.core.channels import ChannelRegistry
+from synapse_channel.core.claim_holder_presence import ClaimHolderPresence
 from synapse_channel.core.dark_seat import DarkSeatMonitor
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
@@ -732,6 +733,9 @@ class SynapseHub:
         self.takeover_oscillation_threshold = self.clients.takeover_oscillation_threshold
         self.takeover_quarantine = self.clients.takeover_quarantine
         self.lease_offline_ttl = self.clients.ownership.offline_ttl
+        self.claim_holders = ClaimHolderPresence(
+            clock=self._clock, started_at=self._started, window=self.lease_offline_ttl
+        )
         self.shutdown_close_timeout = max(
             safe_float(shutdown_close_timeout, default=DEFAULT_SHUTDOWN_CLOSE_TIMEOUT), 0.1
         )
@@ -809,6 +813,7 @@ class SynapseHub:
             drop_waits=self._drop_waits,
             forget_liveness=self._recipient_liveness.forget,
             abort_uploads=(self.attachment_store.abort_sender if self.attachment_store else None),
+            agent_left=self._claim_holder_left,
         )
         self._frame_gates = HubFrameGates(
             require_per_message_auth=self.require_per_message_auth,
@@ -1327,6 +1332,11 @@ class SynapseHub:
         """
         return self._liveness.roster_liveness()
 
+    def _claim_holder_left(self, name: str) -> None:
+        """Start the offline window for ``name`` when it still holds a claim."""
+        if any(claim.owner == name for claim in self.state.claims.values()):
+            self.claim_holders.left(name)
+
     def uptime_seconds(self) -> float:
         """Return seconds elapsed since the hub was constructed."""
         return max(0.0, self._clock() - self._started)
@@ -1629,6 +1639,7 @@ class SynapseHub:
             return
         is_new_agent = self.clients.set_agent_socket(sender, websocket)
         if not was_bound:
+            self.claim_holders.returned(sender)
             self.clients.bind_protocol_version(
                 sender, websocket, read_protocol_version(data.get("protocol_version"))
             )

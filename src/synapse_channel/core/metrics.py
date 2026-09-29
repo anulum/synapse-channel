@@ -169,6 +169,12 @@ def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
             sum(1 for name in hub.agent_sockets if name.endswith("-rx")),
         ),
         Metric(
+            "synapse_claims_released_abandoned_total",
+            "Claims released because their holder stayed offline past the lease window.",
+            "counter",
+            hub.counters.claims_released_abandoned,
+        ),
+        Metric(
             "synapse_message_forward_pending",
             "Chats forwarded to peer hubs and not yet answered, across all peers.",
             "gauge",

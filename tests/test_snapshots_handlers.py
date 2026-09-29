@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
+from synapse_channel.core.claim_holder_presence import ClaimHolderPresence
 from synapse_channel.core.handlers import snapshots
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.wake_capability import WAKE_DIRECT, WAKE_UNKNOWN
@@ -79,6 +80,8 @@ class _Manifester:
 
 
 class _LegacyClients:
+    agent_sockets: dict[str, Any] = {}
+
     def protocol_version_of(self, name: str) -> int:
         """Model a version-two snapshot requester without delivery discovery."""
         return 2
@@ -95,7 +98,8 @@ class _FakeHub:
         chat: list[dict[str, Any]] | None = None,
         board_task_cap: int | None = None,
     ) -> None:
-        self.state = _Snapshotter({"leases": []})
+        self.state = _Snapshotter({"leases": [], "active_claims": []})
+        self.claim_holders = ClaimHolderPresence(clock=lambda: 0.0, started_at=0.0, window=3600.0)
         self.dead_letters = _Snapshotter(["dl"])
         self.relay_approvals = _Pending(["approval"])
         self._liveness = liveness or {}

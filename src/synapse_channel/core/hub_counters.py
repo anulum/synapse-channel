@@ -40,6 +40,8 @@ class HubCounters:
         Claim requests answered ``CLAIM_DENIED``.
     releases_granted : int
         Releases answered ``RELEASE_GRANTED``.
+    claims_released_abandoned : int
+        Claims released because their holder stayed offline past the lease window.
     chat_directed : int
         Chat frames addressed to a specific name, list, or glob.
     chat_broadcast : int
@@ -71,6 +73,7 @@ class HubCounters:
     claims_granted: int = 0
     claims_denied: int = 0
     releases_granted: int = 0
+    claims_released_abandoned: int = 0
     chat_directed: int = 0
     chat_broadcast: int = 0
     auth_failures: int = 0

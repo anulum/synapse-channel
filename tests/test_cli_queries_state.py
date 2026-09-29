@@ -279,3 +279,36 @@ def test_parsers_accept_observed_pin_and_commands_refuse_a_stray_pin(
         stray = cli.build_parser().parse_args([command, "--observed-pin", f"ghost={pin}"])
         assert stray.func(stray) == 2
         assert "does not fetch" in capsys.readouterr().err
+
+
+def test_render_state_marks_a_claim_whose_holder_is_offline(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An offline holder is visible before the hub releases its claim."""
+    cli_queries._render_state(
+        {
+            "active_claims": [
+                {
+                    "task_id": "T-AWAY",
+                    "status": "claimed",
+                    "owner": "P/a",
+                    "paths": ["src"],
+                    "holder_online": False,
+                    "holder_offline_seconds": 12.4,
+                },
+                {
+                    "task_id": "T-HERE",
+                    "status": "claimed",
+                    "owner": "P/b",
+                    "paths": [],
+                    "holder_online": True,
+                    "holder_offline_seconds": None,
+                },
+            ]
+        }
+    )
+    lines = capsys.readouterr().out.splitlines()
+    away = next(line for line in lines if "T-AWAY" in line)
+    here = next(line for line in lines if "T-HERE" in line)
+    assert away.endswith("holder-offline=12s")
+    assert "holder-offline" not in here

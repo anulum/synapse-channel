@@ -173,7 +173,11 @@ def _render_state(
     owner: str | None = None,
     observed_peers: tuple[ObservedPeerSnapshot, ...] = (),
 ) -> None:
-    """Render live claims and checkpoints, optionally filtered to one owner namespace."""
+    """Render live claims and checkpoints, optionally filtered to one owner namespace.
+
+    A claim whose holder is disconnected is marked ``holder-offline=<seconds>``; the hub
+    releases it once that reaches its lease window.
+    """
     claims = list(snapshot.get("active_claims", []))
     if owner:
         prefix = f"{owner}/"
@@ -190,11 +194,17 @@ def _render_state(
         git_suffix = (
             f" git={terminal_text(git['branch'])}->{terminal_text(git['base'])}" if git else ""
         )
+        away = claim.get("holder_offline_seconds")
+        offline_suffix = (
+            f" holder-offline={away:.0f}s"
+            if isinstance(away, (int, float)) and not isinstance(away, bool)
+            else ""
+        )
         print(
             f"  {terminal_text(claim.get('task_id'))} "
             f"[{terminal_text(claim.get('status'))}] "
             f"owner={terminal_text(claim.get('owner'))} paths={paths} "
-            f"checkpoint={checkpoint}{git_suffix}"
+            f"checkpoint={checkpoint}{git_suffix}{offline_suffix}"
         )
     _render_observed_claims(observed_peers, owner=owner)
 
