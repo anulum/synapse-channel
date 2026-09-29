@@ -13,8 +13,13 @@ subjects, missing credentials, and seats that run more than one agent id.
 
 ``keygen`` generates the Ed25519 key an agent uses to prove its identity under
 connection-identity binding: it writes the private key to an owner-only file and
-prints (or enrols) the public trust-bundle entry the hub verifies against. Neither
-of those commands talks to a running hub.
+prints (or enrols) the public trust-bundle entry the hub verifies against.
+
+``machine-key`` does the same for the key this machine already presents: every
+client signs its registration with the auto-provisioned machine key
+(:mod:`synapse_channel.machine_identity`), so enrolling that key for the names a
+seat uses lets the seat join an identity-bound hub without per-command key
+flags. None of these three commands talks to a running hub.
 
 ``reclaim`` is the deliberately narrow live-hub recovery path for a stale
 trust-on-first-use pin. It names the exact key the operator inspected, requires
@@ -42,6 +47,7 @@ from synapse_channel.core.identity_keys import (
     write_signing_key,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.machine_identity import ensure_machine_identity
 from synapse_channel.terminal_text import terminal_text
 
 
@@ -123,6 +129,48 @@ def _cmd_identity_keygen(args: argparse.Namespace) -> int:
         f"wrote identity key to {terminal_text(args.private_out)}. "
         "Enrol this public entry in the hub's "
         "--identity-trust bundle:"
+    )
+    print(json.dumps({"keys": [entry]}, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_identity_machine_key(args: argparse.Namespace) -> int:
+    """Print or enrol the trust-bundle entry for this machine's identity key.
+
+    Provisions the machine key on first use, exactly as the first connecting client
+    would, then emits ``{"keys": [entry]}`` for the named senders or, with
+    ``--trust``, enrols the entry in that bundle. Returns ``2`` when the key cannot
+    be provisioned or the bundle cannot be written (for example the machine key is
+    already enrolled there), else ``0``.
+    """
+    senders = list(dict.fromkeys(args.sender))
+    try:
+        machine = ensure_machine_identity()
+        if args.trust:
+            enroll_identity_key(
+                args.trust,
+                key_id=machine.key_id,
+                public_key_b64=machine.public_key,
+                senders=senders,
+                expires_at=args.expires_at,
+            )
+    except (IdentityKeyError, IdentityBindingError) as exc:
+        print(f"identity machine-key error: {terminal_text(exc)}")
+        return 2
+    named = ", ".join(terminal_text(sender) for sender in senders)
+    if args.trust:
+        print(f"enrolled machine key {machine.key_id} for {named} in {terminal_text(args.trust)}")
+        return 0
+    entry: dict[str, object] = {
+        "key_id": machine.key_id,
+        "public_key": machine.public_key,
+        "senders": senders,
+    }
+    if args.expires_at is not None:
+        entry["expires_at"] = args.expires_at
+    print(
+        f"machine key {machine.key_id} ({terminal_text(machine.key_path)}) proves {named}. "
+        "Enrol this public entry in the hub's --identity-trust bundle:"
     )
     print(json.dumps({"keys": [entry]}, indent=2, sort_keys=True))
     return 0
@@ -286,6 +334,34 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Optional key expiry as wall-clock seconds since the epoch.",
     )
     keygen.set_defaults(func=_cmd_identity_keygen)
+
+    machine_key = nested.add_parser(
+        "machine-key",
+        help="Print or enrol this machine's auto-provisioned identity key for named senders.",
+    )
+    machine_key.add_argument(
+        "--sender",
+        action="append",
+        required=True,
+        metavar="PROJECT/AGENT",
+        help="A name this machine's clients register as; repeat for every name the seat "
+        "uses (waiter sidecars, one-shot verbs, roles). A key is enrolled once, so list "
+        "all names in one call.",
+    )
+    machine_key.add_argument(
+        "--trust",
+        default="",
+        metavar="FILE",
+        help="Enrol the entry in this identity trust bundle instead of printing it.",
+    )
+    machine_key.add_argument(
+        "--expires-at",
+        type=float,
+        default=None,
+        metavar="TS",
+        help="Optional entry expiry as wall-clock seconds since the epoch.",
+    )
+    machine_key.set_defaults(func=_cmd_identity_machine_key)
 
     reclaim = nested.add_parser(
         "reclaim",

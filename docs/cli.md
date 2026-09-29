@@ -2666,7 +2666,10 @@ startup code is printed.
 
 Governance commands are advisory by default — they report, they do not block —
 so a rollout can observe before it enforces. `identity audit` inventories
-declared identities for enforcement-rollout blockers; `acl shadow` evaluates
+declared identities for enforcement-rollout blockers; `identity machine-key`
+prints or enrols the trust-bundle entry for the key every client on this machine
+already signs its registration with, so a seat can join an identity-bound hub
+without per-command key flags; `acl shadow` evaluates
 candidate accesses deny-by-default without denying anything live; `policy-check`
 scores a release receipt against a policy (`--enforce` to gate); and `federation`
 manages operator-confirmed peer-domain bundles for cross-hub trust.
@@ -2769,6 +2772,8 @@ hub neither owns nor has a route to is refused fail-closed, never silently dropp
 ```bash
 synapse identity audit --identities ./identities.json          # audit declared identities for blockers
 synapse identity audit --identities ./identities.json --json
+synapse identity machine-key --sender proj/alice --sender proj/alice-rx   # print this machine's key as a trust-bundle entry
+synapse identity machine-key --sender proj/alice --trust ./trust.json     # or enrol it directly (once per bundle)
 synapse acl shadow --policy ./acl.json --requests ./requests.json   # non-blocking deny-by-default evaluation
 synapse policy-check --policy ./policy.json --receipt-json ./receipt.json   # advisory; --enforce to gate
 synapse federation offer ./my-domain.json                      # validate own material; print fingerprints

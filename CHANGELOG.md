@@ -24,6 +24,13 @@ All notable changes to this project are documented here.
   one of the two flags, or a key file that cannot be read, exits `2` as a
   configuration error.
 
+- Add `synapse identity machine-key`. Every client signs its registration with
+  this machine's auto-provisioned key; the command prints that key as a
+  trust-bundle entry for the `--sender` names given, or enrols it with `--trust`.
+  A seat can then join a hub started with `--require-identity-binding` or
+  `--team-secure` without per-command key flags. A key is enrolled once per
+  bundle; a second enrolment exits `2`.
+
 - Ship the `cryptography` runtime in the container image. The hash-locked image
   closure now includes the `encryption` extra (`cryptography` 50.0.1 with `cffi`
   and `pycparser`, the versions the other locks pin). Before, the image could

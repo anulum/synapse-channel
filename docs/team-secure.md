@@ -54,7 +54,16 @@ synapse hub --db ~/synapse/hub.db --token-file ~/synapse/token \
 ```
 
 Agents that connect must use the shared token **and** sign registration under a
-key enrolled in the trust bundle. Role heartbeats only stick when the grant store
+key enrolled in the trust bundle. Every client already signs with this machine's
+auto-provisioned key, so the shortest path for a seat is to enrol that key for
+all the names it uses, in one call per machine:
+
+```bash
+synapse identity machine-key --sender proj/claude --sender proj/claude-rx --trust trust.json
+```
+
+On a different machine than the hub, run it without `--trust` and add the printed
+entry to the hub's bundle. Role heartbeats only stick when the grant store
 **or** an ACL `role-claim` rule allows them. Directed chat is no longer a
 broadcast to every connected socket. A trusted monitor may replay another
 identity's mailbox only with an ACL `mailbox` rule (self and `-rx` still work
