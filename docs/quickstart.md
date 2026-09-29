@@ -199,8 +199,9 @@ chmod 600 ~/synapse/token
 synapse hub --port 8876 --db ~/synapse/hub.db --token-file ~/synapse/token &
 
 # Optional multi-seat trust (identity binding + role grants + private directed):
-# synapse identity keygen --subject myproj/alice --out-key alice.pem --enroll ~/synapse/trust.json
-# synapse role grant myproj/coordinator myproj/alice --store ~/synapse/roles.json
+# synapse identity keygen --sender myproj/alice --key-id alice-1 \
+#   --private-out alice.pem --trust ~/synapse/trust.json
+# synapse role grant myproj/coordinator --to myproj/alice --store ~/synapse/roles.json
 # synapse hub --db ~/synapse/hub.db --token-file ~/synapse/token \
 #   --team-secure --identity-trust ~/synapse/trust.json --role-grants ~/synapse/roles.json
 

@@ -43,8 +43,9 @@ off. Recommendations never block startup.
 
 ```bash
 # Once: identity key + trust bundle, role grant store
-synapse identity keygen --subject proj/claude --out-key claude.pem --enroll trust.json
-synapse role grant proj/coordinator proj/claude --store role-grants.json
+synapse identity keygen --sender proj/claude --key-id claude-1 \
+  --private-out claude.pem --trust trust.json
+synapse role grant proj/coordinator --to proj/claude --store role-grants.json
 
 synapse hub --db ~/synapse/hub.db --token-file ~/synapse/token \
   --team-secure \

@@ -9,9 +9,12 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 import pytest
+
+from synapse_channel import cli
 
 pytestmark = pytest.mark.docs_contract
 
@@ -63,3 +66,27 @@ def test_team_secure_design_contrasts_with_paranoid() -> None:
 
     assert "paranoid" in text
     assert "lighter" in text or "lighter than" in text
+
+
+@pytest.mark.parametrize("doc", ["docs/team-secure.md", "docs/quickstart.md"])
+def test_documented_identity_and_role_commands_parse(doc: str) -> None:
+    """Every keygen / role-grant example must be accepted by the real parser.
+
+    These pages once showed ``--subject``/``--out-key``/``--enroll`` and a
+    positional grantee, none of which the CLI accepts; a copied command failed.
+    """
+    lines = _read(ROOT / doc).splitlines()
+    commands: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip().removeprefix("#").strip()
+        if line.startswith(("synapse identity keygen", "synapse role grant")):
+            while line.endswith("\\"):
+                index += 1
+                line = line[:-1] + " " + lines[index].strip().removeprefix("#").strip()
+            commands.append(line)
+        index += 1
+    assert {command.split()[1] for command in commands} == {"identity", "role"}
+    for command in commands:
+        args = cli.build_parser().parse_args(shlex.split(command)[1:])
+        assert callable(args.func), command
