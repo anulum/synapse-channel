@@ -31,6 +31,12 @@ All notable changes to this project are documented here.
 
 - Reserve every name containing `@` for seats on peer hubs; a local client that
   registers one is refused as a name conflict.
+- Upgrade note: once a hub has admitted a delivery intent forwarded by a peer
+  hub, its delivery journal holds requests that entered through that peer, and
+  hubs older than 0.99.29 refuse to serve that journal
+  (`delivery journal belongs to a different stable hub id`). Back up the event
+  store before accepting forwarded delivery intents if a downgrade may be
+  needed. Forwarded chats do not affect a downgrade.
 - Mark the Pro mobile app and the Team hosted dashboard as planned in the price
   list: neither is available yet, so neither is part of what a plan delivers today.
 

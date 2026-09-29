@@ -641,7 +641,10 @@ own recipient session, exactly as for a local requester named
 `steer`; such a mode is refused with `unauthorised_requester`. The relayed
 `delivery_status` carries `remote_hub`. Later `delivery_status_request` and
 `delivery_cancel` frames for that operation key are routed to the same peer, and
-only the requesting seat may send them. A forward that cannot complete is
+only the requesting seat may send them. A hub that has admitted a forwarded
+intent cannot be downgraded below version 0.99.29 with its journal intact,
+because older hubs refuse a delivery journal whose requests entered through
+another hub. Back up the event store first if a downgrade may be needed. A forward that cannot complete is
 answered with `delivery_refused` whose `reason_code` is one of the following:
 `unknown_hub`, `peer_unreachable`, `peer_rejected`, `peer_invalid_answer`,
 `invalid_target`, `invalid_shape` or the peer's own refusal code.
