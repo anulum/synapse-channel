@@ -59,6 +59,7 @@ from synapse_channel.core.logging_setup import (
     LOG_FORMATS,
     LOG_LEVELS,
 )
+from synapse_channel.core.merkle_checkpoint import DEFAULT_CHECKPOINT_INTERVAL
 from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
 from synapse_channel.core.state import MAX_CLAIMS_PER_AGENT, MAX_OFFERS_PER_AGENT
@@ -339,6 +340,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=DEFAULT_LEASE_OFFLINE_TTL,
         help="Seconds a name ownership lease outlives its holder disconnect before the "
         "name returns to first-come-first-owned; 0 ends the lease at disconnect.",
+    )
+    hub.add_argument(
+        "--checkpoint-interval",
+        type=_positive_finite,
+        default=DEFAULT_CHECKPOINT_INTERVAL,
+        metavar="SECONDS",
+        help="With --db, anchor the live log to its anti-rollback checkpoint this often "
+        f"(default {DEFAULT_CHECKPOINT_INTERVAL:g}). Writes newer than the last anchor could "
+        "be cut undetected after a crash; a clean shutdown anchors at once.",
     )
     hub.add_argument(
         "--shutdown-close-timeout",

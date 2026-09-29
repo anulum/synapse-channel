@@ -76,6 +76,7 @@ from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS_PER_AUTHOR,
     DEFAULT_MAX_PROGRESS_PER_TASK,
 )
+from synapse_channel.core.merkle_checkpoint import DEFAULT_CHECKPOINT_INTERVAL
 from synapse_channel.core.message_auth import (
     DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
     EventSignatureTrustBundle,
@@ -293,6 +294,7 @@ class HubConfig:
     attachment_store: AttachmentStore | None = None
     anti_rollback_checkpoint: bool = True
     checkpoint_store_path: str | Path | None = None
+    checkpoint_interval: float = DEFAULT_CHECKPOINT_INTERVAL
     protected_write_policies: Mapping[str, ProtectedAdmissionReplayPolicy] | None = None
     clock: Callable[[], float] | None = None
     rate_limiter: RateLimiter | None = None

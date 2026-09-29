@@ -924,6 +924,7 @@ def _cmd_hub(
         "compact_hint_threshold": args.compact_hint_threshold,
         "takeover_cooldown": args.takeover_cooldown,
         "lease_offline_ttl": args.lease_offline_ttl,
+        "checkpoint_interval": args.checkpoint_interval,
         "shutdown_close_timeout": args.shutdown_close_timeout,
         "enable_metrics": args.metrics,
         "auth_timeout": args.auth_timeout,

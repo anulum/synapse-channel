@@ -1199,6 +1199,7 @@ class EventStore:
         *,
         through_seq: int | None = None,
         kinds: Iterable[str] | None = None,
+        after_seq: int | None = None,
     ) -> Iterator[StoredEvent]:
         """Yield events in ascending sequence order without materialising the log.
 
@@ -1216,6 +1217,10 @@ class EventStore:
         kinds : Iterable[str] or None, optional
             When given, restrict the stream to these event kinds; an empty
             iterable yields nothing. ``None`` streams every kind.
+        after_seq : int or None, optional
+            Exclusive sequence floor; only events after it are yielded, so an
+            incremental fold reads just what it has not seen. ``None`` starts at
+            the beginning of the log.
 
         Yields
         ------
@@ -1228,6 +1233,9 @@ class EventStore:
         if through_seq is not None:
             clauses.append("seq <= ?")
             params.append(int(through_seq))
+        if after_seq is not None:
+            clauses.append("seq > ?")
+            params.append(int(after_seq))
         if kinds is not None:
             kind_list = [str(k) for k in kinds]
             if not kind_list:

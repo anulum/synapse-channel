@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import ssl
 import time
 import uuid
@@ -125,7 +126,12 @@ from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS_PER_TASK,
 )
 from synapse_channel.core.mailbox_pending import MailboxPendingTracker
-from synapse_channel.core.merkle_checkpoint import MerkleCheckpointStore, checkpoint_path_for
+from synapse_channel.core.merkle_checkpoint import (
+    DEFAULT_CHECKPOINT_INTERVAL,
+    LiveCheckpoint,
+    MerkleCheckpointStore,
+    checkpoint_path_for,
+)
 from synapse_channel.core.message_auth import (
     DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
     EventSignatureTrustBundle,
@@ -483,6 +489,12 @@ class SynapseHub:
         Override for the checkpoint database location; defaults to
         ``<journal path>.checkpoint.db`` beside the event store. The checkpoint
         store must live outside the log it attests.
+    checkpoint_interval : float, optional
+        Seconds between live anchors while the hub serves (default
+        :data:`~synapse_channel.core.merkle_checkpoint.DEFAULT_CHECKPOINT_INTERVAL`).
+        This is the declared window: writes newer than the latest anchor could be
+        cut from the log undetected after a crash; a clean shutdown anchors at once
+        and closes the checkpoint store. Must be a positive finite number.
     protected_write_policies : Mapping or None, optional
         Retained enrollment replay policies for protected reservations. Omitting
         them refuses protected history; supplying them does not enable dispatch.
@@ -569,6 +581,7 @@ class SynapseHub:
         federation_offer_path: str | Path | None = None,
         anti_rollback_checkpoint: bool = True,
         checkpoint_store_path: str | Path | None = None,
+        checkpoint_interval: float = DEFAULT_CHECKPOINT_INTERVAL,
     ) -> None:
         if attachment_store is not None and not (
             authenticator is not None
@@ -588,30 +601,23 @@ class SynapseHub:
             )
         self.attachment_store = attachment_store
         self.journal = journal
-        self._checkpoint_store: MerkleCheckpointStore | None
+        interval = float(checkpoint_interval)
+        if not (math.isfinite(interval) and interval > 0.0):
+            raise ValueError("checkpoint_interval must be a positive finite number of seconds")
+        self.checkpoint_interval = interval
+        self._checkpoint_path: Path | None = None
+        self._live_checkpoint: LiveCheckpoint | None = None
         if (
             anti_rollback_checkpoint
             and isinstance(journal, EventStore)
             and journal.path != ":memory:"
         ):
-            checkpoint_path = (
+            self._checkpoint_path = (
                 Path(checkpoint_store_path)
                 if checkpoint_store_path
                 else (checkpoint_path_for(journal.path))
             )
-            self._checkpoint_store = MerkleCheckpointStore(checkpoint_path)
-            # Fail closed BEFORE serving: a truncated or rewritten log is a
-            # hard error at startup, never a quiet restart. Only then anchor
-            # the current state as the newest chain link. A refused start owns
-            # no hub, so it releases the checkpoint connection it opened.
-            try:
-                self._checkpoint_store.verify(journal)
-                self._checkpoint_store.anchor(journal)
-            except BaseException:
-                self._checkpoint_store.close()
-                raise
-        else:
-            self._checkpoint_store = None
+            self._open_live_checkpoint(journal)
         self.enable_metrics = bool(enable_metrics)
         self.auth_timeout = max(safe_float(auth_timeout, default=DEFAULT_AUTH_TIMEOUT), 0.1)
         self.metrics_token = metrics_token or None
@@ -1984,6 +1990,48 @@ class SynapseHub:
             raise RuntimeError("hub signalled readiness without a bound address")
         return self._bound_address
 
+    @property
+    def _checkpoint_store(self) -> MerkleCheckpointStore | None:
+        """The open checkpoint chain, or ``None`` when anchoring is off or closed."""
+        return None if self._live_checkpoint is None else self._live_checkpoint.store
+
+    def _open_live_checkpoint(self, journal: EventStore) -> None:
+        """Open the checkpoint chain, verify the log against it, then anchor it.
+
+        Fail closed BEFORE serving: a truncated or rewritten log is a hard error
+        at startup, never a quiet restart. Only then is the current state anchored
+        as the newest chain link. A refused start owns no hub, so it releases the
+        checkpoint connection it opened.
+        """
+        assert self._checkpoint_path is not None
+        store = MerkleCheckpointStore(self._checkpoint_path)
+        try:
+            store.verify(journal)
+            self._live_checkpoint = LiveCheckpoint(store, journal)
+        except BaseException:
+            store.close()
+            raise
+
+    async def _checkpoint_anchor_loop(self, live: LiveCheckpoint) -> None:
+        """Anchor the live log every ``checkpoint_interval`` seconds while serving.
+
+        The loop is cancelled before :meth:`_close_live_checkpoint` releases ``live``.
+        """
+        while True:
+            await asyncio.sleep(self.checkpoint_interval)
+            live.anchor()
+
+    def _close_live_checkpoint(self) -> None:
+        """Anchor the final state and release the checkpoint store (clean shutdown)."""
+        live = self._live_checkpoint
+        if live is None:
+            return
+        self._live_checkpoint = None
+        try:
+            live.anchor()
+        finally:
+            live.close()
+
     async def serve(
         self,
         host: str = DEFAULT_HOST,
@@ -2011,6 +2059,13 @@ class SynapseHub:
         self._guard_at_rest(host)
         if self.journal is not None and self.stable_delivery_hub_id:
             self.journal.delivery.verify_origin_hub(self.hub_id)
+        if (
+            self._checkpoint_path is not None
+            and self._live_checkpoint is None
+            and isinstance(self.journal, EventStore)
+        ):
+            # A hub served again after a clean shutdown re-verifies before serving.
+            self._open_live_checkpoint(self.journal)
         self._bind_host = host
         self._bind_port = int(port)
         self._bound_address = None
@@ -2020,6 +2075,7 @@ class SynapseHub:
         started = False
         delivery_sweeper: asyncio.Task[None] | None = None
         forward_retrier: asyncio.Task[None] | None = None
+        anchorer: asyncio.Task[None] | None = None
         try:
             async with (
                 self._dark_seats.running(),
@@ -2066,8 +2122,13 @@ class SynapseHub:
 
                     forward_retrier = asyncio.create_task(message_forward_retry_loop(self))
                     forward_retrier.add_done_callback(lambda _task: stop.set())
+                if self._live_checkpoint is not None:
+                    anchorer = asyncio.create_task(
+                        self._checkpoint_anchor_loop(self._live_checkpoint)
+                    )
+                    anchorer.add_done_callback(lambda _task: stop.set())
                 await stop.wait()
-                for background in (delivery_sweeper, forward_retrier):
+                for background in (delivery_sweeper, forward_retrier, anchorer):
                     if background is not None and background.done():
                         background.result()
         except BaseException:
@@ -2077,10 +2138,14 @@ class SynapseHub:
                 self._serving.set()
             raise
         finally:
-            for background in (delivery_sweeper, forward_retrier):
+            for background in (delivery_sweeper, forward_retrier, anchorer):
                 if background is not None:
                     background.cancel()
                     await asyncio.gather(background, return_exceptions=True)
+            if started:
+                # K4-N1: a clean stop anchors everything written, then releases
+                # the checkpoint store; only a crash leaves an unanchored window.
+                self._close_live_checkpoint()
             self._bound_address = None
             if started:
                 self._serving.clear()

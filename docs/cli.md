@@ -1256,6 +1256,14 @@ the change was authorised, move the checkpoint store aside so the next start
 anchors a new chain. `synapse merkle checkpoint DB` prints the newest link;
 with `--verify` it exits `0` when the log matches and `2` on detection.
 
+While it serves, the hub anchors again every `--checkpoint-interval` seconds
+(default `60`), folding only the events written since the previous anchor, and a
+clean stop anchors at once and closes the checkpoint store. So cutting writes
+made while the hub was running is refused on the next start too. The declared
+window is the interval: after a crash or a kill, writes newer than the last anchor
+could be cut without detection. On the project's own 102,291-event log a full
+recompute takes 1.7 s, which is why live anchors are incremental.
+
 ```bash
 synapse health                       # exit 0 if the local hub is reachable
 synapse health --uri ws://host:8876

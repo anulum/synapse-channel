@@ -1431,7 +1431,10 @@ A hub with a journal also persists that commitment as a hash-chained checkpoint
 OUTSIDE the log — an owner-only `<db>.checkpoint.db` beside it — and verifies
 the log against the newest link before serving: a tail-truncated or replaced
 log is a hard `AntiRollbackError` at startup, not a quiet restart, and a
-verified tip is anchored as the next chain link. `synapse merkle checkpoint
+verified tip is anchored as the next chain link. While serving it anchors every
+`--checkpoint-interval` seconds (default 60) and again at a clean stop, so writes
+made after start are covered too; only the last interval before a crash is
+unanchored. `synapse merkle checkpoint
 ./synapse.db` shows the newest link, and `--verify` re-checks the log against
 it (exit `0` clean, `2` on detection). This is the local anti-rollback layer;
 external witnessing stays owner-gated. An intentional rewrite such as
@@ -1709,10 +1712,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Package version | 0.99.30 |
 | Public API exports | 70 |
 | Package modules | 648 |
-| Classes | 959 |
+| Classes | 960 |
 | Wire message types | 101 |
 | CLI subcommands | 224 |
-| Test functions | 10524 |
+| Test functions | 10531 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 78 |
 | GitHub Actions workflows | 27 |

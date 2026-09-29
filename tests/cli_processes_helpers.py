@@ -65,6 +65,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "shutdown_close_timeout": DEFAULT_SHUTDOWN_CLOSE_TIMEOUT,
         "takeover_cooldown": DEFAULT_TAKEOVER_COOLDOWN,
         "lease_offline_ttl": DEFAULT_LEASE_OFFLINE_TTL,
+        "checkpoint_interval": 60.0,
         "log_format": DEFAULT_LOG_FORMAT,
         "log_level": DEFAULT_LOG_LEVEL,
         "token": None,

@@ -41,6 +41,16 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Anchor the anti-rollback checkpoint while the hub serves. Before, the hub
+  anchored its log only at start and never closed the checkpoint store, so
+  cutting events written while it ran passed the next start (reproduced on the
+  previous code). Now it anchors every `--checkpoint-interval` seconds (default
+  60), folding only new events, and a clean stop anchors at once and closes the
+  store. A hub served again re-verifies before serving. The declared window is
+  the interval: after a crash, writes newer than the last anchor can still be cut
+  undetected. `SynapseHub` gains `checkpoint_interval`, and `EventStore.iter_events`
+  gains `after_seq`.
+
 - Require provisioned identity on exposed and multi-seat hubs. A hub that binds
   off loopback, or that declares a multi-seat profile on loopback
   (`--expect-multi-seat`, `--bridge-exposed`, `--private-directed-messages`,
