@@ -354,7 +354,7 @@ async def test_ungranted_namespace_is_refused_by_the_receiving_hub(tmp_path: Pat
             assert receipt["forward_state"] == "refused"
             assert receipt["reason"] == "forward_refused"
             assert "namespace_not_granted" in receipt["payload"]
-            with pytest.raises(TimeoutError):
+            with pytest.raises(asyncio.TimeoutError):
                 await asyncio.wait_for(_chat_from(other, "PROJ/alice@workstation"), 0.5)
         finally:
             await alice.close()
@@ -491,7 +491,7 @@ async def test_retried_forward_is_answered_once_and_a_reused_id_is_refused(
             assert (first.disposition, second.disposition) == ("accepted", "duplicate")
             assert second.result == first.result
             await _chat_from(bob, "PROJ/alice@workstation")
-            with pytest.raises(TimeoutError):
+            with pytest.raises(asyncio.TimeoutError):
                 await asyncio.wait_for(_chat_from(bob, "PROJ/alice@workstation"), 0.5)
             altered = MessageForwardRequest(
                 forward_id="retry-1",
@@ -703,7 +703,7 @@ async def test_plain_chat_needs_no_receipt_and_honours_private_routing(tmp_path:
             assert receipt["delivered"] is True
             assert "client_msg_id" not in receipt
             assert receipt["message_seq"] >= 1
-            with pytest.raises(TimeoutError):
+            with pytest.raises(asyncio.TimeoutError):
                 await asyncio.wait_for(_chat_from(watcher, "PROJ/alice"), 0.5)
         finally:
             for websocket in (alice, watcher, bob):
