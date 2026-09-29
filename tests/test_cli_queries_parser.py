@@ -56,3 +56,8 @@ def test_parser_health() -> None:
     args = cli.build_parser().parse_args(["health", "--uri", "ws://x"])
     assert args.func is cli_queries._cmd_health
     assert args.uri == "ws://x"
+    assert (args.identity_key_file, args.identity_key_id) == (None, "")
+    signed = cli.build_parser().parse_args(
+        ["health", "--identity-key-file", "h.pem", "--identity-key-id", "health-1"]
+    )
+    assert (signed.identity_key_file, signed.identity_key_id) == ("h.pem", "health-1")

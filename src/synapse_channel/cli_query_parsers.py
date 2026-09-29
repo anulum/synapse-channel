@@ -113,6 +113,19 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     health.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
     )
+    health.add_argument(
+        "--identity-key-file",
+        default=None,
+        metavar="FILE",
+        help="Ed25519 identity key (owner-only PEM) that signs the probe's registration, "
+        "for a hub started with --require-identity-binding; enrol it for --name.",
+    )
+    health.add_argument(
+        "--identity-key-id",
+        default="",
+        metavar="KEY_ID",
+        help="Key id the hub's --identity-trust bundle records for --identity-key-file.",
+    )
     health.set_defaults(func=_cmd_health)
 
     state = subparsers.add_parser(

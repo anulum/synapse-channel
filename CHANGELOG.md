@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Let `synapse health` sign its registration. `--identity-key-file` and
+  `--identity-key-id` name an Ed25519 key enrolled in the hub's
+  `--identity-trust` bundle for the probe's `--name` (default `HEALTH`), so a
+  container healthcheck can probe a hub started with
+  `--require-identity-binding`. On a token-guarded hub a refused registration
+  gets no welcome, so an unenrolled probe reports the hub unhealthy. Giving only
+  one of the two flags, or a key file that cannot be read, exits `2` as a
+  configuration error.
+
 ### Changed
 
 - State the open loopback default explicitly. A hub on loopback without a

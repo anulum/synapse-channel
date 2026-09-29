@@ -22,7 +22,7 @@ everything, since they need the whole command table.
 | `synapse quickstart-coding` | Create a coding-fleet workspace, run the live overlapping-claim refusal demo, and print a success marker. |
 | `synapse fleet-init` | Empty machine to working fleet in one command: doctor (`--fix`), persistent workspace scaffold, provider-seat probe, demo smoke, and a printed next-steps plan. |
 | `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
-| `synapse health` | Probe the hub; exit `0` if reachable, `1` if not (wired as a container healthcheck). |
+| `synapse health` | Probe the hub; exit `0` if reachable, `1` if not (wired as a container healthcheck). For a hub with `--require-identity-binding`, pass `--identity-key-file` and `--identity-key-id` for a key enrolled for the probe's `--name`. |
 | `synapse worker` | Run a model worker that answers on the channel. |
 | `synapse worker-session` | Run a provider command with `SYN_PROJECT`/`SYN_IDENTITY` set and a waiter armed around it. |
 | `synapse team` | Launch a hub plus one or two local workers in one shot. |

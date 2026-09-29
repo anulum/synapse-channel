@@ -25,6 +25,7 @@ from synapse_channel.cli_query_transport import AgentFactory, _drop_message, _qu
 from synapse_channel.cli_query_who import _cmd_who as _cmd_who
 from synapse_channel.cli_query_who import _who as _who
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.core.identity_keys import IdentityKeyError
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.observed_peers import (
     ObservedPeerSpec,
@@ -41,11 +42,15 @@ async def _health(
     agent_factory: AgentFactory = SynapseAgent,
     token: str | None = None,
     ready_timeout: float = 5.0,
+    identity_key_path: str | None = None,
+    identity_key_id: str = "",
 ) -> int:
     """Connect and report whether the hub is reachable: ``0`` if so, ``1`` if not.
 
     A quiet liveness probe for container healthchecks — it opens a connection, waits
-    for the welcome handshake, and exits without printing on success.
+    for the welcome handshake, and exits without printing on success. A hub that
+    requires connection-identity binding admits the probe only when its registration
+    is signed by a key enrolled for ``name``; pass that key here.
 
     Parameters
     ----------
@@ -58,13 +63,21 @@ async def _health(
     ready_timeout : float, optional
         Seconds to wait for the welcome handshake before treating the hub as
         unreachable. Defaults to ``5.0``.
+    identity_key_path : str or None, optional
+        Ed25519 identity signing key (PKCS#8 PEM) that signs the registration. When
+        omitted the probe presents the machine key, as every client does.
+    identity_key_id : str, optional
+        The key id the trust bundle records for ``identity_key_path``.
 
     Returns
     -------
     int
         ``0`` when the hub answered, ``1`` otherwise.
     """
-    agent = agent_factory(name, _drop_message, uri=uri, verbose=False, token=token)
+    identity: dict[str, str] = {}
+    if identity_key_path:
+        identity = {"identity_key_path": identity_key_path, "identity_key_id": identity_key_id}
+    agent = agent_factory(name, _drop_message, uri=uri, verbose=False, token=token, **identity)
     conn_task = asyncio.create_task(agent.connect())
     try:
         return 0 if await agent.wait_until_ready(timeout=ready_timeout) else 1
@@ -76,10 +89,34 @@ async def _health(
 
 
 def _cmd_health(args: argparse.Namespace) -> int:
-    """Probe the hub and return its reachability as the process exit code."""
-    return asyncio.run(
-        _health(uri=args.uri, name=args.name, token=args.token, ready_timeout=args.ready_timeout)
-    )
+    """Probe the hub and return its reachability as the process exit code.
+
+    ``--identity-key-file`` and ``--identity-key-id`` go together; one without the
+    other, or a key file that cannot be loaded, is a configuration error (``2``)
+    rather than an unhealthy hub.
+    """
+    key_file = getattr(args, "identity_key_file", None)
+    key_id = getattr(args, "identity_key_id", "")
+    if bool(key_file) != bool(key_id):
+        print(
+            "synapse health: --identity-key-file and --identity-key-id must be given together",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        return asyncio.run(
+            _health(
+                uri=args.uri,
+                name=args.name,
+                token=args.token,
+                ready_timeout=args.ready_timeout,
+                identity_key_path=key_file,
+                identity_key_id=key_id,
+            )
+        )
+    except IdentityKeyError as exc:
+        print(f"synapse health: {exc}", file=sys.stderr)
+        return 2
 
 
 async def _state(
