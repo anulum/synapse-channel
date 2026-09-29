@@ -31,6 +31,7 @@ from synapse_channel.core.acl import (
 )
 from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.agent_liveness import waiter_owner, waiter_sidecar_names
+from synapse_channel.core.chat_dedupe import chat_digest
 from synapse_channel.core.dead_letter_escalation import (
     crosses_escalation_threshold,
     escalation_notice,
@@ -76,11 +77,13 @@ MAX_CLIENT_MSG_ID_BYTES = 256
 def _normalize_client_msg_id(data: dict[str, Any]) -> str:
     """Retain one bounded printable sender-chosen chat identity, else omit it.
 
-    The hub deliberately does not suppress chat retries: delivery is at-least-once.
-    Instead, every live, retained, journalled, replayed, and receipted copy echoes this
-    identity so receivers can deduplicate by ``(sender, client_msg_id)``. Invalid or
-    oversized identifiers are removed rather than turning a chat into a connection
-    error; the message still follows ordinary at-least-once semantics.
+    A valid identity makes a retry safe: once a copy reached a live recipient, the hub
+    answers a repeated ``(sender, client_msg_id)`` with a duplicate notice instead of
+    routing it again (:mod:`synapse_channel.core.chat_dedupe`), and every live, retained,
+    journalled, replayed, and receipted copy still echoes the identity so receivers
+    can deduplicate what arrives by other paths. Invalid or oversized identifiers
+    are removed rather than turning a chat into a connection error; such a chat
+    follows ordinary at-least-once semantics.
     """
     raw = data.get("client_msg_id")
     if not isinstance(raw, str):
@@ -206,6 +209,7 @@ async def route_chat(
     websocket: Any,
     *,
     report_refusal: bool = True,
+    dedupe_retries: bool = True,
 ) -> ChatRouting:
     """Stamp, retain, journal, and broadcast a chat message to every socket.
 
@@ -240,6 +244,11 @@ async def route_chat(
     report_refusal : bool, optional
         Send a refusal to ``websocket`` as an ``error`` frame (the agent path). A peer
         forward passes ``False`` and relays :attr:`ChatRouting.refusal` in its own result.
+    dedupe_retries : bool, optional
+        Answer a retried chat (same sender and ``client_msg_id``) from
+        :class:`~synapse_channel.core.chat_dedupe.ChatDedupe` instead of routing it again
+        (the agent path). A peer forward passes ``False``: its ``forward_id`` ledger
+        already answers a repeated forward.
 
     Returns
     -------
@@ -259,6 +268,36 @@ async def route_chat(
 
     _stamp_chat_times(data)
     client_msg_id = _normalize_client_msg_id(data)
+    accepted_at = float(data["timestamp"])
+    remember = bool(client_msg_id) and dedupe_retries
+    digest = chat_digest(data) if remember else ""
+    if remember:
+        retry = hub.chat_dedupe.check(sender, client_msg_id, digest, now=accepted_at)
+        if retry.outcome == "conflict":
+            hub.counters.chat_client_id_conflicts += 1
+            return await _refuse_chat(
+                hub,
+                sender,
+                websocket,
+                f"client_msg_id {client_msg_id!r} was already used for a different message.",
+                report=report_refusal,
+            )
+        if retry.original is not None:
+            # K4-WF8: the first copy was accepted; tell the sender instead of routing it
+            # again. A system notice, since clients drop chat frames bearing their name.
+            hub.counters.chat_duplicates_suppressed += 1
+            await hub._send_json(
+                websocket,
+                hub._system(
+                    f"Chat {client_msg_id!r} was already accepted as message "
+                    f"{retry.original.get('msg_id')}; it was not routed again.",
+                    target=sender,
+                    duplicate=True,
+                    client_msg_id=client_msg_id,
+                    **retry.original,
+                ),
+            )
+            return ChatRouting()
     if hub.durable_ingress_quota is not None:
         principal = hub.clients.quota_principal(websocket, fallback_agent=sender)
         reason = hub.durable_ingress_quota.allow(
@@ -279,10 +318,14 @@ async def route_chat(
     data["msg_id"] = hub._next_msg_id()
     channel = str(data.get("channel") or "").strip()
     if channel:
-        await _route_channel_chat(hub, sender, data, websocket, channel)
+        reached = await _route_channel_chat(hub, sender, data, websocket, channel)
+        if reached and remember:
+            hub.chat_dedupe.remember(sender, client_msg_id, digest, data, accepted_at=accepted_at)
         return ChatRouting()
     if HUB_ADDRESS_SEPARATOR in str(data.get("target") or ""):
-        await forward_chat(hub, sender, data, websocket)
+        accepted = await forward_chat(hub, sender, data, websocket)
+        if accepted and remember:
+            hub.chat_dedupe.remember(sender, client_msg_id, digest, data, accepted_at=accepted_at)
         return ChatRouting()
     target = str(data.get("target") or "all")
     logical_target = waiter_owner(target)
@@ -329,6 +372,10 @@ async def route_chat(
         data["seq"] = record_chat(hub.journal, data)
         hub.mailbox_pending.observe_chat(int(data["seq"]), data)
     message_seq = int(data["seq"]) if "seq" in data else None
+    if remember and delivery.delivered:
+        # Only a copy that reached a live recipient makes a retry redundant; a retry of a
+        # chat nobody received is a redelivery attempt and is routed again.
+        hub.chat_dedupe.remember(sender, client_msg_id, digest, data, accepted_at=accepted_at)
     receipt_before_fanout = (
         receipt_requested and directed and not delivery.delivered and bool(recipients)
     )
@@ -492,13 +539,14 @@ async def _forward_dead_letter_to_peer(hub: SynapseHub, *, target: str, count: i
 
 async def _route_channel_chat(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any, channel: str
-) -> None:
+) -> bool:
     """Deliver a channel-scoped chat to online members only, never broadcast.
 
     Non-members are refused privately. The body is not retained in the public
     chat history, but it is retained in the channel's bounded live history and
     mirrored/journalled with explicit channel metadata so relay and event-query
-    can filter it.
+    can filter it. Returns whether the chat was accepted and reached at least one
+    online member.
     """
     if not hub.channels.is_member(channel, sender):
         await hub._send_json(
@@ -510,7 +558,7 @@ async def _route_channel_chat(
                 channel=channel,
             ),
         )
-        return
+        return False
     online = set(hub.online_agents())
     recipients = sorted(
         member for member in hub.channels.members(channel) if member != sender and member in online
@@ -531,6 +579,7 @@ async def _route_channel_chat(
             decision=classify_delivery_liveness(recipients, ()),
             client_msg_id=str(data.get("client_msg_id") or ""),
         )
+    return bool(recipients)
 
 
 def _directed_audience(recipients: list[str], observers: Iterable[str]) -> list[str]:

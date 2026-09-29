@@ -1079,9 +1079,12 @@ all socket-level `matched_recipients`, `stale_recipients`, a machine-readable
 it. The one-shot CLI generates a unique `client_msg_id` and accepts only a receipt
 echoing that value; a pending receipt replayed when the sender identity reconnects
 therefore cannot be mistaken for the new send's verdict. Programmatic clients that
-retry chat reuse a bounded printable `client_msg_id` and receivers deduplicate on
-`(sender, client_msg_id)`; the hub remains intentionally at-least-once and gives
-each attempt a new `msg_id` / `seq`.
+retry chat reuse a bounded printable `client_msg_id`. Once a copy has reached a
+live recipient, the hub answers a same-content retry (within 24 hours, in the same
+hub process) with a `system` frame marked `duplicate` that names the first copy's
+`msg_id`. It refuses a reused id with different content. A retry of a chat that
+reached nobody is routed again. Receivers still deduplicate on the pair for copies
+the hub cannot recognise.
 A socket match counts as live
 only when the recipient reacted within the configured liveness window or has a
 fresh `-rx` waiter; otherwise the CLI prints `delivery failed: no live recipient

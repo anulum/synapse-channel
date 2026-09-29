@@ -121,7 +121,7 @@ def chat_target_refusal(target: str) -> str:
     return ""
 
 
-async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
+async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> bool:
     """Accept one agent chat addressed to a seat on a peer hub and forward it.
 
     Parameters
@@ -135,6 +135,11 @@ async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], webso
         The chat frame.
     websocket : Any
         The sender's connection; refusals and the receipt go there.
+
+    Returns
+    -------
+    bool
+        ``True`` when the chat was accepted into the outbox, ``False`` when refused.
     """
     target = str(data.get("target") or "").strip()
     refusal = chat_target_refusal(target)
@@ -146,7 +151,7 @@ async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], webso
         await hub._send_json(
             websocket, hub._system(refusal, msg_type=MessageType.ERROR, target=sender)
         )
-        return
+        return False
     data["target"] = str(address)
     client_msg_id = str(data.get("client_msg_id") or "")
     body: dict[str, Any] = {
@@ -174,7 +179,7 @@ async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], webso
                 f"Chat cannot be forwarded: {exc}", msg_type=MessageType.ERROR, target=sender
             ),
         )
-        return
+        return False
     hub.chat_history.append(data.copy())
     if len(hub.chat_history) > hub.max_history:
         del hub.chat_history[0]
@@ -200,6 +205,7 @@ async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], webso
         await hub._send_json(websocket, forward_receipt_frame(hub, settled, data))
         if settled.state != "pending":
             hub.message_forward_ledger.mark_sender_notified(settled.forward_id, now=time.time())
+    return True
 
 
 async def attempt_forward(hub: SynapseHub, entry: OutboxEntry) -> OutboxEntry:

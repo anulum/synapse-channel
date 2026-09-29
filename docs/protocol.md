@@ -416,16 +416,30 @@ totals, while `--all-mailbox-pending` expands the retained map. Older clients
 ignore the WHO field; older hubs ignore the additive ACK identity and keep their
 receipt-only ACK behavior.
 
-**Chat retry identity.** Chat delivery is explicitly **at least once**. The hub
-does not consume `idem_key` for chat and does not suppress a retry. A sender that
-may retry across reconnects instead supplies an optional printable
-`client_msg_id` of at most 256 UTF-8 bytes. The hub echoes the normalized value on
-live delivery, bounded history, the durable chat row, mailbox replay, immediate /
-deferred receipt frames, and the durable receipt ledger. Receivers deduplicate on
-`(sender, client_msg_id)`; `msg_id` and durable `seq` identify individual delivery
-attempts and therefore differ across retries. Missing or invalid `client_msg_id`
-keeps ordinary at-least-once behavior. The hub never treats this caller-chosen
-identity as authentication or authorization.
+**Chat retry identity.** Chat delivery is **at least once**, and the hub does not
+consume `idem_key` for chat. A sender that may retry across reconnects supplies an
+optional printable `client_msg_id` of at most 256 UTF-8 bytes. The hub echoes the
+normalized value on live delivery, bounded history, the durable chat row, mailbox
+replay, immediate / deferred receipt frames, and the durable receipt ledger.
+
+Once a copy from a directly connected sender reaches a live recipient (or a peer
+hub's forward outbox), the hub remembers its `(sender, client_msg_id)` with a
+digest of the chat's content. That memory lasts up to 24 hours and 4096 pairs and
+lives only in the hub process.
+- **Same pair, same content:** a retry is not stored, journalled or delivered
+  again. The sender receives a `system` frame with `duplicate: true`,
+  `client_msg_id`, and the first copy's `msg_id`, plus `seq`, `channel` or
+  `forward_id` when the first copy had one. The first copy's delivery receipt, if
+  requested, stands.
+- **Same pair, different content:** the chat is refused with an `error`.
+- **A chat that reached nobody:** it is not remembered, so resending it is a
+  redelivery attempt and is routed again.
+- **After a restart, outside the retention, or by other paths:** copies are still
+  possible, so receivers should keep deduplicating on `(sender, client_msg_id)`.
+- **Invalid or missing `client_msg_id`:** plain at-least-once behavior.
+- Chats a peer hub forwards are deduplicated by their `forward_id` instead.
+- The hub never treats this caller-chosen identity as authentication or
+  authorization.
 
 **Durable ingress quotas.** Optional per-principal sliding-window bounds cap how
 many chat events and serialized chat-frame bytes a server-derived quota principal may have

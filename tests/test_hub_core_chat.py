@@ -8,12 +8,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import time
 from pathlib import Path
 from typing import Any
 
+import pytest
 from websockets.asyncio.client import connect
 
 from hub_e2e_helpers import (
@@ -46,9 +48,10 @@ async def test_chat_is_broadcast_and_recorded_end_to_end() -> None:
             await close_agents(alpha, beta)
 
 
-async def test_chat_retries_echo_client_identity_without_suppressing_attempts(
+async def test_chat_retry_echoes_client_identity_and_is_accepted_once(
     tmp_path: Path,
 ) -> None:
+    """INV-DG-1: the first copy is delivered and receipted; a same-content retry is not."""
     store = EventStore(tmp_path / "events.db")
     async with running_hub(SynapseHub(journal=store, max_history=1)) as (hub, uri):
         async with connect(uri) as bob_ws:
@@ -63,7 +66,8 @@ async def test_chat_retries_echo_client_identity_without_suppressing_attempts(
                     }
                 )
             )
-            for _ in range(2):
+            answers: list[dict[str, Any]] = []
+            for attempt in range(2):
                 async with connect(uri) as alice_ws:
                     await read_until_type(alice_ws, "welcome")
                     await alice_ws.send(
@@ -78,16 +82,23 @@ async def test_chat_retries_echo_client_identity_without_suppressing_attempts(
                             }
                         )
                     )
-                    delivered = await read_until_type(bob_ws, "chat")
-                    receipt = await read_until_type(alice_ws, "delivery_receipt")
-                    assert delivered["client_msg_id"] == "send-42"
-                    assert receipt["client_msg_id"] == "send-42"
+                    if attempt == 0:
+                        delivered = await read_until_type(bob_ws, "chat")
+                        answers.append(await read_until_type(alice_ws, "delivery_receipt"))
+                    else:
+                        answers.append(await read_until_type(alice_ws, "system"))
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(read_until_type(bob_ws, "chat"), 0.5)
 
     chat_events = [event for event in store.read_all() if event.kind == EventKind.CHAT]
     store.close()
-    assert len(chat_events) == 2
-    assert {event.payload["client_msg_id"] for event in chat_events} == {"send-42"}
-    assert chat_events[0].payload["msg_id"] != chat_events[1].payload["msg_id"]
+    receipt, duplicate = answers
+    assert delivered["client_msg_id"] == receipt["client_msg_id"] == "send-42"
+    assert duplicate["duplicate"] is True
+    assert duplicate["client_msg_id"] == "send-42"
+    assert duplicate["msg_id"] == delivered["msg_id"]
+    assert len(chat_events) == 1
+    assert chat_events[0].payload["client_msg_id"] == "send-42"
     assert len(hub.chat_history) == 1
     assert hub.chat_history[0]["client_msg_id"] == "send-42"
 

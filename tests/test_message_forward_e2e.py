@@ -711,6 +711,33 @@ async def test_plain_chat_needs_no_receipt_and_honours_private_routing(tmp_path:
         assert [entry["payload"] for entry in pair.workstation.chat_history] == ["asked"]
 
 
+async def test_a_retried_cross_hub_chat_is_forwarded_once(tmp_path: Path) -> None:
+    """K4-WF8: the origin answers the retry itself; the peer never sees a second copy."""
+    async with _two_hubs(tmp_path) as pair:
+        ca = pair.material.ca
+        alice = await _agent(pair.ws_uri, ca, "PROJ/alice")
+        bob = await _agent(pair.lp_uri, ca, "PROJ/bob")
+        try:
+            await _chat(alice, "PROJ/alice", "PROJ/bob@laptop", "retry", receipt=False)
+            first = await _chat_from(bob, "PROJ/alice@workstation")
+            await _chat(alice, "PROJ/alice", "PROJ/bob@laptop", "retry", receipt=False)
+            notice = await read_until_type(alice, MessageType.SYSTEM, limit=_READ_LIMIT)
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(_chat_from(bob, "PROJ/alice@workstation"), 0.5)
+        finally:
+            for websocket in (alice, bob):
+                await websocket.close()
+        forwarded = [
+            entry for entry in pair.workstation.chat_history if entry.get("payload") == "retry"
+        ]
+    assert first["payload"] == "retry"
+    assert notice["duplicate"] is True
+    assert notice["client_msg_id"] == "cm-retry"
+    assert notice["msg_id"] == forwarded[0]["msg_id"]
+    assert len(str(notice["forward_id"])) == 32
+    assert len(forwarded) == 1
+
+
 def _workstation_peer(pair: _Pair) -> MessageForwardPeer:
     peers = pair.workstation.message_peers
     assert peers is not None

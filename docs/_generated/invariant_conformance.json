@@ -218,6 +218,7 @@
       ],
       "scope": "Journal-backed coordination operations, defined delivery receipts and audit decisions, AEF records, and federation quarantine evidence.",
       "sources": [
+        "src/synapse_channel/core/chat_dedupe.py",
         "src/synapse_channel/core/journal.py",
         "src/synapse_channel/core/universal_receipts.py",
         "src/synapse_channel/dashboard_store_feeds.py"
@@ -233,6 +234,7 @@
       "status": "partial",
       "tests": [
         "tests/test_atomic_operation_killpoints.py",
+        "tests/test_chat_dedupe.py",
         "tests/test_cli_event_query.py",
         "tests/test_dashboard_store_feeds_activity.py",
         "tests/test_delivery_receipts.py",

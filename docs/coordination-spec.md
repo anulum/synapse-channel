@@ -438,18 +438,28 @@ hub start. The lease TTL remains the upper bound.
 
 Delivery guarantees differ by verb, on purpose, and the difference is normative.
 
-### INV-DG-1 — chat is at-least-once
+### INV-DG-1 — chat is at-least-once; a named retry is accepted once
 
 **Normative.** Chat delivery is at-least-once. The hub MUST NOT consume `idem_key`
-for chat and MUST NOT suppress a retry. A sender that may retry SHOULD carry a
-printable `client_msg_id`; the hub MUST echo it on every copy so receivers can
-deduplicate by `(sender, client_msg_id)`. `client_msg_id` MUST NOT be treated as
-authentication.
+for chat. A sender that may retry SHOULD carry a printable `client_msg_id`; the
+hub MUST echo it on every copy. Once a copy from a directly connected sender has
+reached a live recipient (or a peer hub's forward outbox), the hub remembers its
+`(sender, client_msg_id)` in process memory for at most 24 hours and 4096 pairs.
+A later chat with that pair and the same content MUST NOT be stored, journalled or
+delivered again: the hub answers the sender with a `system` frame carrying
+`duplicate: true`, the `client_msg_id` and the first copy's `msg_id` (and `seq`).
+The same pair with different content MUST be refused. A retry of a chat that
+reached nobody is a redelivery attempt and MUST be routed again. A chat without a
+`client_msg_id` keeps plain at-least-once delivery. Receivers SHOULD still
+deduplicate by `(sender, client_msg_id)`: a retry after a hub restart or outside
+the retention, and copies arriving by other paths, are not covered. `client_msg_id` MUST
+NOT be treated as authentication.
 
-**Implementation.** `core/handlers/messaging.py` (`_normalize_client_msg_id`);
-`CHAT` is absent from `hub_ledger_guard.py:_MUTATING_TYPES`.
+**Implementation.** `core/handlers/messaging.py` (`_normalize_client_msg_id`,
+`route_chat`); `core/chat_dedupe.py`; `CHAT` is absent from
+`hub_ledger_guard.py:_MUTATING_TYPES`.
 
-**Pinned by.** `tests/test_hub_core_chat.py`.
+**Pinned by.** `tests/test_hub_core_chat.py`, `tests/test_chat_dedupe.py`.
 
 ### INV-DG-2 — keyed coordination verbs are apply-once
 

@@ -281,7 +281,9 @@ async def _deliver_chat(
     client_msg_id = body.get("client_msg_id")
     if isinstance(client_msg_id, str) and client_msg_id:
         chat["client_msg_id"] = client_msg_id
-    routing = await route_chat(hub, sender, chat, websocket, report_refusal=False)
+    routing = await route_chat(
+        hub, sender, chat, websocket, report_refusal=False, dedupe_retries=False
+    )
     if routing.refusal:
         raise _Refused("chat_refused", routing.refusal)
     # The wire codec forbids '@' in the target seat and the frame carries no channel, so an

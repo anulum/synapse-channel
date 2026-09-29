@@ -67,6 +67,7 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
 from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
 from synapse_channel.core.channels import ChannelRegistry
+from synapse_channel.core.chat_dedupe import ChatDedupe
 from synapse_channel.core.claim_holder_presence import ClaimHolderPresence
 from synapse_channel.core.dark_seat import DarkSeatMonitor
 from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
@@ -886,6 +887,11 @@ class SynapseHub:
             clock=self._clock,
         )
         self.chat_history = seeded.chat_history
+        # K4-WF8: a retried chat (same sender and client_msg_id) whose first copy reached
+        # a live recipient is answered with a duplicate notice instead of routed again.
+        # The memory is per process: the journal does not record whether a copy was
+        # received, and re-seeding from it would suppress a legitimate redelivery.
+        self.chat_dedupe = ChatDedupe()
         self.pending_receipts.restore(seeded.pending_receipts)
         self.blackboard = seeded.blackboard
         self._dark_seats = DarkSeatMonitor(

@@ -179,12 +179,14 @@ limitations = [
 ]
 spec_invariants = ["INV-JA-1", "INV-JA-2", "INV-DG-1", "INV-DG-3", "INV-DG-4", "INV-MH-5"]
 sources = [
+  "src/synapse_channel/core/chat_dedupe.py",
   "src/synapse_channel/core/journal.py",
   "src/synapse_channel/core/universal_receipts.py",
   "src/synapse_channel/dashboard_store_feeds.py",
 ]
 tests = [
   "tests/test_atomic_operation_killpoints.py",
+  "tests/test_chat_dedupe.py",
   "tests/test_cli_event_query.py",
   "tests/test_dashboard_store_feeds_activity.py",
   "tests/test_delivery_receipts.py",

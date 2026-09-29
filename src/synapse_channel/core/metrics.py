@@ -175,6 +175,18 @@ def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
             hub.counters.claims_released_abandoned,
         ),
         Metric(
+            "synapse_chat_duplicates_suppressed_total",
+            "Retried chats answered with their first accepted copy instead of routed again.",
+            "counter",
+            hub.counters.chat_duplicates_suppressed,
+        ),
+        Metric(
+            "synapse_chat_client_id_conflicts_total",
+            "Chats refused because their client_msg_id already named a different message.",
+            "counter",
+            hub.counters.chat_client_id_conflicts,
+        ),
+        Metric(
             "synapse_message_forward_pending",
             "Chats forwarded to peer hubs and not yet answered, across all peers.",
             "gauge",

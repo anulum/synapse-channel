@@ -56,6 +56,20 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Accept a retried chat once. Once a copy with a `client_msg_id` has reached a
+  live recipient (or a peer hub's forward outbox), a same-content retry from the
+  same sender within 24 hours in the same hub process is no longer stored,
+  journalled or delivered again. The sender gets a `system` frame with
+  `duplicate: true` naming the first copy's `msg_id`, and the same id with
+  different content is refused. A retry of a chat that reached nobody is still
+  routed again, so redelivery flows such as `review-feedback route` keep working.
+  Before, every retry was delivered and journalled again (reproduced: two sends
+  reached the recipient twice). Chats without `client_msg_id` are unchanged, and
+  peer-forwarded chats keep their `forward_id` dedupe. New metrics:
+  `synapse_chat_duplicates_suppressed_total` and
+  `synapse_chat_client_id_conflicts_total`. This revises INV-DG-1 in
+  `docs/coordination-spec.md`.
+
 - Anchor the anti-rollback checkpoint while the hub serves. Before, the hub
   anchored its log only at start and never closed the checkpoint store, so
   cutting events written while it ran passed the next start (reproduced on the

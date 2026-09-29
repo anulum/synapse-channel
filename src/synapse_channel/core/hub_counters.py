@@ -42,6 +42,10 @@ class HubCounters:
         Releases answered ``RELEASE_GRANTED``.
     claims_released_abandoned : int
         Claims released because their holder stayed offline past the lease window.
+    chat_duplicates_suppressed : int
+        Retried chats (same sender and ``client_msg_id``) answered with the first copy.
+    chat_client_id_conflicts : int
+        Chats refused because their ``client_msg_id`` already named a different message.
     chat_directed : int
         Chat frames addressed to a specific name, list, or glob.
     chat_broadcast : int
@@ -74,6 +78,8 @@ class HubCounters:
     claims_denied: int = 0
     releases_granted: int = 0
     claims_released_abandoned: int = 0
+    chat_duplicates_suppressed: int = 0
+    chat_client_id_conflicts: int = 0
     chat_directed: int = 0
     chat_broadcast: int = 0
     auth_failures: int = 0
