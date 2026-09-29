@@ -29,7 +29,10 @@ overlapping definition of "secure".
 - deny-by-default ACL enforcement (`--acl-policy`);
 - native WSS (`--tls-certfile`/`--tls-keyfile`);
 - bearer-only metrics authentication when `--metrics` is enabled;
-- the metrics query-token and insecure-off-loopback relaxations disabled.
+- the metrics query-token and insecure-off-loopback relaxations disabled;
+- durable message-auth sequence floors recorded in `compat` mode (an unset
+  `--message-auth-sequence-floor-mode` becomes `compat`; see
+  [team-secure](team-secure.md) for why not `strict`).
 
 `team_secure.py` and `paranoid.py` remain the single authorities for their own
 checks; the umbrella turns both on and reports once instead of twice.

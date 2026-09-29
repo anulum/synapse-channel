@@ -56,6 +56,14 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Record durable message-auth sequence floors under `--secure` and `--team-secure`.
+  When per-message auth and a durable replay ledger are present, an unset
+  `--message-auth-sequence-floor-mode` now becomes `compat`, which records each
+  key's high-water sequence without refusing anything. `strict` is not the profile
+  default. Tested through the public claim route: the shipped client numbers
+  frames from 1 in every process, so a strict floor refused a restarted agent's
+  first frame with `sequence_mismatch`. It stays an explicit operator choice.
+
 - Accept a retried chat once. Once a copy with a `client_msg_id` has reached a
   live recipient (or a peer hub's forward outbox), a same-content retry from the
   same sender within 24 hours in the same hub process is no longer stored,

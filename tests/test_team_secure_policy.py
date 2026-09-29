@@ -109,3 +109,39 @@ def test_team_secure_policy_rejects_missing_required_settings(
     """Team-secure mode fails closed for settings the hub CLI directly controls."""
     with pytest.raises(TeamSecureModeError, match=message):
         apply_team_secure_hub_profile(_args(**overrides))
+
+
+@pytest.mark.parametrize(
+    ("overrides", "mode", "line"),
+    [
+        ({}, "off", None),
+        ({"require_message_auth": True}, "off", None),
+        (
+            {"require_message_auth": True, "db": "hub.db"},
+            "compat",
+            "durable message-auth sequence floors recorded (compat)",
+        ),
+        (
+            {
+                "require_message_auth": True,
+                "message_auth_replay_db": "auth.db",
+                "message_auth_sequence_floor_mode": "strict",
+            },
+            "strict",
+            "durable message-auth sequence floors recorded (strict)",
+        ),
+    ],
+)
+def test_sequence_floors_turn_on_in_compat_where_they_can_run(
+    overrides: dict[str, object], mode: str, line: str | None
+) -> None:
+    """K4-WF10: floors need message auth and a durable ledger; unset means compat."""
+    args = _args(**{"message_auth_sequence_floor_mode": "off", **overrides})
+    report = apply_team_secure_hub_profile(args)
+    assert report is not None
+    assert args.message_auth_sequence_floor_mode == mode
+    assert (
+        (line in report.enforced)
+        if line
+        else not any("sequence floors" in entry for entry in report.enforced)
+    )

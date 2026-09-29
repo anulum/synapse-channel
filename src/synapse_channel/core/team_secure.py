@@ -108,6 +108,9 @@ def apply_team_secure_hub_profile(args: argparse.Namespace) -> TeamSecureHubRepo
         "role-claim grants required (--role-grants + --require-role-claim)",
         "private directed messages required",
     ]
+    floors = _record_sequence_floors(args)
+    if floors:
+        enforced.append(floors)
     recommended: list[str] = []
     if not getattr(args, "message_auth_key", None) or not bool(
         getattr(args, "require_message_auth", False)
@@ -135,3 +138,29 @@ def apply_team_secure_hub_profile(args: argparse.Namespace) -> TeamSecureHubRepo
         enforced=tuple(enforced),
         recommended=tuple(recommended),
     )
+
+
+def _record_sequence_floors(args: argparse.Namespace) -> str:
+    """Turn durable sequence floors on in ``compat`` mode where they can run (K4-WF10).
+
+    Floors need per-message authentication and a durable replay ledger (``--db`` or
+    ``--message-auth-replay-db``); without both they stay off. An unset (``off``) mode
+    becomes ``compat``, which records each key's high-water sequence without refusing
+    anything. ``strict`` is left to the operator: the shipped client numbers frames
+    from 1 in every process, so a strict floor refuses a restarted agent's first
+    frames (reproduced) until clients keep their sequence across restarts.
+
+    Returns
+    -------
+    str
+        The report line, or ``""`` when floors cannot run.
+    """
+    if not bool(getattr(args, "require_message_auth", False)):
+        return ""
+    if not (getattr(args, "db", None) or getattr(args, "message_auth_replay_db", None)):
+        return ""
+    mode = str(getattr(args, "message_auth_sequence_floor_mode", "off") or "off")
+    if mode == "off":
+        mode = "compat"
+        args.message_auth_sequence_floor_mode = mode
+    return f"durable message-auth sequence floors recorded ({mode})"

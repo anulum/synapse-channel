@@ -34,6 +34,14 @@ same multi-seat hub is also network-exposed.
 4. **Private directed messages** — forced on, so a directed chat is delivered
    only to its recipients (and `-rx` sidecars) plus identities with the ACL
    `observe` grant, not to every socket.
+5. **Durable sequence floors, when they can run** — with
+   `--require-message-auth` and a durable replay ledger (`--db` or
+   `--message-auth-replay-db`), an unset `--message-auth-sequence-floor-mode`
+   becomes `compat`: each key's high-water sequence is recorded, and nothing is
+   refused on that basis. `strict` stays an explicit choice. The shipped client
+   numbers its frames from 1 in every process, so a strict floor refuses a
+   restarted agent's first frames (`sequence_mismatch`). This was tested through
+   the public claim route.
 
 On startup the hub prints what was enforced and a short **recommended next**
 list (message-auth, ACL, TLS/`--paranoid`, durable `--db`) when those are still

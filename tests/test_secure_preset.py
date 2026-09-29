@@ -372,3 +372,12 @@ def test_secure_mode_refuses_the_unbound_identity_downgrade() -> None:
     """K4-F2: the strict umbrella never starts with identity binding waived."""
     with pytest.raises(SecureModeError, match="--insecure-unbound-identity"):
         apply_secure_hub_profile(_complete_args(insecure_unbound_identity=True))
+
+
+def test_secure_mode_records_sequence_floors_in_compat_mode() -> None:
+    """K4-WF10: --secure turns floors on without refusing a restarted client."""
+    args = _complete_args(message_auth_sequence_floor_mode="off")
+    report = apply_secure_hub_profile(args)
+    assert report is not None
+    assert args.message_auth_sequence_floor_mode == "compat"
+    assert "durable message-auth sequence floors recorded (compat)" in report.enforced

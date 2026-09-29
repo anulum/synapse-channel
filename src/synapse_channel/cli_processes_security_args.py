@@ -172,7 +172,9 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
         default="off",
         help="Durable per-key/sender sequence policy. 'off' persists nonces only; "
         "'compat' records a high-water mark without rejecting lower fresh nonces; "
-        "'strict' rejects sequence values at or below the durable floor.",
+        "'strict' rejects sequence values at or below the durable floor (a restarted "
+        "client starts again at 1, so strict refuses it). --secure and --team-secure "
+        "turn 'off' into 'compat' when a durable ledger exists.",
     )
     hub.add_argument(
         "--acl-policy",
