@@ -5,12 +5,12 @@
   "review_interval_days": 7,
   "surfaces": {
     "claude-code": {
-      "verified_version": "2.1.280",
-      "reviewed_notes_sha256": "d091773ef99df3894ff11b5554c681bc5caf9afe301d8349ee367e3edf0a2f86",
-      "verification": "Exact 2.1.280 Linux host validator, isolated plugin load, MCP hub/claim and allowed/denied hook test",
+      "verified_version": "2.1.284",
+      "reviewed_notes_sha256": "6f8d4d1dd56c748fab44447bdc96ee7b50c663d0c271222fa82a36aa6aff2c9b",
+      "verification": "Exact 2.1.284 Linux host validator, isolated plugin load, MCP hub/claim and allowed/denied hook test",
       "capability_class": "native",
       "owning_adapter": "integrations/claude-code",
-      "migration_decision": "Admit 2.1.280 on the exercised Linux plugin path; retain 2.1.278 as the previous verified rollback version."
+      "migration_decision": "Admit 2.1.284 on the exercised Linux plugin path; retain 2.1.280 as the previous verified rollback version. The 2.1.281-2.1.284 notes change no surface this plugin uses."
     },
     "codex-cli": {
       "verified_version": "0.156.0",

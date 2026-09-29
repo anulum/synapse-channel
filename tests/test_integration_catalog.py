@@ -42,7 +42,7 @@ def test_public_catalog_lists_each_reviewed_host(capsys: pytest.CaptureFixture[s
     assert {row["host"] for row in rows} == {host.key for host in HOSTS}
     assert host_capability("codex-cli").verified_version == "0.156.0"
     assert host_capability("pi").verified_version == "0.87.1"
-    assert host_capability("claude-code").verified_version == "2.1.280"
+    assert host_capability("claude-code").verified_version == "2.1.284"
     assert host_capability("opencode").verified_version == "1.18.32"
     assert all(
         row["version_accepted"] is False for row in rows if row["capability"] == "unsupported"
@@ -288,8 +288,8 @@ def test_public_claude_lifecycle_validates_and_removes_an_isolated_plugin(
         pytest.skip("exact Claude Code host unavailable")
     host = Path(selected)
     version = subprocess.run([str(host), "--version"], capture_output=True, text=True, timeout=10)
-    if version.returncode or version.stdout.strip() != "2.1.280 (Claude Code)":
-        pytest.skip("exact Claude Code 2.1.280 host unavailable")
+    if version.returncode or version.stdout.strip() != "2.1.284 (Claude Code)":
+        pytest.skip("exact Claude Code 2.1.284 host unavailable")
     synapse = Path(sysconfig.get_path("scripts")) / "synapse"
     assert synapse.is_file()
     profile = tmp_path / "claude"

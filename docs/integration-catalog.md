@@ -18,7 +18,7 @@ separately from this acceptance catalog.
 
 | Host | Reviewed version | Lifecycle | Rollback evidence |
 |---|---:|---|---|
-| Claude Code | 2.1.280 | Native plugin: inspect, install, diagnose, uninstall | 2.1.278 |
+| Claude Code | 2.1.284 | Native plugin: inspect, install, diagnose, uninstall | 2.1.280 |
 | Codex CLI | 0.156.0 | Manual local stdio MCP: inspect, install, diagnose, uninstall | None validated |
 | Pi | 0.87.1 | Bound participant: inspect, offline RPC diagnose | 0.86.0 |
 | OpenCode | 1.18.32 | Native adapter: inspect, install, diagnose, uninstall | 1.18.31 |

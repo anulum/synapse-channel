@@ -82,6 +82,10 @@ resume. The compatibility matrix now accepts 0.86.0 for these paths and keeps
 0.85.1 as the verified rollback reference. A model-driven claim mutation on
 0.86.0 and other operating systems remain separate verification work.
 
+On 2026-09-29, Claude Code 2.1.284 passed the same checks, with 2.1.280 as its
+rollback version; its 2.1.281 to 2.1.284 notes touch no surface the plugin
+uses.
+
 On 2026-09-22, Claude Code 2.1.280 passed its official strict plugin validator,
 isolated plugin load, local MCP hub claim journey and allowed/denied write hook
 checks on Linux. The installed binary identified itself as 2.1.280; the matrix

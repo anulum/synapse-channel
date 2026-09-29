@@ -37,7 +37,7 @@ HOSTS: tuple[HostCapability, ...] = (
         "Claude Code",
         "native",
         CLAUDE_VERSION,
-        "2.1.278",
+        "2.1.280",
         "claude-plugin",
         ("inspect", "install", "diagnose", "uninstall"),
         "strict plugin validator and isolated Linux hub/claim journey",

@@ -5,6 +5,6 @@
   "description": "Exact Claude Code host for real plugin coverage in CI",
   "license": "AGPL-3.0-or-later",
   "dependencies": {
-    "@anthropic-ai/claude-code": "2.1.280"
+    "@anthropic-ai/claude-code": "2.1.284"
   }
 }

@@ -45,7 +45,7 @@ benchmark extra additionally uses [`tiktoken`](https://pypi.org/project/tiktoken
 dependency remains under its own licence.
 
 The CI-only `integrations/claude-code` test package installs the exact
-`@anthropic-ai/claude-code` 2.1.280 host and its platform-specific native
+`@anthropic-ai/claude-code` 2.1.284 host and its platform-specific native
 package from the integrity-locked npm manifest. The upstream package declares
 its proprietary licence in its README; the native package carries its own
 licence file. The CI-only test manifest and lockfile live in the Git repository;

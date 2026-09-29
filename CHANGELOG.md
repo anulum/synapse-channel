@@ -13,6 +13,16 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Claude Code plugin validated with Claude Code 2.1.284.**
+  - The installer's tested host, the CI host (integrity-locked npm package),
+    the integration catalog and the vendor-watch matrix all move from 2.1.280.
+  - 2.1.280 stays the rollback version.
+  - The exact host passed the strict plugin validator, the isolated plugin
+    install/upgrade/removal and the live hub claim hook journey.
+  - Its 2.1.281 to 2.1.284 release notes change no surface the plugin uses.
+
 ### Upgrade notes
 
 - **`--team-secure`, and therefore `--secure`, now force `--require-fencing-epoch`.**
