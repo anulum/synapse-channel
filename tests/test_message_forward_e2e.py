@@ -33,6 +33,15 @@ from hub_e2e_helpers import _await_listening, _free_port, read_until_type
 from multihub_tls_helpers import TLSIdentity, certificate_authority, issue_identity
 from synapse_channel.core.federation import FederationBundle, FederationPeer
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.identity_binding import (
+    enroll_identity_key,
+    load_identity_trust_bundle,
+)
+from synapse_channel.core.identity_keys import (
+    generate_signing_key,
+    public_key_b64,
+    write_signing_key,
+)
 from synapse_channel.core.message_forward_origin import run_forward_retries
 from synapse_channel.core.message_forward_transport import (
     MessageForwardPeer,
@@ -143,6 +152,7 @@ def _build_hub(
     remote_port: int,
     namespaces: frozenset[str] = frozenset({_NS}),
     ttl: float = 86_400.0,
+    identity_trust: Path | None = None,
 ) -> SynapseHub:
     return SynapseHub(
         hub_id=name,
@@ -150,6 +160,10 @@ def _build_hub(
         multihub_serving_policy=_policy(remote, material.clients[remote], namespaces),
         message_peers=_peers(material, local=name, remote=remote, port=remote_port),
         message_forward_ttl=ttl,
+        identity_trust_bundle=(
+            None if identity_trust is None else load_identity_trust_bundle(identity_trust)
+        ),
+        require_identity_binding=identity_trust is not None,
     )
 
 
@@ -178,6 +192,7 @@ async def _two_hubs(
     laptop_namespaces: frozenset[str] = frozenset({_NS}),
     workstation_ttl: float = 86_400.0,
     corrupt_laptop_journal: bool = False,
+    laptop_identity_trust: Path | None = None,
 ) -> AsyncIterator[_Pair]:
     material = _material(tmp_path)
     ws_port, lp_port = _free_port(), _free_port()
@@ -208,6 +223,7 @@ async def _two_hubs(
         remote="workstation",
         remote_port=ws_port,
         namespaces=laptop_namespaces,
+        identity_trust=laptop_identity_trust,
     )
     ws_task = await _serve(workstation, material, ws_port)
     lp_task = await _serve(laptop, material, lp_port) if laptop_up else None
@@ -736,6 +752,37 @@ async def test_a_retried_cross_hub_chat_is_forwarded_once(tmp_path: Path) -> Non
     assert notice["msg_id"] == forwarded[0]["msg_id"]
     assert len(str(notice["forward_id"])) == 32
     assert len(forwarded) == 1
+
+
+async def test_an_identity_bound_hub_admits_its_mtls_peer_but_not_a_name_squatter(
+    tmp_path: Path,
+) -> None:
+    """A peer hub proves its id with its pinned client certificate, not a signature.
+
+    Found while pinning Fleet to 0.99.31: an identity-bound receiving hub refused every
+    forward from its mTLS peer (``identity binding denied for workstation``), so a hub
+    that had to bind identity off loopback could not federate at all.
+    """
+    key = generate_signing_key()
+    write_signing_key(tmp_path / "bob.pem", key)
+    trust = tmp_path / "laptop-identity-trust.json"
+    enroll_identity_key(
+        trust, key_id="bob-1", public_key_b64=public_key_b64(key), senders=["PROJ/bob"]
+    )
+    async with _two_hubs(tmp_path, laptop_identity_trust=trust) as pair:
+        ca = pair.material.ca
+        alice = await _agent(pair.ws_uri, ca, "PROJ/alice")
+        squatter = await _agent(pair.lp_uri, ca, "workstation")
+        try:
+            await _chat(alice, "PROJ/alice", "PROJ/bob@laptop", "bound")
+            receipt = await _receipt(alice)
+            refusal = await read_until_type(squatter, MessageType.ERROR, limit=_READ_LIMIT)
+        finally:
+            for websocket in (alice, squatter):
+                await websocket.close()
+    assert receipt["reason"] == "no_online_recipient"
+    assert "forwarded to laptop" in receipt["payload"]
+    assert "identity binding failed" in refusal["payload"]
 
 
 def _workstation_peer(pair: _Pair) -> MessageForwardPeer:

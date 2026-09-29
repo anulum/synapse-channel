@@ -1593,7 +1593,13 @@ class SynapseHub:
         # On the first (name-binding) frame, resolve the connection credential to the
         # claimed identity before the name is trusted, so a -rx mailbox or role claim
         # rests on a proven identity. A socket that cannot prove it is refused and closed.
-        if not was_bound and not await self._identity_gate.verify_identity(sender, data, websocket):
+        # A peer hub proves its name with the pinned mutual-TLS certificate its serving
+        # grant is bound to, not with a registration signature.
+        if (
+            not was_bound
+            and not self._peer_hub_identity_proven(sender, websocket)
+            and not await self._identity_gate.verify_identity(sender, data, websocket)
+        ):
             return
 
         # ``token`` is a connection credential, never application data. Keep it
@@ -2000,6 +2006,18 @@ class SynapseHub:
     def _checkpoint_store(self) -> MerkleCheckpointStore | None:
         """The open checkpoint chain, or ``None`` when anchoring is off or closed."""
         return None if self._live_checkpoint is None else self._live_checkpoint.store
+
+    def _peer_hub_identity_proven(self, sender: str, websocket: Any) -> bool:
+        """Return whether ``sender`` is a peer hub proven by its pinned client certificate.
+
+        The multi-hub serving policy keys each grant by the peer's registered id and
+        admits it only over a live mutual-TLS connection whose certificate matches that
+        grant's trust bundle. That is a proof of the name as strong as a registration
+        signature, so an identity-bound hub accepts it for the peer's own id; every
+        other name still has to present an enrolled signature.
+        """
+        policy = self.multihub_serving_policy
+        return policy is not None and policy.authorise(sender=sender, websocket=websocket).allowed
 
     def _open_live_checkpoint(self, journal: EventStore) -> None:
         """Open the checkpoint chain, verify the log against it, then anchor it.

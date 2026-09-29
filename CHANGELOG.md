@@ -130,7 +130,11 @@ All notable changes to this project are documented here.
   health-probe key `SYNAPSE_HEALTH_KEY_FILE` (see `docs/deployment.md`). The
   local-development compose file carries the explicit downgrade. Single-owner
   loopback hubs are unaffected, and library users constructing `SynapseHub`
-  directly are unaffected.
+  directly are unaffected. A peer hub granted by `--multihub-serving-policy`
+  proves its id with its pinned mutual-TLS client certificate. So cross-hub
+  forwarding, watch and claim routing keep working into an identity-bound hub,
+  while a socket that uses the peer's id without that certificate is still
+  refused.
 
 - State the open loopback default explicitly. A hub on loopback without a
   connect token or identity binding now prints a one-line start-up notice, and

@@ -65,7 +65,10 @@ each seat with `synapse identity machine-key --sender NAME --trust FILE` (the ke
 every client on that machine already signs with) or `synapse identity keygen
 --trust FILE`. `--insecure-unbound-identity` downgrades the refusal to a warning;
 `--paranoid` and `--secure` refuse that flag. The refusal happens before any
-durable store is opened.
+durable store is opened. A peer hub granted by `--multihub-serving-policy` proves
+its own id with the pinned mutual-TLS client certificate that grant is bound to,
+so federation keeps working on an identity-bound hub. Any other socket using that
+id still needs an enrolled signature.
 
 ### Forged event rows
 
