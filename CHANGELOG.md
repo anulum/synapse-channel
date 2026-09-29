@@ -13,6 +13,32 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.31] - 2026-09-29
+
+### Upgrade notes
+
+- **Hubs off loopback, or declared multi-seat, now need provisioned identity.**
+  - They refuse to start without `--identity-trust` and
+    `--require-identity-binding`.
+  - Enrol each seat with `synapse identity machine-key --sender NAME --trust FILE`.
+    `--insecure-unbound-identity` keeps the old behaviour with a warning.
+  - The production `docker-compose.yml` needs `SYNAPSE_IDENTITY_TRUST_FILE` and
+    `SYNAPSE_HEALTH_KEY_FILE`; see `docs/deployment.md`.
+  - Single-owner loopback hubs are unaffected.
+- **A `--db` hub creates `DB.rowmac.key` beside its log on the first start.**
+  Back it up with the log: a log whose rows carry MACs refuses to start without
+  it.
+- **Downgrade.**
+  - An older version can still open the log. The rows it writes carry no MAC, so
+    a later 0.99.31 start quarantines them and serves read-only.
+  - To accept them after review, clear every row MAC
+    (`UPDATE events SET mac = NULL`) and move the key file aside, so a new key
+    starts at the current tip.
+- **The durable-ingress chat quota is on by default**
+  (`--no-durable-ingress-quota` opts out).
+- **Pathless MCP claims now claim the whole Git worktree.** Outside Git they
+  need `task_only=true`.
+
 ### Added
 
 - Add two `synapse doctor` checks against MCP server impersonation. An MCP
