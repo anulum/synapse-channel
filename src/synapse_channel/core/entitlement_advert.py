@@ -240,7 +240,8 @@ def _timestamp(value: object, name: str) -> None:
     if not isinstance(value, str) or len(value) > 40:
         raise EntitlementAdvertError(f"{name} must be an ISO-8601 time")
     try:
-        parsed = datetime.fromisoformat(value)
+        # Python 3.10's fromisoformat does not accept a trailing "Z".
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00" if value.endswith("Z") else value)
     except ValueError as exc:
         raise EntitlementAdvertError(f"{name} must be an ISO-8601 time") from exc
     if parsed.tzinfo is None:
