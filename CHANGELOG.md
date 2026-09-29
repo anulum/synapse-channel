@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.34] - 2026-09-30
+
 ### Fixed
 
 - **Signed peers behind a TLS-terminating proxy were admitted but served
