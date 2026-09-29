@@ -64,6 +64,10 @@ from synapse_channel.core.hub_exposure import (
     is_loopback_host,
 )
 from synapse_channel.core.identity_binding import IdentityBindingError, load_identity_trust_bundle
+from synapse_channel.core.identity_enrollments import (
+    DEFAULT_ENROLLMENT_RATE,
+    DEFAULT_ENROLLMENT_WINDOW_SECONDS,
+)
 from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.merkle_checkpoint import AntiRollbackError, checkpoint_path_for
 from synapse_channel.core.message_auth import MessageAuthKey
@@ -977,6 +981,16 @@ def _cmd_hub(
         "identity_trust_bundle": identity_trust_bundle,
         "require_identity_binding": args.require_identity_binding,
         "identity_pin_path": args.identity_pins or None,
+        "identity_enrollment_path": getattr(args, "identity_enrollments", "") or None,
+        "identity_enrollment_namespaces": tuple(
+            getattr(args, "identity_enrollment_namespace", []) or ()
+        ),
+        "identity_enrollment_rate": getattr(
+            args, "identity_enrollment_rate", DEFAULT_ENROLLMENT_RATE
+        ),
+        "identity_enrollment_window_seconds": getattr(
+            args, "identity_enrollment_window", DEFAULT_ENROLLMENT_WINDOW_SECONDS
+        ),
         "private_directed_messages": args.private_directed_messages,
         "warn_stale_recipients": args.warn_stale_recipients,
         "recipient_liveness_window": args.recipient_liveness_window,

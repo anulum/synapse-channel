@@ -106,6 +106,36 @@ The ACL model and its evaluation are implemented in
   notice. Removal is compare-and-swap on `--expected-key-id`; it never rotates
   or installs a replacement key. The next valid proof establishes a fresh
   first-use pin.
+- **Governed online enrolment**: on a hub started with
+  `--identity-enrollments FILE`, `synapse identity enroll <name> --operator
+  <identity> --key-id <id> --public-key <b64> --reason <text>` adds an identity
+  key for `<name>` without editing the `--identity-trust` file or restarting the
+  hub. The new key proves `<name>` at its next registration.
+  - **What the hub requires, in this order:**
+    1. a durable journal (`--db`) and an operator trust bundle
+       (`--identity-trust`);
+    2. a requester whose connection identity is cryptographically proven (a
+       token alone is not enough);
+    3. the `identity-enroll` ACL grant on the target `agent:<name>`, always
+       enforced for this verb;
+    4. the `<requester project>/identity-enroller` role grant in
+       `--role-grants`;
+    5. the name's project listed with `--identity-enrollment-namespace` (none by
+       default, so enabling the store alone enrols nothing);
+    6. at most `--identity-enrollment-rate` changes per operator per
+       `--identity-enrollment-window` (default 10 per hour).
+  - **Key and name checks:** the key id must be new, the key must be 32 raw
+    Ed25519 bytes, and the name must be `<project>/<id>` and not covered by the
+    trust file. The trust file stays authoritative for its names.
+  - **Rotation:** `--expected-key-id` names the name's current enrolled key. It
+    is a compare-and-swap. The old key is kept as revoked history, and a live
+    socket that proved it is closed with code 4018. An operator may rotate only
+    its own key, never add a second one for itself.
+  - **Storage:** the enrolled keys live in the hub-owned, owner-only store, in
+    the trust-bundle format. A restarted hub loads it on top of the trust file.
+  - **Audit:** every change writes an `identity_enrollment` audit trail
+    (`approved`, then `applied` or `not_applied`) that feeds AEF receipts. An
+    authorised operator's refusals are recorded as `denied`.
 
 The identity namespace is taken from the resolved sender (`project/agent`). The
 first credential format is now the zero-config machine key above (operator
@@ -221,6 +251,7 @@ permission vocabulary should stay small and auditable:
 | `mailbox` | Replay another identity's directed backlog via a mailbox heartbeat (`mailbox_for`). Target kind `agent`. Self and `-rx` sidecars do not need a grant. |
 | `role-claim` | Bind a role on the heartbeat when `--require-role-claim` is on. Target kind `role` (`<project>/<role>`). Complements the role-grant store. |
 | `identity-pin-reclaim` | Remove one exact stale TOFU pin after the liveness, expected-key, requester-binding, and durable-audit gates pass. Target kind `agent`. Always enforced for this verb. |
+| `identity-enroll` | Enrol or rotate an identity key for a name on a hub with `--identity-enrollments`, together with the `identity-enroller` role grant and the namespace allow-list. Target kind `agent`. Always enforced for this verb. |
 | `evidence` | Append authenticated, content-minimized enforcement evidence. The shipped `guard_denial` target is `evidence:guard-denial`; the handler additionally requires connect-token provenance and a durable journal. |
 | `recall` | Pull the hub's global chat history and cursor-based resume backlog (`history_request` / `resume_request`). Target kind `history`; the shipped target is `history:global`. Consulted only under `--require-acl` — without enforcement the recall reads stay open, matching the proportionate-to-exposure posture. |
 

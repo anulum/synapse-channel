@@ -21,6 +21,10 @@ from synapse_channel.core.capability_card_trust import (
     DEFAULT_CAPABILITY_CARD_HISTORY_RETENTION_SECONDS,
 )
 from synapse_channel.core.hub import DEFAULT_AUTH_TIMEOUT
+from synapse_channel.core.identity_enrollments import (
+    DEFAULT_ENROLLMENT_RATE,
+    DEFAULT_ENROLLMENT_WINDOW_SECONDS,
+)
 from synapse_channel.core.message_auth import DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS
 
 
@@ -230,6 +234,42 @@ def add_hub_security_arguments(hub: argparse.ArgumentParser) -> None:
         help="Require a socket's first frame to carry a valid identity signature verified "
         "against --identity-trust before the name binds; an unproven socket is refused and "
         "closed. Off by default, so an open hub is unchanged. Requires --identity-trust.",
+    )
+    hub.add_argument(
+        "--identity-enrollments",
+        default="",
+        metavar="FILE",
+        help="Hub-owned, owner-only store of identity keys enrolled online with "
+        "'synapse identity enroll', layered on --identity-trust (which is never rewritten "
+        "and stays authoritative for its names). Enables the enrolment verb; requires "
+        "--identity-trust and --db, and every change is audited in the journal. An "
+        "operator also needs the identity-enroll ACL grant, the "
+        "<project>/identity-enroller role grant and the name's namespace in "
+        "--identity-enrollment-namespace. Off by default.",
+    )
+    hub.add_argument(
+        "--identity-enrollment-namespace",
+        action="append",
+        default=[],
+        metavar="PROJECT",
+        help="Project namespace online enrolment may add names to (repeatable). None by "
+        "default, so enabling --identity-enrollments alone enrols nothing.",
+    )
+    hub.add_argument(
+        "--identity-enrollment-rate",
+        type=int,
+        default=DEFAULT_ENROLLMENT_RATE,
+        metavar="N",
+        help=f"Enrolment changes one operator may make per window "
+        f"(default {DEFAULT_ENROLLMENT_RATE}).",
+    )
+    hub.add_argument(
+        "--identity-enrollment-window",
+        type=float,
+        default=DEFAULT_ENROLLMENT_WINDOW_SECONDS,
+        metavar="SECONDS",
+        help=f"Window for --identity-enrollment-rate, in seconds "
+        f"(default {DEFAULT_ENROLLMENT_WINDOW_SECONDS:g}).",
     )
     hub.add_argument(
         "--capability-card-trust",

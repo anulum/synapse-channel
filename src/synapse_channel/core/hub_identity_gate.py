@@ -117,6 +117,10 @@ class HubIdentityGate:
         )
         self._crypto_warning_logged = False
 
+    def replace_trust_bundle(self, bundle: EventSignatureTrustBundle | None) -> None:
+        """Verify later registrations against ``bundle`` (after an online enrolment)."""
+        self._identity_trust_bundle = bundle
+
     def _warn_crypto_missing(self) -> None:
         """Log — once per gate — that trust-on-first-use is disabled.
 

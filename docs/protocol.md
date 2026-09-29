@@ -108,7 +108,10 @@ does not add agent grades to protocol envelopes.
 - **Governed operator recovery:** `identity_pin_reclaim` removes one exact TOFU
   pin after the always-on ACL, requester-binding, owner-liveness, expected-key,
   and durable-audit gates pass. It is emitted only by an explicit operator
-  command, never automatically by a client.
+  command, never automatically by a client. `identity_enroll` adds or rotates
+  one identity key on a hub with `--identity-enrollments`, after the proven
+  requester, `identity-enroll` ACL, `identity-enroller` role, namespace
+  allow-list, rate and durable-audit gates pass.
 - **Guard evidence:** `guard_denial` admits one content-minimized native
   file-guard refusal; `guard_denial_recorded` acknowledges its durable sequence.
   The authenticated durable contract is defined below.
@@ -299,7 +302,8 @@ recorded observation edge; absence of an edge does not prove concurrency.
 - **Operational warnings:** `recipient_liveness_warning`,
   `dark_seat_alert`, `dead_letter_escalation`, `dead_letter_forwarding`.
 - **Governed operator recovery:** `identity_pin_reclaim_result` is the private
-  applied/refused verdict for an `identity_pin_reclaim` request.
+  applied/refused verdict for an `identity_pin_reclaim` request, and
+  `identity_enroll_result` the one for an `identity_enroll` request.
 
 A `dark_seat_alert` is a default-on hub broadcast for an identity that owns an
 unexpired claim or is the `suggested_owner` of a non-terminal board task but has

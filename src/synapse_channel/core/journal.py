@@ -110,6 +110,7 @@ class EventKind:
     DELIVERY_CANCEL_REQUESTED = DELIVERY_CANCEL_REQUESTED_KIND
     MAILBOX_WATERMARK = "mailbox_watermark"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
+    IDENTITY_ENROLLMENT = "identity_enrollment"
     MULTIHUB_PARTITION = "multihub_partition"
     MULTIHUB_HEAL = "multihub_heal"
     MULTIHUB_EQUIVOCATION = "multihub_equivocation"
@@ -320,6 +321,22 @@ def record_identity_pin_reclaim(store: EventStore, provenance: Mapping[str, Any]
         Monotonic journal sequence of the audit event.
     """
     return store.append(EventKind.IDENTITY_PIN_RECLAIM, dict(provenance), durable=True)
+
+
+def record_identity_enrollment(store: EventStore, provenance: Mapping[str, Any]) -> int:
+    """Append the mandatory durable audit event for an identity-key enrolment.
+
+    Audit-only, like the pin reclaim: the hub-owned enrolment store is the
+    durable state and replay ignores this kind. One request writes an
+    ``approved`` event before the store changes, then ``applied`` or
+    ``not_applied``; a refused request writes ``denied`` with its reason.
+
+    Returns
+    -------
+    int
+        Monotonic journal sequence of the audit event.
+    """
+    return store.append(EventKind.IDENTITY_ENROLLMENT, dict(provenance), durable=True)
 
 
 def record_multihub_ownership_transitions(

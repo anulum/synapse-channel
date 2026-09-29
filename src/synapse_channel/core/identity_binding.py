@@ -164,6 +164,25 @@ def load_identity_trust_bundle(
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise IdentityBindingError(f"invalid identity trust JSON: {exc}") from exc
+    return EventSignatureTrustBundle(
+        keys=parse_identity_trust_document(data),
+        replay_cache=MessageReplayCache(
+            window_seconds=window_seconds,
+            max_entries=replay_capacity,
+            future_skew_seconds=future_skew_seconds,
+        ),
+    )
+
+
+def parse_identity_trust_document(data: object) -> dict[str, EventSignatureKey]:
+    """Parse a decoded ``{"keys": [...]}`` identity trust document into keys by id.
+
+    Raises
+    ------
+    IdentityBindingError
+        When the document is not a mapping with a ``keys`` list, an entry is
+        malformed, or a key id repeats.
+    """
     if not isinstance(data, Mapping) or not isinstance(data.get("keys"), list):
         raise IdentityBindingError("identity trust bundle must be a mapping with a 'keys' list")
     keys: dict[str, EventSignatureKey] = {}
@@ -172,14 +191,7 @@ def load_identity_trust_bundle(
         if key.key_id in keys:
             raise IdentityBindingError(f"duplicate key id {key.key_id!r} in identity trust bundle")
         keys[key.key_id] = key
-    return EventSignatureTrustBundle(
-        keys=keys,
-        replay_cache=MessageReplayCache(
-            window_seconds=window_seconds,
-            max_entries=replay_capacity,
-            future_skew_seconds=future_skew_seconds,
-        ),
-    )
+    return keys
 
 
 def verify_registration(

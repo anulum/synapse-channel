@@ -275,6 +275,109 @@ async def _await_reclaim_result(
     return None
 
 
+async def _identity_enroll(
+    *,
+    uri: str,
+    operator: str,
+    name: str,
+    key_id: str,
+    public_key: str,
+    reason: str,
+    expected_key_id: str,
+    expires_at: float | None,
+    token: str | None,
+    ready_timeout: float,
+    result_timeout: float,
+    json_output: bool,
+    agent_factory: AgentFactory = SynapseAgent,
+) -> int:
+    """Request one governed identity-key enrolment and print the hub's verdict.
+
+    Returns ``0`` when applied, ``1`` when policy refused it, and ``2`` when no
+    authoritative verdict arrived. The operator connects with its ordinary
+    machine identity, which the hub must be able to prove.
+    """
+    replies: list[dict[str, Any]] = []
+
+    async def collect(data: dict[str, Any]) -> None:
+        if data.get("type") in {MessageType.IDENTITY_ENROLL_RESULT, MessageType.ERROR}:
+            replies.append(data)
+
+    agent = agent_factory(operator, collect, uri=uri, verbose=False, token=token)
+    connection = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=ready_timeout) or await closed_after_ready(
+            agent
+        ):
+            print(
+                terminal_text(
+                    describe_connect_failure(
+                        operator,
+                        uri,
+                        close_code=agent.last_close_code,
+                        close_reason=agent.last_close_reason,
+                    )
+                )
+            )
+            return 2
+        fields: dict[str, Any] = {
+            "name": name,
+            "key_id": key_id,
+            "public_key": public_key,
+            "reason": reason,
+        }
+        if expected_key_id:
+            fields["expected_key_id"] = expected_key_id
+        if expires_at is not None:
+            fields["expires_at"] = expires_at
+        await agent.send_message(MessageType.IDENTITY_ENROLL, target="System", **fields)
+        result = await _await_reclaim_result(replies, timeout=result_timeout)
+        if result is None:
+            print("identity enrolment failed: the hub returned no authoritative verdict")
+            return 2
+        rendered = {
+            "applied": bool(result.get("applied")),
+            "name": name,
+            "key_id": key_id,
+            "expected_key_id": expected_key_id,
+            "audit_seq": result.get("audit_seq"),
+            "detail": str(result.get("payload") or "hub refused the request"),
+        }
+        if json_output:
+            print(json.dumps(rendered, indent=2, sort_keys=True))
+        elif rendered["applied"]:
+            suffix = f" (audit seq {rendered['audit_seq']})" if rendered.get("audit_seq") else ""
+            print(f"{terminal_text(rendered['detail'])}{suffix}")
+        else:
+            print(f"identity enrolment refused: {terminal_text(rendered['detail'])}")
+        return 0 if rendered["applied"] else 1
+    finally:
+        agent.running = False
+        connection.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await connection
+
+
+def _cmd_identity_enroll(args: argparse.Namespace) -> int:
+    """Dispatch ``synapse identity enroll`` to the one-shot async client."""
+    return asyncio.run(
+        _identity_enroll(
+            uri=args.uri,
+            operator=args.operator,
+            name=args.name,
+            key_id=args.key_id,
+            public_key=args.public_key,
+            reason=args.reason,
+            expected_key_id=args.expected_key_id,
+            expires_at=args.expires_at,
+            token=args.token,
+            ready_timeout=args.ready_timeout,
+            result_timeout=args.timeout,
+            json_output=args.json,
+        )
+    )
+
+
 def _cmd_identity_reclaim(args: argparse.Namespace) -> int:
     """Dispatch ``synapse identity reclaim`` to the one-shot async client."""
     return asyncio.run(
@@ -401,3 +504,52 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     reclaim.add_argument("--json", action="store_true", help="Emit the verdict as JSON.")
     reclaim.set_defaults(func=_cmd_identity_reclaim)
+
+    enroll = nested.add_parser(
+        "enroll",
+        help="Enrol or rotate one identity key through the hub's governed operator path.",
+    )
+    enroll.add_argument("name", help="Agent identity the key will prove (<project>/<id>).")
+    enroll.add_argument(
+        "--operator",
+        required=True,
+        help="Cryptographically bound requester identity holding the enrolment grants.",
+    )
+    enroll.add_argument(
+        "--key-id", required=True, help="Key id, as 'synapse identity machine-key' prints it."
+    )
+    enroll.add_argument(
+        "--public-key",
+        required=True,
+        help="Base64 raw Ed25519 public key, as 'synapse identity machine-key' prints it.",
+    )
+    enroll.add_argument(
+        "--reason", required=True, help="Operator reason written to the durable audit event."
+    )
+    enroll.add_argument(
+        "--expected-key-id",
+        default="",
+        help="Rotate: the name's current enrolled key id, which this key replaces.",
+    )
+    enroll.add_argument(
+        "--expires-at",
+        type=float,
+        default=None,
+        metavar="TS",
+        help="Optional key expiry as wall-clock seconds since the epoch.",
+    )
+    enroll.add_argument("--uri", default=default_hub_uri())
+    enroll.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    enroll.add_argument(
+        "--token-file",
+        default=None,
+        help="Read the shared-secret token from this file instead of --token.",
+    )
+    enroll.add_argument(
+        "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
+    enroll.add_argument(
+        "--timeout", type=float, default=5.0, help="Seconds to await the governed verdict."
+    )
+    enroll.add_argument("--json", action="store_true", help="Emit the verdict as JSON.")
+    enroll.set_defaults(func=_cmd_identity_enroll)

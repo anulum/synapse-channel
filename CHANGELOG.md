@@ -32,6 +32,28 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- **Governed online identity enrolment (SOL4-ID-01).**
+  - `synapse hub --identity-enrollments FILE` lets an operator add or rotate
+    identity keys on a live hub with `synapse identity enroll`, instead of
+    editing the `--identity-trust` file and restarting. The trust file is never
+    rewritten and stays authoritative for its names. The enrolled keys live in a
+    hub-owned, owner-only store in the same format and load on top of the trust
+    file at start-up.
+  - **Gates.** Every request needs:
+    - a cryptographically proven requester;
+    - the new `identity-enroll` ACL grant on the name;
+    - the `<project>/identity-enroller` role grant;
+    - the name's project in `--identity-enrollment-namespace` (none by default);
+    - a per-operator rate bound (`--identity-enrollment-rate`, default 10 per
+      hour);
+    - a durable journal.
+  - **Rotation** is a compare-and-swap on `--expected-key-id`. It keeps the old
+    key as revoked history and closes a live socket that proved it (code
+    4018).
+  - **Audit.** Each change writes an `identity_enrollment` audit trail
+    (`approved`, then `applied` or `not_applied`) that feeds AEF receipts.
+  - **Wire.** New wire types `identity_enroll` and `identity_enroll_result`.
+
 - **Opt-in strict lease fencing (FENCE-01 narrow slice).**
   - `synapse hub --require-fencing-epoch` refuses a task update, release,
     handoff or checkpoint that names no lease epoch. Previously such a

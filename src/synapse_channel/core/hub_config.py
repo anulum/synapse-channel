@@ -71,6 +71,10 @@ from synapse_channel.core.hub_defaults import (
     DEFAULT_TAKEOVER_OSCILLATION_WINDOW,
     DEFAULT_TAKEOVER_QUARANTINE,
 )
+from synapse_channel.core.identity_enrollments import (
+    DEFAULT_ENROLLMENT_RATE,
+    DEFAULT_ENROLLMENT_WINDOW_SECONDS,
+)
 from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS,
     DEFAULT_MAX_PROGRESS_PER_AUTHOR,
@@ -202,6 +206,10 @@ class HubAuthConfig:
     identity_trust_bundle: EventSignatureTrustBundle | None = None
     require_identity_binding: bool = False
     identity_pin_path: str | Path | None = None
+    identity_enrollment_path: str | Path | None = None
+    identity_enrollment_namespaces: tuple[str, ...] = ()
+    identity_enrollment_rate: int = DEFAULT_ENROLLMENT_RATE
+    identity_enrollment_window_seconds: float = DEFAULT_ENROLLMENT_WINDOW_SECONDS
     private_directed_messages: bool = False
 
 

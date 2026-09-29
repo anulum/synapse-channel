@@ -42,6 +42,7 @@ OBSERVE = "observe"
 MAILBOX = "mailbox"
 ROLE_CLAIM = "role-claim"
 PIN_RECLAIM = "identity-pin-reclaim"
+IDENTITY_ENROLL = "identity-enroll"
 EVIDENCE = "evidence"
 RECALL = "recall"
 DELIVERY_CONTROL = "delivery-control"
@@ -64,6 +65,7 @@ PERMISSIONS = frozenset(
         MAILBOX,
         ROLE_CLAIM,
         PIN_RECLAIM,
+        IDENTITY_ENROLL,
         EVIDENCE,
         RECALL,
         DELIVERY_CONTROL,
@@ -99,6 +101,13 @@ one stale trust-on-first-use identity pin. Target kind is ``agent``. Unlike the
 general mutation switch, this grant is always enforced by the reclaim handler,
 even when ``--require-acl`` is off, because no open-hub compatibility posture
 may silently make identity recovery public.
+
+``IDENTITY_ENROLL`` grants a cryptographically bound operator the right to enrol,
+rotate or revoke an identity key for a name on a hub with ``--identity-enrollments``.
+Target kind is ``agent``; the pattern matches the name the key will prove. Like
+``PIN_RECLAIM`` it is always enforced by its handler, and the requester also needs
+the ``<project>/identity-enroller`` role grant and the name's namespace on the
+hub's enrolment allow-list.
 
 ``EVIDENCE`` grants an authenticated recorder the right to append a bounded
 enforcement record. The shipped guard-denial target is

@@ -120,6 +120,13 @@ from synapse_channel.core.hub_ledger_guard import FindingQuota, HubLedgerGuard
 from synapse_channel.core.hub_liveness import HubLivenessView
 from synapse_channel.core.hub_relay import RelayMirror
 from synapse_channel.core.hub_state_seed import seed_hub_state
+from synapse_channel.core.identity_enrollments import (
+    DEFAULT_ENROLLMENT_RATE,
+    DEFAULT_ENROLLMENT_WINDOW_SECONDS,
+    EnrollmentRateLimiter,
+    load_enrolled_keys,
+    merge_enrolled_keys,
+)
 from synapse_channel.core.identity_pins import IdentityPinStore
 from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS,
@@ -562,6 +569,10 @@ class SynapseHub:
         identity_trust_bundle: EventSignatureTrustBundle | None = None,
         require_identity_binding: bool = False,
         identity_pin_path: str | Path | None = None,
+        identity_enrollment_path: str | Path | None = None,
+        identity_enrollment_namespaces: tuple[str, ...] = (),
+        identity_enrollment_rate: int = DEFAULT_ENROLLMENT_RATE,
+        identity_enrollment_window_seconds: float = DEFAULT_ENROLLMENT_WINDOW_SECONDS,
         private_directed_messages: bool = False,
         warn_stale_recipients: bool = DEFAULT_WARN_STALE_RECIPIENTS,
         recipient_liveness_window: float = DEFAULT_RECIPIENT_LIVENESS_WINDOW,
@@ -667,7 +678,32 @@ class SynapseHub:
         self.role_grants = role_grants
         self.require_role_claim = bool(require_role_claim)
         self.require_fencing_epoch = bool(require_fencing_epoch)
-        self.identity_trust_bundle = identity_trust_bundle
+        if identity_enrollment_path and (identity_trust_bundle is None or journal is None):
+            raise ValueError(
+                "online identity enrolment needs an identity trust bundle and a durable "
+                "journal: pass --identity-trust and --db with --identity-enrollments"
+            )
+        self._static_identity_trust = identity_trust_bundle
+        self.identity_enrollment_path = (
+            Path(identity_enrollment_path).expanduser() if identity_enrollment_path else None
+        )
+        self._enrolled_identity_keys = (
+            load_enrolled_keys(self.identity_enrollment_path)
+            if self.identity_enrollment_path is not None
+            else {}
+        )
+        self.identity_trust_bundle = (
+            merge_enrolled_keys(identity_trust_bundle, self._enrolled_identity_keys)
+            if identity_trust_bundle is not None and self.identity_enrollment_path is not None
+            else identity_trust_bundle
+        )
+        self.identity_enrollment_namespaces = frozenset(
+            namespace.strip() for namespace in identity_enrollment_namespaces if namespace.strip()
+        )
+        self._enrollment_rate = EnrollmentRateLimiter(
+            limit=max(0, int(identity_enrollment_rate)),
+            window_seconds=max(0.0, float(identity_enrollment_window_seconds)),
+        )
         self.require_identity_binding = bool(require_identity_binding)
         self.identity_pin_path = Path(identity_pin_path).expanduser() if identity_pin_path else None
         self._identity_pins = IdentityPinStore(path=self.identity_pin_path)

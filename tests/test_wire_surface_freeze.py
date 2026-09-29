@@ -95,6 +95,8 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "HEARTBEAT": "heartbeat",
     "HISTORY_REQUEST": "history_request",
     "HISTORY_SNAPSHOT": "history_snapshot",
+    "IDENTITY_ENROLL": "identity_enroll",
+    "IDENTITY_ENROLL_RESULT": "identity_enroll_result",
     "IDENTITY_PIN_RECLAIM": "identity_pin_reclaim",
     "IDENTITY_PIN_RECLAIM_RESULT": "identity_pin_reclaim_result",
     "LEASE_GRANTED": "lease_granted",
