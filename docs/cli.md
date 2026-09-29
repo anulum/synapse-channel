@@ -2181,6 +2181,16 @@ advisory evidence and an audit trail, not a hard runtime gate — nothing blocks
 hub mutation. An approved subject can be cited in a release receipt via `synapse
 release --approval "<id>: approved by <actor>"`.
 
+What a decision proves is who the hub had bound when the note arrived: the actor is
+the connection's registered name, never a field in the frame, and the free-text
+reason is not attribution. A socket cannot switch to another seat's name mid-stream
+(closed with `4009`), and resending the exact frame is idempotent. Consumers that
+act on a decision (`review-feedback`, `entitlements suggest-compute`) accept only
+the exact reviewer they are given. How strongly a name is tied to a person is the
+hub's identity posture: on an open loopback hub any local process may register as
+any free name, while off-loopback and declared multi-seat hubs require provisioned
+identity (see `SECURITY.md`). Signed decision provenance is not part of 0.99.x.
+
 `synapse ttl-advice ./synapse.db` builds read-only adaptive lease TTL advice from
 the same event store. It derives completed-task duration samples, active
 live-claim counts, and stale-claim counts, then prints an advisory default and
