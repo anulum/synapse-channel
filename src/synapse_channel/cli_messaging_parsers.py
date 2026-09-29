@@ -160,6 +160,21 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     listen.add_argument(
         "--decrypt-key-file",
         default=None,
-        help="Decrypt encrypted chat payloads with this 32-byte local key file.",
+        help="Decrypt encrypted chat payloads with this 32-byte local key file. Each "
+        "version-2 envelope is opened once: a replayed, stale or future-dated one is "
+        "refused through a durable owner-only replay ledger.",
+    )
+    listen.add_argument(
+        "--replay-ledger",
+        default=None,
+        metavar="PATH",
+        help="Replay ledger for --decrypt-key-file (default: "
+        "$XDG_DATA_HOME/synapse/payload-replay/<listener>.db).",
+    )
+    listen.add_argument(
+        "--require-replay-protection",
+        action="store_true",
+        help="Refuse version-1 encrypted payloads, which carry no replay identity, "
+        "instead of showing them marked as not replay-protected.",
     )
     listen.set_defaults(func=_cmd_listen)

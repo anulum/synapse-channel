@@ -1120,6 +1120,20 @@ synapse channel key-check ./payload.key
 The key file is a local 32-byte owner-only file. This first runtime tranche does
 not discover, rotate, revoke, or escrow keys.
 
+Envelopes are version 2. The authenticated data also binds the key id, a random
+128-bit `message_id` and the sender's `created_at_ms` clock. `listen
+--decrypt-key-file` opens each envelope once. It records the id in a durable,
+owner-only replay ledger (default
+`$XDG_DATA_HOME/synapse/payload-replay/<listener>.db`; override with
+`--replay-ledger PATH`). It shows the following as refused:
+- a replayed envelope;
+- one older than the 24-hour replay window;
+- one dated more than 5 minutes ahead of the receiver clock.
+
+A version 1 envelope from an older sender still decrypts, marked
+`[not replay-protected: version 1 envelope]`. `--require-replay-protection`
+refuses it instead.
+
 Private channels scope delivery without encrypting payloads:
 
 ```bash

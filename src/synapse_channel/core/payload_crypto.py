@@ -12,6 +12,12 @@ target, channel id, key id, recipient names, nonce, ciphertext, and a base64
 copy of the authenticated associated data, but it never receives plaintext in
 the ``payload`` field. Endpoints load a local 32-byte payload key and decrypt
 only after verifying that the visible route metadata matches the envelope AAD.
+
+Version 2 envelopes also bind a random ``message_id`` (128 bits, hex), the
+sender's ``created_at_ms`` clock and the ``key_id`` into the AAD, so a receiver
+can refuse a captured envelope replayed later under the same route (K3-F5). The
+replay ledger that uses them lives in :mod:`synapse_channel.core.payload_replay`.
+Version 1 envelopes still decrypt; they carry no replay identity.
 """
 
 from __future__ import annotations
@@ -20,8 +26,10 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 import stat
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,8 +38,13 @@ from typing import TypedDict, cast
 from synapse_channel.core.at_rest import KEY_BYTES, NONCE_BYTES, require_aes_gcm
 from synapse_channel.core.errors import SynapseError
 
-PAYLOAD_ENVELOPE_VERSION = 1
-"""Version of the encrypted payload envelope."""
+PAYLOAD_ENVELOPE_VERSION = 2
+"""Version of the encrypted payload envelope written by :func:`encrypt_payload`."""
+
+LEGACY_PAYLOAD_ENVELOPE_VERSION = 1
+"""Envelope version without a replay identity; still accepted for decryption."""
+
+_MESSAGE_ID = re.compile(r"[0-9a-f]{32}")
 
 PAYLOAD_PLACEHOLDER = "<encrypted payload>"
 """Plain envelope payload used when the body is encrypted."""
@@ -68,8 +81,8 @@ class PayloadContext:
     task_id: str = ""
 
 
-class PayloadEnvelope(TypedDict):
-    """JSON-serialisable encrypted payload envelope."""
+class _PayloadEnvelopeFields(TypedDict):
+    """Fields every envelope version carries."""
 
     version: int
     key_id: str
@@ -77,6 +90,38 @@ class PayloadEnvelope(TypedDict):
     ciphertext: str
     nonce: str
     aad: str
+
+
+class PayloadEnvelope(_PayloadEnvelopeFields, total=False):
+    """JSON-serialisable encrypted payload envelope.
+
+    ``message_id`` and ``created_at_ms`` are present from version 2 on.
+    """
+
+    message_id: str
+    created_at_ms: int
+
+
+@dataclass(frozen=True)
+class AuthenticatedPayload:
+    """A decrypted payload and the replay identity its AAD authenticated.
+
+    Attributes
+    ----------
+    plaintext : str
+        The decrypted UTF-8 text.
+    version : int
+        Envelope version.
+    message_id : str or None
+        128-bit hex message id (version 2), authenticated by the AAD.
+    created_at_ms : int or None
+        Sender clock in milliseconds since the epoch (version 2), authenticated.
+    """
+
+    plaintext: str
+    version: int
+    message_id: str | None
+    created_at_ms: int | None
 
 
 def load_payload_key(path: str | Path) -> bytes:
@@ -168,8 +213,10 @@ def encrypt_payload(
     key_id: str,
     recipients: Sequence[str],
     context: PayloadContext,
+    message_id: str | None = None,
+    created_at_ms: int | None = None,
 ) -> PayloadEnvelope:
-    """Encrypt one text payload into a route-bound JSON envelope.
+    """Encrypt one text payload into a route-bound version-2 JSON envelope.
 
     Parameters
     ----------
@@ -183,6 +230,10 @@ def encrypt_payload(
         Intended recipient identities. The sorted unique list is bound into AAD.
     context : PayloadContext
         Visible route metadata that must match again at decryption time.
+    message_id : str or None, optional
+        32 lowercase hex characters; ``None`` draws 128 random bits.
+    created_at_ms : int or None, optional
+        Sender clock in milliseconds; ``None`` reads the wall clock.
 
     Returns
     -------
@@ -193,8 +244,17 @@ def encrypt_payload(
     key_name = str(key_id or "").strip()
     if not key_name:
         raise PayloadCryptoError("payload key id is required")
+    identity = secrets.token_hex(16) if message_id is None else _message_id(message_id)
+    created = int(time.time() * 1000) if created_at_ms is None else _created_at(created_at_ms)
     normalised_recipients = _normalise_recipients(recipients)
-    aad = _aad_bytes(context, normalised_recipients)
+    aad = _aad_bytes(
+        context,
+        normalised_recipients,
+        version=PAYLOAD_ENVELOPE_VERSION,
+        key_id=key_name,
+        message_id=identity,
+        created_at_ms=created,
+    )
     nonce = secrets.token_bytes(NONCE_BYTES)
     cipher = require_aes_gcm()(key)
     ciphertext = cipher.encrypt(nonce, plaintext.encode("utf-8"), aad)
@@ -205,6 +265,8 @@ def encrypt_payload(
         "ciphertext": _b64encode(ciphertext),
         "nonce": _b64encode(nonce),
         "aad": _b64encode(aad),
+        "message_id": identity,
+        "created_at_ms": created,
     }
 
 
@@ -231,10 +293,49 @@ def decrypt_payload(envelope: Mapping[str, object], key: bytes, *, context: Payl
         When the envelope is malformed, the route metadata differs, or
         authentication/decryption fails.
     """
+    return authenticate_payload(envelope, key, context=context).plaintext
+
+
+def authenticate_payload(
+    envelope: Mapping[str, object], key: bytes, *, context: PayloadContext
+) -> AuthenticatedPayload:
+    """Decrypt one envelope and return the replay identity its AAD authenticated.
+
+    Parameters
+    ----------
+    envelope : collections.abc.Mapping[str, object]
+        Version 1 or version 2 envelope.
+    key : bytes
+        Raw 32-byte AES-256-GCM key.
+    context : PayloadContext
+        Visible route metadata from the received hub envelope.
+
+    Returns
+    -------
+    AuthenticatedPayload
+        Plaintext plus the version, ``message_id`` and ``created_at_ms``; the
+        last two are ``None`` for a version 1 envelope.
+
+    Raises
+    ------
+    PayloadCryptoError
+        When the envelope is malformed, the route metadata or replay identity
+        differs from the AAD, or authentication/decryption fails.
+    """
     _require_key(key)
     parsed = _parse_envelope(envelope)
     recipients = parsed["recipients"]
-    expected_aad = _aad_bytes(context, recipients)
+    version = parsed["version"]
+    message_id = parsed.get("message_id")
+    created_at_ms = parsed.get("created_at_ms")
+    expected_aad = _aad_bytes(
+        context,
+        recipients,
+        version=version,
+        key_id=parsed["key_id"],
+        message_id=message_id,
+        created_at_ms=created_at_ms,
+    )
     envelope_aad = _b64decode(parsed["aad"], field="aad")
     if not secrets.compare_digest(envelope_aad, expected_aad):
         raise PayloadCryptoError("routing metadata does not match encrypted payload aad")
@@ -247,9 +348,29 @@ def decrypt_payload(envelope: Mapping[str, object], key: bytes, *, context: Payl
     except _invalid_tag_type() as exc:
         raise PayloadCryptoError("encrypted payload authentication failed") from exc
     try:
-        return plaintext.decode("utf-8")
+        text = plaintext.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise PayloadCryptoError("encrypted payload is not valid UTF-8") from exc
+    return AuthenticatedPayload(
+        plaintext=text,
+        version=version,
+        message_id=message_id,
+        created_at_ms=created_at_ms,
+    )
+
+
+def _message_id(value: object) -> str:
+    """Return a 32-character lowercase hex message id or raise."""
+    if not isinstance(value, str) or _MESSAGE_ID.fullmatch(value) is None:
+        raise PayloadCryptoError("encrypted payload message_id must be 32 lowercase hex characters")
+    return value
+
+
+def _created_at(value: object) -> int:
+    """Return a nonnegative integer millisecond timestamp or raise."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise PayloadCryptoError("encrypted payload created_at_ms must be a nonnegative integer")
+    return value
 
 
 def _require_key(key: bytes) -> None:
@@ -275,24 +396,47 @@ def _normalise_recipients(recipients: Sequence[str]) -> list[str]:
     return sorted({str(recipient).strip() for recipient in recipients if str(recipient).strip()})
 
 
-def _aad_bytes(context: PayloadContext, recipients: Sequence[str]) -> bytes:
-    """Return canonical JSON AAD bytes for route metadata and recipients."""
-    payload = {
+def _aad_bytes(
+    context: PayloadContext,
+    recipients: Sequence[str],
+    *,
+    version: int,
+    key_id: str,
+    message_id: str | None,
+    created_at_ms: int | None,
+) -> bytes:
+    """Return canonical JSON AAD bytes for route metadata, recipients and identity.
+
+    Version 1 AAD is kept byte-identical so existing envelopes still decrypt.
+    Version 2 adds ``key_id``, ``message_id`` and ``created_at_ms``.
+    """
+    payload: dict[str, object] = {
         "channel": context.channel,
         "message_type": context.message_type,
         "recipients": list(recipients),
         "sender": context.sender,
         "target": context.target,
         "task_id": context.task_id,
-        "version": PAYLOAD_ENVELOPE_VERSION,
+        "version": version,
     }
+    if version != LEGACY_PAYLOAD_ENVELOPE_VERSION:
+        payload["key_id"] = key_id
+        payload["message_id"] = message_id
+        payload["created_at_ms"] = created_at_ms
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 def _parse_envelope(envelope: Mapping[str, object]) -> PayloadEnvelope:
     """Validate and return a typed encrypted payload envelope."""
-    if envelope.get("version") != PAYLOAD_ENVELOPE_VERSION:
+    version = envelope.get("version")
+    if isinstance(version, bool) or version not in (
+        LEGACY_PAYLOAD_ENVELOPE_VERSION,
+        PAYLOAD_ENVELOPE_VERSION,
+    ):
         raise PayloadCryptoError("unsupported encrypted payload version")
+    if version == PAYLOAD_ENVELOPE_VERSION:
+        _message_id(envelope.get("message_id"))
+        _created_at(envelope.get("created_at_ms"))
     required = ("key_id", "ciphertext", "nonce", "aad")
     for field in required:
         if not isinstance(envelope.get(field), str) or not str(envelope.get(field)):

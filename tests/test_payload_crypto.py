@@ -48,7 +48,9 @@ def test_payload_envelope_round_trips_and_hides_plaintext() -> None:
     )
 
     assert PAYLOAD_PLACEHOLDER == "<encrypted payload>"
-    assert envelope["version"] == 1
+    assert envelope["version"] == 2
+    assert len(envelope["message_id"]) == 32
+    assert envelope["created_at_ms"] > 0
     assert envelope["key_id"] == "project:main:v1"
     assert envelope["recipients"] == ["bob", "carol"]
     assert "rotate" not in str(envelope)

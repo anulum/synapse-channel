@@ -13,6 +13,31 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- **Encrypted payloads are opened once (K3-F5).** Before this change, an
+  envelope captured on a route could be sent again on the same route and
+  decrypted again; the route-bound AAD cannot tell.
+  - `synapse send --encrypt-key-file` now writes version 2 envelopes. The AAD
+    also binds the key id, a random 128-bit `message_id` and the sender's
+    `created_at_ms`.
+  - `synapse listen --decrypt-key-file` opens each one once through a durable,
+    owner-only replay ledger per listener
+    (`$XDG_DATA_HOME/synapse/payload-replay/`, or `--replay-ledger PATH`).
+  - It refuses a replayed envelope, one older than 24 hours and one dated more
+    than 5 minutes ahead. Admission happens only after authentication.
+  - A version 1 envelope still decrypts, marked as not replay-protected;
+    `--require-replay-protection` refuses it.
+  - New `core.payload_replay` (`PayloadReplayGuard`, `open_payload`, error code
+    `payload_replay`) and `core.payload_crypto.authenticate_payload`.
+  - Verified on a real hub: the released 0.99.31 decrypts a replayed envelope
+    twice, this change once.
+
+### Upgrade notes
+
+- A receiver on an older release cannot read version 2 envelopes ("unsupported
+  encrypted payload version"). Upgrade listeners before senders.
+
 ## [0.99.31] - 2026-09-29
 
 ### Upgrade notes

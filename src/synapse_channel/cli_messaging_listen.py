@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sqlite3
 from typing import Any
 
 from synapse_channel.cli_messaging_types import AgentFactory, AsyncRunner, ListenRunner
@@ -19,8 +20,12 @@ from synapse_channel.connect_failures import describe_connect_failure
 from synapse_channel.core.payload_crypto import (
     PayloadContext,
     PayloadCryptoError,
-    decrypt_payload,
     load_payload_key,
+)
+from synapse_channel.core.payload_replay import (
+    PayloadReplayGuard,
+    default_payload_replay_ledger,
+    open_payload,
 )
 from synapse_channel.core.protocol import MessageType, is_recipient
 from synapse_channel.terminal_text import terminal_chat_line, terminal_text
@@ -36,6 +41,8 @@ async def _listen(
     ready_timeout: float = 5.0,
     max_messages: int | None = None,
     decrypt_key_file: str | None = None,
+    replay_ledger: str | None = None,
+    require_replay_protection: bool = False,
 ) -> int:
     """Stream chat and presence updates to stdout until the connection ends.
 
@@ -55,6 +62,11 @@ async def _listen(
         connection ends.
     decrypt_key_file : str or None, optional
         Local 32-byte payload key used to decrypt encrypted chat envelopes.
+    replay_ledger : str or None, optional
+        Replay ledger for decrypted envelopes; ``None`` uses the per-listener
+        default under ``$XDG_DATA_HOME``. Used only with ``decrypt_key_file``.
+    require_replay_protection : bool, optional
+        Refuse version 1 envelopes, which carry no replay identity.
 
     Returns
     -------
@@ -72,6 +84,14 @@ async def _listen(
     except (OSError, PayloadCryptoError) as exc:
         print(f"decryption key failed: {exc}")
         return 1
+    replay_guard: PayloadReplayGuard | None = None
+    if decrypt_key is not None:
+        ledger = replay_ledger or default_payload_replay_ledger(name)
+        try:
+            replay_guard = PayloadReplayGuard(ledger)
+        except (OSError, sqlite3.Error) as exc:
+            print(f"replay ledger failed: {exc}")
+            return 1
     printed = 0
     intentional_stop = False
 
@@ -82,7 +102,13 @@ async def _listen(
         if msg_type == MessageType.CHAT:
             if for_name and not is_recipient(str(data.get("target", "all")), for_name):
                 return
-            print(terminal_chat_line(data.get("sender"), _render_chat_payload(data, decrypt_key)))
+            rendered = _render_chat_payload(
+                data,
+                decrypt_key,
+                replay_guard=replay_guard,
+                require_replay_protection=require_replay_protection,
+            )
+            print(terminal_chat_line(data.get("sender"), rendered))
             did_print = True
         elif msg_type == MessageType.PRESENCE_UPDATE and not for_name:
             online = ", ".join(
@@ -144,6 +170,8 @@ async def _listen(
         )
         return 1
     finally:
+        if replay_guard is not None:
+            replay_guard.close()
         agent.running = False
         if not conn_task.done():
             conn_task.cancel()
@@ -188,6 +216,8 @@ def _cmd_listen(
                 for_name=args.for_name,
                 ready_timeout=args.ready_timeout,
                 decrypt_key_file=getattr(args, "decrypt_key_file", None),
+                replay_ledger=getattr(args, "replay_ledger", None),
+                require_replay_protection=bool(getattr(args, "require_replay_protection", False)),
             )
         )
     except KeyboardInterrupt:
@@ -195,15 +225,26 @@ def _cmd_listen(
         return 0
 
 
-def _render_chat_payload(data: dict[str, Any], decrypt_key: bytes | None) -> str:
-    """Return plaintext, decrypted plaintext, or an encrypted placeholder."""
+def _render_chat_payload(
+    data: dict[str, Any],
+    decrypt_key: bytes | None,
+    *,
+    replay_guard: PayloadReplayGuard | None = None,
+    require_replay_protection: bool = False,
+) -> str:
+    """Return plaintext, decrypted plaintext, or an encrypted placeholder.
+
+    With a replay guard, a version 2 envelope is shown once. A replayed, stale
+    or future-dated one is shown as refused. A version 1 envelope is marked as
+    not replay-protected, or refused when protection is required.
+    """
     encrypted = data.get("encrypted")
     if not isinstance(encrypted, dict):
         return str(data.get("payload") or "")
     if decrypt_key is None:
         return str(data.get("payload") or "<encrypted payload>")
     try:
-        return decrypt_payload(
+        opened = open_payload(
             encrypted,
             decrypt_key,
             context=PayloadContext(
@@ -213,6 +254,11 @@ def _render_chat_payload(data: dict[str, Any], decrypt_key: bytes | None) -> str
                 channel=str(data.get("channel") or ""),
                 task_id=str(data.get("task_id") or ""),
             ),
+            replay_guard=replay_guard,
+            require_replay_protection=require_replay_protection,
         )
     except PayloadCryptoError as exc:
         return f"<encrypted payload: {exc}>"
+    if replay_guard is not None and not opened.replay_protected:
+        return f"{opened.plaintext} [not replay-protected: version {opened.version} envelope]"
+    return opened.plaintext

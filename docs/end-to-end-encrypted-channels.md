@@ -49,15 +49,33 @@ Encrypted payloads should remain ordinary hub messages with an encrypted body:
   "to": "project/bob",
   "task_id": "TASK-12",
   "encrypted": {
-    "version": 1,
+    "version": 2,
     "key_id": "project:main:2026-06",
     "recipients": ["project/bob"],
     "ciphertext": "base64...",
     "nonce": "base64...",
-    "aad": "base64..."
+    "aad": "base64...",
+    "message_id": "32 lowercase hex characters",
+    "created_at_ms": 1790683269000
   }
 }
 ```
+
+### Replay protection (shipped)
+
+Binding the route stops an envelope from being moved to another route. It does
+not stop a captured envelope from being sent again on the same route. Version 2
+closes that gap. The AAD also binds the `key_id`, a random 128-bit `message_id`
+and the sender's `created_at_ms`. The receiver admits each envelope once, after
+the AAD and the GCM tag verify, into a durable, owner-only ledger. The ledger
+key is the receiver's key fingerprint, the hub-visible sender and the
+`message_id`.
+- **Refused:** a repeated id, an envelope older than the 24-hour window (the
+  ledger forgets ids after it), and one dated more than 5 minutes ahead of the
+  receiver.
+- **Full ledger:** it refuses new envelopes rather than forgetting live ids.
+- **Version 1 envelopes** carry no identity. They still decrypt, marked as not
+  replay-protected, unless the receiver requires protection.
 
 Authenticated associated data should bind visible routing fields, including
 message kind, sender, recipient set, task id, event sequence when known, and

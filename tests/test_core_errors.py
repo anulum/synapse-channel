@@ -435,6 +435,7 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     ),
     "ParanoidModeError": ("synapse_channel.core.paranoid", "paranoid_mode", ValueError),
     "PayloadCryptoError": ("synapse_channel.core.payload_crypto", "payload_crypto", ValueError),
+    "PayloadReplayError": ("synapse_channel.core.payload_replay", "payload_replay", ValueError),
     "PathResolutionError": (
         "synapse_channel.path_resolution",
         "path_resolution",
