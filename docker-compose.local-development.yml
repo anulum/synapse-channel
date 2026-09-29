@@ -27,6 +27,7 @@ services:
       - --relay-log=/data/feed.ndjson
       - --insecure-off-loopback
       - --insecure-plaintext-at-rest
+      - --insecure-unbound-identity
 
 networks:
   # Keep this downgrade isolated even though host ingress is loopback-only.

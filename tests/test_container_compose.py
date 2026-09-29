@@ -51,8 +51,19 @@ def test_production_compose_has_no_insecure_runtime_override() -> None:
         "--db-key-file=/run/synapse/db.key",
         "--tls-certfile=/run/synapse/tls.crt",
         "--tls-keyfile=/run/synapse/tls.key",
+        "--identity-trust=/run/synapse/identity-trust.json",
+        "--require-identity-binding",
     ):
         assert required in command
+
+
+def test_production_healthcheck_signs_with_its_enrolled_probe_key() -> None:
+    """The hub binds identity (K4-F2), so the probe must prove the HEALTH name."""
+    probe = [str(token) for token in _load(COMPOSE)["services"]["hub"]["healthcheck"]["test"]]
+    assert probe[:3] == ["CMD", "synapse", "health"]
+    assert "--identity-key-file=/run/synapse/health.pem" in probe
+    assert "--identity-key-id=compose-health" in probe
+    assert not any(token.startswith("--name") for token in probe)
 
 
 def test_production_compose_mounts_owner_custody_inputs_read_only() -> None:
@@ -66,6 +77,8 @@ def test_production_compose_mounts_owner_custody_inputs_read_only() -> None:
         "/run/synapse/db.key",
         "/run/synapse/tls.crt",
         "/run/synapse/tls.key",
+        "/run/synapse/identity-trust.json",
+        "/run/synapse/health.pem",
     }
     assert all(mounts[path]["read_only"] is True for path in mounts if path != "/data")
     assert service["ports"] == ["127.0.0.1:8876:8876"]
@@ -89,6 +102,7 @@ def test_local_development_downgrade_is_loud_bounded_and_separate() -> None:
     command = _hub_command(LOCAL_DEVELOPMENT_COMPOSE)
     assert "--insecure-off-loopback" in command
     assert "--insecure-plaintext-at-rest" in command
+    assert "--insecure-unbound-identity" in command
     prose = LOCAL_DEVELOPMENT_COMPOSE.read_text(encoding="utf-8")
     assert "INSECURE LOCAL DEVELOPMENT ONLY" in prose
     assert "NEVER USE IN PRODUCTION" in prose
@@ -111,6 +125,14 @@ def test_docker_workflow_smoke_tests_the_compose_file() -> None:
     assert "openssl rand 32" in run_scripts
     assert "--uri wss://127.0.0.1:8876" in run_scripts
     assert "--token-file /run/synapse/token" in run_scripts
+    assert "openssl genpkey -algorithm ed25519" in run_scripts
+    assert '"key_id": "compose-health"' in run_scripts
+    assert "SYNAPSE_IDENTITY_TRUST_FILE=" in run_scripts
+    assert "SYNAPSE_HEALTH_KEY_FILE=" in run_scripts
+    assert "--identity-key-file /run/synapse/health.pem" in run_scripts
+    assert "Confirm the hub refuses an unenrolled registration" in [
+        str(step.get("name", "")) for step in steps
+    ]
     assert 'header != b"SQLite format 3\\x00"' in run_scripts
     assert "Confirm the image can sign and verify identity registrations" in [
         str(step.get("name", "")) for step in steps

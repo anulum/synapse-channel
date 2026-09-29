@@ -92,6 +92,7 @@ def test_paranoid_policy_omits_metrics_auth_when_metrics_disabled() -> None:
         ({"acl_policy": ""}, "requires --require-acl with an --acl-policy"),
         ({"tls_certfile": None}, "requires native WSS"),
         ({"tls_keyfile": None}, "requires native WSS"),
+        ({"insecure_unbound_identity": True}, "refuses --insecure-unbound-identity"),
     ],
 )
 def test_paranoid_policy_rejects_missing_required_settings(

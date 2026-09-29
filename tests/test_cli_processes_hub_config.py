@@ -156,14 +156,15 @@ def test_cmd_hub_insecure_bind_precheck_stays_silent_on_the_opt_out(
     durable store opens exactly as before.
     """
     db_path = tmp_path / "opted-in-hub.db"
-    # Off loopback with a plaintext --db also needs the at-rest opt-out (the two
-    # insecure knobs are independent); together the precheck stays silent and the
-    # store opens exactly as before.
+    # Off loopback with a plaintext --db also needs the at-rest opt-out, and without
+    # provisioned identity the unbound-identity opt-out (the insecure knobs are
+    # independent); together the precheck stays silent and the store opens as before.
     ns = _hub_ns(
         host="0.0.0.0",
         db=str(db_path),
         insecure_off_loopback=True,
         insecure_plaintext_at_rest=True,
+        insecure_unbound_identity=True,
     )
     assert cli_processes._cmd_hub(ns, runner=_close_runner) == 0
     assert db_path.exists()

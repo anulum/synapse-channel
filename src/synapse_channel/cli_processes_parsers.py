@@ -572,6 +572,13 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--db-key-file). Loopback binds and encrypted stores are unaffected.",
     )
     hub.add_argument(
+        "--insecure-unbound-identity",
+        action="store_true",
+        help="Start an off-loopback or declared multi-seat hub without provisioned "
+        "identity (--identity-trust with --require-identity-binding); by default such "
+        "a hub refuses to start, because any token holder could register as any seat.",
+    )
+    hub.add_argument(
         "--allow-origin",
         action="append",
         default=[],

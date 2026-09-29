@@ -53,6 +53,20 @@ table below: a connect token, `--team-secure` identity binding, or `--secure`.
 A locally generated credential is planned to become the default at the 1.0
 boundary, with an explicit opt-out.
 
+### Provisioned identity off loopback and for multi-seat hubs
+
+A connect token says a client may join, not which seat it is. So a hub that binds
+off loopback, or that declares a multi-seat profile on loopback
+(`--expect-multi-seat`, `--bridge-exposed`, `--private-directed-messages`,
+`--require-role-claim`, `--role-grants` or `--identity-trust`), refuses to start
+unless registrations are bound to enrolled keys: `--identity-trust FILE` with
+`--require-identity-binding` (`--team-secure` and `--secure` turn both on). Enrol
+each seat with `synapse identity machine-key --sender NAME --trust FILE` (the key
+every client on that machine already signs with) or `synapse identity keygen
+--trust FILE`. `--insecure-unbound-identity` downgrades the refusal to a warning;
+`--paranoid` and `--secure` refuse that flag. The refusal happens before any
+durable store is opened.
+
 ### Deployment profiles
 
 Security here is proportionate to exposure, not one-size-fits-all. Pick the
@@ -78,6 +92,7 @@ override.
 | Metrics query token | loopback debug only | loopback debug only | disabled | disabled |
 | Durable log (`--db`) | optional | recommended | recommended | recommended |
 | At-rest store encryption (`--db-key-file`) | — | — | **required** with `--db` off-loopback (override `--insecure-plaintext-at-rest`) | **required** with `--db` |
+| Provisioned identity (`--identity-trust` + `--require-identity-binding`) | — | **required** when declared multi-seat | **required** off-loopback (override `--insecure-unbound-identity`) | **required** |
 | Identity binding + role claims + private directed | — | **`--team-secure`** | **`--team-secure`** | **`--team-secure`** + `--paranoid` |
 | One-flag preset | — | `--team-secure` | `--paranoid` | `--secure` (composes both) |
 

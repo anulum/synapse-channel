@@ -39,6 +39,14 @@ services:
         source: ${SYNAPSE_TLS_KEY_FILE:?Set SYNAPSE_TLS_KEY_FILE to a mode-0600 private key}
         target: /run/synapse/tls.key
         read_only: true
+      - type: bind
+        source: ${SYNAPSE_IDENTITY_TRUST_FILE:?Set SYNAPSE_IDENTITY_TRUST_FILE to the identity trust bundle}
+        target: /run/synapse/identity-trust.json
+        read_only: true
+      - type: bind
+        source: ${SYNAPSE_HEALTH_KEY_FILE:?Set SYNAPSE_HEALTH_KEY_FILE to the mode-0600 HEALTH probe key}
+        target: /run/synapse/health.pem
+        read_only: true
     command:
       - hub
       - --host=0.0.0.0
@@ -49,6 +57,10 @@ services:
       - --db-key-file=/run/synapse/db.key
       - --tls-certfile=/run/synapse/tls.crt
       - --tls-keyfile=/run/synapse/tls.key
+      # Provisioned identity: off loopback the hub refuses to start without it, so
+      # every seat and the HEALTH probe below must hold a key enrolled in this bundle.
+      - --identity-trust=/run/synapse/identity-trust.json
+      - --require-identity-binding
     healthcheck:
       test:
         - CMD
@@ -56,6 +68,8 @@ services:
         - health
         - --uri=wss://127.0.0.1:8876
         - --token-file=/run/synapse/token
+        - --identity-key-file=/run/synapse/health.pem
+        - --identity-key-id=compose-health
       interval: 30s
       timeout: 5s
       start_period: 5s

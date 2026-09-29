@@ -114,6 +114,11 @@ def apply_paranoid_hub_profile(args: argparse.Namespace) -> ParanoidHubReport | 
         raise ParanoidModeError(
             "paranoid mode requires native WSS: --tls-certfile and --tls-keyfile"
         )
+    if getattr(args, "insecure_unbound_identity", False):
+        raise ParanoidModeError(
+            "paranoid mode refuses --insecure-unbound-identity; provision identity with "
+            "--identity-trust and --require-identity-binding"
+        )
 
     args.metrics_query_token_ok = False
     args.insecure_off_loopback = False

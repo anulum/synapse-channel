@@ -366,3 +366,9 @@ def test_explicit_zero_rate_is_treated_as_disabled_not_preserved() -> None:
     apply_secure_hub_profile(args)
 
     assert args.rate == SECURE_AGENT_RATE
+
+
+def test_secure_mode_refuses_the_unbound_identity_downgrade() -> None:
+    """K4-F2: the strict umbrella never starts with identity binding waived."""
+    with pytest.raises(SecureModeError, match="--insecure-unbound-identity"):
+        apply_secure_hub_profile(_complete_args(insecure_unbound_identity=True))

@@ -201,6 +201,8 @@ def apply_secure_hub_profile(args: argparse.Namespace) -> SecureHubReport | None
             "secure mode requires all production material before startup; missing: "
             + "; ".join(missing)
         )
+    if getattr(args, "insecure_unbound_identity", False):
+        raise SecureModeError("secure mode refuses --insecure-unbound-identity")
 
     # Force the enforcement gates the subordinate profiles require as preconditions,
     # then compose them. team-secure forces identity binding, role claims, and

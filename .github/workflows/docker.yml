@@ -245,9 +245,18 @@ jobs:
             -subj '/CN=127.0.0.1' -addext 'subjectAltName=IP:127.0.0.1' \
             -keyout runtime/compose-smoke/tls.key \
             -out runtime/compose-smoke/tls.crt
+          # Provisioned identity for the HEALTH probe: an Ed25519 PKCS#8 key and a
+          # trust bundle enrolling its raw public key (what `synapse identity keygen
+          # --sender HEALTH --key-id compose-health --trust` writes).
+          openssl genpkey -algorithm ed25519 -out runtime/compose-smoke/health.pem
+          health_pub="$(openssl pkey -in runtime/compose-smoke/health.pem -pubout -outform DER \
+            | tail -c 32 | base64)"
+          printf '{"keys": [{"key_id": "compose-health", "public_key": "%s", "senders": ["HEALTH"]}]}\n' \
+            "$health_pub" > runtime/compose-smoke/identity-trust.json
           chmod 700 runtime/compose-smoke runtime/compose-smoke/data
           chmod 600 runtime/compose-smoke/token runtime/compose-smoke/db.key \
-            runtime/compose-smoke/tls.key runtime/compose-smoke/tls.crt
+            runtime/compose-smoke/tls.key runtime/compose-smoke/tls.crt \
+            runtime/compose-smoke/health.pem runtime/compose-smoke/identity-trust.json
           sudo chown -R 10001:10001 runtime/compose-smoke
           {
             echo 'SYNAPSE_UID=10001'
@@ -257,6 +266,8 @@ jobs:
             echo "SYNAPSE_DB_KEY_FILE=$GITHUB_WORKSPACE/runtime/compose-smoke/db.key"
             echo "SYNAPSE_TLS_CERT_FILE=$GITHUB_WORKSPACE/runtime/compose-smoke/tls.crt"
             echo "SYNAPSE_TLS_KEY_FILE=$GITHUB_WORKSPACE/runtime/compose-smoke/tls.key"
+            echo "SYNAPSE_IDENTITY_TRUST_FILE=$GITHUB_WORKSPACE/runtime/compose-smoke/identity-trust.json"
+            echo "SYNAPSE_HEALTH_KEY_FILE=$GITHUB_WORKSPACE/runtime/compose-smoke/health.pem"
           } >> "$GITHUB_ENV"
       - name: Bring the hub up and wait for it to become healthy
         run: docker compose up --detach --build --wait --wait-timeout 180
@@ -265,6 +276,16 @@ jobs:
           docker compose exec -T hub synapse health
           --uri wss://127.0.0.1:8876
           --token-file /run/synapse/token
+          --identity-key-file /run/synapse/health.pem
+          --identity-key-id compose-health
+      - name: Confirm the hub refuses an unenrolled registration
+        # Identity binding is live: the same probe without its enrolled key must fail.
+        run: |
+          if docker compose exec -T hub synapse health \
+            --uri wss://127.0.0.1:8876 --token-file /run/synapse/token --ready-timeout 3; then
+            echo "an unenrolled probe was admitted by an identity-bound hub" >&2
+            exit 1
+          fi
       - name: Confirm the durable database is not plaintext SQLite
         run: |
           docker compose exec -T hub python - <<'PY'

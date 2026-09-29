@@ -1193,6 +1193,13 @@ plaintext `--db` event store is **refused** — the durable coordination log wou
 sit unencrypted on the host's disk; encrypt it with `--db-key-file` (after
 `synapse encrypt-key migrate-sqlcipher`) or pass `--insecure-plaintext-at-rest` to
 accept the risk. Loopback binds and encrypted stores are unaffected.
+An off-loopback bind, or a loopback hub that declares a multi-seat profile
+(`--expect-multi-seat`, `--bridge-exposed`, `--private-directed-messages`,
+`--require-role-claim`, `--role-grants` or `--identity-trust`), is **refused**
+without provisioned identity: pass `--identity-trust FILE` with
+`--require-identity-binding` after enrolling each seat
+(`synapse identity machine-key --sender NAME --trust FILE`), or accept the risk
+with `--insecure-unbound-identity`, which `--paranoid` and `--secure` refuse.
 The durable-ingress quota is on by default. Each quota principal may have at
 most 100 chats and 1 MiB of serialized chat frames accepted per 60-second
 window; a zero `--durable-ingress-events` or `--durable-ingress-bytes` keeps the

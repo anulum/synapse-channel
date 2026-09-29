@@ -41,6 +41,24 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Require provisioned identity on exposed and multi-seat hubs. A hub that binds
+  off loopback, or that declares a multi-seat profile on loopback
+  (`--expect-multi-seat`, `--bridge-exposed`, `--private-directed-messages`,
+  `--require-role-claim`, `--role-grants` or `--identity-trust`), now refuses to
+  start with exit `2` unless it runs with `--identity-trust` and
+  `--require-identity-binding`. The refusal happens before any durable store is
+  opened. Before, a shared token was the only guard, so any token holder could
+  register as any seat. **Migration:** enrol each seat's key
+  (`synapse identity machine-key --sender NAME --trust FILE` on each client
+  machine, or `synapse identity keygen --trust FILE`) and add both flags, or pass
+  `--insecure-unbound-identity` to keep the old behaviour with a warning.
+  `--paranoid` and `--secure` refuse that flag. The production
+  `docker-compose.yml` now mounts `SYNAPSE_IDENTITY_TRUST_FILE` and a signed
+  health-probe key `SYNAPSE_HEALTH_KEY_FILE` (see `docs/deployment.md`). The
+  local-development compose file carries the explicit downgrade. Single-owner
+  loopback hubs are unaffected, and library users constructing `SynapseHub`
+  directly are unaffected.
+
 - State the open loopback default explicitly. A hub on loopback without a
   connect token or identity binding now prints a one-line start-up notice, and
   `SECURITY.md` has a new "Open loopback default" section on who can join such a

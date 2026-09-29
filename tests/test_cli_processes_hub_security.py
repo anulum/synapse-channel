@@ -316,6 +316,13 @@ def test_cmd_hub_no_role_grants_by_default() -> None:
     assert captured["require_role_claim"] is False
 
 
+def _bound_identity(tmp_path: Path) -> dict[str, Any]:
+    """Provisioned identity a declared multi-seat hub needs to start (K4-F2)."""
+    trust = tmp_path / "identity-trust.json"
+    _write_identity_trust(trust)
+    return {"identity_trust": str(trust), "require_identity_binding": True}
+
+
 def test_cmd_hub_threads_role_grants(tmp_path: Path) -> None:
     store = tmp_path / "role-grants.json"
     store.write_text(
@@ -329,7 +336,12 @@ def test_cmd_hub_threads_role_grants(tmp_path: Path) -> None:
 
     assert (
         cli_processes._cmd_hub(
-            _hub_ns(role_grants=str(store), require_role_claim=True, token="t"),
+            _hub_ns(
+                role_grants=str(store),
+                require_role_claim=True,
+                token="t",
+                **_bound_identity(tmp_path),
+            ),
             runner=_close_runner,
             hub_factory=build_hub,
         )
@@ -345,14 +357,16 @@ def test_cmd_hub_rejects_a_malformed_role_grants_store(
     store = tmp_path / "role-grants.json"
     store.write_text("{not json", encoding="utf-8")
 
-    assert cli_processes._cmd_hub(_hub_ns(role_grants=str(store)), runner=_close_runner) == 2
+    ns = _hub_ns(role_grants=str(store), **_bound_identity(tmp_path))
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
     assert "not valid JSON" in capsys.readouterr().err
 
 
 def test_cmd_hub_warns_on_require_role_claim_without_token(
-    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert cli_processes._cmd_hub(_hub_ns(require_role_claim=True), runner=_close_runner) == 0
+    ns = _hub_ns(require_role_claim=True, **_bound_identity(tmp_path))
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 0
     assert "--require-role-claim without --token" in capsys.readouterr().err
 
 
@@ -395,7 +409,8 @@ def test_cmd_hub_rejects_malformed_identity_trust(
     trust = tmp_path / "identity-trust.json"
     trust.write_text("{not json", encoding="utf-8")
 
-    assert cli_processes._cmd_hub(_hub_ns(identity_trust=str(trust)), runner=_close_runner) == 2
+    ns = _hub_ns(identity_trust=str(trust), require_identity_binding=True)
+    assert cli_processes._cmd_hub(ns, runner=_close_runner) == 2
     assert "invalid identity trust JSON" in capsys.readouterr().err
 
 
@@ -464,7 +479,7 @@ def test_cmd_hub_rejects_malformed_capability_card_trust(
     assert "invalid capability-card trust JSON" in capsys.readouterr().err
 
 
-def test_cmd_hub_threads_private_directed_messages() -> None:
+def test_cmd_hub_threads_private_directed_messages(tmp_path: Path) -> None:
     captured: dict[str, Any] = {}
 
     def build_hub(**kwargs: Any) -> SynapseHub:
@@ -473,7 +488,7 @@ def test_cmd_hub_threads_private_directed_messages() -> None:
 
     assert (
         cli_processes._cmd_hub(
-            _hub_ns(private_directed_messages=True),
+            _hub_ns(private_directed_messages=True, **_bound_identity(tmp_path)),
             runner=_close_runner,
             hub_factory=build_hub,
         )

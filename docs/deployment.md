@@ -439,15 +439,23 @@ set -gx SYNAPSE_AUTO_CONNECT 0  # Fish
 
 The canonical Compose profile is production-oriented and fails before startup
 unless you provide owner-controlled paths for its token, SQLCipher key, TLS
-certificate/key, and data directory. The hub runs as the numeric owner of
-those files, preserving the normal owner-only secret checks:
+certificate/key, identity trust bundle, health-probe key, and data directory.
+The hub binds identity, so the container healthcheck signs its `HEALTH`
+registration with an enrolled key, and every seat that connects needs its own
+key in the same bundle. The hub runs as the numeric owner of those files,
+preserving the normal owner-only secret checks:
 
 ```bash
 install -d -m 700 runtime/compose-production/data
 openssl rand -hex 32 > runtime/compose-production/token
 synapse encrypt-key generate runtime/compose-production/db.key
 # Copy a trusted certificate chain and private key into tls.crt and tls.key.
-chmod 600 runtime/compose-production/{token,db.key,tls.crt,tls.key}
+synapse identity keygen --sender HEALTH --key-id compose-health \
+  --private-out runtime/compose-production/health.pem \
+  --trust runtime/compose-production/identity-trust.json
+# Enrol every seat in the same bundle; on each client machine run
+# `synapse identity machine-key --sender PROJECT/agent ...` and add the printed entry.
+chmod 600 runtime/compose-production/{token,db.key,tls.crt,tls.key,health.pem}
 
 export SYNAPSE_UID="$(id -u)" SYNAPSE_GID="$(id -g)"
 export SYNAPSE_DATA_DIR="$PWD/runtime/compose-production/data"
@@ -455,14 +463,16 @@ export SYNAPSE_TOKEN_FILE="$PWD/runtime/compose-production/token"
 export SYNAPSE_DB_KEY_FILE="$PWD/runtime/compose-production/db.key"
 export SYNAPSE_TLS_CERT_FILE="$PWD/runtime/compose-production/tls.crt"
 export SYNAPSE_TLS_KEY_FILE="$PWD/runtime/compose-production/tls.key"
+export SYNAPSE_IDENTITY_TRUST_FILE="$PWD/runtime/compose-production/identity-trust.json"
+export SYNAPSE_HEALTH_KEY_FILE="$PWD/runtime/compose-production/health.pem"
 
 docker compose up -d --build
 docker compose logs -f hub
 ```
 
 `docker-compose.yml` contains no insecure override. It publishes on host
-loopback, requires token-file authentication and native WSS, and encrypts the
-durable database with the mounted SQLCipher key. The image includes the exact
+loopback, requires token-file authentication, native WSS and identity-bound
+registrations, and encrypts the durable database with the mounted SQLCipher key. The image includes the exact
 hash-locked SQLCipher runtime needed by this profile, and the `cryptography`
 runtime (the `encryption` extra) that verifies Ed25519 identity-bound
 registrations, so `--require-identity-binding` and `--team-secure` work inside
@@ -477,8 +487,8 @@ docker compose -f docker-compose.local-development.yml up -d --build
 
 That file is marked `INSECURE LOCAL DEVELOPMENT ONLY`, remains host-loopback
 published on a dedicated single-service network, and is never the implicit
-Compose default. It accepts plaintext transport and storage explicitly; do not
-reuse it for a shared, remote, or production hub.
+Compose default. It accepts plaintext transport and storage and unbound
+identities explicitly; do not reuse it for a shared, remote, or production hub.
 
 After the verified GitHub Release is created, the release workflow dispatches the
 `docker` workflow with its immutable `vX.Y.Z` tag. The image is published as that tag

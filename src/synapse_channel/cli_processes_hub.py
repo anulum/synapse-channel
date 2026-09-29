@@ -106,6 +106,7 @@ from synapse_channel.core.tls import (
     _require_certificate_pin_support,
     build_server_ssl_context,
 )
+from synapse_channel.core.unbound_identity_guard import refusal_message, unbound_identity_problem
 
 _PRECHECK_LOGGER = logging.getLogger(__name__ + ".exposure_precheck")
 _PRECHECK_LOGGER.addHandler(logging.NullHandler())
@@ -518,6 +519,18 @@ def _cmd_hub(
     except AtRestBindError as exc:
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
+    # K4-F2 / SOL4-ID-01: a hub others can reach, or one declared multi-seat, needs
+    # provisioned identity; refused here, before any durable store is opened.
+    identity_problem = unbound_identity_problem(
+        args.host,
+        declared_multi_seat=_hub_multi_seat_intent(args) or _hub_bridge_exposed(args),
+        identity_bound=bool(args.require_identity_binding),
+    )
+    if identity_problem is not None:
+        if not getattr(args, "insecure_unbound_identity", False):
+            print(f"synapse hub: {refusal_message(identity_problem)}", file=sys.stderr)
+            return 2
+        print(f"synapse hub: WARNING Synapse Hub {identity_problem}.", file=sys.stderr)
     try:
         store_kwargs: dict[str, Any] = {"key_file": db_key_file}
         if aef_config is not None:
