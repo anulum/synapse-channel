@@ -112,6 +112,7 @@ class TestHubParser:
         assert args.rate == pytest.approx(0.0)
         assert args.burst == pytest.approx(20.0)
         assert args.durable_ingress_events == 0
+        assert args.no_durable_ingress_quota is False
         assert args.durable_ingress_bytes == 0
         assert args.durable_ingress_window == pytest.approx(60.0)
         assert args.warn_stale_recipients is DEFAULT_WARN_STALE_RECIPIENTS

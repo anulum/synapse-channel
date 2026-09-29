@@ -15,6 +15,15 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Turn the durable-ingress chat quota on by default for `synapse hub`. The limit
+  is 100 chats and 1 MiB of serialized chat frames per quota principal per 60
+  seconds; zero values for the size flags keep these defaults.
+  `--no-durable-ingress-quota` turns it off and is refused under `--secure`.
+  Before, a default hub accepted unbounded durable chat growth. Measured on a
+  100-day production log, the peak was 49 chats and 72,560 bytes per window, so
+  no recorded traffic would have been refused. Library users constructing
+  `SynapseHub` directly are unaffected.
+
 - Make the scope of a claim without paths explicit. MCP `synapse_claim` without
   paths now claims the MCP process's whole Git worktree, and the reply names it.
   Outside Git it is refused. The new `task_only=true` form locks the task id alone

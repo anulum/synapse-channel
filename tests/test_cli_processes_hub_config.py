@@ -761,3 +761,32 @@ def test_cmd_hub_rejects_history_without_trust_and_malformed_history(
         == 2
     )
     assert "unknown or missing schema" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        ({}, (100, 1_048_576, 60.0)),
+        ({"durable_ingress_events": 25}, (25, 1_048_576, 60.0)),
+        ({"durable_ingress_bytes": 4096, "durable_ingress_window": 30.0}, (100, 4096, 30.0)),
+        ({"no_durable_ingress_quota": True}, None),
+    ],
+)
+def test_cmd_hub_bounds_durable_ingress_by_default(
+    options: dict[str, Any], expected: tuple[int, int, float] | None
+) -> None:
+    """The quota is on unless explicitly turned off; zeros keep the defaults."""
+    captured: dict[str, Any] = {}
+
+    def build_hub(**kwargs: Any) -> SynapseHub:
+        captured.update(kwargs)
+        return SynapseHub(**kwargs)
+
+    assert (
+        cli_processes._cmd_hub(_hub_ns(**options), runner=_close_runner, hub_factory=build_hub) == 0
+    )
+    quota = captured["durable_ingress_quota"]
+    if expected is None:
+        assert quota is None
+    else:
+        assert (quota.max_events, quota.max_bytes, quota.window_seconds) == expected

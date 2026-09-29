@@ -188,7 +188,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=0,
         help=(
             "Max accepted chat events per principal inside --durable-ingress-window; "
-            "0 disables durable-ingress quotas (default)."
+            "0 keeps the default of 100. The quota is on unless --no-durable-ingress-quota."
         ),
     )
     hub.add_argument(
@@ -197,7 +197,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=0,
         help=(
             "Max accepted serialized chat-frame bytes per principal inside the window; "
-            "0 disables unless --durable-ingress-events is set (then defaults to 1 MiB)."
+            "0 keeps the default of 1 MiB."
+        ),
+    )
+    hub.add_argument(
+        "--no-durable-ingress-quota",
+        action="store_true",
+        help=(
+            "Turn off the durable-ingress chat quota, which is on by default "
+            "(100 chats and 1 MiB per principal per minute). Refused with --secure."
         ),
     )
     hub.add_argument(

@@ -45,6 +45,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "durable_ingress_events": 0,
         "durable_ingress_bytes": 0,
         "durable_ingress_window": 60.0,
+        "no_durable_ingress_quota": False,
         "max_history": 10000,
         "max_progress": 5000,
         "max_progress_per_author": 1000,

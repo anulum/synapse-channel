@@ -143,10 +143,11 @@ def test_stricter_positive_limits_survive() -> None:
             "--durable-ingress-window",
         ),
         ({"durable_ingress_window": float("nan")}, "--durable-ingress-window"),
+        ({"no_durable_ingress_quota": True}, "--no-durable-ingress-quota"),
     ],
 )
 def test_weaker_durable_ingress_limits_fail_closed(
-    overrides: dict[str, float | int], flag: str
+    overrides: dict[str, float | int | bool], flag: str
 ) -> None:
     args = _complete_args(**overrides)
 

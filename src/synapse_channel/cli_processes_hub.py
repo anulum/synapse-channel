@@ -546,7 +546,11 @@ def _cmd_hub(
     durable_ingress_quota = None
     ingress_events = int(getattr(args, "durable_ingress_events", 0) or 0)
     ingress_bytes = int(getattr(args, "durable_ingress_bytes", 0) or 0)
-    if ingress_events > 0 or ingress_bytes > 0:
+    # On by default: a loopback hub is still multi-agent, and unbounded durable growth is
+    # the failure the quota prevents. Measured on the production hub (100 days, 23,792
+    # chats, all local seats in one loopback bucket): at most 49 chats and 72,560 bytes
+    # in any 60 s window, so the defaults refuse none of that traffic.
+    if not getattr(args, "no_durable_ingress_quota", False):
         from synapse_channel.core.durable_ingress import (
             DEFAULT_MAX_BYTES,
             DEFAULT_MAX_EVENTS,

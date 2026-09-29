@@ -400,6 +400,9 @@ def _start_disposable_hub(
             "--insecure-plaintext-at-rest",
             "--identity-pins",
             "",
+            # The replay case writes over 1 MiB of chat history within seconds on purpose;
+            # the default durable-ingress quota would (correctly) refuse that flood.
+            "--no-durable-ingress-quota",
         ],
         env={**os.environ, "HOME": str(isolated_home)},
         stdin=subprocess.DEVNULL,

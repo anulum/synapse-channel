@@ -268,6 +268,8 @@ def apply_secure_hub_profile(args: argparse.Namespace) -> SecureHubReport | None
 
 def _apply_durable_ingress_ceiling(args: argparse.Namespace) -> str:
     """Apply fail-closed durable-ingress ceilings under ``--secure``."""
+    if getattr(args, "no_durable_ingress_quota", False):
+        raise SecureModeError("secure mode refuses --no-durable-ingress-quota")
     raw_events = getattr(args, "durable_ingress_events", 0)
     raw_bytes = getattr(args, "durable_ingress_bytes", 0)
     raw_window = getattr(args, "durable_ingress_window", 0.0)
