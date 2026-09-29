@@ -67,12 +67,25 @@ def _attest_run(
     *,
     key_file: str | Path | None = None,
 ) -> None:
-    """Append a run receipt to a durable event store as a sandbox attestation."""
+    """Append a run receipt to a durable event store as a sandbox attestation.
+
+    When the store is a hub log with a row-authentication key beside it, the
+    attestation row is MACed with that key, so the hub does not quarantine it on its
+    next start (K4-REPLAY). The key is only loaded, never created here.
+    """
+    from synapse_channel.core.event_row_mac import load_or_create_row_mac_key, row_mac_key_path
     from synapse_channel.core.journal import record_sandbox_run
     from synapse_channel.core.persistence import EventStore
 
     store = EventStore(db_path, key_file=key_file)
     try:
+        key_path = row_mac_key_path(db_path)
+        if key_path.exists():
+            store.enable_row_mac(
+                load_or_create_row_mac_key(
+                    key_path, current_max_seq=store.max_seq(), log_has_macs=True
+                )
+            )
         record_sandbox_run(store, dict(receipt))
     finally:
         store.close()

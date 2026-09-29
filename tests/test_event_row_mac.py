@@ -302,3 +302,35 @@ def test_row_macs_survive_the_sqlcipher_migration(tmp_path: Path) -> None:
         assert reopened.enable_row_mac(key) == ()
     finally:
         reopened.close()
+
+
+def test_a_sandbox_attestation_into_a_hub_log_is_authenticated(tmp_path: Path) -> None:
+    """``synapse sandbox run --attest`` MACs its row when the hub key is present."""
+    from synapse_channel.cli_sandbox import _attest_run
+    from synapse_channel.core.sandbox_receipt import RunReceipt
+
+    receipt: RunReceipt = {
+        "tool_id": "probe",
+        "content_digest": "sha256:" + ("a" * 64),
+        "inputs_digest": "sha256:" + ("b" * 64),
+        "granted_capabilities": [],
+        "preopened_paths": [],
+        "exit": "ok",
+        "output_digest": "sha256:" + ("c" * 64),
+        "fuel_used": 1,
+        "reason": "",
+    }
+    plain = tmp_path / "audit.db"
+    _attest_run(plain, receipt)
+    assert not row_mac_key_path(plain).exists()
+
+    db = tmp_path / "hub.db"
+    store, key = _open(db)
+    store.close()
+    _attest_run(db, receipt)
+    reopened = EventStore(db)
+    try:
+        assert reopened.enable_row_mac(key) == ()
+        assert [event.kind for event in reopened.iter_events()] == [EventKind.SANDBOX_RUN]
+    finally:
+        reopened.close()
