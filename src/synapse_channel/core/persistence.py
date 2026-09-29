@@ -47,7 +47,13 @@ from typing import Any, Literal, NamedTuple
 
 from synapse_channel.core.atomic_operations import OperationRecord
 from synapse_channel.core.delivery_persistence import DeliveryPersistence
-from synapse_channel.core.event_row_recovery import CorruptEventRow, decode_event_row
+from synapse_channel.core.event_row_mac import RowMacKey
+from synapse_channel.core.event_row_recovery import (
+    CORRUPT_EVENT_KIND,
+    CorruptEventRow,
+    decode_event_row,
+    unauthenticated_row,
+)
 from synapse_channel.core.message_forward_ledger import MessageForwardLedger
 
 BUSY_TIMEOUT_MS = 5000
@@ -251,7 +257,12 @@ class EventStore:
             ).fetchone()
             is not None
         )
-        self.delivery = DeliveryPersistence(self._conn, self._lock)
+        self._ensure_mac_column()
+        self._row_mac: RowMacKey | None = None
+        self._row_quarantine: dict[int, CorruptEventRow] = {}
+        self.delivery = DeliveryPersistence(
+            self._conn, self._lock, insert_event=self._insert_event_row
+        )
         self.message_forward = MessageForwardLedger(self._conn, self._lock)
         self._conn.commit()
         # WAL mode creates ``-wal`` and ``-shm`` sidecars on the first write (the
@@ -370,10 +381,7 @@ class EventStore:
             try:
                 sequences = []
                 for row in rows:
-                    cursor = self._conn.execute(
-                        "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", row
-                    )
-                    sequence = int(cursor.lastrowid or 0)
+                    sequence = self._insert_event_row(*row)
                     sequences.append(sequence)
                     if row[1] in self._aef_outbox_kinds:
                         self._conn.execute(
@@ -524,18 +532,12 @@ class EventStore:
             committed = False
             try:
                 self._conn.execute("BEGIN IMMEDIATE")
-                cursor = self._conn.execute(
-                    "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)",
-                    (stamp, "chat", self._json_object(chat_payload)),
-                )
-                message_seq = int(cursor.lastrowid or 0)
+                message_seq = self._insert_event_row(stamp, "chat", self._json_object(chat_payload))
                 hook("after_chat_insert")
                 request_payload["message_seq"] = message_seq
-                cursor = self._conn.execute(
-                    "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)",
-                    (stamp, "delivery_receipt_requested", self._json_object(request_payload)),
+                request_seq = self._insert_event_row(
+                    stamp, "delivery_receipt_requested", self._json_object(request_payload)
                 )
-                request_seq = int(cursor.lastrowid or 0)
                 self._conn.execute(
                     "INSERT INTO delivery_receipts ("
                     "message_seq, sender, target, message_id, client_msg_id, state, delivered, "
@@ -727,11 +729,7 @@ class EventStore:
             or str(frame.get("target") or "") != sender
         ):
             raise ValueError("delivery receipt transition does not match its aggregate")
-        cursor = self._conn.execute(
-            "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)",
-            (stamp, kind, self._json_object(receipt)),
-        )
-        event_seq = int(cursor.lastrowid or 0)
+        event_seq = self._insert_event_row(stamp, kind, self._json_object(receipt))
         self._conn.execute(
             "UPDATE delivery_receipts SET state = ?, delivered = ?, deferred = ?, "
             "acked_by = ?, updated_event_seq = ? WHERE message_seq = ?",
@@ -1014,10 +1012,7 @@ class EventStore:
                         raise ValueError("retained operation budget exhausted")
                 sequences: list[int] = []
                 for row in event_rows:
-                    cursor = self._conn.execute(
-                        "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", row
-                    )
-                    sequence = int(cursor.lastrowid or 0)
+                    sequence = self._insert_event_row(*row)
                     sequences.append(sequence)
                     if row[1] in self._aef_outbox_kinds:
                         self._conn.execute(
@@ -1056,21 +1051,17 @@ class EventStore:
                     "first_event_seq": first_seq,
                     "commit_seq": sequences[-1] + 1,
                 }
-                cursor = self._conn.execute(
-                    "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)",
-                    (
-                        stamp,
-                        "idempotency",
-                        json.dumps(
-                            compatibility,
-                            ensure_ascii=True,
-                            sort_keys=True,
-                            separators=(",", ":"),
-                            allow_nan=False,
-                        ),
+                commit_seq = self._insert_event_row(
+                    stamp,
+                    "idempotency",
+                    json.dumps(
+                        compatibility,
+                        ensure_ascii=True,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
                     ),
                 )
-                commit_seq = int(cursor.lastrowid or 0)
                 self._conn.execute(
                     "INSERT INTO operations (operation_key, request_digest, response_json, "
                     "response_sha256, first_event_seq, commit_seq, committed_at) "
@@ -1183,9 +1174,91 @@ class EventStore:
         """
         return list(self.iter_events())
 
-    @staticmethod
-    def _stored_event(row: tuple[object, object, object, object]) -> StoredEvent:
-        """Return one validated event or a non-secret corrupt-row marker."""
+    def _ensure_mac_column(self) -> None:
+        """Add the row-authentication column to a log created before it existed."""
+        columns = {str(info[1]) for info in self._conn.execute("PRAGMA table_info(events)")}
+        if "mac" not in columns:
+            self._conn.execute("ALTER TABLE events ADD COLUMN mac TEXT")
+
+    def _insert_event_row(self, ts: float, kind: str, payload: str) -> int:
+        """Insert one event row in the caller's transaction and return its sequence.
+
+        Every writer of the ``events`` table goes through here, so with a row key
+        enabled each row carries its MAC from the moment it exists (K4-REPLAY).
+        """
+        cursor = self._conn.execute(
+            "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", (ts, kind, payload)
+        )
+        sequence = int(cursor.lastrowid or 0)
+        if self._row_mac is not None:
+            self._conn.execute(
+                "UPDATE events SET mac = ? WHERE seq = ?",
+                (self._row_mac.mac(sequence, ts, kind, payload), sequence),
+            )
+        return sequence
+
+    def has_row_macs(self) -> bool:
+        """Return whether any stored row carries a row MAC."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM events WHERE mac IS NOT NULL LIMIT 1"
+            ).fetchone()
+        return row is not None
+
+    def enable_row_mac(self, key: RowMacKey) -> tuple[CorruptEventRow, ...]:
+        """Authenticate rows written from now on and quarantine unauthenticated ones.
+
+        Every row after ``key.since_seq`` must carry ``key``'s MAC. A row that does
+        not is recorded as quarantined: reads return it as a ``corrupt_event``
+        marker, so replay skips it and the hub's journal-recovery gate refuses
+        mutations until an operator resolves it.
+
+        Parameters
+        ----------
+        key : RowMacKey
+            The hub's row key.
+
+        Returns
+        -------
+        tuple[CorruptEventRow, ...]
+            The quarantined rows, by sequence.
+        """
+        quarantine: dict[int, CorruptEventRow] = {}
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT seq, ts, kind, payload, mac FROM events WHERE seq > ? ORDER BY seq",
+                (key.since_seq,),
+            )
+            for seq, ts, kind, payload, mac in rows:
+                if not key.verify(int(seq), ts, kind, payload, mac):
+                    quarantine[int(seq)] = unauthenticated_row(
+                        int(seq), kind, payload, mac_present=mac is not None
+                    )
+            self._row_mac = key
+            self._row_quarantine = quarantine
+        return tuple(quarantine.values())
+
+    @property
+    def row_quarantine(self) -> frozenset[int]:
+        """Sequences quarantined because their row MAC failed."""
+        return frozenset(self._row_quarantine)
+
+    def _stored_event(
+        self, row: tuple[object, object, object, object], *, apply_row_quarantine: bool = True
+    ) -> StoredEvent:
+        """Return one validated event or a non-secret corrupt-row marker.
+
+        A row quarantined by :meth:`enable_row_mac` is returned as its marker unless
+        ``apply_row_quarantine`` is false (the Merkle commitment folds raw rows).
+        """
+        seq = row[0]
+        marker = (
+            self._row_quarantine.get(seq) if apply_row_quarantine and isinstance(seq, int) else None
+        )
+        if marker is not None:
+            return StoredEvent(
+                seq=marker.seq, ts=0.0, kind=CORRUPT_EVENT_KIND, payload=marker.as_payload()
+            )
         decoded = decode_event_row(row)
         return StoredEvent(
             seq=decoded.seq,
@@ -1200,6 +1273,7 @@ class EventStore:
         through_seq: int | None = None,
         kinds: Iterable[str] | None = None,
         after_seq: int | None = None,
+        apply_row_quarantine: bool = True,
     ) -> Iterator[StoredEvent]:
         """Yield events in ascending sequence order without materialising the log.
 
@@ -1221,6 +1295,9 @@ class EventStore:
             Exclusive sequence floor; only events after it are yielded, so an
             incremental fold reads just what it has not seen. ``None`` starts at
             the beginning of the log.
+        apply_row_quarantine : bool, optional
+            Return rows quarantined by :meth:`enable_row_mac` as markers (the
+            default). The Merkle commitment passes ``False`` to fold the raw rows.
 
         Yields
         ------
@@ -1247,7 +1324,7 @@ class EventStore:
         sql += " ORDER BY seq"
         with self._lock:
             for row in self._conn.execute(sql, params):
-                yield self._stored_event(row)
+                yield self._stored_event(row, apply_row_quarantine=apply_row_quarantine)
 
     def read_since(
         self,

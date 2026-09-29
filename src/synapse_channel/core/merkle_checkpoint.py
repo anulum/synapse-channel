@@ -114,7 +114,7 @@ def _checkpoint_hash(seq: int, root: str, created_at: float, prev_hash: str) -> 
 def _root_through(store: EventStore, through_seq: int | None) -> str:
     """Stream the log into a Merkle root without materialising it."""
     running = RunningRoot()
-    for event in store.iter_events(through_seq=through_seq):
+    for event in store.iter_events(through_seq=through_seq, apply_row_quarantine=False):
         running.add(event)
     return running.commit(through_seq=through_seq).root
 
@@ -250,7 +250,7 @@ class LiveCheckpoint:
 
     def anchor(self) -> MerkleCheckpoint:
         """Fold events written since the last anchor and append a checkpoint if any."""
-        for event in self._log.iter_events(after_seq=self._through):
+        for event in self._log.iter_events(after_seq=self._through, apply_row_quarantine=False):
             self._running.add(event)
             self._through = event.seq
         return self.store.append(self._through, self._running.root_hex())

@@ -141,6 +141,23 @@ All notable changes to this project are documented here.
 
 ### Security
 
+- Authenticate every durable event row (K4-REPLAY).
+  - A `--db` hub MACs each row it writes (HMAC-SHA256 over `seq`, `ts`, `kind` and
+    payload) with a key kept outside the log, in `DB.rowmac.key` (owner-only,
+    created on first start) or at `--row-mac-key-file`.
+  - At start, rows written since the key existed are checked. A missing or wrong
+    MAC quarantines the row through the journal-recovery gate: replay skips it
+    and the hub refuses mutations.
+  - Before, anyone who could write the SQLite file could append a claim or
+    release that replay applied as hub state. The anti-rollback checkpoint does
+    not catch appended rows.
+  - Existing rows are the unchecked legacy prefix.
+  - A log with MACs refuses to start without its key.
+  - The SQLCipher migration carries the MACs.
+  - `EventStore` gains `enable_row_mac`, `has_row_macs`, `row_quarantine`, and an
+    `apply_row_quarantine` switch on `iter_events` that the Merkle commitment
+    uses to fold raw rows.
+
 - Apply the WebSocket handshake's Host and Origin guard to the `/metrics` and
   `/health` probes before they answer. An open loopback hub with `--metrics` and
   no metrics token answered any `Host`, so a DNS-rebinding page could read its

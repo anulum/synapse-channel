@@ -43,6 +43,8 @@ class CorruptEventReason(str, Enum):
     INVALID_JSON = "invalid_json"
     PAYLOAD_NOT_OBJECT = "payload_not_object"
     RESERVED_KIND = "reserved_kind"
+    ROW_MAC_MISSING = "row_mac_missing"
+    ROW_MAC_INVALID = "row_mac_invalid"
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +147,32 @@ class DecodedEventRow:
     kind: str
     payload: dict[str, Any]
     corruption: CorruptEventRow | None
+
+
+def unauthenticated_row(
+    seq: int, kind: object, payload: object, *, mac_present: bool
+) -> CorruptEventRow:
+    """Return the quarantine marker for a row the hub's row MAC does not vouch for.
+
+    Parameters
+    ----------
+    seq : int
+        The row's sequence.
+    kind, payload : object
+        The stored values, reduced to a safe kind and a digest.
+    mac_present : bool
+        Whether the row carried a MAC at all (``row_mac_invalid``) or none
+        (``row_mac_missing``).
+    """
+    reason = (
+        CorruptEventReason.ROW_MAC_INVALID if mac_present else CorruptEventReason.ROW_MAC_MISSING
+    )
+    return CorruptEventRow(
+        seq=seq,
+        original_kind=_safe_original_kind(kind),
+        reasons=(reason,),
+        payload_sha256=_payload_digest(payload),
+    )
 
 
 def _safe_original_kind(value: object) -> str | None:

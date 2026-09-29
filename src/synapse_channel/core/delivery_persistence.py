@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
@@ -120,9 +120,18 @@ class DeliveryWrite:
 class DeliveryPersistence:
     """A version-three aggregate sharing the event store's connection and lock."""
 
-    def __init__(self, connection: Any, lock: Any) -> None:
+    def __init__(
+        self,
+        connection: Any,
+        lock: Any,
+        *,
+        insert_event: Callable[[float, str, str], int],
+    ) -> None:
         self._conn = connection
         self._lock = lock
+        # The owning event store's row writer, so delivery rows carry the same row
+        # authentication as every other event (K4-REPLAY).
+        self._insert_event = insert_event
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS delivery_requests ("
             "operation_key TEXT PRIMARY KEY, sender TEXT NOT NULL, "
@@ -363,11 +372,7 @@ class DeliveryPersistence:
 
     def _event(self, kind: str, payload: Mapping[str, Any], stamp: float) -> int:
         """Insert one event inside the active transaction and return its sequence."""
-        cursor = self._conn.execute(
-            "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)",
-            (stamp, kind, _encode(payload)),
-        )
-        return int(cursor.lastrowid or 0)
+        return self._insert_event(stamp, kind, _encode(payload))
 
     def _notification(
         self, notification_id: str, operation_key: str, audience: str, frame: Mapping[str, Any]

@@ -342,6 +342,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "name returns to first-come-first-owned; 0 ends the lease at disconnect.",
     )
     hub.add_argument(
+        "--row-mac-key-file",
+        default=None,
+        metavar="FILE",
+        help="With --db, the owner-only key that authenticates every event row "
+        "(default DB.rowmac.key, created on first start); rows that fail it are "
+        "quarantined on replay and the hub refuses mutations.",
+    )
+    hub.add_argument(
         "--checkpoint-interval",
         type=_positive_finite,
         default=DEFAULT_CHECKPOINT_INTERVAL,

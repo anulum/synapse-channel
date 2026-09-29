@@ -472,7 +472,10 @@ docker compose logs -f hub
 
 `docker-compose.yml` contains no insecure override. It publishes on host
 loopback, requires token-file authentication, native WSS and identity-bound
-registrations, and encrypts the durable database with the mounted SQLCipher key. The image includes the exact
+registrations, and encrypts the durable database with the mounted SQLCipher key.
+On first start the hub also creates its row-authentication key,
+`/data/hub.db.rowmac.key`, beside the database. Back it up with the database: a
+log whose rows carry MACs refuses to start without it. The image includes the exact
 hash-locked SQLCipher runtime needed by this profile, and the `cryptography`
 runtime (the `encryption` extra) that verifies Ed25519 identity-bound
 registrations, so `--require-identity-binding` and `--team-secure` work inside

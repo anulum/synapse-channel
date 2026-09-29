@@ -44,6 +44,11 @@ from synapse_channel.core.capability_card_trust import (
     CapabilityCardTrustError,
     load_capability_card_trust_bundle,
 )
+from synapse_channel.core.event_row_mac import (
+    RowMacError,
+    load_or_create_row_mac_key,
+    row_mac_key_path,
+)
 from synapse_channel.core.federation import FederationBundle, bundle_can_authorise
 from synapse_channel.core.federation_store import FederationStoreError, bundle_from_store
 from synapse_channel.core.federation_wire import FederationWireError, decode_federation_offer
@@ -541,6 +546,31 @@ def _cmd_hub(
         # SqlCipherKeyError subclasses for missing driver or rejected key.
         print(f"synapse hub: {exc}", file=sys.stderr)
         return 2
+    if journal is not None:
+        # K4-REPLAY: every row this hub writes is MACed with a key kept outside the
+        # log; rows after the key's start that fail it are quarantined before replay.
+        key_path = getattr(args, "row_mac_key_file", None) or row_mac_key_path(args.db)
+        try:
+            row_key = load_or_create_row_mac_key(
+                key_path,
+                current_max_seq=journal.max_seq(),
+                log_has_macs=journal.has_row_macs(),
+            )
+        except RowMacError as exc:
+            journal.close()
+            print(f"synapse hub: {exc}", file=sys.stderr)
+            return 2
+        quarantined = journal.enable_row_mac(row_key)
+        if quarantined:
+            seqs = ", ".join(str(row.seq) for row in quarantined[:10])
+            more = f" and {len(quarantined) - 10} more" if len(quarantined) > 10 else ""
+            print(
+                f"synapse hub: WARNING {len(quarantined)} event row(s) failed row "
+                f"authentication and are quarantined (seq {seqs}{more}); the hub serves "
+                "read-only until an operator removes them or restores the log from a "
+                "trusted copy",
+                file=sys.stderr,
+            )
     if aef_config is not None:
         try:
             settled = drain_aef_startup_backlog(aef_config)

@@ -368,7 +368,14 @@ def migrate_plaintext_to_sqlcipher(
 
     plain = sqlite3.connect(str(src))
     try:
-        rows = list(plain.execute("SELECT seq, ts, kind, payload FROM events ORDER BY seq"))
+        columns = {str(info[1]) for info in plain.execute("PRAGMA table_info(events)")}
+        # Row MACs (K4-REPLAY) travel with their rows; a log from before them has none.
+        query = (
+            "SELECT seq, ts, kind, payload, mac FROM events ORDER BY seq"
+            if "mac" in columns
+            else "SELECT seq, ts, kind, payload, NULL FROM events ORDER BY seq"
+        )
+        rows = list(plain.execute(query))
     finally:
         plain.close()
 
@@ -379,10 +386,11 @@ def migrate_plaintext_to_sqlcipher(
             "seq INTEGER PRIMARY KEY, "
             "ts REAL NOT NULL, "
             "kind TEXT NOT NULL, "
-            "payload TEXT NOT NULL)"
+            "payload TEXT NOT NULL, "
+            "mac TEXT)"
         )
         enc.executemany(
-            "INSERT INTO events (seq, ts, kind, payload) VALUES (?, ?, ?, ?)",
+            "INSERT INTO events (seq, ts, kind, payload, mac) VALUES (?, ?, ?, ?, ?)",
             rows,
         )
         enc.commit()

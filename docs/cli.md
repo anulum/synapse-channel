@@ -1259,6 +1259,19 @@ the change was authorised, move the checkpoint store aside so the next start
 anchors a new chain. `synapse merkle checkpoint DB` prints the newest link;
 with `--verify` it exits `0` when the log matches and `2` on detection.
 
+The checkpoint catches a log that was cut or rewritten, not a row appended after
+the last anchor. For that, the hub authenticates every event row it writes: an
+HMAC-SHA256 over the row's `seq`, `ts`, `kind` and payload, kept in the row. The
+key sits outside the log, in the owner-only `DB.rowmac.key`, created on first
+start (or at `--row-mac-key-file`). At start every row written since the key
+existed is checked. A row with a missing or wrong MAC is quarantined: replay skips
+it, the start prints `WARNING N event row(s) failed row authentication`, and the
+hub serves reads but refuses mutations until the row is removed or the log is
+restored from a trusted copy. Rows from before the key are the legacy prefix and
+are not checked. A log that carries MACs refuses to start when its key file is
+missing. Whoever can read the key file can forge rows, which is the same boundary
+as the checkpoint store.
+
 While it serves, the hub anchors again every `--checkpoint-interval` seconds
 (default `60`), folding only the events written since the previous anchor, and a
 clean stop anchors at once and closes the checkpoint store. So cutting writes

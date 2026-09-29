@@ -67,6 +67,17 @@ every client on that machine already signs with) or `synapse identity keygen
 `--paranoid` and `--secure` refuse that flag. The refusal happens before any
 durable store is opened.
 
+### Forged event rows
+
+A `--db` hub authenticates every event row it writes with an HMAC key kept outside
+the database (`DB.rowmac.key`, owner-only, or `--row-mac-key-file`). At start it
+checks every row written since the key was created. A row appended or edited by
+anyone without the key is quarantined: replay skips it, and the hub refuses
+mutations until an operator resolves it. This complements the anti-rollback
+checkpoint, which detects cut or rewritten history but not appended rows. The key
+file is the trust boundary; keep it on the same owner-only footing as the
+checkpoint store, or on separate custody.
+
 ### Deployment profiles
 
 Security here is proportionate to exposure, not one-size-fits-all. Pick the

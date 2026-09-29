@@ -66,6 +66,7 @@ def _hub_ns(**overrides: Any) -> argparse.Namespace:
         "takeover_cooldown": DEFAULT_TAKEOVER_COOLDOWN,
         "lease_offline_ttl": DEFAULT_LEASE_OFFLINE_TTL,
         "checkpoint_interval": 60.0,
+        "row_mac_key_file": None,
         "log_format": DEFAULT_LOG_FORMAT,
         "log_level": DEFAULT_LOG_LEVEL,
         "token": None,
