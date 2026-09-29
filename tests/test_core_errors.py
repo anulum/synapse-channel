@@ -455,6 +455,12 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     ),
     "RelayWireError": ("synapse_channel.core.operator_relay_wire", "relay_wire", ValueError),
     "RoleGrantError": ("synapse_channel.core.role_grants", "role_grant", ValueError),
+    "RowMacError": ("synapse_channel.core.event_row_mac", "row_mac", ValueError),
+    "UnboundIdentityError": (
+        "synapse_channel.core.unbound_identity_guard",
+        "unbound_identity",
+        RuntimeError,
+    ),
     "SandboxManifestError": ("synapse_channel.core.sandbox_policy", "sandbox_manifest", ValueError),
     "SandboxPathError": ("synapse_channel.core.sandbox_paths", "sandbox_path", RuntimeError),
     "SecretFileError": ("synapse_channel.core.secret_files", "secret_file", ValueError),

@@ -147,6 +147,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_cli_pid_monitor.py": (1, "optional-dep-guard"),
     "tests/test_dashboard_access_store.py": (1, "platform-guard"),
     "tests/test_dashboard_feeds_sqlcipher.py": (1, "optional-dep-guard"),
+    "tests/test_event_row_mac.py": (1, "optional-dep-guard"),
     "tests/test_dashboard_host_sessions.py": (1, "optional-dep-guard"),
     "tests/test_delivery_participant_bridge.py": (2, "optional-dep-guard"),
     "tests/test_host_sessions.py": (1, "optional-dep-guard"),

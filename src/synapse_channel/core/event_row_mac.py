@@ -47,6 +47,11 @@ ROW_MAC_KEY_SUFFIX = ".rowmac.key"
 """Suffix of the key file placed beside the event store (``<db>.rowmac.key``)."""
 
 _KEY_HEADER = "synapse-row-mac-v1"
+_LOST_KEY_REMEDY = (
+    "restore the key file from a trusted copy. Only if it is lost and the log was "
+    "reviewed, clear the row MACs (UPDATE events SET mac = NULL) so a new key "
+    "starts at the current tip"
+)
 _KEY_BYTES = 32
 
 
@@ -155,9 +160,7 @@ def load_or_create_row_mac_key(
     if log_has_macs:
         raise RowMacError(
             f"the event log carries authenticated rows but the key {target} is missing; "
-            "restore the key file from a trusted copy. Only if it is lost and the log was "
-            "reviewed, clear the row MACs (UPDATE events SET mac = NULL) so a new key "
-            "starts at the current tip"
+            + _LOST_KEY_REMEDY
         )
     key = RowMacKey(key=secrets.token_bytes(_KEY_BYTES), since_seq=max(0, current_max_seq))
     line = f"{_KEY_HEADER} {key.since_seq} {base64.b64encode(key.key).decode('ascii')}\n"
