@@ -39,6 +39,20 @@ SYNAPSE CHANNEL is a **local-first** coordination bus. Its default and intended
 deployment is a single operator on one machine, with the hub bound to loopback
 and no authentication — appropriate for that single-owner setting.
 
+### Open loopback default
+
+A hub started with no connect token and no identity binding on a loopback
+address is open by design. Any process running on the same machine, under any
+local user, can connect and register under any seat name that is not currently
+held, and can then read and write coordination state as that seat. This fits one
+owner working on one machine, where every local process is already trusted. It
+does not fit a shared host, several operators, or an untrusted local process. The
+hub prints a one-line notice when it starts in this posture. When more than one
+person or trust domain can reach the machine, use a guarded profile from the
+table below: a connect token, `--team-secure` identity binding, or `--secure`.
+A locally generated credential is planned to become the default at the 1.0
+boundary, with an explicit opt-out.
+
 ### Deployment profiles
 
 Security here is proportionate to exposure, not one-size-fits-all. Pick the

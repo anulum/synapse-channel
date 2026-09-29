@@ -20,6 +20,7 @@ from cli_processes_hub_helpers import (
     _close_runner,
     _federation_store,
     _owner_only,
+    _write_identity_trust,
 )
 from synapse_channel import cli_processes
 from synapse_channel.core.hub import (
@@ -790,3 +791,22 @@ def test_cmd_hub_bounds_durable_ingress_by_default(
         assert quota is None
     else:
         assert (quota.max_events, quota.max_bytes, quota.window_seconds) == expected
+
+
+def test_cmd_hub_announces_the_open_loopback_default(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unguarded loopback hub says so at start; a token or identity binding silences it."""
+    from synapse_channel.core.hub_exposure import OPEN_LOOPBACK_NOTICE
+
+    assert cli_processes._cmd_hub(_hub_ns(), runner=_close_runner) == 0
+    assert OPEN_LOOPBACK_NOTICE in capsys.readouterr().err
+
+    assert cli_processes._cmd_hub(_hub_ns(token="t"), runner=_close_runner) == 0
+    assert OPEN_LOOPBACK_NOTICE not in capsys.readouterr().err
+
+    trust = tmp_path / "identity-trust.json"
+    _write_identity_trust(trust)
+    bound = _hub_ns(identity_trust=str(trust), require_identity_binding=True)
+    assert cli_processes._cmd_hub(bound, runner=_close_runner) == 0
+    assert OPEN_LOOPBACK_NOTICE not in capsys.readouterr().err

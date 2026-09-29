@@ -15,6 +15,11 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- State the open loopback default explicitly. A hub on loopback without a
+  connect token or identity binding now prints a one-line start-up notice, and
+  `SECURITY.md` has a new "Open loopback default" section on who can join such a
+  hub and which profile to use instead.
+
 - Bound how long a disconnected holder keeps its claims. A claim survives its
   holder's disconnect for the hub's lease window (`--lease-offline-ttl`, default
   3600 s). During that window `synapse state` marks it `holder-offline=<s>`, and

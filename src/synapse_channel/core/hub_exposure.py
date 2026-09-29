@@ -18,6 +18,14 @@ LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 """Bind hosts treated as loopback-only, where running without a token is fine."""
 
 
+OPEN_LOOPBACK_NOTICE = (
+    "synapse hub: open loopback hub: no connect token and no identity binding, so any "
+    "process on this machine can join under any seat name. Intended for one owner on one "
+    'machine; see SECURITY.md "Open loopback default" for the guarded profiles.'
+)
+"""The one-line start-up notice of the deliberate open loopback default (K4-F2)."""
+
+
 def is_loopback_host(host: str) -> bool:
     """Return whether ``host`` binds only the loopback interface."""
     return host.strip().lower() in LOOPBACK_HOSTS

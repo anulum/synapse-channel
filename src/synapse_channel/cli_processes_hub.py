@@ -53,7 +53,11 @@ from synapse_channel.core.hub import (
     SynapseHub,
 )
 from synapse_channel.core.hub_config import HubConfig, config_fingerprint
-from synapse_channel.core.hub_exposure import guard_exposure
+from synapse_channel.core.hub_exposure import (
+    OPEN_LOOPBACK_NOTICE,
+    guard_exposure,
+    is_loopback_host,
+)
 from synapse_channel.core.identity_binding import IdentityBindingError, load_identity_trust_bundle
 from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.merkle_checkpoint import AntiRollbackError, checkpoint_path_for
@@ -981,6 +985,14 @@ def _cmd_hub(
             return _serve_with_watch(serve, active_watch)
 
         server_factory = watched_server
+    if (
+        is_loopback_host(args.host)
+        and authenticator is None
+        and not getattr(args, "require_identity_binding", False)
+    ):
+        # K4-F2: the open loopback default is deliberate for one owner on one machine;
+        # say so once as the hub starts, so it is never mistaken for a guarded team hub.
+        print(OPEN_LOOPBACK_NOTICE, file=sys.stderr)
     try:
         runner(
             server_factory() if aef_config is None else _serve_with_aef(server_factory, aef_config)
