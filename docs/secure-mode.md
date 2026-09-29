@@ -25,6 +25,7 @@ overlapping definition of "secure".
 - Ed25519 connection identity binding (`--identity-trust`);
 - role-claim grants (`--role-grants`);
 - private directed routing;
+- fenced lease mutations (`--require-fencing-epoch`, forced by team-secure);
 - sender-bound per-message authentication (`--message-auth-key`);
 - deny-by-default ACL enforcement (`--acl-policy`);
 - native WSS (`--tls-certfile`/`--tls-keyfile`);

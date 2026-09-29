@@ -155,6 +155,7 @@ def test_cmd_hub_secure_applies_the_composed_posture(
     assert captured["require_acl"] is True
     assert captured["require_identity_binding"] is True
     assert captured["require_role_claim"] is True
+    assert captured["require_fencing_epoch"] is True
     assert captured["metrics_query_token_ok"] is False
     assert captured["insecure_off_loopback"] is False
     # Preset flood bounds.

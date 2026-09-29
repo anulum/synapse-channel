@@ -96,6 +96,8 @@ export async function startIntegrationHub(
       tokenFile,
       "--db",
       join(temporary, `${label}.db`),
+      // Strict fencing: every editor release must name the epoch of its own grant.
+      "--require-fencing-epoch",
     ],
     {
       cwd: repositoryRoot,

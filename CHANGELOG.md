@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **`--team-secure`, and therefore `--secure`, now force `--require-fencing-epoch`.**
+  - Upgrade every seat's client before upgrading a team-secure hub.
+  - Clients up to 0.99.32 keep the lease epoch only in the process that claimed. On an upgraded
+    team-secure hub, their `synapse release` or commit-hook release from a new process is refused.
+
 ### Deprecated
 
 - **The composite Action at the repository root** (`uses: anulum/synapse-channel@<tag>`) is
@@ -52,6 +59,14 @@ All notable changes to this project are documented here.
     covers strict fencing. The invariant registry is updated.
   - `expected_version` stays optional. Direct file writes remain outside hub
     fencing.
+  - `--team-secure` (and so `--secure`) now forces the flag. The startup report
+    lists "lease mutations fenced by epoch".
+  - The first-party clients name the epoch too, so they keep working on such a
+    hub.
+    - **TypeScript client:** `release(taskId, epoch?)` and `leaseEpoch()`.
+    - **VS Code extension:** the release of the active file names the epoch.
+    - Both take the epoch from their own grant. Their real-hub acceptance
+      tests now run against a strict hub, and both fail without the change.
 
 ## [0.99.32] - 2026-09-29
 

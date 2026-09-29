@@ -48,6 +48,7 @@ export const MessageType = {
   ClaimDenied: "claim_denied",
   ReleaseGranted: "release_granted",
   ReleaseDenied: "release_denied",
+  HandoffGranted: "handoff_granted",
   TaskUpdated: "task_updated",
   CheckpointSaved: "checkpoint_saved",
   StateSnapshot: "state_snapshot",

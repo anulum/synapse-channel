@@ -86,6 +86,8 @@ export class SynapseClient {
   private readonly anyHandlers = new Set<MessageHandler>();
   private ready = false;
   private hubProtocolVersion: number | null = null;
+  /** Fencing epoch of each lease this client holds, from its own grants. */
+  private readonly leaseEpochs = new Map<string, number>();
   /** Incremented on every connect and close; callbacks of an older socket are ignored. */
   private generation = 0;
   private pending: PendingAttempt | null = null;
@@ -171,6 +173,7 @@ export class SynapseClient {
           clearTimeout(timer);
           resolve();
         }
+        this.trackLeaseEpoch(message);
         this.dispatch(message);
       };
       socket.onerror = () => {
@@ -288,9 +291,26 @@ export class SynapseClient {
     this.send(MessageType.Claim, { extra });
   }
 
-  /** Release a claim you own. */
-  release(taskId: string): void {
-    this.send(MessageType.Release, { extra: { task_id: taskId } });
+  /**
+   * Release a claim you own.
+   *
+   * The frame names the lease's fencing epoch: `epoch` when given, otherwise
+   * the epoch from this client's own `claim_granted` or `handoff_granted` for
+   * the task. A hub started with `--require-fencing-epoch` (forced by
+   * `--team-secure` and `--secure`) refuses a release without it.
+   */
+  release(taskId: string, epoch?: number): void {
+    const extra: Record<string, unknown> = { task_id: taskId };
+    const fence = epoch ?? this.leaseEpochs.get(taskId);
+    if (fence !== undefined) {
+      extra["epoch"] = fence;
+    }
+    this.send(MessageType.Release, { extra });
+  }
+
+  /** The fencing epoch this client holds for `taskId`, if it was granted one. */
+  leaseEpoch(taskId: string): number | undefined {
+    return this.leaseEpochs.get(taskId);
   }
 
   /** Request the shared board snapshot. */
@@ -382,6 +402,24 @@ export class SynapseClient {
       return null;
     } catch {
       return null;
+    }
+  }
+
+  /** Remember the epoch of a lease granted to this client; forget it when it ends. */
+  private trackLeaseEpoch(message: Envelope): void {
+    const taskId = message["task_id"];
+    if (typeof taskId !== "string") {
+      return;
+    }
+    const epoch = message["epoch"];
+    const granted = message.type === MessageType.ClaimGranted ||
+      message.type === MessageType.HandoffGranted;
+    if (granted && message["owner"] === this.options.name &&
+        typeof epoch === "number" && Number.isSafeInteger(epoch) && epoch >= 0) {
+      this.leaseEpochs.set(taskId, epoch);
+    } else if (message.type === MessageType.ReleaseGranted ||
+        message.type === MessageType.HandoffGranted) {
+      this.leaseEpochs.delete(taskId);
     }
   }
 

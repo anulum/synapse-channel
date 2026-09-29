@@ -60,7 +60,9 @@ def test_team_secure_policy_forces_trust_gates_and_reports() -> None:
     assert args.require_identity_binding is True
     assert args.require_role_claim is True
     assert args.private_directed_messages is True
+    assert args.require_fencing_epoch is True
     assert "hub token required" in report.enforced
+    assert "lease mutations fenced by epoch (--require-fencing-epoch)" in report.enforced
     assert "identity binding required" in report.enforced[1]
     assert "role-claim grants required" in report.enforced[2]
     assert "private directed messages required" in report.enforced

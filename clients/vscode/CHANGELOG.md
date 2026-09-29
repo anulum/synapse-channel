@@ -11,6 +11,12 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 ## Unreleased
 
+- Name the lease's fencing epoch when releasing the active file's claim.
+  - The editor remembers the epoch from its own `claim_granted` or
+    `handoff_granted`, never from a state snapshot.
+  - A hub started with `--require-fencing-epoch` refuses epoch-less releases.
+    `--team-secure` and `--secure` force that flag.
+  - The Extension Host acceptance run now uses such a hub.
 - Require VS Code 1.101 or newer for its Node 22 extension host; build with
   Node 22.12 or newer and the current VSIX packaging tools.
 - Add a read-only coordination evidence view that distinguishes self-attested

@@ -57,7 +57,7 @@ client.close();
   or pending rejects.
 - `on(type, handler)` / `onMessage(handler)` — subscribe by `MessageType` or to every frame; each returns an unsubscribe function.
 - `chat(payload, { target?, channel?, priority? })`,
-  `claim(taskId, paths?, pathIdentity?, { taskOnly? })`, `release(taskId)`. The
+  `claim(taskId, paths?, pathIdentity?, { taskOnly? })`, `release(taskId, epoch?)` (names the lease epoch from its own grant, as `--require-fencing-epoch` requires). The
   optional `ClaimScopeIdentity` is for bridges carrying output from the trusted
   Python Git/filesystem resolver; its worktree path is sent automatically. Omit
   it rather than inventing canonical values. A claim without paths covers the

@@ -2,7 +2,8 @@
 
 `synapse hub --team-secure` is the multi-seat *trust* profile for a local fleet
 of coding agents that share one hub. It fails closed unless connection identity
-is proven, role claims are granted, and directed messages are audience-routed.
+is proven, role claims are granted, directed messages are audience-routed, and
+every lease mutation names its fencing epoch.
 
 It is intentionally lighter than [`--paranoid`](paranoid-mode.md):
 
@@ -13,6 +14,7 @@ It is intentionally lighter than [`--paranoid`](paranoid-mode.md):
 | Identity binding (`--identity-trust`) | Required | Optional (still a missing-hook note) |
 | Role-claim grants (`--role-grants`) | Required | Optional |
 | Private directed messages | Forced on | Optional |
+| Lease fencing epoch (`--require-fencing-epoch`) | Forced on | Optional |
 | Per-message HMAC | Recommended | Required |
 | ACL enforcement | Recommended | Required |
 | Native WSS (TLS) | Recommended when off-loopback | Required |
@@ -34,7 +36,17 @@ same multi-seat hub is also network-exposed.
 4. **Private directed messages** — forced on, so a directed chat is delivered
    only to its recipients (and `-rx` sidecars) plus identities with the ACL
    `observe` grant, not to every socket.
-5. **Durable sequence floors, when they can run** — with
+5. **Fenced lease mutations.** The profile forces `--require-fencing-epoch`: a
+   task update, release, handoff or checkpoint must carry the epoch from its
+   grant, so a writer holding a superseded lease is always refused, not checked
+   by name only.
+   - Clients from this release on send the epoch automatically, also across
+     processes (see [`--require-fencing-epoch`](cli.md)).
+   - A client up to Core 0.99.32 sends it only within the process that claimed.
+     Such a client's `synapse release` or commit-hook release from a new process
+     is refused. Upgrade every seat before enabling team-secure on an existing
+     fleet.
+6. **Durable sequence floors, when they can run** — with
    `--require-message-auth` and a durable replay ledger (`--db` or
    `--message-auth-replay-db`), an unset `--message-auth-sequence-floor-mode`
    becomes `compat`: each key's high-water sequence is recorded, and nothing is

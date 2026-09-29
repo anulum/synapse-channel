@@ -37,6 +37,7 @@ import {
 } from "./hubEvidenceProtocol.js";
 import { HubTransport } from "./hubTransport.js";
 import { type MutationSendResult } from "./hubTransportTypes.js";
+import { LeaseEpochMemory, releaseFields } from "./leaseEpochs.js";
 import { workspaceClaimRequest, type WorkspaceClaimRequest } from "./workspaceScope.js";
 
 interface HubState {
@@ -78,6 +79,7 @@ export class FleetController {
   };
   private readonly transport: HubTransport;
   private identityValue = "";
+  private readonly leaseEpochs = new LeaseEpochMemory();
   private projectionKey: { uri: string; identity: string } | undefined;
 
   constructor(
@@ -100,6 +102,7 @@ export class FleetController {
     const verdict = hubConnectionVerdict(uri);
     const nextKey = { uri: verdict.allowed ? verdict.uri : uri, identity };
     if (hubProjectionChanged(this.projectionKey, nextKey)) {
+      this.leaseEpochs.clear();
       this.stateValue.connection = disconnectedConnection();
       this.stateValue.agents = [];
       this.stateValue.tasks = [];
@@ -151,6 +154,7 @@ export class FleetController {
       this.stateValue.deadLetters = frame.deadLetters;
       this.stateValue.relayApprovals = frame.relayApprovals;
     } else if (frame.kind === "state-changed") {
+      this.leaseEpochs.observe(frame, this.identityValue);
       this.transport.request("state_request");
     } else if (frame.kind === "board-changed") {
       this.transport.request("board_request");
@@ -223,9 +227,7 @@ export class FleetController {
       return;
     }
     this.reportMutation(
-      this.transport.mutate("release", {
-        task_id: request.taskId,
-      }),
+      this.transport.mutate("release", releaseFields(request.taskId, this.leaseEpochs)),
     );
   }
 

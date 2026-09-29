@@ -84,7 +84,11 @@ async def main() -> None:
         if os.environ.get("SYNAPSE_TEST_ATTACHMENT") == "1":
             hub, stores = _attachment_hub(Path(directory))
         else:
-            hub = SynapseHub(authenticator=TokenAuthenticator(["integration-only-token"]))
+            # Strict fencing: every release in the SDK journey must name its lease epoch.
+            hub = SynapseHub(
+                authenticator=TokenAuthenticator(["integration-only-token"]),
+                require_fencing_epoch=True,
+            )
             stores = []
         server = asyncio.create_task(hub.serve(host="127.0.0.1", port=0))
         try:

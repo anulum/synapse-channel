@@ -77,8 +77,12 @@ export interface HubStateFrame {
 /** Mutation event requiring a fresh authoritative state query. */
 export interface HubStateChangedFrame {
   kind: "state-changed";
-  operation: "claim" | "release";
+  operation: "claim" | "release" | "handoff";
   taskId: string;
+  /** Lease owner the grant names, when present. */
+  owner: string | null;
+  /** Lease fencing epoch the grant carries, when it is a non-negative safe integer. */
+  epoch: number | null;
 }
 
 /** Board mutation requiring a fresh authoritative board query. */
@@ -245,16 +249,24 @@ export function decodeHubFrame(raw: string): HubDecodeResult {
           },
         };
   }
-  if (wireType === "claim_granted" || wireType === "release_granted") {
+  if (wireType === "claim_granted" || wireType === "release_granted"
+      || wireType === "handoff_granted") {
     const taskId = nonEmptyString(envelope["task_id"]);
+    const epoch = envelope["epoch"];
     return taskId === undefined
       ? invalidKnownFrame()
       : {
           ok: true,
           frame: {
             kind: "state-changed",
-            operation: wireType === "claim_granted" ? "claim" : "release",
+            operation: wireType === "claim_granted"
+              ? "claim"
+              : wireType === "release_granted" ? "release" : "handoff",
             taskId,
+            owner: nonEmptyString(envelope["owner"]) ?? null,
+            epoch: typeof epoch === "number" && Number.isSafeInteger(epoch) && epoch >= 0
+              ? epoch
+              : null,
           },
         };
   }

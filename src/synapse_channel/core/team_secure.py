@@ -8,9 +8,10 @@
 """Team-secure hub profile for multi-seat local fleets.
 
 ``synapse hub --team-secure`` is the multi-agent *trust* preset: it fails closed
-unless connection identity is proven, role claims are granted, and directed
-messages are audience-routed. It is deliberately lighter than ``--paranoid``
-(which also demands TLS, ACL enforcement, and per-message HMAC for exposed
+unless connection identity is proven, role claims are granted, directed
+messages are audience-routed, and every lease mutation names its fencing epoch.
+It is deliberately lighter than ``--paranoid`` (which also demands TLS, ACL
+enforcement, and per-message HMAC for exposed
 production binds). Pair both when a multi-seat hub is also network-exposed.
 
 The profile mutates the parsed hub namespace in place so existing per-flag plumbing
@@ -101,12 +102,14 @@ def apply_team_secure_hub_profile(args: argparse.Namespace) -> TeamSecureHubRepo
     args.require_identity_binding = True
     args.require_role_claim = True
     args.private_directed_messages = True
+    args.require_fencing_epoch = True
 
     enforced = [
         "hub token required",
         "identity binding required (--identity-trust + --require-identity-binding)",
         "role-claim grants required (--role-grants + --require-role-claim)",
         "private directed messages required",
+        "lease mutations fenced by epoch (--require-fencing-epoch)",
     ]
     floors = _record_sequence_floors(args)
     if floors:

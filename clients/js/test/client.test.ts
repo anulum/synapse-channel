@@ -199,6 +199,44 @@ describe("SynapseClient messaging", () => {
     expect(envelopes[4]).toMatchObject({ type: "board_request" });
   });
 
+  it("names the fencing epoch of its own grant when releasing", async () => {
+    const { client, socket } = makeClient();
+    const connected = client.connect();
+    socket.open();
+    socket.welcome();
+    await connected;
+    socket.sent = [];
+
+    socket.deliver({ type: MessageType.ClaimGranted, task_id: "t1", owner: "P/alice", epoch: 4 });
+    // malformed or foreign grants change nothing
+    socket.deliver({ type: MessageType.ClaimGranted, task_id: "t1", owner: "P/bob", epoch: 9 });
+    socket.deliver({ type: MessageType.ClaimGranted, task_id: "t1", owner: "P/alice", epoch: "9" });
+    socket.deliver({ type: MessageType.ClaimGranted, task_id: "t1", owner: "P/alice", epoch: -1 });
+    socket.deliver({ type: MessageType.ClaimGranted, task_id: "t1", owner: "P/alice", epoch: 1.5 });
+    socket.deliver({ type: MessageType.ClaimGranted, task_id: 7, owner: "P/alice", epoch: 9 });
+    expect(client.leaseEpoch("t1")).toBe(4);
+    client.release("t1");
+    client.release("t1", 2); // an explicit epoch wins
+    client.release("unknown");
+
+    socket.deliver({ type: MessageType.HandoffGranted, task_id: "t2", owner: "P/alice", epoch: 6 });
+    expect(client.leaseEpoch("t2")).toBe(6);
+    socket.deliver({ type: MessageType.HandoffGranted, task_id: "t2", owner: "P/bob", epoch: 7 });
+    expect(client.leaseEpoch("t2")).toBeUndefined(); // handed away, so forgotten
+    socket.deliver({ type: MessageType.ReleaseGranted, task_id: "t1", owner: "P/alice" });
+    expect(client.leaseEpoch("t1")).toBeUndefined(); // released, so forgotten
+    client.release("t1");
+
+    expect(socket.sentEnvelopes()).toMatchObject([
+      { type: "release", task_id: "t1", epoch: 4 },
+      { type: "release", task_id: "t1", epoch: 2 },
+      { type: "release", task_id: "unknown" },
+      { type: "release", task_id: "t1" },
+    ]);
+    expect(socket.sentEnvelopes()[2]).not.toHaveProperty("epoch");
+    expect(socket.sentEnvelopes()[3]).not.toHaveProperty("epoch");
+  });
+
   it("dispatches inbound messages by type and to any-handlers", async () => {
     const { client, socket } = makeClient();
     const connected = client.connect();

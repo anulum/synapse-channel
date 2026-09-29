@@ -132,6 +132,7 @@ def test_cmd_hub_team_secure_forces_trust_gates(
                 require_identity_binding=False,
                 require_role_claim=False,
                 private_directed_messages=False,
+                require_fencing_epoch=False,
             ),
             runner=_close_runner,
             hub_factory=build_hub,
@@ -141,6 +142,7 @@ def test_cmd_hub_team_secure_forces_trust_gates(
     assert captured["require_identity_binding"] is True
     assert captured["require_role_claim"] is True
     assert captured["private_directed_messages"] is True
+    assert captured["require_fencing_epoch"] is True
     assert "k" in captured["identity_trust_bundle"].keys
     assert captured["role_grants"].may_claim("proj/claude", "proj/coordinator")
     err = capsys.readouterr().err

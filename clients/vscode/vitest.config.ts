@@ -26,6 +26,7 @@ export default defineConfig({
         "src/hubTransport.ts",
         "src/hubTransportTimers.ts",
         "src/hubTransportTypes.ts",
+        "src/leaseEpochs.ts",
         "src/reconnectPolicy.ts",
         "src/workspaceScope.ts",
       ],
