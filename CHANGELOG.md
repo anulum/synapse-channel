@@ -157,6 +157,8 @@ All notable changes to this project are documented here.
   - `EventStore` gains `enable_row_mac`, `has_row_macs`, `row_quarantine`, and an
     `apply_row_quarantine` switch on `iter_events` that the Merkle commitment
     uses to fold raw rows.
+  - `synapse sandbox run --attest DB` MACs its row with the hub's key when
+    `DB.rowmac.key` exists, so an attestation into a hub log is not quarantined.
 
 - Apply the WebSocket handshake's Host and Origin guard to the `/metrics` and
   `/health` probes before they answer. An open loopback hub with `--metrics` and
