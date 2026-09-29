@@ -10,7 +10,10 @@
 The serving gate itself is deliberately pure.  This module is its supported
 configuration boundary: a small versioned document names the already-audited
 federation store, the client CA that asks TLS peers for certificates, and the
-exact sender identities allowed to request multi-hub operations.  Trust is not
+exact sender identities allowed to request multi-hub operations.  A grant may
+also name an ``identity_key_id``: the peer then proves its sender with a
+registration signature verified against the hub's identity trust bundle, which
+survives a TLS-terminating proxy, instead of a client certificate.  Trust is not
 duplicated in the document.  Certificate pins, signing keys, namespace scope,
 expiry, and revocation remain authoritative in the federation store and are
 composed into the matching mutual-TLS bundle.
@@ -55,6 +58,7 @@ MAX_CLIENT_CA_BYTES = 1_048_576
 
 _ROOT_FIELDS = frozenset({"version", "federation_store", "client_ca_file", "grants"})
 _GRANT_FIELDS = frozenset({"sender", "domain_id", "namespace", "signing_key_id"})
+_OPTIONAL_GRANT_FIELDS = frozenset({"identity_key_id"})
 
 
 class MultiHubServingConfigError(SynapseError, ValueError):
@@ -100,12 +104,18 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
-def _exact_object(value: object, *, label: str, fields: frozenset[str]) -> dict[str, object]:
+def _exact_object(
+    value: object,
+    *,
+    label: str,
+    fields: frozenset[str],
+    optional: frozenset[str] = frozenset(),
+) -> dict[str, object]:
     """Return an exact-field object or raise a bounded configuration error."""
     if not isinstance(value, dict):
         raise MultiHubServingConfigError(f"{label} must be a JSON object")
     item = cast("dict[str, object]", value)
-    unknown = set(item) - fields
+    unknown = set(item) - fields - optional
     missing = fields - set(item)
     if unknown:
         raise MultiHubServingConfigError(
@@ -158,7 +168,9 @@ def _parse_grants(value: object) -> dict[str, MultiHubServingGrant]:
         raise MultiHubServingConfigError("multi-hub serving policy grants must be a non-empty list")
     grants: dict[str, MultiHubServingGrant] = {}
     for index, raw in enumerate(value):
-        item = _exact_object(raw, label=f"grants[{index}]", fields=_GRANT_FIELDS)
+        item = _exact_object(
+            raw, label=f"grants[{index}]", fields=_GRANT_FIELDS, optional=_OPTIONAL_GRANT_FIELDS
+        )
         sender = _text(item["sender"], label=f"grants[{index}].sender")
         if sender in grants:
             raise MultiHubServingConfigError(f"serving policy grants sender {sender!r} twice")
@@ -166,6 +178,11 @@ def _parse_grants(value: object) -> dict[str, MultiHubServingGrant]:
             domain_id=_text(item["domain_id"], label=f"grants[{index}].domain_id"),
             namespace=_text(item["namespace"], label=f"grants[{index}].namespace"),
             signing_key_id=_text(item["signing_key_id"], label=f"grants[{index}].signing_key_id"),
+            identity_key_id=(
+                _text(item["identity_key_id"], label=f"grants[{index}].identity_key_id")
+                if "identity_key_id" in item
+                else None
+            ),
         )
     return grants
 
@@ -191,9 +208,10 @@ def _mtls_bundle(
             raise MultiHubServingConfigError(
                 f"serving grant {sender!r} signing key is absent from its federation peering"
             )
-        if not peer.certificate_pins:
+        if not peer.certificate_pins and grant.identity_key_id is None:
             raise MultiHubServingConfigError(
-                f"serving grant {sender!r} federation peering has no certificate pin"
+                f"serving grant {sender!r} federation peering has no certificate pin "
+                "and the grant names no identity_key_id"
             )
         peers[grant.domain_id] = MTLSTrustedPeer(
             peer_id=grant.domain_id,

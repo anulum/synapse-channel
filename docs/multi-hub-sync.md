@@ -115,6 +115,23 @@ beside the policy; unsafe, symlinked, duplicate, unknown, or inconsistent input
 refuses startup. Native TLS requests a client certificate for multi-hub frames
 while ordinary local clients may still connect without one; the multi-hub gate
 then denies a missing, revoked, wrongly pinned, or out-of-scope identity.
+
+A grant may also name an `identity_key_id`. That peer then proves its sender
+without a client certificate:
+- The hub must run with `--identity-trust FILE --require-identity-binding`.
+- That bundle must hold the key, unrevoked, bound to the grant's `sender`.
+  Otherwise the hub refuses to start, because the grant could never be met.
+- The peer signs its first frame with that key: `synapse hub
+  --peer-identity-key`, or a Fleet follower's `identity` key.
+- The hub records the key a registration was verified under against the bundle,
+  never a trust-on-first-use key. The identity key then stands in for the
+  certificate. The federation checks (peering active, namespace, signing key),
+  the event-signature check and the ACL still apply.
+- A signature survives a TLS-terminating proxy, where a client certificate does
+  not. The grant proves the peer for log pulls and for forwarded claims,
+  messages, operator relays and dead-letter forwards alike.
+- A grant without `identity_key_id` still requires the live certificate, and its
+  peering still needs a certificate pin.
 The policy, federation store, and client-CA file must each be owned by the
 effective hub service user and use mode `0400` or `0600`. Core captures all
 three through full-component no-follow descriptor reads; OpenSSL receives the
@@ -169,6 +186,13 @@ peer and cannot silently clear a live process's in-memory quarantine.
       "domain_id": "west.example",
       "namespace": "PROJECT",
       "signing_key_id": "PROJECT:hub:2026-07"
+    },
+    {
+      "sender": "fleet-behind-proxy",
+      "domain_id": "fleet.example",
+      "namespace": "PROJECT",
+      "signing_key_id": "PROJECT:fleet:2026-09",
+      "identity_key_id": "fleet-behind-proxy-2026-09"
     }
   ]
 }

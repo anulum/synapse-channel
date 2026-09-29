@@ -168,6 +168,47 @@ class FederationBundle:
         only the federation gate — the caller still composes it with mutual TLS, event
         signature, and the local ACL via :func:`compose_cross_domain`.
         """
+        return self._decide(
+            domain_id,
+            namespace=namespace,
+            signing_key_id=signing_key_id,
+            certificate_pin=certificate_pin,
+            now=now,
+        )
+
+    def authorise_identity_bound(
+        self,
+        domain_id: str,
+        *,
+        namespace: str,
+        signing_key_id: str,
+        now: float,
+    ) -> FederationDecision:
+        """Decide as :meth:`authorise` for a peer proven by an identity key, not a certificate.
+
+        The caller has verified the peer's registration signature under the identity key
+        an operator's serving grant names, which stands in for the certificate pin. Every
+        other check runs unchanged and in the same order: the domain must be peered, the
+        peering active, the namespace granted and the signing key accepted.
+        """
+        return self._decide(
+            domain_id,
+            namespace=namespace,
+            signing_key_id=signing_key_id,
+            certificate_pin=None,
+            now=now,
+        )
+
+    def _decide(
+        self,
+        domain_id: str,
+        *,
+        namespace: str,
+        signing_key_id: str,
+        certificate_pin: str | None,
+        now: float,
+    ) -> FederationDecision:
+        """Run the deny-by-default checks; ``None`` skips only the certificate pin."""
         peer = self._peers.get(domain_id)
         if peer is None:
             return self._deny(domain_id, FederationDenyReason.UNKNOWN_DOMAIN)
@@ -179,7 +220,7 @@ class FederationBundle:
             return self._deny(domain_id, FederationDenyReason.NAMESPACE_NOT_GRANTED)
         if signing_key_id not in peer.signing_key_ids:
             return self._deny(domain_id, FederationDenyReason.SIGNING_KEY_NOT_ACCEPTED)
-        if certificate_pin not in peer.certificate_pins:
+        if certificate_pin is not None and certificate_pin not in peer.certificate_pins:
             return self._deny(domain_id, FederationDenyReason.CERTIFICATE_PIN_NOT_ACCEPTED)
         return FederationDecision(
             allowed=True,

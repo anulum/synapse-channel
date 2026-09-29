@@ -23,6 +23,10 @@ certificate whose pin the policy does not accept all refuse the serve. A hub wit
 configured also refuses every peer: serving is fail-closed until an operator supplies exact
 sender/domain/namespace/signing-key grants and live-certificate trust.
 
+A grant may opt in to an identity key instead of the certificate: the hub then accepts a
+registration it verified against its identity trust bundle under that key, which survives a
+TLS-terminating proxy.
+
 The module is pure of the wire protocol and of the hub: it reads the live socket only through a
 small, injectable :data:`PeerCertificateSource`, so a test can drive the full decision without a
 real mutual-TLS handshake while production uses :func:`live_peer_certificate_der`.
@@ -35,8 +39,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from synapse_channel.core.federation import FederationBundle
+from synapse_channel.core.message_auth import EventSignatureTrustBundle
 from synapse_channel.core.multihub_federation import (
     MultiHubAuthorisation,
+    authorise_multihub_identity_peer,
     authorise_multihub_peer,
 )
 from synapse_channel.core.tls import (
@@ -48,6 +54,14 @@ from synapse_channel.core.tls import (
 
 PeerCertificateSource = Callable[[Any], bytes | None]
 """Reads the peer's DER certificate off a live connection, or ``None`` when there is none."""
+
+PeerIdentitySource = Callable[[Any], tuple[str, str] | None]
+"""Returns ``(sender, key_id)`` of a connection's operator-verified registration, or ``None``."""
+
+
+def no_peer_identity(_websocket: Any) -> tuple[str, str] | None:
+    """Report no verified registration; the default until a hub injects its own source."""
+    return None
 
 
 def live_peer_certificate_der(websocket: Any) -> bytes | None:
@@ -92,11 +106,17 @@ class MultiHubServingGrant:
         The local namespace whose log the peer may pull; the peering must grant it.
     signing_key_id : str
         The peer's event-signing key id, which both bundles must accept.
+    identity_key_id : str or None
+        Opt-in alternative to the client certificate. When set, a connection whose
+        registration the hub verified against its identity trust bundle under exactly this
+        key id, for this grant's sender, is proven without a certificate. A
+        TLS-terminating proxy removes the certificate but carries the signature.
     """
 
     domain_id: str
     namespace: str
     signing_key_id: str
+    identity_key_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +139,10 @@ class MultiHubServingPolicy:
     cert_source : PeerCertificateSource
         Reads the peer's live certificate. Defaults to :func:`live_peer_certificate_der`;
         injected in tests to exercise the decision without a real handshake.
+    identity_source : PeerIdentitySource
+        Reads the connection's operator-verified registration. Defaults to
+        :func:`no_peer_identity`; the hub injects its own record, so a policy used outside
+        a hub never treats a connection as identity-proven.
     signature_ok : bool
         Forwarded to :func:`authorise_multihub_peer`. Defaults to ``True``; the
         connection-establishment gate does not require per-event signing.
@@ -131,16 +155,18 @@ class MultiHubServingPolicy:
     grants: Mapping[str, MultiHubServingGrant]
     clock: Callable[[], float]
     cert_source: PeerCertificateSource = field(default=live_peer_certificate_der)
+    identity_source: PeerIdentitySource = field(default=no_peer_identity)
     signature_ok: bool = True
     acl_ok: bool = True
 
     def authorise(self, *, sender: str, websocket: Any) -> MultiHubAuthorisation:
         """Decide whether ``sender`` may pull this hub's log over ``websocket``.
 
-        The sender must have an operator-configured grant, the live connection must present a
-        client certificate, and that certificate must pass the shared
-        :func:`authorise_multihub_peer` composition for the granted identity. The first failure
-        refuses, fail-closed.
+        The sender must have an operator-configured grant, and the connection must prove it:
+        either the live client certificate passes the shared :func:`authorise_multihub_peer`
+        composition, or, for a grant naming an ``identity_key_id``, the hub verified this
+        sender's registration under that key and :func:`authorise_multihub_identity_peer`
+        passes. The first failure refuses, fail-closed.
 
         Parameters
         ----------
@@ -161,7 +187,7 @@ class MultiHubServingPolicy:
             return MultiHubAuthorisation(
                 allowed=False, reason=MTLSVerificationResult.UNKNOWN_PEER.value
             )
-        return self._authorise_grant(grant, websocket, namespace=grant.namespace)
+        return self._authorise_grant(sender, grant, websocket, namespace=grant.namespace)
 
     def authorise_namespace(
         self, *, sender: str, websocket: Any, namespace: str
@@ -193,12 +219,29 @@ class MultiHubServingPolicy:
             return MultiHubAuthorisation(
                 allowed=False, reason=MTLSVerificationResult.UNKNOWN_PEER.value
             )
-        return self._authorise_grant(grant, websocket, namespace=namespace)
+        return self._authorise_grant(sender, grant, websocket, namespace=namespace)
 
     def _authorise_grant(
-        self, grant: MultiHubServingGrant, websocket: Any, *, namespace: str
+        self, sender: str, grant: MultiHubServingGrant, websocket: Any, *, namespace: str
     ) -> MultiHubAuthorisation:
-        """Check the live certificate and every trust layer for one granted namespace."""
+        """Check the connection's proof and every trust layer for one granted namespace.
+
+        A grant naming an identity key is satisfied by a registration the hub verified under
+        that key for this sender; otherwise the live certificate is required, as before.
+        """
+        if grant.identity_key_id is not None and self.identity_source(websocket) == (
+            sender,
+            grant.identity_key_id,
+        ):
+            return authorise_multihub_identity_peer(
+                federation=self.federation,
+                domain_id=grant.domain_id,
+                namespace=namespace,
+                signing_key_id=grant.signing_key_id,
+                now=self.clock(),
+                signature_ok=self.signature_ok,
+                acl_ok=self.acl_ok,
+            )
         der = self.cert_source(websocket)
         if der is None:
             return MultiHubAuthorisation(
@@ -221,3 +264,38 @@ class MultiHubServingPolicy:
             signature_ok=self.signature_ok,
             acl_ok=self.acl_ok,
         )
+
+
+def check_identity_grants(
+    policy: MultiHubServingPolicy,
+    *,
+    identity_trust_bundle: EventSignatureTrustBundle | None,
+    require_identity_binding: bool,
+) -> None:
+    """Refuse a policy whose identity-key grants the hub could never satisfy.
+
+    A grant naming an ``identity_key_id`` is proven only by a registration the hub
+    verified against its identity trust bundle, so the hub must require identity binding,
+    and that bundle must hold the key, unrevoked, bound to the grant's sender. Otherwise
+    the peer would be admitted but refused every request, silently.
+
+    Raises
+    ------
+    ValueError
+        Naming the first grant that cannot be satisfied.
+    """
+    for sender, grant in sorted(policy.grants.items()):
+        if grant.identity_key_id is None:
+            continue
+        if not require_identity_binding or identity_trust_bundle is None:
+            raise ValueError(
+                f"serving grant {sender!r} names an identity_key_id, but the hub does not "
+                "verify registrations against an identity trust bundle: pass --identity-trust "
+                "with --require-identity-binding"
+            )
+        key = identity_trust_bundle.keys.get(grant.identity_key_id)
+        if key is None or key.revoked or sender not in key.senders:
+            raise ValueError(
+                f"serving grant {sender!r} identity key {grant.identity_key_id!r} is not "
+                "enrolled, unrevoked, for that sender in the identity trust bundle"
+            )

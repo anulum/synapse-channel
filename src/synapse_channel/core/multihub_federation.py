@@ -34,6 +34,7 @@ from pathlib import Path
 from synapse_channel.core.federation import (
     AUTHORISED,
     FederationBundle,
+    FederationDecision,
     ScopeGrant,
     compose_cross_domain,
 )
@@ -236,11 +237,81 @@ def authorise_multihub_peer(
         project=namespace,
         signing_key_id=signing_key_id,
     )
-    mtls_ok = mtls_result == MTLSVerificationResult.VALID
-    allowed = compose_cross_domain(
-        decision, mtls_ok=mtls_ok, signature_ok=signature_ok, acl_ok=acl_ok
+    return _composed(
+        decision,
+        domain_id=domain_id,
+        mtls_ok=mtls_result == MTLSVerificationResult.VALID,
+        mtls_reason=mtls_result.value,
+        signature_ok=signature_ok,
+        acl_ok=acl_ok,
     )
-    if allowed:
+
+
+def authorise_multihub_identity_peer(
+    *,
+    federation: FederationBundle,
+    domain_id: str,
+    namespace: str,
+    signing_key_id: str,
+    now: float,
+    signature_ok: bool = True,
+    acl_ok: bool = True,
+) -> MultiHubAuthorisation:
+    """Compose every trust layer for a peer proven by an operator-granted identity key.
+
+    The serving side calls this instead of :func:`authorise_multihub_peer` when the peer's
+    registration on the live connection was verified against the hub's identity trust
+    bundle under the identity key its serving grant names. That verified key stands in for
+    the mutual-TLS layer, which a TLS-terminating proxy cannot carry. The federation checks
+    (:meth:`FederationBundle.authorise_identity_bound`), the event-signature check and the
+    ACL still run, and the first refusing layer's reason is returned.
+
+    Parameters
+    ----------
+    federation : FederationBundle
+        The operator's peered-domain policy.
+    domain_id : str
+        The peer's trust-domain id.
+    namespace : str
+        The local namespace the request concerns; the peering must grant it.
+    signing_key_id : str
+        The peer's event-signing key id, which the peering must accept.
+    now : float
+        Current UNIX epoch time used to evaluate peering expiry.
+    signature_ok : bool, optional
+        Whether an event-signature check is satisfied. Defaults to ``True``.
+    acl_ok : bool, optional
+        Whether the local ACL permits the mapped scope. Defaults to ``True``.
+
+    Returns
+    -------
+    MultiHubAuthorisation
+        The composed decision; ``allowed`` is ``True`` only when every layer permits it.
+    """
+    decision = federation.authorise_identity_bound(
+        domain_id, namespace=namespace, signing_key_id=signing_key_id, now=now
+    )
+    return _composed(
+        decision,
+        domain_id=domain_id,
+        mtls_ok=True,
+        mtls_reason="",
+        signature_ok=signature_ok,
+        acl_ok=acl_ok,
+    )
+
+
+def _composed(
+    decision: FederationDecision,
+    *,
+    domain_id: str,
+    mtls_ok: bool,
+    mtls_reason: str,
+    signature_ok: bool,
+    acl_ok: bool,
+) -> MultiHubAuthorisation:
+    """Compose the layers and name the first refusing one, federation first."""
+    if compose_cross_domain(decision, mtls_ok=mtls_ok, signature_ok=signature_ok, acl_ok=acl_ok):
         return MultiHubAuthorisation(
             allowed=True,
             reason=AUTHORISED,
@@ -252,7 +323,7 @@ def authorise_multihub_peer(
     if not decision.allowed:
         reason = decision.reason
     elif not mtls_ok:
-        reason = mtls_result.value
+        reason = mtls_reason
     elif not signature_ok:
         reason = SIGNATURE_UNVERIFIED
     else:

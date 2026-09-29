@@ -13,6 +13,34 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Signed peers behind a TLS-terminating proxy were admitted but served
+  nothing.** 0.99.33 said a peer hub's or Fleet follower's signed log pull
+  works behind such a proxy. It did not.
+  - The signature got the registration admitted, but the hub serves its log only
+    to a serving grant, and every grant required the peer's live client
+    certificate, which the proxy removes.
+  - The refusal is an empty snapshot, the same shape as "no new events", so a
+    follower reported success and mirrored nothing.
+  - Grants can now name an identity key (below), and the deployment, CLI and
+    multi-hub docs now describe the requirement correctly.
+
+### Added
+
+- **Serving grants proven by an identity key.** A `--multihub-serving-policy`
+  grant may name an `identity_key_id`.
+  - A registration the hub verified against its `--identity-trust` bundle under
+    that key, for that grant's sender, then stands in for the client
+    certificate.
+  - The federation checks, the event-signature check and the ACL still apply.
+  - One grant covers log pulls and forwarded claims, messages, operator relays
+    and dead-letter forwards.
+  - The hub must run with `--require-identity-binding`, and the bundle must bind
+    the key, unrevoked, to the sender. Otherwise the hub refuses to start.
+  - A trust-on-first-use key never satisfies a grant.
+  - Grants without the field are unchanged.
+
 ## [0.99.33] - 2026-09-29
 
 ### Upgrade notes

@@ -658,12 +658,19 @@ its frames the same way:
   `synapse identity machine-key --sender PEER-HUB-ID --trust FILE`.
 
 What a signature carries through the proxy:
-- It proves the peer's id, so its multi-hub log pulls (the watch, and a Fleet
-  follower) are admitted.
-- Forwarded claims, operator relays and forwarded messages mutate this hub's
-  state. They still need a `--multihub-serving-policy` grant, which is bound to
-  the peer's live client certificate. For those, use direct native WSS/mTLS or
-  TCP/TLS passthrough.
+- It proves the peer's id, so an identity-bound hub admits its registration.
+- Admission alone serves nothing. The hub serves its log, and applies forwarded
+  claims, messages, operator relays and dead-letter forwards, only to a
+  `--multihub-serving-policy` grant for that sender.
+- A plain grant is bound to the peer's live client certificate, which the proxy
+  removes. Behind the proxy, give the grant an `identity_key_id` naming the key
+  enrolled above; see *Serving policy* in `multi-hub-sync.md`.
+- Without such a grant, a signed peer behind the proxy is admitted but receives
+  empty log snapshots, and its forwards are refused. In that case use direct
+  native WSS/mTLS or TCP/TLS passthrough.
+- Core 0.99.33 said signed log pulls work behind the proxy. That was wrong: the
+  pull was admitted but served nothing. Serving needs the identity grant added
+  in 0.99.34.
 
 ## Persistence and backups
 

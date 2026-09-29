@@ -23,6 +23,7 @@ routing core stays a table lookup rather than a growing branch ladder.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import math
@@ -165,6 +166,7 @@ from synapse_channel.core.multihub_claim_transport import (
 from synapse_channel.core.multihub_serving import (
     MultiHubServingPolicy,
     PeerCertificateSource,
+    check_identity_grants,
     live_peer_certificate_der,
 )
 from synapse_channel.core.name_ownership import DEFAULT_LEASE_OFFLINE_TTL
@@ -415,7 +417,10 @@ class SynapseHub:
         Deny-by-default gate for serving the event log to peer hubs over a multi-hub pull.
         ``None`` (the default) refuses every peer. An explicit policy serves only a peer
         whose sender grant and live certificate it trusts, mirroring the following side's
-        fail-closed pull gate.
+        fail-closed pull gate. A grant naming an ``identity_key_id`` is proven instead by a
+        registration this hub verified under that key; the hub then needs
+        ``require_identity_binding`` and a trust bundle binding that key to the sender, or
+        construction raises ``ValueError``.
     namespace_ownership : NamespaceOwnership or None, optional
         Single-authoritative-hub map that routes claims by namespace ownership. ``None`` (the
         default) lets the hub grant claims in every namespace, preserving single-hub behaviour;
@@ -721,6 +726,12 @@ class SynapseHub:
             0.0,
         )
         self._recipient_liveness = RecipientLiveness(window_seconds=self.recipient_liveness_window)
+        if multihub_serving_policy is not None:
+            check_identity_grants(
+                multihub_serving_policy,
+                identity_trust_bundle=self.identity_trust_bundle,
+                require_identity_binding=self.require_identity_binding,
+            )
         self.multihub_serving_policy = multihub_serving_policy
         self.namespace_ownership = namespace_ownership
         self.claim_peers = dict(claim_peers) if claim_peers else None
@@ -778,6 +789,11 @@ class SynapseHub:
         self.takeover_oscillation_threshold = self.clients.takeover_oscillation_threshold
         self.takeover_quarantine = self.clients.takeover_quarantine
         self.lease_offline_ttl = self.clients.ownership.offline_ttl
+        if self.multihub_serving_policy is not None:
+            # A grant naming an identity key reads the registration this hub verified.
+            self.multihub_serving_policy = dataclasses.replace(
+                self.multihub_serving_policy, identity_source=self.clients.identity_proof
+            )
         self.claim_holders = ClaimHolderPresence(
             clock=self._clock, started_at=self._started, window=self.lease_offline_ttl
         )
@@ -1633,12 +1649,10 @@ class SynapseHub:
         # rests on a proven identity. A socket that cannot prove it is refused and closed.
         # A peer hub proves its name with the pinned mutual-TLS certificate its serving
         # grant is bound to, not with a registration signature.
-        if (
-            not was_bound
-            and not self._peer_hub_identity_proven(sender, websocket)
-            and not await self._identity_gate.verify_identity(sender, data, websocket)
-        ):
-            return
+        if not was_bound and not self._peer_hub_identity_proven(sender, websocket):
+            if not await self._identity_gate.verify_identity(sender, data, websocket):
+                return
+            self._record_identity_proof(sender, data, websocket)
 
         # ``token`` is a connection credential, never application data. Keep it
         # through first-use identity verification because the registration
@@ -2044,6 +2058,18 @@ class SynapseHub:
     def _checkpoint_store(self) -> MerkleCheckpointStore | None:
         """The open checkpoint chain, or ``None`` when anchoring is off or closed."""
         return None if self._live_checkpoint is None else self._live_checkpoint.store
+
+    def _record_identity_proof(self, sender: str, data: dict[str, Any], websocket: Any) -> None:
+        """Record the key a registration was verified under against the operator bundle.
+
+        Only the operator-bundle posture proves a key an operator enrolled; the
+        trust-on-first-use posture admits a key the client chose, so it records nothing.
+        A serving grant naming ``identity_key_id`` reads this record.
+        """
+        signature = data.get("signature")
+        key_id = signature.get("key_id") if isinstance(signature, dict) else None
+        if self.require_identity_binding and isinstance(key_id, str) and key_id:
+            self.clients.record_identity_proof(websocket, sender, key_id)
 
     def _peer_hub_identity_proven(self, sender: str, websocket: Any) -> bool:
         """Return whether ``sender`` is a peer hub proven by its pinned client certificate.

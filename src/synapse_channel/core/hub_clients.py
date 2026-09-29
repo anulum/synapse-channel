@@ -88,6 +88,7 @@ class HubClientRegistry:
         self.agent_delivery_sessions: dict[str, DeliverySession] = {}
         self.agent_protocol_versions: dict[str, int] = {}
         self.socket_quota_principals: dict[Any, str] = {}
+        self._socket_identity_proofs: dict[Any, tuple[str, str]] = {}
         self._socket_hosts: dict[Any, str] = {}
         self._host_counts: dict[str, int] = {}
 
@@ -118,6 +119,7 @@ class HubClientRegistry:
         """Drop a socket and return the active agent name that disappeared, if any."""
         self.connected_clients.discard(websocket)
         self.socket_quota_principals.pop(websocket, None)
+        self._socket_identity_proofs.pop(websocket, None)
         host = self._socket_hosts.pop(websocket, None)
         if host is not None:
             remaining = self._host_counts.get(host, 0) - 1
@@ -213,6 +215,22 @@ class HubClientRegistry:
         never present a forwarded sender or a remote target as its own name.
         """
         return sender.casefold() in _RESERVED_AGENT_NAMES or is_hub_qualified_name(sender)
+
+    def record_identity_proof(self, websocket: Any, sender: str, key_id: str) -> None:
+        """Remember that ``websocket`` registered as ``sender`` with a signature under ``key_id``.
+
+        The caller records only a registration it verified against the operator's identity
+        trust bundle; a trust-on-first-use proof, whose key the client chose, is never
+        recorded.
+        """
+        self._socket_identity_proofs[websocket] = (sender, key_id)
+
+    def identity_proof(self, websocket: Any) -> tuple[str, str] | None:
+        """Return ``(sender, key_id)`` while ``websocket`` is still bound to that sender."""
+        proof = self._socket_identity_proofs.get(websocket)
+        if proof is None or self.socket_agent.get(websocket) != proof[0]:
+            return None
+        return proof
 
     def bound_agent(self, websocket: Any) -> str | None:
         """Return the agent name bound to the socket, if any."""

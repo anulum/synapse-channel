@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 from cryptography import x509
@@ -213,14 +212,10 @@ async def test_a_forwarding_from_an_unauthorised_peer_is_dropped(tmp_path: Path)
 # --- fine-grained gate branches, exercised directly --------------------------------------
 
 
-class _Policy:
-    """A stand-in serving policy that authorises (or refuses) every peer uniformly."""
-
-    def __init__(self, *, allowed: bool) -> None:
-        self._allowed = allowed
-
-    def authorise(self, *, sender: str, websocket: Any) -> Any:
-        return SimpleNamespace(allowed=self._allowed)
+def _policy(tmp_path: Path, *, allowed: bool) -> MultiHubServingPolicy:
+    """A real serving policy that grants the framing peer, or grants only another sender."""
+    pin, der = _write_peer_cert(tmp_path)
+    return _serving_policy(pin, der, sender="peer" if allowed else "someone-else")
 
 
 def _frame(pointer: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -259,35 +254,37 @@ async def test_a_hub_with_no_serving_policy_drops_the_forwarding(tmp_path: Path)
     store.close()
 
 
-async def test_a_refused_peer_is_dropped() -> None:
-    hub, broadcasts = _recording_hub(policy=_Policy(allowed=False), ownership=_owns())
+async def test_a_refused_peer_is_dropped(tmp_path: Path) -> None:
+    hub, broadcasts = _recording_hub(policy=_policy(tmp_path, allowed=False), ownership=_owns())
     await handle_dead_letter_forwarding(hub, "peer", _frame(), websocket=object())
     assert broadcasts == []
 
 
-async def test_a_pointer_for_an_unowned_namespace_is_dropped() -> None:
+async def test_a_pointer_for_an_unowned_namespace_is_dropped(tmp_path: Path) -> None:
     # The peer is authorised, but this hub is not the owner of the target's namespace.
     elsewhere = NamespaceOwnership(owners={_NAMESPACE: "another-hub"}, local_hub_id=_OWNER)
-    hub, broadcasts = _recording_hub(policy=_Policy(allowed=True), ownership=elsewhere)
+    hub, broadcasts = _recording_hub(policy=_policy(tmp_path, allowed=True), ownership=elsewhere)
     await handle_dead_letter_forwarding(hub, "peer", _frame(), websocket=object())
     assert broadcasts == []
 
 
-async def test_a_forwarding_with_no_ownership_map_is_dropped() -> None:
-    hub, broadcasts = _recording_hub(policy=_Policy(allowed=True), ownership=None)
+async def test_a_forwarding_with_no_ownership_map_is_dropped(tmp_path: Path) -> None:
+    hub, broadcasts = _recording_hub(policy=_policy(tmp_path, allowed=True), ownership=None)
     await handle_dead_letter_forwarding(hub, "peer", _frame(), websocket=object())
     assert broadcasts == []
 
 
-async def test_a_malformed_frame_is_dropped() -> None:
-    hub, broadcasts = _recording_hub(policy=_Policy(allowed=True), ownership=_owns())
+async def test_a_malformed_frame_is_dropped(tmp_path: Path) -> None:
+    hub, broadcasts = _recording_hub(policy=_policy(tmp_path, allowed=True), ownership=_owns())
     await handle_dead_letter_forwarding(hub, "peer", {"type": _TYPE}, websocket=object())
     assert broadcasts == []
 
 
-async def test_without_a_journal_the_operators_are_still_told() -> None:
+async def test_without_a_journal_the_operators_are_still_told(tmp_path: Path) -> None:
     # No durable log to write the inbound audit to, but the owning hub still tells its operators.
-    hub, broadcasts = _recording_hub(policy=_Policy(allowed=True), ownership=_owns(), journal=None)
+    hub, broadcasts = _recording_hub(
+        policy=_policy(tmp_path, allowed=True), ownership=_owns(), journal=None
+    )
     assert hub.journal is None
     await handle_dead_letter_forwarding(hub, "peer", _frame(), websocket=object())
     assert len(broadcasts) == 1

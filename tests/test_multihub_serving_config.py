@@ -214,3 +214,33 @@ def test_refuses_non_owner_only_trust_input(tmp_path: Path, trust_name: str) -> 
 
     with pytest.raises(MultiHubServingConfigError, match="owner-only|accessible by other"):
         load_multihub_serving_config(path)
+
+
+def test_an_identity_grant_loads_and_may_rest_on_a_pinless_peering(tmp_path: Path) -> None:
+    path = _policy(tmp_path)
+    _store(tmp_path / "federation.json", pins=frozenset())
+    grant: dict[str, object] = {
+        "sender": "fleet-a",
+        "domain_id": "domain-a",
+        "namespace": "PROJECT",
+        "signing_key_id": "key-1",
+        "identity_key_id": " fleet-a-identity ",
+    }
+    document = _document(grants=[grant])
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    loaded = load_multihub_serving_config(path)
+
+    assert loaded.policy.grants["fleet-a"].identity_key_id == "fleet-a-identity"
+    assert loaded.policy.mtls.peers["domain-a"].certificate_pins == frozenset()
+    assert (
+        load_multihub_serving_config(_policy(tmp_path / "plain"))
+        .policy.grants["fleet-a"]
+        .identity_key_id
+        is None
+    )
+
+    grant["identity_key_id"] = "  "
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(MultiHubServingConfigError, match=r"grants\[0\]\.identity_key_id"):
+        load_multihub_serving_config(path)
