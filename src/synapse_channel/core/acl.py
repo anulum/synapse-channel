@@ -43,6 +43,7 @@ MAILBOX = "mailbox"
 ROLE_CLAIM = "role-claim"
 PIN_RECLAIM = "identity-pin-reclaim"
 IDENTITY_ENROLL = "identity-enroll"
+ENTITLEMENT_ADVERTISE = "entitlement-advertise"
 EVIDENCE = "evidence"
 RECALL = "recall"
 DELIVERY_CONTROL = "delivery-control"
@@ -66,6 +67,7 @@ PERMISSIONS = frozenset(
         ROLE_CLAIM,
         PIN_RECLAIM,
         IDENTITY_ENROLL,
+        ENTITLEMENT_ADVERTISE,
         EVIDENCE,
         RECALL,
         DELIVERY_CONTROL,
@@ -108,6 +110,11 @@ Target kind is ``agent``; the pattern matches the name the key will prove. Like
 ``PIN_RECLAIM`` it is always enforced by its handler, and the requester also needs
 the ``<project>/identity-enroller`` role grant and the name's namespace on the
 hub's enrolment allow-list.
+
+``ENTITLEMENT_ADVERTISE`` grants a cryptographically bound owner the right to record
+a redacted pool advertisement (``synapse entitlements advertise``) in the hub
+journal, for fleet planners. Target kind is ``pool-alias``; the pattern matches the
+advertised alias. It is always enforced by its handler.
 
 ``EVIDENCE`` grants an authenticated recorder the right to append a bounded
 enforcement record. The shipped guard-denial target is

@@ -12,7 +12,8 @@ Contact: www.anulum.li | protoscience@anulum.li
 `synapse entitlements` stores account and quota evidence in a separate owner-only
 SQLite ledger at `$XDG_STATE_HOME/synapse-channel/entitlements/ledger.sqlite3`
 (normally `~/.local/state/synapse-channel/entitlements/ledger.sqlite3`). It does not write account names or
-balances to the shared hub event log. The `show` and `history` commands are
+balances to the shared hub event log. The one exception is a pool the owner
+explicitly advertises (see below), and only in redacted form. The `show` and `history` commands are
 local owner operations. A registered MCP read tool exposes only the count of
 accounts and pools; it withholds identities, labels, products, balances, sources
 and credential references. Neither view grants spending or routing authority.
@@ -187,3 +188,33 @@ This is an owner-only advisory read. An approval note is audit evidence, not a
 provider authorisation token. The command does not reserve a grant, activate a
 billing account, buy capacity, launch a job or change the hub task state. Fleet
 F08 owns any later authorised provider lifecycle.
+
+## Advertise a pool to fleet planners
+
+A fleet that plans work across hubs needs to know which pools exist and roughly
+how much is left. `synapse entitlements advertise --pool POOL_ID --alias ALIAS`
+shares one pool, by the owner's choice only, in redacted form. `--dry-run`
+prints exactly what would be sent.
+
+**What the advertisement shares:**
+- the alias, never the pool id, account id, account label, credential
+  reference, products or source references;
+- the unit, the resource kind, and the capabilities, data classes and eligible
+  projects the planner needs to rule out unsuitable work;
+- per window, an opaque reference, the end time and whether the window is
+  current;
+- a remaining-balance **bucket** per window (`>50%`, `10-50%`, `<10%`,
+  `depleted` or `unknown`), never the amount;
+- the class of balance evidence, the age of the last observation, the forecast
+  state and the confidence.
+
+**What the hub requires:**
+- a durable journal (`--db`);
+- a cryptographically proven sender;
+- the `entitlement-advertise` ACL grant for the alias (target kind
+  `pool-alias`), which is always enforced.
+
+The advertisement becomes an audit-only journal row with the advertiser and the
+hub id. It is never broadcast to connected seats. Operators and fleet mirrors
+read it from the journal, so a seat without journal access cannot see it.
+Advertising again records a newer row; nothing is removed.

@@ -42,6 +42,19 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- **Opt-in pool advertisements for fleet planning (F03 option A).**
+  - `synapse entitlements advertise --pool ID --alias NAME` shares one pool of
+    the private ledger with fleet planners. It carries the alias, unit,
+    capabilities and eligibility, and per window a remaining-balance bucket.
+    It never carries ids, labels, credential references, products, sources or
+    amounts.
+  - The hub needs a proven sender, the new always-enforced
+    `entitlement-advertise` ACL grant and a durable journal. It records the
+    advertisement as an audit-only `entitlement_advert` journal row, which
+    feeds AEF receipts and is never broadcast to seats.
+  - `--dry-run` prints the exact payload.
+  - Wire: `entitlement_advert` and `entitlement_advert_result`.
+
 - **Peer hubs can prove their id with a signature (PEER-SIGNED-REGISTRATION).**
   - `synapse hub --peer-identity-key FILE --peer-identity-key-id ID` signs
     every first frame this hub sends to a multi-hub peer: watch pulls,

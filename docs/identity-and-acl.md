@@ -256,6 +256,7 @@ permission vocabulary should stay small and auditable:
 | `mailbox` | Replay another identity's directed backlog via a mailbox heartbeat (`mailbox_for`). Target kind `agent`. Self and `-rx` sidecars do not need a grant. |
 | `role-claim` | Bind a role on the heartbeat when `--require-role-claim` is on. Target kind `role` (`<project>/<role>`). Complements the role-grant store. |
 | `identity-pin-reclaim` | Remove one exact stale TOFU pin after the liveness, expected-key, requester-binding, and durable-audit gates pass. Target kind `agent`. Always enforced for this verb. |
+| `entitlement-advertise` | Record a redacted pool advertisement (`synapse entitlements advertise`) in the hub journal. Target kind `pool-alias`. Always enforced for this verb. |
 | `identity-enroll` | Enrol, rotate or revoke an identity key for a name on a hub with `--identity-enrollments`, together with the `identity-enroller` role grant and the namespace allow-list. Target kind `agent`. Always enforced for these verbs. |
 | `evidence` | Append authenticated, content-minimized enforcement evidence. The shipped `guard_denial` target is `evidence:guard-denial`; the handler additionally requires connect-token provenance and a durable journal. |
 | `recall` | Pull the hub's global chat history and cursor-based resume backlog (`history_request` / `resume_request`). Target kind `history`; the shipped target is `history:global`. Consulted only under `--require-acl` — without enforcement the recall reads stay open, matching the proportionate-to-exposure posture. |

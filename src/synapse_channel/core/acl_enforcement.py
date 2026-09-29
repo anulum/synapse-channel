@@ -38,6 +38,7 @@ from synapse_channel.core.acl import (
     ATTACHMENT_WRITE,
     BOARD,
     CLAIM,
+    ENTITLEMENT_ADVERTISE,
     EVIDENCE,
     IDENTITY_ENROLL,
     MESSAGE,
@@ -103,6 +104,7 @@ GATED_MUTATIONS = (
             MessageType.IDENTITY_PIN_RECLAIM,
             MessageType.IDENTITY_ENROLL,
             MessageType.IDENTITY_REVOKE,
+            MessageType.ENTITLEMENT_ADVERT,
             MessageType.GUARD_DENIAL,
         }
     )
@@ -193,6 +195,10 @@ def required_accesses(msg_type: str, data: dict[str, Any]) -> list[tuple[str, Ta
         return [(BOARD, Target("capability", str(data.get("agent") or "*")))]
     if msg_type == MessageType.IDENTITY_PIN_RECLAIM:
         return [(PIN_RECLAIM, Target("agent", str(data.get("pin_name") or "")))]
+    if msg_type == MessageType.ENTITLEMENT_ADVERT:
+        advert = data.get("advert")
+        alias = advert.get("pool_alias") if isinstance(advert, dict) else None
+        return [(ENTITLEMENT_ADVERTISE, Target("pool-alias", str(alias or "")))]
     if msg_type in (MessageType.IDENTITY_ENROLL, MessageType.IDENTITY_REVOKE):
         return [(IDENTITY_ENROLL, Target("agent", str(data.get("name") or "")))]
     if msg_type == MessageType.GUARD_DENIAL:

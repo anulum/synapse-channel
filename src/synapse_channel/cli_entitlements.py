@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import contextlib
 import hashlib
 import json
 import sys
@@ -17,6 +19,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
+from synapse_channel.cli_messaging_types import AgentFactory
+from synapse_channel.client.agent import SynapseAgent, default_hub_uri
+from synapse_channel.connect_failures import closed_after_ready, describe_connect_failure
 from synapse_channel.core.approvals import build_approval_report
 from synapse_channel.core.compute_credit import (
     ComputeCreditError,
@@ -24,6 +29,7 @@ from synapse_channel.core.compute_credit import (
     suggest_compute_work,
     validate_compute_task,
 )
+from synapse_channel.core.entitlement_advert import EntitlementAdvertError, build_advert
 from synapse_channel.core.entitlement_store import (
     EntitlementStoreError,
     append_event,
@@ -39,6 +45,7 @@ from synapse_channel.core.entitlements import (
 )
 from synapse_channel.core.journal import EventKind, replay
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.secure_path import SecurePathError, read_owner_only_file_bytes
 
 
@@ -237,6 +244,97 @@ def _suggest_compute(args: argparse.Namespace) -> int:
     return 0
 
 
+def _advert(args: argparse.Namespace) -> dict[str, object] | None:
+    """Build the redacted advertisement, or print why it cannot be built."""
+    try:
+        return build_advert(
+            read_events(_store_path(args)),
+            pool_id=args.pool,
+            alias=args.alias,
+            as_of=datetime.now(timezone.utc),
+        )
+    except (EntitlementError, EntitlementStoreError, EntitlementAdvertError, ValueError) as exc:
+        print(f"entitlements: {exc}", file=sys.stderr)
+        return None
+
+
+def _advertise(args: argparse.Namespace) -> int:
+    """Print, or send to the hub, one pool's redacted advertisement."""
+    advert = _advert(args)
+    if advert is None:
+        return 2
+    if args.dry_run:
+        print(json.dumps(advert, indent=2, sort_keys=True))
+        return 0
+    return asyncio.run(
+        _send_advert(
+            advert,
+            uri=args.uri,
+            name=args.name,
+            token=args.token,
+            ready_timeout=args.ready_timeout,
+            result_timeout=args.timeout,
+        )
+    )
+
+
+async def _send_advert(
+    advert: dict[str, object],
+    *,
+    uri: str,
+    name: str,
+    token: str | None,
+    ready_timeout: float,
+    result_timeout: float,
+    agent_factory: AgentFactory = SynapseAgent,
+) -> int:
+    """Send one advertisement as ``name`` and print the hub's verdict.
+
+    Returns ``0`` when recorded, ``1`` when refused, ``2`` when no verdict arrived.
+    """
+    replies: list[dict[str, object]] = []
+
+    async def collect(data: dict[str, object]) -> None:
+        if data.get("type") in {MessageType.ENTITLEMENT_ADVERT_RESULT, MessageType.ERROR}:
+            replies.append(data)
+
+    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
+    connection = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(timeout=ready_timeout) or await closed_after_ready(
+            agent
+        ):
+            print(
+                describe_connect_failure(
+                    name,
+                    uri,
+                    close_code=agent.last_close_code,
+                    close_reason=agent.last_close_reason,
+                )
+            )
+            return 2
+        await agent.send_message(MessageType.ENTITLEMENT_ADVERT, target="System", advert=advert)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(result_timeout, 0.0)
+        while not replies and loop.time() <= deadline:
+            await asyncio.sleep(0.01)
+        if not replies:
+            print("advertisement failed: the hub returned no verdict")
+            return 2
+        verdict = replies[-1]
+        detail = str(verdict.get("payload") or "hub refused the advertisement")
+        if verdict.get("applied") is True:
+            print(f"{detail} (audit seq {verdict.get('audit_seq')})")
+            return 0
+        print(f"advertisement refused: {detail}")
+        return 1
+    finally:
+        agent.running = False
+        connection.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await connection
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register owner-local entitlement record, show and history commands."""
     root = subparsers.add_parser(
@@ -284,3 +382,24 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     suggest.add_argument("--max-evidence-age-hours", type=int, default=168)
     suggest.add_argument("--store", help="Private SQLite entitlement ledger path.")
     suggest.set_defaults(func=_suggest_compute)
+    advertise = commands.add_parser(
+        "advertise",
+        help="Share one pool, redacted and under an alias, with fleet planners via the hub.",
+    )
+    advertise.add_argument("--pool", required=True, help="Private pool id to advertise.")
+    advertise.add_argument(
+        "--alias", required=True, help="Name fleet planners see instead of the pool id."
+    )
+    advertise.add_argument("--store", help="Private SQLite entitlement ledger path.")
+    advertise.add_argument(
+        "--dry-run", action="store_true", help="Print the advertisement; send nothing."
+    )
+    advertise.add_argument("--uri", default=default_hub_uri())
+    advertise.add_argument("--name", default="", help="Proven owner identity that sends it.")
+    advertise.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    advertise.add_argument(
+        "--token-file", default=None, help="Read the hub token from this file instead."
+    )
+    advertise.add_argument("--ready-timeout", type=float, default=5.0)
+    advertise.add_argument("--timeout", type=float, default=5.0)
+    advertise.set_defaults(func=_advertise)

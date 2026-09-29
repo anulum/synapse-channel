@@ -113,6 +113,9 @@ does not add agent grades to protocol envelopes.
   requester, `identity-enroll` ACL, `identity-enroller` role, namespace
   allow-list, rate and durable-audit gates pass. `identity_revoke` revokes one
   enrolled key behind the same gates.
+- **Fleet planning input:** `entitlement_advert` records one owner's redacted
+  pool advertisement as an audit-only journal row after the proven-sender,
+  `entitlement-advertise` ACL and durable-journal gates. It is never broadcast.
 - **Guard evidence:** `guard_denial` admits one content-minimized native
   file-guard refusal; `guard_denial_recorded` acknowledges its durable sequence.
   The authenticated durable contract is defined below.
@@ -305,7 +308,8 @@ recorded observation edge; absence of an edge does not prove concurrency.
 - **Governed operator recovery:** `identity_pin_reclaim_result` is the private
   applied/refused verdict for an `identity_pin_reclaim` request.
   `identity_enroll_result` and `identity_revoke_result` are the verdicts for
-  `identity_enroll` and `identity_revoke`.
+  `identity_enroll` and `identity_revoke`. `entitlement_advert_result` is the
+  private verdict for `entitlement_advert`.
 
 A `dark_seat_alert` is a default-on hub broadcast for an identity that owns an
 unexpired claim or is the `suggested_owner` of a non-terminal board task but has

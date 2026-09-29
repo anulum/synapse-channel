@@ -111,6 +111,7 @@ class EventKind:
     MAILBOX_WATERMARK = "mailbox_watermark"
     IDENTITY_PIN_RECLAIM = "identity_pin_reclaim"
     IDENTITY_ENROLLMENT = "identity_enrollment"
+    ENTITLEMENT_ADVERT = "entitlement_advert"
     MULTIHUB_PARTITION = "multihub_partition"
     MULTIHUB_HEAL = "multihub_heal"
     MULTIHUB_EQUIVOCATION = "multihub_equivocation"
@@ -321,6 +322,20 @@ def record_identity_pin_reclaim(store: EventStore, provenance: Mapping[str, Any]
         Monotonic journal sequence of the audit event.
     """
     return store.append(EventKind.IDENTITY_PIN_RECLAIM, dict(provenance), durable=True)
+
+
+def record_entitlement_advert(store: EventStore, record: Mapping[str, Any]) -> int:
+    """Append one redacted pool advertisement as a durable, audit-only row.
+
+    Replay ignores this kind; it is never broadcast to seats. Fleet mirrors read
+    it from the replicated log (F03 option A).
+
+    Returns
+    -------
+    int
+        Monotonic journal sequence of the row.
+    """
+    return store.append(EventKind.ENTITLEMENT_ADVERT, dict(record), durable=True)
 
 
 def record_identity_enrollment(store: EventStore, provenance: Mapping[str, Any]) -> int:
