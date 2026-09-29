@@ -24,6 +24,14 @@ All notable changes to this project are documented here.
   one of the two flags, or a key file that cannot be read, exits `2` as a
   configuration error.
 
+- Ship the `cryptography` runtime in the container image. The hash-locked image
+  closure now includes the `encryption` extra (`cryptography` 50.0.1 with `cffi`
+  and `pycparser`, the versions the other locks pin). Before, the image could
+  not verify an Ed25519 identity-bound registration, so `--require-identity-binding`
+  and `--team-secure` could not work inside the container. The compose smoke
+  now signs a registration inside the running image and checks that a foreign
+  sender is refused.
+
 ### Changed
 
 - State the open loopback default explicitly. A hub on loopback without a

@@ -463,7 +463,11 @@ docker compose logs -f hub
 `docker-compose.yml` contains no insecure override. It publishes on host
 loopback, requires token-file authentication and native WSS, and encrypts the
 durable database with the mounted SQLCipher key. The image includes the exact
-hash-locked SQLCipher runtime needed by this profile.
+hash-locked SQLCipher runtime needed by this profile, and the `cryptography`
+runtime (the `encryption` extra) that verifies Ed25519 identity-bound
+registrations, so `--require-identity-binding` and `--team-secure` work inside
+the container. The compose smoke signs a registration inside the running image and
+checks that a foreign sender is refused.
 
 For a disposable single-host experiment only, use the separately named downgrade:
 

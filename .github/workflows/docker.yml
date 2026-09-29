@@ -273,6 +273,51 @@ jobs:
           header = Path("/data/hub.db").read_bytes()[:16]
           assert header != b"SQLite format 3\x00", "production database is plaintext"
           PY
+      - name: Confirm the image can sign and verify identity registrations
+        # The image carries the encryption extra, so a containerised hub can run
+        # --require-identity-binding and --team-secure; a foreign sender must fail.
+        run: |
+          docker compose exec -T hub python - <<'PY'
+          import tempfile
+          import time
+          from pathlib import Path
+
+          from synapse_channel.core.identity_binding import (
+              enroll_identity_key,
+              load_identity_trust_bundle,
+              verify_registration,
+          )
+          from synapse_channel.core.identity_keys import (
+              generate_signing_key,
+              public_key_b64,
+              sign_registration,
+          )
+          from synapse_channel.core.message_auth import SignedEventVerificationResult
+          from synapse_channel.core.protocol import build_envelope
+
+          key = generate_signing_key()
+          with tempfile.TemporaryDirectory() as tmp:
+              trust = Path(tmp) / "identity-trust.json"
+              enroll_identity_key(
+                  trust,
+                  key_id="smoke-1",
+                  public_key_b64=public_key_b64(key),
+                  senders=["SMOKE/probe"],
+              )
+              bundle = load_identity_trust_bundle(trust)
+          frame = build_envelope("SMOKE/probe", "heartbeat", target="System", payload="online")
+          signed = sign_registration(
+              frame, private_key=key, key_id="smoke-1", nonce="n1", sequence=1
+          )
+          valid = verify_registration(
+              signed, trust_bundle=bundle, now=time.time(), required_sender="SMOKE/probe"
+          )
+          assert valid is SignedEventVerificationResult.VALID, valid
+          foreign = verify_registration(
+              signed, trust_bundle=bundle, now=time.time(), required_sender="SMOKE/other"
+          )
+          assert foreign is not SignedEventVerificationResult.VALID, foreign
+          PY
       - name: Show hub logs on failure
         if: failure()
         run: docker compose logs hub

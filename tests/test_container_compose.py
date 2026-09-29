@@ -112,6 +112,10 @@ def test_docker_workflow_smoke_tests_the_compose_file() -> None:
     assert "--uri wss://127.0.0.1:8876" in run_scripts
     assert "--token-file /run/synapse/token" in run_scripts
     assert 'header != b"SQLite format 3\\x00"' in run_scripts
+    assert "Confirm the image can sign and verify identity registrations" in [
+        str(step.get("name", "")) for step in steps
+    ]
+    assert "verify_registration(" in run_scripts
 
 
 def test_docker_workflow_can_publish_an_immutable_release_tag_after_automation() -> None:
@@ -161,20 +165,35 @@ def test_dockerfile_installs_only_hash_locked_build_and_runtime_inputs() -> None
 
 
 def test_container_runtime_lock_matches_the_base_project_dependency() -> None:
-    """The base image closure stays exact, hashed, and aligned with metadata."""
+    """The base image closure stays exact, hashed, and aligned with metadata.
+
+    ``cryptography`` (the ``encryption`` extra) is in the closure so a containerised
+    hub can verify Ed25519 identity-bound registrations; without it
+    ``--require-identity-binding`` and ``--team-secure`` could not work in the image.
+    """
     lock = CONTAINER_REQUIREMENTS.read_text(encoding="utf-8")
     assert "websockets==17.1" in lock
     assert "--hash=sha256:ff3e2ba7a9f0a110b0555452e9b5a03a34e11662544e01beea15f144b48ba7b7" in lock
     assert "sqlcipher3-binary==0.6.0" in lock
     assert "--hash=sha256:8a6afbdef7cbbb33b1228ce96edc1bfe7f15bdf2a5e8bdab87261ab52e4111e6" in lock
+    assert "--extra sqlcipher --extra encryption" in lock
     packages = [
         line.split("==", 1)[0]
         for line in lock.splitlines()
         if "==" in line and not line.startswith("#")
     ]
-    assert packages == ["sqlcipher3-binary", "websockets"]
+    assert packages == ["cffi", "cryptography", "pycparser", "sqlcipher3-binary", "websockets"]
     assert lock.count("--hash=sha256:") >= len(packages)
-    assert "websockets>=13.0" in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "websockets>=13.0" in pyproject
+    assert '"cryptography>=42.0"' in pyproject
+    # One cryptography version across the repository's hash locks.
+    dev_lock = (ROOT / ".github" / "requirements" / "requirements-dev.txt").read_text(
+        encoding="utf-8"
+    )
+    pinned = re.search(r"^cryptography==(\S+)", lock, re.MULTILINE)
+    assert pinned is not None
+    assert f"cryptography=={pinned.group(1)} " in dev_lock
 
 
 def test_container_build_lock_contains_only_the_required_exact_toolchain() -> None:
