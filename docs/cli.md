@@ -1203,10 +1203,20 @@ synapse hub --require-fencing-epoch                # refuse lease mutations that
 
 `--require-fencing-epoch` makes the lease epoch mandatory on a task update,
 release, handoff or checkpoint, so a writer holding a superseded lease is always
-refused rather than checked only by name. The shipped client sends the epoch of
-its own grant automatically. A custom client must copy `epoch` from its
-`claim_granted` or `handoff_granted` frame. See INV-EF-4 in the
-[coordination spec](coordination-spec.md).
+refused rather than checked only by name.
+
+- **Shipped client.** It sends the epoch of its own grant automatically, also
+  across processes. Each granted epoch is kept in an owner-only file under
+  `$XDG_DATA_HOME/synapse/lease-epoch/` (default `~/.local/share/...`), keyed by
+  identity, hub and task, and forgotten on release or handoff. So
+  `synapse release` after `synapse lock`, or the commit hook after `git-claim`,
+  still names the epoch.
+- **Separate data home.** A process with a different data home sends no epoch
+  and is refused under this flag, like a writer that never held the lease.
+- **Custom client.** It must copy `epoch` from its `claim_granted` or
+  `handoff_granted` frame.
+
+See INV-EF-4 in the [coordination spec](coordination-spec.md).
 
 Binding a non-loopback host without a token (and, with `--metrics`, a metrics
 token) is **refused** by default — the hub will not start exposed by accident.

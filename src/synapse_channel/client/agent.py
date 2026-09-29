@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from websockets.asyncio.client import ClientConnection
@@ -35,6 +36,7 @@ from synapse_channel.client.agent_lifecycle import (
 )
 from synapse_channel.client.agent_outbound import AgentOutboundMixin
 from synapse_channel.client.agent_queries import AgentQueryMixin
+from synapse_channel.client.lease_epoch_store import LeaseEpochStore
 from synapse_channel.core.capability_card_signing import (
     DEFAULT_CAPABILITY_CARD_LIFETIME_SECONDS,
 )
@@ -170,6 +172,16 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         Version-three modes this process can actually execute. ``None`` means
         sender-only compatibility; a mapping creates a fresh in-memory session
         token and advertises only those native or emulated modes.
+    persist_lease_epochs : bool, optional
+        Keep the fencing epoch of each lease this agent is granted on disk
+        (:mod:`synapse_channel.client.lease_epoch_store`), so a later process
+        of the same identity — ``synapse release`` after ``synapse lock``, or
+        the commit hook after ``git-claim`` — still names the epoch its
+        mutation acts under. On by default, so no call site can forget it;
+        ``False`` keeps the memory in this process only.
+    lease_epoch_root : pathlib.Path or None, optional
+        Root of the epoch store; ``None`` uses
+        ``$XDG_DATA_HOME/synapse/lease-epoch``.
     """
 
     def __init__(
@@ -203,6 +215,8 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
         ping_interval: float = 20.0,
         ping_timeout: float = 20.0,
         delivery_capabilities: dict[str, str] | None = None,
+        persist_lease_epochs: bool = True,
+        lease_epoch_root: Path | None = None,
     ) -> None:
         if identity_key_path is None and machine_identity:
             # Present the zero-config machine identity by default. Every verb
@@ -266,6 +280,9 @@ class SynapseAgent(AgentLifecycleMixin, AgentDispatchMixin, AgentOutboundMixin, 
             )
         self._message_auth_sequence = 0
         self.lease_epochs: dict[str, int] = {}
+        self._lease_epoch_store = (
+            LeaseEpochStore(name, root=lease_epoch_root) if persist_lease_epochs else None
+        )
         self._identity_key = load_signing_key(identity_key_path) if identity_key_path else None
         self._identity_key_id = str(identity_key_id)
         self._identity_sequence = 0

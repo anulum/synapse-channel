@@ -34,6 +34,18 @@ All notable changes to this project are documented here.
     `handoff_granted` frames. It sends that epoch when the caller names none,
     so it passes the flag unchanged. It forgets an epoch when the release is
     granted or the task is handed to another agent.
+  - The epoch also survives across processes of one identity. The CLI claims in
+    one process and releases in another: `synapse lock` then `synapse release`,
+    or `git-claim` then the commit hook.
+    - `SynapseAgent` keeps each granted epoch in an owner-only file under
+      `$XDG_DATA_HOME/synapse/lease-epoch/<identity>/<hub>/<task>`.
+    - Every path part is escaped, so it cannot climb out of the store.
+    - Writes are atomic, and failures are ignored.
+    - It is on by default so no call site can forget it;
+      `persist_lease_epochs=False` keeps it in memory.
+    - Proven with the real `synapse` commands against a strict hub: the release
+      from a second process is granted, and it is refused once the store is
+      removed.
   - Proven on real hubs: an epoch-less release from a superseded writer
     succeeds by default and is refused under the flag.
   - Normative text: INV-EF-2 now states the epoch-less case; the new INV-EF-4

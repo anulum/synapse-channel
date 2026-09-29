@@ -17,15 +17,23 @@ its current epoch on its own, so it keeps working under strict fencing.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from cli_processes_helpers import _hub_ns
 from cli_processes_hub_helpers import _close_runner
-from hub_e2e_helpers import AgentHandle, close_agents, connect_agent, running_hub
+from hub_e2e_helpers import (
+    AgentHandle,
+    Recorder,
+    close_agents,
+    connect_agent,
+    running_hub,
+)
 from synapse_channel import cli_processes
 from synapse_channel.cli import build_parser
 from synapse_channel.client.agent import SynapseAgent
@@ -69,9 +77,7 @@ async def test_an_epochless_stale_release_is_refused_only_under_strict_fencing(
             back = await _handoff(bob, alice, "T1")
             alice.recorder.messages.clear()
             # a stale writer of alice's first lease names its old epoch: always refused
-            await alice.agent.send_message(
-                MessageType.RELEASE, target="System", task_id="T1", epoch=first["epoch"]
-            )
+            await alice.agent.release("T1", epoch=first["epoch"])  # an explicit epoch wins
             stale = await alice.recorder.wait_for(
                 lambda m: m.get("type") == MessageType.RELEASE_DENIED
             )
@@ -211,3 +217,61 @@ async def test_the_client_keeps_only_well_formed_epochs_of_leases_it_holds() -> 
     await frame(type=MessageType.CLAIM_GRANTED, task_id="U", owner="P/alice", epoch=1)
     await frame(type=MessageType.RELEASE_GRANTED, task_id="U", owner="P/alice")
     assert agent.lease_epochs == {}
+
+
+async def _process(name: str, uri: str, root: Path, *, persist: bool = True) -> AgentHandle:
+    """Connect one client "process": a fresh agent with its own empty memory."""
+    recorder = Recorder()
+    agent = SynapseAgent(
+        name,
+        recorder,
+        uri=uri,
+        heartbeat_interval=60.0,
+        verbose=False,
+        persist_lease_epochs=persist,
+        lease_epoch_root=root,
+    )
+    handle = AgentHandle(agent=agent, recorder=recorder, task=asyncio.create_task(agent.connect()))
+    assert await agent.wait_until_ready(3.0)
+    return handle
+
+
+async def test_a_later_process_of_the_identity_uses_the_stored_epoch(tmp_path: Path) -> None:
+    async with running_hub(SynapseHub(require_fencing_epoch=True)) as (hub, uri):
+        claimer = await _process("P/alice", uri, tmp_path)
+        grant = await _claim(claimer, "T5")
+        await close_agents(claimer)
+        releaser = await _process("P/alice", uri, tmp_path)
+        try:
+            assert releaser.agent.lease_epochs == {}  # nothing in this process's memory
+            await releaser.agent.release("T5")
+            released = await releaser.recorder.wait_for(
+                lambda m: m.get("type") == MessageType.RELEASE_GRANTED
+            )
+        finally:
+            await close_agents(releaser)
+    assert released["task_id"] == "T5"
+    assert grant["epoch"] >= 1
+    assert "T5" not in hub.state.claims
+    assert [path for path in tmp_path.rglob("*") if path.is_file()] == []  # forgotten
+
+
+async def test_an_agent_that_does_not_persist_leaves_no_file(tmp_path: Path) -> None:
+    async with running_hub(SynapseHub(require_fencing_epoch=True)) as (_hub, uri):
+        claimer = await _process("P/alice", uri, tmp_path, persist=False)
+        try:
+            grant = await _claim(claimer, "T6")
+        finally:
+            await close_agents(claimer)
+        releaser = await _process("P/alice", uri, tmp_path, persist=False)
+        try:
+            await releaser.agent.release("T6")
+            refused = await releaser.recorder.wait_for(
+                lambda m: m.get("type") == MessageType.RELEASE_DENIED
+            )
+            await releaser.agent.release("T6", epoch=grant["epoch"])  # named by the caller
+            await releaser.recorder.wait_for(lambda m: m.get("type") == MessageType.RELEASE_GRANTED)
+        finally:
+            await close_agents(releaser)
+    assert refused["payload"] == FENCING_EPOCH_REQUIRED
+    assert list(tmp_path.iterdir()) == []

@@ -18,6 +18,23 @@ from synapse_channel.core.receipts import build_release_receipt
 __all__ = ["AgentTaskMutationMixin"]
 
 
+def _fence_epoch(agent: _OutboundAgent, task_id: str, epoch: int | None) -> int | None:
+    """Return the epoch a lease mutation names (FENCE-01, FENCE-01b).
+
+    An explicit ``epoch`` wins. Otherwise the epoch this agent remembers from
+    its own grant, first in memory, then in the on-disk store a previous
+    process of the same identity wrote for this hub. ``None`` when neither
+    knows the task, so the frame carries no epoch.
+    """
+    if epoch is not None:
+        return epoch
+    task = task_id.strip()
+    remembered = agent.lease_epochs.get(task)
+    if remembered is None and agent._lease_epoch_store is not None:
+        remembered = agent._lease_epoch_store.load(agent.hub_id, task)
+    return remembered
+
+
 class AgentTaskMutationMixin:
     """Send task lease, lifecycle, checkpoint, handoff, and wait envelopes."""
 
@@ -74,7 +91,7 @@ class AgentTaskMutationMixin:
     ) -> None:
         """Release a task lease, optionally attaching closeout evidence."""
         extra: dict[str, Any] = {"task_id": task_id.strip()}
-        fence = epoch if epoch is not None else self.lease_epochs.get(task_id.strip())
+        fence = _fence_epoch(self, task_id, epoch)
         if fence is not None:
             extra["epoch"] = int(fence)
         if idem_key:
@@ -128,7 +145,7 @@ class AgentTaskMutationMixin:
             extra["note"] = note
         if data_ref is not None:
             extra["data_ref"] = data_ref
-        fence = epoch if epoch is not None else self.lease_epochs.get(task_id.strip())
+        fence = _fence_epoch(self, task_id, epoch)
         if fence is not None:
             extra["epoch"] = int(fence)
         if expected_version is not None:
@@ -152,7 +169,7 @@ class AgentTaskMutationMixin:
         extra: dict[str, Any] = {"task_id": task_id.strip(), "to_agent": to_agent.strip()}
         if note is not None:
             extra["note"] = note
-        fence = epoch if epoch is not None else self.lease_epochs.get(task_id.strip())
+        fence = _fence_epoch(self, task_id, epoch)
         if fence is not None:
             extra["epoch"] = int(fence)
         if idem_key:
@@ -171,7 +188,7 @@ class AgentTaskMutationMixin:
     ) -> None:
         """Save a resume checkpoint on an owned task."""
         extra: dict[str, Any] = {"task_id": task_id.strip(), "checkpoint": checkpoint}
-        fence = epoch if epoch is not None else self.lease_epochs.get(task_id.strip())
+        fence = _fence_epoch(self, task_id, epoch)
         if fence is not None:
             extra["epoch"] = int(fence)
         if idem_key:

@@ -14,6 +14,7 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, cast
 
+from synapse_channel.client.lease_epoch_store import LeaseEpochStore
 from synapse_channel.core.protocol import MessageType, read_protocol_version
 
 MessageCallback = Callable[[dict[str, Any]], Awaitable[None]]
@@ -43,6 +44,7 @@ class _DispatchAgent(Protocol):
     on_lease_granted: Callable[[str], None] | None
     owner_lease: str
     lease_epochs: dict[str, int]
+    _lease_epoch_store: LeaseEpochStore | None
     ready_event: Any
     verbose: bool
     _mailbox_since_seq: int
@@ -151,7 +153,9 @@ class AgentDispatchMixin:
         A claim or handoff granted to this agent records the lease epoch, so a
         later update, release, handoff or checkpoint carries it without the
         caller naming it. A release, or a handoff to another agent, forgets
-        it, so the map holds only leases this agent still owns.
+        it, so the map holds only leases this agent still owns. With a lease
+        epoch store the same record is kept on disk under the hub's id, so a
+        later process of this identity finds it (FENCE-01b).
         """
         task_id = data.get("task_id")
         if not isinstance(task_id, str):
@@ -164,8 +168,12 @@ class AgentDispatchMixin:
             and not isinstance(epoch, bool)
         ):
             self.lease_epochs[task_id] = epoch
+            if self._lease_epoch_store is not None:
+                self._lease_epoch_store.save(self.hub_id, task_id, epoch)
         elif data.get("type") != MessageType.CLAIM_GRANTED:
             self.lease_epochs.pop(task_id, None)
+            if self._lease_epoch_store is not None:
+                self._lease_epoch_store.forget(self.hub_id, task_id)
 
     async def _track_mailbox_frame(self: _DispatchAgent, data: dict[str, Any]) -> None:
         """Advance the mailbox cursor and ack an accepted chat frame.

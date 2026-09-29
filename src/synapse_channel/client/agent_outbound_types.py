@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from websockets.asyncio.client import ClientConnection
 
+from synapse_channel.client.lease_epoch_store import LeaseEpochStore
 from synapse_channel.core.message_auth import MessageAuthKey
 
 if TYPE_CHECKING:
@@ -30,6 +31,8 @@ class _OutboundAgent(Protocol):
     _message_auth_key: MessageAuthKey | None
     _message_auth_sequence: int
     lease_epochs: dict[str, int]
+    _lease_epoch_store: LeaseEpochStore | None
+    hub_id: str
     _identity_key: Ed25519PrivateKey | None
     _identity_key_id: str
     _identity_sequence: int
