@@ -13,6 +13,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.32] - 2026-09-29
+
+### Upgrade notes
+
+- A receiver on an older release cannot read version 2 envelopes ("unsupported
+  encrypted payload version"). Upgrade listeners before senders.
+
 ### Added
 
 - **`synapse aef`: offline AEF evidence verification (K4-AEF-SURFACE).**
@@ -51,6 +58,12 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- The deployment guide's Caddy example, an internet-exposed hub behind a
+  TLS-terminating proxy, now enrols seats and starts the hub with
+  `--expect-multi-seat --identity-trust FILE --require-identity-binding`, as
+  `SECURITY.md` requires for that posture. It also states that a peer hub or
+  Fleet follower proving its id by client certificate needs direct WSS/mTLS or
+  TCP/TLS passthrough, because the certificate stops at the proxy.
 - **A restarted client passes strict sequence floors
   (CLIENT-SEQUENCE-PERSIST).** The Python client numbered per-message-auth
   frames from 1 in every process, so a hub with
@@ -64,11 +77,6 @@ All notable changes to this project are documented here.
     refused. On the old client code the strict case fails.
   - The `--secure`/`--team-secure` default stays `compat` while seats may run
     older clients.
-
-### Upgrade notes
-
-- A receiver on an older release cannot read version 2 envelopes ("unsupported
-  encrypted payload version"). Upgrade listeners before senders.
 
 ## [0.99.31] - 2026-09-29
 
