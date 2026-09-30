@@ -142,6 +142,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "review-feedback": GOVERNANCE,
     # newer or advisory surfaces still settling
     "benchmark": EXPERIMENTAL,
+    "spend": EXPERIMENTAL,
     "deliberate": EXPERIMENTAL,
     "memory-recall": EXPERIMENTAL,
     "participant": EXPERIMENTAL,
