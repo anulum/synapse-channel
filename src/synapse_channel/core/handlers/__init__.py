@@ -73,6 +73,7 @@ from synapse_channel.core.handlers.snapshots import (
     handle_state_request,
     handle_who_request,
 )
+from synapse_channel.core.handlers.spend import handle_spend_request
 from synapse_channel.core.protocol import RESOURCE_TYPE_ALIASES, MessageType
 
 if TYPE_CHECKING:
@@ -125,6 +126,7 @@ DISPATCH: dict[str, Handler] = {
     MessageType.CHANNEL_HISTORY_REQUEST: handle_channel_history_request,
     MessageType.MULTIHUB_LOG_REQUEST: handle_multihub_log_request,
     MessageType.MULTIHUB_CLAIM_REQUEST: handle_multihub_claim_request,
+    MessageType.SPEND_REQUEST: handle_spend_request,
     MessageType.MULTIHUB_MESSAGE_FORWARD: handle_multihub_message_forward,
     MessageType.OPERATOR_RELAY_REQUEST: handle_operator_relay_request,
     MessageType.DEAD_LETTER_FORWARDING: handle_dead_letter_forwarding,

@@ -114,6 +114,8 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "MANIFEST_SNAPSHOT": "manifest_snapshot",
     "MULTIHUB_CLAIM_REQUEST": "multihub_claim_request",
     "MULTIHUB_CLAIM_RESULT": "multihub_claim_result",
+    "SPEND_REQUEST": "spend_request",
+    "SPEND_RESULT": "spend_result",
     "MULTIHUB_MESSAGE_FORWARD": "multihub_message_forward",
     "MULTIHUB_MESSAGE_RESULT": "multihub_message_result",
     "MULTIHUB_LOG_REQUEST": "multihub_log_request",

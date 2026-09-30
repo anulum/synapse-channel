@@ -212,6 +212,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_benchmark:add_parsers", ("benchmark",)),
     ("synapse_channel.cli_accounting:add_parsers", ("accounting",)),
     ("synapse_channel.cli_entitlements:add_parsers", ("entitlements",)),
+    ("synapse_channel.cli_spend:add_parsers", ("spend",)),
     ("synapse_channel.cli_app_tasks:add_parsers", ("app-task",)),
     ("synapse_channel.cli_attention:add_parsers", ("attention",)),
     ("synapse_channel.cli_review_feedback:add_parsers", ("review-feedback",)),

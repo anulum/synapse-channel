@@ -449,6 +449,17 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
     ),
     "SpendPoolError": ("synapse_channel.core.spend_pool", "spend_pool", ValueError),
     "SpendLedgerError": ("synapse_channel.core.spend_ledger", "spend_ledger", ValueError),
+    "SpendWireError": ("synapse_channel.core.spend_wire", "spend_wire", ValueError),
+    "SpendTransportError": (
+        "synapse_channel.core.spend_transport",
+        "spend_transport",
+        RuntimeError,
+    ),
+    "SpendTransportTimeoutError": (
+        "synapse_channel.core.spend_transport",
+        "spend_transport_timeout",
+        RuntimeError,
+    ),
     "IdentityEnrollmentError": (
         "synapse_channel.core.identity_enrollments",
         "identity_enrollment",

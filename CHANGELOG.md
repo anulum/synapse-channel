@@ -13,6 +13,29 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Shared-pool reservations with one authoritative owner (F02, not yet
+  enforced).**
+  - `synapse hub --spend-ledger FILE` makes a hub the owner of shared pools. It
+    requires `--hub-id` and `--multihub-serving-policy`.
+  - The owner decides every reservation in an owner-only SQLite ledger, kept
+    apart from the replicated journal, and checks
+    `settled + outstanding + new <= hard_bound` in one serialized transaction.
+  - Exposure includes the pool's minimum charge and fixed fee, and every pool
+    declares its tax basis.
+  - Expired grants and grants from an earlier owner epoch still count until a
+    final settlement or an operator reconciliation.
+  - Depth, wall time and concurrent seats are separate limits. An overrun blocks
+    new grants until it is reconciled.
+  - Peer hubs use `spend_request` / `spend_result` (reserve, settle, query), or
+    `synapse spend request`. Every refusal is the same `not-admitted`, and a
+    retry or `query` returns the stored answer.
+  - Operators configure, inspect, audit and reconcile pools locally with
+    `synapse spend`.
+  - Owner failover is manual. The ledger bounds reservations, but it cannot stop
+    a provider from billing.
+
 ## [0.99.34] - 2026-09-30
 
 ### Fixed

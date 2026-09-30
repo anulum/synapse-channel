@@ -430,6 +430,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "certificate, while multi-hub requests still refuse without an authorised one.",
     )
     hub.add_argument(
+        "--spend-ledger",
+        default="",
+        metavar="FILE",
+        help="Owner-only spend ledger that makes this hub the owner of shared pools "
+        "(F02). Peers authorised by --multihub-serving-policy may reserve, settle and "
+        "query; pools are configured locally with `synapse spend configure`. Requires "
+        "--hub-id and --multihub-serving-policy.",
+    )
+    hub.add_argument(
         "--hub-id",
         default=None,
         metavar="ID",

@@ -201,6 +201,7 @@ from synapse_channel.core.protocol import (
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.role_grants import RoleGrants
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
+from synapse_channel.core.spend_ledger import SpendLedger
 from synapse_channel.core.state import (
     MAX_CLAIMS_PER_AGENT,
     MAX_OFFERS_PER_AGENT,
@@ -421,6 +422,10 @@ class SynapseHub:
         registration this hub verified under that key; the hub then needs
         ``require_identity_binding`` and a trust bundle binding that key to the sender, or
         construction raises ``ValueError``.
+    spend_ledger : SpendLedger or None, optional
+        The owner-only ledger that makes this hub the owner of shared pools (F02).
+        ``None`` (the default) refuses every ``spend_request`` uniformly. A peer is
+        served only when ``multihub_serving_policy`` authorises it.
     namespace_ownership : NamespaceOwnership or None, optional
         Single-authoritative-hub map that routes claims by namespace ownership. ``None`` (the
         default) lets the hub grant claims in every namespace, preserving single-hub behaviour;
@@ -583,6 +588,7 @@ class SynapseHub:
         recipient_liveness_window: float = DEFAULT_RECIPIENT_LIVENESS_WINDOW,
         waiter_liveness_window: float = DEFAULT_WAITER_LIVENESS_WINDOW,
         multihub_serving_policy: MultiHubServingPolicy | None = None,
+        spend_ledger: SpendLedger | None = None,
         namespace_ownership: NamespaceOwnership | None = None,
         claim_peers: Mapping[str, ClaimForwardPeer] | None = None,
         claim_forwarder: ClaimForwarder = forward_claim,
@@ -733,6 +739,7 @@ class SynapseHub:
                 require_identity_binding=self.require_identity_binding,
             )
         self.multihub_serving_policy = multihub_serving_policy
+        self.spend_ledger = spend_ledger
         self.namespace_ownership = namespace_ownership
         self.claim_peers = dict(claim_peers) if claim_peers else None
         self.claim_forwarder = claim_forwarder

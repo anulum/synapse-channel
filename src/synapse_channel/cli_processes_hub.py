@@ -114,6 +114,7 @@ from synapse_channel.core.secret_files import (
     read_secret_lines,
 )
 from synapse_channel.core.secure import SecureModeError, apply_secure_hub_profile
+from synapse_channel.core.spend_ledger import SpendLedger, SpendLedgerError
 from synapse_channel.core.team_secure import TeamSecureModeError, apply_team_secure_hub_profile
 from synapse_channel.core.tls import (
     HubTLSConfigError,
@@ -420,6 +421,20 @@ def _cmd_hub(
             serving_config = load_multihub_serving_config(serving_policy_path)
             certificate_pin_support_checker()
         except (MultiHubServingConfigError, HubTLSConfigError) as exc:
+            print(f"synapse hub: {exc}", file=sys.stderr)
+            return 2
+    spend_ledger: SpendLedger | None = None
+    spend_ledger_path = getattr(args, "spend_ledger", "")
+    if spend_ledger_path:
+        if serving_config is None or not args.hub_id:
+            print(
+                "synapse hub: --spend-ledger requires --hub-id and --multihub-serving-policy",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            spend_ledger = SpendLedger(spend_ledger_path, owner_hub_id=args.hub_id)
+        except SpendLedgerError as exc:
             print(f"synapse hub: {exc}", file=sys.stderr)
             return 2
     try:
@@ -1032,6 +1047,7 @@ def _cmd_hub(
         "require_relay_reason": getattr(args, "require_relay_reason", False),
         "require_two_person_relay": getattr(args, "require_two_person_relay", False),
         "multihub_serving_policy": (serving_config.policy if serving_config is not None else None),
+        "spend_ledger": spend_ledger,
         "insecure_off_loopback": args.insecure_off_loopback,
         "insecure_plaintext_at_rest": getattr(args, "insecure_plaintext_at_rest", False),
     }

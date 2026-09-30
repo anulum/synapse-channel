@@ -116,6 +116,12 @@ does not add agent grades to protocol envelopes.
 - **Fleet planning input:** `entitlement_advert` records one owner's redacted
   pool advertisement as an audit-only journal row after the proven-sender,
   `entitlement-advertise` ACL and durable-journal gates. It is never broadcast.
+- **Shared-pool reservations (F02):** `spend_request` is a peer hub's request to
+  a pool owner hub. It carries `spend_action` (`reserve`, `settle` or `query`)
+  and a `spend` document.
+  - The owner answers only a peer its multi-hub serving policy authorises, and
+    only with `--spend-ledger`.
+  - It decides in its owner-only ledger, never in the replicated journal.
 - **Guard evidence:** `guard_denial` admits one content-minimized native
   file-guard refusal; `guard_denial_recorded` acknowledges its durable sequence.
   The authenticated durable contract is defined below.
@@ -309,7 +315,9 @@ recorded observation edge; absence of an edge does not prove concurrency.
   applied/refused verdict for an `identity_pin_reclaim` request.
   `identity_enroll_result` and `identity_revoke_result` are the verdicts for
   `identity_enroll` and `identity_revoke`. `entitlement_advert_result` is the
-  private verdict for `entitlement_advert`.
+  private verdict for `entitlement_advert`. `spend_result` is the private
+  answer to `spend_request`. Every refusal is the same `not-admitted` shape, and a
+  `query` returns a stored answer without creating anything.
 
 A `dark_seat_alert` is a default-on hub broadcast for an identity that owns an
 unexpired claim or is the `suggested_owner` of a non-terminal board task but has

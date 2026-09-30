@@ -118,6 +118,7 @@ from synapse_channel.core.protected_write_admission_journal import ProtectedAdmi
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.role_grants import RoleGrants
 from synapse_channel.core.scoping import MAX_DECLARED_PATHS
+from synapse_channel.core.spend_ledger import SpendLedger
 from synapse_channel.core.state import MAX_CLAIMS_PER_AGENT, MAX_OFFERS_PER_AGENT
 
 __all__ = [
@@ -246,6 +247,7 @@ class MultiHubConfig:
     """Multi-hub routing: serving policy, ownership, claim, relay and message forwarding."""
 
     multihub_serving_policy: MultiHubServingPolicy | None = None
+    spend_ledger: SpendLedger | None = None
     namespace_ownership: NamespaceOwnership | None = None
     claim_peers: Mapping[str, ClaimForwardPeer] | None = None
     claim_forwarder: ClaimForwarder = forward_claim
