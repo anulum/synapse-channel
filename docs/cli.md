@@ -2231,6 +2231,20 @@ reaches a peer.
   - After a timeout, `query` with the same seat, task, operation and key returns
     the owner's stored answer.
 - **Refusals.** A refused peer sees only `not-admitted`.
+- **Amounts.** Every amount is a decimal string with at most 30 digits, at most
+  18 decimals and a magnitude below 10**19. The ledger computes exactly: an
+  operation that would have to round is refused instead.
+- **Quota windows.** Idempotency keys and settled usage belong to the configured
+  window, so the same key in a new window is a new decision.
+  - Open reservations from an earlier window still count against the bound.
+  - The unit, billing surface, account and tax basis cannot change while any
+    reservation is open.
+  - The fixed fee and minimum charge can change, because each grant keeps the
+    exposure it was granted with.
+- **Upgrading a 0.99.35 ledger.** The first open migrates it to schema 2. Each
+  stored answer is moved to the window it was decided in, so a retry or a query
+  still finds it. A record that cannot be matched refuses the ledger and changes
+  nothing. Once migrated, 0.99.35 refuses to open the ledger.
 - **Handing a pool to a new owner.** It takes three pieces of evidence:
   1. `checkpoint --pool ID` gives the ledger sequence and chain digest.
   2. `sign-revocation --key PEM --key-id ID --file BODY.json` signs a revocation
@@ -2242,7 +2256,8 @@ reaches a peer.
 
   Grants of the old epoch still count until they are settled.
   `record-revocation` makes a recovered old owner refuse its revoked epoch, and
-  peers must not start new consumption on a grant of a revoked epoch.
+  peers must not start new consumption on a grant of a revoked epoch, or on one
+  that expires within their clock-skew margin.
 - **Not yet enforced.** Enforcement is not activated: the ledger bounds
   reservations, but it cannot stop a provider from billing.
 

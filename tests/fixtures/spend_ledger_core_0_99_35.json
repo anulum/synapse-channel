@@ -1,0 +1,141 @@
+{
+ "provenance": {
+  "producer": "released synapse-channel 0.99.35 public SpendLedger API",
+  "wheel_sha256": "2cacb09dc8a076901b04ae152e6cebf0dd27823b93261c42e3558a318e348709",
+  "generator": "make_v1_ledger.py, recorded with the F02 review-fix evidence"
+ },
+ "user_version": 1,
+ "schema": [
+  "CREATE TABLE events (\n        seq INTEGER PRIMARY KEY AUTOINCREMENT,\n        pool_id TEXT NOT NULL,\n        kind TEXT NOT NULL,\n        recorded_at TEXT NOT NULL,\n        body TEXT NOT NULL\n    )",
+  "CREATE INDEX events_by_pool ON events (pool_id, seq)",
+  "CREATE TABLE operations (\n        scope TEXT PRIMARY KEY,\n        digest TEXT NOT NULL,\n        response TEXT NOT NULL\n    )"
+ ],
+ "events": [
+  [
+   1,
+   "pool-a",
+   "pool_config",
+   "2026-10-01T12:00:00+00:00",
+   "{\"account_ref\":\"acct-ref-1\",\"billing_surface\":\"api\",\"cause\":\"initial pool\",\"cost_basis\":{\"fixed_fee\":\"1\",\"minimum_charge\":\"2\",\"tax\":\"pre_tax\"},\"epoch\":1,\"grantees\":[{\"hub\":\"hub-peer\",\"project\":\"PROJ\"}],\"hard_bound\":\"100\",\"limits\":{\"max_agents\":2,\"max_depth\":2,\"max_wall_seconds\":3600},\"owner_hub_id\":\"hub-owner\",\"pool_id\":\"pool-a\",\"price_revision\":\"price-1\",\"unit\":\"USD\",\"window_ends_at\":\"2026-11-01T00:00:00Z\",\"window_starts_at\":\"2026-10-01T00:00:00Z\"}"
+  ],
+  [
+   2,
+   "pool-a",
+   "grant",
+   "2026-10-01T12:00:00+00:00",
+   "{\"caller\":\"hub-peer\",\"config_revision\":1,\"depth\":1,\"epoch\":1,\"expires_at\":\"2026-10-01T12:10:00+00:00\",\"exposure\":\"11\",\"operation\":\"call-1\",\"project\":\"PROJ\",\"requested_upper\":\"10\",\"reservation_id\":\"rsv-4739bad2a217699a734568bb7918dac2\",\"seat\":\"PROJ/alice\",\"task\":\"t1\"}"
+  ],
+  [
+   3,
+   "pool-a",
+   "refusal",
+   "2026-10-01T12:00:00+00:00",
+   "{\"caller\":\"hub-peer\",\"reason\":\"bound_exceeded\",\"request\":{\"depth\":1,\"key\":\"k2\",\"operation\":\"call-1\",\"pool_id\":\"pool-a\",\"price_revision\":\"price-1\",\"project\":\"PROJ\",\"seat\":\"PROJ/alice\",\"task\":\"t1\",\"tax\":\"pre_tax\",\"unit\":\"USD\",\"upper_bound\":\"200\",\"wall_seconds\":600}}"
+  ],
+  [
+   4,
+   "pool-z",
+   "refusal",
+   "2026-10-01T12:00:00+00:00",
+   "{\"caller\":\"hub-peer\",\"reason\":\"unknown_pool\",\"request\":{\"depth\":1,\"key\":\"kz\",\"operation\":\"call-1\",\"pool_id\":\"pool-z\",\"price_revision\":\"price-1\",\"project\":\"PROJ\",\"seat\":\"PROJ/alice\",\"task\":\"t1\",\"tax\":\"pre_tax\",\"unit\":\"USD\",\"upper_bound\":\"10\",\"wall_seconds\":600}}"
+  ],
+  [
+   5,
+   "pool-a",
+   "settlement",
+   "2026-10-01T12:00:00+00:00",
+   "{\"amount\":\"5\",\"final\":false,\"provenance\":\"billed\",\"reservation_id\":\"rsv-4739bad2a217699a734568bb7918dac2\",\"usage_ref\":\"u1\"}"
+  ],
+  [
+   6,
+   "pool-a",
+   "refusal",
+   "2026-10-01T12:00:00+00:00",
+   "{\"caller\":\"hub-other\",\"reason\":\"settlement_not_accepted\",\"request\":{\"amount\":\"1\",\"final\":false,\"pool_id\":\"pool-a\",\"provenance\":\"billed\",\"reservation_id\":\"rsv-4739bad2a217699a734568bb7918dac2\",\"usage_ref\":\"u9\"}}"
+  ],
+  [
+   7,
+   "pool-a",
+   "pool_config",
+   "2026-10-01T12:01:00+00:00",
+   "{\"account_ref\":\"acct-ref-1\",\"billing_surface\":\"api\",\"cause\":\"lower the bound\",\"cost_basis\":{\"fixed_fee\":\"1\",\"minimum_charge\":\"2\",\"tax\":\"pre_tax\"},\"epoch\":1,\"grantees\":[{\"hub\":\"hub-peer\",\"project\":\"PROJ\"}],\"hard_bound\":\"90\",\"limits\":{\"max_agents\":2,\"max_depth\":2,\"max_wall_seconds\":3600},\"owner_hub_id\":\"hub-owner\",\"pool_id\":\"pool-a\",\"price_revision\":\"price-1\",\"unit\":\"USD\",\"window_ends_at\":\"2026-11-01T00:00:00Z\",\"window_starts_at\":\"2026-10-01T00:00:00Z\"}"
+  ],
+  [
+   8,
+   "pool-a",
+   "grant",
+   "2026-10-01T12:02:00+00:00",
+   "{\"caller\":\"hub-peer\",\"config_revision\":2,\"depth\":1,\"epoch\":1,\"expires_at\":\"2026-10-01T12:12:00+00:00\",\"exposure\":\"6\",\"operation\":\"call-1\",\"project\":\"PROJ\",\"requested_upper\":\"5\",\"reservation_id\":\"rsv-a79c289b309b6646d54920d846d438da\",\"seat\":\"PROJ/bob\",\"task\":\"t1\"}"
+  ]
+ ],
+ "operations": [
+  [
+   "reserve\u0000hub-peer\u0000pool-a\u0000PROJ/alice\u0000t1\u0000call-1\u0000k1",
+   "732295863ae787f0692586383a6d7b6b599342f93a23d1da1d9112b3557066ac",
+   "{\"admitted\":true,\"config_revision\":1,\"epoch\":1,\"expires_at\":\"2026-10-01T12:10:00+00:00\",\"exposure\":\"11\",\"pool_id\":\"pool-a\",\"reservation_id\":\"rsv-4739bad2a217699a734568bb7918dac2\",\"sequence\":2,\"unit\":\"USD\"}"
+  ],
+  [
+   "reserve\u0000hub-peer\u0000pool-a\u0000PROJ/alice\u0000t1\u0000call-1\u0000k2",
+   "a83f3543191e8651a691cfd6a0b4fda2d466ab77120371244cb7772712fd3f61",
+   "{\"admitted\":false,\"reason\":\"not-admitted\"}"
+  ],
+  [
+   "reserve\u0000hub-peer\u0000pool-z\u0000PROJ/alice\u0000t1\u0000call-1\u0000kz",
+   "e70767a1eeadb4f28348cdeea0e2c1c414620ce7ebb9e2bb01acc46b19fd187a",
+   "{\"admitted\":false,\"reason\":\"not-admitted\"}"
+  ],
+  [
+   "settle\u0000hub-peer\u0000pool-a\u0000rsv-4739bad2a217699a734568bb7918dac2\u0000u1",
+   "722c09f0a1cfeac6b102f5cb1d233d0e3c8092a9e9a4a2faa9cb7fcc1b23ad61",
+   "{\"overrun\":false,\"reservation_id\":\"rsv-4739bad2a217699a734568bb7918dac2\",\"settled\":true,\"usage_ref\":\"u1\"}"
+  ],
+  [
+   "settle\u0000hub-other\u0000pool-a\u0000rsv-4739bad2a217699a734568bb7918dac2\u0000u9",
+   "5a0d8e196eab04a267a3cbc1c991e2912ceb43e7f69a81cfe45b2660de11b49f",
+   "{\"reason\":\"not-admitted\",\"settled\":false}"
+  ],
+  [
+   "reserve\u0000hub-peer\u0000pool-a\u0000PROJ/bob\u0000t1\u0000call-1\u0000k3",
+   "2dd730685dfa45019f7116055ceae7c1fe46eef47f5d4ced3e3b11c447d18573",
+   "{\"admitted\":true,\"config_revision\":2,\"epoch\":1,\"expires_at\":\"2026-10-01T12:12:00+00:00\",\"exposure\":\"6\",\"pool_id\":\"pool-a\",\"reservation_id\":\"rsv-a79c289b309b6646d54920d846d438da\",\"sequence\":8,\"unit\":\"USD\"}"
+  ]
+ ],
+ "answers": {
+  "k1": {
+   "admitted": true,
+   "reservation_id": "rsv-4739bad2a217699a734568bb7918dac2",
+   "pool_id": "pool-a",
+   "epoch": 1,
+   "config_revision": 1,
+   "sequence": 2,
+   "expires_at": "2026-10-01T12:10:00+00:00",
+   "exposure": "11",
+   "unit": "USD"
+  },
+  "k2": {
+   "admitted": false,
+   "reason": "not-admitted"
+  },
+  "kz": {
+   "admitted": false,
+   "reason": "not-admitted"
+  },
+  "k3": {
+   "admitted": true,
+   "reservation_id": "rsv-a79c289b309b6646d54920d846d438da",
+   "pool_id": "pool-a",
+   "epoch": 1,
+   "config_revision": 2,
+   "sequence": 8,
+   "expires_at": "2026-10-01T12:12:00+00:00",
+   "exposure": "6",
+   "unit": "USD"
+  },
+  "settle_u1": {
+   "settled": true,
+   "reservation_id": "rsv-4739bad2a217699a734568bb7918dac2",
+   "usage_ref": "u1",
+   "overrun": false
+  }
+ }
+}

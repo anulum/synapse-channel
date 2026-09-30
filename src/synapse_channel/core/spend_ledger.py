@@ -14,10 +14,18 @@ IMMEDIATE`` transaction: it replays the pool's events, checks the invariant of
 under the request's idempotency scope before committing. Any number of processes
 may share the file, and SQLite serializes them.
 
-- **Idempotency.** A reservation's scope is (caller hub, pool, seat, task, operation,
-  key). An identical retry returns the stored response; changed content is refused as
-  ``idempotency_conflict``. :meth:`SpendLedger.query` returns the stored response for
-  a scope without creating anything, which is how a caller recovers a lost reply.
+- **Idempotency.** A reservation's scope is (caller hub, pool, quota window, seat,
+  task, operation, key). An identical retry returns the stored response; changed
+  content is refused as ``idempotency_conflict``. :meth:`SpendLedger.query` returns
+  the stored response for a scope without creating anything, which is how a caller
+  recovers a lost reply.
+- **Exact amounts.** Every public method runs in the
+  :data:`~synapse_channel.core.spend_pool.EXACT` context, so no sum, difference,
+  sign or comparison of an amount can round; one that would fails closed.
+- **Schema.** Version 2 adds the window to reservation scopes. A version 1 ledger
+  (Core 0.99.35) is migrated in place when first opened: each stored reservation
+  answer is re-keyed to the window in effect when it was decided, so a retry still
+  replays it. A record that cannot be matched refuses the ledger.
 - **Uniform refusal (C4).** A refused requester sees only
   ``{"admitted": false, "reason": "not-admitted"}``. The detailed reason is an audit
   row that only the operator reads.
@@ -27,15 +35,16 @@ may share the file, and SQLite serializes them.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import sqlite3
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta
-from decimal import Decimal, DecimalException, localcontext
+from decimal import DecimalException, localcontext
 from pathlib import Path
-from typing import Any, Final, cast
+from typing import Any, Final, ParamSpec, TypeVar, cast
 
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.secure_path import (
@@ -64,8 +73,11 @@ from synapse_channel.core.spend_pool import (
     validate_request,
 )
 
-SCHEMA_VERSION: Final = 1
-"""SQLite schema version accepted by this implementation."""
+SCHEMA_VERSION: Final = 2
+"""SQLite schema version written by this implementation; version 1 is migrated."""
+
+_LEGACY_SCHEMA_VERSION: Final = 1
+"""Core 0.99.35 ledgers: reservation scopes without the quota window."""
 
 NOT_ADMITTED: Final = "not-admitted"
 """The only refusal reason a requester ever sees (review correction C4)."""
@@ -93,19 +105,31 @@ _QUERY_FIELDS = frozenset({"pool_id", "seat", "task", "operation", "key"})
 
 
 def _checked_fold(events: list[dict[str, Any]]) -> PoolState:
-    """Fold a pool's events, failing closed on a record outside the exact domain."""
+    """Fold a pool's events, failing closed on a malformed record or one outside the domain."""
     try:
         return fold(events)
-    except (SpendPoolError, DecimalException) as exc:
+    except (DecimalException, KeyError, TypeError, ValueError) as exc:  # SpendPoolError too
         raise SpendLedgerError(
-            f"the ledger holds a record this version cannot evaluate exactly: {exc}"
+            f"the ledger holds a record this version cannot evaluate exactly: {exc!r}"
         ) from exc
 
 
-def _exact_sum(*values: Decimal) -> Decimal:
-    """Add quantities exactly; a sum that would round raises instead."""
-    with localcontext(EXACT):
-        return sum(values, Decimal(0))
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _exact(method: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Run ``method`` with every amount operation in ``EXACT``; rounding fails closed."""
+
+    @functools.wraps(method)
+    def run(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        try:
+            with localcontext(EXACT):
+                return method(*args, **kwargs)
+        except DecimalException as exc:
+            raise SpendLedgerError("exact arithmetic would have to round") from exc
+
+    return run
 
 
 class SpendLedgerError(SynapseError, ValueError):
@@ -179,6 +203,8 @@ class SpendLedger:
                     connection.execute(statement)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 connection.execute("COMMIT")
+            elif version == _LEGACY_SCHEMA_VERSION:
+                self._migrate_window_scopes(connection)
             elif version != SCHEMA_VERSION:
                 raise SpendLedgerError(f"unsupported spend ledger version {version}")
         except (sqlite3.Error, SpendLedgerError) as exc:
@@ -214,6 +240,73 @@ class SpendLedger:
             str(request["operation"]),
             str(request["key"]),
         )
+
+    @classmethod
+    def _migrate_window_scopes(cls, connection: sqlite3.Connection) -> None:
+        """Re-key version 1 reservation answers to their window, losing none (schema 2).
+
+        Core 0.99.35 stored a reservation's answer under a scope without the quota
+        window. Each such answer is moved to the scope of the window in effect when it
+        was decided, so an identical retry or a query still finds it. The migration is
+        idempotent and runs in one transaction; a record it cannot match refuses the
+        ledger instead of dropping an answer.
+        """
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            windows = cls._legacy_windows(connection)
+            rows = connection.execute("SELECT scope, response FROM operations").fetchall()
+            for scope, response in rows:
+                parts = scope.split("\x00")
+                if parts[0] != "reserve" or len(parts) != 7:
+                    continue
+                answer = json.loads(response)
+                decided = answer["reservation_id"] if answer.get("admitted") is True else scope
+                window = windows.get(decided)
+                if window is None:
+                    raise SpendLedgerError(
+                        "a version 1 reservation answer has no matching ledger event; "
+                        "the ledger needs operator repair before it can be used"
+                    )
+                connection.execute(
+                    "UPDATE operations SET scope = ? WHERE scope = ?",
+                    (_scope(*parts[:3], window, *parts[3:]), scope),
+                )
+            connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+        except BaseException:
+            connection.execute("ROLLBACK")
+            raise
+        connection.execute("COMMIT")
+
+    @staticmethod
+    def _legacy_windows(connection: sqlite3.Connection) -> dict[str, str]:
+        """Map each grant id and each refused scope to the window it was decided in."""
+        windows: dict[str, str] = {}
+        current: dict[str, str] = {}
+        rows = connection.execute("SELECT pool_id, kind, body FROM events ORDER BY seq")
+        try:
+            for pool_id, kind, raw in rows:
+                body = json.loads(raw)
+                if kind == "pool_config":
+                    current[pool_id] = validate_config(body).window_id
+                elif kind == "grant":
+                    windows[body["reservation_id"]] = current.get(pool_id, "")
+                elif kind == "refusal" and "key" in body["request"]:
+                    request = body["request"]
+                    scope = _scope(
+                        "reserve",
+                        body["caller"],
+                        pool_id,
+                        request["seat"],
+                        request["task"],
+                        request["operation"],
+                        request["key"],
+                    )
+                    windows[scope] = current.get(pool_id, "")
+        except (SpendPoolError, KeyError, TypeError, ValueError) as exc:
+            raise SpendLedgerError(
+                f"a version 1 ledger event cannot be read for migration: {exc}"
+            ) from exc
+        return windows
 
     @staticmethod
     def _events(connection: sqlite3.Connection, pool_id: str) -> list[dict[str, Any]]:
@@ -264,6 +357,7 @@ class SpendLedger:
             (scope, digest, _canonical(response)),
         )
 
+    @_exact
     def configure(self, document: object, *, now: datetime) -> dict[str, object]:
         """Append one operator configuration of a pool; return its pool id and revision.
 
@@ -293,6 +387,7 @@ class SpendLedger:
             self._append(connection, config.pool_id, "pool_config", body, now)
         return {"pool_id": config.pool_id, "revision": state.revision + 1}
 
+    @_exact
     def reserve(self, caller: str, document: object, *, now: datetime) -> dict[str, object]:
         """Decide one reservation for ``caller`` (the verified peer hub).
 
@@ -315,10 +410,7 @@ class SpendLedger:
             stored = self._stored(connection, scope, digest, "admitted")
             if stored is not None:
                 return stored
-            try:
-                reason = self._refusal_reason(state, caller, request, now)
-            except DecimalException as exc:
-                raise SpendLedgerError("exact arithmetic would have to round") from exc
+            reason = self._refusal_reason(state, caller, request, now)
             if reason is not None:
                 self._append(
                     connection,
@@ -355,11 +447,9 @@ class SpendLedger:
                 "agents_exceeded",
             ),
             (
-                _exact_sum(
-                    state.settled(config.window_id),
-                    state.outstanding(),
-                    config.exposure(request.upper_bound),
-                )
+                state.settled(config.window_id)
+                + state.outstanding()
+                + config.exposure(request.upper_bound)
                 > config.hard_bound,
                 "bound_exceeded",
             ),
@@ -407,6 +497,7 @@ class SpendLedger:
             "unit": config.unit,
         }
 
+    @_exact
     def settle(self, caller: str, document: object, *, now: datetime) -> dict[str, object]:
         """Record usage against ``caller``'s own reservation, idempotently per usage ref.
 
@@ -464,6 +555,7 @@ class SpendLedger:
             self._store(connection, scope, digest, response)
         return response
 
+    @_exact
     def reconcile(self, document: object, *, now: datetime) -> dict[str, object]:
         """Close a reservation with the operator's evidenced final amount.
 
@@ -501,6 +593,7 @@ class SpendLedger:
             self._append(connection, pool_id, "reconciliation", body, now)
         return {"reconciled": True, "reservation_id": reservation_id}
 
+    @_exact
     def query(self, caller: str, document: object) -> dict[str, object]:
         """Return the stored reservation response for ``caller``'s scope, creating nothing."""
         if not isinstance(document, Mapping) or set(document) != _QUERY_FIELDS:
@@ -519,6 +612,7 @@ class SpendLedger:
             return {"found": False}
         return {"found": True, "response": json.loads(row[0])}
 
+    @_exact
     def status(self, pool_id: str, *, now: datetime) -> dict[str, object]:
         """Return the operator's view of a pool: bound, charged, held and headroom.
 
@@ -533,11 +627,8 @@ class SpendLedger:
         config = state.config
         if config is None:
             raise SpendLedgerError("no such pool")
-        try:
-            settled, outstanding = state.settled(config.window_id), state.outstanding()
-            headroom = _exact_sum(config.hard_bound, -settled, -outstanding)
-        except DecimalException as exc:
-            raise SpendLedgerError("exact arithmetic would have to round") from exc
+        settled, outstanding = state.settled(config.window_id), state.outstanding()
+        headroom = config.hard_bound - settled - outstanding  # exact under @_exact
         return {
             "pool_id": pool_id,
             "owner_hub_id": config.owner_hub_id,
@@ -566,6 +657,7 @@ class SpendLedger:
             for seq, kind, recorded_at, body in rows
         ]
 
+    @_exact
     def checkpoint(self, pool_id: str) -> dict[str, object]:
         """Return the pool's last ledger sequence, chain digest and epoch.
 
@@ -606,6 +698,7 @@ class SpendLedger:
             raise SpendLedgerError("the revocation does not name the pool's current epoch")
         return state, revocation
 
+    @_exact
     def record_revocation(
         self, pool_id: str, document: object, *, now: datetime
     ) -> dict[str, object]:
@@ -644,6 +737,7 @@ class SpendLedger:
         signed = cast("Mapping[str, Any]", document)
         return {**revocation.body(), "key_id": revocation.key_id, "signature": signed["signature"]}
 
+    @_exact
     def fail_over(self, pool_id: str, document: object, *, now: datetime) -> dict[str, object]:
         """Take over a pool as its new owner, from a verified copy of the old ledger.
 

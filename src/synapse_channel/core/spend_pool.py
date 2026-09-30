@@ -394,7 +394,7 @@ class Reservation:
     exposure: Decimal
     expires_at: datetime
     epoch: int
-    window: str | None = None
+    window: str = ""
     settled: Decimal = Decimal(0)
     closed: bool = False
     overrun_open: bool = False
@@ -416,18 +416,10 @@ class PoolState:
     revoked_epochs: set[int] = field(default_factory=set)
 
     def settled(self, window: str) -> Decimal:
-        """Return what reservations of ``window`` charged, exactly.
-
-        A reservation recorded before grants carried their window (Core 0.99.35) counts
-        in every window, conservatively.
-        """
+        """Return what reservations of ``window`` charged, exactly."""
         with localcontext(EXACT):
             return sum(
-                (
-                    item.settled
-                    for item in self.reservations.values()
-                    if item.window is None or item.window == window
-                ),
+                (item.settled for item in self.reservations.values() if item.window == window),
                 Decimal(0),
             )
 
@@ -463,6 +455,8 @@ def fold(events: Iterable[Mapping[str, Any]]) -> PoolState:
             state.config = validate_config(body)
             state.revision += 1
         elif kind == "grant":
+            if state.config is None:
+                raise SpendPoolError("a grant precedes its pool's configuration")
             state.reservations[body["reservation_id"]] = Reservation(
                 reservation_id=body["reservation_id"],
                 caller=body["caller"],
@@ -470,7 +464,9 @@ def fold(events: Iterable[Mapping[str, Any]]) -> PoolState:
                 exposure=Decimal(body["exposure"]),
                 expires_at=timestamp(body["expires_at"], "expires_at"),
                 epoch=int(body["epoch"]),
-                window=body.get("window"),
+                # Core 0.99.35 grants carry no window: they were decided in the window
+                # of the configuration in effect when they were recorded.
+                window=body.get("window", state.config.window_id),
             )
         elif kind == "settlement":
             reservation = state.reservations[body["reservation_id"]]
