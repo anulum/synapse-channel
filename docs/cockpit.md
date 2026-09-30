@@ -18,6 +18,14 @@ browser principal has the matching capability.
 The cockpit is experimental in the current pre-1.0 line. Pin the package
 version when you depend on a specific layout or browser contract.
 
+The Python dashboard observer accepts decompressed hub messages up to 8 MiB.
+This finite receive bound allows a growing task board to pass the WebSocket
+library's former 1 MiB default while matching the cockpit live-frame ceiling.
+A larger response closes the connection with code `1009`; split or reduce the
+requested data before retrying. If the retained event log advances while roster,
+claims, and board remain unavailable, check the dashboard's client version and
+receive diagnostics. Unavailable snapshot counts do not prove an empty fleet.
+
 ## Start the cockpit from a source checkout
 
 Start a hub first; the [quick start](quickstart.md) covers the basic hub and

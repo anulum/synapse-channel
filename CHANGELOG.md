@@ -31,6 +31,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Python clients, CLI queries, and dashboard observers accept hub responses up
+  to a finite 8 MiB instead of disconnecting on accumulated boards above the
+  WebSocket library's 1 MiB default. Oversized responses still close with code
+  `1009`, including an authored diagnostic for local receive-size refusals.
+
 - Peer attachment transports refuse plaintext connections outside loopback and
   require verified server certificates or an exact live certificate pin before
   registration. Source reads now require a successful bounded private audit write;

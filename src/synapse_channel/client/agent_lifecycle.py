@@ -29,6 +29,9 @@ HUB_URI_ENV_VAR = "SYNAPSE_URI"
 MINIMUM_HEARTBEAT_INTERVAL = 5.0
 """Floor applied to the configured heartbeat interval, in seconds."""
 
+MAX_HUB_MESSAGE_BYTES = 8 * 1024 * 1024
+"""Finite decompressed hub-response limit, aligned with cockpit live frames."""
+
 
 def default_hub_uri() -> str:
     """Return the hub URI a command should use when ``--uri`` is not given.
@@ -55,14 +58,18 @@ def _is_connection_refused(exc: OSError) -> bool:
 
 
 def _received_close(exc: ConnectionClosedError) -> tuple[int | None, str]:
-    """Return the close code and reason the hub sent, if any.
+    """Return the hub close diagnostic or the client's receive-size refusal.
 
     Reads the received Close frame (``exc.rcvd``) rather than the deprecated
     ``exc.code``/``exc.reason`` shortcuts. ``exc.rcvd`` is ``None`` when this side
-    initiated the close, in which case there is no hub-supplied code to report.
+    initiated the close. A local size refusal is reported as ``1009`` with an
+    authored reason; other locally initiated closes have no hub diagnostic.
     """
     received = getattr(exc, "rcvd", None)
     if received is None:
+        sent = getattr(exc, "sent", None)
+        if getattr(sent, "code", None) == 1009:
+            return 1009, "received hub message exceeds the client size limit"
         return None, ""
     code = getattr(received, "code", None)
     reason = str(getattr(received, "reason", "") or "")
@@ -164,7 +171,10 @@ class AgentLifecycleMixin:
         heartbeat: asyncio.Task[None] | None = None
         try:
             async with connect(
-                self.uri, ping_interval=self.ping_interval, ping_timeout=self.ping_timeout
+                self.uri,
+                ping_interval=self.ping_interval,
+                ping_timeout=self.ping_timeout,
+                max_size=MAX_HUB_MESSAGE_BYTES,
             ) as websocket:
                 self.connection = websocket
                 if self.verbose:

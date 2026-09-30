@@ -68,6 +68,14 @@ is re-armed and the diagnostics are reset, while the mailbox cursor and any
 owner lease carry over. A second `connect()` while an attempt is still active
 raises `RuntimeError` instead of racing the live listener.
 
+The Python client limits each decompressed inbound hub message to 8 MiB
+(`MAX_HUB_MESSAGE_BYTES`). This also applies to CLI and dashboard clients and
+allows accumulated board snapshots above 1 MiB. Responses exceeding the bound
+close the connection with code `1009`. A locally initiated size refusal is
+recorded with the fixed reason `received hub message exceeds the client size
+limit` when no peer close frame arrived. A received peer close frame retains its
+own diagnostic. Readiness is cleared when either connection attempt ends.
+
 ## The verbs you will use most
 
 Grouped by what they coordinate (all are `async` methods on `SynapseAgent`):
