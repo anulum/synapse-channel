@@ -103,3 +103,11 @@ service or user data. Its child process is stopped after the test.
 The `clients-js` CI workflow runs this check with Node 22 and Python 3.12,
 alongside type checking and unit tests. Changes to the Python source, package
 configuration, or its hash-locked test dependencies also trigger the workflow.
+
+### Reconnect after close
+
+`close()` clears readiness immediately. A subsequent `connect()` waits for the
+previous WebSocket close event before registering the same name again. If that
+close is not observed within five seconds, reconnect rejects; the client does
+not request a takeover or weaken hub ownership checks. A later actual close
+event makes the instance reusable. A second `close()` cancels a queued reconnect.

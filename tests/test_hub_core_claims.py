@@ -240,8 +240,10 @@ async def test_release_receipt_progress_is_not_broadcast_when_the_board_refuses(
     hub = SynapseHub(hub_id="syn-test")
     broadcasts: list[object] = []
 
-    async def record_broadcast(data: object) -> None:
+    async def record_broadcast(data: object) -> frozenset[str]:
+        """Record the frame without manufacturing completed recipient writes."""
         broadcasts.append(data)
+        return frozenset()
 
     hub._broadcast = record_broadcast  # type: ignore[method-assign]
     hub.blackboard.post_progress = (  # type: ignore[method-assign]
@@ -260,8 +262,10 @@ async def test_release_receipt_progress_broadcasts_without_a_journal() -> None:
     hub = SynapseHub(hub_id="syn-test")  # journal is None by default
     broadcasts: list[dict[str, object]] = []
 
-    async def record_broadcast(data: dict[str, object]) -> None:
+    async def record_broadcast(data: dict[str, object]) -> frozenset[str]:
+        """Record the frame without manufacturing completed recipient writes."""
         broadcasts.append(data)
+        return frozenset()
 
     hub._broadcast = record_broadcast  # type: ignore[method-assign]
     receipt = build_release_receipt(task_id="T1", owner="alice")
@@ -281,8 +285,10 @@ async def test_release_receipt_progress_records_into_a_journal(tmp_path: Path) -
         hub = SynapseHub(hub_id="syn-test", journal=journal)
         broadcasts: list[dict[str, object]] = []
 
-        async def record_broadcast(data: dict[str, object]) -> None:
+        async def record_broadcast(data: dict[str, object]) -> frozenset[str]:
+            """Record the frame without manufacturing completed recipient writes."""
             broadcasts.append(data)
+            return frozenset()
 
         hub._broadcast = record_broadcast  # type: ignore[method-assign]
         receipt = build_release_receipt(task_id="T1", owner="alice")

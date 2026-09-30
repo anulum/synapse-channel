@@ -6,6 +6,8 @@
 // Contact: www.anulum.li | protoscience@anulum.li
 // SYNAPSE_CHANNEL — typed WebSocket client for the coordination hub
 
+import { SocketClosureBarrier } from "./socket-closure.js";
+
 import {
   type ClaimScopeIdentity,
   type Envelope,
@@ -91,6 +93,8 @@ export class SynapseClient {
   /** Incremented on every connect and close; callbacks of an older socket are ignored. */
   private generation = 0;
   private pending: PendingAttempt | null = null;
+  private readonly closing = new SocketClosureBarrier();
+  private awaitingClosure = false;
 
   constructor(options: SynapseClientOptions) {
     this.options = options;
@@ -111,13 +115,27 @@ export class SynapseClient {
    * handlers act only while that socket is current, and a closed socket leaves
    * the client not ready so the same instance can `connect()` again. A call
    * while a socket is already open or pending rejects instead of racing it;
-   * `close()` first.
+   * `close()` first. A reconnect waits for the prior close event, with a
+   * five-second deadline, rather than competing with the old name binding.
    */
-  connect(): Promise<void> {
-    if (this.socket !== null) {
+  async connect(): Promise<void> {
+    if (this.socket !== null || this.awaitingClosure) {
       return Promise.reject(
         new Error(`${this.options.name} already has an open or pending connection; close() it first`),
       );
+    }
+    const closure = this.closing.pending;
+    if (closure !== null) {
+      this.awaitingClosure = true;
+      const generation = this.generation;
+      try {
+        await closure;
+      } finally {
+        this.awaitingClosure = false;
+      }
+      if (generation !== this.generation) {
+        throw new Error(`${this.options.name} was closed while awaiting its prior socket`);
+      }
     }
     const factory = this.options.webSocketFactory ?? defaultFactory;
     const socket = factory(this.options.uri);
@@ -134,6 +152,12 @@ export class SynapseClient {
         this.stopHeartbeat();
         this.ready = false;
         this.socket = null;
+        try {
+          this.closing.close(socket);
+        } catch (closeError) {
+          reject(closeError);
+          return;
+        }
         reject(error);
       };
       const timer = setTimeout(() => {
@@ -141,7 +165,6 @@ export class SynapseClient {
           return;
         }
         fail(new Error(`hub did not welcome ${this.options.name} in time`));
-        socket.close();
       }, this.options.readyTimeoutMs ?? 5000);
       this.pending = { timer, reject };
 
@@ -154,7 +177,6 @@ export class SynapseClient {
           this.startHeartbeat();
         } catch (error) {
           fail(error instanceof Error ? error : new Error("registration signer failed"));
-          socket.close();
         }
       };
       socket.onmessage = (event) => {
@@ -349,7 +371,7 @@ export class SynapseClient {
       clearTimeout(pending.timer);
       pending.reject(new Error(`${this.options.name} was closed before the hub welcomed it`));
     }
-    socket?.close();
+    if (socket !== null) this.closing.close(socket);
   }
 
   private sendRegistration(): void {

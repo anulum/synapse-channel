@@ -17,6 +17,7 @@ uniform dispatch table.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable, Iterable
@@ -40,6 +41,7 @@ from synapse_channel.core.dead_letter_forwarding import DeadLetterForwardError, 
 from synapse_channel.core.dead_letters import is_directed_target
 from synapse_channel.core.directed_delivery_liveness import (
     DeliveryLiveness,
+    classify_completed_delivery,
     classify_delivery_liveness,
 )
 from synapse_channel.core.handlers.delivery_feedback import (
@@ -372,10 +374,6 @@ async def route_chat(
         data["seq"] = record_chat(hub.journal, data)
         hub.mailbox_pending.observe_chat(int(data["seq"]), data)
     message_seq = int(data["seq"]) if "seq" in data else None
-    if remember and delivery.delivered:
-        # Only a copy that reached a live recipient makes a retry redundant; a retry of a
-        # chat nobody received is a redelivery attempt and is routed again.
-        hub.chat_dedupe.remember(sender, client_msg_id, digest, data, accepted_at=accepted_at)
     receipt_before_fanout = (
         receipt_requested and directed and not delivery.delivered and bool(recipients)
     )
@@ -410,9 +408,18 @@ async def route_chat(
         # still mirrored to the relay and journalled above, so the durable feed keeps
         # full visibility for dashboards and the federation follower.
         audience = _directed_audience(recipients, hub.observing_identities(target))
-        await hub._broadcast_directed(data, names=audience, sender_socket=websocket)
+        successful = await hub._broadcast_directed(data, names=audience, sender_socket=websocket)
     else:
-        await hub._broadcast(data)
+        successful = await hub._broadcast(data)
+    previous_delivery = delivery.delivered
+    delivery = classify_completed_delivery(delivery, successful)
+    if directed and previous_delivery and not delivery.delivered:
+        count = hub.dead_letters.record(target, sender=sender, ts=float(data["timestamp"]))
+        if crosses_escalation_threshold(count, hub.dead_letter_escalation_threshold):
+            escalation = (target, count, sender)
+    if remember and delivery.delivered:
+        # Failed writes remain retryable; sender/observer echoes do not prove delivery.
+        hub.chat_dedupe.remember(sender, client_msg_id, digest, data, accepted_at=accepted_at)
     if escalation is not None:
         # After the chat is delivered: escalate the blackhole it added to, as a follow-up signal.
         await _escalate_dead_letter(
@@ -547,8 +554,9 @@ async def _route_channel_chat(
     Non-members are refused privately. The body is not retained in the public
     chat history, but it is retained in the channel's bounded live history and
     mirrored/journalled with explicit channel metadata so relay and event-query
-    can filter it. Returns whether the chat was accepted and reached at least one
-    online member.
+    can filter it. Writes run concurrently with finite transport deadlines. Returns
+    whether a write to at least one online member completed; receipts and retry
+    deduplication use this same verdict.
     """
     if not hub.channels.is_member(channel, sender):
         await hub._send_json(
@@ -569,8 +577,11 @@ async def _route_channel_chat(
     if hub.journal is not None:
         record_chat(hub.journal, data)
     await hub._mirror_to_relay(data)
-    for member in recipients:
-        await hub._send_to_agent(member, data)
+    completed = await asyncio.gather(*(hub._send_to_agent(member, data) for member in recipients))
+    successful = [member for member, sent in zip(recipients, completed, strict=True) if sent]
+    delivery = classify_completed_delivery(
+        classify_delivery_liveness(recipients, ()), successful, include_waiters=False
+    )
     if bool(data.get("receipt_requested")):
         await send_delivery_receipt(
             hub,
@@ -578,10 +589,10 @@ async def _route_channel_chat(
             sender=sender,
             target=channel,
             msg_id=int(data["msg_id"]),
-            decision=classify_delivery_liveness(recipients, ()),
+            decision=delivery,
             client_msg_id=str(data.get("client_msg_id") or ""),
         )
-    return bool(recipients)
+    return delivery.delivered
 
 
 def _directed_audience(recipients: list[str], observers: Iterable[str]) -> list[str]:

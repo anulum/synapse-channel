@@ -33,7 +33,7 @@ MIN_DARK_SEAT_POLL_SECONDS = 0.01
 ClaimSource = Callable[[], Mapping[str, TaskClaim]]
 TaskSource = Callable[[], Mapping[str, LedgerTask]]
 WaiterProbe = Callable[[str], bool]
-Broadcaster = Callable[[dict[str, Any]], Awaitable[None]]
+Broadcaster = Callable[[dict[str, Any]], Awaitable[object]]
 SystemFactory = Callable[..., dict[str, Any]]
 Clock = Callable[[], float]
 

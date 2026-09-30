@@ -28,6 +28,7 @@ from synapse_channel.core.delivery_receipts import (
 )
 from synapse_channel.core.directed_delivery_liveness import (
     NO_LIVE_RECIPIENT,
+    RECIPIENT_TRANSPORT_UNAVAILABLE,
     DeliveryLiveness,
 )
 from synapse_channel.core.journal import (
@@ -78,6 +79,8 @@ def _failure_payload(target: str, decision: DeliveryLiveness) -> str:
     if decision.reason == NO_LIVE_RECIPIENT:
         stale = ", ".join(decision.stale_recipients)
         return f"delivery failed: no live recipient matched {target}; stale sockets: {stale}"
+    if decision.reason == RECIPIENT_TRANSPORT_UNAVAILABLE:
+        return f"delivery failed: no recipient transport completed a write for {target}"
     return f"delivery failed: no online recipient matched {target}"
 
 

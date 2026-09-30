@@ -25,6 +25,7 @@ from typing import Any
 
 from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_relay import RelayMirror
+from synapse_channel.core.outbound_send import OutboundSender
 from synapse_channel.core.protocol import MessageType
 
 
@@ -58,25 +59,32 @@ class HubBroadcaster:
         self._relay = relay
         self._system = system
         self._online_agents = online_agents
+        self._sender = OutboundSender()
 
     async def send_json(self, websocket: Any, data: dict[str, Any]) -> None:
         """Serialise and send one message to a single socket."""
-        await websocket.send(json.dumps(data))
+        await self._sender.send(websocket, json.dumps(data))
 
-    async def broadcast(self, data: dict[str, Any]) -> None:
-        """Send one message to every connected socket, ignoring failures.
+    async def broadcast(self, data: dict[str, Any]) -> frozenset[str]:
+        """Mirror and fan out one frame, returning successful bound socket names.
 
         The message is mirrored to the relay log first — even with no socket
         connected — so the log captures it for a later observer.
         """
         await self._relay.mirror_async(data)
-        clients = self._clients.connected_clients
+        clients = tuple(self._clients.connected_clients)
+        owners = {socket: self._clients.socket_agent.get(socket) for socket in clients}
         if not clients:
-            return
+            return frozenset()
         raw = json.dumps(data)
-        await asyncio.gather(
-            *(client.send(raw) for client in clients),
+        results = await asyncio.gather(
+            *(self._sender.send(client, raw) for client in clients),
             return_exceptions=True,
+        )
+        return frozenset(
+            name
+            for socket, result in zip(clients, results, strict=True)
+            if result is None and (name := owners[socket]) is not None
         )
 
     async def broadcast_presence(self, event: str, agent: str | None = None) -> None:
@@ -110,7 +118,7 @@ class HubBroadcaster:
 
     async def send_directed(
         self, data: dict[str, Any], *, names: Iterable[str], sender_socket: Any = None
-    ) -> None:
+    ) -> frozenset[str]:
         """Send one directed message to a named audience only, never the whole hub.
 
         The message is mirrored to the relay log first — exactly as
@@ -126,11 +134,22 @@ class HubBroadcaster:
         sockets: set[Any] = set()
         if sender_socket is not None:
             sockets.add(sender_socket)
+        owners: dict[Any, set[str]] = {}
         for name in names:
             websocket = self._clients.agent_sockets.get(name)
             if websocket is not None:
                 sockets.add(websocket)
+                owners.setdefault(websocket, set()).add(name)
         if not sockets:
-            return
+            return frozenset()
         raw = json.dumps(data)
-        await asyncio.gather(*(socket.send(raw) for socket in sockets), return_exceptions=True)
+        audience = tuple(sockets)
+        results = await asyncio.gather(
+            *(self._sender.send(socket, raw) for socket in audience), return_exceptions=True
+        )
+        return frozenset(
+            name
+            for socket, result in zip(audience, results, strict=True)
+            if result is None
+            for name in owners.get(socket, ())
+        )

@@ -787,6 +787,27 @@ Receivers must continuously consume protocol frames. Use unique client message I
 check delivery receipts, and re-arm or reconnect after a refused connection; a
 successful WebSocket handshake alone does not prove registration or delivery.
 
+## Outbound backpressure
+
+A peer that stops reading must not hold the hub's fan-out indefinitely. Each
+outbound socket write has a five-second drain deadline. On expiry the hub attempts
+close code `1013` (`outbound delivery timeout`) for one second, then aborts the
+stalled transport and drains the write task. Healthy sockets continue independently;
+receivers must reconnect and replay their durable mailbox after a disconnect.
+
+Directed receipts count only completed writes to a consume-live recipient or its
+waiter. A sender echo or observer copy cannot make a failed recipient successful.
+If every eligible recipient write fails, the receipt is negative with reason
+`recipient_transport_unavailable`; the durable message remains available, and a
+retry with the same `client_msg_id` is allowed. Once a recipient write succeeds,
+the normal retry deduplication applies. A negative receipt does not prove that no
+bytes arrived before the deadline; receivers must deduplicate retries by sender
+and client message ID. Transport acceptance does not prove task execution.
+
+Private-channel writes also run concurrently and use the same finite deadlines.
+Channel receipts list only members whose writes completed; an entirely failed
+fan-out remains retryable with the same client message ID.
+
 ## Claim-quota principals
 
 `--max-claims-per-agent` is enforced against a hub-derived **quota principal**, not

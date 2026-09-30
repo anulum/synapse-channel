@@ -430,3 +430,103 @@ describe("SynapseClient reconnect contract", () => {
     expect(client.isReady).toBe(true);
   });
 });
+
+
+describe("SynapseClient asynchronous close boundary", () => {
+  /** Build transports whose close request and close completion are independent. */
+  function fixture(): { client: SynapseClient; sockets: FakeSocket[] } {
+    const sockets: FakeSocket[] = [];
+    const client = new SynapseClient({
+      uri: "ws://localhost:8876", name: "P/alice",
+      webSocketFactory: () => {
+        const socket = new FakeSocket();
+        socket.close = () => { socket.closed = true; };
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    return { client, sockets };
+  }
+
+  it("a signer failure requests one close and waits before reusing the identity", async () => {
+    const sockets: FakeSocket[] = [];
+    let closes = 0;
+    const client = new SynapseClient({
+      uri: "ws://localhost:8876", name: "P/alice",
+      signRegistration: () => { throw new Error("signer unavailable"); },
+      webSocketFactory: () => {
+        const socket = new FakeSocket();
+        socket.close = () => { closes += 1; socket.closed = true; };
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    const failed = client.connect();
+    sockets[0]!.open();
+    await expect(failed).rejects.toThrow(/signer unavailable/);
+    expect(closes).toBe(1);
+    const next = client.connect();
+    expect(sockets.length).toBe(1);
+    sockets[0]!.onclose?.({});
+    await vi.waitFor(() => expect(sockets.length).toBe(2));
+    sockets[1]!.open();
+    await expect(next).rejects.toThrow(/signer unavailable/);
+    expect(closes).toBe(2);
+    sockets[1]!.onclose?.({});
+  });
+  it("a transport close failure rejects connect without opening a replacement", async () => {
+    const { client, sockets } = fixture();
+    const failed = client.connect();
+    sockets[0]!.close = () => { throw new Error("close failed"); };
+    sockets[0]!.onerror?.({});
+    await expect(failed).rejects.toThrow(/close failed/);
+    await expect(client.connect()).rejects.toThrow(/close failed/);
+    expect(sockets.length).toBe(1);
+    sockets[0]!.onclose?.({});
+    const next = client.connect();
+    sockets[1]!.open(); sockets[1]!.welcome(); await next;
+    client.close(); sockets[1]!.onclose?.({});
+  });
+  it("does not reopen the name before the old close handshake completes", async () => {
+    const { client, sockets } = fixture();
+    const first = client.connect();
+    sockets[0]!.open(); sockets[0]!.welcome(); await first;
+    client.close();
+    const next = client.connect();
+    expect(sockets.length).toBe(1);
+    await expect(client.connect()).rejects.toThrow(/already has an open or pending/);
+    sockets[0]!.onclose?.({});
+    await vi.waitFor(() => expect(sockets.length).toBe(2));
+    sockets[1]!.open(); sockets[1]!.welcome(); await next;
+    client.close(); sockets[1]!.onclose?.({});
+  });
+  it("a second close cancels the queued reconnect", async () => {
+    const { client, sockets } = fixture();
+    const first = client.connect();
+    sockets[0]!.open(); sockets[0]!.welcome(); await first;
+    client.close();
+    const next = client.connect();
+    client.close();
+    sockets[0]!.onclose?.({});
+    await expect(next).rejects.toThrow(/closed while awaiting/);
+    expect(sockets.length).toBe(1);
+    expect(client.isReady).toBe(false);
+  });
+  it("a close timeout refuses reconnect without taking over the name", async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, sockets } = fixture();
+      const first = client.connect();
+      sockets[0]!.open(); sockets[0]!.welcome(); await first;
+      client.close();
+      const next = client.connect();
+      vi.advanceTimersByTime(5000);
+      await expect(next).rejects.toThrow(/did not close in time/);
+      expect(sockets.length).toBe(1);
+      sockets[0]!.onclose?.({});
+      const recovered = client.connect();
+      sockets[1]!.open(); sockets[1]!.welcome(); await recovered;
+      client.close(); sockets[1]!.onclose?.({});
+    } finally { vi.useRealTimers(); }
+  });
+});

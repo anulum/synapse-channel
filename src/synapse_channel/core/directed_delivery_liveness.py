@@ -19,6 +19,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from synapse_channel.core.agent_liveness import waiter_sidecar_names
+
 NO_ONLINE_RECIPIENT = "no_online_recipient"
 """Negative receipt reason when no socket matched the directed target."""
 
@@ -40,7 +42,7 @@ class DeliveryLiveness:
         Matched recipients lacking both consume-liveness proofs.
     reason : str
         Empty for a positive verdict, otherwise ``no_online_recipient`` or
-        ``no_live_recipient``.
+        ``no_live_recipient`` or ``recipient_transport_unavailable``.
     """
 
     matched_recipients: tuple[str, ...]
@@ -88,4 +90,35 @@ def classify_delivery_liveness(
         live_recipients=live,
         stale_recipients=stale,
         reason=reason,
+    )
+
+
+RECIPIENT_TRANSPORT_UNAVAILABLE = "recipient_transport_unavailable"
+"""Negative reason when no consume-live recipient completed an outbound write."""
+
+
+def classify_completed_delivery(
+    decision: DeliveryLiveness, successful_names: Iterable[str], *, include_waiters: bool = True
+) -> DeliveryLiveness:
+    """Keep only consume-live recipients whose own or waiter write completed.
+
+    Observer and sender echoes cannot manufacture a successful recipient. A
+    Set ``include_waiters=False`` for channels, whose audience is exact membership. A
+    stale recipient remains stale even if its transport accepted bytes. Preserve
+    the original matched and stale partitions for receipt audit evidence.
+    """
+    if not decision.delivered:
+        return decision
+    successful = set(successful_names)
+    live = tuple(
+        name
+        for name in decision.live_recipients
+        if name in successful
+        or (include_waiters and successful.intersection(waiter_sidecar_names(name)))
+    )
+    return DeliveryLiveness(
+        matched_recipients=decision.matched_recipients,
+        live_recipients=live,
+        stale_recipients=decision.stale_recipients,
+        reason="" if live else RECIPIENT_TRANSPORT_UNAVAILABLE,
     )

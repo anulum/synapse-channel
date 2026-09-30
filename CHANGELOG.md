@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- Bound outbound socket writes and isolate unread peers with finite close/abort cleanup.
+  Directed and private-channel chat receipts and retry deduplication now require
+  completed recipient or waiter writes; failed writes remain durable and retryable. The JavaScript SDK
+  waits for the prior socket close event before reconnecting the same identity.
+
 ### Added
 
 - Recipient-granted private cross-hub attachment metadata and chunk reads (wire

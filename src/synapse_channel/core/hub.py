@@ -1439,15 +1439,15 @@ class SynapseHub:
         """
         await self._relay.mirror_async(data)
 
-    async def _broadcast(self, data: dict[str, Any]) -> None:
-        """Send one message to every connected socket, ignoring failures."""
-        await self._broadcaster.broadcast(data)
+    async def _broadcast(self, data: dict[str, Any]) -> frozenset[str]:
+        """Fan out with bounded writes, returning successful bound socket names."""
+        return await self._broadcaster.broadcast(data)
 
     async def _broadcast_directed(
         self, data: dict[str, Any], *, names: Iterable[str], sender_socket: Any
-    ) -> None:
-        """Deliver a directed message to its recipients (and granted observers) only."""
-        await self._broadcaster.send_directed(data, names=names, sender_socket=sender_socket)
+    ) -> frozenset[str]:
+        """Return successful writes to recipients and granted observers only."""
+        return await self._broadcaster.send_directed(data, names=names, sender_socket=sender_socket)
 
     async def _broadcast_presence(self, event: str, agent: str | None = None) -> None:
         """Broadcast a presence update naming who joined or left."""
@@ -1797,8 +1797,6 @@ class SynapseHub:
             await deliver_pending_forward_receipts(self, sender=sender)
         if not was_bound or msg_type != MessageType.HEARTBEAT:
             self.dead_letters.clear(sender)
-        if is_new_agent:
-            await self._broadcast_presence("joined", sender)
         if self.warn_stale_recipients and (not was_bound or msg_type != MessageType.HEARTBEAT):
             # Seed the grace window on registration, then refresh on every genuine
             # reaction — any non-heartbeat frame — so directed delivery can classify
@@ -1807,6 +1805,8 @@ class SynapseHub:
             # agent. Only written when the warning is enabled, so the default open hub
             # keeps no per-frame liveness state.
             self._recipient_liveness.touch(sender, self._clock())
+        if is_new_agent:
+            await self._broadcast_presence("joined", sender)
         # A channel-scoped frame is audience-restricted, so its body must not land
         # in the hub log either — log the channel id and length, never the content.
         channel_id = str(data.get("channel") or "").strip()

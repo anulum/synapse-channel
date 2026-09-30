@@ -8,6 +8,14 @@ does not encrypt payloads, does not replace end-to-end encrypted channels, and
 does not create cryptographic identity. The hub can still see metadata, route
 events, enforce retention, and write durable logs.
 
+Channel messages use concurrent writes with a five-second drain deadline and a
+one-second close attempt before aborting a stalled transport. A requested delivery
+receipt lists only members whose writes completed. If no matched member write
+completes, the negative reason is `recipient_transport_unavailable`; retry with the
+same `client_msg_id` remains eligible. Once a member write completes, normal hub
+deduplication applies. Receivers must deduplicate retries because some bytes can
+arrive before a write times out. Transport acceptance does not prove processing.
+
 ## Implemented runtime
 
 The private-channel runtime is implemented for local coordination. The hub keeps a

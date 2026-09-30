@@ -394,8 +394,8 @@ ACL `observe` grant. The durable journal and configured relay log still retain
 the message for audit and replay.
 
 **Immediate receipts.** A `chat` sent with `receipt_requested: true` gets a private
-`delivery_receipt` back: `delivered: true` with the matched `recipients` when a live
-connection matched the target, or `delivered: false` when none did. A directed
+`delivery_receipt` back: `delivered: true` with `recipients` when a consume-live
+recipient or its waiter completed a write, or `delivered: false` when none did. A directed
 message that matched no live connection is a *dead letter* — durable in the journal
 and feed, but woken by nobody at send time. Journal-backed hubs also include a
 stable `receipt_notification_id`. A transport retry may repeat the same id; senders
@@ -478,7 +478,8 @@ new principals fail closed instead of resetting another principal's quota.
 
 **Consume-live immediate receipts.** For a directed chat, the hub partitions
 socket-level matches using the same reaction-plus-waiter liveness policy exposed
-by WHO. At least one consume-live match yields `delivered: true`. If sockets match
+by WHO. A completed write to at least one consume-live match yields
+`delivered: true`. If sockets match
 but every recipient is stale, the immediate receipt instead carries
 `delivered: false`, `reason: "no_live_recipient"`, the complete
 `matched_recipients` and `stale_recipients`, and `dead_lettered: true`; no socket
@@ -524,6 +525,23 @@ and never represents human or model consumption.
 Mailbox watermarks are separate `mailbox_watermark` events: losing the newest
 normal-durability watermark in a power failure can cause safe replay/recount, not
 loss of an unseen message body.
+
+### Recipient transport failure
+
+Outbound writes have a five-second drain deadline and a one-second graceful close
+attempt before a stalled transport is aborted (`1013`, `outbound delivery timeout`).
+For directed chat, `delivered: true` requires a completed write to a consume-live
+recipient or its waiter. Sender and observer echoes do not count as recipients.
+When no such write completes, `reason: "recipient_transport_unavailable"` accompanies
+a negative receipt; `matched_recipients` and `stale_recipients` retain the original
+routing evidence. The chat remains durable and retryable with the same `client_msg_id`.
+A completed transport write proves neither application processing nor task execution.
+Clients must retain retry deduplication because bytes may arrive before a drain times out.
+
+Private-channel fan-out follows the same completed-write rule and sends to members
+concurrently. A positive channel receipt lists only successful members. If every
+matched member write fails, it is negative with `recipient_transport_unavailable`,
+and a retry with the same client message ID remains eligible.
 
 ## Session-bound delivery (wire version 3)
 
