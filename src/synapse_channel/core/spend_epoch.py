@@ -32,8 +32,10 @@ import base64
 import binascii
 import hashlib
 import json
+import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.errors import SynapseError
@@ -196,15 +198,38 @@ def verify_owner_revocation(document: object, keys: Mapping[str, str]) -> OwnerR
     return OwnerRevocation(key_id=str(key_id), **body)
 
 
-def usable_grant(grant: Mapping[str, Any], revocations: Iterable[OwnerRevocation]) -> bool:
-    """Return whether a peer may start consumption on ``grant``.
+def usable_grant(
+    grant: Mapping[str, Any],
+    revocations: Iterable[OwnerRevocation],
+    *,
+    now: datetime,
+    min_remaining_seconds: float = 0.0,
+) -> bool:
+    """Return whether a peer may *start* consumption on ``grant`` at ``now``.
 
-    A grant of a revoked epoch, or of any earlier epoch of the same pool, must not
-    start new consumption. It may still be settled.
+    Starting work needs all of:
+    - the owner admitted the grant;
+    - it has not expired: ``expires_at`` must be later than ``now`` plus
+      ``min_remaining_seconds``, a margin that also covers clock skew between this host
+      and the owner. A missing or unreadable expiry fails closed;
+    - no verified revocation fences its epoch, or any later one, for the same pool.
+
+    A grant that fails this check may still be settled, and its exposure stays counted
+    until the owner records a final settlement or a reconciliation.
     """
+    if now.tzinfo is None:
+        raise SpendEpochError("the evaluation time must include a UTC offset")
+    if not math.isfinite(min_remaining_seconds) or min_remaining_seconds < 0:
+        raise SpendEpochError("min_remaining_seconds must be a non-negative number")
     pool_id = grant.get("pool_id")
     epoch = grant.get("epoch")
     if grant.get("admitted") is not True or isinstance(epoch, bool) or not isinstance(epoch, int):
+        return False
+    try:
+        expires_at = timestamp(grant.get("expires_at"), "expires_at")
+    except SpendPoolError:
+        return False
+    if expires_at <= now + timedelta(seconds=min_remaining_seconds):
         return False
     return all(
         revocation.pool_id != pool_id or epoch > revocation.revoked_epoch

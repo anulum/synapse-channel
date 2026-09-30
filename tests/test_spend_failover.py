@@ -91,11 +91,11 @@ def test_a_new_owner_takes_over_and_the_old_epoch_is_fenced(tmp_path: Path) -> N
     assert reasons == ["epoch_revoked"]
 
     revocation = verify_owner_revocation(signed, {"operator-1": KEYS[0]["public_key"]})
-    assert usable_grant(prior, [revocation]) is False
-    assert usable_grant(fresh, [revocation]) is True
-    assert usable_grant({**prior, "pool_id": "pool-b"}, [revocation]) is True
-    assert usable_grant({"admitted": False, "reason": NOT_ADMITTED}, []) is False
-    assert usable_grant({**fresh, "epoch": True}, []) is False
+    assert usable_grant(prior, [revocation], now=T0) is False
+    assert usable_grant(fresh, [revocation], now=T0) is True
+    assert usable_grant({**prior, "pool_id": "pool-b"}, [revocation], now=T0) is True
+    assert usable_grant({"admitted": False, "reason": NOT_ADMITTED}, [], now=T0) is False
+    assert usable_grant({**fresh, "epoch": True}, [], now=T0) is False
 
 
 def test_a_stale_copy_another_owner_or_a_wrong_epoch_is_refused(tmp_path: Path) -> None:

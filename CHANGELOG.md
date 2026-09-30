@@ -13,6 +13,31 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **F02 spend ledger: findings from an independent correctness review**
+  (SCPN-PHASE-ORCHESTRATOR/codex-01a0eea6, 2026-09-30). Enforcement is still not
+  activated.
+  - **Exact arithmetic.** Amounts, exposures, sums and comparisons used the
+    default Decimal context (28 digits), so a small fixed fee could be rounded
+    away at admission.
+    - Quantities now have a bounded exact domain: at most 30 digits, at most 18
+      decimals, and a magnitude below 10**19.
+    - Every ledger computation runs in a context that traps rounding, so it
+      refuses instead of rounding.
+    - A ledger row outside the domain, possible from 0.99.35, makes evaluation
+      fail closed.
+  - **Expiry at the use boundary.** `usable_grant` now needs `now` and accepts a
+    `min_remaining_seconds` margin for clock skew. An expired grant, including
+    a replayed or queried one, is not usable to start work. Its exposure still
+    counts until it is settled or reconciled.
+  - **Quota windows.** A reservation's idempotency scope and record now include
+    the configured window.
+    - A new window has its own keys and its own settled usage.
+    - Unresolved exposure from earlier windows still counts.
+    - The unit, billing surface, account or tax basis cannot change while
+      reservations are unresolved.
+
 ## [0.99.35] - 2026-09-30
 
 ### Added

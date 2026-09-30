@@ -30,7 +30,19 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from decimal import (
+    Clamped,
+    Context,
+    Decimal,
+    DivisionByZero,
+    Inexact,
+    InvalidOperation,
+    Overflow,
+    Rounded,
+    Subnormal,
+    Underflow,
+    localcontext,
+)
 from typing import Any
 
 from synapse_channel.core.errors import SynapseError
@@ -43,6 +55,35 @@ PROVENANCES = ("measured", "billed")
 
 MAX_LIMIT = 1_000_000
 """Upper bound on any configured integer limit."""
+
+MAX_DIGITS = 30
+"""Most significant digits in one quantity."""
+
+MIN_EXPONENT = -18
+"""Finest quantity step: at most 18 fractional digits."""
+
+MAX_ADJUSTED = 18
+"""Largest quantity magnitude: below 10**19."""
+
+EXACT = Context(
+    prec=96,
+    traps=[
+        Clamped,
+        DivisionByZero,
+        Inexact,
+        InvalidOperation,
+        Overflow,
+        Rounded,
+        Subnormal,
+        Underflow,
+    ],
+)
+"""Arithmetic context for every spend computation: any rounding raises instead of rounding.
+
+Quantities are bounded (``MAX_DIGITS``, ``MIN_EXPONENT``, ``MAX_ADJUSTED``), so exposures,
+sums and comparisons of any realistic number of them fit ``prec`` exactly. Should a
+computation ever need to round, it raises, and the decision fails closed.
+"""
 
 _TOKEN = re.compile(r"[A-Za-z0-9._:/@-]{1,128}")
 _CURRENCY = re.compile(r"[A-Z]{3}")
@@ -72,6 +113,17 @@ def quantity(value: object, name: str) -> Decimal:
         raise SpendPoolError(f"{name} must be a decimal string") from exc
     if not parsed.is_finite() or parsed < 0:
         raise SpendPoolError(f"{name} must be a finite, non-negative amount")
+    exponent = parsed.as_tuple().exponent
+    if (
+        len(parsed.as_tuple().digits) > MAX_DIGITS
+        or not isinstance(exponent, int)
+        or exponent < MIN_EXPONENT
+        or parsed.adjusted() > MAX_ADJUSTED
+    ):
+        raise SpendPoolError(
+            f"{name} must have at most {MAX_DIGITS} digits, {-MIN_EXPONENT} decimals "
+            f"and a magnitude below 10**{MAX_ADJUSTED + 1}"
+        )
     return parsed
 
 
@@ -160,9 +212,15 @@ class PoolConfig:
     cause: str
     revocation_keys: Mapping[str, str] = field(default_factory=dict)
 
+    @property
+    def window_id(self) -> str:
+        """Return the identity of the configured quota window."""
+        return f"{self.window_starts_at.isoformat()}/{self.window_ends_at.isoformat()}"
+
     def exposure(self, upper_bound: Decimal) -> Decimal:
-        """Return the exposure a call with ``upper_bound`` reserves (C2)."""
-        return max(upper_bound, self.minimum_charge) + self.fixed_fee
+        """Return the exposure a call with ``upper_bound`` reserves (C2), exactly."""
+        with localcontext(EXACT):
+            return max(upper_bound, self.minimum_charge) + self.fixed_fee
 
 
 def validate_config(document: object) -> PoolConfig:
@@ -336,6 +394,7 @@ class Reservation:
     exposure: Decimal
     expires_at: datetime
     epoch: int
+    window: str | None = None
     settled: Decimal = Decimal(0)
     closed: bool = False
     overrun_open: bool = False
@@ -343,7 +402,8 @@ class Reservation:
 
     def open_exposure(self) -> Decimal:
         """Return what this reservation still holds against the bound."""
-        return Decimal(0) if self.closed else max(self.exposure - self.settled, Decimal(0))
+        with localcontext(EXACT):
+            return Decimal(0) if self.closed else max(self.exposure - self.settled, Decimal(0))
 
 
 @dataclass
@@ -355,13 +415,30 @@ class PoolState:
     reservations: dict[str, Reservation] = field(default_factory=dict)
     revoked_epochs: set[int] = field(default_factory=set)
 
-    def settled(self) -> Decimal:
-        """Return every amount charged to the pool."""
-        return sum((item.settled for item in self.reservations.values()), Decimal(0))
+    def settled(self, window: str) -> Decimal:
+        """Return what reservations of ``window`` charged, exactly.
+
+        A reservation recorded before grants carried their window (Core 0.99.35) counts
+        in every window, conservatively.
+        """
+        with localcontext(EXACT):
+            return sum(
+                (
+                    item.settled
+                    for item in self.reservations.values()
+                    if item.window is None or item.window == window
+                ),
+                Decimal(0),
+            )
 
     def outstanding(self) -> Decimal:
-        """Return exposure still held by open reservations, expired or not (C1, C3)."""
-        return sum((item.open_exposure() for item in self.reservations.values()), Decimal(0))
+        """Return exposure still held by open reservations of any window (C1, C3)."""
+        with localcontext(EXACT):
+            return sum((item.open_exposure() for item in self.reservations.values()), Decimal(0))
+
+    def unresolved(self) -> bool:
+        """Return whether any reservation is still open."""
+        return any(not item.closed for item in self.reservations.values())
 
     def overruns(self) -> tuple[str, ...]:
         """Return the reservations whose overrun still blocks new grants."""
@@ -393,12 +470,14 @@ def fold(events: Iterable[Mapping[str, Any]]) -> PoolState:
                 exposure=Decimal(body["exposure"]),
                 expires_at=timestamp(body["expires_at"], "expires_at"),
                 epoch=int(body["epoch"]),
+                window=body.get("window"),
             )
         elif kind == "settlement":
             reservation = state.reservations[body["reservation_id"]]
             amount = Decimal(body["amount"])
             reservation.usage[body["usage_ref"]] = (amount, bool(body["final"]))
-            reservation.settled += amount
+            with localcontext(EXACT):
+                reservation.settled += amount
             if reservation.settled > reservation.exposure:
                 reservation.overrun_open = True
             if body["final"]:

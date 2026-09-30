@@ -33,6 +33,7 @@ import sqlite3
 from collections.abc import Iterator, Mapping
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta
+from decimal import Decimal, DecimalException, localcontext
 from pathlib import Path
 from typing import Any, Final, cast
 
@@ -50,6 +51,7 @@ from synapse_channel.core.spend_epoch import (
     verify_owner_revocation,
 )
 from synapse_channel.core.spend_pool import (
+    EXACT,
     PROVENANCES,
     PoolConfig,
     PoolState,
@@ -88,6 +90,22 @@ _SETTLE_FIELDS = frozenset(
 )
 _RECONCILE_FIELDS = frozenset({"pool_id", "reservation_id", "amount", "evidence_ref", "cause"})
 _QUERY_FIELDS = frozenset({"pool_id", "seat", "task", "operation", "key"})
+
+
+def _checked_fold(events: list[dict[str, Any]]) -> PoolState:
+    """Fold a pool's events, failing closed on a record outside the exact domain."""
+    try:
+        return fold(events)
+    except (SpendPoolError, DecimalException) as exc:
+        raise SpendLedgerError(
+            f"the ledger holds a record this version cannot evaluate exactly: {exc}"
+        ) from exc
+
+
+def _exact_sum(*values: Decimal) -> Decimal:
+    """Add quantities exactly; a sum that would round raises instead."""
+    with localcontext(EXACT):
+        return sum(values, Decimal(0))
 
 
 class SpendLedgerError(SynapseError, ValueError):
@@ -183,6 +201,21 @@ class SpendLedger:
             connection.execute("COMMIT")
 
     @staticmethod
+    def _reserve_scope(state: PoolState, caller: str, request: Mapping[str, Any]) -> str:
+        """Return the idempotency scope: caller, pool, window, seat, task, operation, key."""
+        window = state.config.window_id if state.config is not None else ""
+        return _scope(
+            "reserve",
+            caller,
+            str(request["pool_id"]),
+            window,
+            str(request["seat"]),
+            str(request["task"]),
+            str(request["operation"]),
+            str(request["key"]),
+        )
+
+    @staticmethod
     def _events(connection: sqlite3.Connection, pool_id: str) -> list[dict[str, Any]]:
         rows = connection.execute(
             "SELECT seq, kind, body FROM events WHERE pool_id = ? ORDER BY seq", (pool_id,)
@@ -191,7 +224,7 @@ class SpendLedger:
 
     @classmethod
     def _pool(cls, connection: sqlite3.Connection, pool_id: str) -> PoolState:
-        return fold(cls._events(connection, pool_id))
+        return _checked_fold(cls._events(connection, pool_id))
 
     @staticmethod
     def _append(
@@ -249,6 +282,14 @@ class SpendLedger:
             state = self._pool(connection, config.pool_id)
             if state.config is not None and config.epoch < state.config.epoch:
                 raise SpendLedgerError("the owner epoch cannot go backwards")
+            if state.config is not None and state.unresolved():
+                previous = state.config
+                identity = ("unit", "billing_surface", "account_ref", "tax")
+                if any(getattr(previous, name) != getattr(config, name) for name in identity):
+                    raise SpendLedgerError(
+                        "the unit, billing surface, account or tax basis cannot change "
+                        "while reservations are unresolved; settle or reconcile them first"
+                    )
             self._append(connection, config.pool_id, "pool_config", body, now)
         return {"pool_id": config.pool_id, "revision": state.revision + 1}
 
@@ -267,22 +308,17 @@ class SpendLedger:
             request = validate_request(document)
         except SpendPoolError:
             return _refusal("admitted")
-        scope = _scope(
-            "reserve",
-            caller,
-            request.pool_id,
-            request.seat,
-            request.task,
-            request.operation,
-            request.key,
-        )
         digest = _digest({"caller": caller, **request.document()})
         with self._transaction() as connection:
+            state = self._pool(connection, request.pool_id)
+            scope = self._reserve_scope(state, caller, request.document())
             stored = self._stored(connection, scope, digest, "admitted")
             if stored is not None:
                 return stored
-            state = self._pool(connection, request.pool_id)
-            reason = self._refusal_reason(state, caller, request, now)
+            try:
+                reason = self._refusal_reason(state, caller, request, now)
+            except DecimalException as exc:
+                raise SpendLedgerError("exact arithmetic would have to round") from exc
             if reason is not None:
                 self._append(
                     connection,
@@ -319,7 +355,11 @@ class SpendLedger:
                 "agents_exceeded",
             ),
             (
-                state.settled() + state.outstanding() + config.exposure(request.upper_bound)
+                _exact_sum(
+                    state.settled(config.window_id),
+                    state.outstanding(),
+                    config.exposure(request.upper_bound),
+                )
                 > config.hard_bound,
                 "bound_exceeded",
             ),
@@ -352,6 +392,7 @@ class SpendLedger:
             "epoch": config.epoch,
             "config_revision": state.revision,
             "expires_at": expires_at.isoformat(),
+            "window": config.window_id,
         }
         sequence = self._append(connection, request.pool_id, "grant", body, now)
         return {
@@ -469,16 +510,8 @@ class SpendLedger:
         except SpendPoolError:
             return {"found": False}
         values = dict(zip(sorted(_QUERY_FIELDS), parts, strict=True))
-        scope = _scope(
-            "reserve",
-            caller,
-            values["pool_id"],
-            values["seat"],
-            values["task"],
-            values["operation"],
-            values["key"],
-        )
         with closing(self._connect()) as connection:
+            scope = self._reserve_scope(self._pool(connection, values["pool_id"]), caller, values)
             row = connection.execute(
                 "SELECT response FROM operations WHERE scope = ?", (scope,)
             ).fetchone()
@@ -500,7 +533,11 @@ class SpendLedger:
         config = state.config
         if config is None:
             raise SpendLedgerError("no such pool")
-        settled, outstanding = state.settled(), state.outstanding()
+        try:
+            settled, outstanding = state.settled(config.window_id), state.outstanding()
+            headroom = _exact_sum(config.hard_bound, -settled, -outstanding)
+        except DecimalException as exc:
+            raise SpendLedgerError("exact arithmetic would have to round") from exc
         return {
             "pool_id": pool_id,
             "owner_hub_id": config.owner_hub_id,
@@ -511,7 +548,8 @@ class SpendLedger:
             "hard_bound": str(config.hard_bound),
             "settled": str(settled),
             "outstanding": str(outstanding),
-            "headroom": str(config.hard_bound - settled - outstanding),
+            "headroom": str(headroom),
+            "window": config.window_id,
             "overruns": list(state.overruns()),
             "active_agents": len(state.active_seats(now)),
         }
@@ -541,7 +579,7 @@ class SpendLedger:
         """
         with closing(self._connect()) as connection:
             events = self._events(connection, pool_id)
-        state = fold(events)
+        state = _checked_fold(events)
         if state.config is None:
             raise SpendLedgerError("no such pool")
         return {
@@ -555,7 +593,7 @@ class SpendLedger:
         self, events: list[dict[str, Any]], document: object
     ) -> tuple[PoolState, OwnerRevocation]:
         """Verify a signed revocation against the pool's configured operator keys."""
-        state = fold(events)
+        state = _checked_fold(events)
         if state.config is None:
             raise SpendLedgerError("no such pool")
         try:
