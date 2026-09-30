@@ -132,9 +132,35 @@ The Python API is `synapse_channel.core.attachment_transport.request_attachment`
 It checks the source hub id on every response, negotiates version six before
 requesting content, bounds frames and chunks, validates response fields and returns
 chunk bodies as bytes. Across hosts, supply a verifying `ssl_context` and `wss://`
-URI; an identity-key registration can prove the recipient through a TLS proxy.
-The source id check supplements TLS server authentication. The caller validates the
-assembled length and complete SHA-256 digest before committing to its local Core
+URI; plain `ws://` is refused outside numeric loopback or `localhost`. An
+identity-key registration can prove the recipient through a TLS proxy.
+The source id check supplements TLS server authentication. A supplied context
+must verify the server certificate and hostname, or the caller must pass an exact
+`source_certificate_pin="sha256:<hex>"`. The live pin is checked immediately after
+the TLS handshake, before registration or a connection token is sent. This supports
+owner-pinned private certificates without treating a disabled CA check as trust.
+The caller validates the assembled length and complete SHA-256 digest before committing to its local Core
 store; interrupted local Core uploads still require a new session-bound token.
 Fleet transfer staging and resumability are separate consumer responsibilities.
 Older peers and clients keep their earlier local attachment and forwarding APIs.
+
+
+### Private owner read audit
+
+The source's private `attachments.sqlite3` ledger retains the most recent 256
+peer read decisions across restarts. Each entry names the bound recipient,
+validated scope and digest, `info`/`read` (or `invalid`), timestamp and whether
+content was served. Malformed identifiers are omitted and recipient names are
+bounded to 128 characters. No bytes, provenance, connection tokens or grant
+contents are recorded. An atomic SQLite trigger bounds retention on every insert;
+a failed audit write refuses the read with the ordinary fixed unavailable result.
+The local owner API is `AttachmentStore.peer_read_audit()`. No seat, peer, HTTP or
+federated-log API exports these entries; filesystem custody remains owner-only.
+
+Every chunk request reloads and parses the policy (at most 64 KiB and 256 grants)
+and writes one audit decision. This intentionally repeats file I/O to apply
+revocation on the next request. Existing source integrity checks also hash the
+complete bounded object before returning a chunk. A maximum 8 MiB object requires
+256 data requests at the 32 KiB chunk limit; each incurs those checks. Keep large
+artifacts on owner-controlled artifact storage and tune transfer concurrency to
+the source's storage capacity.

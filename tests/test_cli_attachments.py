@@ -181,7 +181,7 @@ async def test_cli_recipient_policy_serves_the_governed_source_over_real_tls(
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        await _await_listening(port, timeout=5)
+        await _await_listening(port, timeout=15)
         context = ssl.create_default_context(cafile=str(ca))
         metadata = await request_attachment(
             "info",

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import ipaddress
 import json
 import math
 import ssl
@@ -19,6 +20,7 @@ from typing import Any
 
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import WebSocketException
+from websockets.uri import parse_uri
 
 from synapse_channel.core.attachment_store import (
     MAX_ATTACHMENT_BYTES,
@@ -33,6 +35,7 @@ from synapse_channel.core.protocol import (
     build_envelope,
     loads_bounded,
 )
+from synapse_channel.core.tls import live_peer_certificate_pin
 
 
 async def _receive(socket: ClientConnection, kind: str, source_hub_id: str) -> dict[str, Any]:
@@ -101,6 +104,32 @@ def _validate_result(
     return {"scope": scope, "digest": digest, "offset": offset, "body": body, "eof": frame["eof"]}
 
 
+def _require_safe_transport(uri: str, context: ssl.SSLContext | None, pin: str | None) -> None:
+    try:
+        address = parse_uri(uri)
+    except (WebSocketException, ValueError, TypeError) as exc:
+        raise AttachmentError("attachment source request failed") from exc
+    loopback = address.host == "localhost"
+    if not loopback:
+        try:
+            loopback = ipaddress.ip_address(address.host).is_loopback
+        except ValueError:
+            loopback = False
+    if not address.secure and (not loopback or pin is not None):
+        raise AttachmentError("attachment source requires TLS outside loopback or with a pin")
+    if pin is not None:
+        if not isinstance(pin, str) or not pin.startswith("sha256:"):
+            raise AttachmentError("invalid attachment source certificate pin")
+        AttachmentStore.validate_digest(pin.removeprefix("sha256:"))
+    if (
+        address.secure
+        and context is not None
+        and (context.verify_mode != ssl.CERT_REQUIRED or not context.check_hostname)
+        and pin is None
+    ):
+        raise AttachmentError("attachment source requires certificate verification or a pin")
+
+
 async def request_attachment(
     action: str,
     *,
@@ -113,6 +142,7 @@ async def request_attachment(
     token: str | None = None,
     signer: PeerRegistrationSigner | None = None,
     ssl_context: ssl.SSLContext | None = None,
+    source_certificate_pin: str | None = None,
     timeout: float = 10.0,
 ) -> dict[str, Any]:
     """Read metadata or one chunk after negotiating the named source hub's wire version.
@@ -137,6 +167,9 @@ async def request_attachment(
         Identity registration proof for an identity-key serving grant.
     ssl_context : ssl.SSLContext or None
         Verifying TLS context, including the recipient client certificate for mTLS.
+    source_certificate_pin : str or None
+        Exact ``sha256:<hex>`` source certificate pin, checked before registration.
+        Required when the supplied TLS context disables CA or hostname verification.
     timeout : float
         Finite positive deadline covering connect, registration and the request.
 
@@ -151,6 +184,7 @@ async def request_attachment(
     AttachmentError
         For invalid arguments, unavailable grants, incompatible peers or transport faults.
     """
+    _require_safe_transport(uri, ssl_context, source_certificate_pin)
     AttachmentStore.validate_scope(scope)
     AttachmentStore.validate_digest(digest)
     if (
@@ -170,6 +204,11 @@ async def request_attachment(
         if ssl_context is not None:
             options["ssl"] = ssl_context
         async with connect(uri, **options) as socket:
+            if (
+                source_certificate_pin is not None
+                and live_peer_certificate_pin(socket.transport) != source_certificate_pin
+            ):
+                raise AttachmentError("attachment source certificate pin mismatch")
             fields: dict[str, Any] = {"protocol_version": MIN_ATTACHMENT_PEER_PROTOCOL_VERSION}
             if token is not None:
                 fields["token"] = token

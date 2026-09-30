@@ -774,5 +774,8 @@ and namespace trust, then its exact recipient grant before storage. Private
 chunk with its scope, digest, offset and EOF. Handler refusals contain only
 `ok: false` and `error: "attachment unavailable"` beyond the normal envelope.
 Connection authentication failures retain their existing types. No content is
-broadcast or replicated into the event log. See the [complete attachment
+broadcast or replicated into the event log. Bounded private owner audit decisions
+remain in the separate attachment ledger. Peer transports require TLS outside
+loopback and verify the source certificate by CA/hostname or an explicit live pin
+before registration. See the [complete attachment
 contract](attachments.md#recipient-granted-cross-hub-reads-wire-version-6).

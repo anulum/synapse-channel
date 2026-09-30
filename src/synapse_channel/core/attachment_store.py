@@ -85,6 +85,15 @@ class AttachmentStore:
               digest TEXT NOT NULL, length INTEGER NOT NULL, received INTEGER NOT NULL,
               media_type TEXT NOT NULL, provenance TEXT NOT NULL, expires_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS peer_read_audit (
+              seq INTEGER PRIMARY KEY, read_at REAL NOT NULL, recipient TEXT NOT NULL,
+              scope TEXT NOT NULL, digest TEXT NOT NULL, action TEXT NOT NULL,
+              allowed INTEGER NOT NULL CHECK(allowed IN (0,1))
+            );
+            CREATE TRIGGER IF NOT EXISTS peer_read_audit_retention
+              AFTER INSERT ON peer_read_audit BEGIN
+                DELETE FROM peer_read_audit WHERE seq <= NEW.seq - 256;
+              END;
             CREATE TABLE IF NOT EXISTS refs (
               scope TEXT NOT NULL, digest TEXT NOT NULL, ref TEXT NOT NULL,
               PRIMARY KEY(scope,digest,ref),
@@ -356,6 +365,50 @@ class AttachmentStore:
                 self.db.execute("DELETE FROM objects WHERE scope=? AND digest=?", (scope, digest))
                 (self.objects / filename).unlink(missing_ok=True)
         return [str(digest) for digest, _ in rows]
+
+    def record_peer_read(
+        self, recipient: str, scope: object, digest: object, action: object, *, allowed: bool
+    ) -> None:
+        """Record one decision privately, retaining at most 256 entries atomically.
+
+        Malformed object identifiers are omitted. This never looks up an object or
+        records its bytes, provenance, token or policy. A failed audit write prevents
+        the peer handler from serving content.
+        """
+        now = float(self._clock())
+        if not math.isfinite(now) or now <= 0:
+            raise AttachmentError("invalid attachment audit time")
+        self.db.execute(
+            "INSERT INTO peer_read_audit(read_at,recipient,scope,digest,action,allowed) "
+            "VALUES(?,?,?,?,?,?)",
+            (
+                now,
+                recipient[:128],
+                scope if isinstance(scope, str) and _SCOPE.fullmatch(scope) else "",
+                digest if isinstance(digest, str) and _DIGEST.fullmatch(digest) else "",
+                action if action in ("info", "read") else "invalid",
+                int(allowed),
+            ),
+        )
+
+    def peer_read_audit(self) -> list[dict[str, Any]]:
+        """Return the private owner's bounded read decisions, oldest first.
+
+        This local storage API has no HTTP, peer, seat or federated-log endpoint.
+        Entries survive a store restart and are independent of object retention.
+        """
+        return [
+            {
+                "sequence": row[0],
+                "read_at": row[1],
+                "recipient": row[2],
+                "scope": row[3],
+                "digest": row[4],
+                "action": row[5],
+                "allowed": bool(row[6]),
+            }
+            for row in self.db.execute("SELECT * FROM peer_read_audit ORDER BY seq")
+        ]
 
     def close(self) -> None:
         """Close the ledger after the hub stops serving."""

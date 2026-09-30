@@ -332,7 +332,10 @@ def test_reservation_database_failure_removes_staging_file(tmp_path: Path) -> No
         store.close()
 
 
-def test_commit_database_failure_removes_unpublished_object(tmp_path: Path) -> None:
+@pytest.mark.parametrize("abort_mode", ["ABORT", "ROLLBACK"])
+def test_commit_database_failure_removes_unpublished_object(
+    tmp_path: Path, abort_mode: str
+) -> None:
     """A failed metadata commit leaves neither visible bytes nor reserved quota."""
     store = AttachmentStore(tmp_path / "private")
     digest = hashlib.sha256(b"safe").hexdigest()
@@ -349,7 +352,7 @@ def test_commit_database_failure_removes_unpublished_object(tmp_path: Path) -> N
         store.chunk(upload_id, SENDER, 0, b"safe")
         store.db.execute(
             "CREATE TRIGGER reject_object BEFORE INSERT ON objects "
-            "BEGIN SELECT RAISE(ABORT,'metadata refused'); END"
+            f"BEGIN SELECT RAISE({abort_mode},'metadata refused'); END"
         )
         with pytest.raises(sqlite3.IntegrityError, match="metadata refused"):
             store.commit(upload_id, SENDER)
@@ -357,5 +360,57 @@ def test_commit_database_failure_removes_unpublished_object(tmp_path: Path) -> N
             store.info("proj", digest)
         assert list(store.objects.iterdir()) == []
         assert store.db.execute("SELECT COUNT(*) FROM uploads").fetchone()[0] == 0
+    finally:
+        store.close()
+
+
+def test_peer_read_audit_is_private_bounded_and_survives_restart(tmp_path: Path) -> None:
+    root = tmp_path / "private"
+    store = AttachmentStore(root, clock=lambda: 100.0)
+    digest = hashlib.sha256(b"never stored").hexdigest()
+    try:
+        assert store.peer_read_audit() == []
+        for index in range(260):
+            store.record_peer_read("hub-b", "proj", digest, "info", allowed=index % 2 == 0)
+        entries = store.peer_read_audit()
+        assert len(entries) == 256
+        assert entries[0]["sequence"] == 5 and entries[-1]["sequence"] == 260
+        assert entries[-1] == {
+            "sequence": 260,
+            "read_at": 100.0,
+            "recipient": "hub-b",
+            "scope": "proj",
+            "digest": digest,
+            "action": "info",
+            "allowed": False,
+        }
+        with pytest.raises(AttachmentError, match="attachment unavailable"):
+            store.info("proj", digest)
+        assert list(store.objects.iterdir()) == []
+    finally:
+        store.close()
+    reopened = AttachmentStore(root)
+    try:
+        assert reopened.peer_read_audit() == entries
+        assert (root / "attachments.sqlite3").stat().st_mode & 0o777 == 0o600
+        reopened.record_peer_read("x" * 200, "../secret", "not-a-digest", {}, allowed=False)
+        latest = reopened.peer_read_audit()[-1]
+        assert latest["recipient"] == "x" * 128
+        assert latest["scope"] == latest["digest"] == ""
+        assert latest["action"] == "invalid" and latest["allowed"] is False
+        assert len(reopened.peer_read_audit()) == 256
+        reopened.record_peer_read("hub-b", None, [], "read", allowed=True)
+        assert reopened.peer_read_audit()[-1]["action"] == "read"
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize("now", [0.0, float("nan"), float("inf")])
+def test_peer_read_audit_refuses_invalid_clock(tmp_path: Path, now: float) -> None:
+    store = AttachmentStore(tmp_path / "private", clock=lambda: now)
+    try:
+        with pytest.raises(AttachmentError, match="invalid attachment audit time"):
+            store.record_peer_read("hub-b", "proj", "a" * 64, "read", allowed=False)
+        assert store.peer_read_audit() == []
     finally:
         store.close()

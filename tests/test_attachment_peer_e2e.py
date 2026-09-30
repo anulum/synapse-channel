@@ -51,6 +51,7 @@ from synapse_channel.core.tls import (
     MTLSTrustedPeer,
     build_server_ssl_context,
     certificate_sha256_pin,
+    pin_trust_client_context,
 )
 
 pytestmark = pytest.mark.real_hub
@@ -509,3 +510,59 @@ async def test_revoked_or_expired_peering_stops_source_reads(source: Source, rev
     async with running_hub(source.hub) as (_, uri):
         with pytest.raises(AttachmentError, match="attachment unavailable"):
             await _ask(source, uri)
+
+
+async def test_private_audit_records_decisions_and_failure_denies_content(source: Source) -> None:
+    async with running_hub(source.hub) as (_, uri):
+        await _ask(source, uri)
+        source.write_grants([])
+        with pytest.raises(AttachmentError, match="attachment unavailable"):
+            await _ask(source, uri, "read", offset=0)
+        source.write_grants([source.grant()])
+        records = source.store.peer_read_audit()
+        assert [(entry["action"], entry["allowed"]) for entry in records] == [
+            ("info", True),
+            ("read", False),
+        ]
+        assert all(
+            entry["recipient"] == RECIPIENT and entry["digest"] == DIGEST for entry in records
+        )
+        assert all("body" not in entry and "metadata" not in entry for entry in records)
+        source.store.db.execute("PRAGMA query_only=ON")
+        with pytest.raises(AttachmentError, match="attachment unavailable"):
+            await _ask(source, uri)
+        source.store.db.execute("PRAGMA query_only=OFF")
+        assert source.store.peer_read_audit() == records
+
+
+async def test_pinned_source_tls_is_verified_before_registration(
+    source: Source, tmp_path: Path
+) -> None:
+    ca_key, ca_cert = certificate_authority("attachment-source-pin-ca")
+    server = issue_identity(tmp_path, "pinned-server", ca_key=ca_key, ca_cert=ca_cert, server=True)
+    context = build_server_ssl_context(certfile=server.cert, keyfile=server.key)
+    port = _free_port()
+    task = asyncio.create_task(source.hub.serve("localhost", port, ssl_context=context))
+    try:
+        await _await_listening(port)
+        uri = f"wss://localhost:{port}"
+        result = await _ask(
+            source,
+            uri,
+            ssl_context=pin_trust_client_context(),
+            source_certificate_pin=certificate_sha256_pin(server.cert),
+        )
+        assert result["length"] == len(BODY)
+        assert len(source.store.peer_read_audit()) == 1
+        with pytest.raises(AttachmentError, match="certificate pin mismatch"):
+            await _ask(
+                source,
+                uri,
+                ssl_context=pin_trust_client_context(),
+                source_certificate_pin="sha256:" + "0" * 64,
+            )
+        assert len(source.store.peer_read_audit()) == 1
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task

@@ -26,6 +26,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Peer attachment transports refuse plaintext connections outside loopback and
+  require verified server certificates or an exact live certificate pin before
+  registration. Source reads now require a successful bounded private audit write;
+  the owner ledger retains the latest 256 decisions across restarts without content.
+
 - **F02 spend ledger: findings from an independent correctness review and its
   follow-up** (SCPN-PHASE-ORCHESTRATOR/codex-01a0eea6, 2026-09-30). Enforcement
   is still not activated.

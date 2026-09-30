@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import ssl
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -200,3 +201,34 @@ async def test_source_error_is_fixed_and_never_echoes_received_text(source: Sour
                 await _request(uri, source)
     with pytest.raises(AttachmentError, match="^attachment source request failed$"):
         await _request("not-a-websocket-uri", source)
+
+
+@pytest.mark.parametrize("uri", ["ws://example.com:1", "ws://192.0.2.1:1", "ws://[2001:db8::1]:1"])
+async def test_non_loopback_plaintext_is_refused_before_credentials(
+    source: Source, uri: str
+) -> None:
+    with pytest.raises(AttachmentError, match="requires TLS"):
+        await _request(uri, source)
+
+
+async def test_loopback_numeric_address_keeps_local_transport(source: Source) -> None:
+    with pytest.raises(AttachmentError, match="attachment source request failed"):
+        await _request("ws://127.0.0.1:1", source)
+
+
+@pytest.mark.parametrize("disable_ca", [False, True])
+async def test_unverified_tls_context_requires_source_pin(source: Source, disable_ca: bool) -> None:
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    if disable_ca:
+        context.verify_mode = ssl.CERT_NONE
+    with pytest.raises(AttachmentError, match="certificate verification or a pin"):
+        await _request("wss://localhost:1", source, ssl_context=context)
+
+
+async def test_certificate_pin_requires_tls_and_canonical_digest(source: Source) -> None:
+    for pin in ("wrong-format", "sha256:UPPERCASE", 123):
+        with pytest.raises(AttachmentError):
+            await _request("wss://localhost:1", source, source_certificate_pin=pin)
+    with pytest.raises(AttachmentError, match="requires TLS"):
+        await _request("ws://localhost:1", source, source_certificate_pin="sha256:" + "a" * 64)
