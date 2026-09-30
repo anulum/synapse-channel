@@ -207,11 +207,11 @@ class SpendLedger:
                 self._migrate_window_scopes(connection)
             elif version != SCHEMA_VERSION:
                 raise SpendLedgerError(f"unsupported spend ledger version {version}")
-        except (sqlite3.Error, SpendLedgerError) as exc:
-            connection.close()
-            if isinstance(exc, SpendLedgerError):
-                raise
-            raise SpendLedgerError("the spend ledger is not a valid database") from exc
+        except BaseException as exc:
+            connection.close()  # on every failure, interrupts included; only sqlite maps
+            if isinstance(exc, sqlite3.Error):
+                raise SpendLedgerError("the spend ledger is not a valid database") from exc
+            raise
         return connection
 
     @contextmanager
@@ -259,9 +259,7 @@ class SpendLedger:
                 parts = scope.split("\x00")
                 if parts[0] != "reserve" or len(parts) != 7:
                     continue
-                answer = json.loads(response)
-                decided = answer["reservation_id"] if answer.get("admitted") is True else scope
-                window = windows.get(decided)
+                window = windows.get(cls._legacy_decision(scope, response))
                 if window is None:
                     raise SpendLedgerError(
                         "a version 1 reservation answer has no matching ledger event; "
@@ -276,6 +274,23 @@ class SpendLedger:
             connection.execute("ROLLBACK")
             raise
         connection.execute("COMMIT")
+
+    @staticmethod
+    def _legacy_decision(scope: str, response: object) -> str:
+        """Return the grant id of a stored grant, or ``scope`` for a stored refusal."""
+        try:
+            answer = json.loads(response) if isinstance(response, str) else None
+        except ValueError:
+            answer = None
+        if isinstance(answer, dict) and answer.get("admitted") is not True:
+            return scope
+        grant_id = answer.get("reservation_id") if isinstance(answer, dict) else None
+        if not isinstance(grant_id, str):
+            raise SpendLedgerError(
+                "a version 1 reservation answer is malformed; "
+                "the ledger needs operator repair before it can be used"
+            )
+        return grant_id
 
     @staticmethod
     def _legacy_windows(connection: sqlite3.Connection) -> dict[str, str]:

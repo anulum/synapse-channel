@@ -42,7 +42,8 @@ All notable changes to this project are documented here.
     - Ledger schema 2. A 0.99.35 ledger (schema 1) is migrated when first
       opened: each stored answer is re-keyed to the window it was decided in, so
       a retry after the upgrade replays it instead of granting twice. A record
-      that cannot be matched refuses the ledger unchanged.
+      that cannot be matched or read refuses the ledger unchanged, and the
+      refused open closes its connection.
     - A 0.99.35 grant, which carries no window, belongs to the window of the
       configuration in effect when it was recorded.
 

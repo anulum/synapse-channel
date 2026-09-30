@@ -2243,8 +2243,8 @@ reaches a peer.
     exposure it was granted with.
 - **Upgrading a 0.99.35 ledger.** The first open migrates it to schema 2. Each
   stored answer is moved to the window it was decided in, so a retry or a query
-  still finds it. A record that cannot be matched refuses the ledger and changes
-  nothing. Once migrated, 0.99.35 refuses to open the ledger.
+  still finds it. A record that cannot be matched or read refuses the ledger and
+  changes nothing. Once migrated, 0.99.35 refuses to open the ledger.
 - **Handing a pool to a new owner.** It takes three pieces of evidence:
   1. `checkpoint --pool ID` gives the ledger sequence and chain digest.
   2. `sign-revocation --key PEM --key-id ID --file BODY.json` signs a revocation

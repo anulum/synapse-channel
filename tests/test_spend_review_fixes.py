@@ -9,7 +9,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import json
+import os
 import sqlite3
 from datetime import timedelta
 from decimal import Context, Decimal, localcontext
@@ -280,6 +283,22 @@ def test_a_settlement_overrun_is_reported_exactly_and_replayed_identically(
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "spend_ledger_core_0_99_35.json"
+K1 = (
+    "('reserve' || char(0) || 'hub-peer' || char(0) || 'pool-a' || char(0) || 'PROJ/alice'"
+    " || char(0) || 't1' || char(0) || 'call-1' || char(0) || 'k1')"
+)
+
+
+def _open_handles(path: Path) -> int:
+    """Count this process's open descriptors on ``path`` (0 where /proc is absent)."""
+    fds = Path("/proc/self/fd")
+    if not fds.is_dir():
+        return 0
+    count = 0
+    for entry in fds.iterdir():
+        with contextlib.suppress(OSError):
+            count += os.readlink(entry) == str(path)
+    return count
 
 
 def _legacy_ledger(tmp_path: Path) -> tuple[SpendLedger, dict[str, Any]]:
@@ -349,6 +368,13 @@ def test_a_core_0_99_35_ledger_is_migrated_without_losing_an_answer(tmp_path: Pa
             "cannot be read for migration",
         ),
         ("UPDATE events SET body = '[]' WHERE kind = 'refusal'", "cannot be read for migration"),
+        (f"UPDATE operations SET response = '[]' WHERE scope = {K1}", "answer is malformed"),
+        (
+            f"UPDATE operations SET response = '{{\"admitted\": true}}' WHERE scope = {K1}",
+            "answer is malformed",
+        ),
+        (f"UPDATE operations SET response = '{{' WHERE scope = {K1}", "answer is malformed"),
+        (f"UPDATE operations SET response = x'00' WHERE scope = {K1}", "answer is malformed"),
     ],
 )
 def test_a_legacy_ledger_that_cannot_be_matched_is_refused(
@@ -358,7 +384,7 @@ def test_a_legacy_ledger_that_cannot_be_matched_is_refused(
     home = tmp_path / "legacy"
     home.mkdir(mode=0o700)
     path = home / "ledger.sqlite3"
-    with sqlite3.connect(path) as connection:
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         for sql in dump["schema"]:
             connection.execute(sql)
         connection.executemany("INSERT INTO events VALUES (?, ?, ?, ?, ?)", dump["events"])
@@ -366,7 +392,11 @@ def test_a_legacy_ledger_that_cannot_be_matched_is_refused(
         connection.execute(statement)
         connection.execute("PRAGMA user_version=1")
     path.chmod(0o600)
+    assert _open_handles(path) == 0
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
     with pytest.raises(SpendLedgerError, match=match):
         SpendLedger(path, owner_hub_id=OWNER)
-    with sqlite3.connect(path) as connection:  # the failed migration changed nothing
+    assert _open_handles(path) == 0  # the refused open closed its connection
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before  # nothing changed
+    with sqlite3.connect(path) as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
