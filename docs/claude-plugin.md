@@ -84,3 +84,5 @@ unexpected or edited files so user work remains available for manual review.
 Neither command rewrites `settings.json`, other skills, plugins, or project
 configuration. Restart Claude Code or use `/reload-plugins` to pick up a
 changed MCP server or hook. A local install does not publish to a marketplace.
+
+A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).

@@ -349,3 +349,5 @@ kommerzielle Nutzung, Zitation und Lizenz — wird im kanonischen
 [englischen README](../../README.md#quick-start) fortgesetzt. Das englische
 Original ist stets maßgeblich; generierte Blöcke (capability snapshot,
 Zitation) existieren nur dort.
+
+Ein Timeout beweist keine Ablehnung. Ein unbekanntes Ergebnis hat Exit-Code `3`; `--confirm-only` prüft die exakte gültige Lease ohne erneute Mutation. [Claim recovery](../git-claims.md#claim-outcomes-and-recovery).

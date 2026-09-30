@@ -49,6 +49,11 @@ async def handle_state_request(
             "State snapshot",
             msg_type=MessageType.STATE_SNAPSHOT,
             target=sender,
+            **(
+                {"request_id": data["request_id"]}
+                if isinstance(data.get("request_id"), str) and 0 < len(data["request_id"]) <= 128
+                else {}
+            ),
             snapshot={
                 **snapshot,
                 "dead_letters": hub.dead_letters.snapshot(),

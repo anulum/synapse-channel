@@ -572,3 +572,5 @@ See [recipient-granted reads](attachments.md#recipient-granted-cross-hub-reads-w
 Python peer consumers use `request_attachment` with a verified source TLS context
 and expected source hub id. The TypeScript seat client retains its version-four
 local attachment API; it has no peer federation transport.
+
+A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).

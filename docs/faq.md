@@ -104,3 +104,5 @@ SaaS use — there is no feature difference between the builds. See
 Open an issue at <https://github.com/anulum/synapse-channel/issues>, or see
 [`SUPPORT.md`](https://github.com/anulum/synapse-channel/blob/main/SUPPORT.md) for the security
 and contact channels.
+
+A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).

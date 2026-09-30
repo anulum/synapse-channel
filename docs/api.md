@@ -272,3 +272,8 @@ These APIs operate on an owner-local ledger, separate from hub events. See the
       members: [entitlement_view]
       show_root_heading: true
       show_source: false
+
+Git claim outcome handling uses `reply_timeout` and `confirm_only` on the native
+runner and MCP bridge/tool. Unknown CLI outcomes exit `3`; confirmation persists
+only the fence of an exact live lease and never replays the mutation.
+See [claim outcomes and recovery](git-claims.md#claim-outcomes-and-recovery).

@@ -117,3 +117,5 @@ component, and it makes no control claim beyond what its parts already enforce.
   required cloud service.
 - "Radar" and "flight recorder" are **audit signals**, not predictions of intent
   or proof that a merge is safe.
+
+A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).

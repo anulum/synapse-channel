@@ -21,15 +21,17 @@ without a real repository.
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
-from synapse_channel.connect_failures import describe_connect_failure, explain_silent_outcome
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.client.claim_confirmation import (
+    DEFAULT_CLAIM_REPLY_TIMEOUT,
+    ClaimIntent,
+    valid_claim_timeout,
+)
 from synapse_channel.core.state import GitContext
+from synapse_channel.git.claim_transport import claim_outcome
 from synapse_channel.git.git_runtime import (
     GitError as GitError,
 )
@@ -148,8 +150,10 @@ async def run_git_claim(
     agent_factory: AgentFactory = SynapseAgent,
     runner: GitRunner = _default_git_runner,
     ready_timeout: float = 5.0,
-    attempts: int = 40,
+    attempts: int | None = None,
     poll_interval: float = 0.05,
+    reply_timeout: float = DEFAULT_CLAIM_REPLY_TIMEOUT,
+    confirm_only: bool = False,
 ) -> int:
     """Resolve the current branch and send a git-scoped claim, printing the outcome.
 
@@ -193,21 +197,32 @@ async def run_git_claim(
     ready_timeout : float, optional
         Seconds to wait for the hub connection readiness event.
     attempts : int, optional
-        Number of claim outcome polling attempts.
+        Legacy deadline override: ``attempts * poll_interval`` seconds.
+        Omit to use ``reply_timeout``. No polling is performed.
     poll_interval : float, optional
-        Seconds to sleep between claim outcome polls.
+        Legacy per-attempt duration, used only with ``attempts``.
+    reply_timeout : float, optional
+        Deadline for each send/reply exchange, including confirmation. Defaults
+        to 30 seconds; must be finite, positive and at most 300 seconds.
+    confirm_only : bool, optional
+        Read and verify the existing exact lease without claiming or renewing it.
 
     Returns
     -------
     int
-        ``0`` on a granted claim; ``1`` when git fails, the hub is unreachable,
-        or the claim is denied.
+        ``0`` on a grant or confirmed live lease; ``1`` on Git/readiness failure
+        or explicit denial; ``2`` on an invalid deadline; ``3`` when the outcome
+        remains unknown. Unknown never authorizes edits or implies a denial.
     """
+    deadline = reply_timeout if attempts is None else attempts * poll_interval
+    if not valid_claim_timeout(deadline) or not valid_claim_timeout(ready_timeout):
+        print("git claim refused: deadlines must be finite, positive and at most 300 seconds")
+        return 2
     try:
         branch = resolve_branch(runner=runner)
         repo = resolve_repo(runner=runner)
-    except GitError as exc:
-        print(f"git error: {exc}")
+    except GitError:
+        print("git error: could not resolve the current repository and branch")
         return 1
     repo_root = Path(repo)
     try:
@@ -222,11 +237,11 @@ async def run_git_claim(
             semantic_request.selector_records or semantic_request.diff_base is not None
         ):
             write_semantic_evidence(semantic_request, repo_root, semantic_evidence_json)
-    except (RuntimeError, ValueError) as exc:
-        print(f"semantic claim error: {exc}")
+    except (RuntimeError, ValueError):
+        print("semantic claim error: could not resolve the requested semantic scope")
         return 1
-    except OSError as exc:
-        print(f"semantic claim evidence error: {exc}")
+    except OSError:
+        print("semantic claim evidence error: could not write semantic evidence")
         return 1
     if semantic_request.selector_records:
         print(f"semantic selectors resolved: {len(semantic_request.selector_records)} selector(s)")
@@ -245,66 +260,33 @@ async def run_git_claim(
             claim_paths,
             runner=runner,
         )
-    except (OSError, RuntimeError, ValueError) as exc:
-        print(f"claim path identity error: {exc}")
+    except (OSError, RuntimeError, ValueError):
+        print("claim path identity error: could not resolve canonical claim paths")
         return 1
     context = GitContext(branch=branch, base=base, auto_release_on=auto_release_on)
 
-    outcome: dict[str, Any] = {}
-
-    async def collect(data: dict[str, Any]) -> None:
-        if data.get("task_id") != task_id:
-            return
-        if data.get("type") == MessageType.CLAIM_GRANTED and data.get("owner") == name:
-            outcome["granted"] = True
-        elif data.get("type") == MessageType.CLAIM_DENIED:
-            outcome["denied"] = str(data.get("payload") or "claim denied")
-
-    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    conn_task = asyncio.create_task(agent.connect())
-    try:
-        if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(
-                describe_connect_failure(
-                    name,
-                    uri,
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
-                )
-            )
-            return 1
-        await agent.claim(
-            task_id,
-            worktree=canonical_root.as_posix(),
-            paths=canonical_paths,
-            path_identity=path_identity.as_dict(),
-            git=context.as_dict(),
+    intent = ClaimIntent(
+        task_id=task_id.strip(),
+        owner=name,
+        worktree=canonical_root.as_posix(),
+        paths=canonical_paths,
+        path_identity=path_identity.as_dict(),
+        git=context.as_dict(),
+    )
+    status, recovered = await claim_outcome(
+        uri=uri,
+        intent=intent,
+        token=token,
+        agent_factory=agent_factory,
+        ready_timeout=ready_timeout,
+        reply_timeout=deadline,
+        confirm_only=confirm_only,
+    )
+    if status == 0:
+        label = "confirmed live claim" if recovered else "claimed"
+        print(
+            f"{label} '{task_id}' on branch {branch} "
+            f"(base {base}, auto-release on {auto_release_on})"
         )
-        for _ in range(attempts):
-            if outcome or conn_task.done():
-                break
-            await asyncio.sleep(poll_interval)
-        if outcome.get("granted"):
-            print(
-                f"claimed '{task_id}' on branch {branch} "
-                f"(base {base}, auto-release on {auto_release_on})"
-            )
-            _warn_if_auto_release_unbacked(auto_release_on, task_id, name, runner=runner)
-            return 0
-        denied = outcome.get("denied")
-        if denied:
-            print(f"claim denied for '{task_id}': {denied}")
-        else:
-            print(
-                explain_silent_outcome(
-                    name,
-                    uri,
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
-                    fallback=f"claim denied for '{task_id}': no response from hub",
-                )
-            )
-        return 1
-    finally:
-        agent.running = False
-        conn_task.cancel()
+        _warn_if_auto_release_unbacked(auto_release_on, task_id, name, runner=runner)
+    return status

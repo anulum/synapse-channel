@@ -331,3 +331,5 @@ SYNAPSE CHANNEL은 프로덕션 멀티 에이전트 개발을 위한 코디네�
 한계, SYNAPSE CHANNEL Fleet, 상용 이용, 인용, 라이선스 — 는 정본인
 [영어 README](../../README.md#quick-start)에서 이어집니다. 영어 원문이 항상
 기준이며, 생성 블록(capability snapshot, 인용)은 그곳에만 존재합니다.
+
+시간 초과는 거부를 의미하지 않습니다. 알 수 없는 결과의 종료 코드는 `3`입니다. `--confirm-only`는 변경을 재전송하지 않고 정확한 유효 임대를 확인합니다. [Claim recovery](../git-claims.md#claim-outcomes-and-recovery).

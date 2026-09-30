@@ -123,3 +123,5 @@ Do not infer that an entire page is either shipped or absent from its title.
 Federation policy and exchange, multi-hub observation, and the WASM sandbox now
 have runtime surfaces; automatic cross-organisation trust, CRDT claim merging,
 and the marketplace remain outside those shipped tranches.
+
+A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).

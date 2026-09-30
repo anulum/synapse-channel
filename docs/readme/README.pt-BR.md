@@ -349,3 +349,5 @@ Fleet, uso comercial, citação e licença — continua no
 [README em inglês](../../README.md#quick-start) canônico. O original em inglês
 é sempre a referência; os blocos gerados (capability snapshot, citação)
 existem apenas lá.
+
+Um timeout não comprova uma recusa. Um resultado desconhecido retorna o código `3`; `--confirm-only` verifica a concessão exata e válida sem repetir a mutação. [Claim recovery](../git-claims.md#claim-outcomes-and-recovery).

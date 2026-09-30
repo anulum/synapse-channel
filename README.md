@@ -1714,11 +1714,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.35 |
 | Public API exports | 70 |
-| Package modules | 671 |
-| Classes | 1000 |
+| Package modules | 674 |
+| Classes | 1001 |
 | Wire message types | 111 |
 | CLI subcommands | 236 |
-| Test functions | 10759 |
+| Test functions | 10774 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 79 |
 | GitHub Actions workflows | 27 |
@@ -2010,3 +2010,5 @@ AGPL text, [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md) the commercial terms
 <p align="center">
   &copy; 1998–2026 Miroslav Šotek &middot; <a href="https://www.anulum.li">anulum.li</a> &middot; <code>protoscience@anulum.li</code>
 </p>
+
+A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](docs/git-claims.md#claim-outcomes-and-recovery).

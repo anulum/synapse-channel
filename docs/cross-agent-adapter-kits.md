@@ -165,3 +165,5 @@ deliberately narrow.
   pretends.
 - Adapters add **no new coordination primitive**: claims, releases, presence, and
   the hub already exist; the kit only routes existing tools to them.
+
+A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).

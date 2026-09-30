@@ -9,18 +9,17 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
 
 import pytest
 
+from claim_outcome_helpers import ClaimProxy, claim_proxy
 from hub_e2e_helpers import running_hub
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.git.gitclaim import AgentFactory, run_git_claim
+from synapse_channel.git.gitclaim import run_git_claim
 from synapse_channel.git.semantic_scope import semantic_scope_path
 
 
@@ -153,7 +152,8 @@ async def test_run_git_claim_reports_semantic_selector_errors(
     )
 
     assert rc == 1
-    assert "semantic claim error: unknown module selector" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "semantic claim error: could not resolve the requested semantic scope" in out
 
 
 async def test_run_git_claim_reports_unwritable_semantic_evidence(
@@ -300,53 +300,28 @@ async def test_synthetic_symbol_paths_coexist_but_whole_file_is_refused(
     assert set(hub.state.claims) == {"FIRST", "SECOND"}
 
 
-class _ScriptedClaimAgent:
-    """Feeds crafted claim verdicts to run_git_claim without a hub."""
-
-    frames: tuple[dict[str, object], ...] = ()
-
-    def __init__(self, name: str, callback: object, **_kwargs: object) -> None:
-        self.name = name
-        self.callback = callback
-        self.running = True
-        self.last_close_code: int | None = None
-        self.last_close_reason = ""
-
-    async def connect(self) -> None:
-        # Park until teardown cancels the connect task (cancellable hang).
-        await asyncio.Event().wait()
-
-    async def wait_until_ready(self, timeout: float) -> bool:
-        del timeout
-        return True
-
-    async def claim(self, task_id: str, **_kwargs: object) -> None:
-        del task_id
-        for frame in self.frames:
-            await self.callback(frame)  # type: ignore[operator]
-
-
+@pytest.mark.parametrize("field", ["owner", "task_id"])
 async def test_run_git_claim_ignores_foreign_grants_and_explains_silence(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], field: str
 ) -> None:
-    """A grant for another owner never counts as ours; with no verdict at all the
-    silent-outcome guidance is printed instead of a bare denial."""
+    """A real transport grant for another owner or task never authorizes edits."""
 
-    class _ForeignGrantOnly(_ScriptedClaimAgent):
-        frames = (
-            {"type": "claim_granted", "task_id": "T", "owner": "someone-else"},
-            {"type": "claim_granted", "task_id": "other", "owner": "me"},
-        )
+    def foreign(data: dict[str, object]) -> None:
+        """Corrupt one grant field while confirmation replies are lost."""
+        if data.get("type") == "claim_granted":
+            data[field] = "someone-else"
 
-    rc = await run_git_claim(
-        uri="ws://unused",
-        name="me",
-        task_id="T",
-        paths=["src"],
-        runner=_branch_then_repo("feature/x", tmp_path),
-        agent_factory=cast("AgentFactory", _ForeignGrantOnly),
-        attempts=2,
-        poll_interval=0.001,
-    )
-    assert rc == 1
-    assert "claim denied for 'T': no response from hub" in capsys.readouterr().out
+    async with running_hub() as (_hub, upstream):
+        proxy = ClaimProxy(upstream, drop_grants=False, drop_snapshots=True, transform=foreign)
+        async with claim_proxy(proxy) as uri:
+            rc = await run_git_claim(
+                uri=uri,
+                name="me",
+                task_id="T",
+                paths=["src"],
+                runner=_branch_then_repo("feature/x", tmp_path),
+                attempts=2,
+                poll_interval=0.01,
+            )
+    assert rc == 3
+    assert "claim outcome unknown for 'T'" in capsys.readouterr().out

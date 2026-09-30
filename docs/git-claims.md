@@ -16,6 +16,58 @@ an ordinary claim. The hub stores it, replays it from the durable log on restart
 and shows it in the state view, but it never acts on it. That keeps the
 local-first, single-dependency guarantee intact while making claims branch-aware.
 
+## Claim outcomes and recovery
+
+A missing reply does not prove denial: the hub may have durably granted the
+lease before the reply was lost or delayed. `git-claim` waits up to 30 seconds
+per send/reply exchange by default, then requests one correlated state snapshot
+before deciding the outcome. `--reply-timeout` accepts a finite positive duration
+up to 300 seconds. Confirmation has its own equally bounded exchange; this is
+not an overall command deadline. Local Git/semantic resolution happens first,
+and connection readiness has a separate five-second wait plus a short
+post-welcome refusal check.
+
+| Exit | Meaning | Permission to edit |
+| --- | --- | --- |
+| `0` | Exact grant or confirmed live lease | Only within the verified scope and lease |
+| `1` | Explicit claim denial or local/connection failure | None |
+| `2` | Invalid command/deadline | None |
+| `3` | Claim outcome unknown; no confirmed live lease | None |
+
+For exit `3`, repeat the original identity, task, resolved paths, base and release
+policy with `--confirm-only`:
+
+```bash
+synapse git-claim TASK --name=PROJECT/seat --paths=src/owned.py \
+  --base=main --auto-release-on=commit --reply-timeout=30 --confirm-only
+```
+
+Confirmation sends a read-only state request; it never issues another claim,
+renews a lease, advances its epoch, releases it, or bypasses staged claim checks.
+It requires exactly one active claim with the same owner, worktree, ordered
+canonical paths, path identities and Git context, a positive integer fencing
+epoch, a nonterminal status and a finite unexpired lease. The snapshot must echo
+a fresh opaque request id and report a valid generation timestamp. The verified
+epoch is persisted and read back when persistence is enabled, for a later
+release/checkpoint/hook process. Unavailable fence storage leaves recovery
+unknown. Missing,
+mismatched, expired, ambiguous or unavailable state remains **unknown**.
+
+MCP `synapse_git_claim` exposes equivalent `reply_timeout` (default `30.0`) and
+`confirm_only` (default `false`) arguments. Its text distinguishes `claim granted`,
+`claim confirmed`, `claim denied` and `claim outcome unknown`. Other ordinary MCP
+queries keep the bridge request timeout. A dashboard operator must preserve
+these distinctions and verify a live lease before enabling scoped work; a
+viewer state display alone does not grant authority.
+
+Compatibility: exit `3` replaces the former exit `1` for unresolved outcomes.
+Automations must handle it without editing or blindly replaying a claim. The
+native `attempts`/`poll_interval` arguments remain a deadline override for
+existing callers; they no longer cause polling. Snapshot confirmation requires
+a hub that echoes the optional `request_id` on `state_snapshot`. An older hub
+can still grant normally but cannot confirm an uncertain outcome, which stays
+unknown. No wire version bump is needed for the optional correlation field.
+
 ## Natural-language claim drafts
 
 `synapse claim-parse` asks an explicitly selected provider for a draft:

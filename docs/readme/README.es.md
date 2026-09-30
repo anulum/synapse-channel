@@ -351,3 +351,5 @@ SYNAPSE CHANNEL Fleet, uso comercial, cita y licencia — continúa en el
 [README en inglés](../../README.md#quick-start) canónico. El original en inglés
 es siempre la referencia; los bloques generados (capability snapshot, cita)
 existen solo allí.
+
+Un timeout no demuestra un rechazo. Un resultado desconocido devuelve el código `3`; `--confirm-only` verifica la concesión exacta y vigente sin repetir la mutación. [Claim recovery](../git-claims.md#claim-outcomes-and-recovery).

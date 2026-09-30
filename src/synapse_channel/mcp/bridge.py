@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
+from synapse_channel.client.claim_confirmation import DEFAULT_CLAIM_REPLY_TIMEOUT
 from synapse_channel.mcp import app_task_actions
 from synapse_channel.mcp.advisory_actions import McpAdvisoryActions
 from synapse_channel.mcp.claim_actions import McpClaimActions
@@ -107,7 +108,14 @@ class SynapseHubBridge:
         async def await_reply(match: Matcher, send: Sender) -> dict[str, Any] | None:
             return await self._await_reply(match, send)
 
-        self.claim_actions = McpClaimActions(self.name, self.agent, await_reply)
+        async def await_timed_reply(
+            match: Matcher, send: Sender, timeout: float
+        ) -> dict[str, Any] | None:
+            return await self._await_reply_with_timeout(match, send, timeout)
+
+        self.claim_actions = McpClaimActions(
+            self.name, self.agent, await_reply, await_timed_reply=await_timed_reply
+        )
         self.plan_actions = McpPlanActions(self.agent, await_reply)
         self.advisory_actions = McpAdvisoryActions(self.agent, await_reply)
         self.snapshot_queries = McpSnapshotQueries(self.agent, await_reply)
@@ -132,6 +140,12 @@ class SynapseHubBridge:
                 return
 
     async def _await_reply(self, match: Matcher, send: Sender) -> dict[str, Any] | None:
+        """Use the existing bridge deadline for ordinary queries and actions."""
+        return await self._await_reply_with_timeout(match, send, self.request_timeout)
+
+    async def _await_reply_with_timeout(
+        self, match: Matcher, send: Sender, timeout: float
+    ) -> dict[str, Any] | None:
         """Register a matcher, issue ``send``, and return the correlated reply.
 
         Parameters
@@ -140,6 +154,8 @@ class SynapseHubBridge:
             Predicate selecting the hub reply this request waits for.
         send : Sender
             Coroutine that issues the request on the hub client.
+        timeout : float
+            Finite deadline covering both the send and correlated reply.
 
         Returns
         -------
@@ -147,12 +163,17 @@ class SynapseHubBridge:
             The matched reply, or ``None`` if none arrived within
             :attr:`request_timeout`.
         """
+
+        async def exchange() -> dict[str, Any]:
+            """Include sending in the same finite reply deadline."""
+            await send()
+            return await future
+
         future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
         waiter = (match, future)
         self._waiters.append(waiter)
         try:
-            await send()
-            return await asyncio.wait_for(future, self.request_timeout)
+            return await asyncio.wait_for(exchange(), timeout)
         except asyncio.TimeoutError:
             return None
         finally:
@@ -173,14 +194,42 @@ class SynapseHubBridge:
         base: str = "main",
         auto_release_on: str = "manual",
         whole_worktree: bool = False,
+        reply_timeout: float = DEFAULT_CLAIM_REPLY_TIMEOUT,
+        confirm_only: bool = False,
     ) -> str:
-        """Claim bounded paths in the MCP process's current Git worktree."""
+        """Claim or confirm an exact Git scope through the MCP face.
+
+        Parameters
+        ----------
+        task_id : str
+            Task whose lease is requested or confirmed.
+        paths : Sequence[str] or None
+            Canonical repository-relative file scopes.
+        base : str
+            Intended integration branch stored on the lease.
+        auto_release_on : str
+            Client-side release policy: manual, commit or merge.
+        whole_worktree : bool
+            Explicitly request the whole worktree instead of bounded paths.
+        reply_timeout : float
+            Seconds per send/reply exchange; finite, positive and at most 300.
+        confirm_only : bool
+            Verify the existing exact live lease without claiming or renewing it.
+
+        Returns
+        -------
+        str
+            Grant, confirmation, refusal or unknown outcome. Unknown never
+            authorizes edits; confirmation requires an exact scope and live fence.
+        """
         return await self.claim_actions.git_claim(
             task_id,
             paths,
             base=base,
             auto_release_on=auto_release_on,
             whole_worktree=whole_worktree,
+            reply_timeout=reply_timeout,
+            confirm_only=confirm_only,
         )
 
     async def release(

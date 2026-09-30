@@ -31,6 +31,13 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Git claim timeouts remain unknown (CLI exit 3) instead of reporting denial.
+  CLI and MCP wait with finite configurable deadlines and confirm exact live
+  leases through a correlated state snapshot. `--confirm-only` / `confirm_only`
+  recover without replaying a mutation or renewing a lease; verified fences
+  persist for later release and hook processes. Older hubs without the optional
+  snapshot request-id echo leave uncertain claims unknown.
+
 - Python clients, CLI queries, and dashboard observers accept hub responses up
   to a finite 8 MiB instead of disconnecting on accumulated boards above the
   WebSocket library's 1 MiB default. Oversized responses still close with code

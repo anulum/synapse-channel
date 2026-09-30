@@ -797,3 +797,10 @@ remain in the separate attachment ledger. Peer transports require TLS outside
 loopback and verify the source certificate by CA/hostname or an explicit live pin
 before registration. See the [complete attachment
 contract](attachments.md#recipient-granted-cross-hub-reads-wire-version-6).
+
+For correlated read-only claim confirmation, `state_request` may carry an opaque
+`request_id` string of 1–128 characters. The hub echoes only that bounded string
+on its private `state_snapshot`; missing/invalid ids remain absent. This additive
+field does not change the wire version. Clients must match the requesting identity
+and exact id before treating that snapshot as confirmation. See
+[claim outcomes and recovery](git-claims.md#claim-outcomes-and-recovery).

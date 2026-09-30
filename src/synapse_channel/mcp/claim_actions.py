@@ -9,10 +9,17 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.client.claim_confirmation import (
+    DEFAULT_CLAIM_REPLY_TIMEOUT,
+    ClaimIntent,
+    confirm_claim,
+    valid_claim_timeout,
+)
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.git.ordinary_claim import (
     OrdinaryClaimScopeError,
@@ -23,6 +30,7 @@ from synapse_channel.mcp.git_claim import McpGitClaimError, resolve_mcp_git_clai
 Matcher = Callable[[dict[str, Any]], bool]
 Sender = Callable[[], Awaitable[None]]
 ReplyAwaiter = Callable[[Matcher, Sender], Awaitable[dict[str, Any] | None]]
+TimedReplyAwaiter = Callable[[Matcher, Sender, float], Awaitable[dict[str, Any] | None]]
 
 
 class McpClaimActions:
@@ -36,12 +44,22 @@ class McpClaimActions:
         Connected hub client used to issue claim and release operations.
     await_reply : ReplyAwaiter
         Correlator owned by the bridge transport layer.
+    await_timed_reply : TimedReplyAwaiter
+        Correlator with a per-exchange deadline for Git claims and confirmation.
     """
 
-    def __init__(self, name: str, agent: SynapseAgent, await_reply: ReplyAwaiter) -> None:
+    def __init__(
+        self,
+        name: str,
+        agent: SynapseAgent,
+        await_reply: ReplyAwaiter,
+        *,
+        await_timed_reply: TimedReplyAwaiter,
+    ) -> None:
         self.name = name
         self.agent = agent
         self.await_reply = await_reply
+        self.await_timed_reply = await_timed_reply
 
     async def claim(
         self, task_id: str, paths: list[str] | None = None, *, task_only: bool = False
@@ -111,8 +129,36 @@ class McpClaimActions:
         base: str = "main",
         auto_release_on: str = "manual",
         whole_worktree: bool = False,
+        reply_timeout: float = DEFAULT_CLAIM_REPLY_TIMEOUT,
+        confirm_only: bool = False,
     ) -> str:
-        """Resolve and claim bounded paths in the current Git worktree."""
+        """Claim or confirm an exact Git scope through the MCP face.
+
+        Parameters
+        ----------
+        task_id : str
+            Task whose lease is requested or confirmed.
+        paths : Sequence[str] or None
+            Canonical repository-relative file scopes.
+        base : str
+            Intended integration branch stored on the lease.
+        auto_release_on : str
+            Client-side release policy: manual, commit or merge.
+        whole_worktree : bool
+            Explicitly request the whole worktree instead of bounded paths.
+        reply_timeout : float
+            Seconds per send/reply exchange; finite, positive and at most 300.
+        confirm_only : bool
+            Verify the existing exact live lease without claiming or renewing it.
+
+        Returns
+        -------
+        str
+            Grant, confirmation, refusal or unknown outcome. Unknown never
+            authorizes edits; confirmation requires an exact scope and live fence.
+        """
+        if not valid_claim_timeout(reply_timeout):
+            return "git claim refused: deadline must be finite, positive and at most 300 seconds"
         try:
             scope = resolve_mcp_git_claim_scope(
                 paths,
@@ -133,6 +179,8 @@ class McpClaimActions:
             path_identity=scope.path_identity,
             git=scope.git,
             where=where,
+            reply_timeout=reply_timeout,
+            confirm_only=confirm_only,
         )
 
     async def _claim(
@@ -144,26 +192,51 @@ class McpClaimActions:
         path_identity: dict[str, object] | None,
         git: dict[str, str] | None,
         where: str,
+        reply_timeout: float = DEFAULT_CLAIM_REPLY_TIMEOUT,
+        confirm_only: bool = False,
     ) -> str:
+        """Issue one claim, or prove an uncertain Git lease through fresh state."""
+        task_id = task_id.strip()
+        intent = ClaimIntent(task_id, self.name, worktree, tuple(paths), path_identity, git)
+
+        async def await_claim_reply(match: Matcher, send: Sender) -> dict[str, Any] | None:
+            """Use the timed correlator when the owning bridge supplies it."""
+            return await self.await_timed_reply(match, send, reply_timeout)
+
         def match(data: dict[str, Any]) -> bool:
             if data.get("task_id") != task_id:
                 return False
             kind = data.get("type")
             if kind == MessageType.CLAIM_GRANTED:
-                return data.get("owner") == self.name
+                return (
+                    intent.matches(data, now=time.time())
+                    if git is not None
+                    else data.get("owner") == self.name
+                )
             return kind == MessageType.CLAIM_DENIED
 
-        reply = await self.await_reply(
-            match,
-            lambda: self.agent.claim(
-                task_id,
-                worktree=worktree,
-                paths=paths,
-                path_identity=path_identity,
-                git=git,
-            ),
+        reply = (
+            None
+            if confirm_only
+            else await (await_claim_reply if git is not None else self.await_reply)(
+                match,
+                lambda: self.agent.claim(
+                    task_id,
+                    worktree=worktree,
+                    paths=paths,
+                    path_identity=path_identity,
+                    git=git,
+                ),
+            )
         )
         if reply is None:
+            if git is not None:
+                if await confirm_claim(self.agent, await_claim_reply, intent):
+                    return f"claim confirmed: '{task_id}' ({where}; live lease, no mutation replay)"
+                return (
+                    f"claim outcome unknown: '{task_id}'; no confirmed live lease. "
+                    "Use confirm_only=true with the same identity and scope before working."
+                )
             return f"claim '{task_id}': no response from the hub"
         if reply.get("type") == MessageType.CLAIM_GRANTED:
             return f"claim granted: '{task_id}' ({where})"

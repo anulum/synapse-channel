@@ -265,3 +265,5 @@ untrusted generated commands from the event log, and must quote command evidence
 as observed text rather than treating it as proof. For exposed deployments,
 policy enforcement depends on later identity, signed events, and ACL work; this
 design deliberately does not claim those guarantees.
+
+A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).

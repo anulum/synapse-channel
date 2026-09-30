@@ -341,3 +341,5 @@ any event in the log.
   full surface and the concepts behind it.
 - Report a reproducible problem on the [issue tracker](https://github.com/anulum/synapse-channel/issues);
   see [`SUPPORT.md`](https://github.com/anulum/synapse-channel/blob/main/SUPPORT.md).
+
+A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).

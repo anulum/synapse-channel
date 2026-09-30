@@ -344,3 +344,5 @@ SYNAPSE CHANNEL は、本番のマルチエージェント開発のための調�
 ライセンス — は正本の[英語 README](../../README.md#quick-start) に続きます。
 英語原文が常に正であり、生成ブロック（capability snapshot、引用）はそこに
 しか存在しません。
+
+タイムアウトは拒否を意味しません。不明な結果の終了コードは `3` です。`--confirm-only` は変更を再送せず、正確な有効リースを確認します。 [Claim recovery](../git-claims.md#claim-outcomes-and-recovery).

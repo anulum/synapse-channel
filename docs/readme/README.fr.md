@@ -356,3 +356,5 @@ SYNAPSE CHANNEL Fleet, usage commercial, citation et licence — se poursuit
 dans le [README anglais](../../README.md#quick-start) canonique. L'original
 anglais fait toujours foi ; les blocs générés (capability snapshot, citation)
 n'existent que là-bas.
+
+Un délai dépassé ne prouve pas un refus. Un résultat inconnu renvoie le code `3` ; `--confirm-only` vérifie le bail exact encore valide sans répéter la mutation. [Claim recovery](../git-claims.md#claim-outcomes-and-recovery).

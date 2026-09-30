@@ -305,3 +305,5 @@ SYNAPSE CHANNEL 正在寻求启动资金、战略伙伴和志同道合的生态�
 架构、能力清单、安全态势、已知限制、SYNAPSE CHANNEL Fleet、商业使用、引用
 和许可 — 在权威的[英文 README](../../README.md#quick-start) 中继续。英文
 原文始终为准；生成的区块（capability snapshot、引用）只存在于那里。
+
+超时不代表拒绝。结果未知时退出码为 `3`；`--confirm-only` 验证完全匹配且仍有效的租约，不重复提交变更。 [Claim recovery](../git-claims.md#claim-outcomes-and-recovery).

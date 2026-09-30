@@ -331,3 +331,5 @@ bezpečnostný postoj, známe obmedzenia, SYNAPSE CHANNEL Fleet, komerčné pou�
 citácia a licencia — pokračuje v kanonickom
 [anglickom README](../../README.md#quick-start). Anglický originál je vždy
 smerodajný; generované bloky (capability snapshot, citácia) existujú len tam.
+
+Timeout nepotvrdzuje zamietnutie claimu. Neznámy výsledok má kód `3`; `--confirm-only` overí presnú platnú lease bez opakovania mutácie. [Claim recovery](../git-claims.md#claim-outcomes-and-recovery).

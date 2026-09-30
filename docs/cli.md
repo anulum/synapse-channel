@@ -3140,3 +3140,5 @@ For a secured hub, pass `--token SECRET` to `worker`, `send`, `listen`, `board`,
 `manifest`, `release`, `a2a-card`, `a2a-serve`, and `task`.
 
 Run any command with `--help` for its full set of options.
+
+A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).

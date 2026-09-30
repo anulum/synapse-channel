@@ -146,14 +146,18 @@ def build_mcp_server(
         base: str = "main",
         auto_release_on: str = "manual",
         whole_worktree: bool = False,
+        reply_timeout: float = 30.0,
+        confirm_only: bool = False,
     ) -> str:
-        """Claim bounded paths in the MCP process's current Git worktree."""
+        """Claim or read-only confirm exact Git paths; unknown never authorizes edits."""
         return await bridge.git_claim(
             task_id,
             paths,
             base=base,
             auto_release_on=auto_release_on,
             whole_worktree=whole_worktree,
+            reply_timeout=reply_timeout,
+            confirm_only=confirm_only,
         )
 
     @server.tool()

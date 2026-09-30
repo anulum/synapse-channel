@@ -547,3 +547,5 @@ procfs, or kernels without sealing support. Those platforms need a future
 equivalent native descriptor-execution backend; there is no pathname fallback.
 Per-agent ACLs over which identity may invoke outbound MCP remain a later tranche;
 the controls here bind the operator's process-launch policy before tool discovery.
+
+A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).

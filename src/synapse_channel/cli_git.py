@@ -25,6 +25,7 @@ from collections.abc import Callable, Coroutine, Sequence
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.cli_git_claim_options import add_claim_outcome_options
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.git.gitclaim import GitError, run_git_claim
 from synapse_channel.git.gitconflict import run_conflicts
@@ -207,6 +208,8 @@ def _cmd_git_claim(
             semantic_diff_head=getattr(args, "semantic_diff_head", None),
             semantic_diff_paths=tuple(getattr(args, "semantic_diff_path", None) or ()),
             semantic_evidence_json=args.semantic_evidence_json,
+            reply_timeout=getattr(args, "reply_timeout", 30.0),
+            confirm_only=getattr(args, "confirm_only", False),
         )
     )
 
@@ -543,6 +546,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     git_claim.add_argument("--uri", default=default_hub_uri())
     git_claim.add_argument("--name", default="USER")
     git_claim.add_argument("--token", default=None, help="Shared-secret token for a secured hub.")
+    add_claim_outcome_options(git_claim)
     git_claim.set_defaults(func=_cmd_git_claim)
 
     git_init = subparsers.add_parser(
