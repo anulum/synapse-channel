@@ -70,6 +70,12 @@ switch does not yet enforce:
 The hub profile prints its enforced settings and missing hooks to stderr at
 startup. It does not rewrite service units or hooks.
 
+Recipient-granted attachment reads remain a separate opt-in. `--paranoid` does
+not grant a peer any attachment or enable `--attachment-root`,
+`--multihub-serving-policy` or `--attachment-recipient-policy`. All source
+attachment posture requirements and exact object permissions still apply; see
+[attachments](attachments.md#recipient-granted-cross-hub-reads-wire-version-6).
+
 ## Controls not composed by this profile
 
 The checklist explicitly reports controls that `--paranoid` does not enable. A

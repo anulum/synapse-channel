@@ -33,6 +33,7 @@ from synapse_channel.core.aef_runtime import (
     run_aef_outbox_worker,
 )
 from synapse_channel.core.at_rest_guard import AtRestBindError, guard_at_rest
+from synapse_channel.core.attachment_serving import AttachmentServingPolicy
 from synapse_channel.core.attachment_store import AttachmentError, AttachmentStore
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability_card_history import PersistentCapabilityCardHistory
@@ -939,6 +940,25 @@ def _cmd_hub(
             f"(sequence_floor={sequence_floor_mode.value})",
             file=sys.stderr,
         )
+    attachment_serving_policy: AttachmentServingPolicy | None = None
+    recipient_policy_path = getattr(args, "attachment_recipient_policy", None)
+    if recipient_policy_path:
+        try:
+            if not getattr(args, "attachment_root", None) or serving_config is None:
+                raise AttachmentError(
+                    "attachment recipient policy requires attachments and peer serving policy"
+                )
+            attachment_serving_policy = AttachmentServingPolicy(Path(recipient_policy_path))
+            attachment_serving_policy.load()
+        except AttachmentError:
+            print(
+                "synapse hub: attachment recipient policy unavailable or invalid", file=sys.stderr
+            )
+            if message_auth_replay_store is not None:
+                message_auth_replay_store.close()
+            if journal is not None:
+                journal.close()
+            return 2
     attachment_store: AttachmentStore | None = None
     if getattr(args, "attachment_root", None):
         if not (
@@ -974,6 +994,7 @@ def _cmd_hub(
     hub_kwargs: dict[str, Any] = {
         "journal": journal,
         "attachment_store": attachment_store,
+        "attachment_serving_policy": attachment_serving_policy,
         "rate_limiter": limiter,
         "host_rate_limiter": host_limiter,
         "durable_ingress_quota": durable_ingress_quota,

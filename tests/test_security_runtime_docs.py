@@ -151,20 +151,21 @@ def test_public_claims_separate_shipped_controls_from_staged_work() -> None:
 
 
 def test_wire_version_docs_match_negotiate_down_runtime() -> None:
-    """Wire documentation must describe the version-five compatibility decision."""
-    assert WIRE_PROTOCOL_VERSION == 5
+    """Wire documentation must describe the version-six compatibility decision."""
+    assert WIRE_PROTOCOL_VERSION == 6
     assert negotiate_protocol_version(1).effective_version == 1
     assert negotiate_protocol_version(2).effective_version == 2
     assert negotiate_protocol_version(4).effective_version == 4
     assert negotiate_protocol_version(5).effective_version == 5
+    assert negotiate_protocol_version(6).effective_version == 6
     assert negotiate_protocol_version(None).effective_version == 1
     assert negotiate_protocol_version(1).warning is not None
-    assert negotiate_protocol_version(6).warning is not None
+    assert negotiate_protocol_version(7).warning is not None
     assert negotiate_protocol_version(None).warning is not None
 
     protocol_doc = _collapsed("docs/protocol.md")
     protocol_source = _collapsed("src/synapse_channel/core/protocol.py")
-    assert "current wire is version `5`" in protocol_doc
+    assert "current wire is version `6`" in protocol_doc
     assert "lowest common wire version" in protocol_doc
     assert "advertise-only for now" not in protocol_source
     assert "multi-hub network fetcher records that decision" in protocol_source

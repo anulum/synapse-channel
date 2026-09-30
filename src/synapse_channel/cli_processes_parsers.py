@@ -129,6 +129,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Path to a durable event-log database; enables crash-safe persistence.",
     )
     hub.add_argument(
+        "--attachment-recipient-policy",
+        default=None,
+        metavar="FILE",
+        help=(
+            "Owner-only recipient hub/scope/digest/expiry grants, reloaded on every peer read; "
+            "requires --attachment-root and --multihub-serving-policy."
+        ),
+    )
+    hub.add_argument(
         "--attachment-root",
         default=None,
         help=(

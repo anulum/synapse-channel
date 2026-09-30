@@ -1100,7 +1100,10 @@ unchanged in the browser and in Node 20+ with no runtime dependencies. See the
 The opt-in [scoped attachment API](docs/attachments.md) transfers small
 project-local evidence through signed, bounded WebSocket frames. The Hub keeps
 bytes in private local storage; hashes alone grant no access, and large
-datasets or weights remain on owner-controlled artifact storage.
+datasets or weights remain on owner-controlled artifact storage. A source can
+separately permit an exact recipient hub, scope, digest and expiry through its
+[private peer read API](docs/attachments.md#recipient-granted-cross-hub-reads-wire-version-6);
+each metadata or chunk request rechecks peer trust and the owner's current grant.
 
 ### A2A HTTP bridge
 
@@ -1711,11 +1714,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.35 |
 | Public API exports | 70 |
-| Package modules | 667 |
-| Classes | 997 |
-| Wire message types | 109 |
+| Package modules | 670 |
+| Classes | 999 |
+| Wire message types | 111 |
 | CLI subcommands | 236 |
-| Test functions | 10711 |
+| Test functions | 10736 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 79 |
 | GitHub Actions workflows | 27 |

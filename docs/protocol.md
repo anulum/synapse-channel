@@ -17,7 +17,7 @@ applied once. On a secured hub, the first message of a connection must carry a
 `token`.
 
 The hub advertises its wire-protocol version in the `welcome` handshake as
-`protocol_version` (an integer; the current wire is version `5`), and it is also
+`protocol_version` (an integer; the current wire is version `6`), and it is also
 reported by `/health` as `protocol_version`. It is decoupled from the package
 version on purpose — a patch or feature release that leaves the wire shapes
 unchanged does not bump it, so it is a stable compatibility signal a client can
@@ -46,6 +46,11 @@ Version `5` adds hub-to-hub message forwarding: a chat or delivery addressed to
 `PROJECT/seat@HUB_ID` is forwarded to that configured peer hub. The two new
 frames travel only between hubs, so agent-facing frames keep their earlier
 meaning; see [Cross-hub message forwarding](#cross-hub-message-forwarding-wire-version-5).
+
+Version `6` adds recipient-granted private cross-hub attachment reads. A peer
+registers at version six and negotiates the source welcome before sending
+`attachment_peer_request`; earlier versions retain their existing APIs. See
+[recipient-granted reads](attachments.md#recipient-granted-cross-hub-reads-wire-version-6).
 
 The [per-message authentication runtime](per-message-authentication.md) keeps
 the same envelope shape and adds an `auth` object for selected mutating frames
@@ -758,3 +763,16 @@ This is not an external protocol-conformance certification; it is automated
 local property-based coverage for malformed bytes, malformed JSON, quoted
 bracket runs, valid nested JSON, depth-limit rejection, and persistence
 round-trips.
+
+
+## Cross-hub attachment reads (wire version 6)
+
+`attachment_peer_request` names `action: "info"` or `"read"`, `scope` and `digest`;
+reads additionally name an integer `offset`. The source checks live peer identity
+and namespace trust, then its exact recipient grant before storage. Private
+`attachment_peer_result` contains `ok: true` and metadata, or a bounded base64
+chunk with its scope, digest, offset and EOF. Handler refusals contain only
+`ok: false` and `error: "attachment unavailable"` beyond the normal envelope.
+Connection authentication failures retain their existing types. No content is
+broadcast or replicated into the event log. See the [complete attachment
+contract](attachments.md#recipient-granted-cross-hub-reads-wire-version-6).

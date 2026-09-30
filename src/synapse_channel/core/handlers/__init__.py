@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.handlers.attachment_peer import handle_attachment_peer
 from synapse_channel.core.handlers.attachments import handle_attachment
 from synapse_channel.core.handlers.channels import (
     handle_channel_create,
@@ -83,6 +84,7 @@ Handler = Callable[["SynapseHub", str, dict[str, Any], Any], Awaitable[None]]
 """A message handler: ``(hub, sender, data, websocket) -> awaitable[None]``."""
 
 DISPATCH: dict[str, Handler] = {
+    MessageType.ATTACHMENT_PEER_REQUEST: handle_attachment_peer,
     MessageType.ATTACHMENT_BEGIN: handle_attachment,
     MessageType.ATTACHMENT_CHUNK: handle_attachment,
     MessageType.ATTACHMENT_COMMIT: handle_attachment,

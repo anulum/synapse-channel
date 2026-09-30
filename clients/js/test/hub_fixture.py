@@ -88,6 +88,7 @@ async def main() -> None:
             hub = SynapseHub(
                 authenticator=TokenAuthenticator(["integration-only-token"]),
                 require_fencing_epoch=True,
+                identity_pin_path=Path(directory) / "identity-pins.json",
             )
             stores = []
         server = asyncio.create_task(hub.serve(host="127.0.0.1", port=0))

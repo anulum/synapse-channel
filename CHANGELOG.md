@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Recipient-granted private cross-hub attachment metadata and chunk reads (wire
+  version six). `--attachment-recipient-policy` binds verified recipient hubs to
+  exact scopes, digests and finite expiries, reloads owner-only permissions on
+  every request and composes them with live peer trust before storage lookup.
+  Invalid or revoked grants, expired content and malformed requests share one
+  private refusal. The Python peer transport checks the named source, negotiates
+  version six and validates bounded responses. Local attachment permissions,
+  quotas, session-bound uploads and reference retention remain in force.
+
 ### Fixed
 
 - **F02 spend ledger: findings from an independent correctness review and its

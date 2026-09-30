@@ -42,6 +42,8 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "ATTACHMENT_COMMIT": "attachment_commit",
     "ATTACHMENT_GC": "attachment_gc",
     "ATTACHMENT_INFO": "attachment_info",
+    "ATTACHMENT_PEER_REQUEST": "attachment_peer_request",
+    "ATTACHMENT_PEER_RESULT": "attachment_peer_result",
     "ATTACHMENT_READ": "attachment_read",
     "ATTACHMENT_REF": "attachment_ref",
     "ATTACHMENT_RESULT": "attachment_result",
@@ -188,6 +190,6 @@ def test_wire_envelope_carries_the_reserved_keys() -> None:
 
 
 def test_wire_protocol_version_is_frozen_at_the_current_baseline() -> None:
-    # The wire is at version 5 (hub-to-hub message forwarding); a
+    # The wire is at version 6 (recipient-granted attachment reads); a
     # bump is a wire vocabulary change and a deliberate edit, not an accident.
-    assert WIRE_PROTOCOL_VERSION == 5
+    assert WIRE_PROTOCOL_VERSION == 6

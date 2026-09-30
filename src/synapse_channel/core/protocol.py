@@ -30,7 +30,7 @@ from typing import Any
 SENDER_HUB = "SynapseHub"
 """Reserved sender name stamped on every hub-originated message."""
 
-WIRE_PROTOCOL_VERSION = 5
+WIRE_PROTOCOL_VERSION = 6
 """The version of the hub's wire protocol.
 
 Advertised in the ``WELCOME`` handshake so a client — including an out-of-tree
@@ -58,6 +58,7 @@ version-three delivery sessions remain valid on newer connections.
 Version ``5`` adds hub-to-hub message forwarding: a hub forwards a chat or delivery
 addressed to ``PROJECT/seat@HUB_ID`` to that peer and relays its answer. The frames
 travel only between hubs; agent-facing frames are unchanged.
+Version ``6`` adds private recipient-granted attachment metadata and chunk reads between hubs.
 """
 
 MIN_ACK_PROTOCOL_VERSION = 2
@@ -72,6 +73,9 @@ verb is never sent it.
 
 MIN_DELIVERY_PROTOCOL_VERSION = 3
 """Lowest negotiated wire version admitted for session-bound delivery intents."""
+
+MIN_ATTACHMENT_PEER_PROTOCOL_VERSION = 6
+"""Lowest wire version supporting recipient-granted cross-hub attachment reads."""
 
 MIN_ATTACHMENT_PROTOCOL_VERSION = 4
 """Lowest negotiated wire version admitted for scoped attachment transfers."""
@@ -348,6 +352,7 @@ class MessageType:
     CHANNEL_HISTORY_REQUEST = "channel_history_request"
     MULTIHUB_LOG_REQUEST = "multihub_log_request"
     MULTIHUB_CLAIM_REQUEST = "multihub_claim_request"
+    ATTACHMENT_PEER_REQUEST = "attachment_peer_request"
     SPEND_REQUEST = "spend_request"
     MULTIHUB_MESSAGE_FORWARD = "multihub_message_forward"
     OPERATOR_RELAY_REQUEST = "operator_relay_request"
@@ -407,6 +412,7 @@ class MessageType:
     CHANNEL_HISTORY = "channel_history"
     MULTIHUB_LOG_SNAPSHOT = "multihub_log_snapshot"
     MULTIHUB_CLAIM_RESULT = "multihub_claim_result"
+    ATTACHMENT_PEER_RESULT = "attachment_peer_result"
     SPEND_RESULT = "spend_result"
     MULTIHUB_MESSAGE_RESULT = "multihub_message_result"
     OPERATOR_RELAY_RESULT = "operator_relay_result"

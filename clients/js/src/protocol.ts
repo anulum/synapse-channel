@@ -39,6 +39,7 @@ export const MessageType = {
   AttachmentRead: "attachment_read",
   AttachmentRef: "attachment_ref",
   AttachmentGc: "attachment_gc",
+  AttachmentPeerRequest: "attachment_peer_request",
   // Hub -> agent.
   System: "system",
   Welcome: "welcome",
@@ -58,10 +59,14 @@ export const MessageType = {
   LedgerProgressPosted: "ledger_progress_posted",
   Error: "error",
   AttachmentResult: "attachment_result",
+  AttachmentPeerResult: "attachment_peer_result",
 } as const;
 
 /** Optional attachment wire vocabulary first advertised by protocol version four. */
 export const MIN_ATTACHMENT_PROTOCOL_VERSION = 4;
+
+/** Exact recipient-granted peer reads require wire version six. */
+export const MIN_ATTACHMENT_PEER_PROTOCOL_VERSION = 6;
 
 /** A wire message-type string. */
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];

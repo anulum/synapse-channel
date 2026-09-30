@@ -118,6 +118,10 @@ The Hub's optional `--attachment-root PATH` enables the
 [scoped attachment API](attachments.md). It requires the governed token,
 identity-binding, durable message-authentication, ACL, role-grant and journal
 posture described there. No attachment directory is created by default.
+`--attachment-recipient-policy FILE` adds exact source-owned peer read grants;
+it requires that local posture and `--multihub-serving-policy`. The owner-only
+file is reloaded on every peer metadata and chunk request. See
+[recipient-granted reads](attachments.md#recipient-granted-cross-hub-reads-wire-version-6).
 
 The installed CLI has a source-checkout-free validation path:
 

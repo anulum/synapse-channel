@@ -131,3 +131,15 @@ Within `0.x`, a surface removed or changed is a reviewed edit to its guard plus 
 CHANGELOG entry; a wire change also bumps `WIRE_PROTOCOL_VERSION`. After `1.0.0`,
 a stable surface is removed only across a major version, with the prior behaviour
 kept for a deprecation window where feasible.
+
+
+### Recipient-granted attachment peer API
+
+Wire version six adds `attachment_peer_request` and `attachment_peer_result`.
+The Python `core.attachment_transport.request_attachment` API returns validated
+metadata or one bounded bytes chunk after checking the named source and its wire
+version. `core.attachment_serving.AttachmentServingPolicy` supplies the source
+operator's reloadable exact grants. These are separate from local seat
+attachments; no existing local request changes shape or permission semantics.
+Older consumers retain their earlier wire floor. See the [attachment
+contract](attachments.md#recipient-granted-cross-hub-reads-wire-version-6).

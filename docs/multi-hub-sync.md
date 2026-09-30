@@ -558,3 +558,17 @@ deliberately conservative.
   the cross-host pull is observe-only. Multi-host mutual exclusion requires an explicit,
   consistent namespace-owner map plus the standing watch; the durable transition events
   evidence that posture but do not replace it with consensus.
+
+
+## Private attachment reads
+
+An event-log peering never grants attachment access. With wire version six, a
+source operator can separately grant an exact recipient hub, scope, digest and
+expiry through `--attachment-recipient-policy`. The source composes that grant
+with the peer serving policy on every metadata and chunk request, including
+retries. It reloads the owner-only file on each request; removal or invalidation
+stops subsequent reads. Content and references remain under source authority.
+See [recipient-granted reads](attachments.md#recipient-granted-cross-hub-reads-wire-version-6).
+Python peer consumers use `request_attachment` with a verified source TLS context
+and expected source hub id. The TypeScript seat client retains its version-four
+local attachment API; it has no peer federation transport.

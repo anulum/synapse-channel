@@ -12,10 +12,12 @@ import dataclasses
 import inspect
 import math
 from collections import Counter
+from pathlib import Path
 from typing import cast
 
 import pytest
 
+from synapse_channel.core.attachment_serving import AttachmentServingPolicy
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import (
     DEFAULT_AUTH_TIMEOUT,
@@ -218,6 +220,18 @@ class TestConfigFingerprint:
         unarmed = config_fingerprint(HubConfig())
         assert armed_a == armed_b
         assert armed_a != unarmed
+
+    def test_recipient_policy_changes_posture_without_hashing_its_path(
+        self, tmp_path: Path
+    ) -> None:
+        first = config_fingerprint(
+            HubConfig(attachment_serving_policy=AttachmentServingPolicy(tmp_path / "first"))
+        )
+        rotated = config_fingerprint(
+            HubConfig(attachment_serving_policy=AttachmentServingPolicy(tmp_path / "rotated"))
+        )
+        assert first != config_fingerprint(HubConfig())
+        assert first == rotated
 
     def test_from_config_stamps_the_epoch_and_an_adhoc_hub_is_empty(self) -> None:
         config = HubConfig(limits=HubLimits(max_clients=7))

@@ -17,7 +17,9 @@
         "src/synapse_channel/core/state.py",
         "src/synapse_channel/core/multihub_federation.py",
         "src/synapse_channel/core/multihub_watch.py",
-        "src/synapse_channel/core/namespace_ownership.py"
+        "src/synapse_channel/core/namespace_ownership.py",
+        "src/synapse_channel/core/attachment_serving.py",
+        "src/synapse_channel/core/handlers/attachment_peer.py"
       ],
       "spec_invariants": [
         "INV-ME-1",
@@ -34,7 +36,8 @@
         "tests/test_hub_takeover_race.py",
         "tests/test_invariant_properties.py",
         "tests/test_multihub_watch.py",
-        "tests/test_namespace_ownership.py"
+        "tests/test_namespace_ownership.py",
+        "tests/test_attachment_peer_e2e.py"
       ],
       "title": "Single authority"
     },

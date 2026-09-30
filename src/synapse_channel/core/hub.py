@@ -63,6 +63,7 @@ from synapse_channel.core.atomic_operations import (
     canonical_request_digest,
     idempotency_conflict_response,
 )
+from synapse_channel.core.attachment_serving import AttachmentServingPolicy
 from synapse_channel.core.attachment_store import AttachmentStore
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability import CapabilityRegistry
@@ -422,6 +423,9 @@ class SynapseHub:
         registration this hub verified under that key; the hub then needs
         ``require_identity_binding`` and a trust bundle binding that key to the sender, or
         construction raises ``ValueError``.
+    attachment_serving_policy : AttachmentServingPolicy or None, optional
+        Source-owned exact recipient hub, scope, digest and expiry grants. Reloaded
+        before every peer read. Requires attachments and a peer serving policy.
     spend_ledger : SpendLedger or None, optional
         The owner-only ledger that makes this hub the owner of shared pools (F02).
         ``None`` (the default) refuses every ``spend_request`` uniformly. A peer is
@@ -525,6 +529,7 @@ class SynapseHub:
         hub_id: str | None = None,
         journal: EventStore | None = None,
         attachment_store: AttachmentStore | None = None,
+        attachment_serving_policy: AttachmentServingPolicy | None = None,
         rate_limiter: RateLimiter | None = None,
         host_rate_limiter: RateLimiter | None = None,
         durable_ingress_quota: DurableIngressQuota | None = None,
@@ -623,6 +628,13 @@ class SynapseHub:
                 "attachments require token, bound identity, durable signed frames, "
                 "ACL, roles, and journal"
             )
+        if attachment_serving_policy is not None:
+            if attachment_store is None or multihub_serving_policy is None:
+                raise ValueError(
+                    "attachment recipient policy requires attachments and peer serving policy"
+                )
+            attachment_serving_policy.load()
+        self.attachment_serving_policy = attachment_serving_policy
         self.attachment_store = attachment_store
         self.journal = journal
         interval = float(checkpoint_interval)

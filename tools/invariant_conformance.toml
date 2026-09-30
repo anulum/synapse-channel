@@ -21,6 +21,8 @@ sources = [
   "src/synapse_channel/core/multihub_federation.py",
   "src/synapse_channel/core/multihub_watch.py",
   "src/synapse_channel/core/namespace_ownership.py",
+  "src/synapse_channel/core/attachment_serving.py",
+  "src/synapse_channel/core/handlers/attachment_peer.py",
 ]
 tests = [
   "tests/test_coordination_spec_model.py",
@@ -30,6 +32,7 @@ tests = [
   "tests/test_invariant_properties.py",
   "tests/test_multihub_watch.py",
   "tests/test_namespace_ownership.py",
+  "tests/test_attachment_peer_e2e.py",
 ]
 evidence_modes = [
   "state-machine",

@@ -32,8 +32,11 @@ Scoped attachments are disabled unless `--attachment-root` is set with bound
 identity, durable per-message authentication, ACL and role grants. The private
 root stores plaintext bytes; the operator must provide disk encryption when
 needed. Every digest lookup follows authorisation, content is verified before
-read, and neither the Hub's HTTP surfaces nor federation serve attachment
-bytes. See [the attachment security contract](docs/attachments.md).
+read. The Hub's HTTP surfaces and federated event log never serve attachment
+bytes. The separate wire-v6 peer read API requires a verified requesting hub, a
+namespace grant and an exact source-owner recipient/scope/digest/expiry grant,
+reloaded before each metadata or chunk read. Its uniform refusals precede storage
+lookup; revocation affects the next request, including on an existing socket. See [the attachment security contract](docs/attachments.md).
 
 SYNAPSE CHANNEL is a **local-first** coordination bus. Its default and intended
 deployment is a single operator on one machine, with the hub bound to loopback

@@ -48,6 +48,7 @@ from synapse_channel.core.agent_liveness import (
     DEFAULT_WAITER_LIVENESS_WINDOW,
     DEFAULT_WARN_STALE_RECIPIENTS,
 )
+from synapse_channel.core.attachment_serving import AttachmentServingPolicy
 from synapse_channel.core.attachment_store import AttachmentStore
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.capability_card_trust import CapabilityCardTrustBundle
@@ -303,6 +304,7 @@ class HubConfig:
     hub_id: str | None = None
     journal: EventStore | None = None
     attachment_store: AttachmentStore | None = None
+    attachment_serving_policy: AttachmentServingPolicy | None = None
     anti_rollback_checkpoint: bool = True
     checkpoint_store_path: str | Path | None = None
     checkpoint_interval: float = DEFAULT_CHECKPOINT_INTERVAL
@@ -399,6 +401,7 @@ def config_fingerprint(config: HubConfig) -> str:
     """
     posture: dict[str, object] = {}
     posture["attachment_store"] = config.attachment_store is not None
+    posture["attachment_serving_policy"] = config.attachment_serving_policy is not None
     for family_name in _FAMILY_FIELDS:
         family = getattr(config, family_name)
         for spec in fields(family):
