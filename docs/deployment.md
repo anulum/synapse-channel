@@ -749,6 +749,44 @@ This is **expected transient behaviour**, not a permanent outage. Mitigations:
 See also [Troubleshooting](troubleshooting.md) for capacity and exit-code `3`
 re-arm behaviour.
 
+## Large local fleets and connection limits
+
+Size capacity by simultaneous WebSocket connections, rather than terminal count.
+A terminal can have a receiver, hooks, waiters and temporary send or lock clients;
+20 terminals can therefore consume a 128-connection host budget. Open local clients
+share the loopback host bucket. A reverse proxy can also place all clients in one
+host bucket. Reserve capacity for commands and reconnect overlap.
+
+For a trusted local fleet targeting 100 terminals, an operator profile is:
+
+```bash
+synapse hub --port 8876 --db /path/to/hub.db --hub-id EXISTING_HUB_ID \
+  --max-connections-per-host 2048 --max-clients 4096 \
+  --durable-ingress-events 10000 --durable-ingress-bytes 16777216 \
+  --durable-ingress-window 60
+```
+
+Retain the existing database and hub ID when changing a service command. Persist
+these flags in the service configuration, verify the effective command after
+restart, and retain a consistent database backup before maintenance. This profile
+raises finite ceilings; the generic defaults remain 32 connections per host and
+256 clients overall. It is not a throughput or uninterrupted-delivery guarantee.
+Verify the workload on the deployment hardware before declaring it supported.
+
+The per-host refusal is close code `4015`; the global client refusal is `4013`.
+The separate unauthenticated connection ceiling can produce `4014` on a secured
+hub. Connection ceilings do not replace frame rate limits (`--host-rate` and
+`--host-burst`) or durable chat quotas. On an open loopback hub, durable ingress
+budgets are also shared across local clients, so raising only the connection cap
+can leave a busy fleet blocked by the default chat quota. Keep all limits finite
+and size the byte budget for actual message sizes.
+
+Include existing services, hooks and reconnect overlap in the socket budget, and
+check file descriptor limits, memory, delivery latency and disk growth under load.
+Receivers must continuously consume protocol frames. Use unique client message IDs,
+check delivery receipts, and re-arm or reconnect after a refused connection; a
+successful WebSocket handshake alone does not prove registration or delivery.
+
 ## Claim-quota principals
 
 `--max-claims-per-agent` is enforced against a hub-derived **quota principal**, not

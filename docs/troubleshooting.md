@@ -210,11 +210,25 @@ deadline applies to the first name-binding registration (`4012` reason
 
 ## A client is closed with `too many connections from host`
 
-The hub enforces `--max-connections-per-host` (default **32**) and that remote
-host already has that many sockets open. Close stale clients, raise the cap for
-trusted local fan-out, or pass `0` to disable the per-host connection-count
-limit. This is separate from `--host-rate`, which meters frames rather than open
-sockets.
+The hub refused this connection with close code **4015** because
+`--max-connections-per-host` (default **32**) is already reached for the remote
+host. This counts sockets, rather than terminals: receivers, hooks, waiters and
+temporary commands all consume capacity. A 128-socket budget can be exhausted
+by 20 terminals. Loopback clients share one host bucket; a reverse proxy can
+also collapse many clients into one bucket.
+
+Inspect active connections and the effective service command before changing
+limits. Close only stale clients you own, or raise both the finite per-host and
+global budgets with command/reconnect headroom. The global refusal is **4013**;
+secured hubs can separately refuse an unauthenticated burst with **4014**.
+See the [large local fleet profile](deployment.md#large-local-fleets-and-connection-limits)
+for a 100-terminal capacity planning example and durable chat quotas.
+
+This cap is separate from `--host-rate`, which meters frames, and from durable
+ingress quotas. Passing `0` disables the connection-count cap; a finite sized
+budget keeps resource use bounded. After refusal, reconnect or re-arm the
+receiver and verify directed delivery receipts. A larger cap alone does not
+prove reliable message delivery during a registration storm.
 
 ## `synapse doctor` warns that a filesystem is nearly full
 

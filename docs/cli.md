@@ -1251,7 +1251,10 @@ Over 100 days the project's own production hub peaked at 49 chats and about
 `--no-durable-ingress-quota` turns the quota off; `--secure` refuses that flag.
 `--max-connections-per-host` is a connection-count cap keyed by the
 remote host (default **32**; pass `0` to disable); it is separate from
-`--host-rate`, which meters inbound frames from that host. The hub always
+`--host-rate`, which meters inbound frames from that host. For many local
+terminals, size both this cap and `--max-clients` for receivers, hooks, transient
+commands and reconnect overlap. The [large local fleet profile](deployment.md#large-local-fleets-and-connection-limits)
+shows finite connection and durable ingress budgets for planning 100 terminals. The hub always
 installs a handshake guard: browser `Origin` values are refused unless listed
 via `--allow-origin` (concrete `scheme://host[:port]` only; never `null` or
 wildcards), and every upgrade — browser or native — must present a `Host`
