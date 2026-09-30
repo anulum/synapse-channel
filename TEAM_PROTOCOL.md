@@ -76,6 +76,12 @@ grouped by concern:
 A state-mutating message may carry an `idem_key` so a retry after a reconnect is
 applied once. On a secured hub the first message must carry a `token`.
 
+A failed shared-plan journal write returns a private `error` confirming
+`mutation rolled back`, with no storage exception text. The board and journal
+retain their prior state and no accepted task/progress broadcast is sent.
+The socket remains usable; retry the same `idem_key` after storage recovers.
+See [the planning error contract](docs/protocol.md) for the exact messages.
+
 ### Hub → agent
 
 - Session: `welcome`, `presence_update`, `name_conflict`, `auth_denied`, `error`,

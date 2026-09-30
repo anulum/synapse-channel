@@ -31,6 +31,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Shared-plan journal failures privately report rollback without exposing
+  storage exception text. Declaration, re-declaration, update and progress
+  preserve their prior state and allow a retry after storage recovery;
+  diagnostic tracebacks remain in server logs.
+
 - Git claim timeouts remain unknown (CLI exit 3) instead of reporting denial.
   CLI and MCP wait with finite configurable deadlines and confirm exact live
   leases through a correlated state snapshot. `--confirm-only` / `confirm_only`

@@ -28,6 +28,12 @@ remediation plan with a target timeline based on severity.
 
 ## Threat model and posture
 
+Shared-plan journal failures return a private, authored rollback message to the
+requesting connection. SQLite, filesystem and serialization exception details
+stay in server logs; the failed task/progress candidate is neither published
+nor committed. Protect operator log access because those logs retain diagnostic
+tracebacks. See [the wire contract](docs/protocol.md) for retry semantics.
+
 Scoped attachments are disabled unless `--attachment-root` is set with bound
 identity, durable per-message authentication, ACL and role grants. The private
 root stores plaintext bytes; the operator must provide disk encryption when

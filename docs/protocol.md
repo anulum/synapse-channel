@@ -290,6 +290,16 @@ task projections in `ledger_task_posted`, `ledger_task_updated`, and
 `board_snapshot` carry `project` and `version`. A non-integer
 `expected_version` (booleans included) is refused as malformed.
 
+If journalling a `ledger_task`, `ledger_task_update`, or `ledger_progress`
+write fails, the hub sends only the requesting connection a private `error`:
+`Task '<task_id>' was not journalled; mutation rolled back.` or
+`Progress note was not journalled; mutation rolled back.` Storage diagnostics
+stay in server logs. No task/progress candidate, event, or durable idempotency
+result is published. The connection remains usable; once storage recovers, the
+caller can retry the same `idem_key`. An accepted keyed retry is committed once
+and subsequent replays return its original result privately. Clients and
+dashboards must keep the prior board state when receiving this refusal.
+
 Both task write verbs may also carry additive `causal_parent` metadata with
 exactly `hub_id` (non-empty, at most 512 UTF-8 bytes), positive integer `seq`,
 and lowercase SHA-256 `event_fingerprint`. The hub validates and journals this

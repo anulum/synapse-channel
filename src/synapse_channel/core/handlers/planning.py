@@ -16,6 +16,7 @@ to the sender.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -37,6 +38,8 @@ _JOURNAL_FAILURES = (sqlite3.Error, TypeError, ValueError, OSError)
 """Exception classes a journal append may surface to a planning handler."""
 
 _BoardResult = TypeVar("_BoardResult")
+
+logger = logging.getLogger("synapse.hub.planning")
 
 
 async def _run_board_operation(
@@ -76,11 +79,16 @@ async def _send_journal_failure(
     subject: str,
     exc: BaseException,
 ) -> None:
-    """Report one failed board commit without publishing its private candidate."""
+    """Log storage diagnostics and privately report rollback without exception text."""
+    logger.error(
+        "%s was not journalled; mutation rolled back.",
+        subject,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
     await hub._send_json(
         websocket,
         hub._system(
-            f"{subject} was not journalled ({exc}); mutation rolled back.",
+            f"{subject} was not journalled; mutation rolled back.",
             msg_type=MessageType.ERROR,
             target=sender,
         ),
