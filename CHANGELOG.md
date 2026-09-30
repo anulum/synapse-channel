@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.35] - 2026-09-30
+
 ### Added
 
 - **Shared-pool reservations with one authoritative owner (F02, not yet
