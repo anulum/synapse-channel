@@ -447,6 +447,8 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "entitlement_advert",
         ValueError,
     ),
+    "SpendPoolError": ("synapse_channel.core.spend_pool", "spend_pool", ValueError),
+    "SpendLedgerError": ("synapse_channel.core.spend_ledger", "spend_ledger", ValueError),
     "IdentityEnrollmentError": (
         "synapse_channel.core.identity_enrollments",
         "identity_enrollment",
