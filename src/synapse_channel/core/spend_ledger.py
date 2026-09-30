@@ -43,6 +43,12 @@ from synapse_channel.core.secure_path import (
     assert_owner_only_dir_path,
     assert_owner_only_file_path,
 )
+from synapse_channel.core.spend_epoch import (
+    OwnerRevocation,
+    SpendEpochError,
+    pool_ledger_digest,
+    verify_owner_revocation,
+)
 from synapse_channel.core.spend_pool import (
     PROVENANCES,
     PoolConfig,
@@ -177,11 +183,15 @@ class SpendLedger:
             connection.execute("COMMIT")
 
     @staticmethod
-    def _pool(connection: sqlite3.Connection, pool_id: str) -> PoolState:
+    def _events(connection: sqlite3.Connection, pool_id: str) -> list[dict[str, Any]]:
         rows = connection.execute(
-            "SELECT kind, body FROM events WHERE pool_id = ? ORDER BY seq", (pool_id,)
+            "SELECT seq, kind, body FROM events WHERE pool_id = ? ORDER BY seq", (pool_id,)
         ).fetchall()
-        return fold({"kind": kind, "body": json.loads(body)} for kind, body in rows)
+        return [{"seq": seq, "kind": kind, "body": json.loads(body)} for seq, kind, body in rows]
+
+    @classmethod
+    def _pool(cls, connection: sqlite3.Connection, pool_id: str) -> PoolState:
+        return fold(cls._events(connection, pool_id))
 
     @staticmethod
     def _append(
@@ -295,6 +305,7 @@ class SpendLedger:
             return "unknown_pool"
         checks = (
             (config.owner_hub_id != self.owner_hub_id, "not_owner"),
+            (config.epoch in state.revoked_epochs, "epoch_revoked"),
             ((caller, request.project) not in config.grantees, "caller_not_granted"),
             (request.unit != config.unit, "unit_mismatch"),
             (request.tax != config.tax, "tax_basis_mismatch"),
@@ -516,3 +527,123 @@ class SpendLedger:
             {"seq": seq, "kind": kind, "recorded_at": recorded_at, "body": json.loads(body)}
             for seq, kind, recorded_at, body in rows
         ]
+
+    def checkpoint(self, pool_id: str) -> dict[str, object]:
+        """Return the pool's last ledger sequence, chain digest and epoch.
+
+        The operator puts these into an owner revocation. The new owner's copy of the
+        ledger must reproduce them exactly.
+
+        Raises
+        ------
+        SpendLedgerError
+            When the pool is not configured.
+        """
+        with closing(self._connect()) as connection:
+            events = self._events(connection, pool_id)
+        state = fold(events)
+        if state.config is None:
+            raise SpendLedgerError("no such pool")
+        return {
+            "pool_id": pool_id,
+            "epoch": state.config.epoch,
+            "sequence": events[-1]["seq"],
+            "digest": pool_ledger_digest(events),
+        }
+
+    def _verified_revocation(
+        self, events: list[dict[str, Any]], document: object
+    ) -> tuple[PoolState, OwnerRevocation]:
+        """Verify a signed revocation against the pool's configured operator keys."""
+        state = fold(events)
+        if state.config is None:
+            raise SpendLedgerError("no such pool")
+        try:
+            revocation = verify_owner_revocation(document, state.config.revocation_keys)
+        except SpendEpochError as exc:
+            raise SpendLedgerError(str(exc)) from exc
+        if revocation.pool_id != state.config.pool_id:
+            raise SpendLedgerError("the revocation names another pool")
+        if revocation.revoked_epoch != state.config.epoch:
+            raise SpendLedgerError("the revocation does not name the pool's current epoch")
+        return state, revocation
+
+    def record_revocation(
+        self, pool_id: str, document: object, *, now: datetime
+    ) -> dict[str, object]:
+        """Record a verified revocation of the pool's current epoch; that epoch grants no more.
+
+        Any holder of the ledger may record it, including a recovered old owner, whose
+        reservations for the revoked epoch are then refused.
+
+        Raises
+        ------
+        SpendLedgerError
+            When the revocation does not verify or does not name the current epoch.
+        """
+        _require_aware(now)
+        with self._transaction() as connection:
+            state, revocation = self._verified_revocation(
+                self._events(connection, pool_id), document
+            )
+            if revocation.revoked_epoch in state.revoked_epochs:
+                return {
+                    "pool_id": pool_id,
+                    "revoked_epoch": revocation.revoked_epoch,
+                    "recorded": False,
+                }
+            self._append(
+                connection,
+                pool_id,
+                "owner_revocation",
+                self._revocation_row(revocation, document),
+                now,
+            )
+        return {"pool_id": pool_id, "revoked_epoch": revocation.revoked_epoch, "recorded": True}
+
+    @staticmethod
+    def _revocation_row(revocation: OwnerRevocation, document: object) -> dict[str, object]:
+        signed = cast("Mapping[str, Any]", document)
+        return {**revocation.body(), "key_id": revocation.key_id, "signature": signed["signature"]}
+
+    def fail_over(self, pool_id: str, document: object, *, now: datetime) -> dict[str, object]:
+        """Take over a pool as its new owner, from a verified copy of the old ledger.
+
+        The revocation must name this hub as the new owner and the current epoch as
+        revoked, and this copy of the ledger must reproduce the revocation's sequence
+        and digest exactly. The revocation and a configuration for the next epoch are
+        then appended together. Grants of the old epoch remain outstanding exposure.
+
+        Raises
+        ------
+        SpendLedgerError
+            When any of those checks fails.
+        """
+        _require_aware(now)
+        with self._transaction() as connection:
+            events = self._events(connection, pool_id)
+            state, revocation = self._verified_revocation(events, document)
+            if revocation.new_owner_hub_id != self.owner_hub_id:
+                raise SpendLedgerError("the revocation hands the pool to another hub")
+            # A configured pool always has at least its configuration event.
+            if (
+                events[-1]["seq"] != revocation.ledger_sequence
+                or pool_ledger_digest(events) != revocation.ledger_digest
+            ):
+                raise SpendLedgerError("this ledger copy does not match the revoked owner's state")
+            config = next(e["body"] for e in reversed(events) if e["kind"] == "pool_config")
+            successor = {
+                **config,
+                "epoch": revocation.new_epoch,
+                "owner_hub_id": self.owner_hub_id,
+                "cause": f"failover: {revocation.cause}",
+            }
+            self._append(
+                connection,
+                pool_id,
+                "owner_revocation",
+                self._revocation_row(revocation, document),
+                now,
+            )
+            self._append(connection, pool_id, "pool_config", successor, now)
+        return {"pool_id": pool_id, "epoch": revocation.new_epoch, "revision": state.revision + 1}

@@ -33,8 +33,15 @@ All notable changes to this project are documented here.
     retry or `query` returns the stored answer.
   - Operators configure, inspect, audit and reconcile pools locally with
     `synapse spend`.
-  - Owner failover is manual. The ledger bounds reservations, but it cannot stop
-    a provider from billing.
+  - **Owner failover.** An operator-signed revocation of the current epoch, from
+    a key the pool lists, names the new owner, the ledger sequence and digest of
+    the exact copy it starts from, and an attestation that the old key is revoked
+    or the host retired.
+    - `synapse spend fail-over` takes the pool over from that copy.
+    - Grants of the old epoch still count until they are settled.
+    - A recovered old owner that records the revocation refuses its revoked
+      epoch.
+  - The ledger bounds reservations, but it cannot stop a provider from billing.
 
 ## [0.99.34] - 2026-09-30
 

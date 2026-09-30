@@ -23,8 +23,10 @@ from hub_e2e_helpers import running_hub
 from synapse_channel import cli_processes
 from synapse_channel.cli import build_parser
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.identity_keys import write_signing_key
 from synapse_channel.core.spend_ledger import SpendLedger
 from test_multihub_identity_grant import FOLLOWER, IDENTITY_KEY
+from test_spend_failover import KEYS, OPERATOR_KEY, _body
 from test_spend_peer_e2e import OWNER, _hub, _ledger, _material, _pool, _reserve
 
 
@@ -195,3 +197,50 @@ def test_the_hub_flag_needs_its_partners_and_a_valid_ledger(
     )
     ledger = captured["spend_ledger"]
     assert isinstance(ledger, SpendLedger) and ledger.owner_hub_id == "hub-x"
+
+
+def test_the_operator_hands_a_pool_over_from_the_command_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    old_home, new_home = tmp_path / "old", tmp_path / "new"
+    old_home.mkdir(mode=0o700)
+    new_home.mkdir(mode=0o700)
+    old = ["--ledger", str(old_home / "l.sqlite3"), "--hub-id", OWNER]
+    new = ["--ledger", str(new_home / "l.sqlite3"), "--hub-id", "hub-new"]
+    pool = _file(tmp_path / "p.json", _pool(revocation_keys=KEYS))
+    assert _run(["spend", "configure", *old, "--file", pool]) == 0
+    capsys.readouterr()
+    assert _run(["spend", "checkpoint", *old, "--pool", "pool-a"]) == 0
+    checkpoint = json.loads(capsys.readouterr().out)
+    key = tmp_path / "operator.pem"
+    write_signing_key(key, OPERATOR_KEY)
+    body = _file(tmp_path / "body.json", _body(checkpoint))
+    assert (
+        _run(
+            [
+                "spend",
+                "sign-revocation",
+                "--key",
+                str(key),
+                "--key-id",
+                "operator-1",
+                "--file",
+                body,
+            ]
+        )
+        == 0
+    )
+    signed = _file(tmp_path / "signed.json", json.loads(capsys.readouterr().out))
+    (new_home / "l.sqlite3").write_bytes((old_home / "l.sqlite3").read_bytes())
+    (new_home / "l.sqlite3").chmod(0o600)
+    assert _run(["spend", "fail-over", *new, "--pool", "pool-a", "--file", signed]) == 0
+    assert json.loads(capsys.readouterr().out)["epoch"] == 2
+    assert _run(["spend", "record-revocation", *old, "--pool", "pool-a", "--file", signed]) == 0
+    assert json.loads(capsys.readouterr().out)["recorded"] is True
+    assert _run(["spend", "fail-over", *old, "--pool", "pool-a", "--file", signed]) == 2
+    assert "another hub" in capsys.readouterr().err
+    bad = _file(tmp_path / "bad-body.json", {"pool_id": "pool-a"})
+    assert (
+        _run(["spend", "sign-revocation", "--key", str(key), "--key-id", "k", "--file", bad]) == 2
+    )
+    assert "documented fields" in capsys.readouterr().err

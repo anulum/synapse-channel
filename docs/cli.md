@@ -2231,9 +2231,20 @@ reaches a peer.
   - After a timeout, `query` with the same seat, task, operation and key returns
     the owner's stored answer.
 - **Refusals.** A refused peer sees only `not-admitted`.
-- **Limits of this release.** Owner failover is manual. Enforcement is not
-  activated: the ledger bounds reservations, but it does not stop a provider from
-  billing.
+- **Handing a pool to a new owner.** It takes three pieces of evidence:
+  1. `checkpoint --pool ID` gives the ledger sequence and chain digest.
+  2. `sign-revocation --key PEM --key-id ID --file BODY.json` signs a revocation
+     of the current epoch with an operator key listed in the pool's
+     `revocation_keys`. The body names the new owner, that sequence and digest,
+     and an `attestation`: `old_key_revoked` or `host_retired`.
+  3. On the new owner, `fail-over --pool ID --file SIGNED.json` takes over, but
+     only from a copy of the ledger that reproduces the digest exactly.
+
+  Grants of the old epoch still count until they are settled.
+  `record-revocation` makes a recovered old owner refuse its revoked epoch, and
+  peers must not start new consumption on a grant of a revoked epoch.
+- **Not yet enforced.** Enforcement is not activated: the ledger bounds
+  reservations, but it cannot stop a provider from billing.
 
 `synapse fleet-scorecard ./synapse.db --out fleet-scorecard.json` composes the
 existing causality, accounting, contention, and reliability reports into one

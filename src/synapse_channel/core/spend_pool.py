@@ -95,8 +95,17 @@ def timestamp(value: object, name: str) -> datetime:
     return parsed
 
 
-def _fields(document: object, required: frozenset[str], name: str) -> Mapping[str, Any]:
-    if not isinstance(document, Mapping) or set(document) != required:
+def _fields(
+    document: object,
+    required: frozenset[str],
+    name: str,
+    optional: frozenset[str] = frozenset(),
+) -> Mapping[str, Any]:
+    if (
+        not isinstance(document, Mapping)
+        or not required <= set(document)
+        or not set(document) <= required | optional
+    ):
         raise SpendPoolError(f"{name} must have exactly the fields: {', '.join(sorted(required))}")
     return document
 
@@ -119,6 +128,9 @@ _CONFIG_FIELDS = frozenset(
         "cause",
     }
 )
+_CONFIG_OPTIONAL = frozenset({"revocation_keys"})
+_REVOCATION_KEY_FIELDS = frozenset({"key_id", "public_key"})
+_PUBLIC_KEY = re.compile(r"[A-Za-z0-9+/]{43}=")
 _BASIS_FIELDS = frozenset({"tax", "fixed_fee", "minimum_charge"})
 _LIMIT_FIELDS = frozenset({"max_depth", "max_agents", "max_wall_seconds"})
 _GRANTEE_FIELDS = frozenset({"hub", "project"})
@@ -146,6 +158,7 @@ class PoolConfig:
     max_wall_seconds: int
     grantees: frozenset[tuple[str, str]]
     cause: str
+    revocation_keys: Mapping[str, str] = field(default_factory=dict)
 
     def exposure(self, upper_bound: Decimal) -> Decimal:
         """Return the exposure a call with ``upper_bound`` reserves (C2)."""
@@ -161,7 +174,7 @@ def validate_config(document: object) -> PoolConfig:
         When a field is missing, extra or invalid, the window is empty, the cause is
         empty, or a monetary pool declares no tax basis.
     """
-    data = _fields(document, _CONFIG_FIELDS, "pool configuration")
+    data = _fields(document, _CONFIG_FIELDS, "pool configuration", _CONFIG_OPTIONAL)
     basis = _fields(data["cost_basis"], _BASIS_FIELDS, "cost_basis")
     limits = _fields(data["limits"], _LIMIT_FIELDS, "limits")
     epoch = data["epoch"]
@@ -209,7 +222,22 @@ def validate_config(document: object) -> PoolConfig:
         max_wall_seconds=limit(limits["max_wall_seconds"], "limits.max_wall_seconds"),
         grantees=grantees,
         cause=cause.strip(),
+        revocation_keys=_revocation_keys(data.get("revocation_keys", [])),
     )
+
+
+def _revocation_keys(value: object) -> dict[str, str]:
+    """Return the operator keys that may sign an owner revocation, by key id."""
+    if not isinstance(value, list) or len(value) > 8:
+        raise SpendPoolError("revocation_keys must be a list of at most 8 keys")
+    keys: dict[str, str] = {}
+    for item in value:
+        entry = _fields(item, _REVOCATION_KEY_FIELDS, "revocation key")
+        public = entry["public_key"]
+        if not isinstance(public, str) or _PUBLIC_KEY.fullmatch(public) is None:
+            raise SpendPoolError("a revocation public key must be a base64 Ed25519 key")
+        keys[token(entry["key_id"], "revocation key_id")] = public
+    return keys
 
 
 _REQUEST_FIELDS = frozenset(
@@ -325,6 +353,7 @@ class PoolState:
     config: PoolConfig | None = None
     revision: int = 0
     reservations: dict[str, Reservation] = field(default_factory=dict)
+    revoked_epochs: set[int] = field(default_factory=set)
 
     def settled(self) -> Decimal:
         """Return every amount charged to the pool."""
@@ -374,6 +403,8 @@ def fold(events: Iterable[Mapping[str, Any]]) -> PoolState:
                 reservation.overrun_open = True
             if body["final"]:
                 reservation.closed = True
+        elif kind == "owner_revocation":
+            state.revoked_epochs.add(int(body["revoked_epoch"]))
         elif kind == "reconciliation":
             reservation = state.reservations[body["reservation_id"]]
             reservation.settled = Decimal(body["amount"])
