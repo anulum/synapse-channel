@@ -44,12 +44,16 @@ from synapse_channel.participants.participant import (
 
 
 async def _until(
-    queue: asyncio.Queue[dict[str, Any]], kind: str, *, stage: str = ""
+    queue: asyncio.Queue[dict[str, Any]], kind: str, *, stage: str = "", operation_key: str = ""
 ) -> dict[str, Any]:
     """Wait for one callback frame with a type and optional lifecycle stage."""
     while True:
         frame = await asyncio.wait_for(queue.get(), 60)
-        if frame.get("type") == kind and (not stage or frame.get("stage") == stage):
+        if (
+            frame.get("type") == kind
+            and (not stage or frame.get("stage") == stage)
+            and (not operation_key or frame.get("operation_key") == operation_key)
+        ):
             return frame
 
 
@@ -473,7 +477,19 @@ async def test_cancelled_queued_offer_never_invokes_provider(tmp_path: Path) -> 
         bridge = DeliveryParticipantBridge(
             receiver, participant, ledger_path=tmp_path / "bridge.db"
         )
-        receiver.callback = bridge.on_message
+        cancellation_applied = asyncio.Event()
+        second = ""
+
+        async def receiver_callback(frame: dict[str, Any]) -> None:
+            await bridge.on_message(frame)
+            if (
+                frame.get("type") == MessageType.DELIVERY_STATUS
+                and frame.get("operation_key") == second
+                and frame.get("cancel_requested") is True
+            ):
+                cancellation_applied.set()
+
+        receiver.callback = receiver_callback
         bridge.start()
         sender_task = asyncio.create_task(sender.connect())
         receiver_task = asyncio.create_task(receiver.connect())
@@ -499,11 +515,18 @@ async def test_cancelled_queued_offer_never_invokes_provider(tmp_path: Path) -> 
                 request_id="second-req",
                 idempotency_key="second-idem",
             )
+            await _until(
+                sender_frames, MessageType.DELIVERY_STATUS, stage="queued", operation_key=second
+            )
             await sender.cancel_delivery(second, mutation_id="cancel-second")
-            await _until(sender_frames, MessageType.DELIVERY_STATUS, stage="queued")
+            await asyncio.wait_for(cancellation_applied.wait(), 5)
             participant.release.set()
-            await _until(sender_frames, MessageType.DELIVERY_STATUS, stage="completed")
-            cancelled = await _until(sender_frames, MessageType.DELIVERY_STATUS, stage="cancelled")
+            await _until(
+                sender_frames, MessageType.DELIVERY_STATUS, stage="completed", operation_key=first
+            )
+            cancelled = await _until(
+                sender_frames, MessageType.DELIVERY_STATUS, stage="cancelled", operation_key=second
+            )
             assert cancelled["operation_key"] == second
             await sender.request_delivery_status(second)
             cancelled_status = await _until(

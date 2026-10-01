@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import sqlite3
@@ -66,7 +67,7 @@ def _damage(path: Path, condition: str) -> None:
     if condition == "not-sqlite":
         path.write_bytes(b"PRIVATE-STORAGE-CANARY is not a SQLite database")
     elif condition == "wrong-schema":
-        with sqlite3.connect(path) as connection:
+        with contextlib.closing(sqlite3.connect(path)) as connection:
             connection.execute("CREATE TABLE events (seq INTEGER PRIMARY KEY)")
 
 
@@ -93,7 +94,7 @@ def test_store_failure_is_private_and_the_same_server_recovers(
         if condition == "wrong-schema":
             # Repair the SQLite database through SQLite, including its WAL;
             # swapping just its main file would retain the old journal.
-            with sqlite3.connect(db) as connection:
+            with contextlib.closing(sqlite3.connect(db)) as connection:
                 connection.execute("DROP TABLE events")
             _seed(db)
         else:

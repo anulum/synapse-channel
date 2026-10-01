@@ -171,10 +171,8 @@ async def test_mcp_memory_recall_without_key_fails_closed(tmp_path: Path) -> Non
     )
     text = out.lower()
     assert "packaging release notes" not in text
-    assert any(
-        token in text
-        for token in ("key", "sqlcipher", "encrypt", "cipher", "db-key-file", "database")
-    )
+    assert text == "cannot read memory recall event store"
+    assert str(db) not in out
 
 
 @pytest.mark.asyncio
@@ -192,10 +190,8 @@ async def test_mcp_memory_recall_wrong_key_fails_closed(tmp_path: Path) -> None:
     )
     text = out.lower()
     assert "packaging release notes" not in text
-    assert any(
-        token in text
-        for token in ("key", "sqlcipher", "encrypt", "cipher", "db-key-file", "database")
-    )
+    assert text == "cannot read memory recall event store"
+    assert str(db) not in out
 
 
 def _stub_bridge_for_route_task() -> SynapseHubBridge:
@@ -262,10 +258,8 @@ async def test_mcp_route_task_observation_store_without_key_fails_closed(
     out = await bridge.route_task("T1", event_store=str(db))
     text = out.lower()
     # Must not silently rank as if observations were empty success.
-    assert any(
-        token in text
-        for token in ("key", "sqlcipher", "encrypt", "cipher", "db-key-file", "database")
-    )
+    assert text == "cannot read observed capability event store"
+    assert str(db) not in out
 
 
 @pytest.mark.asyncio
@@ -278,14 +272,9 @@ async def test_mcp_route_task_observation_store_wrong_key_fails_closed(
     bridge = _stub_bridge_for_route_task()
     out = await bridge.route_task("T1", event_store=str(db), event_store_key_file=str(wrong))
     text = out.lower()
-    assert "candidates" not in text or any(
-        token in text
-        for token in ("key", "sqlcipher", "encrypt", "cipher", "db-key-file", "database")
-    )
-    assert any(
-        token in text
-        for token in ("key", "sqlcipher", "encrypt", "cipher", "db-key-file", "database")
-    )
+    assert "candidates" not in text
+    assert text == "cannot read observed capability event store"
+    assert str(db) not in out
 
 
 @pytest.mark.asyncio

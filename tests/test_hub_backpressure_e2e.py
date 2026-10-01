@@ -14,9 +14,10 @@ import json
 import socket
 from collections.abc import AsyncIterator
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
-from websockets.asyncio.client import connect
+from websockets.asyncio.client import ClientConnection, connect
 from websockets.asyncio.server import ServerConnection, serve
 
 from hub_e2e_helpers import (
@@ -58,6 +59,29 @@ async def _small_buffer_server(hub: SynapseHub) -> AsyncIterator[str]:
         yield "ws://127.0.0.1:" + str(server.sockets[0].getsockname()[1])
 
 
+@contextlib.asynccontextmanager
+async def _unread_client(uri: str) -> AsyncIterator[ClientConnection]:
+    """Negotiate a small real TCP receive window before the WebSocket handshake."""
+    endpoint = urlsplit(uri)
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        client_socket.setblocking(False)
+        assert endpoint.port is not None
+        await asyncio.get_running_loop().sock_connect(client_socket, ("127.0.0.1", endpoint.port))
+        async with connect(
+            uri,
+            sock=client_socket,
+            compression=None,
+            max_queue=1,
+            ping_interval=None,
+            close_timeout=1,
+        ) as connection:
+            yield connection
+    finally:
+        client_socket.close()
+
+
 @pytest.mark.parametrize("private", [False, True])
 async def test_failed_recipient_write_is_negative_and_same_id_can_retry(
     tmp_path: Path, private: bool
@@ -73,12 +97,7 @@ async def test_failed_recipient_write_is_negative_and_same_id_can_retry(
         sender = await connect_agent("P/sender", uri)
         observer = await connect_agent("P/other", uri)
         try:
-            async with connect(
-                uri, compression=None, max_queue=1, ping_interval=None, close_timeout=1
-            ) as unread:
-                unread.transport.get_extra_info("socket").setsockopt(
-                    socket.SOL_SOCKET, socket.SO_RCVBUF, 4096
-                )
+            async with _unread_client(uri) as unread:
                 await read_until_type(unread, "welcome")
                 await unread.send(json.dumps({"sender": "P/recipient", "type": "heartbeat"}))
                 await sender.recorder.wait_for(
@@ -231,12 +250,7 @@ async def test_channel_receipt_and_retry_use_completed_concurrent_member_writes(
             await sender.recorder.wait_for(
                 lambda m: m.get("ok") is True and "created" in m.get("payload", "")
             )
-            async with connect(
-                uri, compression=None, max_queue=1, ping_interval=None, close_timeout=1
-            ) as unread:
-                unread.transport.get_extra_info("socket").setsockopt(
-                    socket.SOL_SOCKET, socket.SO_RCVBUF, 4096
-                )
+            async with _unread_client(uri) as unread:
                 await read_until_type(unread, "welcome")
                 await unread.send(json.dumps({"sender": "P/a-unread", "type": "heartbeat"}))
                 await sender.recorder.wait_for(lambda m: m.get("agent") == "P/a-unread")

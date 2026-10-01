@@ -9,43 +9,44 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
-import os
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.client.claim_confirmation import DEFAULT_CLAIM_REPLY_TIMEOUT
-from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.mcp import app_task_actions
 from synapse_channel.mcp.advisory_actions import McpAdvisoryActions
 from synapse_channel.mcp.claim_actions import McpClaimActions
 from synapse_channel.mcp.entitlement_actions import read_entitlement_overview
-from synapse_channel.mcp.hub_inbox import drain_hub_inbox
-from synapse_channel.mcp.inbox import DEFAULT_MCP_INBOX_LIMIT, McpFeedInbox
+from synapse_channel.mcp.inbox import (
+    DEFAULT_MCP_INBOX_LIMIT as DEFAULT_MCP_INBOX_LIMIT,
+)
+from synapse_channel.mcp.inbox import (
+    McpFeedInbox as McpFeedInbox,
+)
+from synapse_channel.mcp.inbox_queries import _McpInboxQueries
 from synapse_channel.mcp.plan_actions import McpPlanActions
+from synapse_channel.mcp.reply_exchange import (
+    DEFAULT_REQUEST_TIMEOUT as DEFAULT_REQUEST_TIMEOUT,
+)
+from synapse_channel.mcp.reply_exchange import (
+    Matcher as Matcher,
+)
+from synapse_channel.mcp.reply_exchange import (
+    Sender as Sender,
+)
 from synapse_channel.mcp.snapshot_queries import McpSnapshotQueries
 from synapse_channel.mcp.status import mcp_status
 
 AgentFactory = Callable[..., SynapseAgent]
 """Factory that builds the bridge's hub client; injectable for testing."""
 
-Matcher = Callable[[dict[str, Any]], bool]
-"""Predicate that selects the hub reply a pending request is waiting for."""
-
-Sender = Callable[[], Awaitable[None]]
-"""Zero-argument coroutine that issues one request on the hub client."""
-
 DEFAULT_BRIDGE_NAME = "synapse-mcp"
 """Default identity the MCP adapter registers under on the hub."""
 
-DEFAULT_REQUEST_TIMEOUT = 5.0
-"""Seconds a tool waits for the hub's reply before reporting no response."""
 
-
-class SynapseHubBridge:
+class SynapseHubBridge(_McpInboxQueries):
     """Translate MCP tool/resource calls into hub coordination verbs.
 
     Holds one hub client and a list of pending requests. Each query/action sends
@@ -88,21 +89,13 @@ class SynapseHubBridge:
         inbox_cursor: str | Path | None = None,
     ) -> None:
         self.name = name
-        self.request_timeout = request_timeout
-        self.inbox_source = os.environ.get("SYN_INBOX_SOURCE", "feed")
-        if self.inbox_source not in {"feed", "hub"}:
-            raise ValueError("SYN_INBOX_SOURCE must be feed or hub")
-        if self.inbox_source == "hub" and (inbox_feed is not None or inbox_cursor is not None):
-            raise ValueError("local inbox paths cannot be combined with the hub source")
-        self.inbox_uri = uri
-        self.inbox_home = Path(os.environ.get("SYN_HOME", str(Path.home() / "synapse")))
-        role_names = tuple(dict.fromkeys(role.strip() for role in roles if role.strip()))
-        self._waiters: list[tuple[Matcher, asyncio.Future[dict[str, Any]]]] = []
-        self.inbox_reader = McpFeedInbox(
-            name,
-            roles=role_names,
-            feed_path=inbox_feed,
-            cursor_path=inbox_cursor,
+        super().__init__(
+            name=name,
+            uri=uri,
+            request_timeout=request_timeout,
+            roles=roles,
+            inbox_feed=inbox_feed,
+            inbox_cursor=inbox_cursor,
         )
         self.agent = agent_factory(
             name,
@@ -110,7 +103,7 @@ class SynapseHubBridge:
             uri=uri,
             verbose=False,
             token=token,
-            roles=role_names,
+            roles=self.inbox_roles,
         )
 
         # Look up ``self._await_reply`` on each call so test doubles that rebind
@@ -129,66 +122,6 @@ class SynapseHubBridge:
         self.plan_actions = McpPlanActions(self.agent, await_reply)
         self.advisory_actions = McpAdvisoryActions(self.agent, await_reply)
         self.snapshot_queries = McpSnapshotQueries(self.agent, await_reply)
-
-    async def on_message(self, data: dict[str, Any]) -> None:
-        """Resolve the first pending request whose matcher accepts ``data``.
-
-        Registered as the hub client's callback, so it sees every inbound message
-        and hands each to at most one waiting request.
-
-        Parameters
-        ----------
-        data : dict[str, Any]
-            One decoded inbound message from the hub.
-        """
-        for waiter in list(self._waiters):
-            match, future = waiter
-            if not future.done() and match(data):
-                future.set_result(data)
-                with contextlib.suppress(ValueError):
-                    self._waiters.remove(waiter)
-                return
-
-    async def _await_reply(self, match: Matcher, send: Sender) -> dict[str, Any] | None:
-        """Use the existing bridge deadline for ordinary queries and actions."""
-        return await self._await_reply_with_timeout(match, send, self.request_timeout)
-
-    async def _await_reply_with_timeout(
-        self, match: Matcher, send: Sender, timeout: float
-    ) -> dict[str, Any] | None:
-        """Register a matcher, issue ``send``, and return the correlated reply.
-
-        Parameters
-        ----------
-        match : Matcher
-            Predicate selecting the hub reply this request waits for.
-        send : Sender
-            Coroutine that issues the request on the hub client.
-        timeout : float
-            Finite deadline covering both the send and correlated reply.
-
-        Returns
-        -------
-        dict[str, Any] or None
-            The matched reply, or ``None`` if none arrived within
-            :attr:`request_timeout`.
-        """
-
-        async def exchange() -> dict[str, Any]:
-            """Include sending in the same finite reply deadline."""
-            await send()
-            return await future
-
-        future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
-        waiter = (match, future)
-        self._waiters.append(waiter)
-        try:
-            return await asyncio.wait_for(exchange(), timeout)
-        except asyncio.TimeoutError:
-            return None
-        finally:
-            with contextlib.suppress(ValueError):
-                self._waiters.remove(waiter)
 
     async def claim(
         self, task_id: str, paths: list[str] | None = None, *, task_only: bool = False
@@ -295,39 +228,6 @@ class SynapseHubBridge:
     async def board(self) -> str:
         """Return the shared task/progress blackboard through the query facade."""
         return await self.snapshot_queries.board()
-
-    async def inbox(self, limit: int = DEFAULT_MCP_INBOX_LIMIT) -> str:
-        """Read one bounded page from the selected feed or authenticated hub.
-
-        ``SYN_INBOX_SOURCE=hub`` uses this bridge's connection and an independent
-        endpoint/identity cursor. Availability is explicit; a read does not prove
-        model processing. The default preserves offline local-feed behaviour.
-
-        Parameters
-        ----------
-        limit : int, optional
-            Maximum matching messages, bounded to 1–100.
-
-        Returns
-        -------
-        str
-            JSON page with source, availability, cursor and remaining-page state.
-        """
-        if self.inbox_source == "hub":
-            return await drain_hub_inbox(
-                self.agent,
-                self._await_reply,
-                uri=self.inbox_uri,
-                home=self.inbox_home,
-                limit=safe_int(
-                    limit,
-                    default=DEFAULT_MCP_INBOX_LIMIT,
-                    min_value=1,
-                    max_value=100,
-                    allow_bool=False,
-                ),
-            )
-        return self.inbox_reader.drain(limit)
 
     async def status(self) -> str:
         """Return live roster, waiter, claim, resource, and mailbox counts."""

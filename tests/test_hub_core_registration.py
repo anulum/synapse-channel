@@ -144,7 +144,8 @@ async def test_untrusted_log_fields_are_rendered_without_control_characters(
                         }
                     )
                 )
-                await read_until_type(websocket, "presence_update")
+                echoed = await read_until_type(websocket, "chat")
+                assert echoed["payload"] == "body\r\ninjected"
     logged = "\n".join(record.getMessage() for record in caplog.records)
     assert "evil\\nFORGED" in logged  # the sender's newline is escaped to \n
     assert "body\\r\\ninjected" in logged  # the payload's CR/LF is escaped
