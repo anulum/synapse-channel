@@ -31,6 +31,15 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Manual release bounds the complete send/reply exchange and returns exit `3`
+  for a missing acknowledgement instead of reporting a refusal. A retained
+  operation key and semantic SHA-256 digest support exact read-only durable
+  confirmation, including after restart, without another release. Python and
+  JavaScript clients expose the optional query. Legacy replies and corrupt or
+  missing journal proofs remain unknown. The non-blocking Git hook reports
+  `release requested` and joins its connection cleanup rather than claiming
+  confirmed release from a send alone.
+
 - Durable dashboard feeds return a fixed private HTTP 503 for storage,
   builder and JSON-encoding failures instead of exposing internal paths or
   disconnecting the request. Live events, receipts and operator-actions

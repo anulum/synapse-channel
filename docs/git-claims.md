@@ -389,6 +389,9 @@ that produced the commit and releases that seat's claims. Mixed-identity linked
 worktrees therefore auto-release correctly; the identity baked at install time is
 only the fallback for a worktree with no recorded identity, and
 `--auto-release-on manual` remains available whenever explicit release is preferred.
+The non-blocking `git-release` hook prints `release requested on ...` after its
+send attempt; exit `0` is not a confirmed hub release. For an operator-confirmed
+closeout, use the [manual release and exact read-only recovery](cli.md) workflow.
 
 This repository dogfoods the gate through the pre-commit framework:
 

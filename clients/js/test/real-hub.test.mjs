@@ -97,7 +97,49 @@ test("SDK interoperates with an authenticated Python hub", { timeout: 25000 }, a
   assert.equal(chat.payload, "real hub delivery");
   await exchange(alice, MessageType.ClaimGranted, () => alice.claim("alice-task", ["shared.py"]));
   await exchange(bob, MessageType.ClaimDenied, () => bob.claim("bob-task", ["shared.py"]));
-  await exchange(alice, MessageType.ReleaseGranted, () => alice.release("alice-task"));
+  const releaseKey = "js-release-unique-operation";
+  const prepared = alice.prepareRelease("alice-task", undefined, releaseKey);
+  const semantic = Object.fromEntries(Object.entries(prepared).filter(([key]) =>
+    !["timestamp", "client_timestamp", "auth", "signature"].includes(key)));
+  const releaseDigest = createHash("sha256").update(canonical(semantic).replace(
+    /[\u007f-\uffff]/g, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  )).digest("hex");
+  const grant = await exchange(alice, MessageType.ReleaseGranted, () =>
+    alice.release("alice-task", prepared.epoch, releaseKey));
+  assert.equal(grant.release_operation_id, releaseKey);
+  assert.equal(grant.request_digest, releaseDigest);
+  const confirmed = await exchange(alice, MessageType.StateSnapshot, () =>
+    alice.requestReleaseConfirmation("alice-task", releaseKey, releaseDigest, "js-exact-release"));
+  assert.equal(confirmed.request_id, "js-exact-release");
+  assert.equal(confirmed.target, "js-alice");
+  assert.equal(confirmed.release_confirmation.status, "confirmed");
+  assert.deepEqual(confirmed.release_confirmation.receipt, grant.receipt);
+  assert.equal(confirmed.snapshot, undefined);
+  for (const [client, digest] of [[bob, releaseDigest], [alice, "0".repeat(64)]]) {
+    const unknown = await exchange(client, MessageType.StateSnapshot, () =>
+      client.requestReleaseConfirmation("alice-task", releaseKey, digest, "js-negative-release"));
+    assert.equal(unknown.release_confirmation.status, "unknown");
+    assert.equal(unknown.release_confirmation.receipt, undefined);
+  }
+  const unicodeTask = "\u0085\ufeffunicode-release-é-😀\u0085";
+  const unicodeKey = "unicode-operation-é-😀";
+  await exchange(alice, MessageType.ClaimGranted, () =>
+    alice.claim(unicodeTask, [], undefined, { taskOnly: true }));
+  const unicodePrepared = alice.prepareRelease(unicodeTask, undefined, unicodeKey);
+  assert.equal(unicodePrepared.task_id, "\ufeffunicode-release-é-😀");
+  assert.equal(typeof unicodePrepared.epoch, "number");
+  const unicodeSemantic = Object.fromEntries(Object.entries(unicodePrepared).filter(([key]) =>
+    !["timestamp", "client_timestamp", "auth", "signature"].includes(key)));
+  const unicodeDigest = createHash("sha256").update(canonical(unicodeSemantic).replace(
+    /[\u007f-\uffff]/g, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  )).digest("hex");
+  const unicodeGrant = await exchange(alice, MessageType.ReleaseGranted, () =>
+    alice.release(unicodeTask, unicodePrepared.epoch, unicodeKey));
+  assert.equal(unicodeGrant.request_digest, unicodeDigest);
+  const unicodeProof = await exchange(alice, MessageType.StateSnapshot, () =>
+    alice.requestReleaseConfirmation(unicodeTask, unicodeKey, unicodeDigest, "js-unicode-proof"));
+  assert.equal(unicodeProof.release_confirmation.status, "confirmed");
+  assert.deepEqual(unicodeProof.release_confirmation.receipt, unicodeGrant.receipt);
   await exchange(bob, MessageType.ClaimGranted, () => bob.claim("bob-task", ["shared.py"]));
   await exchange(bob, MessageType.ReleaseGranted, () => bob.release("bob-task"));
   await exchange(alice, MessageType.ClaimGranted, () =>

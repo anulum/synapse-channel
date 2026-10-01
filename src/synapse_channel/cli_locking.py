@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import logging
 import math
 import sys
@@ -29,10 +28,24 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.cli_lock_process import run_locked_subprocess
+from synapse_channel.cli_release import (
+    _load_release_receipt as _load_release_receipt,
+)
+from synapse_channel.cli_release import (
+    _receipt_freshness as _receipt_freshness,
+)
+from synapse_channel.cli_release import (
+    _receipt_list as _receipt_list,
+)
+from synapse_channel.cli_release import (
+    _release as _release,
+)
+from synapse_channel.cli_release import (
+    _validate_release_receipt_identity as _validate_release_receipt_identity,
+)
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.connect_failures import describe_connect_failure, explain_silent_outcome
 from synapse_channel.core.protocol import SENDER_HUB, MessageType
-from synapse_channel.core.receipts import build_release_receipt
 from synapse_channel.git.ordinary_claim import (
     OrdinaryClaimScopeError,
     resolve_ordinary_claim_scope,
@@ -43,61 +56,6 @@ logger = logging.getLogger("synapse.lock")
 AgentFactory = Callable[..., SynapseAgent]
 LockRunner = Callable[[list[str]], Awaitable[int]]
 _run_subprocess = run_locked_subprocess
-
-
-def _load_release_receipt(path: str | Path) -> dict[str, Any]:
-    """Load and validate a release receipt JSON object from ``path``."""
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("receipt must be a JSON object")
-    return payload
-
-
-def _receipt_list(
-    payload: dict[str, Any],
-    key: str,
-    fallback: list[str] | None,
-) -> list[str]:
-    """Merge a repeated receipt field with explicit CLI values."""
-    items: list[str] = []
-    raw = payload.get(key)
-    if raw is not None:
-        if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
-            raise ValueError(f"receipt field '{key}' must be a list of strings")
-        items.extend(raw)
-    items.extend(fallback or [])
-    return items
-
-
-def _receipt_freshness(payload: dict[str, Any], fallback: float | None) -> float | None:
-    """Validate finite freshness, preferring an explicit value over receipt input."""
-    raw = fallback if fallback is not None else payload.get("freshness_seconds")
-    if raw is None:
-        return None
-    if isinstance(raw, bool) or not isinstance(raw, int | float):
-        raise ValueError("receipt field 'freshness_seconds' must be a number")
-    try:
-        freshness = float(raw)
-    except OverflowError as exc:
-        raise ValueError("receipt field 'freshness_seconds' must be finite") from exc
-    if not math.isfinite(freshness):
-        raise ValueError("receipt field 'freshness_seconds' must be finite")
-    return freshness
-
-
-def _validate_release_receipt_identity(
-    payload: dict[str, Any],
-    *,
-    task_id: str,
-    name: str,
-) -> None:
-    """Reject receipts whose task or owner would release the wrong claim."""
-    receipt_task = payload.get("task_id")
-    receipt_owner = payload.get("owner")
-    if receipt_task is not None and receipt_task != task_id:
-        raise ValueError(f"receipt task_id {receipt_task!r} does not match {task_id!r}")
-    if receipt_owner is not None and receipt_owner != name:
-        raise ValueError(f"receipt owner {receipt_owner!r} does not match {name!r}")
 
 
 async def _lock(
@@ -348,170 +306,6 @@ def _cmd_lock(args: argparse.Namespace) -> int:
     )
 
 
-async def _release(
-    *,
-    uri: str,
-    name: str,
-    task_id: str,
-    evidence: list[str] | None = None,
-    artifacts: list[str] | None = None,
-    known_failures: list[str] | None = None,
-    changed_files: list[str] | None = None,
-    generated_artifacts: list[str] | None = None,
-    approvals: list[str] | None = None,
-    confidence: str = "",
-    freshness_seconds: float | None = None,
-    receipt: str | Path | None = None,
-    receipt_json: bool = False,
-    agent_factory: AgentFactory = SynapseAgent,
-    token: str | None = None,
-    ready_timeout: float = 5.0,
-    attempts: int = 40,
-    poll_interval: float = 0.05,
-) -> int:
-    """Drop a claim the caller owns, printing the hub's verdict and receipt.
-
-    The manual escape hatch for a claim that no automatic trigger will release —
-    a ``git-claim --auto-release-on manual``, or any lease whose holder simply
-    wants to let go. The hub only honours a release from the claim's owner, so
-    ``--name`` must match the owner recorded on the claim. Optional receipt
-    fields travel through the real release envelope and are echoed by the hub;
-    ``receipt_json`` prints that echo as machine-readable JSON.
-
-    Parameters
-    ----------
-    uri, name : str
-        Hub URI and the releasing identity; must equal the claim's owner.
-    task_id : str
-        Identifier of the claim to release.
-    evidence, artifacts, known_failures, changed_files : list[str] or None, optional
-        Repeated closeout evidence fields attached to the release receipt.
-    generated_artifacts, approvals : list[str] or None, optional
-        Additional repeated artifact/review fields attached to the receipt.
-    confidence : str, optional
-        Optional caller-supplied confidence label.
-    freshness_seconds : float or None, optional
-        Age, in seconds, of the newest evidence.
-    receipt : str or pathlib.Path or None, optional
-        Verified release receipt JSON to seed the repeated release receipt fields.
-    receipt_json : bool, optional
-        Print the release receipt as JSON instead of the legacy one-line text.
-    agent_factory : AgentFactory, optional
-        Factory for the hub client; injectable for testing.
-    token : str or None, optional
-        Shared-secret token for a secured hub.
-    ready_timeout : float, optional
-        Seconds to wait for the hub connection readiness event.
-    attempts : int, optional
-        Release verdict polling attempts.
-    poll_interval : float, optional
-        Seconds to wait between verdict polls.
-
-    Returns
-    -------
-    int
-        ``0`` when the hub confirms the release; ``1`` when the hub is unreachable,
-        denies the release (not the owner, or no such claim), or stays silent.
-    """
-    try:
-        receipt_payload = _load_release_receipt(receipt) if receipt is not None else {}
-        _validate_release_receipt_identity(receipt_payload, task_id=task_id, name=name)
-        release_evidence = _receipt_list(receipt_payload, "evidence", evidence)
-        release_artifacts = _receipt_list(receipt_payload, "artifacts", artifacts)
-        release_known_failures = _receipt_list(
-            receipt_payload,
-            "known_failures",
-            known_failures,
-        )
-        release_changed_files = _receipt_list(receipt_payload, "changed_files", changed_files)
-        release_generated_artifacts = _receipt_list(
-            receipt_payload,
-            "generated_artifacts",
-            generated_artifacts,
-        )
-        release_approvals = _receipt_list(receipt_payload, "approvals", approvals)
-        release_confidence = confidence or str(receipt_payload.get("confidence") or "")
-        release_freshness_seconds = _receipt_freshness(receipt_payload, freshness_seconds)
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
-        print(f"invalid release receipt for '{task_id}': {exc}")
-        return 1
-
-    outcome: dict[str, Any] = {}
-
-    async def collect(data: dict[str, Any]) -> None:
-        """Collect this owner's release verdict or an addressed hub refusal."""
-        if (
-            data.get("type") == MessageType.ERROR
-            and data.get("sender") == SENDER_HUB
-            and data.get("target") == name
-        ):
-            outcome["denied"] = str(data.get("payload") or "hub refused the request")
-            return
-        if str(data.get("task_id")) != task_id:
-            return
-        if data.get("type") == MessageType.RELEASE_GRANTED and data.get("owner") == name:
-            outcome["released"] = True
-            if isinstance(data.get("receipt"), dict):
-                outcome["receipt"] = data["receipt"]
-        elif data.get("type") == MessageType.RELEASE_DENIED:
-            outcome["denied"] = str(data.get("payload") or "release denied")
-
-    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    conn_task = asyncio.create_task(agent.connect())
-    try:
-        if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(
-                describe_connect_failure(
-                    name,
-                    uri,
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
-                )
-            )
-            return 1
-        await agent.release(
-            task_id,
-            evidence=release_evidence,
-            artifacts=release_artifacts,
-            known_failures=release_known_failures,
-            changed_files=release_changed_files,
-            generated_artifacts=release_generated_artifacts,
-            approvals=release_approvals,
-            confidence=release_confidence,
-            freshness_seconds=release_freshness_seconds,
-        )
-        for _ in range(attempts):
-            if outcome or conn_task.done():
-                break
-            await asyncio.sleep(poll_interval)
-        if outcome.get("released"):
-            if receipt_json:
-                receipt_output = outcome.get("receipt")
-                if not isinstance(receipt_output, dict):
-                    receipt_output = build_release_receipt(task_id=task_id, owner=name)
-                print(json.dumps(receipt_output, sort_keys=True))
-            else:
-                print(f"released '{task_id}'")
-            return 0
-        denied = outcome.get("denied")
-        if denied:
-            print(f"release refused for '{task_id}': {denied}")
-        else:
-            print(
-                explain_silent_outcome(
-                    name,
-                    uri,
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
-                    fallback=f"release refused for '{task_id}': no response from hub",
-                )
-            )
-        return 1
-    finally:
-        agent.running = False
-        conn_task.cancel()
-
-
 def _cmd_release(args: argparse.Namespace) -> int:
     """Dispatch the ``release`` subcommand: manually drop an owned claim."""
     return asyncio.run(
@@ -531,6 +325,10 @@ def _cmd_release(args: argparse.Namespace) -> int:
             receipt_json=args.receipt_json,
             token=args.token,
             ready_timeout=args.ready_timeout,
+            reply_timeout=getattr(args, "reply_timeout", 30.0),
+            idem_key=getattr(args, "idem_key", None),
+            request_digest=getattr(args, "request_digest", None),
+            confirm_only=getattr(args, "confirm_only", False),
         )
     )
 
@@ -645,5 +443,24 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     release.add_argument(
         "--ready-timeout", type=float, default=5.0, help="Seconds to await hub readiness."
+    )
+    release.add_argument(
+        "--reply-timeout",
+        type=float,
+        default=30.0,
+        help="Bound each complete send/reply exchange (0 < seconds <= 300).",
+    )
+    release.add_argument(
+        "--idem-key", default=None, help="Unique release operation key; generated when omitted."
+    )
+    release.add_argument(
+        "--request-digest",
+        default=None,
+        help="Original SHA-256 fingerprint; required with --confirm-only.",
+    )
+    release.add_argument(
+        "--confirm-only",
+        action="store_true",
+        help="Read the exact durable result without sending another release.",
     )
     release.set_defaults(func=_cmd_release)

@@ -51,6 +51,7 @@ from synapse_channel.core.receipts import (
     format_release_receipt_note,
     release_receipt_has_evidence,
 )
+from synapse_channel.core.release_confirmation import release_reply_binding
 from synapse_channel.core.scoping import normalize_paths
 from synapse_channel.core.state import GitContext, SynapseState
 from synapse_channel.core.state_transaction import durable_state_transaction
@@ -642,6 +643,7 @@ async def handle_release(
             task_id=task_id,
             owner=sender,
             receipt=receipt,
+            **release_reply_binding(data),
         )
         events: list[tuple[str, Mapping[str, Any]]] = [(EventKind.RELEASE, {"task_id": task_id})]
         if release_receipt_has_evidence(receipt):
@@ -699,6 +701,7 @@ async def handle_release(
             msg_type=MessageType.RELEASE_DENIED,
             target=sender,
             task_id=task_id,
+            **release_reply_binding(data),
         ),
     )
 

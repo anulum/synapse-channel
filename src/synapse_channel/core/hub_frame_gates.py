@@ -56,6 +56,7 @@ from synapse_channel.core.multihub_claim_transport import (
 from synapse_channel.core.multihub_claim_wire import ClaimForwardRequest
 from synapse_channel.core.namespace_ownership import NamespaceOwnership, OwnershipOutcome
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.release_confirmation import release_error_correlation
 
 logger = logging.getLogger("synapse.hub")
 
@@ -175,6 +176,7 @@ class HubFrameGates:
                 msg_type=MessageType.ERROR,
                 target=sender,
                 verification_result=result.value,
+                **release_error_correlation(data),
             ),
         )
         return False
@@ -211,6 +213,7 @@ class HubFrameGates:
                 target=sender,
                 acl_decision=denial.decision,
                 acl_reason=denial.reason,
+                **release_error_correlation(data),
             ),
         )
         return False

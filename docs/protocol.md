@@ -790,6 +790,33 @@ shows the release closeout alongside the task plan. The hub records the submitte
 evidence; policy decisions about whether that evidence is sufficient remain
 outside the wire protocol.
 
+Keyed release verdicts also echo `release_operation_id` (the request's
+`idem_key`) and `request_digest` (SHA-256 of canonical semantic JSON, excluding
+`timestamp`, `client_timestamp`, `auth`, and `signature`). Callers must match the
+hub sender, owner, task, key, digest and receipt before accepting a grant.
+Release ACL and per-message-authentication errors also echo the operation key
+and task so an unrelated asynchronous error cannot masquerade as its refusal.
+
+For exact read-only recovery, `state_request` may carry a bounded `request_id`
+and `release_confirmation: {task_id, operation_id, request_digest}`. The key
+is 1–128 characters with no NUL; the digest is 64 lowercase hexadecimal digits.
+The authenticated sender's release namespace is the only operation lookup.
+The private `state_snapshot` echoes the valid request id and contains only
+`release_confirmation`, without the ordinary full `snapshot`.
+
+A confirmed projection carries `status: "confirmed"`, task, owner, operation
+identity, matching `receipt`, `first_event_seq` and `commit_seq`. It verifies the
+durable request digest, response hash, release event and matching idempotency
+commit witness. Unknown projections have `status: "unknown"` and no receipt;
+malformed input, missing/non-durable data and damaged storage all remain unknown.
+No release, renewal, replay or journal write happens on this read. A confirmed
+historical release says nothing about a newer lease for the same task.
+
+These optional fields do not change the message vocabulary or wire version.
+Legacy hubs can ignore the request extension and return an ordinary snapshot;
+that is **not** confirmation. The manual CLI's conservative exit `3` and exact
+operator recovery are documented in [the CLI reference](cli.md).
+
 ## Decoder hardening
 
 Inbound hub and A2A JSON frames use `loads_bounded()` from

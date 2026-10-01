@@ -139,7 +139,7 @@ async def test_run_git_release_releases_matching_claim(
 
         assert rc == 0
         await _wait_until(lambda: "T1" not in hub.state.claims)
-    assert "released on commit: T1" in capsys.readouterr().out
+    assert "release requested on commit: T1" in capsys.readouterr().out
 
 
 async def test_run_git_release_skips_non_matching_claims(

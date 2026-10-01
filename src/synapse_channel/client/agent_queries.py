@@ -50,6 +50,27 @@ class AgentQueryMixin:
         """Ask the hub for a full state snapshot."""
         await self.send_message(MessageType.STATE_REQUEST, target="System", payload="snapshot")
 
+    async def request_release_confirmation(
+        self: _QueryAgent, task_id: str, operation_id: str, request_digest: str, request_id: str
+    ) -> None:
+        """Read an exact durable release result; never repeat the release mutation.
+
+        The callback receives a private correlated ``state_snapshot`` with a
+        ``release_confirmation`` projection. A legacy snapshot or unknown status
+        is not confirmation. Retain the original key and semantic SHA-256 digest.
+        """
+        await self.send_message(
+            MessageType.STATE_REQUEST,
+            target="System",
+            payload="release confirmation",
+            request_id=request_id,
+            release_confirmation={
+                "task_id": task_id.strip(),
+                "operation_id": operation_id,
+                "request_digest": request_digest,
+            },
+        )
+
     async def request_who(self: _QueryAgent, hub: str | None = None) -> None:
         """Ask the hub for the list of online agents.
 

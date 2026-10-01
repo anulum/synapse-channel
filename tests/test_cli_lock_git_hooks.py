@@ -304,7 +304,7 @@ async def test_commit_hook_releases_edit_claim_inside_same_owner_lock(
                 row.kind == "release" and row.payload.get("task_id") == "edited-file"
                 for row in journal.iter_events()
             ), "commit hook must persist an edit-claim release"
-            assert "released on commit: edited-file" in result.output
+            assert "release requested on commit: edited-file" in result.output
     finally:
         journal.close()
         token_path.unlink(missing_ok=True)

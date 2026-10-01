@@ -85,12 +85,14 @@ async def main() -> None:
             hub, stores = _attachment_hub(Path(directory))
         else:
             # Strict fencing: every release in the SDK journey must name its lease epoch.
+            journal = EventStore(Path(directory) / "hub.db")
             hub = SynapseHub(
+                journal=journal,
                 authenticator=TokenAuthenticator(["integration-only-token"]),
                 require_fencing_epoch=True,
                 identity_pin_path=Path(directory) / "identity-pins.json",
             )
-            stores = []
+            stores = [journal]
         server = asyncio.create_task(hub.serve(host="127.0.0.1", port=0))
         try:
             host, port = await hub.wait_until_serving(timeout=5.0)

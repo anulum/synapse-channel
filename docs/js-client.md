@@ -65,6 +65,23 @@ already open or pending rejects; `close()` it first.
 
 ## Scope and boundaries
 
+For release recovery, call `prepareRelease(taskId, epoch?, idemKey?)` with a unique
+key before sending. Retain the prepared epoch and canonical semantic SHA-256
+digest: sorted ASCII JSON keys, compact separators, non-ASCII characters escaped
+as `\uXXXX`, excluding `timestamp`, `client_timestamp`, `auth`, and `signature`.
+Send with `release(taskId, prepared.epoch, idemKey)`. That call proves only a send.
+Preparation and confirmation use the hub's Python whitespace rules for task
+ids, including NEL while preserving BOM, and Unicode fingerprints use ASCII
+JSON escapes. The prepared epoch is typed as an optional number for TS callers.
+
+`requestReleaseConfirmation(taskId, operationId, requestDigest, requestId)` reads
+the original result without another mutation. Match the hub sender, your target
+and request id; accept only `release_confirmation.status === "confirmed"` with
+the original task, owner, key, digest and valid receipt. Unknown and ordinary
+legacy snapshots remain uncertain. Confirmation is historical and does not free
+a newer claim. The [wire contract](protocol.md#release-receipts) and
+[manual CLI workflow](cli.md) define the same recovery semantics as Python.
+
 The optional [scoped attachment API](attachments.md) uses wire version four.
 Configure `signRegistration` with a bound identity signer and `signAttachment`
 with a per-message signer, then call `attachment(MessageType.AttachmentBegin,

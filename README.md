@@ -853,6 +853,14 @@ receipt carries advisory `epistemic_status` metadata (`supported`,
 `needs_freshness`, `stale`, `degraded`, or `unsupported`) with reasons derived
 from the submitted evidence, and `--receipt-json` prints it for automation.
 
+Manual `release` bounds each send/reply exchange with `--reply-timeout` (30 seconds
+by default). A missing acknowledgement returns `3` (outcome unknown), prints the
+original operation key and SHA-256 fingerprint, and provides a `--confirm-only`
+command that reads the exact durable result without another release. A valid
+matching grant or durable confirmation returns `0`; explicit refusal or invalid
+local input returns `1`. Lease absence and legacy replies cannot supply that
+proof. See [release recovery](docs/cli.md) for journal and compatibility boundaries.
+
 To make fresh terminals connect automatically, install the shell hook once:
 
 ```bash
@@ -1724,11 +1732,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.35 |
 | Public API exports | 70 |
-| Package modules | 674 |
-| Classes | 1005 |
+| Package modules | 676 |
+| Classes | 1006 |
 | Wire message types | 111 |
 | CLI subcommands | 236 |
-| Test functions | 10791 |
+| Test functions | 10805 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 79 |
 | GitHub Actions workflows | 27 |

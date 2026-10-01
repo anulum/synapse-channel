@@ -61,6 +61,14 @@ const ATTACHMENT_REQUEST_TYPES = new Set<string>([
 ]);
 
 const MINIMUM_HEARTBEAT_MS = 1000;
+const HUB_WHITESPACE = "[\\u0009-\\u000d\\u001c-\\u0020\\u0085\\u00a0\\u1680" +
+  "\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]";
+const HUB_TASK_EDGES = new RegExp(`^${HUB_WHITESPACE}+|${HUB_WHITESPACE}+$`, "g");
+
+/** Match the Python hub's task-id stripping, including NEL and preserving BOM. */
+function normalizedTaskId(taskId: string): string {
+  return taskId.replace(HUB_TASK_EDGES, "");
+}
 
 function defaultFactory(uri: string): WebSocketLike {
   return new WebSocket(uri) as unknown as WebSocketLike;
@@ -321,13 +329,24 @@ export class SynapseClient {
    * the task. A hub started with `--require-fencing-epoch` (forced by
    * `--team-secure` and `--secure`) refuses a release without it.
    */
-  release(taskId: string, epoch?: number): void {
-    const extra: Record<string, unknown> = { task_id: taskId };
-    const fence = epoch ?? this.leaseEpochs.get(taskId);
+  release(taskId: string, epoch?: number, idemKey?: string): void {
+    const request = this.prepareRelease(taskId, epoch, idemKey);
+    const { sender: _sender, type: _type, target, payload, timestamp: _timestamp, ...extra } = request;
+    this.send(MessageType.Release, { target, payload, extra });
+  }
+
+  /** Prepare a release without sending; retain its key, epoch and semantic SHA-256 for recovery. */
+  prepareRelease(
+    taskId: string, epoch?: number, idemKey?: string,
+  ): Envelope & { task_id: string; epoch?: number; idem_key?: string } {
+    const task = normalizedTaskId(taskId);
+    const extra: { task_id: string; epoch?: number; idem_key?: string } = { task_id: task };
+    const fence = epoch ?? this.leaseEpochs.get(task);
     if (fence !== undefined) {
       extra["epoch"] = fence;
     }
-    this.send(MessageType.Release, { extra });
+    if (idemKey !== undefined) extra["idem_key"] = idemKey;
+    return { ...buildEnvelope(this.options.name, MessageType.Release, { extra }), ...extra };
   }
 
   /** The fencing epoch this client holds for `taskId`, if it was granted one. */
@@ -352,6 +371,18 @@ export class SynapseClient {
   /** Request active claims and checkpoints. */
   requestState(): void {
     this.send(MessageType.StateRequest);
+  }
+
+  /** Read an exact durable release; an unknown or legacy snapshot never confirms success. */
+  requestReleaseConfirmation(
+    taskId: string, operationId: string, requestDigest: string, requestId: string,
+  ): void {
+    this.send(MessageType.StateRequest, {
+      target: "System", payload: "release confirmation",
+      extra: { request_id: requestId, release_confirmation: {
+        task_id: normalizedTaskId(taskId), operation_id: operationId, request_digest: requestDigest,
+      } },
+    });
   }
 
   /**

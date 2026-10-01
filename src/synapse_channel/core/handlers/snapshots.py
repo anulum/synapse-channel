@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.release_confirmation import read_release_confirmation
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN
 
 if TYPE_CHECKING:
@@ -35,6 +36,26 @@ async def handle_state_request(
     while connected), so a claim whose holder disconnected is visible as such before the
     lease window releases it.
     """
+    request_id = data.get("request_id")
+    request_fields = (
+        {"request_id": request_id}
+        if isinstance(request_id, str) and 0 < len(request_id) <= 128
+        else {}
+    )
+    if "release_confirmation" in data:
+        await hub._send_json(
+            websocket,
+            hub._system(
+                "Release confirmation",
+                msg_type=MessageType.STATE_SNAPSHOT,
+                target=sender,
+                **request_fields,
+                release_confirmation=read_release_confirmation(
+                    hub.journal, sender, data["release_confirmation"]
+                ),
+            ),
+        )
+        return
     snapshot = hub.state.snapshot()
     now = hub.claim_holders.clock()
     online = hub.clients.agent_sockets
@@ -49,11 +70,7 @@ async def handle_state_request(
             "State snapshot",
             msg_type=MessageType.STATE_SNAPSHOT,
             target=sender,
-            **(
-                {"request_id": data["request_id"]}
-                if isinstance(data.get("request_id"), str) and 0 < len(data["request_id"]) <= 128
-                else {}
-            ),
+            **request_fields,
             snapshot={
                 **snapshot,
                 "dead_letters": hub.dead_letters.snapshot(),

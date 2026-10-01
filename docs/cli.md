@@ -683,14 +683,41 @@ returns failure. Lock retries apply to claim contention; a hub error terminates
 the attempt without running the command. Cleanup releases only a claim whose
 grant was confirmed.
 
-A timeout means the CLI did not confirm the result. The hub may already have
-recorded a grant or release, so inspect the live claim before retrying. Lock
-never starts the wrapped command without a confirmed grant.
+A timeout means the CLI did not confirm the result. Lock never starts the
+wrapped command without a confirmed grant. Manual `release` returns `0` only
+for a matching keyed grant with a valid receipt or an exact durable confirmation;
+`1` means invalid local input, failed admission before sending, or an explicit
+hub refusal. Response loss, connection loss after sending, and unconfirmed
+legacy replies return **`3` (outcome unknown)**. Lease absence is not proof that
+this particular release committed. No receipt is fabricated for an older hub.
+An unrelated generic error is not a release verdict: ingress refusals carry the
+release key/task, while dedicated release denials and idempotency conflicts
+retain their explicit refusal meaning. Uncorrelated legacy errors stay unknown.
 
-If an older hub confirms release without a structured receipt, `--receipt-json`
-returns a minimal receipt for that confirmed task and owner with no evidence
-and `epistemic_status: unsupported`. It does not turn an older acknowledgement
-into verified evidence.
+`--reply-timeout` bounds each complete send/reply exchange, including a blocked
+send: default 30 seconds, finite and greater than zero, at most 300. After one
+unanswered release, the CLI makes one read-only confirmation query. It never
+automatically repeats the mutation. A remaining unknown result prints its
+unique operation key, semantic SHA-256 digest, and exact recovery command:
+
+```bash
+synapse release BUILD --name api-dev --confirm-only \
+  --idem-key ORIGINAL_KEY --request-digest ORIGINAL_SHA256
+```
+
+Retain that key/digest pair and use the original identity and hub. For secured
+hubs, supply the usual private `--token-file`; recovery output never copies a
+token. `--confirm-only` accepts no receipt fields and sends no release. A caller
+may provide a unique `--idem-key` on the original release; otherwise one is
+generated. Do not reuse a key for a later claim incarnation or changed evidence.
+Confirmation proves the historical operation and receipt, not that a later
+claim is absent, that work is authorized, or that evidence is sufficient.
+
+The hub must support the optional release-confirmation extension and retain the
+operation journal for read-only recovery. A missing/pruned record, an in-memory
+cache alone, a mismatched digest, or corrupt transaction witnesses remain unknown.
+An older hub that ignores the extension also remains unknown. The non-blocking
+`git-release` hook and the `lock` child-exit contract keep their existing behavior.
 
 Add receipt fields when the release is also the closeout record. The hub echoes
 the receipt on `release_granted`; if any evidence field is present, it records the

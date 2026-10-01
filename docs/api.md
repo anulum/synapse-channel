@@ -91,6 +91,23 @@ Grouped by what they coordinate (all are `async` methods on `SynapseAgent`):
 
 For the exact signatures of every method, read the generated reference below.
 
+`prepare_release(task_id, idem_key=..., ...)` is a synchronous preparation helper:
+it returns the exact release envelope, including its remembered fencing epoch,
+without sending. Retain a unique key and the canonical semantic SHA-256 digest
+before sending. `ReleaseIntent.from_request(request)` from
+`synapse_channel.core.release_confirmation` retains the owner, task, key and
+digest. Send with the prepared epoch and original receipt fields; `release(...)`
+remains an asynchronous
+send helper; returning from it does not prove the hub committed the mutation.
+
+`request_release_confirmation(task_id, operation_id, request_digest, request_id)`
+sends a read-only query. Match the private `state_snapshot` to the hub identity,
+your own target and exact request id, then accept only a confirmed projection
+with the original task, owner, key, digest and receipt. Missing records, invalid
+proofs and ordinary legacy snapshots stay unknown. This never replays a release
+or proves a newer lease is absent. The [wire contract](protocol.md#release-receipts)
+and [manual CLI recovery](cli.md) define the bounded operator workflow.
+
 ## Embedding a hub
 
 To run the hub in-process (tests, a bundled tool), construct `SynapseHub` from a

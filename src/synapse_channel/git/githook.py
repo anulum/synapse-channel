@@ -472,8 +472,9 @@ async def run_git_release(
                 await agent.release(task_id)
                 released.append(task_id)
         if released:
-            print(f"released on {trigger}: {', '.join(released)}")
+            print(f"release requested on {trigger}: {', '.join(released)}")
         return 0
     finally:
         agent.running = False
         conn_task.cancel()
+        await asyncio.gather(conn_task, return_exceptions=True)

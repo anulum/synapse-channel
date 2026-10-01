@@ -57,13 +57,22 @@ client.close();
   or pending rejects.
 - `on(type, handler)` / `onMessage(handler)` — subscribe by `MessageType` or to every frame; each returns an unsubscribe function.
 - `chat(payload, { target?, channel?, priority? })`,
-  `claim(taskId, paths?, pathIdentity?, { taskOnly? })`, `release(taskId, epoch?)` (names the lease epoch from its own grant, as `--require-fencing-epoch` requires). The
+  `claim(taskId, paths?, pathIdentity?, { taskOnly? })`, `release(taskId, epoch?, idemKey?)` (names the lease epoch from its own grant, as `--require-fencing-epoch` requires). The
   optional `ClaimScopeIdentity` is for bridges carrying output from the trusted
   Python Git/filesystem resolver; its worktree path is sent automatically. Omit
   it rather than inventing canonical values. A claim without paths covers the
   whole worktree named by `pathIdentity`. `{ taskOnly: true }` locks the task id
   alone with no file scope, like `synapse lock`. A claim with neither throws.
 - `requestBoard()`, `requestWho()`, `requestState()`.
+- `prepareRelease(taskId, epoch?, idemKey?)` returns the exact envelope without
+  sending. Retain its unique key and canonical semantic SHA-256 digest before
+  sending with the retained epoch. Returning from `release()` proves only a send.
+- `requestReleaseConfirmation(taskId, operationId, requestDigest, requestId)`
+  sends a private read-only query. Match the hub, target, request id, key, digest,
+  owner/task and receipt; only `release_confirmation.status === "confirmed"`
+  proves that historical operation. An ordinary legacy snapshot or unknown
+  projection never confirms it. No mutation is repeated. See the
+  [wire contract](../../docs/protocol.md#release-receipts).
 - `attachment(type, fields)` sends a version-four scoped attachment request.
   Configure `signRegistration` with an enrolled identity signer and
   `signAttachment` with the Hub's per-message HMAC signer. The callbacks sign
@@ -97,8 +106,10 @@ SYNAPSE_TEST_PYTHON=../../.venv/bin/python npm run test:integration
 This builds the SDK and starts a temporary authenticated Python hub on an
 OS-assigned loopback port. It checks rejected authentication, directed chat,
 conflicting claims, release, snapshots, and reconnecting the same client.
-The fixture uses checkout source, no persistent journal, and no running Synapse
-service or user data. Its child process is stopped after the test.
+The fixture uses checkout source, a temporary SQLite journal, and no running
+Synapse service or user data. It also exercises exact durable release proof,
+foreign-owner and changed-digest refusals. Its child process and temporary
+journal are removed after the test.
 
 The `clients-js` CI workflow runs this check with Node 22 and Python 3.12,
 alongside type checking and unit tests. Changes to the Python source, package

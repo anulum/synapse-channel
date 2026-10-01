@@ -150,7 +150,12 @@ async def test_transport_size_limit_refuses_unconfirmed_operation(
                 )
                 assert claim.ok(), claim.output
             arguments = (
-                [value for index in range(10) for value in ("--evidence", f"{index}:" + "x" * 498)]
+                ["--reply-timeout", "0.1"]
+                + [
+                    value
+                    for index in range(10)
+                    for value in ("--evidence", f"{index}:" + "x" * 498)
+                ]
                 if operation == "release"
                 else ["--", sys.executable, "-c", "print('unconfirmed-command-ran')"]
             )
@@ -164,7 +169,7 @@ async def test_transport_size_limit_refuses_unconfirmed_operation(
                 uri=uri,
                 cwd=repo,
             )
-            assert result.returncode == 1, result.output
+            assert result.returncode == (3 if operation == "release" else 1), result.output
             assert "1009" in result.output, result.output
             assert "unconfirmed-command-ran" not in result.stdout
             if operation == "release":
