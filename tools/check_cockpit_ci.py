@@ -36,7 +36,7 @@ REQUIRED_WORKFLOW_MARKERS = (
     "src/synapse_channel/cli_dashboard.py",
     ".github/workflows/clients-cockpit.yml",
     "cache-dependency-path: clients/cockpit/package-lock.json",
-    'node-version: "22.23.2"',
+    'node-version: "22.23.3"',
     "npm ci",
     "npm run typecheck",
     "npm run coverage",

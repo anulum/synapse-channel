@@ -284,6 +284,25 @@ describe("deriveAttentionQueue", () => {
 });
 
 describe("mergeStoredAttention", () => {
+  it("preserves unknown observation times and stable order when the stored feed is quiet", () => {
+    const live = deriveAttentionQueue({
+      ...EMPTY,
+      deadLetters: [
+        { target: "z", count: 1, lastSender: "peer", lastTs: null },
+        { target: "recent", count: 1, lastSender: "peer", lastTs: 20 },
+        { target: "a", count: 1, lastSender: "peer", lastTs: null },
+        { target: "old", count: 1, lastSender: "peer", lastTs: 10 },
+      ],
+    });
+    const merged = mergeStoredAttention(live, {
+      state: "quiet", alerts: [], remaining: 0, snoozedCount: 0,
+    });
+    expect(merged.map((item) => [item.subject, item.observedAt])).toEqual([
+      ["old", 10], ["recent", 20], ["a", null], ["z", null],
+    ]);
+    expect(merged).toEqual(live);
+  });
+
   it("shows the owner-local approval and recovery in one severity-ranked queue", () => {
     const merged = mergeStoredAttention([], {
       state: "active",

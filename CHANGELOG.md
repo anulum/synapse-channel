@@ -18,6 +18,13 @@ All notable changes to this project are documented here.
   completed recipient or waiter writes; failed writes remain durable and retryable. The JavaScript SDK
   waits for the prior socket close event before reconnecting the same identity.
 
+### Changed
+
+- Refresh compatible hash-locked Python workflow cohorts, the cockpit test/build
+  lock, Ruff hooks and the CodeQL action commit. CI uses Node 22.23.3 and the
+  Python 3.13.15 slim container digest. The accepted MCP SDK 1.30.0 and historical
+  hub fixtures remain pinned to their exercised compatibility contracts.
+
 ### Added
 
 - Explicit durable hub inbox pages for remote CLI and MCP readers, with exact
@@ -150,6 +157,11 @@ All notable changes to this project are documented here.
       refused open closes its connection.
     - A 0.99.35 grant, which carries no window, belongs to the window of the
       configuration in effect when it was recorded.
+
+### Security
+
+- The GitHub App development lock uses PyJWT 2.15.1, removing the
+  pre-verification JWT payload recursion denial of service (GHSA-42vr-xj54-vc7v).
 
 ## [0.99.35] - 2026-09-30
 
