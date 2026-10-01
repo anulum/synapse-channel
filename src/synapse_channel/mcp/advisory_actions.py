@@ -9,12 +9,16 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.capability_directory import build_capability_directory
-from synapse_channel.core.capability_observations import read_observed_capability_index
+from synapse_channel.core.capability_observations import (
+    ObservedCapabilityInputError,
+    read_observed_capability_index,
+)
 from synapse_channel.core.memory_projection import (
     MemoryRecallInputError,
     memory_recall_to_json,
@@ -34,6 +38,8 @@ from synapse_channel.core.semantic_routing import (
 Matcher = Callable[[dict[str, Any]], bool]
 Sender = Callable[[], Awaitable[None]]
 ReplyAwaiter = Callable[[Matcher, Sender], Awaitable[dict[str, Any] | None]]
+
+logger = logging.getLogger(__name__)
 
 
 class McpAdvisoryActions:
@@ -59,7 +65,28 @@ class McpAdvisoryActions:
         event_store: str | None = None,
         event_store_key_file: str | None = None,
     ) -> str:
-        """Return advisory semantic route recommendations for a board task."""
+        """Return advisory routes or a caller-safe store-read refusal.
+
+        Parameters
+        ----------
+        task_id : str
+            Existing board task whose routing candidates are requested.
+        limit : int, optional
+            Maximum recommendations returned by the routing projector.
+        include_zero : bool, optional
+            Whether to retain candidates with no matching capability tokens.
+        event_store : str or None, optional
+            Local store supplying advisory observed capability evidence.
+        event_store_key_file : str or None, optional
+            Owner-only key file for that store.
+
+        Returns
+        -------
+        str
+            JSON recommendations, a missing-snapshot/task response, an
+            explicitly authored input refusal or fixed storage-failure text.
+            Unexpected storage details are logged only on the server.
+        """
         board_reply = await self.await_reply(
             lambda data: data.get("type") == MessageType.BOARD_SNAPSHOT,
             self.agent.request_board,
@@ -96,8 +123,11 @@ class McpAdvisoryActions:
                 observations = read_observed_capability_index(
                     event_store, key_file=event_store_key_file
                 )
-            except ValueError as exc:
+            except ObservedCapabilityInputError as exc:
                 return str(exc)
+            except Exception:
+                logger.exception("cannot read observed capability event store")
+                return "cannot read observed capability event store"
         recommendation = recommend_agents_for_task(
             task,
             directory,
@@ -162,7 +192,27 @@ class McpAdvisoryActions:
         since_seq: int = 0,
         event_store_key_file: str | None = None,
     ) -> str:
-        """Return deterministic local memory recall hits as JSON."""
+        """Return local memory hits or a caller-safe store-read refusal.
+
+        Parameters
+        ----------
+        event_store : str
+            Local event store containing the retained memory records.
+        query : str
+            Text used by the deterministic memory projector.
+        limit : int, optional
+            Maximum matching records returned.
+        since_seq : int, optional
+            Exclusive lower event sequence bound.
+        event_store_key_file : str or None, optional
+            Owner-only key file for the store.
+
+        Returns
+        -------
+        str
+            JSON hits, an explicitly authored missing-store input refusal or
+            fixed storage-failure text. Unexpected details stay in server logs.
+        """
         try:
             report = read_memory_recall(
                 event_store,
@@ -171,7 +221,9 @@ class McpAdvisoryActions:
                 limit=limit,
                 key_file=event_store_key_file,
             )
-        except (MemoryRecallInputError, ValueError, OSError) as exc:
-            # ValueError covers SqlCipherKeyError on encrypted stores.
+        except MemoryRecallInputError as exc:
             return str(exc)
+        except Exception:
+            logger.exception("cannot read memory recall event store")
+            return "cannot read memory recall event store"
         return memory_recall_to_json(report)

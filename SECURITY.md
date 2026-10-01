@@ -307,6 +307,14 @@ worth stating plainly:
   to the operator's stderr and must be treated as trusted server output. These
   controls authenticate local launch policy; they do not sandbox a trusted MCP
   server after it starts.
+- **Local MCP storage responses.** Inbox feed and cursor failures and advisory
+  event-store failures return fixed diagnostics instead of system exception
+  text. Cursor-write failure retains the original cursor and repeatable messages.
+  Only explicitly typed, deliberately authored missing-store refusals retain
+  their original text. The inbox's configured `source` path remains intentional
+  local provenance; generated temporary paths and database/key-file diagnostics
+  remain in operator server logs. SDK argument validation is retained. See the
+  [MCP guide](docs/mcp.md) for the exact recovery and response contract.
 - **Outbound MCP platform floor.** Descriptor-bound MCP launch currently requires
   Linux `memfd_create`, sealing, and procfs. It fails closed on macOS, Windows,
   or Linux environments without `/proc/self/fd`; no weaker pathname fallback is

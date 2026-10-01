@@ -31,6 +31,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- MCP inbox and advisory storage failures return fixed diagnostics instead of
+  system exception text. Failed cursor writes retain the original cursor and
+  repeatable messages; tool sessions remain usable after a failure. Explicitly
+  typed missing-store input refusals retain their authored text. Unexpected
+  database and key-file details remain in server logs.
+
 - Governed identity storage failures keep exception text out of operator
   responses and audit details. Pin reclaim, enrolment, rotation and revocation
   retain existing authority and live holders until persistence succeeds.

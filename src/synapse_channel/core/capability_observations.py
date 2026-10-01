@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore, StoredEvent
 
@@ -61,6 +62,12 @@ _STOPWORDS = frozenset(
         "with",
     }
 )
+
+
+class ObservedCapabilityInputError(SynapseError, ValueError):
+    """Raised for a deliberately refused local capability observation request."""
+
+    code = "observed_capability_input"
 
 
 @dataclass(frozen=True)
@@ -251,13 +258,14 @@ def read_observed_capability_index(
 
     Raises
     ------
-    ValueError
-        If the event store does not exist.
+    ObservedCapabilityInputError
+        If the event store does not exist. This authored refusal remains a
+        ``ValueError`` for callers using the original exception contract.
     """
     path = Path(db_path)
     if not path.exists():
         msg = f"missing event store: {path}"
-        raise ValueError(msg)
+        raise ObservedCapabilityInputError(msg)
     store = EventStore(path, key_file=key_file)
     try:
         return build_observed_capability_index(store.read_all())

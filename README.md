@@ -1041,6 +1041,8 @@ resources. It also exposes read-only resource templates for a single board task,
 one agent, and one resource kind. The bridge derives a visible project identity
 when `--name` is omitted, but concurrent clients should pin distinct names. It
 does not wake an idle provider; the permanent waiter remains a separate path.
+Unexpected inbox and advisory storage failures return fixed diagnostics;
+cursor-write failures retain the original cursor and allow a retry after recovery.
 For a private remote client, `synapse mcp --transport streamable-http` uses
 direct TLS, provisioned subject-to-seat grants and bounded project-scoped
 actions. The [HTTP guide](docs/mcp-http.md) documents the verified Inspector CLI
@@ -1716,10 +1718,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Package version | 0.99.35 |
 | Public API exports | 70 |
 | Package modules | 674 |
-| Classes | 1001 |
+| Classes | 1002 |
 | Wire message types | 111 |
 | CLI subcommands | 236 |
-| Test functions | 10776 |
+| Test functions | 10780 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 79 |
 | GitHub Actions workflows | 27 |

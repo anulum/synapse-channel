@@ -128,7 +128,7 @@ def test_missing_or_unreadable_feed_is_explicitly_unavailable(tmp_path: Path) ->
     assert missing_payload["available"] is False
     assert missing_payload["error"] == "local relay feed is missing"
     assert unreadable_payload["available"] is False
-    assert "cannot read local relay feed" in unreadable_payload["error"]
+    assert unreadable_payload["error"] == "cannot read local relay feed"
 
 
 def test_empty_feed_does_not_create_a_cursor(tmp_path: Path) -> None:
@@ -161,7 +161,7 @@ def test_cursor_persistence_failure_is_explicit_and_replay_safe(tmp_path: Path) 
     assert payload["cursor"] == 0
     assert payload["has_more"] is True
     assert [message["payload"] for message in payload["messages"]] == ["repeatable"]
-    assert "messages may repeat" in payload["error"]
+    assert payload["error"] == "cannot persist MCP inbox cursor; messages may repeat"
 
 
 def test_blank_identity_is_refused(tmp_path: Path) -> None:

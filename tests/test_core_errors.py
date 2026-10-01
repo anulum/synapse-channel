@@ -371,6 +371,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "memory_recall_input",
         ValueError,
     ),
+    "ObservedCapabilityInputError": (
+        "synapse_channel.core.capability_observations",
+        "observed_capability_input",
+        ValueError,
+    ),
     "MessageForwardRejectedError": (
         "synapse_channel.core.message_forward_transport",
         "message_forward_rejected",

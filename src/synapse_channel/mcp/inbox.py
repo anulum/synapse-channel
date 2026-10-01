@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType, is_recipient
 from synapse_channel.core.relay import decode_lite
 from synapse_channel.mailbox_cursor import load_cursor, save_cursor
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MCP_INBOX_LIMIT = 50
 """Default messages returned by one MCP inbox call."""
@@ -109,7 +112,8 @@ class McpFeedInbox:
         -------
         str
             JSON containing availability, identity, messages, cursor, and
-            whether unread feed bytes remain.
+            whether unread feed bytes remain. Storage errors use fixed text;
+            a failed cursor write retains messages and the original cursor.
         """
         bounded = safe_int(
             limit,
@@ -145,19 +149,21 @@ class McpFeedInbox:
                 messages, cursor = self._scan(handle, size=size, limit=limit)
         except FileNotFoundError:
             return McpInboxPage((), original, False, False, "local relay feed is missing")
-        except OSError as exc:
-            return McpInboxPage((), original, False, False, f"cannot read local relay feed: {exc}")
+        except OSError:
+            logger.exception("cannot read local relay feed")
+            return McpInboxPage((), original, False, False, "cannot read local relay feed")
 
         if cursor != original:
             try:
                 save_cursor(self.cursor_path, cursor)
-            except OSError as exc:
+            except OSError:
+                logger.exception("cannot persist MCP inbox cursor; messages may repeat")
                 return McpInboxPage(
                     messages=tuple(messages),
                     cursor=original,
                     has_more=True,
                     available=False,
-                    error=f"cannot persist MCP inbox cursor; messages may repeat: {exc}",
+                    error="cannot persist MCP inbox cursor; messages may repeat",
                 )
         return McpInboxPage(
             messages=tuple(messages),

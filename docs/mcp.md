@@ -229,6 +229,27 @@ only complete lines, pages without skipping a remaining tail, and reports
 local layout pass `synapse mcp --inbox-feed PATH --inbox-cursor PATH`. A remote
 MCP process does not pretend that a remote hub's file is locally available.
 
+Inbox read failures return `cannot read local relay feed`; a missing file keeps
+the authored `local relay feed is missing` refusal. A failed cursor write returns
+`cannot persist MCP inbox cursor; messages may repeat`, with `available: false`,
+the original cursor and the collected messages. Repair the local storage and
+retry; those messages may repeat until their cursor is durably saved. The
+`source` field remains the configured feed path, an explicit local provenance
+field. Error text never adds system exception details or temporary cursor paths.
+
+Unexpected store-read failures in `synapse_memory_recall` and the optional
+observed-evidence path of `synapse_route_task` return, respectively,
+`cannot read memory recall event store` and
+`cannot read observed capability event store`. The original authored
+`missing event store: PATH` refusal remains: `MemoryRecallInputError` and
+`ObservedCapabilityInputError` identify that deliberate input refusal, while
+the latter remains a `ValueError` for existing Python callers. Other storage,
+key-file and database exceptions stay in server logs, not tool results.
+The session remains usable and the tool can be retried after storage recovery.
+The MCP SDK's documented argument-validation responses remain in use for
+malformed tool arguments. HTTP grants still determine which tools are callable;
+these response changes grant no additional access to local files.
+
 There is deliberately no MCP `synapse_lock(command)` tool. `synapse lock` owns
 a local child process; exposing that wrapper would turn an MCP call into
 arbitrary shell execution. Through MCP, use
