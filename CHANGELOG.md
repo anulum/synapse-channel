@@ -31,6 +31,13 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- One-shot sends distinguish confirmed delivery (`0`), explicit negative
+  receipts (`1`) and missing confirmation (`3`), including receiptless older
+  hubs. The receipt timeout bounds send and confirmation together, rejects
+  nonfinite deadlines and never triggers automatic retransmission. Receipt
+  matching checks the hub sender, original target, message identity and boolean
+  verdict; unknown output preserves the identity for journal correlation.
+
 - Manual release bounds the complete send/reply exchange and returns exit `3`
   for a missing acknowledgement instead of reporting a refusal. A retained
   operation key and semantic SHA-256 digest support exact read-only durable

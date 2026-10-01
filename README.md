@@ -505,8 +505,15 @@ letter instead of reporting socket presence as delivery. Each one-shot send
 uses a unique message identity and accepts only its matching receipt, so an old
 pending receipt replayed when the sender reconnects cannot be reported as the
 new send's result. Add
-`--require-recipient` when the positive receipt should also be printed and a hub
-too old to return receipts must fail closed.
+`--require-recipient` to also print a positive receipt. A matching positive
+receipt exits `0`; an explicit negative receipt exits `1`. A missing receipt,
+including from an older hub, exits `3` and prints `delivery unknown` with the
+message identity. `--receipt-timeout` bounds send and confirmation together
+(default 2 seconds, finite, greater than 0, at most 300). Check the preserved hub
+journal before retrying an unknown send: the recipient may already have received
+it. The CLI never retransmits automatically. Broadcasts and channel sends without
+`--require-recipient` report submission rather than confirmed delivery. No receipt
+proves that a model read or acted on the message.
 
 For selected sensitive payloads, encrypt the body before it reaches the hub and
 decrypt it only on the recipient side:
@@ -1736,7 +1743,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 1006 |
 | Wire message types | 111 |
 | CLI subcommands | 236 |
-| Test functions | 10805 |
+| Test functions | 10811 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 79 |
 | GitHub Actions workflows | 27 |

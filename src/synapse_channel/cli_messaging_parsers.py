@@ -46,15 +46,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--require-recipient",
         action="store_true",
         help=(
-            "Print a positive receipt and fail if the hub returns no receipt; directed sends "
-            "already fail by default when no consume-live recipient matches."
+            "Request and print a positive receipt (directed sends request one by default). "
+            "Exit 1 for a negative receipt, 3 if delivery remains unconfirmed."
         ),
     )
     send.add_argument(
         "--receipt-timeout",
         type=float,
         default=2.0,
-        help="Seconds to wait for a directed delivery receipt.",
+        help="Bound send and receipt together: finite seconds greater than 0, at most 300.",
     )
     send.add_argument(
         "--encrypt-key-file",

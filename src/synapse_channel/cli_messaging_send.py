@@ -12,9 +12,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import math
 import os
 import uuid
 from typing import Any
+
+from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.cli_messaging_types import AgentFactory
 from synapse_channel.client.agent import SynapseAgent
@@ -28,7 +31,7 @@ from synapse_channel.core.payload_crypto import (
     load_payload_key,
     payload_key_fingerprint,
 )
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.protocol import SENDER_HUB, MessageType
 from synapse_channel.terminal_text import terminal_chat_line, terminal_text
 from synapse_channel.waiter_identity import waiter_owner
 
@@ -77,15 +80,17 @@ async def _send(
         Hub URI, sender name, recipient, and message body.
     wait_seconds : float
         Seconds to keep listening for replies after sending (``0`` to skip).
+    channel : str, optional
+        Private channel to route through. Without ``require_recipient``, channel
+        sends report submission rather than confirmed recipient delivery.
     priority : bool, optional
         Mark the message as priority so it wakes even directed-only waiters.
     require_recipient : bool, optional
-        Print the positive hub delivery receipt as well as returning ``1`` for a
-        negative one. Directed sends request a receipt by default so a stale-only
-        or offline target still fails visibly without this flag.
+        Request and print a positive hub receipt, including for broadcasts and
+        channels. Directed sends already request receipts by default.
     receipt_timeout : float, optional
-        Seconds to wait for a directed delivery receipt. A receiptless older hub
-        remains compatible unless ``require_recipient`` explicitly requires one.
+        Finite positive deadline for the entire send and receipt exchange,
+        at most 300 seconds. Missing confirmation returns ``3`` on every hub.
     encrypt_key_file : str or None, optional
         Local 32-byte payload key file used to encrypt ``message`` before send.
     encrypt_key_id : str, optional
@@ -102,8 +107,13 @@ async def _send(
     Returns
     -------
     int
-        ``0`` on success, ``1`` when the hub could not be reached.
+        ``0`` for a confirmed delivery, or submission when no receipt was
+        requested; ``1`` for local/admission failure or explicit negative receipt;
+        ``3`` when a send attempt has no confirmed outcome. No message is retried.
     """
+    if not math.isfinite(receipt_timeout) or not 0 < receipt_timeout <= 300:
+        print("invalid receipt timeout: use a finite number greater than 0 and at most 300")
+        return 1
     sender_name = _one_shot_sender_name(name)
     client_msg_id = f"cli-{uuid.uuid4().hex}"
     replies: list[dict[str, Any]] = []
@@ -118,8 +128,11 @@ async def _send(
                 replies.append(data)
         elif (
             data.get("type") == MessageType.DELIVERY_RECEIPT
+            and data.get("sender") == SENDER_HUB
             and data.get("target") == sender_name
             and data.get("client_msg_id") == client_msg_id
+            and data.get("message_target") == target
+            and isinstance(data.get("delivered"), bool)
         ):
             receipts.append(data)
 
@@ -151,13 +164,12 @@ async def _send(
                 )
             )
             return 1
-        extra: dict[str, Any] = {}
+        extra: dict[str, Any] = {"client_msg_id": client_msg_id}
         if priority:
             extra["priority"] = True
         request_receipt = require_recipient or (not channel and is_directed_target(target))
         if request_receipt:
             extra["receipt_requested"] = True
-            extra["client_msg_id"] = client_msg_id
         if channel:
             extra["channel"] = channel
         outbound_payload = message
@@ -182,18 +194,40 @@ async def _send(
             except (OSError, PayloadCryptoError, RuntimeError) as exc:
                 print(f"encryption failed: {exc}")
                 return 1
-        await agent.send_message(MessageType.CHAT, target=target, payload=outbound_payload, **extra)
-        if request_receipt:
-            receipt = await _wait_for_delivery_receipt(receipts, timeout=receipt_timeout)
-            if receipt is None:
-                if require_recipient:
-                    print(f"delivery failed: no receipt from hub for {target}")
-                    return 1
-            else:
-                if require_recipient or not bool(receipt.get("delivered")):
-                    print(terminal_text(receipt.get("payload") or "delivery receipt received"))
-                if not bool(receipt.get("delivered")):
-                    return 1
+        deadline = asyncio.get_running_loop().time() + receipt_timeout
+        receipt = None
+        try:
+            await asyncio.wait_for(
+                agent.send_message(
+                    MessageType.CHAT, target=target, payload=outbound_payload, **extra
+                ),
+                timeout=receipt_timeout,
+            )
+            if request_receipt:
+                receipt = await _wait_for_delivery_receipt(
+                    receipts, timeout=deadline - asyncio.get_running_loop().time()
+                )
+        except (TimeoutError, ConnectionClosed, OSError):
+            print(
+                terminal_text(
+                    f"delivery unknown: send was not confirmed for {target}; "
+                    f"client_msg_id={client_msg_id}. Check the hub journal before retrying."
+                )
+            )
+            return 3
+        if request_receipt and receipt is None:
+            print(
+                terminal_text(
+                    f"delivery unknown: no matching receipt from hub for {target}; "
+                    f"client_msg_id={client_msg_id}. Check the hub journal before retrying."
+                )
+            )
+            return 3
+        if receipt is not None:
+            if require_recipient or not receipt["delivered"]:
+                print(terminal_text(receipt.get("payload") or "delivery receipt received"))
+            if not receipt["delivered"]:
+                return 1
         if wait_seconds > 0:
             await asyncio.sleep(wait_seconds)
             for reply in replies:

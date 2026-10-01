@@ -717,11 +717,11 @@ async def test_send_require_recipient_fails_without_hub_receipt(
         server.close()
         await server.wait_closed()
 
-    assert code == 1
-    assert "delivery failed: no receipt from hub for MISSING" in capsys.readouterr().out
+    assert code == 3
+    assert "delivery unknown: no matching receipt from hub for MISSING" in capsys.readouterr().out
 
 
-async def test_default_directed_receipt_stays_compatible_with_an_older_hub(
+async def test_default_directed_receipt_reports_unknown_for_an_older_hub(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     async def receiptless_hub(websocket: ServerConnection) -> None:
@@ -744,8 +744,8 @@ async def test_default_directed_receipt_stays_compatible_with_an_older_hub(
         server.close()
         await server.wait_closed()
 
-    assert code == 0
-    assert capsys.readouterr().out == ""
+    assert code == 3
+    assert "delivery unknown: no matching receipt from hub for LEGACY" in capsys.readouterr().out
 
 
 def test_send_waiter_identity_normalization_is_documented() -> None:

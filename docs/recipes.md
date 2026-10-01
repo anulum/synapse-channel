@@ -77,7 +77,10 @@ can hold a strict lease on its behalf.
 
     Use `--require-recipient` when a directed nudge must not disappear into the
     durable feed unnoticed. The command waits for the hub's receipt and exits
-    non-zero if no online recipient matches the target.
+    `1` if no consume-live recipient matches, or `3` if confirmation is missing.
+    An unknown result can follow successful delivery; inspect the printed
+    message identity in the hub journal before retrying. The CLI sends once and
+    never treats a receipt as proof that a model acted.
 
 4. **Keep the plan current.** Declare work with dependencies so a finished task
    unblocks the next; a stall supervisor re-offers anything that goes quiet:

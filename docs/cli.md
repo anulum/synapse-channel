@@ -1136,10 +1136,25 @@ after its next authenticated connection and deduplicates any at-least-once retry
 that id. Receipt frames are not replayed through the chat mailbox, and WebSocket
 acceptance never proves that a model read or acted. The durable verdict remains
 queryable with `synapse event-query <db> "receipts <sender>"`.
-`--require-recipient` additionally
-prints a positive `delivered to ...` receipt and fails if an older hub returns no
-receipt; without the flag, receiptless older hubs retain their historical success
-result.
+`--require-recipient` additionally prints a positive `delivered to ...` receipt
+and requests a receipt for broadcasts and channels. A matching positive receipt
+exits `0`, an explicit negative receipt exits `1`, and missing confirmation exits
+`3` with `delivery unknown` and its `client_msg_id`. This applies with and without
+the flag, including receiptless older hubs: their former default exit `0` becomes
+`3`; their former strict exit `1` becomes `3`. Update scripts to handle unknown
+separately from explicit failure. Connection/admission or invalid local input
+before sending still exits `1`.
+
+`--receipt-timeout` bounds the complete send and receipt exchange, including a
+blocked write: default 2 seconds, finite and greater than 0, at most 300. A send
+timeout or connection failure after an attempt also exits `3`. No automatic
+retransmission occurs. Correlate the printed identity with the original sender's
+journal receipts before deciding to retry; a fresh CLI invocation creates a new
+message identity and can duplicate effects. A later deferred delivery does not
+rewrite the original negative or unknown observation. Timeout alone proves
+neither delivery nor refusal. Without a requested receipt, exit `0` for a
+broadcast/channel means local submission, not recipient delivery or model
+acknowledgement.
 
 For selected sensitive bodies, `synapse send --encrypt-key-file` replaces the
 plain payload with an AES-256-GCM envelope whose authenticated data binds the
@@ -1197,8 +1212,9 @@ For the common question workflow, use `syn ask <target> <message>`. It resolves
 the same identity as `syn say`, dispatches to `synapse send` with
 `--wait-seconds 30 --require-recipient`, and prints replies during that wait
 window. Override the window with `syn ask --wait 10 <target> <message>`. Use
-`--no-require-recipient` for broadcasts or to tolerate a receiptless legacy hub;
-a directed negative receipt from a current hub still exits non-zero.
+`--no-require-recipient` to suppress positive receipt output, or for broadcasts
+that need only submission. Directed sends still request a receipt: explicit
+negative exits `1`, receiptless legacy or missing confirmation exits `3`.
 
 A reader sees only the messages addressed to it with `--for`, which also drops
 presence noise and other agents' cross-talk — a per-agent inbox. Because the
