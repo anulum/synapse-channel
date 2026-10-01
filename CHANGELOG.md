@@ -31,6 +31,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Deadlock socket tests correlate claim grants with the requested task and
+  holder before sending dependent waits. An unrelated claim broadcast no
+  longer satisfies another holder's setup barrier; wait and deadlock behavior
+  is unchanged.
+
 - Failed event-store initialization closes the acquired SQLite or SQLCipher
   connection across schema setup, backfill, caller interruption and replay
   validation. Retaining an exception traceback no longer retains failed-open

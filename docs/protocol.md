@@ -343,6 +343,12 @@ Clients and dashboards retain the prior task until an accepted write arrives.
   answer to `spend_request`. Every refusal is the same `not-admitted` shape, and a
   `query` returns a stored answer without creating anything.
 
+A `claim_granted` notification can be a broadcast about another agent's task.
+Before treating it as confirmation of a claim, match both `task_id` and `owner`
+to the request and require the hub sender. A dependent `wait_request` sent after
+an unrelated notification can arrive before the intended claim; the hub then
+correctly returns `wait_denied` because that task is not yet held.
+
 A `dark_seat_alert` is a default-on hub broadcast for an identity that owns an
 unexpired claim or is the `suggested_owner` of a non-terminal board task but has
 no fresh exact-identity `-rx` waiter. The condition must persist for 30 seconds;
