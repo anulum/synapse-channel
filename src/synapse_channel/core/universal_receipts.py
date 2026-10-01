@@ -171,8 +171,8 @@ def universal_receipt_from_event(event: StoredEvent) -> UniversalReceipt | None:
         return _cross_hub_receipt(event)
     if event.kind == EventKind.DEAD_LETTER_ESCALATION:
         return _dead_letter_escalation_receipt(event)
-    if event.kind == EventKind.IDENTITY_PIN_RECLAIM:
-        return _identity_pin_reclaim_receipt(event)
+    if event.kind in {EventKind.IDENTITY_PIN_RECLAIM, EventKind.IDENTITY_ENROLLMENT}:
+        return _identity_receipt(event)
     if event.kind in {EventKind.MULTIHUB_PARTITION, EventKind.MULTIHUB_HEAL}:
         return _multihub_ownership_receipt(event)
     if event.kind in {
@@ -356,18 +356,22 @@ def _dead_letter_escalation_receipt(event: StoredEvent) -> UniversalReceipt:
     )
 
 
-def _identity_pin_reclaim_receipt(event: StoredEvent) -> UniversalReceipt:
-    """Project one durable identity-pin reclaim decision or outcome."""
+def _identity_receipt(event: StoredEvent) -> UniversalReceipt:
+    """Project a governed identity change without conflating approval and application."""
+    kind, field, noun = {
+        EventKind.IDENTITY_PIN_RECLAIM: ("identity-pin-reclaim", "pin_name", "pin"),
+        EventKind.IDENTITY_ENROLLMENT: ("identity-enrollment", "name", "key"),
+    }[event.kind]
     payload = _object_payload(event.payload)
     status = _text(payload, "status")
     if not status:
         status = "applied" if bool(payload.get("applied", False)) else "recorded"
-    pin_name = _text(payload, "pin_name")
-    summary = f"identity pin {pin_name or '<unknown>'} {status}"
+    name = _text(payload, field)
+    summary = f"identity {noun} {name or '<unknown>'} {status}"
     return _receipt(
         event,
-        kind="identity-pin-reclaim",
-        subject=pin_name,
+        kind=kind,
+        subject=name,
         actor=_text(payload, "operator"),
         status=status,
         summary=summary,

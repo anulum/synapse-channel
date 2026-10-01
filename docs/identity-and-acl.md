@@ -105,7 +105,10 @@ The ACL model and its evaluation are implemented in
   write-ahead `identity_pin_reclaim` audit trail and broadcast as a system
   notice. Removal is compare-and-swap on `--expected-key-id`; it never rotates
   or installs a replacement key. The next valid proof establishes a fresh
-  first-use pin.
+  first-use pin. A storage failure returns `applied: false` with
+  `could not persist the reclaimed pin table`, and records `not_applied`
+  after `approved`. It preserves the pin and any live holder or lease;
+  storage diagnostics and tracebacks stay in server logs.
 - **Governed online enrolment**: on a hub started with
   `--identity-enrollments FILE`, `synapse identity enroll <name> --operator
   <identity> --key-id <id> --public-key <b64> --reason <text>` adds an identity
@@ -141,6 +144,15 @@ The ACL model and its evaluation are implemented in
   - **Audit:** every change writes an `identity_enrollment` audit trail
     (`approved`, then `applied` or `not_applied`) that feeds AEF receipts. An
     authorised operator's refusals are recorded as `denied`.
+    These phases also appear in `/receipts.json` as `identity-enrollment`
+    receipts, preserving the operator, name and original event sequence.
+  - **Storage recovery:** enrolment, rotation and revocation failures return
+    `applied: false` with `could not persist the enrolment store`. The audit
+    detail uses the same sentence, without filesystem paths or exception text.
+    Existing keys and live sockets remain valid, and failed writes do not
+    consume the successful-change rate budget. After repairing storage,
+    submit a fresh governed request with the observed key id. Approval alone
+    is not application; only `applied` proves the change took effect.
 
 The identity namespace is taken from the resolved sender (`project/agent`). The
 first credential format is now the zero-config machine key above (operator

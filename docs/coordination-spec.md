@@ -516,20 +516,26 @@ restart projection).
 
 **Normative.** Every declared durable `EventKind` MUST be classified as either
 receipt-bearing or intentionally non-receipt, and the two sets MUST be disjoint. A
-claim denial, guard denial, dead-letter escalation, or identity-pin reclaim
-MUST project its existing bounded audit payload through the universal receipt
-read side with the original sequence and timestamp. Projection MUST NOT invent
+claim denial, guard denial, dead-letter escalation, identity-pin reclaim or
+identity-key enrolment MUST project its existing bounded audit payload through
+the universal receipt read side with the original sequence and timestamp.
+Projection MUST NOT invent
 success, model action, or an undisclosed raw task/path value. Ordinary state,
 chat, memory, and idempotency events remain explicitly non-receipt rather than
 silently falling out of the feed.
 
+Identity-change receipts preserve `approved`, `not_applied`, `denied` and
+`applied` as separate states. An approval never proves application. Storage
+refusal details contain only authored text; diagnostics remain in server logs.
+
 **Implementation.** `core/universal_receipts.py` defines the exhaustive
 `UNIVERSAL_RECEIPT_EVENT_KINDS` / `NON_RECEIPT_EVENT_KINDS` disposition and the
-four audit projections; `dashboard_store_feeds.py:build_receipts_feed` and
+audit projections; `dashboard_store_feeds.py:build_receipts_feed` and
 `core/event_query.py` consume the shared receipt-bearing set.
 
 **Pinned by.** `tests/test_universal_receipts.py`,
-`tests/test_cli_event_query.py`, `tests/test_dashboard_store_feeds_activity.py`.
+`tests/test_cli_event_query.py`, `tests/test_dashboard_store_feeds_activity.py`
+and `tests/test_identity_persistence_refusal_runtime.py`.
 
 ## 8. Hub and federation clock model
 

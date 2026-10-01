@@ -31,6 +31,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Governed identity storage failures keep exception text out of operator
+  responses and audit details. Pin reclaim, enrolment, rotation and revocation
+  retain existing authority and live holders until persistence succeeds.
+  Dashboard receipts now include the declared identity-enrolment events,
+  keeping approval, failed application and successful application distinct.
+
 - Shared-plan journal failures privately report rollback without exposing
   storage exception text. Declaration, re-declaration, update and progress
   preserve their prior state and allow a retry after storage recovery;

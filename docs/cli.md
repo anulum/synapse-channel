@@ -2810,6 +2810,15 @@ candidate accesses deny-by-default without denying anything live; `policy-check`
 scores a release receipt against a policy (`--enforce` to gate); and `federation`
 manages operator-confirmed peer-domain bundles for cross-hub trust.
 
+`identity reclaim`, `identity enroll` (including rotation) and `identity revoke`
+print the hub's authoritative applied/refused verdict. A failed storage write
+returns `applied: false` with `could not persist the reclaimed pin table` or
+`could not persist the enrolment store`; filesystem details stay in server logs.
+The `approved` audit sequence in a refused result is not success. Inspect
+`not_applied` in the event or receipt feed, repair storage, then submit a fresh
+governed request with the current key id. Existing authority and live holders
+remain intact until application succeeds.
+
 The federation exchange pair moves bundle *bytes* over the wire while the *trust
 decision* stays out-of-band, the SSH-known-hosts ceremony: the offering operator
 authors their domain's bundle material, serves it with

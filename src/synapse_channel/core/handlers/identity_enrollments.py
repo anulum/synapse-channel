@@ -267,15 +267,16 @@ async def _apply(
     evict: bool,
     detail: str,
 ) -> None:
-    """Audit, persist, swap the trust bundle, evict, and answer one approved change."""
+    """Apply an approved change, keeping storage diagnostics out of verdicts and audits."""
     journal = cast(EventStore, hub.journal)  # availability is part of the authority
     approved_seq = record_identity_enrollment(
         journal, {**provenance, "status": "approved", "applied": False}
     )
     try:
         write_enrolled_keys(cast(Path, hub.identity_enrollment_path), updated)
-    except OSError as exc:
-        failure = f"could not persist the enrolment store: {exc}"
+    except OSError:
+        logger.exception("Identity enrolment persistence failed")
+        failure = "could not persist the enrolment store"
         record_identity_enrollment(
             journal,
             {

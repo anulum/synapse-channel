@@ -694,7 +694,8 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   limit, and audit decision. With `--feeds-db`, the cockpit's Audit tab incrementally renders the
   universal receipt ledger and governed operator-relay history as two distinct,
   bounded store-attested feeds. The receipt ledger includes minimized claim and
-  guard denials, dead-letter escalations, and identity-pin reclaim outcomes;
+  guard denials, dead-letter escalations, identity-pin reclaim and identity-key
+  enrolment outcomes, with approval and application kept distinct;
   every declared durable `EventKind` is explicitly classified as receipt-bearing or
   intentionally omitted. Absence and stale last-good data remain visible.
   Add
@@ -1718,7 +1719,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 1001 |
 | Wire message types | 111 |
 | CLI subcommands | 236 |
-| Test functions | 10775 |
+| Test functions | 10776 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 79 |
 | GitHub Actions workflows | 27 |

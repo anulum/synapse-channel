@@ -394,7 +394,7 @@ async def test_reclaim_storage_failure_and_cas_race_stay_not_applied(
         )
         failed = await _await_result(replies, previous)
         assert failed["applied"] is False
-        assert "disk unavailable" in failed["payload"]
+        assert failed["payload"] == "could not persist the reclaimed pin table"
 
         monkeypatch.setattr(
             hub._identity_pins,

@@ -79,6 +79,13 @@ its own id with the pinned mutual-TLS client certificate that grant is bound to,
 so federation keeps working on an identity-bound hub. Any other socket using that
 id still needs an enrolled signature.
 
+Governed identity-pin reclaim, enrolment, rotation and revocation expose fixed
+storage-refusal text to callers and audit readers. Filesystem paths, system
+error details and tracebacks remain in server logs. A persistence failure keeps
+the existing authority and live holder intact; the durable `approved` and
+`not_applied` records do not imply an applied key change. Dashboard event and
+receipt feeds preserve this distinction without publishing storage diagnostics.
+
 ### Forged event rows
 
 A `--db` hub authenticates every event row it writes with an HMAC key kept outside

@@ -393,6 +393,18 @@ first-use pin. Because the verb is explicit operator control rather than an
 automatically emitted compatibility feature, an older hub simply refuses the
 unknown request; clients never send it during ordinary connect or messaging.
 
+Persistence refusals carry `applied: false` and the authored payload
+`could not persist the reclaimed pin table`. Enrolment, rotation and revocation
+use `could not persist the enrolment store` in their private typed results.
+The matching `not_applied` audit uses that same text and links to `approved_seq`;
+the result's `audit_seq` refers to the approval, not an applied event.
+Exception text and tracebacks remain in server logs. Original authority and
+live holders survive, no applied notice is broadcast, and the connection
+remains usable. Repair storage before sending a fresh governed request;
+repeating an applied change does not apply it again. These verbs have no
+idempotency-key replay contract. Dashboard receipts preserve each approval,
+refusal and application as distinct events.
+
 ## Directed delivery and the mailbox
 
 A `chat` addressed to a `target` — one name, a `project/*` group glob, or a

@@ -43,7 +43,8 @@ async def handle_identity_pin_reclaim(
     A successful operation is write-ahead audited, compare-and-swap removes the
     observed key, revokes any break-glass live binding, records the applied
     phase, broadcasts an operator-visible notice, and returns a typed result.
-    A denial changes nothing and returns the first actionable reason.
+    A denial changes nothing and returns the first actionable reason. Storage
+    failures expose an authored verdict; their diagnostics stay in server logs.
     """
     pin_name = str(data.get("pin_name") or "").strip()
     expected_key_id = str(data.get("expected_key_id") or "").strip()
@@ -111,8 +112,9 @@ async def handle_identity_pin_reclaim(
     )
     try:
         removed = hub._identity_pins.reclaim(pin_name, expected_key_id=expected_key_id)
-    except OSError as exc:
-        detail = f"could not persist the reclaimed pin table: {exc}"
+    except OSError:
+        logger.exception("Identity pin reclaim persistence failed")
+        detail = "could not persist the reclaimed pin table"
         record_identity_pin_reclaim(
             journal,
             {
