@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 import pytest
 from websockets.asyncio.client import ClientConnection, connect
-from websockets.asyncio.server import ServerConnection, serve
+from websockets.asyncio.server import Server, ServerConnection, serve
 
 from hub_e2e_helpers import (
     AgentHandle,
@@ -44,7 +44,7 @@ class _SmallBuffers(ServerConnection):
 
 
 @contextlib.asynccontextmanager
-async def _small_buffer_server(hub: SynapseHub) -> AsyncIterator[str]:
+async def _small_buffer_server(hub: SynapseHub) -> AsyncIterator[tuple[str, Server]]:
     """Exercise the real public hub handler over low-buffer local TCP."""
     async with serve(
         hub.handler,
@@ -56,7 +56,7 @@ async def _small_buffer_server(hub: SynapseHub) -> AsyncIterator[str]:
         ping_interval=None,
         close_timeout=1,
     ) as server:
-        yield "ws://127.0.0.1:" + str(server.sockets[0].getsockname()[1])
+        yield "ws://127.0.0.1:" + str(server.sockets[0].getsockname()[1]), server
 
 
 @contextlib.asynccontextmanager
@@ -82,6 +82,46 @@ async def _unread_client(uri: str) -> AsyncIterator[ClientConnection]:
         client_socket.close()
 
 
+@contextlib.asynccontextmanager
+async def _blocked_peer(
+    server: Server, unread: ClientConnection, identity: str
+) -> AsyncIterator[None]:
+    """Observe actual TCP write pressure before asking the hub for a receipt."""
+    address = unread.transport.get_extra_info("sockname")
+    peer = next(
+        connection for connection in server.connections if connection.remote_address == address
+    )
+    unread.transport.pause_reading()
+    # OS buffer sizes are hints. Prime this real transport until its write buffer
+    # actually blocks; these fixture frames never enter the hub's journal/quota.
+    frame = json.dumps(
+        {"type": "chat", "sender": "fixture-primer", "target": identity, "payload": "x" * 65536}
+    )
+
+    async def prime() -> None:
+        for _ in range(1024):
+            await peer.send(frame)
+
+    writer = asyncio.create_task(prime())
+    try:
+        deadline = asyncio.get_running_loop().time() + 5
+        while peer.transport.get_write_buffer_size() <= 1024:
+            if writer.done():
+                await writer
+                raise AssertionError("bounded TCP priming completed without write pressure")
+            assert asyncio.get_running_loop().time() < deadline, (
+                "TCP write pressure was not observed"
+            )
+            await asyncio.sleep(0)
+        assert not writer.done()
+        yield
+    finally:
+        writer.cancel()
+        await asyncio.gather(writer, return_exceptions=True)
+        unread.transport.resume_reading()
+        await peer.close()
+
+
 @pytest.mark.parametrize("private", [False, True])
 async def test_failed_recipient_write_is_negative_and_same_id_can_retry(
     tmp_path: Path, private: bool
@@ -93,7 +133,7 @@ async def test_failed_recipient_write_is_negative_and_same_id_can_retry(
         private_directed_messages=private,
         dead_letter_escalation_threshold=1 if not private else 10,
     )
-    async with _small_buffer_server(hub) as uri:
+    async with _small_buffer_server(hub) as (uri, server):
         sender = await connect_agent("P/sender", uri)
         observer = await connect_agent("P/other", uri)
         try:
@@ -106,26 +146,27 @@ async def test_failed_recipient_write_is_negative_and_same_id_can_retry(
                 # Fill the unread client's frame queue before the larger directed frame.
                 await observer.agent.chat("prime", target="all")
                 await sender.recorder.wait_for(lambda m: m.get("payload") == "prime")
-                payload = "retry-body:" + "x" * 262144
-                await sender.agent.send_message(
-                    MessageType.CHAT,
-                    payload=payload,
-                    target="P/recipient",
-                    client_msg_id="retry-stalled",
-                    receipt_requested=True,
-                )
-                negative = await sender.recorder.wait_for(
-                    lambda m: (
-                        m.get("type") == MessageType.DELIVERY_RECEIPT
-                        and m.get("client_msg_id") == "retry-stalled"
-                    ),
-                    timeout=15,
-                )
-                assert negative["delivered"] is False
-                assert negative["reason"] == RECIPIENT_TRANSPORT_UNAVAILABLE
-                assert negative["matched_recipients"] == ["P/recipient"]
-                assert "transport completed a write" in negative["payload"]
-                assert hub.counters.chat_duplicates_suppressed == 0
+                async with _blocked_peer(server, unread, "P/recipient"):
+                    payload = "retry-body:" + "x" * 262144
+                    await sender.agent.send_message(
+                        MessageType.CHAT,
+                        payload=payload,
+                        target="P/recipient",
+                        client_msg_id="retry-stalled",
+                        receipt_requested=True,
+                    )
+                    negative = await sender.recorder.wait_for(
+                        lambda m: (
+                            m.get("type") == MessageType.DELIVERY_RECEIPT
+                            and m.get("client_msg_id") == "retry-stalled"
+                        ),
+                        timeout=15,
+                    )
+                    assert negative["delivered"] is False
+                    assert negative["reason"] == RECIPIENT_TRANSPORT_UNAVAILABLE
+                    assert negative["matched_recipients"] == ["P/recipient"]
+                    assert "transport completed a write" in negative["payload"]
+                    assert hub.counters.chat_duplicates_suppressed == 0
             receiver = await connect_agent("P/recipient", uri)
             try:
                 await sender.agent.send_message(
@@ -242,7 +283,7 @@ async def test_channel_receipt_and_retry_use_completed_concurrent_member_writes(
     """Real channel members get truthful receipts without serial stalled fan-out."""
     store = EventStore(tmp_path / "channel.db")
     hub = SynapseHub(journal=store)
-    async with _small_buffer_server(hub) as uri:
+    async with _small_buffer_server(hub) as (uri, server):
         sender = await connect_agent("P/sender", uri)
         other = await connect_agent("P/z-healthy", uri)
         try:
@@ -287,35 +328,36 @@ async def test_channel_receipt_and_retry_use_completed_concurrent_member_writes(
                 ):
                     await asyncio.sleep(0.01)
                 assert not unread.transport.is_reading()
-                payload = "channel-body:" + "x" * 262144
-                await sender.agent.send_message(
-                    MessageType.CHAT,
-                    channel="ops",
-                    payload=payload,
-                    client_msg_id="channel-retry",
-                    receipt_requested=True,
-                )
-                if healthy:
-                    await other.recorder.wait_for(
+                async with _blocked_peer(server, unread, "P/a-unread"):
+                    payload = "channel-body:" + "x" * 262144
+                    await sender.agent.send_message(
+                        MessageType.CHAT,
+                        channel="ops",
+                        payload=payload,
+                        client_msg_id="channel-retry",
+                        receipt_requested=True,
+                    )
+                    if healthy:
+                        await other.recorder.wait_for(
+                            lambda m: (
+                                m.get("client_msg_id") == "channel-retry"
+                                and m.get("type") == MessageType.CHAT
+                            ),
+                            timeout=3,
+                        )
+                    receipt = await sender.recorder.wait_for(
                         lambda m: (
                             m.get("client_msg_id") == "channel-retry"
-                            and m.get("type") == MessageType.CHAT
+                            and m.get("type") == MessageType.DELIVERY_RECEIPT
                         ),
-                        timeout=3,
+                        timeout=15,
                     )
-                receipt = await sender.recorder.wait_for(
-                    lambda m: (
-                        m.get("client_msg_id") == "channel-retry"
-                        and m.get("type") == MessageType.DELIVERY_RECEIPT
-                    ),
-                    timeout=15,
-                )
-                assert receipt["delivered"] is healthy
-                if healthy:
-                    assert receipt["recipients"] == ["P/z-healthy"]
-                else:
-                    assert receipt["reason"] == RECIPIENT_TRANSPORT_UNAVAILABLE
-                    assert receipt["matched_recipients"] == ["P/a-unread"]
+                    assert receipt["delivered"] is healthy
+                    if healthy:
+                        assert receipt["recipients"] == ["P/z-healthy"]
+                    else:
+                        assert receipt["reason"] == RECIPIENT_TRANSPORT_UNAVAILABLE
+                        assert receipt["matched_recipients"] == ["P/a-unread"]
             receiver = await connect_agent("P/a-unread", uri)
             try:
                 await sender.agent.send_message(
