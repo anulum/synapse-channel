@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -230,7 +231,7 @@ async def test_unconfirmed_durable_operation_is_reported_without_false_success(
             async with serve(forward, "127.0.0.1", 0) as proxy:
                 proxy_uri = f"ws://127.0.0.1:{proxy.sockets[0].getsockname()[1]}"
                 arguments = (
-                    ["--receipt-json"]
+                    ["--receipt-json", "--reply-timeout", "1"]
                     if operation == "release"
                     else [
                         "--wait-timeout",
@@ -254,17 +255,50 @@ async def test_unconfirmed_durable_operation_is_reported_without_false_success(
                     timeout=15,
                 )
                 assert intercepted.is_set(), "the actual hub confirmation was not intercepted"
-                assert result.returncode == 1, result.output
+                assert result.returncode == (3 if operation == "release" else 1), result.output
                 assert "unconfirmed-command-ran" not in result.stdout
                 assert not result.stderr
                 if operation == "release":
-                    assert "no response from hub" in result.stdout
+                    assert "outcome unknown" in result.stdout
+                    assert "do not replay release" in result.stdout
                     assert '"released": true' not in result.stdout
                     assert "unconfirmed-edit" not in hub.state.claims
                     assert any(
                         row.kind == "release" and row.payload.get("task_id") == "unconfirmed-edit"
                         for row in journal.iter_events()
                     )
+                    assert sum(row.kind == "release" for row in journal.iter_events()) == 1
+                    recovery_line = next(
+                        line
+                        for line in result.stdout.splitlines()
+                        if line.startswith("Read-only recovery: ")
+                    )
+                    recovery = [
+                        value
+                        for value in shlex.split(
+                            recovery_line.removeprefix("Read-only recovery: ")
+                        )[1:]
+                        if not value.startswith("--uri=")
+                    ]
+                    recovery[recovery.index("--") : recovery.index("--")] = [
+                        "--receipt-json",
+                        "--reply-timeout",
+                        "1",
+                    ]
+                    confirmed = await asyncio.to_thread(
+                        run_cli,
+                        *recovery,
+                        uri=hub_uri,
+                        cwd=repo,
+                        env=environment,
+                        timeout=15,
+                    )
+                    assert confirmed.ok(), confirmed.output
+                    receipt = json.loads(confirmed.stdout)
+                    assert receipt["task_id"] == "unconfirmed-edit"
+                    assert receipt["owner"] == "unconfirmed-owner"
+                    assert receipt["released"] is True
+                    assert sum(row.kind == "release" for row in journal.iter_events()) == 1
                 else:
                     assert "timed out" in result.stdout
                     assert hub.state.claims["unconfirmed-edit"].owner == "unconfirmed-owner"
