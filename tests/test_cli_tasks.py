@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -66,6 +68,46 @@ def test_parser_refuses_malformed_causal_parent() -> None:
         cli.build_parser().parse_args(
             ["task", "update", "BUILD", "--causal-parent", "hub:not-a-seq:digest"]
         )
+
+
+@pytest.mark.parametrize("error_type", [ValueError, TypeError, KeyError, RuntimeError])
+@pytest.mark.parametrize("operation", ["declare", "update"])
+def test_parser_does_not_echo_unexpected_causal_parent_fault(
+    error_type: type[Exception],
+    operation: str,
+) -> None:
+    """Run an injected fault in a real CLI process without pytest logging capture."""
+    diagnostic = "PRIVATE_PARSER_CANARY /private/causal-parent.db"
+    program = (
+        "import builtins,sys\n"
+        "from synapse_channel import cli, cli_tasks\n"
+        "def fail(value):\n"
+        "    raise getattr(builtins,sys.argv[1])(sys.argv[2])\n"
+        "cli_tasks.parse_task_causal_parent_ref = fail\n"
+        "sys.exit(cli.main(sys.argv[3:]))\n"
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            program,
+            error_type.__name__,
+            diagnostic,
+            "task",
+            operation,
+            "T",
+            "--causal-parent",
+            f"west:1:{'a' * 64}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "argument --causal-parent: causal parent validation failed" in result.stderr
+    assert diagnostic not in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_task_bare_prints_usage(capsys: pytest.CaptureFixture[str]) -> None:

@@ -2678,6 +2678,13 @@ synapse task update FIX --status done \
 ```
 
 The reference is `HUB_ID:SEQ:SHA256` (hub ids may themselves contain colons).
+Malformed CLI references exit `2` with an authored validation reason;
+integer conversion and size-limit exceptions do not expose interpreter text.
+Unexpected reference-parser faults exit `2` with
+`causal parent validation failed` and no traceback on stdout or stderr.
+Hub-side malformed documents are privately refused before any task or
+idempotency result is committed. Correct the parent and retry the same key;
+the board keeps its prior state until the write succeeds.
 Use the `event_fingerprint` in multi-hub board provenance. The fold verifies the
 parent identity, complete-event fingerprint, and task id before suppressing the
 ancestor. A missing or invalid parent remains an unresolved head and is not

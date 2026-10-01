@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from synapse_channel.core.errors import SynapseError, error_code
 from synapse_channel.core.task_causality import (
     TASK_CAUSAL_PARENT_FIELD,
     TaskCausalParent,
@@ -39,9 +40,13 @@ def test_parent_round_trips_mapping_and_colon_reference() -> None:
     "value",
     [
         {},
+        "not-an-object",
+        [1],
         {"hub_id": "hub", "seq": 1, "event_fingerprint": "a" * 64, "extra": True},
         {"hub_id": "", "seq": 1, "event_fingerprint": "a" * 64},
+        {"hub_id": "h" * 513, "seq": 1, "event_fingerprint": "a" * 64},
         {"hub_id": "hub", "seq": True, "event_fingerprint": "a" * 64},
+        {"hub_id": "hub", "seq": "1", "event_fingerprint": "a" * 64},
         {"hub_id": "hub", "seq": 0, "event_fingerprint": "a" * 64},
         {"hub_id": "hub", "seq": 1 << 63, "event_fingerprint": "a" * 64},
         {"hub_id": 4, "seq": 1, "event_fingerprint": "a" * 64},
@@ -52,8 +57,10 @@ def test_parent_round_trips_mapping_and_colon_reference() -> None:
     ],
 )
 def test_parent_rejects_malformed_mapping(value: object) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as raised:
         parse_task_causal_parent(value)
+    assert isinstance(raised.value, SynapseError)
+    assert error_code(raised.value) == "task_causal_parent_input"
 
 
 @pytest.mark.parametrize(
@@ -61,8 +68,10 @@ def test_parent_rejects_malformed_mapping(value: object) -> None:
     ["hub:bad-seq:" + "a" * 64, "hub:1", "hub:0:" + "a" * 64],
 )
 def test_parent_rejects_malformed_cli_reference(value: str) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as raised:
         parse_task_causal_parent_ref(value)
+    assert isinstance(raised.value, SynapseError)
+    assert error_code(raised.value) == "task_causal_parent_input"
 
 
 def test_event_metadata_is_additive_and_stripped_from_task_projection() -> None:

@@ -34,6 +34,7 @@ from synapse_channel.client.agent import SynapseAgent, default_hub_uri
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.task_causality import (
     TaskCausalParent,
+    TaskCausalParentInputError,
     parse_task_causal_parent_ref,
 )
 
@@ -216,11 +217,16 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         )
 
     def _add_causal_parent(parser_: argparse.ArgumentParser) -> None:
+        """Register a parent reference with authored refusals and fixed fault text."""
+
         def parse(value: str) -> TaskCausalParent:
+            """Parse a reference while keeping unexpected diagnostics out of stderr."""
             try:
                 return parse_task_causal_parent_ref(value)
-            except ValueError as exc:
+            except TaskCausalParentInputError as exc:
                 raise argparse.ArgumentTypeError(str(exc)) from exc
+            except Exception as exc:
+                raise argparse.ArgumentTypeError("causal parent validation failed") from exc
 
         parser_.add_argument(
             "--causal-parent",

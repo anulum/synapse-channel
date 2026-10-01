@@ -699,6 +699,12 @@ outside the compatible projected task record. One accepted edge proves only the
 recorded observation relation it names; absence of an edge MUST NOT be called
 concurrency.
 
+Malformed-parent refusals MUST be private to the requesting connection and
+MUST NOT consume a durable operation key. Only explicitly typed, deliberately
+authored validation reasons may be echoed. Unexpected parser faults MUST return
+`Causal parent validation failed; task was not changed.` without exception text;
+diagnostics remain in server logs. A corrected write MAY reuse its key.
+
 **Implementation.** `core/task_causality.py` (bounded wire value and task/event
 separation), `core/handlers/planning.py` (ingress and atomic journal binding),
 `core/multihub_fold.py` (content verification and ancestry).
@@ -706,6 +712,8 @@ separation), `core/handlers/planning.py` (ingress and atomic journal binding),
 **Pinned by.** `tests/test_task_causality.py`,
 `tests/test_atomic_operation_handlers.py`, `tests/test_multihub_fold.py`,
 `tests/test_client_ledger_envelopes.py`, `tests/test_cli_tasks.py`.
+The private refusal, same-key recovery, replay and restart journey is pinned by
+`tests/test_planning_causal_refusal_runtime.py`.
 
 > **Note — the name-ownership lease is single-hub.** The `--lease-offline-ttl`
 > ownership lease (close code `4016`, "name owned") protects a name across

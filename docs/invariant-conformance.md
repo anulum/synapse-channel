@@ -26,7 +26,7 @@ source.
 | Immediate-effect fencing | Partial | Hub-mediated epochs and versions fence stale mutations, but direct external effects are outside that boundary. |
 | Atomic operation truth | Partial | Claim-family operations commit before publication and apply once; this is not yet universal. |
 | Content-bound global event identity | Conformant | A federated identity binds one fingerprint; equivocation quarantines before publication. |
-| Causal conflict handling | Partial | Equivocation fails closed and divergent task snapshots produce payload-free unresolved conflict objects, but task events do not carry causal parents. |
+| Causal conflict handling | Partial | Content-bound, same-task parent edges suppress proven ancestors; unresolved heads remain payload-free conflicts without automatic resolution. |
 | Evidence completeness | Partial | Defined journal, receipt, AEF, and quarantine evidence exists, but coverage is not universal. |
 
 `python tools/invariant_conformance.py --check` validates the schema, exact six-row
@@ -58,8 +58,12 @@ payload-free conflict object with each contender's hub, sequence, timestamp, and
 record fingerprint. Equal snapshots converge without a conflict, and later equal
 snapshots clear the divergence. This makes disagreement visible without leaking the
 losing task record or choosing an authoritative winner. It is not a claim that the
-snapshots were concurrent: task events do not yet carry a causal parent or vector
-clock, so the boundary remains partial.
+snapshots were concurrent. Task events may carry one content-bound parent;
+only a verified same-task complete-event fingerprint proves that ancestry.
+Malformed local parents are privately refused before any mutation or retry-key
+result. Malformed observed parents remain invalid and suppress nothing. A single
+optional parent is not a vector clock, and missing edges do not prove concurrency,
+so the boundary remains partial.
 
 The randomized state machine is complemented by
 `python tools/exhaustive_coordination_model.py --depth 4`. That deterministic

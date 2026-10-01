@@ -81,6 +81,13 @@ for the concrete refusal reason used in CLI documents and receipts. This
 instance reason does not change the class-level classification. Constructors,
 exception messages and setup refusal codes remain compatible.
 
+Task causal-parent validation uses `TaskCausalParentInputError` from
+`synapse_channel.core.task_causality`, with code `task_causal_parent_input`.
+It remains a `ValueError` and preserves the existing authored messages.
+Planning and CLI boundaries echo only this deliberate refusal type; unrelated
+parser exceptions use fixed error text. This adds a Python taxonomy entry
+without changing causal-parent fields or task response shapes.
+
 Protected-write representation and replay refusals, and remote MCP policy
 loading, also participate in this classification contract:
 

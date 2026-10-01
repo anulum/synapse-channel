@@ -34,6 +34,14 @@ stay in server logs; the failed task/progress candidate is neither published
 nor committed. Protect operator log access because those logs retain diagnostic
 tracebacks. See [the wire contract](docs/protocol.md) for retry semantics.
 
+Causal-parent validation echoes only `TaskCausalParentInputError` messages
+chosen at deliberate refusal sites. Other parser exceptions return a fixed
+private error and stay in server logs. Both task write verbs refuse before
+board, journal or idempotency mutation. The CLI similarly distinguishes
+authored refusals from unexpected faults, without logging tracebacks to the
+same stderr used for caller output. These changes preserve the task/wire
+shape, causal-parent bounds and existing authority checks.
+
 Scoped attachments are disabled unless `--attachment-root` is set with bound
 identity, durable per-message authentication, ACL and role grants. The private
 root stores plaintext bytes; the operator must provide disk encryption when

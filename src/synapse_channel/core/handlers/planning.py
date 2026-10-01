@@ -27,6 +27,7 @@ from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.task_causality import (
     TaskCausalParent,
+    TaskCausalParentInputError,
     parse_task_causal_parent,
     task_event_payload,
 )
@@ -121,19 +122,19 @@ def _expected_version(data: dict[str, Any]) -> tuple[int | None, str | None]:
 async def _causal_parent(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> tuple[TaskCausalParent | None, bool]:
-    """Parse additive task causality metadata and privately reject malformed input."""
+    """Privately echo authored parent refusals and log unexpected parser faults."""
     try:
         return parse_task_causal_parent(data.get("causal_parent")), True
-    except ValueError as exc:
-        await hub._send_json(
-            websocket,
-            hub._system(
-                f"Malformed frame: {exc}",
-                msg_type=MessageType.ERROR,
-                target=sender,
-            ),
-        )
-        return None, False
+    except TaskCausalParentInputError as exc:
+        reason = f"Malformed frame: {exc}"
+    except Exception:
+        logger.exception("Unexpected causal parent validation failure")
+        reason = "Causal parent validation failed; task was not changed."
+    await hub._send_json(
+        websocket,
+        hub._system(reason, msg_type=MessageType.ERROR, target=sender),
+    )
+    return None, False
 
 
 async def handle_ledger_task(

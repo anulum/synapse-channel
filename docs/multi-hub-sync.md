@@ -290,6 +290,12 @@ must not use the display winner as authoritative task truth. A `causal: true` pr
 means a verified parent chain selected a unique head, not that the observed board grants
 local authority.
 
+Malformed parent metadata is privately refused before a local task write or
+retry-key result is committed. Authored validation reasons are preserved;
+unexpected parser faults return fixed text. A corrected request can reuse the
+same key. Invalid observed parent metadata remains `invalid` provenance and
+never suppresses a contender; the typed refusal keeps `ValueError` compatibility.
+
 ### 4. Follow a peer over the network
 
 When the peer is on another host with no shared filesystem, `follow` pulls its event log

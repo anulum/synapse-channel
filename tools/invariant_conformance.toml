@@ -163,6 +163,7 @@ tests = [
   "tests/test_multihub_watch.py",
   "tests/test_namespace_ownership.py",
   "tests/test_task_causality.py",
+  "tests/test_planning_causal_refusal_runtime.py",
 ]
 evidence_modes = [
   "adversarial",

@@ -548,6 +548,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         RuntimeError,
     ),
     "StreamError": ("synapse_channel.core.streaming", "stream", ValueError),
+    "TaskCausalParentInputError": (
+        "synapse_channel.core.task_causality",
+        "task_causal_parent_input",
+        ValueError,
+    ),
     "TeamSecureModeError": ("synapse_channel.core.team_secure", "team_secure_mode", ValueError),
     "WorkflowError": ("synapse_channel.core.workflow", "workflow", ValueError),
 }

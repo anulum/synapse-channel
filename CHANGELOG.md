@@ -31,6 +31,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Task causal-parent validation uses an explicit authored refusal type while
+  preserving `ValueError` compatibility and existing validation reasons.
+  Unexpected parser faults return fixed private errors without changing the
+  board or consuming a retry key. CLI failures keep interpreter diagnostics
+  and tracebacks out of caller output.
+
 - MCP inbox and advisory storage failures return fixed diagnostics instead of
   system exception text. Failed cursor writes retain the original cursor and
   repeatable messages; tool sessions remain usable after a failure. Explicitly

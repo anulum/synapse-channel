@@ -569,6 +569,9 @@ fingerprint exposed in multi-hub board provenance. A verified same-task parent
 lets the observed fold discard only that proven ancestor; a missing or
 mismatched reference remains unresolved and never becomes a concurrency claim.
 This metadata changes the advisory observed board, not local claim authority.
+Malformed parent metadata is privately refused before a task write is committed.
+Validation retains authored reasons; unexpected parser faults return fixed text.
+The board stays unchanged, and a corrected request may reuse its retry key.
 
 ### Use it with your coding agent
 
@@ -1718,10 +1721,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Package version | 0.99.35 |
 | Public API exports | 70 |
 | Package modules | 674 |
-| Classes | 1002 |
+| Classes | 1003 |
 | Wire message types | 111 |
 | CLI subcommands | 236 |
-| Test functions | 10780 |
+| Test functions | 10784 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 79 |
 | GitHub Actions workflows | 27 |

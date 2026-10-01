@@ -310,6 +310,15 @@ event exists, its content-bound fingerprint matches, and it concerns the same
 task. Missing or mismatched references suppress nothing. A parent proves one
 recorded observation edge; absence of an edge does not prove concurrency.
 
+Malformed parent documents are refused before a task or durable operation is
+created. Only deliberately authored validation reasons reach the requesting
+connection, prefixed with `Malformed frame: `. An unexpected parser fault
+instead returns the private `error` sentence
+`Causal parent validation failed; task was not changed.`; its traceback stays
+in the hub log. No refusal is broadcast or changes the board. The connection
+remains usable, and a corrected request may reuse the same `idem_key`.
+Clients and dashboards retain the prior task until an accepted write arrives.
+
 ## Hub → agent
 
 - **Session:** `welcome`, `presence_update`, `name_conflict`, `auth_denied`,
