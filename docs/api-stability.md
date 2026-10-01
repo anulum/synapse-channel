@@ -160,3 +160,25 @@ operator's reloadable exact grants. These are separate from local seat
 attachments; no existing local request changes shape or permission semantics.
 Older consumers retain their earlier wire floor. See the [attachment
 contract](attachments.md#recipient-granted-cross-hub-reads-wire-version-6).
+
+## Hub inbox reader modules
+
+`hub_inbox` provides `inbox_query(identity, cursor, limit)`,
+`validate_inbox_page(response, identity, cursor, *, roles=())`, and async
+`read_hub_inbox(*, uri, identity, home, token=None, limit=50, timeout=5.0)`.
+The reader prints one page and persists its cursor; it returns zero on
+success or one on an unavailable result. Validation raises `ValueError`
+before consuming unsupported or malformed pages.
+
+`hub_inbox_cursor` provides frozen `HubInboxCursor(hub_id="", seq=0)`,
+`hub_inbox_cursor_path(home, uri, identity)`, `load_hub_inbox_cursor(path)`
+and `save_hub_inbox_cursor(path, cursor)`. These public filesystem helpers
+refuse malformed state and isolate endpoint and identity cursors. Storage
+failures raise `OSError`.
+
+`mcp.hub_inbox.drain_hub_inbox(agent, await_reply, *, uri, home, limit)`
+returns page or unavailable JSON over the bridge connection. The handler is
+`core.handlers.inbox.handle_inbox_query(hub, sender, data, websocket)`.
+All modules are under `synapse_channel`; they are implementation surfaces,
+not new package-root exports or SDK methods. Python and JavaScript support
+the additive query through their existing generic-send methods.

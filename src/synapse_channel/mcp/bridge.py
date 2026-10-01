@@ -11,16 +11,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.client.claim_confirmation import DEFAULT_CLAIM_REPLY_TIMEOUT
+from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.mcp import app_task_actions
 from synapse_channel.mcp.advisory_actions import McpAdvisoryActions
 from synapse_channel.mcp.claim_actions import McpClaimActions
 from synapse_channel.mcp.entitlement_actions import read_entitlement_overview
+from synapse_channel.mcp.hub_inbox import drain_hub_inbox
 from synapse_channel.mcp.inbox import DEFAULT_MCP_INBOX_LIMIT, McpFeedInbox
 from synapse_channel.mcp.plan_actions import McpPlanActions
 from synapse_channel.mcp.snapshot_queries import McpSnapshotQueries
@@ -86,6 +89,13 @@ class SynapseHubBridge:
     ) -> None:
         self.name = name
         self.request_timeout = request_timeout
+        self.inbox_source = os.environ.get("SYN_INBOX_SOURCE", "feed")
+        if self.inbox_source not in {"feed", "hub"}:
+            raise ValueError("SYN_INBOX_SOURCE must be feed or hub")
+        if self.inbox_source == "hub" and (inbox_feed is not None or inbox_cursor is not None):
+            raise ValueError("local inbox paths cannot be combined with the hub source")
+        self.inbox_uri = uri
+        self.inbox_home = Path(os.environ.get("SYN_HOME", str(Path.home() / "synapse")))
         role_names = tuple(dict.fromkeys(role.strip() for role in roles if role.strip()))
         self._waiters: list[tuple[Matcher, asyncio.Future[dict[str, Any]]]] = []
         self.inbox_reader = McpFeedInbox(
@@ -287,7 +297,36 @@ class SynapseHubBridge:
         return await self.snapshot_queries.board()
 
     async def inbox(self, limit: int = DEFAULT_MCP_INBOX_LIMIT) -> str:
-        """Return one bounded, cursored page of local durable message bodies."""
+        """Read one bounded page from the selected feed or authenticated hub.
+
+        ``SYN_INBOX_SOURCE=hub`` uses this bridge's connection and an independent
+        endpoint/identity cursor. Availability is explicit; a read does not prove
+        model processing. The default preserves offline local-feed behaviour.
+
+        Parameters
+        ----------
+        limit : int, optional
+            Maximum matching messages, bounded to 1–100.
+
+        Returns
+        -------
+        str
+            JSON page with source, availability, cursor and remaining-page state.
+        """
+        if self.inbox_source == "hub":
+            return await drain_hub_inbox(
+                self.agent,
+                self._await_reply,
+                uri=self.inbox_uri,
+                home=self.inbox_home,
+                limit=safe_int(
+                    limit,
+                    default=DEFAULT_MCP_INBOX_LIMIT,
+                    min_value=1,
+                    max_value=100,
+                    allow_bool=False,
+                ),
+            )
         return self.inbox_reader.drain(limit)
 
     async def status(self) -> str:

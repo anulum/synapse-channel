@@ -868,3 +868,40 @@ on its private `state_snapshot`; missing/invalid ids remain absent. This additiv
 field does not change the wire version. Clients must match the requesting identity
 and exact id before treating that snapshot as confirmation. See
 [claim outcomes and recovery](git-claims.md#claim-outcomes-and-recovery).
+
+## Durable inbox query
+
+`history_request` optionally carries `request_id` and an `inbox_query` object.
+This additive query has its own `version: 1`; ordinary history selectors and
+the wire version remain unchanged:
+
+```json
+{"type":"history_request","sender":"PROJ/reader","target":"System",
+ "request_id":"reader-unique-request",
+ "inbox_query":{"version":1,"identity":"PROJ/reader","hub_id":"",
+                "since_seq":0,"limit":50}}
+```
+
+An initial cursor is zero with an empty hub binding. Subsequent requests
+bind the returned `hub_id` and use `cursor` as `since_seq`. Integers exclude
+booleans; `since_seq` is within SQLite's nonnegative signed 64-bit range and
+`limit` is 1–100. The requester must be the exact identity or one of its
+recognized receive-only waiter sidecars. Identity admission applies. ACL
+enforcement requires `mailbox` on `agent:<identity>`; this does not grant
+`recall` on global history.
+
+The private `history_snapshot` echoes a request ID of 1–128 characters and
+contains `inbox_page`: `version`, `available`, `identity`, `hub_id`, `cursor`,
+`messages` and `has_more`. Messages carry durable journal `seq`. Ascending
+reads scan at most 1,000 chat rows, with a 7 MiB encoded-message budget.
+The cursor advances past inspected foreign rows and returned messages,
+without consuming the next matching message. `has_more` may be true with
+no messages.
+
+Exact, comma-separated, project, wildcard and admitted-role recipients are
+matched. Own chat and channel-tagged chat are excluded. Invalid queries,
+foreign identities, changed hubs, cursors beyond retained history, absent
+journals and oversized first messages return `available: false` with fixed
+refusals. Clients must require this explicit schema: a legacy ordinary
+history reply is not proof of an empty inbox. Retention bounds recovery;
+reading does not advance waiter ACKs or prove model processing.

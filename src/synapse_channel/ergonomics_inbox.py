@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -40,6 +41,10 @@ class InboxOptions:
     exact_name: str | None
     project_wide: bool
     aliases: tuple[str, ...]
+    source: str = "feed"
+    uri: str | None = None
+    token_file: str | None = None
+    limit: int = 50
 
 
 def inbox_argv(
@@ -84,9 +89,26 @@ def parse_inbox_options(rest: Sequence[str], env: Mapping[str, str]) -> InboxOpt
     aliases: list[str] = []
     exact_name: str | None = None
     project_wide = False
+    source_options: dict[str, str] = {}
     index = 0
     while index < len(tokens):
         token = tokens[index]
+        flag, separator, inline = token.partition("=")
+        if flag in {"--source", "--uri", "--token-file", "--limit"}:
+            if flag in source_options:
+                raise ValueError(f"{flag} may be supplied only once")
+            if separator:
+                value = inline.strip()
+                index += 1
+            else:
+                if index + 1 >= len(tokens) or tokens[index + 1].startswith("--"):
+                    raise ValueError(f"{flag} requires a nonblank value")
+                value = tokens[index + 1].strip()
+                index += 2
+            if not value:
+                raise ValueError(f"{flag} requires a nonblank value")
+            source_options[flag] = value
+            continue
         if token in {"--as", "--name"}:
             if index + 1 >= len(tokens) or tokens[index + 1].startswith("--"):
                 raise ValueError(f"{token} requires a nonblank identity")
@@ -124,10 +146,27 @@ def parse_inbox_options(rest: Sequence[str], env: Mapping[str, str]) -> InboxOpt
         raise ValueError("--name and --project-wide are mutually exclusive")
     if not aliases:
         aliases = [item.strip() for item in env.get("SYN_ALIASES", "").split(",")]
+    source = source_options.get("--source", env.get("SYN_INBOX_SOURCE", "feed"))
+    if source not in {"feed", "hub"}:
+        raise ValueError("--source must be feed or hub")
+    try:
+        limit = int(source_options.get("--limit", "50"))
+    except ValueError:
+        raise ValueError("--limit must be an integer from 1 to 100") from None
+    if not 1 <= limit <= 100:
+        raise ValueError("--limit must be an integer from 1 to 100")
+    if source == "hub" and project_wide:
+        raise ValueError("hub inbox requires an exact identity; --project-wide is not supported")
+    if source == "feed" and any(flag != "--source" for flag in source_options):
+        raise ValueError("--uri, --token-file and --limit require --source hub")
     return InboxOptions(
         exact_name=exact_name,
         project_wide=project_wide,
         aliases=tuple(dict.fromkeys(name for name in aliases if name)),
+        source=source,
+        uri=source_options.get("--uri"),
+        token_file=source_options.get("--token-file"),
+        limit=limit,
     )
 
 
@@ -147,12 +186,62 @@ def run_inbox(
     *,
     home: Path,
 ) -> int:
-    """Dispatch an exact primary inbox plus explicitly requested aliases."""
+    """Read the selected source for an exact primary inbox and explicit aliases.
+
+    ``--source hub`` (or ``SYN_INBOX_SOURCE=hub``) reads authenticated durable
+    pages from ``--uri``/``SYNAPSE_URI`` with source-isolated local cursors.
+    The default feed source retains the established offline local behaviour.
+
+    Parameters
+    ----------
+    identity : InboxIdentity
+        Resolved project and exact primary identity.
+    rest : Sequence[str]
+        Inbox flags selecting the source and explicit aliases.
+    env : Mapping[str, str]
+        Coordination environment, including endpoint and credential-file paths.
+    dispatcher : Callable
+        Existing package dispatcher used by the local feed source.
+    home : Path
+        Local coordination home containing source-specific cursors.
+
+    Returns
+    -------
+    int
+        Zero on successful reads, one on unavailable source, two on invalid flags.
+    """
     try:
         options = parse_inbox_options(rest, env)
     except ValueError as exc:
         print(f"syn inbox: {exc}", file=sys.stderr)
         return 2
+
+    if options.source == "hub":
+        from synapse_channel.core.secret_files import SecretFileError, read_secret_file
+        from synapse_channel.hub_inbox import read_hub_inbox
+
+        uri = options.uri or env.get("SYNAPSE_URI", "").strip() or "ws://127.0.0.1:8876"
+        token_file = options.token_file or env.get("SYNAPSE_TOKEN_FILE", "").strip()
+        try:
+            token = read_secret_file(token_file, flag="--token-file") if token_file else None
+        except SecretFileError:
+            print("syn inbox: cannot read hub credential file", file=sys.stderr)
+            return 1
+        code = 0
+        for name in dict.fromkeys((options.exact_name or identity.identity, *options.aliases)):
+            code = max(
+                code,
+                asyncio.run(
+                    read_hub_inbox(
+                        uri=uri,
+                        identity=name,
+                        home=home,
+                        token=token,
+                        limit=options.limit,
+                    )
+                ),
+            )
+        return code
 
     feed = str(home / "feed.ndjson")
     primary_name = options.exact_name or identity.identity

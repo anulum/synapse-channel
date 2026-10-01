@@ -193,7 +193,7 @@ tools wait for the hub's grant or denial; query tools return JSON.
 | `synapse_git_claim(task_id, paths?, base?, auto_release_on?, whole_worktree?)` | Resolve the MCP process's real Git worktree, branch, Git-index spelling, filesystem aliases, case policy, and existing object identities, then take a mutation-compatible canonical claim. Bounded paths are mandatory unless `whole_worktree=true` is explicit. |
 | `synapse_release(task_id, evidence?, changed_files?, confidence?)` | Release a lease you hold and validate the hub-attested receipt; supplied evidence is persisted as an assessment note. |
 | `synapse_send(target, message)` | Send a chat to an agent, a group glob, or `all`. |
-| `synapse_inbox(limit?)` | Consume up to 1–100 local durable relay messages for this bridge identity as JSON. |
+| `synapse_inbox(limit?)` | Consume up to 1–100 messages for this identity as JSON, from the selected local feed or connected hub journal. |
 | `synapse_handoff(task_id, to_agent)` | Hand a held task to another online agent. |
 | `synapse_task_declare(task_id, title, depends_on?)` | Declare or refine a task on the plan. |
 | `synapse_task_update(task_id, status?, suggested_owner?)` | Update a plan task. |
@@ -222,7 +222,7 @@ not prove account-owner authority, so the tool always withholds private details.
 If the private store is unavailable or corrupt, it returns a generic unavailable
 state without disclosing its path or contents.
 
-`synapse_inbox` reads the hub host's local durable relay file (default
+By default, `synapse_inbox` reads the adapter host's local durable relay file (default
 `$SYN_HOME/feed.ndjson`) through an owner-only per-identity cursor. It consumes
 only complete lines, pages without skipping a remaining tail, and reports
 `available: false` when the adapter cannot see that local file. For a custom
@@ -570,3 +570,21 @@ Per-agent ACLs over which identity may invoke outbound MCP remain a later tranch
 the controls here bind the operator's process-launch policy before tool discovery.
 
 A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).
+
+## Reading the connected hub inbox
+
+Set `SYN_INBOX_SOURCE=hub` in the MCP adapter's environment to make
+`synapse_inbox` read the central journal over its existing authenticated
+connection. This opens no additional socket. `--uri` and `--token-file`
+remain the server's connection options. The default `feed` source reads the
+adapter host's local relay file. Local `--inbox-feed` or `--inbox-cursor`
+overrides cannot be combined with the hub source.
+
+Hub pages report `available`, `hub_id`, `identity`, `cursor`, `messages`,
+`has_more` and the endpoint in `source`. Repeat while `has_more` is true.
+The bridge has an independent endpoint and identity sequence cursor under
+`$SYN_HOME/hub-inbox-cursor/`. A refused, malformed, missing or unsupported
+response returns fixed unavailable JSON and retains the prior cursor; it
+never drains the local feed. Admitted roles participate in recipient matching.
+Channel-tagged chat is excluded. See [remote inbox CLI](cli.md#reading-an-inbox-on-another-machine)
+for bounds, retention and replay. Reading does not prove model processing.

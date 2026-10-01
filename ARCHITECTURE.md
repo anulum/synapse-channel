@@ -165,3 +165,15 @@ process over SQLite, which bounds throughput. See
 - **Not a datacentre message bus.** Throughput is bounded by a single-writer
   asyncio process over SQLite; the design target is coordination correctness
   for a workstation or a small LAN fleet, not horizontal message throughput.
+
+## Durable remote inbox reads
+
+`core.handlers.inbox` serves identity-scoped, bounded journal pages through
+an additive history query. Hub admission and mailbox ACLs precede this
+reader; channel chat is excluded. `hub_inbox` validates replies and the
+live hub binding. `hub_inbox_cursor` persists independent endpoint and
+identity sequence cursors. `ergonomics_inbox` selects feed or hub reads,
+and `mcp.hub_inbox` reuses the bridge connection. The local feed remains
+the default. Replies expose source, availability and remaining pages to
+control interfaces; the current dashboard does not configure per-client
+inbox sources.

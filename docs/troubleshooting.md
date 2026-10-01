@@ -362,3 +362,17 @@ any event in the log.
   see [`SUPPORT.md`](https://github.com/anulum/synapse-channel/blob/main/SUPPORT.md).
 
 A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).
+
+## A remote wake arrives but the inbox stays empty
+
+Compare the inbox's `source` with the connected hub endpoint. Default CLI
+and MCP reads use a local file, so a working remote hub or SSH forward does
+not prove that file is current. Use `syn inbox --source hub` with `--uri`,
+or start the MCP adapter with `SYN_INBOX_SOURCE=hub`. Both hub and reader
+must support the [durable inbox query](protocol.md#durable-inbox-query).
+
+Unavailable means the connection, protocol, journal or cursor storage needs
+repair; it is not an empty inbox. If the exact identity is already connected,
+use that connection's MCP inbox. Repeat successful pages while `has_more`
+is true. Feed and hub cursors remain separate. Changed hubs and corrupt
+cursors refuse reads rather than hiding the problem behind a stale feed.

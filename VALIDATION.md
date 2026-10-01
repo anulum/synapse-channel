@@ -124,3 +124,16 @@ Run them with:
 ```bash
 make bench
 ```
+
+## Durable hub inbox recovery
+
+`tests/test_hub_inbox.py` exercises admitted WebSocket reads, recipient
+filtering, private-channel exclusion, mailbox ACLs, long gaps exceeding
+one scan page and malformed queries. `tests/test_hub_inbox_clients.py`
+exercises CLI cursors and the MCP bridge connection;
+`tests/test_hub_inbox_network.py` probes untrusted replies and handshake refusals.
+`tests/test_hub_inbox_cursor.py` checks real filesystem isolation,
+owner-only persistence and refusals preserving prior state. The JavaScript
+real-hub journey sends the same additive query. These checks establish
+transport and reader consumption, not model processing or recovery beyond
+retained journal history.

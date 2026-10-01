@@ -208,3 +208,53 @@ def test_inbox_helpers_have_a_focused_owner_and_compatibility_reexports() -> Non
     assert ergonomics.inbox_argv is ergonomics_inbox.inbox_argv
     assert ergonomics.split_as_names is ergonomics_inbox.split_as_names
     assert ergonomics.aliased_inbox_argv is ergonomics_inbox.aliased_inbox_argv
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--source", "other"],
+        ["--source"],
+        ["--source="],
+        ["--source", "hub", "--source", "hub"],
+        ["--source", "hub", "--uri"],
+        ["--source", "hub", "--limit", "bad"],
+        ["--source", "hub", "--limit", "0"],
+        ["--source", "hub", "--limit", "101"],
+        ["--source", "hub", "--project-wide"],
+        ["--uri", "ws://localhost:8876"],
+        ["--token-file", "missing"],
+        ["--limit", "1"],
+    ],
+)
+def test_invalid_source_options_refuse_before_reading(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    arguments: list[str],
+) -> None:
+    assert (
+        ergonomics.main(
+            ["inbox", *arguments],
+            env=_env(tmp_path, "P/reader"),
+            cwd_basename="P",
+        )
+        == 2
+    )
+    assert capsys.readouterr().err.startswith("syn inbox:")
+    assert not list(tmp_path.iterdir())
+
+
+def test_hub_credential_file_refusal_is_fixed_and_creates_no_cursor(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert (
+        ergonomics.main(
+            ["inbox", "--source", "hub", "--token-file", str(tmp_path / "missing")],
+            env=_env(tmp_path, "P/reader"),
+            cwd_basename="P",
+        )
+        == 1
+    )
+    assert capsys.readouterr().err == "syn inbox: cannot read hub credential file\n"
+    assert not list(tmp_path.iterdir())

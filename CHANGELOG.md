@@ -20,6 +20,10 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Explicit durable hub inbox pages for remote CLI and MCP readers, with exact
+  recipient filtering, mailbox ACLs, bounded journal scans, independent
+  endpoint and identity cursors, and unavailable results for unsupported hubs.
+
 - Real SQLite recovery regressions for damaged atomic-operation rows, settled
   evidence outbox bindings, invalid operation and AEF identities, and cleanup
   refusals before or after commit. Independent database reads and reopen/replay

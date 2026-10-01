@@ -786,6 +786,7 @@ syn arm                           # keep a directed-only waiter armed (named <pr
 syn say REMANENTIA,CEO "ack"      # send to one, several, or all
 syn ask CEO "status?"             # send, require an online recipient, and wait for replies
 syn inbox                         # print messages addressed to you since the cursor
+syn inbox --source hub --uri ws://127.0.0.1:8876  # read the connected hub journal
 syn inbox --project-wide          # explicitly include every identity in this project
 syn inbox --name PROJ/role        # read one exact identity under its own cursor
 syn board                         # the shared task/progress board
@@ -813,6 +814,12 @@ that identity. It never falls back to a shared project cursor. Use
 for another exact address, or repeat `--as PROJ/name` to drain standing role
 addresses under independent cursors. A bare `--as PROJ` is the explicit
 project-wide alias form; `$SYN_ALIASES` supplies the same standing alias list.
+For a remote hub, select `syn inbox --source hub --uri ENDPOINT` or set
+`SYN_INBOX_SOURCE=hub` for the CLI or MCP adapter. This reads authenticated
+journal pages with independent endpoint and identity cursors instead of a
+stale local feed. Repeat while `has_more` is true; an unavailable result
+is not an empty inbox. Hub mode treats aliases as exact identities and
+excludes channel-tagged chat. See [remote inbox](docs/cli.md#reading-an-inbox-on-another-machine).
 On the hub side the waiter identity is protected by a **name-ownership lease**:
 the first `synapse wait`/`arm` for a name is granted an opaque token (persisted
 under `~/synapse/owner-lease/`), every re-arm presents it and re-takes its own
@@ -1745,11 +1752,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.35 |
 | Public API exports | 70 |
-| Package modules | 676 |
-| Classes | 1006 |
+| Package modules | 680 |
+| Classes | 1007 |
 | Wire message types | 111 |
 | CLI subcommands | 236 |
-| Test functions | 10823 |
+| Test functions | 10848 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 79 |
 | GitHub Actions workflows | 27 |

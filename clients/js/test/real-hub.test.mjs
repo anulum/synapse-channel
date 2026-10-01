@@ -95,6 +95,25 @@ test("SDK interoperates with an authenticated Python hub", { timeout: 25000 }, a
     alice.chat("real hub delivery", { target: "js-bob" }));
   assert.equal(chat.sender, "js-alice");
   assert.equal(chat.payload, "real hub delivery");
+  const inbox = await exchange(bob, "history_snapshot", () => bob.send(
+    "history_request", { target: "System", extra: {
+      request_id: "js-inbox-page",
+      inbox_query: { version: 1, identity: "js-bob", hub_id: "", since_seq: 0, limit: 1 },
+    } },
+  ));
+  assert.equal(inbox.request_id, "js-inbox-page");
+  assert.equal(inbox.inbox_page.available, true);
+  assert.equal(inbox.inbox_page.identity, "js-bob");
+  assert.deepEqual(inbox.inbox_page.messages.map((message) => message.payload),
+    ["real hub delivery"]);
+  const nextInbox = await exchange(bob, "history_snapshot", () => bob.send(
+    "history_request", { extra: { request_id: "js-inbox-next", inbox_query: {
+      version: 1, identity: "js-bob", hub_id: inbox.inbox_page.hub_id,
+      since_seq: inbox.inbox_page.cursor, limit: 1,
+    } } },
+  ));
+  assert.equal(nextInbox.inbox_page.available, true);
+  assert.deepEqual(nextInbox.inbox_page.messages, []);
   await exchange(alice, MessageType.ClaimGranted, () => alice.claim("alice-task", ["shared.py"]));
   await exchange(bob, MessageType.ClaimDenied, () => bob.claim("bob-task", ["shared.py"]));
   const releaseKey = "js-release-unique-operation";

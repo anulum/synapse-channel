@@ -3208,3 +3208,40 @@ For a secured hub, pass `--token SECRET` to `worker`, `send`, `listen`, `board`,
 Run any command with `--help` for its full set of options.
 
 A Git claim timeout is an **unknown outcome** (exit `3`), not proof of denial. Use `--confirm-only` with the original identity and scope to verify an exact live lease without replaying a mutation. [Claim recovery](git-claims.md#claim-outcomes-and-recovery).
+
+## Reading an inbox on another machine
+
+The default `syn inbox` reads `$SYN_HOME/feed.ndjson` where the command runs.
+An SSH or Tailscale connection to a central hub does not synchronize that file.
+A wake can therefore arrive while the local inbox remains stale. Select the
+hub source explicitly:
+
+```bash
+syn inbox --source hub --uri ws://127.0.0.1:8876 --name PROJ/terminal --limit 50
+# For a token-gated endpoint, add --token-file /path/to/owner-only-token.
+export SYN_INBOX_SOURCE=hub
+export SYNAPSE_URI=ws://127.0.0.1:8876
+syn inbox
+```
+
+Each call returns JSON with `available`, `identity`, `hub_id`, `cursor`,
+`messages`, `has_more` and `source`. Repeat while `has_more` is true, including
+pages without matching messages. A request scans at most 1,000 chat rows,
+returns 1–100 matching messages, and has a 7 MiB encoded-message budget.
+Ascending reads retain old unread messages through long gaps. A single
+message exceeding that budget refuses the read.
+
+The endpoint and exact identity select an owner-only cursor under
+`$SYN_HOME/hub-inbox-cursor/`, bound to the actual hub identity. Feed offsets
+and waiter ACKs do not substitute for this sequence cursor. Corrupt cursors,
+a different hub, a cursor beyond retained history, an absent journal or an
+unsupported response return unavailable without advancing the cursor.
+There is no automatic local-feed fallback. Journal retention bounds recovery.
+
+The command connects as the requested identity without takeover. If that
+identity already has a connected MCP bridge, call its `synapse_inbox` instead.
+`--as` and `SYN_ALIASES` select additional exact identities in hub mode; each
+must be admitted by the hub. Project-wide reads require the feed source.
+Channel-tagged chat is excluded and uses channel history. A read records
+reader consumption, not model processing. Failed cursor writes may cause
+messages to repeat.

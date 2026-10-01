@@ -41,6 +41,7 @@ from synapse_channel.core.acl import (
     ENTITLEMENT_ADVERTISE,
     EVIDENCE,
     IDENTITY_ENROLL,
+    MAILBOX,
     MESSAGE,
     PIN_RECLAIM,
     RECALL,
@@ -206,6 +207,10 @@ def required_accesses(msg_type: str, data: dict[str, Any]) -> list[tuple[str, Ta
     if msg_type in _CHANNEL_TYPES:
         return [(MESSAGE, Target("channel", str(data.get("channel") or "")))]
     if msg_type in _RECALL_TYPES:
+        if msg_type == MessageType.HISTORY_REQUEST and "inbox_query" in data:
+            query = data.get("inbox_query")
+            identity = query.get("identity") if isinstance(query, dict) else None
+            return [(MAILBOX, Target("agent", identity if isinstance(identity, str) else ""))]
         return [(RECALL, Target("history", "global"))]
     return []
 

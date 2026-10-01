@@ -150,7 +150,14 @@ async def handle_history_request(
     ``history_client_msg_id`` and ``history_target`` are optional exact string
     selectors applied before ``limit``. Invalid selectors yield no matches,
     never an unfiltered response. Existing recall ACL admission still applies.
+    A versioned ``inbox_query`` selects the durable exact-identity reader,
+    admitted through the mailbox ACL rather than global recall.
     """
+    if "inbox_query" in data:
+        from synapse_channel.core.handlers.inbox import handle_inbox_query
+
+        await handle_inbox_query(hub, sender, data, websocket)
+        return
     history = list(hub.chat_history)
     for selector, field in (
         ("history_client_msg_id", "client_msg_id"),
