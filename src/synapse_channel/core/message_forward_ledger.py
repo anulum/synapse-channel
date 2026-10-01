@@ -29,6 +29,7 @@ import json
 import logging
 import sqlite3
 import threading
+import weakref
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
@@ -224,9 +225,16 @@ class MessageForwardLedger:
         Returns
         -------
         MessageForwardLedger
-            A ledger whose state lives only as long as the process.
+            A ledger whose private connection closes when the ledger is retired.
         """
-        return cls(sqlite3.connect(":memory:", check_same_thread=False), threading.RLock())
+        connection = sqlite3.connect(":memory:", check_same_thread=False)
+        try:
+            ledger = cls(connection, threading.RLock())
+        except BaseException:
+            connection.close()
+            raise
+        weakref.finalize(ledger, connection.close)
+        return ledger
 
     def _durable_write(self, sql: str, params: tuple[Any, ...]) -> int:
         """Run one write under the lock with a full sync, and return the changed row count.

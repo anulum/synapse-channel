@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import gc
+import warnings
 from pathlib import Path
 
 import pytest
@@ -217,3 +219,14 @@ def test_pending_summary_reports_depth_and_oldest_age_per_peer() -> None:
     }
     assert ledger.pending_summary(0.0)["laptop"].oldest_pending_seconds == 0.0
     assert MessageForwardLedger.in_memory().pending_summary(1.0) == {}
+
+    gc.collect()
+    with warnings.catch_warnings(record=True) as observed:
+        warnings.simplefilter("always", ResourceWarning)
+        for _ in range(10):
+            retired = MessageForwardLedger.in_memory()
+            _enqueue(retired, "retired")
+            assert retired.pending_counts() == {"laptop": 1}
+            del retired
+        gc.collect()
+    assert not [warning for warning in observed if issubclass(warning.category, ResourceWarning)]

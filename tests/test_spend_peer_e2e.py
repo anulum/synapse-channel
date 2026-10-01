@@ -252,6 +252,22 @@ async def test_the_transport_fails_closed(
     with pytest.raises(SpendTransportError, match="failed"):
         await request_spend("reserve", _reserve(), uri="ws://127.0.0.1:9", local_id=FOLLOWER)
 
+    async def interrupt_handshake(
+        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> None:
+        try:
+            await reader.readuntil(b"\r\n\r\n")
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    async with await asyncio.start_server(interrupt_handshake, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        with pytest.raises(SpendTransportError, match="failed"):
+            await request_spend(
+                "reserve", _reserve(), uri=f"ws://127.0.0.1:{port}", local_id=FOLLOWER
+            )
+
 
 async def test_a_malformed_request_and_bytes_frames(tmp_path: Path) -> None:
     granted, _spare, trust = _material(tmp_path)

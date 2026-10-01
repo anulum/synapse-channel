@@ -13,12 +13,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-- Bound outbound socket writes and isolate unread peers with finite close/abort cleanup.
-  Directed and private-channel chat receipts and retry deduplication now require
-  completed recipient or waiter writes; failed writes remain durable and retryable. The JavaScript SDK
-  waits for the prior socket close event before reconnecting the same identity.
+## [0.99.36] - 2026-10-01
 
 ### Changed
+
+- Document per-host connection budgets for large terminal fleets, including
+  transient CLI connections, close code `4015`, and explicit 100-terminal sizing.
 
 - Refresh compatible hash-locked Python workflow cohorts, the cockpit test/build
   lock, Ruff hooks and the CodeQL action commit. CI uses Node 22.23.3 and the
@@ -46,6 +46,19 @@ All notable changes to this project are documented here.
   quotas, session-bound uploads and reference retention remain in force.
 
 ### Fixed
+
+- Spend requests classify an interrupted WebSocket handshake as a transport
+  failure, allowing callers to retry within their existing bounded budget and
+  refuse unavailable owners without granting unconfirmed reservations.
+
+- Journal-free hubs release the private SQLite forwarding connection when
+  its ledger is retired. Journal-backed connections remain owned by the event
+  store, preserving forwarding state across hub restarts.
+
+- Bound outbound socket writes and isolate unread peers with finite close/abort cleanup.
+  Directed and private-channel chat receipts and retry deduplication now require
+  completed recipient or waiter writes; failed writes remain durable and retryable. The JavaScript SDK
+  waits for the prior socket close event before reconnecting the same identity.
 
 - Manual release verifies exact-confirmation support before sending a mutation.
   Unsupported, malformed or missing probes refuse without releasing the claim;
