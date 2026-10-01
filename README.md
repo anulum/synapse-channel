@@ -701,6 +701,10 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   enrolment outcomes, with approval and application kept distinct;
   every declared durable `EventKind` is explicitly classified as receipt-bearing or
   intentionally omitted. Absence and stale last-good data remain visible.
+  Durable-feed storage and encoding failures return a fixed HTTP 503;
+  internal diagnostics stay in server logs, and a later request can recover
+  after the store is repaired. The live durable-feed channels use the same
+  failure detail. See the [cockpit recovery guide](docs/cockpit.md).
   Add
   `--observed-peer HUB=URI` to include advisory peer-hub rows in the browser and
   `/snapshot.json`; those rows are labelled `observed@HUB` and never grant local
@@ -1721,10 +1725,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Package version | 0.99.35 |
 | Public API exports | 70 |
 | Package modules | 674 |
-| Classes | 1003 |
+| Classes | 1005 |
 | Wire message types | 111 |
 | CLI subcommands | 236 |
-| Test functions | 10784 |
+| Test functions | 10791 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 79 |
 | GitHub Actions workflows | 27 |

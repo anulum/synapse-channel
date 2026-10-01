@@ -24,6 +24,8 @@ from synapse_channel.core.state import TaskClaim
 from synapse_channel.dashboard_store_feeds import (
     DEFAULT_EVENTS_LIMIT,
     MAX_EVENTS_LIMIT,
+    DashboardCausalityInputError,
+    DashboardCausalityTaskNotFoundError,
     build_causality_feed,
     build_events_tail,
     build_metrics_feed,
@@ -138,23 +140,25 @@ class TestCausalityFeed:
         db = tmp_path / "hub.db"
         _seed_log(db)
 
-        with pytest.raises(ValueError, match="no recorded event for task 'GHOST'"):
+        with pytest.raises(
+            DashboardCausalityTaskNotFoundError, match="no recorded event for task 'GHOST'"
+        ):
             build_causality_feed(db, direction="causes", task="GHOST")
 
     def test_exactly_one_anchor_is_required(self, tmp_path: Path) -> None:
         db = tmp_path / "hub.db"
         _seed_log(db)
 
-        with pytest.raises(ValueError, match="exactly one of seq and task"):
+        with pytest.raises(DashboardCausalityInputError, match="exactly one of seq and task"):
             build_causality_feed(db, direction="causes")
-        with pytest.raises(ValueError, match="exactly one of seq and task"):
+        with pytest.raises(DashboardCausalityInputError, match="exactly one of seq and task"):
             build_causality_feed(db, direction="causes", seq=1, task="A")
 
     def test_only_causes_and_effects_are_served(self, tmp_path: Path) -> None:
         db = tmp_path / "hub.db"
         _seed_log(db)
 
-        with pytest.raises(ValueError, match="unknown causality direction"):
+        with pytest.raises(DashboardCausalityInputError, match="unknown causality direction"):
             build_causality_feed(db, direction="counterfactual", seq=1)
 
 

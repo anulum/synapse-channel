@@ -31,6 +31,13 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Durable dashboard feeds return a fixed private HTTP 503 for storage,
+  builder and JSON-encoding failures instead of exposing internal paths or
+  disconnecting the request. Live events, receipts and operator-actions
+  channels use the same fixed detail. Explicit causality refusal types
+  preserve authored 400/404 messages and `ValueError` compatibility; the
+  next request can observe a repaired store on the same dashboard server.
+
 - Task causal-parent validation uses an explicit authored refusal type while
   preserving `ValueError` compatibility and existing validation reasons.
   Unexpected parser faults return fixed private errors without changing the

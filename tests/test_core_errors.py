@@ -49,6 +49,16 @@ _SRC = Path(__file__).resolve().parent.parent / "src" / "synapse_channel"
 # A row may be ADDED for a new error class; an existing row must never change.
 # ---------------------------------------------------------------------------
 FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
+    "DashboardCausalityInputError": (
+        "synapse_channel.dashboard_store_feeds",
+        "dashboard_causality_input",
+        ValueError,
+    ),
+    "DashboardCausalityTaskNotFoundError": (
+        "synapse_channel.dashboard_store_feeds",
+        "dashboard_causality_task_not_found",
+        ValueError,
+    ),
     "AttachmentError": (
         "synapse_channel.core.attachment_store",
         "attachment",

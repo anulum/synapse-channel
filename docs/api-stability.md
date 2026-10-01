@@ -113,6 +113,16 @@ neither projection parses exception text or infers semantics from wording.
 Caller-actionable 4xx responses retain their detail, while mapped 5xx responses
 omit exception text so internal paths and storage diagnostics stay server-side.
 
+Dashboard causality builders distinguish `DashboardCausalityInputError`
+(`dashboard_causality_input`, HTTP 400) and
+`DashboardCausalityTaskNotFoundError`
+(`dashboard_causality_task_not_found`, HTTP 404) in
+`synapse_channel.dashboard_store_feeds`. Both remain `ValueError` subclasses
+and preserve authored refusal messages. Durable dashboard feed builders and
+JSON encoding otherwise map unexpected exceptions to a fixed HTTP 503;
+exception text cannot impersonate an authored query refusal. Successful feed
+documents, bearer checks and hub wire vocabulary retain their existing shape.
+
 ## Stability tiers
 
 Every CLI subcommand carries a tier (`synapse_channel.surface_taxonomy`):

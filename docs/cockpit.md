@@ -62,6 +62,16 @@ The dashboard remains useful without `--feeds-db`. Optional panels say that
 their feed is not configured; they do not turn missing evidence into a zero.
 Use `--feeds-db-key-file` when the selected hub store is encrypted.
 
+Configured durable feeds return HTTP 503 with
+`dashboard feed unavailable; check server diagnostics` when their store or
+response cannot be read or encoded. The browser receives no internal path,
+SQLite error or parser traceback. Check the dashboard server logs and restore
+the selected store; failed responses are not cached, so the next request can
+observe recovery without restarting the dashboard. A missing feed configuration
+still returns 404 naming its enabling flag, and malformed queries retain 400.
+The events, receipts and operator-actions channels in `/live.ndjson` use the
+same fixed failure detail instead of presenting unavailable evidence as empty.
+
 Whole-log reliability and causal-health reports are intentionally progressive:
 the exact event tail and lightweight operational feeds start first, then the
 two expensive reports run one at a time and refresh on a two-minute cadence.

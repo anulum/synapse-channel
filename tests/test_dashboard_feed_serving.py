@@ -159,7 +159,7 @@ def test_a_missing_store_file_is_a_fail_visible_503(tmp_path: Path) -> None:
     absent = tmp_path / "never-created.db"
     response = serve_waits(absent)
     assert response.status == HTTPStatus.SERVICE_UNAVAILABLE
-    assert "missing event store" in response.body.decode()
+    assert response.body == b"dashboard feed unavailable; check server diagnostics\n"
 
 
 def test_reliability_serves_the_report_from_a_real_store(tmp_path: Path) -> None:
@@ -205,7 +205,7 @@ def test_every_store_feed_serves_a_document_from_a_real_store(
 def test_causality_is_fail_visible_when_the_store_file_is_missing(tmp_path: Path) -> None:
     response = serve_causality(tmp_path / "never-created.db", "seq=1")
     assert response.status == HTTPStatus.SERVICE_UNAVAILABLE
-    assert "missing event store" in response.body.decode()
+    assert response.body == b"dashboard feed unavailable; check server diagnostics\n"
 
 
 def test_causality_maps_an_unknown_task_to_a_404_not_an_invention(tmp_path: Path) -> None:

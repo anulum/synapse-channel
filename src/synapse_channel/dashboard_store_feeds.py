@@ -55,6 +55,7 @@ from synapse_channel.core.causality_health import (
     health_to_json,
     run_causal_health,
 )
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.federation_lifecycle import classify_federation_lifecycle
 from synapse_channel.core.federation_store import load_store
 from synapse_channel.core.federation_wire import bundle_fingerprint
@@ -75,6 +76,19 @@ from synapse_channel.participants.session_metric_report import (
 )
 
 Clock = Callable[[], float]
+
+
+class DashboardCausalityInputError(SynapseError, ValueError):
+    """An authored causality query refusal safe for an HTTP 400 response."""
+
+    code = "dashboard_causality_input"
+
+
+class DashboardCausalityTaskNotFoundError(DashboardCausalityInputError):
+    """An authored absent-task refusal safe for an HTTP 404 response."""
+
+    code = "dashboard_causality_task_not_found"
+
 
 _event_store_key_file: ContextVar[str | Path | None] = ContextVar(
     "dashboard_event_store_key_file", default=None
@@ -698,22 +712,26 @@ def build_causality_feed(
 
     Raises
     ------
+    DashboardCausalityInputError
+        On an unknown direction or both or neither anchor given.
+    DashboardCausalityTaskNotFoundError
+        If the log does not record the requested task.
     ValueError
-        On an unknown direction, a missing store, both or neither anchor
-        given, or a task the log does not record.
+        If the store does not exist. All refusals remain ``ValueError``
+        subclasses for existing builder callers.
     """
     if direction not in CAUSALITY_FEED_DIRECTIONS:
         msg = f"unknown causality direction '{direction}'; expected one of "
         msg += "/".join(CAUSALITY_FEED_DIRECTIONS)
-        raise ValueError(msg)
+        raise DashboardCausalityInputError(msg)
     if (seq is None) == (task is None):
         msg = "exactly one of seq and task selects the anchor event"
-        raise ValueError(msg)
+        raise DashboardCausalityInputError(msg)
     if task is not None:
         resolved = resolve_task_last_seq(db_path, task)
         if resolved is None:
             msg = f"no recorded event for task '{task}'"
-            raise ValueError(msg)
+            raise DashboardCausalityTaskNotFoundError(msg)
         anchor = resolved
     else:
         # the exclusive-anchor guard leaves seq non-None on this branch

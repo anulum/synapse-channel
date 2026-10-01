@@ -28,6 +28,15 @@ remediation plan with a target timeline based on severity.
 
 ## Threat model and posture
 
+Durable dashboard feeds return a fixed HTTP 503 for unexpected storage,
+builder or JSON-encoding failures. Internal paths, database messages and parser
+tracebacks remain in dashboard server logs, including when the events,
+receipts and operator-actions feeds are carried in live NDJSON frames.
+Only explicitly typed authored causality refusals expose their 400/404 detail;
+matching exception text cannot select those statuses. Protect log access and
+repair the selected store before retrying; a failure does not become a cached
+empty result or fabricated evidence.
+
 Shared-plan journal failures return a private, authored rollback message to the
 requesting connection. SQLite, filesystem and serialization exception details
 stay in server logs; the failed task/progress candidate is neither published

@@ -161,7 +161,7 @@ def test_dashboard_reliability_endpoint_fails_visible_on_a_missing_store(
 
     assert status == 503
     assert content_type == "text/plain"
-    assert "missing event store" in body
+    assert body == "dashboard feed unavailable; check server diagnostics\n"
 
 
 def test_dashboard_reliability_endpoint_requires_the_dashboard_token(
@@ -249,7 +249,7 @@ def test_events_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
         server.close()
 
     assert status == 503
-    assert "missing event store" in body
+    assert body == "dashboard feed unavailable; check server diagnostics\n"
 
 
 def test_postmortem_feed_serves_task_evidence_with_the_hub_down(tmp_path: Path) -> None:
@@ -346,7 +346,7 @@ def test_sessions_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
         server.close()
 
     assert status == 503
-    assert "missing event store" in body
+    assert body == "dashboard feed unavailable; check server diagnostics\n"
 
 
 def _seed_waits_store(db: Path) -> None:
@@ -408,7 +408,7 @@ def test_waits_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
         server.close()
 
     assert status == 503
-    assert "missing event store" in body
+    assert body == "dashboard feed unavailable; check server diagnostics\n"
 
 
 def test_causality_feed_mirrors_the_cli_shape(tmp_path: Path) -> None:
@@ -548,7 +548,7 @@ def test_causality_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None
         server.close()
 
     assert status == 503
-    assert "missing event store" in body
+    assert body == "dashboard feed unavailable; check server diagnostics\n"
 
 
 def test_events_feed_supports_the_latest_tail_shortcut(tmp_path: Path) -> None:
@@ -623,7 +623,7 @@ def test_metrics_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
         server.close()
 
     assert status == 503
-    assert "missing event store" in body
+    assert body == "dashboard feed unavailable; check server diagnostics\n"
 
 
 def test_metrics_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
@@ -711,7 +711,7 @@ def test_receipts_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
         server.close()
 
     assert status == 503
-    assert "missing event store" in body
+    assert body == "dashboard feed unavailable; check server diagnostics\n"
 
 
 def test_receipts_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
@@ -813,7 +813,7 @@ def test_state_at_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> None:
     finally:
         server.close()
     assert status == 503
-    assert "missing event store" in body
+    assert body == "dashboard feed unavailable; check server diagnostics\n"
 
 
 def test_state_at_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
@@ -893,7 +893,7 @@ def test_merkle_proof_feed_fails_visible_on_a_missing_store(tmp_path: Path) -> N
     finally:
         server.close()
     assert status == 503
-    assert "missing event store" in body
+    assert body == "dashboard feed unavailable; check server diagnostics\n"
 
 
 def test_merkle_proof_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:
@@ -970,7 +970,7 @@ def test_health_anomalies_feed_fails_visible_on_a_missing_store(tmp_path: Path) 
     finally:
         server.close()
     assert status == 503
-    assert "missing event store" in body
+    assert body == "dashboard feed unavailable; check server diagnostics\n"
 
 
 def test_health_anomalies_feed_is_behind_the_dashboard_token(tmp_path: Path) -> None:

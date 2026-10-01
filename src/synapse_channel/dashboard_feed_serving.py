@@ -20,6 +20,7 @@ pretending quiet), and 400 for a malformed query parameter.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -27,7 +28,6 @@ from pathlib import Path
 from typing import Any, Final
 from urllib.parse import parse_qs
 
-from synapse_channel.core.federation_store import FederationStoreError
 from synapse_channel.core.reliability import reliability_to_json, run_reliability_report
 from synapse_channel.dashboard_postmortem_feed import (
     MAX_POSTMORTEM_TASK_ID_LENGTH,
@@ -36,6 +36,8 @@ from synapse_channel.dashboard_postmortem_feed import (
 from synapse_channel.dashboard_store_feeds import (
     DEFAULT_EVENTS_LIMIT,
     MAX_EVENTS_LIMIT,
+    DashboardCausalityInputError,
+    DashboardCausalityTaskNotFoundError,
     build_causality_feed,
     build_events_tail,
     build_federation_feed,
@@ -49,6 +51,9 @@ from synapse_channel.dashboard_store_feeds import (
     build_waits_feed,
     latest_cursor,
 )
+
+_LOGGER = logging.getLogger(__name__)
+_FEED_UNAVAILABLE = "dashboard feed unavailable; check server diagnostics"
 
 
 @dataclass(frozen=True)
@@ -115,12 +120,16 @@ def _absent(feed: str, flag: str) -> FeedResponse:
 
 
 def _store_feed(build: Callable[[], dict[str, Any]]) -> FeedResponse:
-    """Run one store-feed builder with the shared unreadable-store posture."""
+    """Build and encode a feed, exposing only authored query refusals."""
     try:
-        document = build()
-    except ValueError as exc:
-        return plain_response(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
-    return json_response(document)
+        return json_response(build())
+    except DashboardCausalityTaskNotFoundError as exc:
+        return plain_response(HTTPStatus.NOT_FOUND, str(exc))
+    except DashboardCausalityInputError as exc:
+        return plain_response(HTTPStatus.BAD_REQUEST, str(exc))
+    except Exception:
+        _LOGGER.exception("Dashboard store feed could not be served")
+        return plain_response(HTTPStatus.SERVICE_UNAVAILABLE, _FEED_UNAVAILABLE)
 
 
 def serve_reliability(db: Path | None, key_file: Path | None) -> FeedResponse:
@@ -336,30 +345,14 @@ def serve_causality(db: Path | None, query: str) -> FeedResponse:
         seq = bounded_query_int(seq_raw) if seq_raw is not None else None
     except ValueError:
         return plain_response(HTTPStatus.BAD_REQUEST, "seq must be an integer")
-    try:
-        document = build_causality_feed(db, direction=direction, seq=seq, task=task)
-    except ValueError as exc:
-        reason = str(exc)
-        status = (
-            HTTPStatus.NOT_FOUND
-            if reason.startswith("no recorded event for task")
-            else HTTPStatus.BAD_REQUEST
-        )
-        if reason.startswith("missing event store"):
-            status = HTTPStatus.SERVICE_UNAVAILABLE
-        return plain_response(status, reason)
-    return json_response(document)
+    return _store_feed(lambda: build_causality_feed(db, direction=direction, seq=seq, task=task))
 
 
 def serve_federation(store: Path | None) -> FeedResponse:
     """Serve the imported peerings, or the feed's honest absence."""
     if store is None:
         return _absent("federation", "--federation-store")
-    try:
-        document = build_federation_feed(store)
-    except FederationStoreError as exc:
-        return plain_response(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
-    return json_response(document)
+    return _store_feed(lambda: build_federation_feed(store))
 
 
 _DIST_CONTENT_TYPES = {

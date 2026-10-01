@@ -530,7 +530,14 @@ same dashboard bearer token as every other path:
 
 Without the flag each endpoint answers 404 naming the remedy; an
 unreadable store answers 503 rather than an empty document pretending the
-log is clean. `--federation-store <federation.json>` adds
+log is clean. Its fixed text is
+`dashboard feed unavailable; check server diagnostics`; storage and encoding
+exception details remain in the dashboard server logs. Failed responses are
+not cached, so a later request can observe a repaired store without a server
+restart. Authored malformed-query 400 and unknown-causality-task 404 responses
+retain their reasons. The events, receipts and operator-actions channels in
+`/live.ndjson` use the same fixed storage-failure detail.
+`--federation-store <federation.json>` adds
 `/federation.json` — the imported peerings with provenance and the bundle
 fingerprints operators compared in the exchange ceremony; namespace
 outcomes are hub-runtime state no durable store carries, so that section

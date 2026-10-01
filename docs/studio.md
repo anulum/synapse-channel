@@ -18,6 +18,15 @@ already serves.
 This page tracks what has shipped. The full direction lives in the internal design
 plan; what is public here is real and running.
 
+Durable event-store feeds and the federation-store feed report storage or
+encoding failures with HTTP 503 and
+`dashboard feed unavailable; check server diagnostics`. Internal exception
+details remain in dashboard server logs. Repairing the selected store lets the
+next request recover on the same server. The live stream reports this fixed
+detail for its durable events, receipts and operator-actions channels; it does
+not replace missing evidence with an empty fleet. See the
+[cockpit guide](cockpit.md) for feed configuration and recovery.
+
 ## Design system
 
 The Studio speaks an **instrument-panel** language rather than a marketing dashboard:
