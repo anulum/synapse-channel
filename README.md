@@ -907,6 +907,12 @@ digest, exact response, and evidence intent together at `synchronous=FULL`
 `synchronous=NORMAL` (durable across an application crash, may lose the last
 commit on power loss).
 
+If store initialization fails, SQLite and SQLCipher connections close before
+the error reaches the caller, including interrupted initialization. Existing
+event rows remain available for diagnosis; incompatible schemas still refuse
+startup. This cleanup does not make schema migration atomic. See
+[failed database startup](docs/troubleshooting.md#the-hub-cannot-open-an-incompatible-database).
+
 Native Agent Evidence Format (AEF) v0.1 emission is an explicit opt-in on top
 of that durable log. Generate an owner-only Ed25519 receipt key, give the hub a
 stable identity, and enable the route:
@@ -1743,7 +1749,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 1006 |
 | Wire message types | 111 |
 | CLI subcommands | 236 |
-| Test functions | 10811 |
+| Test functions | 10817 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 79 |
 | GitHub Actions workflows | 27 |

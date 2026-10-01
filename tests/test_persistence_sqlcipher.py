@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -16,6 +18,8 @@ from synapse_channel.core.at_rest import KEY_BYTES, generate_key_file, load_key_
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import (
     SqlCipherKeyError,
+    connect_sqlcipher,
+    import_sqlcipher_module,
     migrate_plaintext_to_sqlcipher,
     pragma_key_literal,
     rekey_sqlcipher_store,
@@ -26,6 +30,71 @@ pytestmark = pytest.mark.skipif(
     not sqlcipher_available(),
     reason="sqlcipher3-binary not installed (pip install synapse-channel[sqlcipher])",
 )
+
+
+def test_encrypted_failed_schema_open_closes_handle_and_allows_recovery(tmp_path: Path) -> None:
+    """Real SQLCipher failures release WAL ownership despite retained tracebacks."""
+    path = tmp_path / "incompatible.db"
+    key = os.urandom(KEY_BYTES)
+    connection = connect_sqlcipher(path, key)
+    try:
+        connection.execute("CREATE TABLE events (seq INTEGER PRIMARY KEY)")
+        connection.execute("INSERT INTO events VALUES (7)")
+        connection.commit()
+    finally:
+        connection.close()
+    failures: list[BaseException] = []
+    for _ in range(3):
+        with pytest.raises(import_sqlcipher_module().OperationalError) as failure:
+            EventStore(path, key=key)
+        failures.append(failure.value)
+        assert failures[-1].__traceback__ is not None
+        assert not Path(f"{path}-wal").exists()
+        assert not Path(f"{path}-shm").exists()
+    connection = connect_sqlcipher(path, key)
+    try:
+        connection.execute("PRAGMA busy_timeout=0")
+        connection.execute("BEGIN IMMEDIATE")
+        assert connection.execute("SELECT seq FROM events").fetchall() == [(7,)]
+        connection.execute("ALTER TABLE events ADD COLUMN ts REAL NOT NULL DEFAULT 1")
+        connection.execute("ALTER TABLE events ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat'")
+        connection.execute("ALTER TABLE events ADD COLUMN payload TEXT NOT NULL DEFAULT '{}'")
+        connection.commit()
+    finally:
+        connection.close()
+    with EventStore(path, key=key) as recovered:
+        assert recovered.encrypted
+        assert recovered.read_all()[0].seq == 7
+        assert recovered.append("chat", {"recovered": True}) == 8
+    with EventStore(path, key=key) as reopened:
+        assert reopened.read_all()[1].payload == {"recovered": True}
+
+
+@pytest.mark.parametrize("failure_type", [RuntimeError, BaseException])
+def test_encrypted_interrupted_open_closes_handle(
+    tmp_path: Path, failure_type: type[BaseException]
+) -> None:
+    """Encrypted initialization closes on ordinary and process-level interruption."""
+    path = tmp_path / "interrupted.db"
+    key = os.urandom(KEY_BYTES)
+    with EventStore(path, key=key) as initial:
+        initial.append("chat", {"marker": "kept"})
+    interruption = failure_type("caller interrupted encrypted initialization")
+
+    def interrupted_kinds() -> Iterator[str]:
+        """Interrupt the supplied public iterable after its first kind."""
+        yield "chat"
+        raise interruption
+
+    with pytest.raises(failure_type) as failure:
+        EventStore(path, key=key, aef_outbox_kinds=interrupted_kinds())
+    assert failure.value is interruption
+    assert interruption.__traceback__ is not None
+    assert not Path(f"{path}-wal").exists()
+    assert not Path(f"{path}-shm").exists()
+    with EventStore(path, key=key) as recovered:
+        assert recovered.read_all()[0].payload == {"marker": "kept"}
+        assert recovered.append("chat", {"recovered": True}) == 2
 
 
 def test_pragma_key_literal_is_hex_form() -> None:

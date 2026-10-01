@@ -31,6 +31,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Failed event-store initialization closes the acquired SQLite or SQLCipher
+  connection across schema setup, backfill, caller interruption and replay
+  validation. Retaining an exception traceback no longer retains failed-open
+  WAL handles. Incompatible databases still refuse startup without discarding
+  events; cleanup is not an atomic schema-migration guarantee.
+
 - One-shot sends distinguish confirmed delivery (`0`), explicit negative
   receipts (`1`) and missing confirmation (`3`), including receiptless older
   hubs. The receipt timeout bounds send and confirmation together, rejects

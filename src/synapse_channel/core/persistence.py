@@ -149,6 +149,10 @@ class DeliveryReceiptTransition(NamedTuple):
 class EventStore:
     """Append-only SQLite event log in WAL mode.
 
+    Failed initialization closes the acquired connection before propagating the
+    original exception, even when the caller retains its traceback. Existing
+    rows are not repaired or discarded; schema DDL may already be committed.
+
     Parameters
     ----------
     path : str or pathlib.Path
@@ -171,6 +175,7 @@ class EventStore:
         key: bytes | None = None,
         aef_outbox_kinds: Iterable[str] = (),
     ) -> None:
+        """Open and validate the store, retaining connection ownership on success."""
         self.path = str(path)
         self._lock = threading.RLock()
         from synapse_channel.core.persistence_sqlcipher import connect_event_store
@@ -181,96 +186,96 @@ class EventStore:
             key_file=key_file,
             check_same_thread=False,
         )
-        # The event log holds chat, findings, and recall telemetry, so restrict
-        # it to the owner (0o600) where the platform supports it — encryption
-        # does not replace permissions.
-        self._restrict(self.path)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
-        self._conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS events ("
-            "seq INTEGER PRIMARY KEY AUTOINCREMENT, "
-            "ts REAL NOT NULL, "
-            "kind TEXT NOT NULL, "
-            "payload TEXT NOT NULL)"
-        )
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS operations ("
-            "operation_key TEXT PRIMARY KEY, "
-            "request_digest TEXT NOT NULL, "
-            "response_json TEXT NOT NULL, "
-            "response_sha256 TEXT NOT NULL, "
-            "first_event_seq INTEGER NOT NULL, "
-            "commit_seq INTEGER NOT NULL, "
-            "committed_at REAL NOT NULL)"
-        )
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS operation_outbox ("
-            "operation_key TEXT PRIMARY KEY, "
-            "intent_json TEXT NOT NULL, "
-            "receipt_id TEXT, "
-            "FOREIGN KEY(operation_key) REFERENCES operations(operation_key))"
-        )
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS delivery_receipts ("
-            "message_seq INTEGER PRIMARY KEY, "
-            "sender TEXT NOT NULL, "
-            "target TEXT NOT NULL, "
-            "message_id INTEGER NOT NULL, "
-            "client_msg_id TEXT NOT NULL, "
-            "state TEXT NOT NULL, "
-            "delivered INTEGER, "
-            "deferred INTEGER NOT NULL, "
-            "acked_by TEXT NOT NULL, "
-            "updated_event_seq INTEGER NOT NULL, "
-            "FOREIGN KEY(message_seq) REFERENCES events(seq), "
-            "FOREIGN KEY(updated_event_seq) REFERENCES events(seq))"
-        )
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS delivery_receipt_outbox ("
-            "notification_id TEXT PRIMARY KEY, "
-            "message_seq INTEGER NOT NULL, "
-            "phase TEXT NOT NULL, "
-            "sender TEXT NOT NULL, "
-            "frame_json TEXT NOT NULL, "
-            "attempts INTEGER NOT NULL DEFAULT 0, "
-            "delivered_at REAL, "
-            "FOREIGN KEY(message_seq) REFERENCES delivery_receipts(message_seq))"
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS delivery_receipt_outbox_pending_idx "
-            "ON delivery_receipt_outbox(sender, delivered_at)"
-        )
-        self._backfill_delivery_receipt_aggregates()
-        self._aef_outbox_kinds = frozenset(str(kind) for kind in aef_outbox_kinds)
-        if self._aef_outbox_kinds:
-            self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS aef_outbox ("
-                "legacy_seq INTEGER PRIMARY KEY, "
-                "receipt_id TEXT UNIQUE, "
-                "FOREIGN KEY(legacy_seq) REFERENCES events(seq))"
-            )
-        self._has_aef_outbox = (
-            self._conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'aef_outbox'"
-            ).fetchone()
-            is not None
-        )
-        self._ensure_mac_column()
-        self._row_mac: RowMacKey | None = None
-        self._row_quarantine: dict[int, CorruptEventRow] = {}
-        self.delivery = DeliveryPersistence(
-            self._conn, self._lock, insert_event=self._insert_event_row
-        )
-        self.message_forward = MessageForwardLedger(self._conn, self._lock)
-        self._conn.commit()
-        # WAL mode creates ``-wal`` and ``-shm`` sidecars on the first write (the
-        # ``CREATE TABLE`` commit above). They mirror the same content as the main
-        # file but are born under the process umask, so lock them down once they exist.
-        self._restrict(f"{self.path}-wal")
-        self._restrict(f"{self.path}-shm")
         try:
+            # The event log holds chat, findings, and recall telemetry, so restrict
+            # it to the owner (0o600) where the platform supports it — encryption
+            # does not replace permissions.
+            self._restrict(self.path)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS events ("
+                "seq INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "ts REAL NOT NULL, "
+                "kind TEXT NOT NULL, "
+                "payload TEXT NOT NULL)"
+            )
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS operations ("
+                "operation_key TEXT PRIMARY KEY, "
+                "request_digest TEXT NOT NULL, "
+                "response_json TEXT NOT NULL, "
+                "response_sha256 TEXT NOT NULL, "
+                "first_event_seq INTEGER NOT NULL, "
+                "commit_seq INTEGER NOT NULL, "
+                "committed_at REAL NOT NULL)"
+            )
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS operation_outbox ("
+                "operation_key TEXT PRIMARY KEY, "
+                "intent_json TEXT NOT NULL, "
+                "receipt_id TEXT, "
+                "FOREIGN KEY(operation_key) REFERENCES operations(operation_key))"
+            )
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS delivery_receipts ("
+                "message_seq INTEGER PRIMARY KEY, "
+                "sender TEXT NOT NULL, "
+                "target TEXT NOT NULL, "
+                "message_id INTEGER NOT NULL, "
+                "client_msg_id TEXT NOT NULL, "
+                "state TEXT NOT NULL, "
+                "delivered INTEGER, "
+                "deferred INTEGER NOT NULL, "
+                "acked_by TEXT NOT NULL, "
+                "updated_event_seq INTEGER NOT NULL, "
+                "FOREIGN KEY(message_seq) REFERENCES events(seq), "
+                "FOREIGN KEY(updated_event_seq) REFERENCES events(seq))"
+            )
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS delivery_receipt_outbox ("
+                "notification_id TEXT PRIMARY KEY, "
+                "message_seq INTEGER NOT NULL, "
+                "phase TEXT NOT NULL, "
+                "sender TEXT NOT NULL, "
+                "frame_json TEXT NOT NULL, "
+                "attempts INTEGER NOT NULL DEFAULT 0, "
+                "delivered_at REAL, "
+                "FOREIGN KEY(message_seq) REFERENCES delivery_receipts(message_seq))"
+            )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS delivery_receipt_outbox_pending_idx "
+                "ON delivery_receipt_outbox(sender, delivered_at)"
+            )
+            self._backfill_delivery_receipt_aggregates()
+            self._aef_outbox_kinds = frozenset(str(kind) for kind in aef_outbox_kinds)
+            if self._aef_outbox_kinds:
+                self._conn.execute(
+                    "CREATE TABLE IF NOT EXISTS aef_outbox ("
+                    "legacy_seq INTEGER PRIMARY KEY, "
+                    "receipt_id TEXT UNIQUE, "
+                    "FOREIGN KEY(legacy_seq) REFERENCES events(seq))"
+                )
+            self._has_aef_outbox = (
+                self._conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'aef_outbox'"
+                ).fetchone()
+                is not None
+            )
+            self._ensure_mac_column()
+            self._row_mac: RowMacKey | None = None
+            self._row_quarantine: dict[int, CorruptEventRow] = {}
+            self.delivery = DeliveryPersistence(
+                self._conn, self._lock, insert_event=self._insert_event_row
+            )
+            self.message_forward = MessageForwardLedger(self._conn, self._lock)
+            self._conn.commit()
+            # WAL mode creates ``-wal`` and ``-shm`` sidecars on the first write (the
+            # ``CREATE TABLE`` commit above). They mirror the same content as the main
+            # file but are born under the process umask, so lock them down once they exist.
+            self._restrict(f"{self.path}-wal")
+            self._restrict(f"{self.path}-shm")
             self.delivery.verify_replay()
         except BaseException:
             self._conn.close()

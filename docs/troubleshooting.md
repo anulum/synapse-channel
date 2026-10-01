@@ -303,6 +303,25 @@ private interface. To bind token-over-plaintext anyway on a trusted private
 network, pass `--insecure-off-loopback` to downgrade the refusal to a warning;
 `--paranoid` makes native WSS mandatory with no override.
 
+## The hub cannot open an incompatible database
+
+A database with missing required columns or an incompatible delivery schema
+can refuse startup before the hub serves requests. The event store closes its
+acquired SQLite or SQLCipher connection on any initialization failure, even if
+a caller retains the exception traceback. Repeated failed opens therefore do
+not retain those connections or their WAL ownership. Uncommitted changes roll
+back when the connection closes; earlier schema DDL may already be committed.
+
+Stop the hub and other processes using that database before making a consistent
+backup and checking its schema against the installed version. Preserve the
+original error in private operator logs. Use a supported migration or restore
+a compatible backup before restarting. This cleanup does not repair or discard
+event rows, and other live readers may legitimately keep WAL files present.
+Never delete WAL/SHM files or replace only the main database file while a
+connection is open. A dashboard may run independently of the refused hub;
+check service logs and connectivity rather than interpreting a failed startup
+as a healthy empty fleet.
+
 ## The hub reports degraded health and refuses mutations
 
 Startup found one or more malformed rows in the durable SQLite event log. The hub
