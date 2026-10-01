@@ -20,6 +20,11 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Real SQLite recovery regressions for damaged atomic-operation rows, settled
+  evidence outbox bindings, invalid operation and AEF identities, and cleanup
+  refusals before or after commit. Independent database reads and reopen/replay
+  checks preserve the distinction between a rejected write and durable success.
+
 - Recipient-granted private cross-hub attachment metadata and chunk reads (wire
   version six). `--attachment-recipient-policy` binds verified recipient hubs to
   exact scopes, digests and finite expiries, reloads owner-only permissions on
