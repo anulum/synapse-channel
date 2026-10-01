@@ -804,7 +804,12 @@ Release ACL and per-message-authentication errors also echo the operation key
 and task so an unrelated asynchronous error cannot masquerade as its refusal.
 
 For exact read-only recovery, `state_request` may carry a bounded `request_id`
-and `release_confirmation: {task_id, operation_id, request_digest}`. The key
+and `release_confirmation: {task_id, operation_id, request_digest}`. A client can use
+this nonmutating query before sending a release: an `unknown` projection must
+echo all three intent fields, while `confirmed` must bind the exact owner, key,
+digest and valid released receipt. A generic state snapshot, wrong request ID,
+foreign sender/target/hub or malformed projection cannot establish support.
+This extension does not change the wire version; older hubs ignore it. The key
 is 1–128 characters with no NUL; the digest is 64 lowercase hexadecimal digits.
 The authenticated sender's release namespace is the only operation lookup.
 The private `state_snapshot` echoes the valid request id and contains only
@@ -820,8 +825,10 @@ historical release says nothing about a newer lease for the same task.
 
 These optional fields do not change the message vocabulary or wire version.
 Legacy hubs can ignore the request extension and return an ordinary snapshot;
-that is **not** confirmation. The manual CLI's conservative exit `3` and exact
-operator recovery are documented in [the CLI reference](cli.md).
+that is **not** confirmation. A fresh manual release refuses before sending
+with exit `1` when the probe cannot establish support. After a mutation was
+sent, conservative exit `3` and exact operator recovery remain as documented
+in [the CLI reference](cli.md).
 
 ## Decoder hardening
 

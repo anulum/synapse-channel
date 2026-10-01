@@ -688,7 +688,7 @@ wrapped command without a confirmed grant. Manual `release` returns `0` only
 for a matching keyed grant with a valid receipt or an exact durable confirmation;
 `1` means invalid local input, failed admission before sending, or an explicit
 hub refusal. Response loss, connection loss after sending, and unconfirmed
-legacy replies return **`3` (outcome unknown)**. Lease absence is not proof that
+post-send legacy replies return **`3` (outcome unknown)**. Lease absence is not proof that
 this particular release committed. No receipt is fabricated for an older hub.
 An unrelated generic error is not a release verdict: ingress refusals carry the
 release key/task, while dedicated release denials and idempotency conflicts
@@ -716,8 +716,27 @@ claim is absent, that work is authorized, or that evidence is sufficient.
 The hub must support the optional release-confirmation extension and retain the
 operation journal for read-only recovery. A missing/pruned record, an in-memory
 cache alone, a mismatched digest, or corrupt transaction witnesses remain unknown.
-An older hub that ignores the extension also remains unknown. The non-blocking
+An older hub that ignores the extension cannot admit a fresh release;
+read-only recovery of a previously sent operation remains unknown. The non-blocking
 `git-release` hook and the `lock` child-exit contract keep their existing behavior.
+
+A fresh manual `release` first sends a private, correlated read of its prepared
+operation key and request digest. Only an exact confirmation projection admits
+sending the mutation. Missing, malformed or legacy responses return exit `1`
+with `no release sent`; the claim remains held. A matching already-committed
+receipt returns success without another release. After a mutation is sent,
+missing confirmation still returns exit `3` and never authorizes replay.
+
+Published hubs 0.48.0 and 0.99.27 lack this read extension and cannot admit a
+fresh manual release from this client. Upgrade the hub and client together;
+there is no automatic fallback to an unbound grant. Existing `lock` cleanup,
+non-blocking `git-release` hooks, MCP receipt matching and low-level Python/JS
+`release` methods retain their separate contracts. SDK `release` sends a
+frame; it does not promise the manual CLI's admission or exact confirmation.
+Use the SDK's `request_release_confirmation` / `requestReleaseConfirmation`
+query and validate the private correlation and exact intent when implementing
+that workflow. A dashboard action wrapping this CLI must preserve the exit `1`
+pre-send refusal and exit `3` uncertain outcome instead of displaying success.
 
 Add receipt fields when the release is also the closeout record. The hub echoes
 the receipt on `release_granted`; if any evidence field is present, it records the

@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — published no-receipt hub compatibility
-"""Run the current release CLI against the complete published 0.48.0 hub."""
+"""Refuse manual mutations on complete published hubs without exact confirmation."""
 
 from __future__ import annotations
 
@@ -26,25 +26,31 @@ import pytest
 
 from cli_e2e_helpers import free_port, git_repo, run_cli
 
-_WHEEL_NAME = "synapse_channel-0.48.0-py3-none-any.whl"
-_WHEEL_SHA256 = "d4ee59fa6a32fd6830a3b45c86f206e847a31e2f2fb6c3a398300ce4f6357c01"
+_WHEELS = {
+    "0.48.0": "d4ee59fa6a32fd6830a3b45c86f206e847a31e2f2fb6c3a398300ce4f6357c01",
+    "0.99.27": "bf444c5537e98c97dfae63c4d80931f6a0798cb44e8e52f3db57dce776f8ed52",
+}
 
 
 @pytest.fixture(scope="session")
-def legacy_release_profile(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+def legacy_release_profile(
+    tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest
+) -> Iterator[Path]:
     """Verify and unpack the complete published wheel without installing over the candidate."""
     root = Path(__file__).resolve().parent.parent
     wheel_dir = Path(
         os.environ.get("SYNAPSE_LEGACY_WHEEL_DIR", root / ".pytest_cache/legacy-release")
     )
-    wheel = wheel_dir / _WHEEL_NAME
+    version = str(getattr(request, "param", "0.48.0"))
+    wheel = wheel_dir / f"synapse_channel-{version}-py3-none-any.whl"
     assert wheel.is_file(), (
         "Prepare the historical hub fixture: python -m pip download --require-hashes "
         "--no-deps --only-binary=:all: -r .github/requirements/requirements-legacy-release.txt "
-        "--dest .pytest_cache/legacy-release (or set SYNAPSE_LEGACY_WHEEL_DIR)"
+        "--dest .pytest_cache/legacy-release; also prepare requirements-release-admission.txt "
+        "(or set SYNAPSE_LEGACY_WHEEL_DIR)"
     )
     payload = wheel.read_bytes()
-    assert hashlib.sha256(payload).hexdigest() == _WHEEL_SHA256
+    assert hashlib.sha256(payload).hexdigest() == _WHEELS[version]
     profile = tmp_path_factory.mktemp("legacy-release") / "site-packages"
     profile.mkdir()
     try:
@@ -66,15 +72,20 @@ def legacy_release_profile(tmp_path_factory: pytest.TempPathFactory) -> Iterator
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("legacy_release_profile", tuple(_WHEELS), indirect=True)
 @pytest.mark.parametrize("receipt_json", [False, True])
-async def test_published_hub_without_receipts_confirms_current_cli_release(
+async def test_published_hub_without_confirmation_refuses_manual_release(
     tmp_path: Path, legacy_release_profile: Path, receipt_json: bool
 ) -> None:
-    """A genuine old hub grant confirms release without inventing verified evidence."""
+    """A real old server keeps the durable claim when exact support is absent."""
+    profile = legacy_release_profile
+    expected_version = (
+        next(profile.glob("synapse_channel-*.dist-info")).name.split("-")[1].removesuffix(".dist")
+    )
     repo = git_repo(tmp_path / "repository")
     environment = dict(os.environ)
     environment.update(
-        PYTHONPATH=str(legacy_release_profile),
+        PYTHONPATH=str(profile),
         PYTHONIOENCODING="utf-8",
         SYN_HOME=str(tmp_path / "legacy-home"),
         SYNAPSE_TOKEN="",
@@ -98,8 +109,8 @@ async def test_published_hub_without_receipts_confirms_current_cli_release(
         await version.wait()
     assert version.returncode == 0, stderr.decode()
     reported_version, installed_version, module_path = json.loads(stdout)
-    assert reported_version == installed_version == "0.48.0"
-    assert Path(module_path).resolve().is_relative_to(legacy_release_profile.resolve())
+    assert reported_version == installed_version == expected_version
+    assert Path(module_path).resolve().is_relative_to(profile.resolve())
     port = free_port()
     uri = f"ws://127.0.0.1:{port}"
     database = tmp_path / "legacy-hub.db"
@@ -117,6 +128,11 @@ async def test_published_hub_without_receipts_confirms_current_cli_release(
             str(port),
             "--db",
             str(database),
+            *(
+                ["--identity-pins", str(tmp_path / "pins.json")]
+                if expected_version == "0.99.27"
+                else []
+            ),
             env=environment,
             stdout=log,
             stderr=log,
@@ -136,23 +152,55 @@ async def test_published_hub_without_receipts_confirms_current_cli_release(
                 writer.close()
                 await writer.wait_closed()
                 break
-            claim = await asyncio.to_thread(
-                run_cli,
-                "git-claim",
-                "legacy-edit",
-                "--name",
-                "legacy-owner",
-                "--paths",
-                "README.md",
-                "--base",
-                "HEAD",
-                "--auto-release-on",
-                "manual",
-                uri=uri,
-                cwd=repo,
-                env={"SYNAPSE_TOKEN": "", "SYNAPSE_TOKEN_FILE": ""},
-            )
-            assert claim.ok(), claim.output
+            if expected_version == "0.99.27":
+                owned = await asyncio.to_thread(
+                    run_cli,
+                    "git-claim",
+                    "legacy-edit",
+                    "--name",
+                    "legacy-owner",
+                    "--paths",
+                    "README.md",
+                    "--base",
+                    "HEAD",
+                    "--auto-release-on",
+                    "manual",
+                    "--reply-timeout",
+                    "1",
+                    uri=uri,
+                    cwd=repo,
+                    env={"SYNAPSE_TOKEN": "", "SYNAPSE_TOKEN_FILE": ""},
+                )
+                assert owned.ok(), owned.output
+            else:
+                claimant = await asyncio.create_subprocess_exec(
+                    sys.executable,
+                    "-m",
+                    "synapse_channel.cli",
+                    "git-claim",
+                    "legacy-edit",
+                    "--name",
+                    "legacy-owner",
+                    "--paths",
+                    "README.md",
+                    "--base",
+                    "HEAD",
+                    "--auto-release-on",
+                    "manual",
+                    "--uri",
+                    uri,
+                    cwd=repo,
+                    env=environment,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                try:
+                    claimed_out, claimed_err = await asyncio.wait_for(claimant.communicate(), 10)
+                finally:
+                    if claimant.returncode is None:
+                        claimant.kill()
+                    await claimant.wait()
+                assert claimant.returncode == 0, (claimed_out + claimed_err).decode()
             result = await asyncio.to_thread(
                 run_cli,
                 "release",
@@ -160,27 +208,61 @@ async def test_published_hub_without_receipts_confirms_current_cli_release(
                 "--name",
                 "legacy-owner",
                 *(["--receipt-json"] if receipt_json else []),
+                "--reply-timeout",
+                "0.2",
                 uri=uri,
                 cwd=repo,
                 env={"SYNAPSE_TOKEN": "", "SYNAPSE_TOKEN_FILE": ""},
             )
-            assert result.ok(), result.output
+            assert result.returncode == 1, result.output
+            assert "no release sent" in result.stdout
             with contextlib.closing(
                 sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)
             ) as reader:
                 releases = reader.execute(
                     "SELECT payload FROM events WHERE kind='release'"
                 ).fetchall()
-            assert [json.loads(row[0])["task_id"] for row in releases] == ["legacy-edit"]
-            if receipt_json:
-                receipt = json.loads(result.stdout)
-                assert receipt["task_id"] == "legacy-edit"
-                assert receipt["owner"] == "legacy-owner"
-                assert receipt["released"] is True
-                assert receipt["evidence"] == []
-                assert receipt["epistemic_status"] == "unsupported"
-            else:
-                assert result.stdout.strip() == "released 'legacy-edit'"
+                claims = reader.execute("SELECT payload FROM events WHERE kind='claim'").fetchall()
+            assert not releases
+            hook = await asyncio.to_thread(
+                run_cli,
+                "lock",
+                "legacy-hook",
+                "--name",
+                "hook-owner",
+                "--",
+                sys.executable,
+                "-c",
+                "print('hook command ran')",
+                uri=uri,
+                cwd=repo,
+                env={"SYNAPSE_TOKEN": "", "SYNAPSE_TOKEN_FILE": ""},
+            )
+            assert hook.ok(), hook.output
+            assert "hook command ran" in hook.stdout
+            with contextlib.closing(
+                sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)
+            ) as reader:
+                hook_releases = reader.execute(
+                    "SELECT payload FROM events WHERE kind='release'"
+                ).fetchall()
+            assert [json.loads(row[0])["task_id"] for row in hook_releases] == ["legacy-hook"]
+            assert [json.loads(row[0])["task_id"] for row in claims] == ["legacy-edit"]
+            from hub_e2e_helpers import close_agents, connect_agent
+            from synapse_channel.core.protocol import MessageType
+
+            observer = await connect_agent("legacy-observer", uri)
+            try:
+                await observer.agent.request_state()
+                state = await observer.recorder.wait_for(
+                    lambda data: data.get("type") == MessageType.STATE_SNAPSHOT
+                )
+                assert any(
+                    row["task_id"] == "legacy-edit" and row["owner"] == "legacy-owner"
+                    for row in state["snapshot"]["active_claims"]
+                )
+            finally:
+                await close_agents(observer)
         finally:
             if hub.returncode is None:
                 hub.terminate()

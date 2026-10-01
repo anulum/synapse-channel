@@ -182,3 +182,14 @@ returns page or unavailable JSON over the bridge connection. The handler is
 All modules are under `synapse_channel`; they are implementation surfaces,
 not new package-root exports or SDK methods. Python and JavaScript support
 the additive query through their existing generic-send methods.
+
+### Manual release admission
+
+The manual CLI now requires an exact correlated read response before sending a
+release mutation. Published 0.48.0 and 0.99.27 hubs do not implement that query:
+a fresh manual release returns `1` and leaves the claim held. Upgrade the hub
+and client together. Previously sent operations retain read-only `--confirm-only`
+recovery and exit `3` uncertainty when the old hub cannot prove the operation.
+The wire extension remains additive. Low-level Python/JS sends, MCP receipt
+matching, `lock` teardown and non-blocking Git hooks have separate unchanged
+contracts; their successful sends do not prove this manual CLI journey.

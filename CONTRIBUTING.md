@@ -60,13 +60,17 @@ The `Makefile` wraps the common tasks (`make help` lists them):
 
 ## Standards a change must meet
 
-The CLI release compatibility tests run the complete published 0.48.0 hub,
-whose release confirmations predate evidence receipts. Prepare its hash-pinned
-wheel before running the suite:
+The CLI release compatibility tests run the complete published 0.48.0 and
+0.99.27 hubs. Their missing exact-confirmation extension refuses a fresh manual
+release without mutating the claim; legacy lock cleanup still works. Prepare
+both hash-pinned wheels before running the focused tests:
 
 ```bash
 python -m pip download --require-hashes --no-deps --only-binary=:all: \
   -r .github/requirements/requirements-legacy-release.txt \
+  --dest .pytest_cache/legacy-release
+python -m pip download --require-hashes --no-deps --only-binary=:all: \
+  -r .github/requirements/requirements-release-admission.txt \
   --dest .pytest_cache/legacy-release
 ```
 

@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — published release-confirmation admission fixture
+synapse-channel==0.99.27 \
+    --hash=sha256:bf444c5537e98c97dfae63c4d80931f6a0798cb44e8e52f3db57dce776f8ed52

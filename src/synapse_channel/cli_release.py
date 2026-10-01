@@ -120,6 +120,8 @@ async def _release(
     and ``poll_interval`` retain the prior internal helper deadline override.
     ``confirm_only`` requires the original ``idem_key`` and ``request_digest``
     printed on an uncertain result and never sends a release or receipt fields.
+    A fresh release first requires a correlated exact-query response. A legacy,
+    malformed or missing response refuses the operation before any mutation.
 
     Returns
     -------
@@ -218,6 +220,23 @@ async def _release(
             return True
         return data.get("hub_id") == agent.hub_id
 
+    async def confirmation(intent: ReleaseIntent) -> dict[str, Any] | None:
+        """Read the prepared operation through a fresh private correlation."""
+        request_id = uuid.uuid4().hex
+        reply = await await_reply(
+            lambda data: (
+                from_hub(data)
+                and data.get("type") == MessageType.STATE_SNAPSHOT
+                and data.get("target") == name
+                and data.get("request_id") == request_id
+            ),
+            lambda: agent.request_release_confirmation(
+                task_id, intent.operation_id, intent.request_digest, request_id
+            ),
+        )
+        projection = reply.get("release_confirmation") if reply is not None else None
+        return projection if isinstance(projection, dict) else None
+
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout) or await closed_after_ready(
             agent
@@ -236,6 +255,27 @@ async def _release(
                 task_id, idem_key=idem_key or uuid.uuid4().hex, **fields
             )
             intent = ReleaseIntent.from_request(request)
+            probe = await confirmation(intent)
+            if probe is not None and probe.get("status") == "confirmed":
+                historical = intent.matching_receipt(probe)
+                if historical is not None:
+                    print(
+                        json.dumps(historical, sort_keys=True)
+                        if receipt_json
+                        else f"release confirmed for '{task_id}' "
+                        "(historical operation; no mutation replay)"
+                    )
+                    return 0
+            if (
+                probe is None
+                or probe.get("status") != "unknown"
+                or any(probe.get(key) != value for key, value in intent.as_query().items())
+            ):
+                print(
+                    f"release refused for '{task_id}': hub did not establish exact confirmation "
+                    "support; no release sent"
+                )
+                return 1
 
             def release_verdict(data: dict[str, Any]) -> bool:
                 """Match this keyed grant or an addressed explicit refusal."""
@@ -285,19 +325,7 @@ async def _release(
                     f"release refused for '{task_id}': {reply.get('payload') or 'release denied'}"
                 )
                 return 1
-        request_id = uuid.uuid4().hex
-        reply = await await_reply(
-            lambda data: (
-                from_hub(data)
-                and data.get("type") == MessageType.STATE_SNAPSHOT
-                and data.get("target") == name
-                and data.get("request_id") == request_id
-            ),
-            lambda: agent.request_release_confirmation(
-                task_id, intent.operation_id, intent.request_digest, request_id
-            ),
-        )
-        projection = reply.get("release_confirmation") if reply is not None else None
+        projection = await confirmation(intent)
         receipt_output = (
             intent.matching_receipt(projection)
             if isinstance(projection, dict) and projection.get("status") == "confirmed"

@@ -419,7 +419,7 @@ async def test_precommit_timeout_can_commit_later_and_never_authorizes_a_retry(
 
 @pytest.mark.asyncio
 async def test_legacy_snapshot_is_not_an_exact_confirmation(tmp_path: Path) -> None:
-    """An older reply shape stays unknown even when the lease and journal say released."""
+    """A legacy live response refuses a fresh mutation without losing the claim."""
     repo = git_repo(tmp_path / "repository")
     with EventStore(tmp_path / "hub.db") as journal:
         async with running_hub(LegacyReleaseReplyHub(journal=journal)) as (hub, uri):
@@ -436,13 +436,11 @@ async def test_legacy_snapshot_is_not_an_exact_confirmation(tmp_path: Path) -> N
                 "--idem-key",
                 "legacy-release",
             )
-            assert result.returncode == 3, result.output
-            assert "release-proof" not in hub.state.claims
-            assert journal.get_operation("release-owner\0release\0legacy-release") is not None
-            before = tuple(journal.iter_events())
-            resumed = await command(repo, uri, *recovery_arguments(result))
-            assert resumed.returncode == 3, resumed.output
-            assert tuple(journal.iter_events()) == before
+            assert result.returncode == 1, result.output
+            assert "no release sent" in result.stdout
+            assert "release-proof" in hub.state.claims
+            assert journal.get_operation("release-owner\0release\0legacy-release") is None
+            assert not any(row.kind == "release" for row in journal.iter_events())
 
 
 @pytest.mark.asyncio

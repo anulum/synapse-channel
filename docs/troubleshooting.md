@@ -376,3 +376,23 @@ repair; it is not an empty inbox. If the exact identity is already connected,
 use that connection's MCP inbox. Repeat successful pages while `has_more`
 is true. Feed and hub cursors remain separate. Changed hubs and corrupt
 cursors refuse reads rather than hiding the problem behind a stale feed.
+
+### Manual release refused before sending
+
+A fresh manual `release` first sends a private, correlated read of its prepared
+operation key and request digest. Only an exact confirmation projection admits
+sending the mutation. Missing, malformed or legacy responses return exit `1`
+with `no release sent`; the claim remains held. A matching already-committed
+receipt returns success without another release. After a mutation is sent,
+missing confirmation still returns exit `3` and never authorizes replay.
+
+Published hubs 0.48.0 and 0.99.27 lack this read extension and cannot admit a
+fresh manual release from this client. Upgrade the hub and client together;
+there is no automatic fallback to an unbound grant. Existing `lock` cleanup,
+non-blocking `git-release` hooks, MCP receipt matching and low-level Python/JS
+`release` methods retain their separate contracts. SDK `release` sends a
+frame; it does not promise the manual CLI's admission or exact confirmation.
+Use the SDK's `request_release_confirmation` / `requestReleaseConfirmation`
+query and validate the private correlation and exact intent when implementing
+that workflow. A dashboard action wrapping this CLI must preserve the exit `1`
+pre-send refusal and exit `3` uncertain outcome instead of displaying success.

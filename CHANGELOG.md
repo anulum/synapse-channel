@@ -40,6 +40,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Manual release verifies exact-confirmation support before sending a mutation.
+  Unsupported, malformed or missing probes refuse without releasing the claim;
+  an existing exact receipt is recovered without replay. Published 0.48.0 and
+  0.99.27 hubs require a matching upgrade for this CLI workflow.
+
 - Deadlock socket tests correlate claim grants with the requested task and
   holder before sending dependent waits. An unrelated claim broadcast no
   longer satisfies another holder's setup barrier; wait and deadlock behavior

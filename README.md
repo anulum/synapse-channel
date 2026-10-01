@@ -867,6 +867,9 @@ receipt carries advisory `epistemic_status` metadata (`supported`,
 `needs_freshness`, `stale`, `degraded`, or `unsupported`) with reasons derived
 from the submitted evidence, and `--receipt-json` prints it for automation.
 
+A fresh manual `release` verifies exact-confirmation support before mutation.
+An unsupported or unresponsive hub returns `1` with `no release sent` and keeps
+the claim held; published hubs 0.48.0 and 0.99.27 require a matching hub upgrade.
 Manual `release` bounds each send/reply exchange with `--reply-timeout` (30 seconds
 by default). A missing acknowledgement returns `3` (outcome unknown), prints the
 original operation key and SHA-256 fingerprint, and provides a `--confirm-only`
@@ -1756,7 +1759,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 1007 |
 | Wire message types | 111 |
 | CLI subcommands | 236 |
-| Test functions | 10848 |
+| Test functions | 10850 |
 | Benchmark harnesses | 7 |
 | Documentation pages | 79 |
 | GitHub Actions workflows | 27 |

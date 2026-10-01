@@ -49,6 +49,7 @@ jobs:
           cache-dependency-path: |
             .github/requirements/requirements-dev.txt
             .github/requirements/requirements-legacy-release.txt
+            .github/requirements/requirements-release-admission.txt
       # Advisory lane uses the same universal hash-locked closure as required
       # jobs (`uv pip compile … --universal --generate-hashes`). That pins the
       # full dependency tree by SHA-256 for Scorecard Pinned-Dependencies and
@@ -61,6 +62,11 @@ jobs:
         run: >-
           python -m pip download --require-hashes --no-deps --only-binary=:all:
           -r .github/requirements/requirements-legacy-release.txt
+          --dest .pytest_cache/legacy-release
+      - name: Prepare the published exact-confirmation admission fixture
+        run: >-
+          python -m pip download --require-hashes --no-deps --only-binary=:all:
+          -r .github/requirements/requirements-release-admission.txt
           --dest .pytest_cache/legacy-release
       # macOS: full suite (finishes cleanly on this advisory lane).
       - name: Run the suite (macOS)
