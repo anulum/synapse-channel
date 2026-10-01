@@ -255,20 +255,21 @@ def _throttle(code: int = 429, retry_after: str | None = None) -> urllib.error.H
     return urllib.error.HTTPError("https://pypistats.org", code, "throttled", headers, None)
 
 
-def test_fetch_overall_with_retry_recovers_after_a_throttle() -> None:
+@pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
+def test_fetch_overall_with_retry_recovers_after_a_throttle(status: int) -> None:
     body = json.dumps(_SAMPLE).encode()
-    attempts: list[str] = []
     waits: list[float] = []
+    with LocalHttpResponder(body=body, status=status) as server:
 
-    def flaky(url: str) -> bytes:
-        attempts.append(url)
-        if len(attempts) == 1:
-            raise _throttle()
-        return body
+        def recover(seconds: float) -> None:
+            waits.append(seconds)
+            server.status = 200
 
-    overall = dl.fetch_overall_with_retry("synapse-channel", flaky, waits.append)
+        overall = dl.fetch_overall_with_retry(
+            "synapse-channel", lambda _url: dl._http_get(server.url), recover
+        )
     assert overall == _SAMPLE
-    assert len(attempts) == 2
+    assert len(server.requests) == 2
     assert waits == [dl.RETRY_SCHEDULE[0]]
 
 
@@ -329,6 +330,6 @@ def test_main_skips_cleanly_when_the_throttle_outlasts_retries(
         sleep=lambda _seconds: None,
     )
     assert rc == 0
-    assert "rate limit persisted" in capsys.readouterr().err
+    assert "throttle or server failure persisted" in capsys.readouterr().err
     # the series is left untouched; the next successful run backfills the day
     assert dl.read_csv(csv_path) == {"2026-06-20": {"without_mirrors": 50, "with_mirrors": 90}}

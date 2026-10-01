@@ -85,6 +85,8 @@ def test_official_document_parsers_refuse_missing_and_prerelease() -> None:
 def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None:
     """A missing source never appears as unchanged or as a usable latest version."""
     matrix = load_matrix(DEFAULT_MATRIX)
+    matrix["reviewed_at"] = "2026-09-22"
+    matrix["next_review_at"] = "2026-09-29"
     assert matrix["surfaces"]["claude-code"]["verified_version"] == "2.1.284"
     assert matrix["surfaces"]["codex-cli"]["verified_version"] == "0.156.0"
     assert matrix["surfaces"]["codex-cli"]["capability_class"] == "manual"
@@ -128,6 +130,7 @@ def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None
     assert rows["opencode"]["notes_changed"] is True
     assert rows["opencode"]["priority"] == "breaking_review"
     assert rows["gemini-cli"]["priority"] == "security_review"
+    assert rows["gemini-cli"]["notes_reviewed"] is False
     assert rows["pi"]["status"] == "source_unavailable"
     assert "latest_version" not in rows["pi"]
     assert rows["mcp-spec"]["status"] == "unverified"
@@ -276,13 +279,27 @@ def test_installed_probe_and_strict_report_cli(
             next(name for name, source in SOURCES.items() if source[1] == url), "0.0.1"
         ),
         probe=lambda command: None,
-        now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        now=datetime(2026, 10, 10, tzinfo=timezone.utc),
     )
     target = tmp_path / "report.json"
     monkeypatch.setattr(watch, "build_report", lambda matrix: report)
     monkeypatch.setattr(sys, "argv", ["vendor-watch", "--report", str(target), "--strict"])
     assert watch.main() == 1
     assert json.loads(target.read_text(encoding="utf-8"))["review_overdue"] is True
+    report["review_overdue"] = False
+    row = report["surfaces"]["codex-cli"]
+    row.update(priority="security_review", notes_reviewed=False)
+    assert watch.main() == 1
+    row["notes_reviewed"] = True
+    assert watch.main() == 0
+    # Review acknowledges the notes, never admits an untested host version.
+    assert json.loads(target.read_text())["surfaces"]["codex-cli"]["status"] == "needs_validation"
+    row.update(status="source_unavailable", priority="source_failure")
+    assert watch.main() == 1
+    row.update(status="needs_validation", priority="breaking_review", notes_reviewed=True)
+    assert watch.main() == 0
+    row["notes_reviewed"] = False
+    assert watch.main() == 1
     monkeypatch.setattr(sys, "argv", ["vendor-watch", "--report", str(target)])
     assert watch.main() == 0
 

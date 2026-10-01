@@ -216,6 +216,7 @@ def build_report(
             row["latest_version"] = version
             row["published_at"] = published
             row["notes_sha256"] = hashlib.sha256(notes.encode("utf-8")).hexdigest()
+            row["notes_reviewed"] = surface.get("reviewed_notes_sha256") == row["notes_sha256"]
             row["notes_changed"] = (
                 surface.get("reviewed_notes_sha256") is not None
                 and surface["reviewed_notes_sha256"] != row["notes_sha256"]
@@ -271,7 +272,10 @@ def main() -> int:
     print(json.dumps(report, sort_keys=True))
     urgent = any(
         row["status"] == "source_unavailable"
-        or row["priority"] in {"security_review", "breaking_review"}
+        or (
+            row["priority"] in {"security_review", "breaking_review"}
+            and not row.get("notes_reviewed", False)
+        )
         for row in report["surfaces"].values()
     )
     return 1 if args.strict and (urgent or report["review_overdue"]) else 0

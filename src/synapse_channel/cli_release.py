@@ -203,7 +203,7 @@ async def _release(
 
         try:
             return await asyncio.wait_for(exchange(), timeout)
-        except (TimeoutError, ConnectionClosed, OSError):
+        except (asyncio.TimeoutError, ConnectionClosed, OSError):
             return None
         finally:
             pending = None

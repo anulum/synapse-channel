@@ -47,8 +47,8 @@ PYPISTATS_OVERALL = "https://pypistats.org/api/packages/{package}/overall"
 CATEGORIES = ("without_mirrors", "with_mirrors")
 """Recorded download categories, most-meaningful first."""
 
-RETRYABLE_STATUSES = (429, 502, 503, 504)
-"""Upstream statuses worth retrying: throttles and transient gateway failures."""
+RETRYABLE_STATUSES = (429, 500, 502, 503, 504)
+"""Upstream statuses worth retrying: throttles and transient server/gateway failures."""
 
 RETRY_SCHEDULE = (30.0, 60.0, 120.0)
 """Fallback seconds between attempts when the throttle names no Retry-After."""
@@ -132,7 +132,7 @@ def fetch_overall_with_retry(
     """Fetch ``/overall``, waiting out transient upstream throttles.
 
     pypistats rate-limits shared CI runner addresses, so a 429 (and the
-    transient gateway statuses) earns a paced retry per ``RETRY_SCHEDULE``.
+    transient server/gateway statuses) earns a paced retry per ``RETRY_SCHEDULE``.
     Returns ``None`` only when every attempt ended retryable — the caller
     records a skipped day, which the per-date upsert self-heals on the next
     run. Any other failure propagates unchanged.
@@ -258,11 +258,11 @@ def main(argv: list[str] | None = None, fetch: Fetch = _http_get, sleep: Sleep =
         print(f"{package}: could not fetch download stats: {exc}", file=sys.stderr)
         return 1
     if overall is None:
-        # A throttle that outlasts every retry is an upstream mood, not a
-        # defect here: say so and leave the series alone — the upsert model
+        # A transient upstream failure that outlasts all retries leaves the
+        # existing series intact; report the skipped day — the upsert model
         # backfills the missing day from the rolling window on the next run.
         print(
-            f"{package}: upstream rate limit persisted across retries; "
+            f"{package}: upstream throttle or server failure persisted across retries; "
             "skipping this snapshot (the per-date upsert self-heals next run)",
             file=sys.stderr,
         )
