@@ -241,7 +241,10 @@ def test_real_sqlite_cleanup_refusal_preserves_atomic_commit_truth(
                     commit()
                 assert isinstance(caught.value.__context__, OSError)
         finally:
-            connection.set_authorizer(None)
+            # Python 3.10 requires a callable; None disables only from 3.11.
+            connection.set_authorizer(
+                lambda _action, _first, _second, _database, _origin: sqlite3.SQLITE_OK
+            )
         expected = 1 if committed else 0
         assert _rows(path, "SELECT COUNT(*) FROM operations") == [(expected,)]
         assert store.pending_operation_outbox_count() == expected
