@@ -89,6 +89,7 @@ nav:
   - Invariant conformance: invariant-conformance.md
   - Agent Air Traffic Control: agent-air-traffic-control.md
   - Wire protocol: protocol.md
+  - Delivery journal recovery: delivery-journal-recovery.md
   - Scoped attachments: attachments.md
   - API and wire stability: api-stability.md
   - Migration to 1.0: migration-1.0.md

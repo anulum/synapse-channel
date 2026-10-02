@@ -1,0 +1,14 @@
+{
+  "producer": "Published synapse-channel 0.99.36, two real native TLS hubs. At its deadline, the forwarded intent remained queued at the receiving hub and was quarantined with unauthorised_requester. Captured from its actual SQLite journal.",
+  "core_version": "0.99.36",
+  "official_wheel_sha256": "5a16dde22da41db93ed5f7f5eb5c5d4e58fc2e66beb63de9b4090c5eae3e0db8",
+  "source_database_sha256": "b7feaf3b560aefaa9842e85b12e06f450ab1740ce0b5c541c846f6fba061a566",
+  "sql_sha256": "4b58571cc7d711b7afe9ed76a4eb3470c7d1f6a7179ef3214bd37161889a2135",
+  "operation_key": "373fa7a2e6b5c33ba404344b2b7d86c4a2bfb10bee578944c4d55131d2060c6d",
+  "origin_hub": "workstation",
+  "receiving_hub": "laptop",
+  "sender": "PROJ/alice@workstation",
+  "event_count": 2,
+  "recorded_result": "FAIL: queued after deadline; authority refusal quarantined",
+  "contains_credentials": false
+}

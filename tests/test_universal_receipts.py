@@ -219,6 +219,7 @@ def test_delivery_intent_events_do_not_masquerade_as_transport_receipts() -> Non
         EventKind.DELIVERY_INTENT_QUEUED,
         EventKind.DELIVERY_INTENT_TRANSITION,
         EventKind.DELIVERY_CANCEL_REQUESTED,
+        EventKind.DELIVERY_RECEIVING_HUB_BOUND,
     )
     events = tuple(
         _event(index, kind, {"operation_key": "op"}) for index, kind in enumerate(kinds, 1)

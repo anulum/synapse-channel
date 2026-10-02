@@ -267,7 +267,10 @@ class EventStore:
             self._row_mac: RowMacKey | None = None
             self._row_quarantine: dict[int, CorruptEventRow] = {}
             self.delivery = DeliveryPersistence(
-                self._conn, self._lock, insert_event=self._insert_event_row
+                self._conn,
+                self._lock,
+                insert_event=self._insert_event_row,
+                verify_recovery_authentication=self._verify_delivery_recovery_authentication,
             )
             self.message_forward = MessageForwardLedger(self._conn, self._lock)
             self._conn.commit()
@@ -1209,6 +1212,28 @@ class EventStore:
                 "SELECT 1 FROM events WHERE mac IS NOT NULL LIMIT 1"
             ).fetchone()
         return row is not None
+
+    def _verify_delivery_recovery_authentication(self) -> None:
+        """Refuse recovery without the original row key or with unauthenticated rows.
+
+        The delivery recovery transaction holds this store's lock and the SQLite
+        write reservation. Encryption alone does not configure the row-MAC writer.
+        Rechecking all rows here prevents an unauthenticated binding event or an
+        operator recovery over quarantined history.
+        """
+        from synapse_channel.core.delivery_modes import DeliveryRefusal
+
+        if self._row_mac is None:
+            if self.has_row_macs():
+                raise DeliveryRefusal(
+                    "row_authentication_required",
+                    "delivery recovery requires the original event-row authentication key",
+                )
+            return
+        if self.enable_row_mac(self._row_mac):
+            raise DeliveryRefusal(
+                "journal_recovery_required", "delivery recovery refuses unauthenticated event rows"
+            )
 
     def enable_row_mac(self, key: RowMacKey) -> tuple[CorruptEventRow, ...]:
         """Authenticate rows written from now on and quarantine unauthenticated ones.

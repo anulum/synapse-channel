@@ -27,13 +27,16 @@ from synapse_channel.core.delivery_modes import (
     DeliveryStage,
     parse_delivery_intent,
 )
+from synapse_channel.core.delivery_ownership import validate_receiving_hub, validate_recovery_ref
 from synapse_channel.core.delivery_persistence import (
     DELIVERY_ACCEPTED,
     DELIVERY_CANCEL_REQUESTED,
     DELIVERY_EVENT_KINDS,
+    DELIVERY_OWNER_BOUND,
     DELIVERY_QUEUED,
     DELIVERY_TRANSITION,
 )
+from synapse_channel.core.hub_address import parse_hub_qualified
 
 _REQUEST_FIELDS = frozenset(
     {
@@ -93,6 +96,8 @@ class _ReplayState:
     explicitly_acknowledged: bool = False
     selected_mode: str = ""
     quality: str = ""
+    receiving_hub: str | None = None
+    storage_profile: int = 3
 
 
 def verify_delivery_replay(connection: Any) -> None:
@@ -106,19 +111,21 @@ def verify_delivery_replay(connection: Any) -> None:
     notifications: dict[str, tuple[str, str]] = {}
     mutations: dict[tuple[str, str], tuple[str, int]] = {}
     rows = connection.execute(
-        "SELECT seq, kind, payload FROM events WHERE kind IN (?, ?, ?, ?) ORDER BY seq",
+        "SELECT seq, kind, payload FROM events WHERE kind IN (?, ?, ?, ?, ?) ORDER BY seq",
         tuple(sorted(DELIVERY_EVENT_KINDS)),
     ).fetchall()
     for seq_raw, kind, raw_payload in rows:
         seq = int(seq_raw)
         payload = _object(raw_payload, label="delivery event")
-        if payload.get("profile") != 3:
+        if type(payload.get("profile")) is not int or payload.get("profile") not in (3, 4):
             raise _incompatible("stored delivery event has an incompatible profile")
         key = payload.get("operation_key")
         if not isinstance(key, str) or len(key) != 64:
             raise _incompatible("stored delivery operation key is malformed")
         if kind == DELIVERY_ACCEPTED:
             _accept(states, idempotency, key, payload, seq)
+        elif kind == DELIVERY_OWNER_BOUND:
+            _bind_owner(states, key, payload, seq)
         elif kind == DELIVERY_QUEUED:
             _queue(states, notifications, key, payload, seq)
         elif kind in (DELIVERY_TRANSITION, DELIVERY_CANCEL_REQUESTED):
@@ -188,7 +195,71 @@ def _accept(
     if idem_pair in idempotency:
         raise _incompatible("duplicate delivery idempotency key")
     idempotency[idem_pair] = key
-    states[key] = _ReplayState(request, digest, "accepted", False, 0, seq)
+    profile = payload["profile"]
+    receiver = payload.get("receiving_hub")
+    if profile == 4:
+        try:
+            validate_receiving_hub(receiver)
+        except DeliveryRefusal as exc:
+            raise _incompatible("stored receiving hub is malformed") from exc
+        if parse_hub_qualified(sender) is None and receiver != hub:
+            raise _incompatible("local delivery receiving hub differs from its origin")
+    elif "receiving_hub" in payload:
+        raise _incompatible("legacy accepted delivery cannot carry an unaudited receiver")
+    states[key] = _ReplayState(
+        request,
+        digest,
+        "accepted",
+        False,
+        0,
+        seq,
+        receiving_hub=receiver,
+        storage_profile=profile,
+    )
+
+
+def _bind_owner(
+    states: dict[str, _ReplayState], key: str, payload: dict[str, Any], seq: int
+) -> None:
+    """Apply one explicit legacy binding without changing request or task stage."""
+    state = states.get(key)
+    if (
+        set(payload)
+        != {
+            "profile",
+            "operation_key",
+            "ordinal",
+            "prior_stage",
+            "receiving_hub",
+            "recovery_ref",
+            "released_quarantine_reason",
+        }
+        or type(payload.get("ordinal")) is not int
+        or state is None
+        or state.stage == "accepted"
+        or state.storage_profile != 3
+        or state.receiving_hub is not None
+        or payload.get("profile") != 4
+        or payload.get("ordinal") != state.ordinal + 1
+        or payload.get("prior_stage") != state.stage
+        or payload.get("released_quarantine_reason") not in (None, "unauthorised_requester")
+    ):
+        raise _incompatible("legacy receiving-hub binding lacks its exact predecessor")
+    receiver = payload.get("receiving_hub")
+    try:
+        validate_receiving_hub(receiver)
+        validate_recovery_ref(payload.get("recovery_ref"))
+    except DeliveryRefusal as exc:
+        raise _incompatible("legacy receiving-hub binding evidence is malformed") from exc
+    if (
+        parse_hub_qualified(state.request["sender"]) is None
+        and receiver != state.request["origin_hub"]
+    ):
+        raise _incompatible("legacy local delivery cannot change its receiving hub")
+    state.receiving_hub = receiver
+    state.storage_profile = 4
+    state.ordinal += 1
+    state.event_seq = seq
 
 
 def _queue(
@@ -202,6 +273,8 @@ def _queue(
     state = states.get(key)
     if state is None or state.stage != "accepted" or payload.get("ordinal") != 1:
         raise _incompatible("queued delivery lacks its accepted predecessor")
+    if payload.get("profile") != state.storage_profile:
+        raise _incompatible("queued delivery storage profile changed")
     if payload.get("stage") != "queued":
         raise _incompatible("queued delivery stage is malformed")
     selected = payload.get("selected_mode")
@@ -239,6 +312,8 @@ def _transition(
     state = states.get(key)
     if state is None or state.stage == "accepted":
         raise _incompatible("delivery transition lacks a queued predecessor")
+    if payload.get("profile") != state.storage_profile:
+        raise _incompatible("delivery transition storage profile changed")
     if payload.get("ordinal") != state.ordinal + 1 or payload.get("prior_stage") != state.stage:
         raise _incompatible("delivery transition has an ordinal gap or prior-stage mismatch")
     mutation_id = payload.get("mutation_id")
@@ -285,7 +360,12 @@ def _transition(
                 raise _incompatible("delivery expiry lacks hub evidence")
             if source == "recipient" and actor != state.request.get("target"):
                 raise _incompatible("recipient transition actor changed")
-            if source == "hub" and actor != state.request.get("origin_hub"):
+            owner = (
+                state.receiving_hub
+                if state.storage_profile == 4
+                else state.request.get("origin_hub")
+            )
+            if source == "hub" and actor != owner:
                 raise _incompatible("hub transition actor changed")
             if source not in ("recipient", "hub"):
                 raise _incompatible("transition evidence source is unknown")
@@ -359,7 +439,7 @@ def _verify_aggregates(connection: Any, states: dict[str, _ReplayState]) -> None
         "SELECT operation_key, sender, idempotency_key, request_digest, request_json, "
         "target, target_incarnation, deadline, selected_mode, quality, stage, "
         "cancel_requested, boundary_delivered, explicitly_acknowledged, "
-        "ordinal, latest_event_seq FROM delivery_requests"
+        "ordinal, latest_event_seq, receiving_hub, storage_profile FROM delivery_requests"
     ).fetchall()
     if len(rows) != len(states):
         raise _incompatible("delivery aggregate count differs from event stream")
@@ -385,6 +465,8 @@ def _verify_aggregates(connection: Any, states: dict[str, _ReplayState]) -> None
             int(state.explicitly_acknowledged),
             state.ordinal,
             state.event_seq,
+            state.receiving_hub,
+            state.storage_profile,
         )
         if tuple(row) != expected:
             raise _incompatible("delivery aggregate differs from event stream")

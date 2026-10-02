@@ -39,7 +39,7 @@ _DELIVERY_ROW_SELECT = (
     "SELECT operation_key, sender, idempotency_key, request_digest, request_json, "
     "target, target_incarnation, deadline, selected_mode, quality, stage, "
     "cancel_requested, boundary_delivered, explicitly_acknowledged, ordinal, "
-    "latest_event_seq FROM delivery_requests WHERE "
+    "latest_event_seq, receiving_hub, storage_profile FROM delivery_requests WHERE "
 )
 _DELIVERY_ROW_QUERIES = {
     "key": _DELIVERY_ROW_SELECT + "operation_key = ?",
@@ -51,8 +51,15 @@ DELIVERY_ACCEPTED = "delivery_intent_accepted"
 DELIVERY_QUEUED = "delivery_intent_queued"
 DELIVERY_TRANSITION = "delivery_intent_transition"
 DELIVERY_CANCEL_REQUESTED = "delivery_cancel_requested"
+DELIVERY_OWNER_BOUND = "delivery_receiving_hub_bound"
 DELIVERY_EVENT_KINDS = frozenset(
-    {DELIVERY_ACCEPTED, DELIVERY_QUEUED, DELIVERY_TRANSITION, DELIVERY_CANCEL_REQUESTED}
+    {
+        DELIVERY_ACCEPTED,
+        DELIVERY_QUEUED,
+        DELIVERY_TRANSITION,
+        DELIVERY_CANCEL_REQUESTED,
+        DELIVERY_OWNER_BOUND,
+    }
 )
 MAX_OPEN_DELIVERIES_PER_RECIPIENT = 128
 MAX_OPEN_DELIVERIES_PER_SENDER_RECIPIENT = 16
@@ -92,7 +99,16 @@ def _stage(value: object) -> DeliveryStage:
 
 @dataclass(frozen=True)
 class StoredDelivery:
-    """Current durable aggregate for one sender-scoped delivery intent."""
+    """Current durable aggregate for one sender-scoped delivery intent.
+
+    Attributes
+    ----------
+    receiving_hub : str or None
+        Journal owner, distinct from immutable request origin. ``None`` means
+        legacy forwarded history requires explicit offline binding.
+    storage_profile : int
+        Event storage profile, independent of request and agent wire version.
+    """
 
     operation_key: str
     sender: str
@@ -107,6 +123,8 @@ class StoredDelivery:
     explicitly_acknowledged: bool
     ordinal: int
     latest_event_seq: int
+    receiving_hub: str | None
+    storage_profile: int
 
 
 @dataclass(frozen=True)
@@ -118,7 +136,7 @@ class DeliveryWrite:
 
 
 class DeliveryPersistence:
-    """A version-three aggregate sharing the event store's connection and lock."""
+    """A delivery aggregate sharing the event store's connection and lock."""
 
     def __init__(
         self,
@@ -126,12 +144,14 @@ class DeliveryPersistence:
         lock: Any,
         *,
         insert_event: Callable[[float, str, str], int],
+        verify_recovery_authentication: Callable[[], None],
     ) -> None:
         self._conn = connection
         self._lock = lock
         # The owning event store's row writer, so delivery rows carry the same row
         # authentication as every other event (K4-REPLAY).
         self._insert_event = insert_event
+        self._verify_recovery_authentication = verify_recovery_authentication
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS delivery_requests ("
             "operation_key TEXT PRIMARY KEY, sender TEXT NOT NULL, "
@@ -148,6 +168,16 @@ class DeliveryPersistence:
             "CREATE INDEX IF NOT EXISTS delivery_pending_idx "
             "ON delivery_requests(target, target_incarnation, stage, deadline)"
         )
+        request_columns = {
+            str(row[1]) for row in self._conn.execute("PRAGMA table_info(delivery_requests)")
+        }
+        if "receiving_hub" not in request_columns:
+            self._conn.execute("ALTER TABLE delivery_requests ADD COLUMN receiving_hub TEXT")
+        if "storage_profile" not in request_columns:
+            self._conn.execute(
+                "ALTER TABLE delivery_requests ADD COLUMN storage_profile "
+                "INTEGER NOT NULL DEFAULT 3"
+            )
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS delivery_mutations ("
             "operation_key TEXT NOT NULL, mutation_id TEXT NOT NULL, "
@@ -177,16 +207,13 @@ class DeliveryPersistence:
     def verify_origin_hub(self, hub_id: str) -> None:
         """Refuse a delivery journal opened under another stable hub identity.
 
-        Every stored request must have entered through this hub (``origin_hub`` equals
-        ``hub_id``) or have been forwarded by an authenticated peer, in which case the
-        requester is ``seat@origin_hub`` for that same peer. Local seats cannot hold
-        ``@`` names, so any locally originated row naming another hub fails the check. A
-        journal holding only forwarded rows carries no local identity to compare, and is
-        accepted.
+        Storage profile four records the receiving hub independently of the immutable
+        request origin. Legacy local requests prove their receiver through their origin;
+        legacy forwarded requests require explicit offline ownership recovery.
         """
         with self._lock:
-            for raw, sender in self._conn.execute(
-                "SELECT request_json, sender FROM delivery_requests"
+            for raw, sender, receiver in self._conn.execute(
+                "SELECT request_json, sender, receiving_hub FROM delivery_requests"
             ):
                 try:
                     request = json.loads(raw)
@@ -195,13 +222,61 @@ class DeliveryPersistence:
                         "replay_incompatible", "stored delivery request is malformed"
                     ) from exc
                 origin = request.get("origin_hub") if isinstance(request, dict) else None
-                forwarded = parse_hub_qualified(str(sender))
-                if origin == hub_id or (forwarded is not None and forwarded.hub_id == origin):
+                if receiver is None:
+                    if parse_hub_qualified(str(sender)) is not None:
+                        raise DeliveryRefusal(
+                            "receiving_hub_required",
+                            "legacy forwarded delivery journal requires offline ownership recovery",
+                        )
+                    receiver = origin
+                if receiver == hub_id:
                     continue
                 raise DeliveryRefusal(
                     "hub_identity_mismatch",
                     "delivery journal belongs to a different stable hub id",
                 )
+
+    def bind_legacy_receiving_hub(
+        self, hub_id: str, *, recovery_ref: str, retry_authority_refusals: bool = False
+    ) -> int:
+        """Explicitly bind verified legacy history while the owning hub is stopped.
+
+        The operator must establish the journal's receiving hub from external custody
+        evidence. The append-only recovery event preserves request identity and records
+        any explicitly retried ``unauthorised_requester`` quarantine. Other quarantine
+        reasons are retained. This method is never called by admission or startup.
+
+        Parameters
+        ----------
+        hub_id : str
+            Stable receiver established from the original deployment's custody.
+        recovery_ref : str
+            Credential-free reference to the operator's verified backup and identity.
+        retry_authority_refusals : bool, optional
+            Release only historical ``unauthorised_requester`` quarantine during
+            initial binding. The default retains all quarantine.
+
+        Returns
+        -------
+        int
+            Number of operations bound; repeated binding to the same hub returns zero.
+
+        Raises
+        ------
+        DeliveryRefusal
+            If replay, input evidence or a known receiver refuses recovery.
+        """
+        from synapse_channel.core.delivery_ownership import bind_legacy_receiving_hub
+
+        with self._lock:
+            return bind_legacy_receiving_hub(
+                self._conn,
+                insert_event=self._insert_event,
+                verify_authentication=self._verify_recovery_authentication,
+                hub_id=hub_id,
+                recovery_ref=recovery_ref,
+                retry_authority_refusals=retry_authority_refusals,
+            )
 
     def quarantine(self, operation_key: str, reason_code: str) -> None:
         """Retain a refused record for operator recovery without repeated retries."""
@@ -253,6 +328,14 @@ class DeliveryPersistence:
             explicitly_acknowledged=bool(row[13]),
             ordinal=int(row[14]),
             latest_event_seq=int(row[15]),
+            receiving_hub=(
+                str(row[16])
+                if row[16] is not None
+                else str(request["origin_hub"])
+                if parse_hub_qualified(str(row[1])) is None
+                else None
+            ),
+            storage_profile=int(row[17]),
         )
 
     def _fetch(self, selector: str, args: tuple[object, ...]) -> StoredDelivery | None:
@@ -281,7 +364,8 @@ class DeliveryPersistence:
                 "SELECT operation_key, sender, idempotency_key, request_digest, "
                 "request_json, target, target_incarnation, deadline, selected_mode, "
                 "quality, stage, cancel_requested, boundary_delivered, "
-                "explicitly_acknowledged, ordinal, latest_event_seq "
+                "explicitly_acknowledged, ordinal, latest_event_seq, "
+                "receiving_hub, storage_profile "
                 "FROM delivery_requests WHERE target = ? AND target_incarnation = ? "
                 "AND stage = 'queued' AND latest_event_seq > ? "
                 "ORDER BY latest_event_seq LIMIT ?",
@@ -300,7 +384,8 @@ class DeliveryPersistence:
                 "SELECT operation_key, sender, idempotency_key, request_digest, "
                 "request_json, target, target_incarnation, deadline, selected_mode, "
                 "quality, stage, cancel_requested, boundary_delivered, "
-                "explicitly_acknowledged, ordinal, latest_event_seq "
+                "explicitly_acknowledged, ordinal, latest_event_seq, "
+                "receiving_hub, storage_profile "
                 "FROM delivery_requests WHERE operation_key > ? AND deadline <= ? "
                 "AND stage IN ('queued', 'boundary_delivered', 'acknowledged') "
                 "AND operation_key NOT IN (SELECT operation_key FROM delivery_quarantine) "
@@ -320,7 +405,8 @@ class DeliveryPersistence:
                 "SELECT operation_key, sender, idempotency_key, request_digest, "
                 "request_json, target, target_incarnation, deadline, selected_mode, "
                 "quality, stage, cancel_requested, boundary_delivered, "
-                "explicitly_acknowledged, ordinal, latest_event_seq "
+                "explicitly_acknowledged, ordinal, latest_event_seq, "
+                "receiving_hub, storage_profile "
                 "FROM delivery_requests WHERE target = ? AND target_incarnation != ? "
                 "AND operation_key > ? AND stage IN "
                 "('queued', 'boundary_delivered', 'acknowledged') "
@@ -391,13 +477,49 @@ class DeliveryPersistence:
         selected_mode: str,
         quality: DeliveryQuality,
         offer: Mapping[str, Any],
+        receiving_hub: str | None = None,
     ) -> DeliveryWrite:
         """Atomically admit and queue one request with a stable recipient offer.
 
         A repeated request id or idempotency key returns the existing row only
         when both refer to the same canonical content. No offer is published by
         this method; the caller sends it after the commit.
+
+        Parameters
+        ----------
+        intent : DeliveryIntent
+            Authenticated, immutable version-three request.
+        selected_mode : str
+            Admitted mode selected from the recipient's live capabilities.
+        quality : DeliveryQuality
+            Native or emulated implementation of the selected mode.
+        offer : Mapping
+            Stable recipient notification, committed before publishing.
+        receiving_hub : str or None, optional
+            Server-selected journal owner. Local calls may omit it and use their
+            immutable origin; forwarded calls must supply it explicitly.
+
+        Returns
+        -------
+        DeliveryWrite
+            Committed admission, exact replay or content conflict disposition.
         """
+        from synapse_channel.core.delivery_ownership import validate_receiving_hub
+
+        if receiving_hub is None:
+            if parse_hub_qualified(intent.sender) is not None:
+                raise DeliveryRefusal(
+                    "receiving_hub_required", "forwarded delivery requires its receiving hub"
+                )
+            receiving_hub = intent.origin_hub
+        validate_receiving_hub(receiving_hub)
+        forwarded = parse_hub_qualified(intent.sender)
+        if forwarded is None and receiving_hub != intent.origin_hub:
+            raise DeliveryRefusal(
+                "hub_identity_mismatch", "local delivery receiver differs from origin"
+            )
+        if forwarded is not None and forwarded.hub_id != intent.origin_hub:
+            raise DeliveryRefusal("invalid_shape", "forwarded delivery origin disagrees")
         request = {"profile": 3, **asdict(intent)}
         key = intent.operation_key
         digest = intent.digest
@@ -420,6 +542,11 @@ class DeliveryPersistence:
                 self._begin()
                 existing = self._fetch("either", (key, intent.sender, intent.idempotency_key))
                 if existing is not None:
+                    if existing.receiving_hub != receiving_hub:
+                        raise DeliveryRefusal(
+                            "hub_identity_mismatch",
+                            "delivery journal belongs to a different stable hub id",
+                        )
                     self._conn.rollback()
                     disposition: Literal["replayed", "conflict"] = (
                         "replayed"
@@ -450,13 +577,19 @@ class DeliveryPersistence:
                 stamp = time.time()
                 self._event(
                     DELIVERY_ACCEPTED,
-                    {"profile": 3, "operation_key": key, "digest": digest, "request": request},
+                    {
+                        "profile": 4,
+                        "operation_key": key,
+                        "digest": digest,
+                        "request": request,
+                        "receiving_hub": receiving_hub,
+                    },
                     stamp,
                 )
                 queued_seq = self._event(
                     DELIVERY_QUEUED,
                     {
-                        "profile": 3,
+                        "profile": 4,
                         "operation_key": key,
                         "ordinal": 1,
                         "stage": "queued",
@@ -471,8 +604,8 @@ class DeliveryPersistence:
                     "(operation_key, sender, idempotency_key, request_digest, request_json, "
                     "target, target_incarnation, deadline, selected_mode, quality, stage, "
                     "cancel_requested, boundary_delivered, explicitly_acknowledged, "
-                    "ordinal, latest_event_seq) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, 0, 0, 1, ?)",
+                    "ordinal, latest_event_seq, receiving_hub, storage_profile) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, 0, 0, 1, ?, ?, 4)",
                     (
                         key,
                         intent.sender,
@@ -485,6 +618,7 @@ class DeliveryPersistence:
                         selected_mode,
                         quality,
                         queued_seq,
+                        receiving_hub,
                     ),
                 )
                 self._notification(notification_id, key, intent.target, offer)
@@ -585,6 +719,21 @@ class DeliveryPersistence:
                 current = self._fetch("key", (operation_key,))
                 if current is None:
                     raise DeliveryRefusal("unknown_request", "delivery request does not exist")
+                target = current.request.get("target")
+                if stage is None and actor != current.sender:
+                    raise DeliveryRefusal(
+                        "unauthorised_requester", "only the sender may request cancellation"
+                    )
+                if stage is not None:
+                    if source not in ("recipient", "hub"):
+                        raise DeliveryRefusal(
+                            "invalid_shape", "delivery evidence source is unknown"
+                        )
+                    owner = target if source == "recipient" else current.receiving_hub
+                    if owner is None or actor != owner:
+                        raise DeliveryRefusal(
+                            "unauthorised_requester", "stage evidence is not from its owning actor"
+                        )
                 prior = self._conn.execute(
                     "SELECT mutation_digest FROM delivery_mutations "
                     "WHERE operation_key = ? AND mutation_id = ?",
@@ -596,13 +745,7 @@ class DeliveryPersistence:
                         "replayed" if prior[0] == mutation_digest else "conflict"
                     )
                     return DeliveryWrite(disposition, current)
-                target = current.request.get("target")
-                origin_hub = current.request.get("origin_hub")
                 if stage is None:
-                    if actor != current.sender:
-                        raise DeliveryRefusal(
-                            "unauthorised_requester", "only the sender may request cancellation"
-                        )
                     lifecycle = DeliveryLifecycle(
                         current.stage, current.cancel_requested
                     ).request_cancel()
@@ -612,14 +755,6 @@ class DeliveryPersistence:
                     kind = DELIVERY_CANCEL_REQUESTED
                     audience = target
                 else:
-                    if source == "recipient" and actor != target:
-                        raise DeliveryRefusal(
-                            "unauthorised_requester", "stage evidence is not from recipient"
-                        )
-                    if source == "hub" and actor != origin_hub:
-                        raise DeliveryRefusal(
-                            "unauthorised_requester", "stage evidence is not from owning hub"
-                        )
                     if stage in (
                         "boundary_delivered",
                         "acknowledged",
@@ -653,7 +788,7 @@ class DeliveryPersistence:
                 event_seq = self._event(
                     kind,
                     {
-                        "profile": 3,
+                        "profile": current.storage_profile,
                         "operation_key": operation_key,
                         "ordinal": ordinal,
                         "prior_stage": current.stage,

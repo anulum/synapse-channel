@@ -13,6 +13,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Bind durable delivery decisions to the receiving hub, preserving the immutable
+  request origin. Forwarded requests can expire and resolve replaced sessions;
+  forwarded-only journals refuse startup under another hub identity.
+- Add explicit, append-only legacy ownership recovery with custody references,
+  atomic rollback and an optional reason-specific retry of historical authority
+  refusals. Storage profile 4 requires a compatible runtime after adoption.
+- Document the recorded physical federation result, failed Core 0.99.36 expiry
+  case, recovery procedure and the limits of the validated claims.
+
 ## [0.99.36] - 2026-10-01
 
 ### Changed

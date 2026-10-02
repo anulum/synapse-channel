@@ -310,7 +310,13 @@ async def admit_delivery_request(
     ):
         raise DeliveryRefusal("unauthorised_requester", "active task control is not granted")
     offer = _offer(intent, selected_mode, quality)
-    write = ledger.create(intent, selected_mode=selected_mode, quality=quality, offer=offer)
+    write = ledger.create(
+        intent,
+        selected_mode=selected_mode,
+        quality=quality,
+        offer=offer,
+        receiving_hub=hub.hub_id,
+    )
     if write.disposition == "conflict":
         raise DeliveryRefusal("id_conflict", "request identity was reused with new content")
     await _publish_queued_offer(hub, write.record)

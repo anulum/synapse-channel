@@ -85,7 +85,7 @@ def test_reopen_rejects_incompatible_delivery_history(tmp_path: Path, damage: st
     path = tmp_path / "hub.db"
     key = _seed(path)
     if damage == "wrong_profile":
-        _change_event(path, 1, {"profile": 4})
+        _change_event(path, 1, {"profile": 999})
     else:
         with sqlite3.connect(path) as connection:
             if damage == "missing_queued":

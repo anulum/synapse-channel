@@ -646,7 +646,10 @@ token may replay a queued offer with the same `notification_id`; a fresh token
 cannot inherit it. Terminal work retires undelivered offers to the old recipient
 while retaining their audit rows. A durable hub refuses to open a delivery
 journal under a changed stable `hub_id`; restore the original identity or use
-an explicit, separately reviewed migration. Sender notifications missed while
+the [explicit legacy ownership recovery procedure](delivery-journal-recovery.md).
+Storage profile 4 binds the receiving hub separately from the immutable request
+origin; forwarded storage-profile-3 history needs offline binding before startup.
+Sender notifications missed while
 offline replay by stable ID. The hub promises at-least-once notification and
 recipient deduplication,
 not exactly-once external provider effects. `DeliveryParticipantBridge` executes
@@ -734,9 +737,11 @@ own recipient session, exactly as for a local requester named
 `delivery_status` carries `remote_hub`. Later `delivery_status_request` and
 `delivery_cancel` frames for that operation key are routed to the same peer, and
 only the requesting seat may send them. A hub that has admitted a forwarded
-intent cannot be downgraded below version 0.99.29 with its journal intact,
-because older hubs refuse a delivery journal whose requests entered through
-another hub. Back up the event store first if a downgrade may be needed. A forward that cannot complete is
+intent uses the receiving hub's durable identity for deadline and session
+decisions, while retaining the authenticated origin in its request. New storage
+profile 4 and explicitly bound legacy journals cannot be opened by delivery-aware
+older releases, including 0.99.36. See [journal recovery and rollback](delivery-journal-recovery.md).
+Back up the event store before adoption. A forward that cannot complete is
 answered with `delivery_refused` whose `reason_code` is one of the following:
 `unknown_hub`, `peer_unreachable`, `peer_rejected`, `peer_invalid_answer`,
 `invalid_target`, `invalid_shape` or the peer's own refusal code.

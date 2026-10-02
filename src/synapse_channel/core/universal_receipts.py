@@ -78,6 +78,7 @@ NON_RECEIPT_EVENT_KINDS = frozenset(
         EventKind.DELIVERY_INTENT_QUEUED,
         EventKind.DELIVERY_INTENT_TRANSITION,
         EventKind.DELIVERY_CANCEL_REQUESTED,
+        EventKind.DELIVERY_RECEIVING_HUB_BOUND,
         EventKind.CORRUPT,
     }
 )
