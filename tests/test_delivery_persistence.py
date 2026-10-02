@@ -76,6 +76,131 @@ def _create(store: EventStore, intent: DeliveryIntent, **offer_changes: Any) -> 
     )
 
 
+@pytest.mark.parametrize(
+    ("sender", "receiving_hub", "code"),
+    [
+        ("P/author@hub-1", None, "receiving_hub_required"),
+        ("P/author", "different-hub", "hub_identity_mismatch"),
+        ("P/author@different-origin", "receiving-hub", "invalid_shape"),
+    ],
+)
+def test_admission_refuses_unproven_receiving_ownership_without_writes(
+    tmp_path: Path, sender: str, receiving_hub: str | None, code: str
+) -> None:
+    """Forwarded and local origin/receiver disagreements refuse before admission."""
+    path = tmp_path / "hub.db"
+    intent = _intent(sender=sender)
+    with EventStore(path) as store:
+        with pytest.raises(DeliveryRefusal) as refusal:
+            store.delivery.create(
+                intent,
+                selected_mode="follow_up",
+                quality="native",
+                offer=_offer(intent),
+                receiving_hub=receiving_hub,
+            )
+        assert refusal.value.code == code
+        assert store.delivery.get(intent.operation_key) is None and store.max_seq() == 0
+        assert store.delivery.pending_notifications(intent.target) == ()
+    with EventStore(path) as reopened:
+        reopened.delivery.verify_replay()
+        assert reopened.delivery.get(intent.operation_key) is None
+
+
+def test_matching_forwarded_request_cannot_replay_under_a_different_owner(
+    tmp_path: Path,
+) -> None:
+    """Identical request content cannot transfer the receiving journal's authority."""
+    path = tmp_path / "hub.db"
+    intent = _intent(sender="P/author@hub-1")
+    with EventStore(path) as store:
+        original = store.delivery.create(
+            intent,
+            selected_mode="follow_up",
+            quality="native",
+            offer=_offer(intent),
+            receiving_hub="receiving-hub",
+        )
+        with pytest.raises(DeliveryRefusal) as refusal:
+            store.delivery.create(
+                intent,
+                selected_mode="follow_up",
+                quality="native",
+                offer=_offer(intent),
+                receiving_hub="different-hub",
+            )
+        assert refusal.value.code == "hub_identity_mismatch"
+        assert store.delivery.get(intent.operation_key) == original.record
+        assert store.max_seq() == 2
+    with EventStore(path) as reopened:
+        reopened.delivery.verify_origin_hub("receiving-hub")
+        assert reopened.delivery.get(intent.operation_key) == original.record
+
+
+@pytest.mark.parametrize("transition", [False, True])
+@pytest.mark.parametrize("refuse_write", [False, True])
+def test_real_storage_cleanup_failure_retains_admission_or_transition_truth(
+    tmp_path: Path, transition: bool, refuse_write: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A real SQLite refusal after commit cannot turn durable success into failure."""
+    path = tmp_path / "hub.db"
+    intent = _intent()
+    with EventStore(path) as store:
+        if transition:
+            _create(store, intent)
+
+        def authorize(
+            action: int,
+            argument: str | None,
+            value: str | None,
+            database: str | None,
+            trigger: str | None,
+        ) -> int:
+            """Deny cleanup and optionally the actual event insertion before commit."""
+            if action == sqlite3.SQLITE_PRAGMA and argument == "synchronous" and value == "NORMAL":
+                return sqlite3.SQLITE_DENY
+            if refuse_write and action == sqlite3.SQLITE_INSERT and argument == "events":
+                return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        def write() -> DeliveryWrite:
+            """Exercise one public durable admission or receiving-hub transition."""
+            if not transition:
+                return _create(store, intent)
+            return store.delivery.advance(
+                intent.operation_key,
+                stage="expired",
+                mutation_id="cleanup-expiry",
+                mutation_digest="e" * 64,
+                actor="hub-1",
+                source="hub",
+                evidence={"reason_code": "deadline_elapsed"},
+            )
+
+        store._conn.set_authorizer(authorize)
+        try:
+            if refuse_write:
+                with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+                    write()
+            else:
+                result = write()
+                assert result.disposition == "inserted"
+                assert result.record.stage == ("expired" if transition else "queued")
+        finally:
+            store._conn.set_authorizer(None)
+        assert ("Could not restore SQLite synchronous=NORMAL" in caplog.text) is not refuse_write
+    with EventStore(path) as reopened:
+        reopened.delivery.verify_replay()
+        record = reopened.delivery.get(intent.operation_key)
+        if refuse_write and not transition:
+            assert record is None and reopened.max_seq() == 0
+        else:
+            assert record is not None
+            assert record.receiving_hub == "hub-1" and record.storage_profile == 4
+            assert record.stage == ("expired" if transition and not refuse_write else "queued")
+            assert reopened.max_seq() == (3 if transition and not refuse_write else 2)
+
+
 def test_admission_is_atomic_and_replays_after_restart(tmp_path: Path) -> None:
     """An accepted request, queue event, aggregate and offer survive one reopen."""
     path = tmp_path / "hub.db"

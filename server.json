@@ -7,13 +7,13 @@
     "url": "https://github.com/anulum/synapse-channel",
     "source": "github"
   },
-  "version": "0.99.36",
+  "version": "0.99.37",
   "websiteUrl": "https://anulum.github.io/synapse-channel/",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "synapse-channel",
-      "version": "0.99.36",
+      "version": "0.99.37",
       "runtimeHint": "uvx",
       "runtimeArguments": [
         {

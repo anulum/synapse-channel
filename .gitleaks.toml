@@ -16,9 +16,12 @@ trip the generic-api-key heuristic; the captured 'secret' is the type name itsel
 ceremony walkthrough (docs/federated-trust-model.md) — a label printed by design, \
 not key material. 'generate-wrapped-pkcs11' and 'generate-wrapped-tpm2' are at-rest-key \
 CLI subcommand names (hyphenated verbs that trip the generic-api-key heuristic), not \
-secrets. The recorded Core 0.99.36 delivery fixture's operation identifier is \
-SHA-256 of the public JSON tuple ["workstation", "PROJ/alice@workstation", "owner-expiry"]. \
-Only that exact digest is exempted; it cannot authenticate a connection. \
+secrets. The recorded Core 0.99.36 delivery fixtures' operation identifiers are \
+SHA-256 of these public JSON tuples: \
+["workstation", "PROJ/alice@workstation", "owner-expiry"], \
+["workstation", "PROJ/alice", "legacy-local"], and \
+["workstation", "PROJ/alice@different-origin", "legacy-bad_origin"]. \
+Only those three exact digests are exempted; they cannot authenticate a connection. \
 Build artefacts and bytecode mirror the same source lines and are gitignored."""
 regexes = [
     '''^Ed25519PrivateKey$''',
@@ -26,6 +29,8 @@ regexes = [
     '''^generate-wrapped-pkcs11$''',
     '''^generate-wrapped-tpm2$''',
     '''^373fa7a2e6b5c33ba404344b2b7d86c4a2bfb10bee578944c4d55131d2060c6d$''',
+    '''^62b99fe4cb3d477adc29c4218850f8aa51b9f2555d55c5e7b78fed64166bf1a1$''',
+    '''^6785d98fa2cc2bfcbf4fa07919358491d032034fd4deb3736566aaca42e7e0e5$''',
 ]
 paths = [
     '''^build/''',

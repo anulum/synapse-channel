@@ -1,0 +1,13 @@
+{
+  "producer": "Unmodified published synapse-channel 0.99.36 public parse_delivery_intent and EventStore.delivery.create APIs; dumped directly from the actual SQLite database after close.",
+  "core_version": "0.99.36",
+  "official_wheel_sha256": "5a16dde22da41db93ed5f7f5eb5c5d4e58fc2e66beb63de9b4090c5eae3e0db8",
+  "source_database_sha256": "e573683233e1e19b2b5f2f6635bb049268b3c1c4159bfcdc1e485bdd8f0ec795",
+  "sql_sha256": "e3e1dc6fd02fb615b75643102bf6328cd7abf0900ba114bb7729f5ef07c12571",
+  "operation_key": "62b99fe4cb3d477adc29c4218850f8aa51b9f2555d55c5e7b78fed64166bf1a1",
+  "origin_hub": "workstation",
+  "sender": "PROJ/alice",
+  "event_count": 2,
+  "recorded_result": "Public released parse/create APIs admitted queued operation",
+  "contains_credentials": false
+}

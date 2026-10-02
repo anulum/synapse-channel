@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.37] - 2026-10-02
+
 ### Fixed
 
 - Bind durable delivery decisions to the receiving hub, preserving the immutable
@@ -23,6 +25,8 @@ All notable changes to this project are documented here.
   refusals. Storage profile 4 requires a compatible runtime after adoption.
 - Document the recorded physical federation result, failed Core 0.99.36 expiry
   case, recovery procedure and the limits of the validated claims.
+- Wait for actual hub unregistration in the CLI task replay regression,
+  preserving the stable-key payload-conflict and single-operation assertions.
 
 ## [0.99.36] - 2026-10-01
 

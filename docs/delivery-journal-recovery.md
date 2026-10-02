@@ -71,6 +71,9 @@ owning store's normal writer.
 Binding appends `delivery_receiving_hub_bound` events and atomically updates the
 receiver index. It preserves accepted requests, operation keys, digests, task
 stages, offers and other history. A failed write rolls back the entire binding.
+If restoring the ordinary SQLite sync setting fails after commit, the binding
+remains successful and the cleanup error is logged; cold replay verifies the
+committed state. A cleanup failure must not trigger a second ownership change.
 Rebinding to the same receiver adds no events; a conflicting known receiver is
 refused. The recovery reference must be printable and contain no credentials.
 
@@ -107,6 +110,14 @@ legacy journal as `tests/fixtures/delivery_legacy_core_09936.sql`, with hashes
 and producer provenance in the adjacent JSON file. Regression tests exercise
 forwarded expiry, cold replay, wrong-identity startup, explicit legacy recovery
 and storage rollback through actual runtime and database paths.
+
+Additional captured journals were produced through the unmodified release's
+public parser and ledger APIs: a local request whose receiver is proven by its
+origin, and a forwarded request whose qualified sender disagrees with its
+origin. Their adjacent JSON files retain the producer and database/dump hashes.
+Recovery preserves the local identity and refuses the inconsistent forwarded
+history. Real SQLite authorization failures exercise rollback before commit
+and preservation of durable success after commit.
 
 This evidence establishes message transport for the recorded pair. The original
 physical run failed expiry acceptance. It does not establish direct LAN

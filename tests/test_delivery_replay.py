@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -136,9 +136,13 @@ def test_unmodified_delivery_history_reopens(tmp_path: Path) -> None:
         (1, "request.deadline", True),
         (1, "request.deadline", 10**400),
         (1, "request.deadline", float("nan")),
+        (1, "request.deadline", 160),
         (1, "request.mode", "unknown"),
         (1, "request.extra", "unexpected"),
         (1, "digest", "0" * 64),
+        (1, "receiving_hub", ""),
+        (1, "receiving_hub", "different-hub"),
+        (2, "profile", 3),
         (2, "ordinal", 4),
         (2, "stage", "completed"),
         (2, "selected_mode", "interrupt"),
@@ -176,6 +180,16 @@ def test_reopen_refuses_non_object_delivery_event(tmp_path: Path, raw: str) -> N
     _seed(path)
     with sqlite3.connect(path) as connection:
         connection.execute("UPDATE events SET payload = ? WHERE seq = 1", (raw,))
+    with pytest.raises(DeliveryRefusal) as failure:
+        EventStore(path)
+    assert failure.value.code == "replay_incompatible"
+
+
+def test_reopen_refuses_unaudited_receiver_on_a_legacy_accepted_event(tmp_path: Path) -> None:
+    """A profile-three accepted row cannot impersonate explicit owner recovery."""
+    path = tmp_path / "hub.db"
+    _seed(path)
+    _change_event(path, 1, {"profile": 3, "receiving_hub": "hub-1"})
     with pytest.raises(DeliveryRefusal) as failure:
         EventStore(path)
     assert failure.value.code == "replay_incompatible"
@@ -237,21 +251,26 @@ def test_reopen_refuses_tampered_stage_evidence(tmp_path: Path, field: str, valu
         ("expired", {"source": "recipient"}),
         ("expired", {"source": "unknown"}),
         ("expired", {"actor": "P/attacker"}),
+        ("expired", {"profile": "4"}),
+        ("expired", {"profile": 3}),
+        ("superseded", {"source": "unknown"}),
         ("cancel_requested", {"actor": "P/attacker"}),
         ("cancel_requested", {"source": "recipient"}),
     ],
 )
 def test_reopen_refuses_forged_deadline_or_cancellation_authority(
-    tmp_path: Path, stage: str, changes: dict[str, str]
+    tmp_path: Path,
+    stage: Literal["expired", "superseded", "cancel_requested"],
+    changes: dict[str, object],
 ) -> None:
     """Hub deadline and sender cancellation records retain their exact authority."""
     path = tmp_path / "hub.db"
     key = _seed(path)
     with EventStore(path) as store:
-        if stage == "expired":
+        if stage in ("expired", "superseded"):
             store.delivery.advance(
                 key,
-                stage="expired",
+                stage=stage,
                 mutation_id="deadline-1",
                 mutation_digest="d" * 64,
                 actor="hub-1",
@@ -308,6 +327,8 @@ def test_reopen_refuses_reused_mutation_identity_after_a_real_ack(tmp_path: Path
             'UPDATE delivery_notifications SET frame_json = \'{"operation_key":"wrong"}\'',
         ),
         ("malformed_frame", "UPDATE delivery_notifications SET frame_json = '[]'"),
+        ("receiving_hub", "UPDATE delivery_requests SET receiving_hub = 'changed-hub'"),
+        ("storage_profile", "UPDATE delivery_requests SET storage_profile = 3"),
     ],
 )
 def test_reopen_refuses_damaged_indexes_and_outbox(
