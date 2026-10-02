@@ -46,6 +46,27 @@ class LostReleaseReplyHub(SynapseHub):
         return await super()._broadcast(data)
 
 
+class LostReleaseConfirmationHub(LostReleaseReplyHub):
+    """Lose the first post-commit read as well as the actual release grant."""
+
+    def __init__(self, *, journal: EventStore) -> None:
+        super().__init__(journal=journal)
+        self.confirmation_lost = False
+
+    async def _route(
+        self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
+    ) -> None:
+        if (
+            msg_type == MessageType.STATE_REQUEST
+            and "release_confirmation" in data
+            and self.committed.is_set()
+            and not self.confirmation_lost
+        ):
+            self.confirmation_lost = True
+            return
+        await super()._route(sender, msg_type, data, websocket)
+
+
 class PrecommitReleaseReplyHub(LostReleaseReplyHub):
     """Hold a real accepted release before routing it to the mutation actor."""
 
@@ -575,8 +596,8 @@ async def test_corrupt_durable_proof_never_confirms_or_leaks_storage_details(
     repo = git_repo(tmp_path / "repository")
     db = tmp_path / "hub.db"
     with EventStore(db) as journal:
-        async with running_hub(LostReleaseReplyHub(journal=journal)) as (hub, uri):
-            assert isinstance(hub, LostReleaseReplyHub)
+        async with running_hub(LostReleaseConfirmationHub(journal=journal)) as (hub, uri):
+            assert isinstance(hub, LostReleaseConfirmationHub)
             await claim(repo, uri)
             try:
                 result = await command(
@@ -587,11 +608,12 @@ async def test_corrupt_durable_proof_never_confirms_or_leaks_storage_details(
                     "--name",
                     "release-owner",
                     "--reply-timeout",
-                    "0.1",
+                    "1",
                     "--idem-key",
                     "corrupt-release",
                 )
-                assert result.ok(), result.output
+                assert result.returncode == 3, result.output
+                assert hub.committed.is_set() and hub.confirmation_lost
                 stored = journal.get_operation("release-owner\0release\0corrupt-release")
                 assert stored is not None
                 assert stored.request_digest is not None
@@ -608,6 +630,13 @@ async def test_corrupt_durable_proof_never_confirms_or_leaks_storage_details(
                     "--reply-timeout",
                     "0.2",
                 ]
+                recovery = recovery_arguments(result)
+                recovery[recovery.index("--reply-timeout=0.2")] = "--reply-timeout=1"
+                assert f"--request-digest={stored.request_digest}" in recovery
+                recovered = await command(repo, uri, *recovery)
+                assert recovered.ok(), recovered.output
+                assert "historical operation; no mutation replay" in recovered.stdout
+                assert sum(row.kind == "release" for row in journal.iter_events()) == 1
                 with sqlite3.connect(db) as conn:
                     if damage == "missing_operations_table":
                         conn.execute("DROP TABLE operations")
@@ -652,6 +681,7 @@ async def test_corrupt_durable_proof_never_confirms_or_leaks_storage_details(
                 assert "operations" not in confirmed.stdout
                 assert "Traceback" not in confirmed.output
                 assert "name already online" not in confirmed.output
+                assert sum(row.kind == "release" for row in journal.iter_events()) == 1
             finally:
                 hub.resume.set()
 

@@ -22,6 +22,10 @@ All notable changes to this project are documented here.
 - Review the Codex 0.160.0 release notes for the vendor watch while preserving
   the exercised 0.156.0 Linux stdio profile and separate Windows admission.
 
+- Exercise lost release and confirmation replies before corrupting durable proof.
+  The runtime regression now confirms the original operation through a separate
+  read-only CLI recovery and proves that no second release occurs.
+
 ## [0.99.37] - 2026-10-02
 
 ### Fixed
