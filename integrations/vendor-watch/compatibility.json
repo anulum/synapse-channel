@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "review_owner": "SYNAPSE-CHANNEL/codex-01a0f28e",
-  "reviewed_at": "2026-10-01",
+  "reviewed_at": "2026-10-02",
   "review_interval_days": 7,
   "surfaces": {
     "claude-code": {
@@ -14,11 +14,11 @@
     },
     "codex-cli": {
       "verified_version": "0.156.0",
-      "reviewed_notes_sha256": "13bed7cf971602c85373e8dc49ed73e1c5f4a44de1ea15403eef768e8d06091e",
+      "reviewed_notes_sha256": "9f9f71c5cbf7b15a62797344b633808a7906ac69f9e65fee216844ad3de61c0b",
       "verification": "Exact 0.156.0 isolated Linux Codex app-server: stdio tool inventory, live local-hub state, claim, conflicting-identity refusal and release",
       "capability_class": "manual",
       "owning_adapter": "src/synapse_channel/adapters",
-      "migration_decision": "2026-10-01 review: 0.159.3 adds optional ChatGPT account-security setup reminders; this is not a reported vulnerability in the local stdio adapter. Retain the exercised 0.156.0 manual Linux local stdio profile; remote MCP and paid model turns are not admitted. Newer host acceptance remains a separate exact-host task."
+      "migration_decision": "2026-10-02 review: 0.160.0 fixes queued-input reconnection and duplicate handling, SQLite initialization, Windows PowerShell/sandbox ACL repairs and background console windows, and preserves provider settings. Its security wording includes maintenance-line account-security reminders and provider credential-storage documentation; these notes do not report a vulnerability in the exercised local stdio adapter. Retain the host-tested 0.156.0 manual Linux stdio profile. Guardian history/handoff retrieval is opt-in and remote MCP, new Windows sandbox behavior and paid model turns are not admitted. Native Windows setup must record its actual CLI/OS and exercise the local profile before claiming support. Exact newer-host acceptance remains separate."
     },
     "gemini-cli": {
       "verified_version": null,

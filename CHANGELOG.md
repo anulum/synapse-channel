@@ -19,6 +19,8 @@ All notable changes to this project are documented here.
   installed files after `npm ci`. The upstream shrinkwrap could otherwise
   reinstall vulnerable 5.0.9 while the outer lock's audit reported no finding.
   The reviewed SHA-512 archive replaces only this dependency; Pi remains 0.87.1.
+- Review the Codex 0.160.0 release notes for the vendor watch while preserving
+  the exercised 0.156.0 Linux stdio profile and separate Windows admission.
 
 ## [0.99.37] - 2026-10-02
 
