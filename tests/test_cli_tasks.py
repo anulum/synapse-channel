@@ -158,6 +158,7 @@ async def test_cmd_task_declare_uses_token(capsys: pytest.CaptureFixture[str]) -
 async def test_cmd_task_declare_reuses_stable_key_without_changed_payload(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Observe server cleanup before a second real CLI reuses its identity."""
     store = EventStore(tmp_path / "task-cli.db")
     async with running_hub(SynapseHub(journal=store)) as (hub, uri):
         first = argparse.Namespace(
@@ -171,6 +172,11 @@ async def test_cmd_task_declare_reuses_stable_key_without_changed_payload(
         )
         changed = argparse.Namespace(**{**vars(first), "title": "Changed"})
         assert await asyncio.to_thread(cli_tasks._cmd_task_declare, first) == 0
+        # Closing the client socket does not wait for the server handler to finish.
+        deadline = asyncio.get_running_loop().time() + 3.0
+        while "P" in hub.clients.agent_sockets:
+            assert asyncio.get_running_loop().time() < deadline, "CLI peer cleanup did not finish"
+            await asyncio.sleep(0.01)
         assert "P" not in hub.clients.agent_sockets
         capsys.readouterr()
         code = await asyncio.to_thread(cli_tasks._cmd_task_declare, changed)
