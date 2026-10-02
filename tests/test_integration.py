@@ -311,16 +311,42 @@ async def test_circular_wait_is_refused_end_to_end() -> None:
         assert await b.wait_until_ready(3.0)
 
         await a.claim("EDIT-SRC", paths=["src"])
-        await a_rx.wait_for(lambda m: m.get("type") == "claim_granted")
+        await a_rx.wait_for(
+            lambda m: (
+                m.get("type") == "claim_granted"
+                and m.get("task_id") == "EDIT-SRC"
+                and m.get("owner") == "ALPHA"
+            )
+        )
         await b.claim("EDIT-TESTS", paths=["tests"])
-        await b_rx.wait_for(lambda m: m.get("type") == "claim_granted")
+        await b_rx.wait_for(
+            lambda m: (
+                m.get("type") == "claim_granted"
+                and m.get("task_id") == "EDIT-TESTS"
+                and m.get("owner") == "BETA"
+            )
+        )
 
         # ALPHA waits for BETA's task — allowed.
         await a.request_wait("EDIT-TESTS")
-        await a_rx.wait_for(lambda m: m.get("type") == "wait_granted")
+        await a_rx.wait_for(
+            lambda m: (
+                m.get("type") == "wait_granted"
+                and m.get("task_id") == "EDIT-TESTS"
+                and m.get("holder") == "BETA"
+                and m.get("target") == "ALPHA"
+            )
+        )
         # BETA waiting for ALPHA's task would close the cycle — refused.
         await b.request_wait("EDIT-SRC")
-        denied = await b_rx.wait_for(lambda m: m.get("type") == "wait_denied")
+        denied = await b_rx.wait_for(
+            lambda m: (
+                m.get("type") == "wait_denied"
+                and m.get("task_id") == "EDIT-SRC"
+                and m.get("holder") == "ALPHA"
+                and m.get("target") == "BETA"
+            )
+        )
         assert "deadlock" in denied["payload"]
     finally:
         a.running = False

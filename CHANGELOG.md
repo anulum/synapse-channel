@@ -26,6 +26,10 @@ All notable changes to this project are documented here.
   The runtime regression now confirms the original operation through a separate
   read-only CLI recovery and proves that no second release occurs.
 
+- Correlate claim and wait replies by task, owner and recipient in the real
+  deadlock regression. An unrelated earlier claim broadcast can no longer
+  start the wait before the other participant owns its task.
+
 ## [0.99.37] - 2026-10-02
 
 ### Fixed
