@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- End refused WebSocket upgrade attempts cleanly in the Python client. Health
+  and roster probes return failure without a transport traceback, and the same
+  agent can reconnect after the hub URI or tunnel destination is corrected.
+
 - Pin the Pi host's brace-expansion dependency to 5.0.12 and verify its actual
   installed files after `npm ci`. The upstream shrinkwrap could otherwise
   reinstall vulnerable 5.0.9 while the outer lock's audit reported no finding.

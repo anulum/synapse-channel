@@ -15,7 +15,7 @@ import os
 from typing import Any, Protocol
 
 from websockets.asyncio.client import ClientConnection, connect
-from websockets.exceptions import ConnectionClosedError
+from websockets.exceptions import ConnectionClosedError, InvalidHandshake
 
 from synapse_channel.core.identity_keys import public_key_b64
 from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION, MessageType
@@ -144,7 +144,9 @@ class AgentLifecycleMixin:
 
         Sends the registration heartbeat, starts the keepalive loop, then
         dispatches each inbound message to the callback. Connection failures are
-        reported (when verbose) and end the loop.
+        reported (when verbose) and end the loop. A refused or invalid WebSocket
+        upgrade ends the attempt without propagating a transport traceback;
+        callers still require a welcome before treating the hub as ready.
 
         Each call is one connection attempt that owns its state: readiness is
         cleared when the attempt starts and again when it ends, ``running`` is
@@ -237,6 +239,12 @@ class AgentLifecycleMixin:
                     if not self.running:
                         break
                     await self._dispatch(raw)
+        except InvalidHandshake:
+            if self.verbose:
+                print(
+                    f"[{self.name}] Error: WebSocket handshake failed. "
+                    "Check the hub URI and tunnel destination."
+                )
         except ConnectionRefusedError:
             if self.verbose:
                 print(f"[{self.name}] Error: could not connect. Is the hub running?")

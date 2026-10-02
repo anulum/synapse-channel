@@ -63,6 +63,14 @@ The two together close the gap either leaves open alone.
 
 ### Error taxonomy
 
+The Python `SynapseAgent.connect()` lifecycle treats refused or invalid
+WebSocket upgrades as unsuccessful connection attempts, alongside connection
+refusals and disconnects. It returns with readiness cleared and permits a fresh
+attempt on the same instance. `wait_until_ready()` remains the success check;
+returning from `connect()` alone does not prove registration. Verbose output
+uses an authored handshake diagnostic. This changes no public signature, wire
+message, or WebSocket close-code meaning.
+
 Every domain exception derives from `synapse_channel.core.errors.SynapseError`
 and carries a stable machine-readable `code` (snake_case), so a boundary layer
 — the CLI, the A2A bridge, the MCP server, an embedding application — can

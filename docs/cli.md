@@ -1402,6 +1402,10 @@ healthcheck) rather than the output. When you want a human-readable account of w
 is or is not wired — identity, hub exposure, waiters — run `synapse doctor` instead;
 `health` answers "is the hub up?", `doctor` answers "is my setup right?".
 
+A refused WebSocket upgrade, including an HTTP `403` from a mismatched tunnel
+Host authority, returns `1` without a traceback. Check the forwarded port and
+destination as described in [troubleshooting](troubleshooting.md#a-websocket-handshake-fails-through-an-ssh-tunnel).
+
 ## Selecting the hub
 
 Every client command talks to `ws://localhost:8876` by default. To point the
