@@ -12,9 +12,25 @@ Contact: www.anulum.li | protoscience@anulum.li
 The optional pi participant runs the exact verified
 `@earendil-works/pi-coding-agent` **0.87.1** RPC host as a child process. Node.js
 22.19 or later is required. Install the separately packaged extension from the
-source checkout with `cd integrations/pi && npm ci --ignore-scripts`. Use its
+source checkout using the installation commands below. Use its
 `node_modules/.bin/pi` executable or another exact 0.87.1 binary. The Python
 participant refuses a different version.
+
+For the repository's Pi host, install dependencies and verify the installed
+security pin before launching it:
+
+```bash
+cd integrations/pi
+npm ci --ignore-scripts
+python ../../tools/sync_pi_dependency_pins.py
+```
+
+Pi 0.87.1 ships an upstream shrinkwrap that can install brace-expansion 5.0.9
+even when the outer lock and its audit report 5.0.12. The verification command
+checks the reviewed registry archive against the outer lock's SHA-512 digest,
+then installs only that package's exact files. It does not resolve the remaining
+dependencies or change the admitted Pi version. CI runs this verification after
+each Pi installation. Run it after a fresh `npm ci` and before starting Pi.
 
 Without an explicit claim binding, pi runs with **no tools**. This is useful for
 model-only turns and for testing the provider and session contract:

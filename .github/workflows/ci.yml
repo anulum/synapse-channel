@@ -115,7 +115,9 @@ jobs:
       - name: Install exact Pi host for offline RPC diagnosis coverage
         if: matrix.python-version == '3.12'
         working-directory: integrations/pi
-        run: npm ci --ignore-scripts
+        run: |
+          npm ci --ignore-scripts
+          python ../../tools/sync_pi_dependency_pins.py
       - name: Install exact Claude Code host for real plugin coverage
         if: matrix.python-version == '3.12'
         working-directory: integrations/claude-code
@@ -222,7 +224,9 @@ jobs:
         run: python tools/check_pi_lock_integrity.py
       - name: Install exact Pi integration dependencies without lifecycle scripts
         working-directory: integrations/pi
-        run: npm ci --ignore-scripts
+        run: |
+          npm ci --ignore-scripts
+          python ../../tools/sync_pi_dependency_pins.py
       - name: Type-check and exercise the Pi extension
         working-directory: integrations/pi
         run: |
