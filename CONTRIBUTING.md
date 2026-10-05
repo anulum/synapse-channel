@@ -128,6 +128,28 @@ mutation, replay idempotency, no lost durability — and add the test that pins 
 When a hot-path module (`hub.py`, `state.py`, `message_auth.py`, `persistence.py`)
 grows a second responsibility, prefer extracting a new module over widening it.
 
+### Structure budget
+
+A long module is not a defect while it holds one responsibility. What points at
+a second one is counted from the syntax tree for `src/synapse_channel` and
+`tools`: constructor parameters, attributes set in `__init__`, objects a
+constructor builds, function length and branches, internal imports of a module,
+and access to another object's private members. Units above a threshold are
+listed with their exact figure in `tools/structure_budget.toml`.
+
+```bash
+python -m tools.check_structure_budget --check --baseline HEAD    # pre-commit and CI run this
+python -m tools.check_structure_budget --update --baseline HEAD   # after shortening a listed unit
+python -m tools.check_structure_budget --report --baseline HEAD   # before and after figures
+```
+
+A listed figure may only fall, and the ledger is lowered in the same commit. A
+new unit above a threshold is refused: split it by responsibility. Moving a
+listed unit unchanged is recorded as a `[[moves]]` entry for that one commit. An
+`[[exceptions]]` entry with a reason, an owner and a review date is the only way
+to accept a unit above a threshold outside the ledger; it fails the check once
+its date has passed.
+
 ## Pull requests
 
 1. Branch from `main`.

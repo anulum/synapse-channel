@@ -22,6 +22,17 @@ All notable changes to this project are documented here.
   stamps the recorder, the time and how the recorder's name was bound to the
   connection, and accepts a record only from the seat on its own side.
 
+### Changed
+
+- A structure budget now guards `src/synapse_channel` and `tools` against a unit
+  taking on a second responsibility. `tools/structure_budget.toml` lists every
+  class, function and module above a threshold of constructor parameters,
+  constructor attributes, constructed collaborators, function length, branches,
+  internal imports or access to another object's private members. The
+  pre-commit hook and the CI lint job refuse a new unit above a threshold and
+  any listed figure that rises; a figure that falls must be lowered in the
+  ledger in the same commit.
+
 ### Fixed
 
 - End refused WebSocket upgrade attempts cleanly in the Python client. Health
