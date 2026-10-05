@@ -46,9 +46,9 @@ async def handle_spend_request(
     try:
         action, document = decode_spend_request(data)
     except SpendWireError:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system("Malformed spend request", msg_type=MessageType.ERROR, target=sender),
+            hub.system("Malformed spend request", msg_type=MessageType.ERROR, target=sender),
         )
         return
     result: dict[str, object] = dict(REFUSALS[action])
@@ -71,9 +71,9 @@ async def handle_spend_request(
                 result = await asyncio.to_thread(ledger.query, sender, document)
         except SpendLedgerError as exc:
             logger.error("spend ledger unavailable for %s from %r: %s", action, sender, exc)
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Spend result",
             msg_type=MessageType.SPEND_RESULT,
             target=sender,

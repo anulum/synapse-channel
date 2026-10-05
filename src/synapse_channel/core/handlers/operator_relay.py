@@ -127,9 +127,9 @@ async def handle_operator_relay_request(
         request = decode_relay_request(data)
     except RelayWireError:
         logger.warning("Refused malformed operator relay request from peer %r", sender)
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "Malformed operator relay request",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -211,9 +211,9 @@ async def _send_atomic_execution(
     if execution.outcome in {"replayed", "conflict"}:
         if execution.response is None:
             raise RuntimeError("atomic operator relay returned no replay response")
-        await hub._send_json(websocket, execution.response)
+        await hub.send_json(websocket, execution.response)
         if execution.outcome == "replayed":
-            await hub._settle_atomic_operation(data)
+            await hub.settle_atomic_operation(data)
         return
     application = execution.mutation
     if not isinstance(application, (_ReleaseApplication, _TwoPersonApplication)):
@@ -226,7 +226,7 @@ async def _send_atomic_execution(
         response=execution.response,
     )
     if execution.outcome == "inserted":
-        await hub._settle_atomic_operation(data)
+        await hub.settle_atomic_operation(data)
 
 
 def _authorise(
@@ -506,7 +506,7 @@ async def _apply_release_atomic_async(
             },
         )
 
-    return await hub._run_atomic_operation(data, mutate, prepare)
+    return await hub.run_atomic_operation(data, mutate, prepare)
 
 
 def _persist_release_application(
@@ -565,7 +565,7 @@ async def _apply_with_two_person_atomic_async(
     def publish_candidate(candidate: _TwoPersonSubject) -> None:
         _publish_two_person(hub, candidate)
 
-    return await hub._run_atomic_operation(
+    return await hub.run_atomic_operation(
         data,
         mutate,
         subject=subject,
@@ -643,15 +643,15 @@ async def _send_result(
     discovering it only on its next failed action.
     """
     if result.applied:
-        await hub._broadcast(
-            hub._system(
+        await hub.broadcast(
+            hub.system(
                 f"Task {result.task_id!r} in {result.namespace!r} was released by operator "
                 f"relay: {result.detail}",
                 msg_type=MessageType.RELEASE_GRANTED,
                 task_id=result.task_id,
             )
         )
-    await hub._send_json(
+    await hub.send_json(
         websocket,
         response if response is not None else _result_message(hub, sender, result),
     )
@@ -659,7 +659,7 @@ async def _send_result(
 
 def _result_message(hub: SynapseHub, sender: str, result: RelayActionResult) -> dict[str, Any]:
     """Build the exact private verdict committed for a keyed operator relay."""
-    return hub._system(
+    return hub.system(
         "Operator relay result",
         msg_type=MessageType.OPERATOR_RELAY_RESULT,
         target=sender,

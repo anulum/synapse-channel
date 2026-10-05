@@ -46,9 +46,9 @@ async def _reply(
         if ok and hub.channels.is_member(channel, sender)
         else []
     )
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             message,
             msg_type=MessageType.CHANNEL_RESULT,
             target=sender,
@@ -107,9 +107,9 @@ async def handle_channel_list_request(
 ) -> None:
     """Return the channels the requester is a member of."""
     del data
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "channel list",
             msg_type=MessageType.CHANNEL_LIST,
             target=sender,
@@ -135,9 +135,9 @@ async def handle_channel_history_request(
             message=f"not a member of channel '{channel}'",
         )
         return
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "channel history",
             msg_type=MessageType.CHANNEL_HISTORY,
             target=sender,

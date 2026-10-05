@@ -160,7 +160,7 @@ def collect_hub_metrics(hub: SynapseHub) -> list[Metric]:
             "synapse_messages_total",
             "Messages assigned a sequence id since start (resumed from the journal).",
             "counter",
-            hub._message_seq,
+            hub.message_seq,
         ),
         Metric(
             "synapse_live_waiters",

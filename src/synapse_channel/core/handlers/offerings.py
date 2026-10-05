@@ -48,9 +48,9 @@ async def handle_advertise(
     persist = data.get("persist")
     dispatchable = data.get("dispatchable")
     if persist is not None and not isinstance(persist, bool):
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "Malformed frame: 'persist' must be a boolean.",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -58,9 +58,9 @@ async def handle_advertise(
         )
         return
     if dispatchable is not None and not isinstance(dispatchable, bool):
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "Malformed frame: 'dispatchable' must be a boolean.",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -70,9 +70,9 @@ async def handle_advertise(
     if persist:
         seat = sender.split("/", 1)[1] if "/" in sender else ""
         if not project_of(sender) or not seat.strip():
-            await hub._send_json(
+            await hub.send_json(
                 websocket,
-                hub._system(
+                hub.system(
                     "Persistent capability registration requires a project-scoped "
                     "seat identity (<project>/<seat>).",
                     msg_type=MessageType.ERROR,
@@ -89,9 +89,9 @@ async def handle_advertise(
         # is (a wake listener registers its seat, not its receive-only name). Anything
         # else is an impersonation attempt and fails closed.
         if not requested or (requested != sender and waiter_owner(sender) != requested):
-            await hub._send_json(
+            await hub.send_json(
                 websocket,
-                hub._system(
+                hub.system(
                     "Capability registration for another identity requires the "
                     "connection to be that identity or a recognised receiver sidecar.",
                     msg_type=MessageType.ERROR,
@@ -103,9 +103,9 @@ async def handle_advertise(
         if persist:
             agent_seat = agent.split("/", 1)[1] if "/" in agent else ""
             if not project_of(agent) or not agent_seat.strip():
-                await hub._send_json(
+                await hub.send_json(
                     websocket,
-                    hub._system(
+                    hub.system(
                         "Persistent capability registration requires a project-scoped "
                         "seat identity (<project>/<seat>).",
                         msg_type=MessageType.ERROR,
@@ -139,8 +139,8 @@ async def handle_advertise(
         card_payload["dispatchable"] = (
             registration.dispatchable if registration is not None else True
         )
-    await hub._broadcast(
-        hub._system(
+    await hub.broadcast(
+        hub.system(
             f"Capability advertised by {agent}",
             msg_type=MessageType.CAPABILITY_ADVERTISED,
             agent=agent,
@@ -160,9 +160,9 @@ async def handle_resource(
     journal = hub.journal
 
     if not kind or not name:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "resource offer requires kind+name",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -191,7 +191,7 @@ async def handle_resource(
         key, offer = result
         if key is None or offer is None:
             return None
-        offered = hub._system(
+        offered = hub.system(
             f"Resource offered by {sender}",
             msg_type=MessageType.RESOURCE_OFFERED,
             agent=sender,
@@ -217,10 +217,10 @@ async def handle_resource(
             intent={"family": "resource", "response_type": MessageType.RESOURCE_OFFERED},
         )
 
-    execution = await hub._run_atomic_operation(data, mutate, prepare)
+    execution = await hub.run_atomic_operation(data, mutate, prepare)
     if execution is not None and execution.outcome in {"replayed", "conflict"}:
         assert execution.response is not None
-        await hub._send_json(websocket, execution.response)
+        await hub.send_json(websocket, execution.response)
         return
     key, offer = (
         execution.mutation
@@ -232,9 +232,9 @@ async def handle_resource(
         )
     )
     if key is None:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "resource offer quota exceeded",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -246,7 +246,7 @@ async def handle_resource(
     )
     assert offered is not None
     if execution is None:
-        hub._remember(data, offered)
-    await hub._broadcast(offered)
+        hub.remember(data, offered)
+    await hub.broadcast(offered)
     if execution is not None:
-        await hub._settle_atomic_operation(data)
+        await hub.settle_atomic_operation(data)

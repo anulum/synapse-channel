@@ -77,9 +77,9 @@ async def _send_journal_failure(
     logger.error(
         "%s journal commit failed; memory mutation was not published", subject, exc_info=exc
     )
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             f"{subject} was not journalled; mutation rolled back.",
             msg_type=MessageType.ERROR,
             target=sender,
@@ -126,7 +126,7 @@ async def handle_recall_log(
         return _MemoryWrite(
             accepted=True,
             record=record,
-            response=hub._system(
+            response=hub.system(
                 "recall logged",
                 msg_type=MessageType.RECALL_LOGGED,
                 target=sender,
@@ -149,7 +149,7 @@ async def handle_recall_log(
         if hub.journal is not None and str(data.get("idem_key") or ""):
             execution = cast(
                 AtomicExecution,
-                await hub._run_atomic_operation(
+                await hub.run_atomic_operation(
                     data,
                     mutate,
                     prepare,
@@ -170,15 +170,15 @@ async def handle_recall_log(
         return
 
     if execution.outcome in {"replayed", "conflict"}:
-        await hub._send_json(websocket, _required_response(execution))
+        await hub.send_json(websocket, _required_response(execution))
         if execution.outcome == "replayed":
-            await hub._settle_atomic_operation(data)
+            await hub.settle_atomic_operation(data)
         return
     result = cast(_MemoryWrite, execution.mutation)
     response = execution.response or result.response
-    await hub._send_json(websocket, response)
+    await hub.send_json(websocket, response)
     if execution.outcome == "inserted":
-        await hub._settle_atomic_operation(data)
+        await hub.settle_atomic_operation(data)
 
 
 async def handle_finding(
@@ -209,13 +209,13 @@ async def handle_finding(
     """
     decision = admit(Finding.from_dict(data))
     if decision.verdict == REJECT or decision.finding is None:
-        denied = hub._system(
+        denied = hub.system(
             "; ".join(decision.reasons) or "finding rejected",
             msg_type=MessageType.FINDING_REJECTED,
             target=sender,
             reasons=list(decision.reasons),
         )
-        await hub._send_json(websocket, denied)
+        await hub.send_json(websocket, denied)
         return
     finding = decision.finding
     journal = cast("EventStore", hub.journal)
@@ -229,7 +229,7 @@ async def handle_finding(
             return _MemoryWrite(
                 accepted=False,
                 record=None,
-                response=hub._system(
+                response=hub.system(
                     quota_message,
                     msg_type=MessageType.FINDING_REJECTED,
                     target=sender,
@@ -240,7 +240,7 @@ async def handle_finding(
         return _MemoryWrite(
             accepted=True,
             record=record,
-            response=hub._system(
+            response=hub.system(
                 "; ".join(decision.reasons) if decision.reasons else "finding recorded",
                 msg_type=MessageType.FINDING_RECORDED,
                 verdict=decision.verdict,
@@ -269,7 +269,7 @@ async def handle_finding(
         if hub.journal is not None and str(data.get("idem_key") or ""):
             execution = cast(
                 AtomicExecution,
-                await hub._run_atomic_operation(
+                await hub.run_atomic_operation(
                     data,
                     mutate,
                     prepare,
@@ -290,15 +290,15 @@ async def handle_finding(
         return
 
     if execution.outcome in {"replayed", "conflict"}:
-        await hub._send_json(websocket, _required_response(execution))
+        await hub.send_json(websocket, _required_response(execution))
         if execution.outcome == "replayed":
-            await hub._settle_atomic_operation(data)
+            await hub.settle_atomic_operation(data)
         return
     result = cast(_MemoryWrite, execution.mutation)
     if not result.accepted:
-        await hub._send_json(websocket, result.response)
+        await hub.send_json(websocket, result.response)
         return
     response = execution.response or result.response
-    await hub._broadcast(response)
+    await hub.broadcast(response)
     if execution.outcome == "inserted":
-        await hub._settle_atomic_operation(data)
+        await hub.settle_atomic_operation(data)

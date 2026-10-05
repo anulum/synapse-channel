@@ -43,9 +43,9 @@ async def handle_state_request(
         else {}
     )
     if "release_confirmation" in data:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "Release confirmation",
                 msg_type=MessageType.STATE_SNAPSHOT,
                 target=sender,
@@ -64,9 +64,9 @@ async def handle_state_request(
         away = hub.claim_holders.offline_seconds(owner, online=owner in online, now=now)
         claim["holder_online"] = away is None
         claim["holder_offline_seconds"] = None if away is None else round(away, 3)
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "State snapshot",
             msg_type=MessageType.STATE_SNAPSHOT,
             target=sender,
@@ -93,7 +93,7 @@ async def handle_who_request(
     if isinstance(remote_hub, str) and remote_hub.strip():
         from synapse_channel.core.message_forward_origin import forward_who
 
-        await hub._send_json(websocket, await forward_who(hub, sender, remote_hub.strip()))
+        await hub.send_json(websocket, await forward_who(hub, sender, remote_hub.strip()))
         return
     # Lazy: the package __init__ pulls in the handler modules, so a top-level
     # import of __version__ would be circular; by call time it is initialised.
@@ -125,9 +125,9 @@ async def handle_who_request(
         }
         extra["delivery_sessions"] = delivery_sessions
 
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Who snapshot",
             msg_type=MessageType.WHO_SNAPSHOT,
             target=sender,
@@ -178,9 +178,9 @@ async def handle_history_request(
         n = max(1, limit)
         history = history[-n:]
         requested_limit = n
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "History snapshot",
             msg_type=MessageType.HISTORY_SNAPSHOT,
             target=sender,
@@ -213,9 +213,9 @@ async def handle_resume_request(
     # An absent, non-numeric, or overflowing cursor resumes from the start (0).
     since = safe_int(data.get("since"), default=0)
     tail = [m for m in hub.chat_history if int(m.get("msg_id", 0)) > since]
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Resume snapshot",
             msg_type=MessageType.RESUME_SNAPSHOT,
             target=sender,
@@ -229,9 +229,9 @@ async def handle_board_request(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent a snapshot of the shared blackboard."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Board snapshot",
             msg_type=MessageType.BOARD_SNAPSHOT,
             target=sender,
@@ -244,9 +244,9 @@ async def handle_manifest_request(
     hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent the capability manifest."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Manifest snapshot",
             msg_type=MessageType.MANIFEST_SNAPSHOT,
             target=sender,

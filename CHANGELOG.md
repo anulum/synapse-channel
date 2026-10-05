@@ -33,6 +33,15 @@ All notable changes to this project are documented here.
   any listed figure that rises; a figure that falls must be lowered in the
   ledger in the same commit.
 
+- The methods of `SynapseHub` that the handler modules call carry public names:
+  `system`, `send_json`, `broadcast`, `broadcast_directed`, `send_to_agent`,
+  `mirror_to_relay`, `run_atomic_operation`, `settle_atomic_operation`,
+  `remember`, `next_msg_id` and the `message_seq` property replace the same
+  names with a leading underscore. Behaviour, the wire and the CLI are
+  unchanged. Code outside this repository that calls or overrides one of the
+  old names on a hub must use the new name; they were never part of the stable
+  Python API, which is the package export list.
+
 ### Fixed
 
 - End refused WebSocket upgrade attempts cleanly in the Python client. Health

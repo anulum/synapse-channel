@@ -63,9 +63,9 @@ async def _refuse(
     hub: SynapseHub, websocket: Any, sender: str, data: dict[str, Any], refusal: DeliveryRefusal
 ) -> None:
     """Send one stable reason code without echoing the request body or secrets."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             str(refusal),
             msg_type=MessageType.DELIVERY_REFUSED,
             target=sender,
@@ -155,7 +155,7 @@ def _status(
     session = hub.clients.delivery_session(target)
     active_session = session is not None and session.incarnation == incarnation
     receiver_reachable = active_session and target in hub.clients.agent_sockets
-    return hub._system(
+    return hub.system(
         "Delivery state.",
         msg_type=MessageType.DELIVERY_STATUS,
         target=viewer or record.sender,
@@ -215,7 +215,7 @@ async def _publish_queued_offer(hub: SynapseHub, record: StoredDelivery) -> None
     notification_id = f"delivery:{record.operation_key}:1"
     frame = ledger.notification(notification_id)
     if frame is not None:
-        await hub._send_json(websocket, frame)
+        await hub.send_json(websocket, frame)
         ledger.mark_notification_delivered(notification_id)
 
 
@@ -230,12 +230,12 @@ async def handle_delivery_request(
     try:
         _require_profile(hub, sender, data)
         if HUB_ADDRESS_SEPARATOR in str(data.get("target") or ""):
-            await hub._send_json(websocket, await forward_delivery_request(hub, sender, data))
+            await hub.send_json(websocket, await forward_delivery_request(hub, sender, data))
             return
         admission = await admit_delivery_request(
             hub, sender=sender, origin_hub=hub.hub_id, data=data
         )
-        await hub._send_json(websocket, admission.status)
+        await hub.send_json(websocket, admission.status)
         if admission.expire_now:
             await expire_due_deliveries(hub)
     except DeliveryRefusal as refusal:
@@ -348,9 +348,9 @@ async def handle_delivery_status_request(
         key = _operation_key(data)
         if hub.message_forward_ledger.remote_delivery(key) is not None:
             frame = await forward_delivery_followup(hub, sender, data, kind="delivery_status")
-            await hub._send_json(websocket, frame)
+            await hub.send_json(websocket, frame)
             return
-        await hub._send_json(
+        await hub.send_json(
             websocket, await delivery_status_frame(hub, requester=sender, data=data)
         )
     except DeliveryRefusal as refusal:
@@ -494,7 +494,7 @@ async def _notify_record(hub: SynapseHub, record: StoredDelivery, audience: str)
         and websocket is not None
         and hub.clients.protocol_version_of(audience) >= MIN_DELIVERY_PROTOCOL_VERSION
     ):
-        await hub._send_json(websocket, frame)
+        await hub.send_json(websocket, frame)
         ledger.mark_notification_delivered(notification_id)
 
 
@@ -602,7 +602,7 @@ async def deliver_pending_delivery_notifications(
                     continue
             if hub.clients.agent_sockets.get(sender) is not websocket:
                 return
-            await hub._send_json(websocket, frame)
+            await hub.send_json(websocket, frame)
             hub.journal.delivery.mark_notification_delivered(notification_id)
     session = hub.clients.delivery_session(sender)
     if session is None:
@@ -622,7 +622,7 @@ async def deliver_pending_delivery_notifications(
                 return
             offer_frame = hub.journal.delivery.notification(f"delivery:{record.operation_key}:1")
             if offer_frame is not None:
-                await hub._send_json(websocket, offer_frame)
+                await hub.send_json(websocket, offer_frame)
                 hub.journal.delivery.mark_notification_delivered(offer_frame["notification_id"])
 
 
@@ -685,7 +685,7 @@ async def handle_delivery_stage(
         )
         if write.disposition == "conflict":
             raise DeliveryRefusal("id_conflict", "mutation identity was reused with new content")
-        await hub._send_json(websocket, _status(hub, write.record, viewer=sender))
+        await hub.send_json(websocket, _status(hub, write.record, viewer=sender))
         if write.disposition == "inserted":
             await _notify_record(hub, write.record, write.record.sender)
     except DeliveryRefusal as refusal:
@@ -705,9 +705,9 @@ async def handle_delivery_cancel(
         key = _operation_key(data)
         if hub.message_forward_ledger.remote_delivery(key) is not None:
             frame = await forward_delivery_followup(hub, sender, data, kind="delivery_cancel")
-            await hub._send_json(websocket, frame)
+            await hub.send_json(websocket, frame)
             return
-        await hub._send_json(websocket, await cancel_delivery(hub, requester=sender, data=data))
+        await hub.send_json(websocket, await cancel_delivery(hub, requester=sender, data=data))
     except DeliveryRefusal as refusal:
         await _refuse(hub, websocket, sender, data, refusal)
 

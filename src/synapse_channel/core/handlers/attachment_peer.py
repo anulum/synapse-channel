@@ -74,7 +74,7 @@ async def handle_attachment_peer(
             store.record_peer_read(sender, scope, digest, action, allowed=result["ok"] is True)
         except (AttachmentError, OSError, sqlite3.DatabaseError, TypeError, ValueError):
             result = {"ok": False, "error": "attachment unavailable"}
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system("", msg_type=MessageType.ATTACHMENT_PEER_RESULT, target=sender, **result),
+        hub.system("", msg_type=MessageType.ATTACHMENT_PEER_RESULT, target=sender, **result),
     )

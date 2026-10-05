@@ -95,9 +95,9 @@ async def handle_multihub_message_forward(
         request = decode_message_forward_request(data)
     except MessageForwardWireError as exc:
         logger.warning("Refused malformed message forward from peer %r: %s", sender, exc)
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "Malformed multi-hub message forward", msg_type=MessageType.ERROR, target=sender
             ),
         )
@@ -148,9 +148,9 @@ def _refusal(
 
 async def _send(hub: SynapseHub, websocket: Any, peer: str, fields: dict[str, Any]) -> None:
     """Send one private result frame back to the forwarding peer."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Multi-hub message result",
             msg_type=MessageType.MULTIHUB_MESSAGE_RESULT,
             target=peer,

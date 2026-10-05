@@ -198,8 +198,8 @@ async def _refuse_chat(
 ) -> ChatRouting:
     """Refuse a chat, telling the sender on ``websocket`` when ``report`` is set."""
     if report:
-        await hub._send_json(
-            websocket, hub._system(refusal, msg_type=MessageType.ERROR, target=sender)
+        await hub.send_json(
+            websocket, hub.system(refusal, msg_type=MessageType.ERROR, target=sender)
         )
     return ChatRouting(refusal=refusal)
 
@@ -288,9 +288,9 @@ async def route_chat(
             # K4-WF8: the first copy was accepted; tell the sender instead of routing it
             # again. A system notice, since clients drop chat frames bearing their name.
             hub.counters.chat_duplicates_suppressed += 1
-            await hub._send_json(
+            await hub.send_json(
                 websocket,
-                hub._system(
+                hub.system(
                     f"Chat {client_msg_id!r} was already accepted as message "
                     f"{retry.original.get('msg_id')}; it was not routed again.",
                     target=sender,
@@ -317,7 +317,7 @@ async def route_chat(
             )
     data["type"] = MessageType.CHAT
     data["hub_id"] = hub.hub_id
-    data["msg_id"] = hub._next_msg_id()
+    data["msg_id"] = hub.next_msg_id()
     channel = str(data.get("channel") or "").strip()
     if channel:
         reached = await _route_channel_chat(hub, sender, data, websocket, channel)
@@ -408,9 +408,9 @@ async def route_chat(
         # still mirrored to the relay and journalled above, so the durable feed keeps
         # full visibility for dashboards and the federation follower.
         audience = _directed_audience(recipients, hub.observing_identities(target))
-        successful = await hub._broadcast_directed(data, names=audience, sender_socket=websocket)
+        successful = await hub.broadcast_directed(data, names=audience, sender_socket=websocket)
     else:
-        successful = await hub._broadcast(data)
+        successful = await hub.broadcast(data)
     previous_delivery = delivery.delivered
     delivery = classify_completed_delivery(delivery, successful)
     if directed and previous_delivery and not delivery.delivered:
@@ -484,8 +484,8 @@ async def _escalate_dead_letter(hub: SynapseHub, *, target: str, count: int, sen
             },
         )
     notice = escalation_notice(target, count, sender)
-    await hub._broadcast(
-        hub._system(
+    await hub.broadcast(
+        hub.system(
             notice,
             msg_type=MessageType.DEAD_LETTER_ESCALATION,
             escalation_target=target,
@@ -559,9 +559,9 @@ async def _route_channel_chat(
     deduplication use this same verdict.
     """
     if not hub.channels.is_member(channel, sender):
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 f"not a member of channel '{channel}'",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -576,8 +576,8 @@ async def _route_channel_chat(
     hub.channels.retain_message(channel, data, max_messages=hub.max_history)
     if hub.journal is not None:
         record_chat(hub.journal, data)
-    await hub._mirror_to_relay(data)
-    completed = await asyncio.gather(*(hub._send_to_agent(member, data) for member in recipients))
+    await hub.mirror_to_relay(data)
+    completed = await asyncio.gather(*(hub.send_to_agent(member, data) for member in recipients))
     successful = [member for member, sent in zip(recipients, completed, strict=True) if sent]
     delivery = classify_completed_delivery(
         classify_delivery_liveness(recipients, ()), successful, include_waiters=False
@@ -727,7 +727,7 @@ async def _replay_directed_backlog(
         frame.pop("receipt_requested", None)
         frame["replayed"] = True
         frame["seq"] = event.seq
-        await hub._send_json(websocket, frame)
+        await hub.send_json(websocket, frame)
 
 
 def _mailbox_acl_allows(hub: SynapseHub, connection: str, requested: str) -> bool:

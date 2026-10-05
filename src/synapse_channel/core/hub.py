@@ -778,8 +778,8 @@ class SynapseHub:
             cert_source=federation_cert_source,
             require_per_message_auth=self.require_per_message_auth,
             signed_event_trust=signed_event_trust_bundle is not None,
-            system=self._system,
-            send_json=self._send_json,
+            system=self.system,
+            send_json=self.send_json,
         )
         self.channels = ChannelRegistry()
         self.max_msg_bytes = safe_int(max_msg_bytes, default=DEFAULT_MAX_MSG_BYTES, min_value=1)
@@ -846,7 +846,7 @@ class SynapseHub:
         self._broadcaster = HubBroadcaster(
             self.clients,
             self._relay,
-            system=self._system,
+            system=self.system,
             online_agents=self.online_agents,
         )
         self.hub_id = hub_id or f"syn-{uuid.uuid4().hex[:8]}"
@@ -862,14 +862,14 @@ class SynapseHub:
             metrics_token=self.metrics_token,
             metrics_query_token_ok=self.metrics_query_token_ok,
             insecure_off_loopback=self.insecure_off_loopback,
-            send_json=self._send_json,
-            system=self._system,
+            send_json=self.send_json,
+            system=self.system,
         )
         self._identity_gate = HubIdentityGate(
             require_identity_binding=self.require_identity_binding,
             identity_trust_bundle=self.identity_trust_bundle,
-            send_json=self._send_json,
-            system=self._system,
+            send_json=self.send_json,
+            system=self.system,
             pin_store=self._identity_pins,
         )
         self.connected_clients = self.clients.connected_clients
@@ -886,8 +886,8 @@ class SynapseHub:
             auth_timeout=self.auth_timeout,
             rate_limiter=self.rate_limiter,
             handle_message=self.handle_message,
-            send_json=self._send_json,
-            system=self._system,
+            send_json=self.send_json,
+            system=self.system,
             online_agents=self.online_agents,
             broadcast_presence=self._broadcast_presence,
             drop_waits=self._drop_waits,
@@ -908,8 +908,8 @@ class SynapseHub:
             claim_forwarder=self.claim_forwarder,
             counters=self.counters,
             hub_id=self.hub_id,
-            send_json=self._send_json,
-            system=self._system,
+            send_json=self.send_json,
+            system=self.system,
         )
         self._relay_forwarding = OperatorRelayForwarding(
             namespace_ownership=self.namespace_ownership,
@@ -918,8 +918,8 @@ class SynapseHub:
             observed_asserting_hubs=self.observed_asserting_hubs,
             hub_id=self.hub_id,
             journal=self.journal,
-            send_json=self._send_json,
-            system=self._system,
+            send_json=self.send_json,
+            system=self.system,
         )
         # Resume durable state from the log — leases, chat history, the blackboard,
         # and the ledger-guard seed (message id, finding quota, idempotency cache) —
@@ -943,8 +943,8 @@ class SynapseHub:
         self.journal_corrupt_rows = seeded.corrupt_rows
         self._journal_recovery_gate = HubJournalRecoveryGate(
             self.journal_corrupt_rows,
-            send_json=self._send_json,
-            system=self._system,
+            send_json=self.send_json,
+            system=self.system,
         )
         # The liveness query view combines the reaction store with the live roster and
         # the last-seen map (built with ``state`` above), so it is wired here, after
@@ -971,8 +971,8 @@ class SynapseHub:
             claims=lambda: self.state.claims,
             tasks=lambda: self.blackboard.tasks,
             has_live_waiter=self._liveness.has_live_waiter,
-            broadcast=self._broadcast,
-            system=self._system,
+            broadcast=self.broadcast,
+            system=self.system,
         )
         self._ledger = HubLedgerGuard(
             max_findings_per_agent=self.max_findings_per_agent,
@@ -1006,19 +1006,19 @@ class SynapseHub:
     # -- helpers --------------------------------------------------------------
 
     @property
-    def _message_seq(self) -> int:
+    def message_seq(self) -> int:
         """Current per-hub message-id high-water mark (owned by the ledger guard)."""
         return self._ledger.message_seq
 
-    def _next_msg_id(self) -> int:
+    def next_msg_id(self) -> int:
         """Return a strictly increasing per-hub message sequence number."""
         return self._ledger.next_msg_id()
 
-    def _remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
+    def remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
         """Cache the response of an applied mutation under its idempotency key.
 
-        Thin wrapper over :class:`HubLedgerGuard`, kept because the leasing and
-        memory handlers call ``hub._remember`` directly.
+        Handler surface: the ledger guard owns the cache; a handler that applied
+        a mutation outside the atomic-operation path records its response here.
         """
         self._ledger.remember(data, response)
 
@@ -1044,13 +1044,13 @@ class SynapseHub:
             msg_type,
             data,
             websocket,
-            self._send_json,
+            self.send_json,
             outcomes.append,
         )
         for outcome in outcomes:
             self._record_atomic_outcome(outcome)
         if replayed and outcomes == ["replayed"]:
-            await self._settle_atomic_operation(data)
+            await self.settle_atomic_operation(data)
         return replayed
 
     def _record_atomic_outcome(self, outcome: str) -> None:
@@ -1063,7 +1063,7 @@ class SynapseHub:
         elif outcome == "conflict":
             self.counters.atomic_operations_conflicts += 1
 
-    async def _settle_atomic_operation(self, data: dict[str, Any]) -> None:
+    async def settle_atomic_operation(self, data: dict[str, Any]) -> None:
         """Mark a committed evidence intent projected after successful transport."""
         if self.journal is None:
             return
@@ -1085,7 +1085,7 @@ class SynapseHub:
         except KeyError:
             return
 
-    async def _run_atomic_operation(
+    async def run_atomic_operation(
         self,
         data: dict[str, Any],
         mutate: Callable[[Any], Any],
@@ -1292,7 +1292,7 @@ class SynapseHub:
         self._record_atomic_outcome(execution.outcome)
         return execution
 
-    def _system(self, payload: str, **extra: Any) -> dict[str, Any]:
+    def system(self, payload: str, **extra: Any) -> dict[str, Any]:
         """Build a hub system message stamped with this hub's id."""
         return system_message(payload, hub_id=self.hub_id, **extra)
 
@@ -1426,24 +1426,24 @@ class SynapseHub:
         """Return seconds elapsed since the hub was constructed."""
         return max(0.0, self._clock() - self._started)
 
-    async def _send_json(self, websocket: Any, data: dict[str, Any]) -> None:
+    async def send_json(self, websocket: Any, data: dict[str, Any]) -> None:
         """Serialise and send one message to a single socket (handler surface)."""
         await self._broadcaster.send_json(websocket, data)
 
-    async def _mirror_to_relay(self, data: dict[str, Any]) -> None:
+    async def mirror_to_relay(self, data: dict[str, Any]) -> None:
         """Mirror one broadcast to the lite relay log via :class:`RelayMirror`.
 
-        Kept as a thin wrapper because :mod:`synapse_channel.core.messaging` calls
-        ``hub._mirror_to_relay`` directly; the append, lite encoding, and bounded
-        trimming live in :class:`~synapse_channel.core.hub_relay.RelayMirror`.
+        Handler surface: the chat handler mirrors a channel-scoped message it
+        fans out itself; the append, lite encoding, and bounded trimming live in
+        :class:`~synapse_channel.core.hub_relay.RelayMirror`.
         """
         await self._relay.mirror_async(data)
 
-    async def _broadcast(self, data: dict[str, Any]) -> frozenset[str]:
+    async def broadcast(self, data: dict[str, Any]) -> frozenset[str]:
         """Fan out with bounded writes, returning successful bound socket names."""
         return await self._broadcaster.broadcast(data)
 
-    async def _broadcast_directed(
+    async def broadcast_directed(
         self, data: dict[str, Any], *, names: Iterable[str], sender_socket: Any
     ) -> frozenset[str]:
         """Return successful writes to recipients and granted observers only."""
@@ -1453,7 +1453,7 @@ class SynapseHub:
         """Broadcast a presence update naming who joined or left."""
         await self._broadcaster.broadcast_presence(event, agent)
 
-    async def _send_to_agent(self, agent: str, data: dict[str, Any]) -> bool:
+    async def send_to_agent(self, agent: str, data: dict[str, Any]) -> bool:
         """Send to a named agent's socket; return whether the send succeeded."""
         return await self._broadcaster.send_to_agent(agent, data)
 
@@ -1599,8 +1599,8 @@ class SynapseHub:
         try:
             data = loads_bounded(raw_message)
         except json.JSONDecodeError:
-            await self._send_json(
-                websocket, self._system("Malformed JSON.", msg_type=MessageType.ERROR)
+            await self.send_json(
+                websocket, self.system("Malformed JSON.", msg_type=MessageType.ERROR)
             )
             return
 
@@ -1609,11 +1609,9 @@ class SynapseHub:
         # AttributeError and — caught nowhere on the per-connection loop — drop the
         # socket with a 1011. Reject a non-object envelope at the boundary instead.
         if not isinstance(data, dict):
-            await self._send_json(
+            await self.send_json(
                 websocket,
-                self._system(
-                    "Malformed frame: expected a JSON object.", msg_type=MessageType.ERROR
-                ),
+                self.system("Malformed frame: expected a JSON object.", msg_type=MessageType.ERROR),
             )
             return
 
@@ -1622,8 +1620,8 @@ class SynapseHub:
         if self.host_rate_limiter is not None and not self.host_rate_limiter.allow(
             self._remote_host(websocket)
         ):
-            await self._send_json(
-                websocket, self._system("Host rate limit exceeded.", msg_type=MessageType.ERROR)
+            await self.send_json(
+                websocket, self.system("Host rate limit exceeded.", msg_type=MessageType.ERROR)
             )
             return
 
@@ -1634,9 +1632,9 @@ class SynapseHub:
         # envelope never binds a name or addresses a target it does not spell out.
         mistyped = HubIngress.mistyped_text_field(data)
         if mistyped is not None:
-            await self._send_json(
+            await self.send_json(
                 websocket,
-                self._system(
+                self.system(
                     f"Malformed frame: {mistyped!r} must be a string.",
                     msg_type=MessageType.ERROR,
                 ),
@@ -1744,9 +1742,9 @@ class SynapseHub:
                 stable_hub_id=self.stable_delivery_hub_id,
             )
         except DeliveryRefusal as exc:
-            await self._send_json(
+            await self.send_json(
                 websocket,
-                self._system(
+                self.system(
                     str(exc),
                     msg_type=MessageType.ERROR,
                     target=sender,
@@ -1763,9 +1761,9 @@ class SynapseHub:
             await supersede_old_delivery_sessions(
                 self, target=sender, incarnation=delivery_session.incarnation
             )
-            await self._send_json(
+            await self.send_json(
                 websocket,
-                self._system(
+                self.system(
                     "Delivery session registered.",
                     msg_type=MessageType.DELIVERY_SESSION,
                     target=sender,
@@ -1837,9 +1835,9 @@ class SynapseHub:
             and not self.rate_limiter.allow(sender)
         ):
             self.counters.rate_limited += 1
-            await self._send_json(
+            await self.send_json(
                 websocket,
-                self._system("Rate limit exceeded.", msg_type=MessageType.ERROR, target=sender),
+                self.system("Rate limit exceeded.", msg_type=MessageType.ERROR, target=sender),
             )
             return
 
@@ -1953,9 +1951,9 @@ class SynapseHub:
             return
         handler = DISPATCH.get(msg_type)
         if handler is None:
-            await self._send_to_agent(
+            await self.send_to_agent(
                 sender,
-                self._system(
+                self.system(
                     f"Unknown message type '{msg_type}'.",
                     msg_type=MessageType.ERROR,
                     target=sender,

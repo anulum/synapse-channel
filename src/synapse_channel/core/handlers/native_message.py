@@ -99,9 +99,9 @@ def recorder_binding(hub: SynapseHub, websocket: Any, principal: str) -> str:
 
 
 async def _reject(hub: SynapseHub, websocket: Any, sender: str, text: str, reason: str) -> None:
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             text,
             msg_type=MessageType.NATIVE_MESSAGE_REJECTED,
             target=sender,
@@ -187,7 +187,7 @@ async def handle_native_message_record(
         return record
 
     def prepare(result: dict[str, Any]) -> OperationDraft:
-        recorded = hub._system(
+        recorded = hub.system(
             "Native message recorded.",
             msg_type=MessageType.NATIVE_MESSAGE_RECORDED,
             target=sender,
@@ -207,7 +207,7 @@ async def handle_native_message_record(
         )
 
     try:
-        execution = await hub._run_atomic_operation(data, mutate, prepare)
+        execution = await hub.run_atomic_operation(data, mutate, prepare)
     except _JOURNAL_FAILURES:
         execution = None
     if execution is None or execution.response is None:
@@ -219,7 +219,7 @@ async def handle_native_message_record(
             "native_record_unavailable",
         )
         return
-    await hub._send_json(websocket, execution.response)
+    await hub.send_json(websocket, execution.response)
     # A replay or a conflict is answered before dispatch; one that arrives here lost a
     # race to the same operation, whose settlement this repeats without changing it.
-    await hub._settle_atomic_operation(data)
+    await hub.settle_atomic_operation(data)

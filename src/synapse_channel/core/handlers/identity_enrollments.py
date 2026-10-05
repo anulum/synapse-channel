@@ -320,8 +320,8 @@ async def _apply(
             evicted, code=KEY_ROTATED_CLOSE_CODE, reason="identity key rotated or revoked"
         )
     await _send_result(hub, websocket, sender, result, True, detail, applied_seq)
-    await hub._broadcast(
-        hub._system(
+    await hub.broadcast(
+        hub.system(
             f"Identity key change ({provenance['action']}) for {result.name!r} by operator "
             f"{sender!r}.",
             msg_type=MessageType.SYSTEM,
@@ -359,9 +359,9 @@ async def _send_result(
     audit_seq: int | None,
 ) -> None:
     """Send one private typed verdict to the requesting operator."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             detail,
             msg_type=result.msg_type,
             target=sender,

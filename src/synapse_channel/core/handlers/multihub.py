@@ -82,9 +82,9 @@ async def handle_multihub_log_request(
         snapshot = LogSnapshot(events=(), next_cursor=0)
     else:
         snapshot = _read_snapshot(hub, request)
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Multi-hub log snapshot",
             msg_type=MessageType.MULTIHUB_LOG_SNAPSHOT,
             target=sender,

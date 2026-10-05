@@ -89,8 +89,8 @@ async def handle_dead_letter_forwarding(
                 "peer": sender,
             },
         )
-    await hub._broadcast(
-        hub._system(
+    await hub.broadcast(
+        hub.system(
             incoming_forwarding_notice(notice.target, notice.count, notice.origin_hub_id),
             msg_type=MessageType.DEAD_LETTER_FORWARDING,
             forwarding_target=notice.target,

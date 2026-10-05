@@ -135,7 +135,7 @@ async def handle_attachment(
         ValueError,
     ) as exc:
         result["error"] = str(exc) if isinstance(exc, AttachmentError) else "attachment unavailable"
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system("", msg_type=MessageType.ATTACHMENT_RESULT, target=sender, **result),
+        hub.system("", msg_type=MessageType.ATTACHMENT_RESULT, target=sender, **result),
     )

@@ -103,9 +103,9 @@ async def _send_result(
     audit_seq: int | None,
 ) -> None:
     """Send the private verdict to the advertiser."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             detail,
             msg_type=MessageType.ENTITLEMENT_ADVERT_RESULT,
             target=sender,

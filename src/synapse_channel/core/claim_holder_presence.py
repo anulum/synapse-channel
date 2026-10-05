@@ -179,8 +179,8 @@ async def release_abandoned_claims(hub: SynapseHub) -> list[AbandonedRelease]:
     )
     for item in released:
         hub.counters.claims_released_abandoned += 1
-        await hub._broadcast(
-            hub._system(
+        await hub.broadcast(
+            hub.system(
                 f"Claim '{item.task_id}' released: holder {item.owner} offline for "
                 f"{item.offline_seconds:.0f}s, past the {presence.window:.0f}s lease window.",
                 msg_type=MessageType.RELEASE_GRANTED,

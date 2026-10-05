@@ -148,8 +148,8 @@ async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], webso
     if not refusal and address is not None and address.hub_id not in peers:
         refusal = f"Hub '{address.hub_id}' is not a configured message peer of this hub."
     if refusal or address is None:
-        await hub._send_json(
-            websocket, hub._system(refusal, msg_type=MessageType.ERROR, target=sender)
+        await hub.send_json(
+            websocket, hub.system(refusal, msg_type=MessageType.ERROR, target=sender)
         )
         return False
     data["target"] = str(address)
@@ -173,9 +173,9 @@ async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], webso
             )
         )
     except MessageForwardWireError as exc:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 f"Chat cannot be forwarded: {exc}", msg_type=MessageType.ERROR, target=sender
             ),
         )
@@ -199,10 +199,10 @@ async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], webso
     )
     hub.counters.chat_directed += 1
     if not hub.private_directed_messages:
-        await hub._broadcast(data)
+        await hub.broadcast(data)
     settled = await attempt_forward(hub, entry)
     if entry.notify_sender:
-        await hub._send_json(websocket, forward_receipt_frame(hub, settled, data))
+        await hub.send_json(websocket, forward_receipt_frame(hub, settled, data))
         if settled.state != "pending":
             hub.message_forward_ledger.mark_sender_notified(settled.forward_id, now=time.time())
     return True
@@ -327,7 +327,7 @@ async def deliver_pending_forward_receipts(hub: SynapseHub, *, sender: str) -> N
 
 async def _notify_sender(hub: SynapseHub, entry: OutboxEntry) -> None:
     """Send a settled outcome to its sender when online; otherwise it waits for registration."""
-    if await hub._send_to_agent(entry.sender, forward_receipt_frame(hub, entry)):
+    if await hub.send_to_agent(entry.sender, forward_receipt_frame(hub, entry)):
         hub.message_forward_ledger.mark_sender_notified(entry.forward_id, now=time.time())
 
 
@@ -407,7 +407,7 @@ def forward_receipt_frame(
     client_msg_id = body.get("client_msg_id")
     if isinstance(client_msg_id, str) and client_msg_id:
         fields["client_msg_id"] = client_msg_id
-    return hub._system(text, msg_type=MessageType.DELIVERY_RECEIPT, target=entry.sender, **fields)
+    return hub.system(text, msg_type=MessageType.DELIVERY_RECEIPT, target=entry.sender, **fields)
 
 
 def _object(value: object) -> dict[str, Any]:
@@ -625,7 +625,7 @@ async def forward_who(hub: SynapseHub, sender: str, peer_hub: str) -> dict[str, 
         payload = await _forward_once(hub, peer_hub, request)
     except (DeliveryRefusal, MessageForwardWireError) as exc:
         code = exc.code if isinstance(exc, DeliveryRefusal) else "invalid_shape"
-        return hub._system(
+        return hub.system(
             f"Roster of hub '{peer_hub}' unavailable ({code}): {exc}",
             msg_type=MessageType.ERROR,
             target=sender,
@@ -636,7 +636,7 @@ async def forward_who(hub: SynapseHub, sender: str, peer_hub: str) -> dict[str, 
     for name, session in sessions_raw.items():
         if isinstance(name, str) and name and isinstance(session, dict):
             sessions[f"{name}@{peer_hub}"] = {**session, "hub_id": peer_hub}
-    return hub._system(
+    return hub.system(
         f"Who snapshot of hub {peer_hub}",
         msg_type=MessageType.WHO_SNAPSHOT,
         target=sender,

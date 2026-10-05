@@ -131,9 +131,9 @@ async def handle_inbox_query(
         if isinstance(request_id, str) and 0 < len(request_id) <= 128
         else {}
     )
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Durable inbox page",
             msg_type=MessageType.HISTORY_SNAPSHOT,
             target=sender,

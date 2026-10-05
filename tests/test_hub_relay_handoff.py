@@ -103,7 +103,7 @@ async def test_relay_log_is_bounded_by_trimming(tmp_path: Path) -> None:
 
 async def test_no_relay_log_leaves_mirror_a_noop(tmp_path: Path) -> None:
     hub = SynapseHub(hub_id="syn-test", relay_log=None)
-    await hub._mirror_to_relay({"type": "chat", "sender": "A", "payload": "x"})
+    await hub.mirror_to_relay({"type": "chat", "sender": "A", "payload": "x"})
     assert hub.relay_log is None
     assert not list(tmp_path.iterdir())
 

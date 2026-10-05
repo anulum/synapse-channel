@@ -127,10 +127,10 @@ class _FakeHub:
     def roles_of(self, name: str) -> tuple[str, ...]:
         return tuple(self.agent_roles.get(name, ()))
 
-    def _system(self, text: str, **fields: Any) -> dict[str, Any]:
+    def system(self, text: str, **fields: Any) -> dict[str, Any]:
         return {"text": text, **fields}
 
-    async def _send_json(self, websocket: Any, payload: dict[str, Any]) -> None:
+    async def send_json(self, websocket: Any, payload: dict[str, Any]) -> None:
         self.sent.append(payload)
 
 

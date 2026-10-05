@@ -78,9 +78,9 @@ async def handle_federation_offer_request(
         message = "The federation offer on this hub is unavailable."
         await _send_error(hub, sender, websocket, message)
         return
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Federation-bundle offer",
             msg_type=MessageType.FEDERATION_OFFER,
             target=sender,
@@ -110,7 +110,7 @@ def _read_offer(path: Path) -> FederationPeer:
 
 async def _send_error(hub: SynapseHub, sender: str, websocket: Any, message: str) -> None:
     """Send one private error frame back to the requesting socket."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(message, msg_type=MessageType.ERROR, target=sender),
+        hub.system(message, msg_type=MessageType.ERROR, target=sender),
     )

@@ -83,9 +83,9 @@ async def handle_multihub_claim_request(
         request = decode_claim_forward_request(data)
     except ClaimWireError:
         logger.warning("Refused malformed multi-hub claim request from peer %r", sender)
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "Malformed multi-hub claim request",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -130,8 +130,8 @@ async def handle_multihub_claim_request(
         grant_fields = claim_grant_fields(application.claim)
         # The lease now authoritatively exists on this hub: tell its own agents, exactly as
         # a direct claim does, before relaying the grant back to the forwarding hub.
-        await hub._broadcast(
-            hub._system(application.message, msg_type=MessageType.CLAIM_GRANTED, **grant_fields)
+        await hub.broadcast(
+            hub.system(application.message, msg_type=MessageType.CLAIM_GRANTED, **grant_fields)
         )
         result = ClaimForwardResult(
             granted=True,
@@ -247,9 +247,9 @@ async def _send_result(
     hub: SynapseHub, websocket: Any, sender: str, result: ClaimForwardResult
 ) -> None:
     """Send one private claim-forward result back to the forwarding peer."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Multi-hub claim result",
             msg_type=MessageType.MULTIHUB_CLAIM_RESULT,
             target=sender,

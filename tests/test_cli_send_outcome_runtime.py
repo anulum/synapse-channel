@@ -32,7 +32,7 @@ class ReceiptTransportHub(SynapseHub):
         super().__init__(journal=journal)
         self.profile = profile
 
-    async def _send_json(self, websocket: Any, data: dict[str, Any]) -> None:
+    async def send_json(self, websocket: Any, data: dict[str, Any]) -> None:
         """Exercise delayed, lost, legacy or malformed real receipt transport."""
         if data.get("type") == MessageType.DELIVERY_RECEIPT:
             if self.profile == "delayed":
@@ -48,7 +48,7 @@ class ReceiptTransportHub(SynapseHub):
                 data = {**data, "message_target": "OTHER"}
             elif self.profile == "non_boolean":
                 data = {**data, "delivered": "false"}
-        await super()._send_json(websocket, data)
+        await super().send_json(websocket, data)
 
 
 async def send(uri: str, *, required: bool, timeout: str = "0.05") -> CliResult:

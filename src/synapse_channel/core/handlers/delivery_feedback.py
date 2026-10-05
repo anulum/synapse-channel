@@ -121,7 +121,7 @@ def _delivery_receipt_frame(
         client_msg_id=client_msg_id,
     )
     correlation = {"client_msg_id": client_msg_id} if client_msg_id else {}
-    frame = hub._system(
+    frame = hub.system(
         text,
         msg_type=MessageType.DELIVERY_RECEIPT,
         target=sender,
@@ -184,9 +184,9 @@ async def warn_stale_recipients(
         )
     if not decision.delivered:
         clauses.append("delivery classified no_live_recipient and dead-lettered")
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "; ".join(clauses) + "; a directed message may sit unread",
             msg_type=MessageType.RECIPIENT_LIVENESS_WARNING,
             target=sender,
@@ -248,7 +248,7 @@ async def send_delivery_receipt(
     )
     if hub.journal is not None and message_seq is not None:
         record_delivery_receipt_immediate(hub.journal, audit)
-    await hub._send_json(websocket, frame)
+    await hub.send_json(websocket, frame)
 
 
 def commit_delivery_receipt_request(
@@ -345,7 +345,7 @@ def _expired_receipt_transition(
     audit = expired_receipt_payload(
         entry=entry, message_seq=message_seq, reason="pending_window_evicted"
     )
-    frame = hub._system(
+    frame = hub.system(
         "delivery receipt expired before acknowledgement",
         msg_type=MessageType.DELIVERY_RECEIPT,
         target=entry.sender,
@@ -374,7 +374,7 @@ async def settle_delivery_receipt(
         hub.pending_receipts.claim(message_seq)
         return
     audit = deferred_receipt_payload(entry=entry, message_seq=message_seq, recipient=recipient)
-    frame = hub._system(
+    frame = hub.system(
         f"delivered to {recipient} on reconnect",
         msg_type=MessageType.DELIVERY_RECEIPT,
         target=entry.sender,
@@ -409,12 +409,12 @@ async def deliver_pending_receipt_notifications(
         delivered = False
         if websocket is not None:
             try:
-                await hub._send_json(websocket, pending.frame)
+                await hub.send_json(websocket, pending.frame)
                 delivered = True
             except Exception:
                 delivered = False
         else:
-            delivered = await hub._send_to_agent(sender, pending.frame)
+            delivered = await hub.send_to_agent(sender, pending.frame)
         hub.journal.mark_delivery_notification_attempt(pending.notification_id, delivered=delivered)
 
 

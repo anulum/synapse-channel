@@ -83,7 +83,7 @@ async def test_hub_restart_replays_durable_state(tmp_path: Path) -> None:
     assert "T1" in hub_b.state.claims
     assert hub_b.state.claims["T1"].paths == ("src",)
     assert [m["payload"] for m in hub_b.chat_history] == ["persist me"]
-    assert hub_b._message_seq == 1
+    assert hub_b.message_seq == 1
 
 
 async def test_hub_restart_replays_the_idempotency_guard(tmp_path: Path) -> None:

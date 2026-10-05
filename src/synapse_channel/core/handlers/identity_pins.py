@@ -189,8 +189,8 @@ async def handle_identity_pin_reclaim(
             code=PIN_RECLAIM_CLOSE_CODE,
             reason="identity pin reclaimed",
         )
-    await hub._broadcast(
-        hub._system(
+    await hub.broadcast(
+        hub.system(
             f"Identity pin for {pin_name!r} was reclaimed by operator {sender!r}.",
             msg_type=MessageType.SYSTEM,
             event_kind=EventKind.IDENTITY_PIN_RECLAIM,
@@ -241,9 +241,9 @@ async def _send_result(
     audit_seq: int | None = None,
 ) -> None:
     """Send one private typed reclaim verdict to the requesting operator."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             detail,
             msg_type=MessageType.IDENTITY_PIN_RECLAIM_RESULT,
             target=sender,
