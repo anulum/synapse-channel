@@ -877,7 +877,7 @@ class SynapseHub:
         self.agent_sockets = self.clients.agent_sockets
         self.agent_roles = self.clients.agent_roles
         self.socket_agent = self.clients.socket_agent
-        self._waits: dict[str, set[str]] = {}
+        self.waits: dict[str, set[str]] = {}
         self.capabilities = CapabilityRegistry(trust_bundle=capability_card_trust_bundle)
         self._connection = HubConnection(
             self.clients,
@@ -1464,7 +1464,7 @@ class SynapseHub:
         the agent; a holder going offline is covered by lease expiry plus the
         live ownership resolution at cycle-check time.
         """
-        self._waits.pop(agent, None)
+        self.waits.pop(agent, None)
 
     # -- registration + name resolution --------------------------------------
 
@@ -1678,7 +1678,7 @@ class SynapseHub:
                 return
             # A heartbeat can expire leases; a wait on a task that just lost
             # its holder is stale and must not refuse a later legitimate wait.
-            self._waits = prune_waits(self._waits, self.state.claims)
+            self.waits = prune_waits(self.waits, self.state.claims)
 
         heartbeat_applied = await self.state_mutations.run(
             self.state,

@@ -158,10 +158,10 @@ async def test_handoff_clears_recipient_wait() -> None:
             await read_until_type(ws_a, "claim_granted")
             await send_json(ws_b, sender="B", type="wait_request", task_id="T1")
             await read_until_type(ws_b, "wait_granted")
-            assert hub._waits["B"] == {"T1"}
+            assert hub.waits["B"] == {"T1"}
             await send_json(ws_a, sender="A", type="handoff", task_id="T1", to_agent="B")
             await read_until_type(ws_a, "handoff_granted")
-            assert "B" not in hub._waits
+            assert "B" not in hub.waits
 
 
 async def test_duplicate_handoff_is_not_reapplied() -> None:

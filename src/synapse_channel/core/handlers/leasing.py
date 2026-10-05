@@ -66,7 +66,7 @@ class _ClaimMutationHub(Protocol):
 
     state: SynapseState
     journal: EventStore | None
-    _waits: dict[str, set[str]]
+    waits: dict[str, set[str]]
 
 
 @dataclass
@@ -74,7 +74,7 @@ class _CandidateClaimHub:
     """Private claim context used by the async copy-on-write actor."""
 
     state: SynapseState
-    _waits: dict[str, set[str]]
+    waits: dict[str, set[str]]
     journal: EventStore | None = None
 
 
@@ -295,7 +295,7 @@ def apply_claim(
     if claim is not None:
         # Only the SATISFIED wait is cleared: a claim or renewal for task U must
         # never erase the claimant's still-open wait on an unrelated task T.
-        _clear_satisfied_wait(hub._waits, claimant, task_id)
+        _clear_satisfied_wait(hub.waits, claimant, task_id)
         return ClaimApplication(ok=True, message=message, task_id=task_id, claim=claim)
     return ClaimApplication(
         ok=False,
@@ -319,7 +319,7 @@ async def apply_claim_async(
     def mutate(state: SynapseState) -> ClaimApplication:
         candidate_context = _CandidateClaimHub(
             state=state,
-            _waits={waiter: set(tasks) for waiter, tasks in hub._waits.items()},
+            waits={waiter: set(tasks) for waiter, tasks in hub.waits.items()},
         )
         return apply_claim(
             candidate_context,
@@ -347,7 +347,7 @@ async def apply_claim_async(
 
     def publish(application: ClaimApplication) -> None:
         if application.claim is not None:
-            _clear_satisfied_wait(hub._waits, claimant, application.task_id)
+            _clear_satisfied_wait(hub.waits, claimant, application.task_id)
 
     application = await hub.state_mutations.run(
         hub.state,
@@ -409,7 +409,7 @@ async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], webso
         return apply_claim(
             _CandidateClaimHub(
                 state=state,
-                _waits={waiter: set(tasks) for waiter, tasks in hub._waits.items()},
+                waits={waiter: set(tasks) for waiter, tasks in hub.waits.items()},
             ),
             sender,
             data,
@@ -449,7 +449,7 @@ async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], webso
         prepare,
         persist_uncommitted=persist_denial,
         publish=lambda application: (
-            _clear_satisfied_wait(hub._waits, sender, application.task_id)
+            _clear_satisfied_wait(hub.waits, sender, application.task_id)
             if application.claim is not None
             else None
         ),
@@ -617,7 +617,7 @@ async def handle_release(
         if result[0]:
             # A released task has no holder: prune its wait edges so they
             # cannot refuse a later legitimate wait as a false positive.
-            hub._waits = prune_waits(hub._waits, hub.state.claims)
+            hub.waits = prune_waits(hub.waits, hub.state.claims)
             if prepared_progress:
                 hub.blackboard.restore_progress(prepared_progress[0])
 
@@ -790,7 +790,7 @@ async def handle_handoff(
 
     def publish(result: tuple[bool, str, TaskClaim | None]) -> None:
         if result[2] is not None:
-            _clear_satisfied_wait(hub._waits, to_agent, task_id)
+            _clear_satisfied_wait(hub.waits, to_agent, task_id)
             if prepared_progress:
                 hub.blackboard.restore_progress(prepared_progress[0])
 
@@ -1037,7 +1037,7 @@ async def handle_wait_request(
             ),
         )
         return
-    if would_create_cycle(hub._waits, hub.state.claims, sender, holder):
+    if would_create_cycle(hub.waits, hub.state.claims, sender, holder):
         await hub.send_json(
             websocket,
             hub.system(
@@ -1052,7 +1052,7 @@ async def handle_wait_request(
     # The edge keys the waited TASK, not the incumbent holder: ownership is
     # resolved live at cycle-check time, so a later handoff or release can
     # never leave a stale agent edge behind.
-    hub._waits.setdefault(sender, set()).add(task_id)
+    hub.waits.setdefault(sender, set()).add(task_id)
     await hub.send_json(
         websocket,
         hub.system(

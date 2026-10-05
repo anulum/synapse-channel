@@ -42,7 +42,8 @@ All notable changes to this project are documented here.
   old names on a hub must use the new name; they were never part of the stable
   Python API, which is the package export list. The static helper
   `SynapseHub._optional_int` is now the function
-  `core.numeric_coercion.optional_int_field`.
+  `core.numeric_coercion.optional_int_field`, and the hub's wait graph is the
+  attribute `waits`.
 
 ### Fixed
 

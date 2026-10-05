@@ -204,14 +204,14 @@ async def test_advisory_wait_needs_no_actor_gate_and_survives_in_flight_commit(
     # the complete pre-commit live state. The advisory wait is recorded directly,
     # without taking the actor gate.
     await leasing.handle_wait_request(hub, "W", {"task_id": "T1"}, _FakeSocket())
-    assert hub._waits.get("W") == {"T1"}
+    assert hub.waits.get("W") == {"T1"}
     assert sends and sends[-1]["task_id"] == "T1"
 
     # Publishing the unrelated durable commit does not touch the wait graph:
     # publish_from replaces SynapseState only, never the hub's advisory waits.
     allow_commit.set()
     await claim_task
-    assert hub._waits.get("W") == {"T1"}
+    assert hub.waits.get("W") == {"T1"}
     assert "T1" in hub.state.claims
     assert "T2" in hub.state.claims
     store.close()
