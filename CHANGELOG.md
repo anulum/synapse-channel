@@ -13,6 +13,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Record-only `native_message_record` verb (wire version 7). A seat leaves a
+  durable record of a message that travelled over a vendor's own channel, such
+  as a direct message between two Claude Code sessions or a queued Codex
+  message. The hub stores one `native_message` event and delivers nothing; it
+  stamps the recorder, the time and how the recorder's name was bound to the
+  connection, and accepts a record only from the seat on its own side.
+
 ### Fixed
 
 - End refused WebSocket upgrade attempts cleanly in the Python client. Health

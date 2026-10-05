@@ -59,6 +59,7 @@ from synapse_channel.core.handlers.message_forward import handle_multihub_messag
 from synapse_channel.core.handlers.messaging import handle_ack, handle_chat, handle_heartbeat
 from synapse_channel.core.handlers.multihub import handle_multihub_log_request
 from synapse_channel.core.handlers.multihub_claim import handle_multihub_claim_request
+from synapse_channel.core.handlers.native_message import handle_native_message_record
 from synapse_channel.core.handlers.offerings import handle_advertise, handle_resource
 from synapse_channel.core.handlers.operator_relay import handle_operator_relay_request
 from synapse_channel.core.handlers.planning import (
@@ -138,6 +139,7 @@ DISPATCH: dict[str, Handler] = {
     MessageType.IDENTITY_REVOKE: handle_identity_revoke,
     MessageType.ENTITLEMENT_ADVERT: handle_entitlement_advert,
     MessageType.GUARD_DENIAL: handle_guard_denial,
+    MessageType.NATIVE_MESSAGE_RECORD: handle_native_message_record,
     **{alias: handle_resource for alias in RESOURCE_TYPE_ALIASES},
 }
 

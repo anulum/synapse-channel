@@ -107,6 +107,7 @@ GATED_MUTATIONS = (
             MessageType.IDENTITY_REVOKE,
             MessageType.ENTITLEMENT_ADVERT,
             MessageType.GUARD_DENIAL,
+            MessageType.NATIVE_MESSAGE_RECORD,
         }
     )
     | _BOARD_TYPES
@@ -204,6 +205,8 @@ def required_accesses(msg_type: str, data: dict[str, Any]) -> list[tuple[str, Ta
         return [(IDENTITY_ENROLL, Target("agent", str(data.get("name") or "")))]
     if msg_type == MessageType.GUARD_DENIAL:
         return [(EVIDENCE, Target("evidence", "guard-denial"))]
+    if msg_type == MessageType.NATIVE_MESSAGE_RECORD:
+        return [(EVIDENCE, Target("evidence", "native-message"))]
     if msg_type in _CHANNEL_TYPES:
         return [(MESSAGE, Target("channel", str(data.get("channel") or "")))]
     if msg_type in _RECALL_TYPES:

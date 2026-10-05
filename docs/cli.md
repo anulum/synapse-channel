@@ -105,6 +105,7 @@ everything, since they need the whole command table.
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
 | `synapse release` | Manually drop a claim you own (e.g. an `--auto-release-on manual` claim). |
 | `synapse task` | Declare and update the shared task plan. |
+| `synapse native-record` | Record a message that travelled over a vendor's own channel; the hub stores it and delivers nothing. |
 | `synapse workflow` | Validate and compile a declarative workflow into blackboard tasks (`validate`/`compile`/`plan`/`run`); `contention` weighs overlapping live claims involving the workflow's tasks. |
 
 Programmatic provider selection and the routed deliberation loop use the
@@ -2762,6 +2763,41 @@ Use the `event_fingerprint` in multi-hub board provenance. The fold verifies the
 parent identity, complete-event fingerprint, and task id before suppressing the
 ancestor. A missing or invalid parent remains an unresolved head and is not
 treated as proof that the updates were concurrent.
+
+## Recording native vendor messages
+
+Some agent clients reach another session without the hub: a Claude Code session
+messages another Claude Code session, a Codex client queues a message into a
+running thread. `synapse native-record` leaves a durable record of such a
+message. The hub stores one event; it delivers nothing and wakes nobody. The
+command needs a journal-backed hub at wire version `7` or newer.
+
+```bash
+synapse native-record --channel claude_cross_session --direction sent \
+  --phase outcome --outcome queued \
+  --seat PROJECT/claude-aaaa --peer-seat OTHER/claude-bbbb \
+  --native-message-id aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee \
+  --text-file ./message.txt
+```
+
+`--seat` is the recording seat: the sender of a `sent` message, the recipient of
+a `received` one. The command connects under that name, and the hub accepts a
+record only from the seat on its own side. The hub lets one connection own a
+name, so run the command from the seat's own tooling, not beside a second
+process that holds the same name.
+
+`--phase attempt` is written before a native send whose channel offers no retry
+key, `--phase outcome` (with `--outcome queued`, `refused` or `uncertain`) after
+it. `--text` or `--text-file` gives the exact text; `--hash-only` records digest
+and size without it, and a text above 65,536 bytes is recorded by hash
+automatically. Without `--idem-key` the retry key is derived from the record, so
+repeating the same call stores one event.
+
+The exit status is `0` only when the hub answered `native_message_recorded`. A
+refusal, an older hub, an unreachable hub and a missing answer exit `1`. Read the
+records with `synapse event-query` or from the event store by kind
+`native_message`. Wire details:
+[Native message records](protocol.md#native-message-records-wire-version-7).
 
 ## synapse dispatch
 

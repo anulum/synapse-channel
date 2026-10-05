@@ -44,6 +44,7 @@ _MUTATING_TYPES = (
             MessageType.HANDOFF,
             MessageType.CHECKPOINT,
             MessageType.GUARD_DENIAL,
+            MessageType.NATIVE_MESSAGE_RECORD,
             MessageType.LEDGER_TASK,
             MessageType.LEDGER_TASK_UPDATE,
             MessageType.LEDGER_PROGRESS,

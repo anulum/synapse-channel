@@ -32,7 +32,7 @@ breaking stable public Python API change requires a package major release, while
 a wire-incompatible change bumps the independently versioned wire protocol.
 
 The **wire-protocol version is decoupled from the package version**.
-`synapse_channel.core.protocol.WIRE_PROTOCOL_VERSION` (an integer, currently `6`)
+`synapse_channel.core.protocol.WIRE_PROTOCOL_VERSION` (an integer, currently `7`)
 changes on a wire vocabulary change, so it is a stable compatibility
 signal rather than a release counter. The hub advertises it in the `welcome`
 handshake as `protocol_version` and in `/health`; a client reads the peer's
