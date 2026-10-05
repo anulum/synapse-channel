@@ -43,7 +43,11 @@ All notable changes to this project are documented here.
   Python API, which is the package export list. The static helper
   `SynapseHub._optional_int` is now the function
   `core.numeric_coercion.optional_int_field`, and the hub's wait graph is the
-  attribute `waits`.
+  attribute `waits`. The identity members the handlers read are the public
+  attributes `identity_pins`, `static_identity_trust`,
+  `enrolled_identity_keys`, `enrollment_rate`, `clock` and `liveness`; an
+  enrolment, rotation or revocation takes effect in memory through
+  `SynapseHub.replace_enrolled_identity_keys`.
 
 ### Fixed
 

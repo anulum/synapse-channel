@@ -50,15 +50,15 @@ async def handle_identity_pin_reclaim(
     expected_key_id = str(data.get("expected_key_id") or "").strip()
     reason = str(data.get("reason") or "").strip()
     break_glass = data.get("break_glass") is True
-    pin = hub._identity_pins.pinned(pin_name)
+    pin = hub.identity_pins.pinned(pin_name)
     owner_socket = hub.clients.agent_sockets.get(pin_name)
     owner_online = owner_socket is not None
     lease_live = hub.clients.ownership.is_leased(pin_name)
-    stale_owner_reclaimable = owner_online and hub._liveness.stale_owner_reclaimable(
+    stale_owner_reclaimable = owner_online and hub.liveness.stale_owner_reclaimable(
         pin_name,
         ttl_seconds=hub.clients.ownership.offline_ttl,
     )
-    requester_pin = hub._identity_pins.pinned(sender)
+    requester_pin = hub.identity_pins.pinned(sender)
     requester_bound = hub.require_identity_binding or requester_pin is not None
     journal = hub.journal
     denial = pin_reclaim_denial(
@@ -111,7 +111,7 @@ async def handle_identity_pin_reclaim(
         journal, {**provenance, "status": "approved", "applied": False}
     )
     try:
-        removed = hub._identity_pins.reclaim(pin_name, expected_key_id=expected_key_id)
+        removed = hub.identity_pins.reclaim(pin_name, expected_key_id=expected_key_id)
     except OSError:
         logger.exception("Identity pin reclaim persistence failed")
         detail = "could not persist the reclaimed pin table"

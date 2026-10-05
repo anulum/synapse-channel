@@ -42,7 +42,7 @@ async def handle_entitlement_advert(
     raw = data.get("advert")
     alias = raw.get("pool_alias") if isinstance(raw, dict) else None
     alias_text = alias if isinstance(alias, str) else ""
-    requester_pin = hub._identity_pins.pinned(sender)
+    requester_pin = hub.identity_pins.pinned(sender)
     denial = ""
     if hub.journal is None:
         denial = "advertisements need a hub with a durable journal"

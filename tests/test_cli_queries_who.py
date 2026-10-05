@@ -468,10 +468,10 @@ async def test_who_under_a_foreign_key_fails_loudly_not_silently(
         try:
             assert await owner.wait_until_ready(3.0)
             for _ in range(60):
-                if hub._identity_pins.pinned(name) is not None:
+                if hub.identity_pins.pinned(name) is not None:
                     break
                 await asyncio.sleep(0.05)
-            assert hub._identity_pins.pinned(name) is not None
+            assert hub.identity_pins.pinned(name) is not None
         finally:
             owner.running = False
             owner_task.cancel()
@@ -524,10 +524,10 @@ async def test_who_recovers_from_a_stale_subject_pin_without_replacing_it(
         owner_task = asyncio.create_task(owner.connect())
         assert await owner.wait_until_ready(3.0)
         for _ in range(60):
-            if hub._identity_pins.pinned(name) is not None:
+            if hub.identity_pins.pinned(name) is not None:
                 break
             await asyncio.sleep(0.05)
-        original_pin = hub._identity_pins.pinned(name)
+        original_pin = hub.identity_pins.pinned(name)
         assert original_pin is not None
         owner.running = False
         owner_task.cancel()
@@ -545,7 +545,7 @@ async def test_who_recovers_from_a_stale_subject_pin_without_replacing_it(
             peer.running = False
             peer_task.cancel()
 
-        assert hub._identity_pins.pinned(name) == original_pin
+        assert hub.identity_pins.pinned(name) == original_pin
 
     assert code == 0
     output = capsys.readouterr().out

@@ -144,6 +144,7 @@ from synapse_channel.core.merkle_checkpoint import (
 )
 from synapse_channel.core.message_auth import (
     DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
+    EventSignatureKey,
     EventSignatureTrustBundle,
     MessageAuthKey,
     MessageReplayCache,
@@ -706,30 +707,30 @@ class SynapseHub:
                 "online identity enrolment needs an identity trust bundle and a durable "
                 "journal: pass --identity-trust and --db with --identity-enrollments"
             )
-        self._static_identity_trust = identity_trust_bundle
+        self.static_identity_trust = identity_trust_bundle
         self.identity_enrollment_path = (
             Path(identity_enrollment_path).expanduser() if identity_enrollment_path else None
         )
-        self._enrolled_identity_keys = (
+        self.enrolled_identity_keys = (
             load_enrolled_keys(self.identity_enrollment_path)
             if self.identity_enrollment_path is not None
             else {}
         )
         self.identity_trust_bundle = (
-            merge_enrolled_keys(identity_trust_bundle, self._enrolled_identity_keys)
+            merge_enrolled_keys(identity_trust_bundle, self.enrolled_identity_keys)
             if identity_trust_bundle is not None and self.identity_enrollment_path is not None
             else identity_trust_bundle
         )
         self.identity_enrollment_namespaces = frozenset(
             namespace.strip() for namespace in identity_enrollment_namespaces if namespace.strip()
         )
-        self._enrollment_rate = EnrollmentRateLimiter(
+        self.enrollment_rate = EnrollmentRateLimiter(
             limit=max(0, int(identity_enrollment_rate)),
             window_seconds=max(0.0, float(identity_enrollment_window_seconds)),
         )
         self.require_identity_binding = bool(require_identity_binding)
         self.identity_pin_path = Path(identity_pin_path).expanduser() if identity_pin_path else None
-        self._identity_pins = IdentityPinStore(path=self.identity_pin_path)
+        self.identity_pins = IdentityPinStore(path=self.identity_pin_path)
         self.private_directed_messages = bool(private_directed_messages)
         self.warn_stale_recipients = bool(warn_stale_recipients)
         self.recipient_liveness_window = max(
@@ -783,8 +784,8 @@ class SynapseHub:
         )
         self.channels = ChannelRegistry()
         self.max_msg_bytes = safe_int(max_msg_bytes, default=DEFAULT_MAX_MSG_BYTES, min_value=1)
-        self._clock = clock or time.monotonic
-        self._started = self._clock()
+        self.clock = clock or time.monotonic
+        self._started = self.clock()
         self.counters = HubCounters()
         if self.journal is not None:
             self.counters.operation_outbox_pending = self.journal.pending_operation_outbox_count()
@@ -794,7 +795,7 @@ class SynapseHub:
             max_unauth_clients=max_unauth_clients,
             max_connections_per_host=max_connections_per_host,
             takeover_cooldown=takeover_cooldown,
-            clock=self._clock,
+            clock=self.clock,
             takeover_oscillation_window=takeover_oscillation_window,
             takeover_oscillation_threshold=takeover_oscillation_threshold,
             takeover_quarantine=takeover_quarantine,
@@ -814,7 +815,7 @@ class SynapseHub:
                 self.multihub_serving_policy, identity_source=self.clients.identity_proof
             )
         self.claim_holders = ClaimHolderPresence(
-            clock=self._clock, started_at=self._started, window=self.lease_offline_ttl
+            clock=self.clock, started_at=self._started, window=self.lease_offline_ttl
         )
         self.shutdown_close_timeout = max(
             safe_float(shutdown_close_timeout, default=DEFAULT_SHUTDOWN_CLOSE_TIMEOUT), 0.1
@@ -870,7 +871,7 @@ class SynapseHub:
             identity_trust_bundle=self.identity_trust_bundle,
             send_json=self.send_json,
             system=self.system,
-            pin_store=self._identity_pins,
+            pin_store=self.identity_pins,
         )
         self.connected_clients = self.clients.connected_clients
         self.unauth_clients = self.clients.unauth_clients
@@ -950,14 +951,14 @@ class SynapseHub:
         # the last-seen map (built with ``state`` above), so it is wired here, after
         # ``state`` exists. The store itself is created earlier so the connection's
         # forget hook and the frame handler's touch can reference it.
-        self._liveness = HubLivenessView(
+        self.liveness = HubLivenessView(
             self._recipient_liveness,
             enabled=self.warn_stale_recipients,
             waiter_window_seconds=self.waiter_liveness_window,
             online_agents=self.online_agents,
             agent_sockets=self.agent_sockets,
             last_seen=self.state.last_seen,
-            clock=self._clock,
+            clock=self.clock,
         )
         self.chat_history = seeded.chat_history
         # K4-WF8: a retried chat (same sender and client_msg_id) whose first copy reached
@@ -970,7 +971,7 @@ class SynapseHub:
         self._dark_seats = DarkSeatMonitor(
             claims=lambda: self.state.claims,
             tasks=lambda: self.blackboard.tasks,
-            has_live_waiter=self._liveness.has_live_waiter,
+            has_live_waiter=self.liveness.has_live_waiter,
             broadcast=self.broadcast,
             system=self.system,
         )
@@ -1406,7 +1407,7 @@ class SynapseHub:
         :meth:`~synapse_channel.core.hub_liveness.HubLivenessView.recipients_without_live_waiter`,
         kept because the chat handler and tests call ``hub.recipients_without_live_waiter``.
         """
-        return self._liveness.recipients_without_live_waiter(recipients)
+        return self.liveness.recipients_without_live_waiter(recipients)
 
     def roster_liveness(self) -> dict[str, dict[str, Any]]:
         """Per-agent liveness annotation for the ``/who`` roster (handler surface).
@@ -1415,7 +1416,7 @@ class SynapseHub:
         :meth:`~synapse_channel.core.hub_liveness.HubLivenessView.roster_liveness`, kept
         because the who-snapshot handler and tests call ``hub.roster_liveness``.
         """
-        return self._liveness.roster_liveness()
+        return self.liveness.roster_liveness()
 
     def _claim_holder_left(self, name: str) -> None:
         """Start the offline window for ``name`` when it still holds a claim."""
@@ -1424,7 +1425,7 @@ class SynapseHub:
 
     def uptime_seconds(self) -> float:
         """Return seconds elapsed since the hub was constructed."""
-        return max(0.0, self._clock() - self._started)
+        return max(0.0, self.clock() - self._started)
 
     async def send_json(self, websocket: Any, data: dict[str, Any]) -> None:
         """Serialise and send one message to a single socket (handler surface)."""
@@ -1775,7 +1776,7 @@ class SynapseHub:
             # heartbeat is deliberately not a reaction: it proves the socket, not the
             # agent. Only written when the warning is enabled, so the default open hub
             # keeps no per-frame liveness state.
-            self._recipient_liveness.touch(sender, self._clock())
+            self._recipient_liveness.touch(sender, self.clock())
         if is_new_agent:
             await self._broadcast_presence("joined", sender)
         # A channel-scoped frame is audience-restricted, so its body must not land
@@ -2060,6 +2061,35 @@ class SynapseHub:
         key_id = signature.get("key_id") if isinstance(signature, dict) else None
         if self.require_identity_binding and isinstance(key_id, str) and key_id:
             self.clients.record_identity_proof(websocket, sender, key_id)
+
+    def replace_enrolled_identity_keys(self, enrolled: dict[str, EventSignatureKey]) -> None:
+        """Make ``enrolled`` the hub's online-enrolled identity keys (handler surface).
+
+        The single place where an enrolment, rotation or revocation takes effect
+        in memory. Three things must agree afterwards: the enrolled keys, the
+        effective trust bundle (the operator's static bundle merged with them),
+        and the bundle the identity gate verifies later registrations against.
+        The caller has already written the audit record and persisted the store.
+
+        Parameters
+        ----------
+        enrolled : dict[str, EventSignatureKey]
+            Every enrolled key by key id, revoked ones included.
+
+        Raises
+        ------
+        ValueError
+            When the hub has no static identity trust bundle to merge with.
+        IdentityEnrollmentError
+            When the merge is refused; nothing has changed in that case.
+        """
+        static = self.static_identity_trust
+        if static is None:
+            raise ValueError("identity enrolment needs an identity trust bundle on the hub")
+        bundle = merge_enrolled_keys(static, enrolled)
+        self.enrolled_identity_keys = enrolled
+        self.identity_trust_bundle = bundle
+        self._identity_gate.replace_trust_bundle(bundle)
 
     def _peer_hub_identity_proven(self, sender: str, websocket: Any) -> bool:
         """Return whether ``sender`` is a peer hub proven by its pinned client certificate.

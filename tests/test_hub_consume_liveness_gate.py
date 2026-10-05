@@ -156,7 +156,7 @@ async def test_socket_keepalives_cannot_hide_a_dead_letter_or_pin_forever(
         target_task = await _start(target)
         await _await_online(hub, PIN_NAME)
         assert await _await_reaction(hub, PIN_NAME) == 5_000.0
-        pin = hub._identity_pins.pinned(PIN_NAME)
+        pin = hub.identity_pins.pinned(PIN_NAME)
         assert pin is not None
 
         clock.now = 5_006.0
@@ -228,7 +228,7 @@ async def test_socket_keepalives_cannot_hide_a_dead_letter_or_pin_forever(
         assert applied == 0
         await _await_offline(hub, PIN_NAME)
         assert target.last_close_code == PIN_RECLAIM_CLOSE_CODE
-        assert hub._identity_pins.pinned(PIN_NAME) is None
+        assert hub.identity_pins.pinned(PIN_NAME) is None
 
         replacement = SynapseAgent(
             PIN_NAME,
@@ -240,7 +240,7 @@ async def test_socket_keepalives_cannot_hide_a_dead_letter_or_pin_forever(
         )
         replacement_task = await _start(replacement)
         await _await_online(hub, PIN_NAME)
-        replacement_pin = hub._identity_pins.pinned(PIN_NAME)
+        replacement_pin = hub.identity_pins.pinned(PIN_NAME)
         assert replacement_pin is not None and replacement_pin.key_id != pin.key_id
         await _stop(replacement, replacement_task)
         await _stop(target, target_task)
