@@ -40,7 +40,9 @@ All notable changes to this project are documented here.
   names with a leading underscore. Behaviour, the wire and the CLI are
   unchanged. Code outside this repository that calls or overrides one of the
   old names on a hub must use the new name; they were never part of the stable
-  Python API, which is the package export list.
+  Python API, which is the package export list. The static helper
+  `SynapseHub._optional_int` is now the function
+  `core.numeric_coercion.optional_int_field`.
 
 ### Fixed
 

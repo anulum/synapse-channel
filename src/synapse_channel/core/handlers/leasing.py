@@ -38,7 +38,7 @@ from synapse_channel.core.journal import (
     record_task_update,
 )
 from synapse_channel.core.ledger import ProgressNote
-from synapse_channel.core.numeric_coercion import safe_float
+from synapse_channel.core.numeric_coercion import optional_int_field, safe_float
 from synapse_channel.core.path_identity import (
     PathIdentityError,
     parse_optional_claim_scope_identity,
@@ -132,7 +132,7 @@ async def _refuse_unfenced(
     bool
         ``True`` when the frame was refused and the caller must stop.
     """
-    if not hub.require_fencing_epoch or hub._optional_int(data, "epoch") is not None:
+    if not hub.require_fencing_epoch or optional_int_field(data, "epoch") is not None:
         return False
     await hub.send_json(
         websocket,
@@ -520,8 +520,8 @@ async def handle_task_update(
             status=str(status) if status else None,
             note=str(note) if note is not None else None,
             data_ref=str(data_ref) if data_ref is not None else None,
-            epoch=hub._optional_int(data, "epoch"),
-            expected_version=hub._optional_int(data, "expected_version"),
+            epoch=optional_int_field(data, "epoch"),
+            expected_version=optional_int_field(data, "expected_version"),
         )
         return ok, message, state.claims.get(task_id) if ok else None
 
@@ -603,7 +603,7 @@ async def handle_release(
     journal = hub.journal
 
     def mutate(state: SynapseState) -> tuple[bool, str]:
-        return state.release(sender, task_id, epoch=hub._optional_int(data, "epoch"))
+        return state.release(sender, task_id, epoch=optional_int_field(data, "epoch"))
 
     def persist(result: tuple[bool, str]) -> None:
         if journal is None:
@@ -775,7 +775,7 @@ async def handle_handoff(
             task_id,
             to_agent,
             note=str(note) if note is not None else None,
-            epoch=hub._optional_int(data, "epoch"),
+            epoch=optional_int_field(data, "epoch"),
         )
         return ok, message, state.claims.get(task_id) if ok else None
 
@@ -926,7 +926,7 @@ async def handle_checkpoint(
             sender,
             task_id,
             checkpoint,
-            epoch=hub._optional_int(data, "epoch"),
+            epoch=optional_int_field(data, "epoch"),
         )
         return ok, message, state.claims.get(task_id) if ok else None
 

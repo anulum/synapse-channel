@@ -1457,33 +1457,6 @@ class SynapseHub:
         """Send to a named agent's socket; return whether the send succeeded."""
         return await self._broadcaster.send_to_agent(agent, data)
 
-    @staticmethod
-    def _optional_int(data: dict[str, Any], key: str) -> int | None:
-        """Extract an optional integer field from a message, or ``None``.
-
-        Booleans and non-numeric values are treated as absent so a stray ``true``
-        is never read as a guard value; a non-finite float (``inf``/``nan``, which a
-        JSON ``1e400`` decodes to) is treated as absent too, since ``int()`` of it
-        raises and would otherwise escape the frame handler as an unhandled error.
-
-        Parameters
-        ----------
-        data : dict[str, Any]
-            The decoded message.
-        key : str
-            The field to read.
-
-        Returns
-        -------
-        int or None
-            The integer value, or ``None`` when the field is absent, not numeric,
-            or a non-finite float.
-        """
-        value = data.get(key)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            return None
-        return safe_int(value, default=None, allow_bool=False)
-
     def _drop_waits(self, agent: str) -> None:
         """Remove a disconnecting agent's outgoing wait edges.
 
