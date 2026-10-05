@@ -13,6 +13,8 @@ import hashlib
 from typing import Any
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from synapse_channel.core.native_message import (
     MAX_NATIVE_TEXT_BYTES,
@@ -220,3 +222,110 @@ def test_attempt_and_outcome_of_one_message_never_share_a_key() -> None:
         frame(phase="attempt", outcome=None, native_message_id=None)
     )
     assert native_idempotency_key(attempt) == native_idempotency_key(attempt_without_id)
+
+
+def test_inline_bound_is_inclusive_at_exactly_the_limit() -> None:
+    at_limit = "x" * MAX_NATIVE_TEXT_BYTES
+    record = parse_native_message_record(
+        frame(
+            text=at_limit,
+            text_bytes=MAX_NATIVE_TEXT_BYTES,
+            text_sha256=hashlib.sha256(at_limit.encode("utf-8")).hexdigest(),
+        )
+    )
+    assert record["text"] == at_limit
+    over = at_limit + "x"
+    with pytest.raises(NativeMessageError) as refused:
+        parse_native_message_record(
+            frame(
+                text=over,
+                text_bytes=MAX_NATIVE_TEXT_BYTES + 1,
+                text_sha256=hashlib.sha256(over.encode("utf-8")).hexdigest(),
+            )
+        )
+    assert refused.value.reason == "native_record_text_too_large"
+
+
+def test_phase_alone_separates_the_keys_of_a_message_without_a_native_id() -> None:
+    attempt = parse_native_message_record(
+        frame(phase="attempt", outcome=None, native_message_id=None)
+    )
+    outcome = parse_native_message_record(frame(native_message_id=None))
+    assert native_idempotency_key(attempt) != native_idempotency_key(outcome)
+
+
+def test_text_digest_separates_the_keys_of_two_messages_without_a_native_id() -> None:
+    other = "another text sent in the same call and second"
+    encoded = other.encode("utf-8")
+    first = parse_native_message_record(frame(native_message_id=None))
+    second = parse_native_message_record(
+        frame(
+            native_message_id=None,
+            text=other,
+            text_bytes=len(encoded),
+            text_sha256=hashlib.sha256(encoded).hexdigest(),
+        )
+    )
+    assert native_idempotency_key(first) != native_idempotency_key(second)
+
+
+_TEXTS = st.text(min_size=1, max_size=400)
+_NAMES = st.text(
+    alphabet=st.characters(min_codepoint=33, max_codepoint=0x24F, exclude_characters="\x7f"),
+    min_size=1,
+    max_size=40,
+)
+
+
+def _frame_for(text: str, **changes: Any) -> dict[str, Any]:
+    encoded = text.encode("utf-8", errors="surrogatepass")
+    return frame(
+        text=text,
+        text_bytes=len(encoded),
+        text_sha256=hashlib.sha256(encoded).hexdigest(),
+        **changes,
+    )
+
+
+@given(text=_TEXTS, seat=_NAMES, peer=_NAMES, phase=st.sampled_from(["attempt", "outcome"]))
+def test_any_valid_record_round_trips_through_the_parser_unchanged(
+    text: str, seat: str, peer: str, phase: str
+) -> None:
+    """Parsing a parsed record again changes nothing, and its key stays the same."""
+    outcome = "queued" if phase == "outcome" else None
+    data = _frame_for(text, sender_seat=seat, recipient_seat=peer, phase=phase, outcome=outcome)
+    record = parse_native_message_record(data)
+    assert parse_native_message_record({**data, **record}) == record
+    assert record["text_bytes"] == len(text.encode("utf-8", errors="surrogatepass"))
+    assert own_side_seat(record) == seat
+    assert native_idempotency_key(record) == native_idempotency_key(dict(record))
+
+
+@given(text=_TEXTS, other=_TEXTS)
+def test_a_record_never_carries_a_text_that_differs_from_its_digest(text: str, other: str) -> None:
+    """Any inline text that is not the hashed text is refused."""
+    data = _frame_for(text)
+    data["text"] = other
+    if other == text:
+        assert parse_native_message_record(data)["text"] == text
+        return
+    with pytest.raises(NativeMessageError) as refused:
+        parse_native_message_record(data)
+    assert refused.value.reason == "native_record_text_mismatch"
+
+
+@given(first=_TEXTS, second=_TEXTS)
+def test_keys_of_records_without_a_native_id_collide_only_for_the_same_text(
+    first: str, second: str
+) -> None:
+    """With session, call and time equal, the retry key follows the text digest."""
+    one = native_idempotency_key(
+        parse_native_message_record(_frame_for(first, native_message_id=None))
+    )
+    two = native_idempotency_key(
+        parse_native_message_record(_frame_for(second, native_message_id=None))
+    )
+    same_bytes = first.encode("utf-8", errors="surrogatepass") == second.encode(
+        "utf-8", errors="surrogatepass"
+    )
+    assert (one == two) == same_bytes

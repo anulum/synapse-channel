@@ -160,6 +160,29 @@ python benchmarks/coding_fleet_benchmark.py
 | Replay events | 10 |
 | Post-release claims | 0 |
 
+## `native_message_record_benchmark.py`
+
+Measures what one `native_message_record` costs. The parser is timed over a
+256-byte and a 32,768-byte text, because the digest check grows with the text.
+The durable round trip runs a real hub with an on-disk WAL journal on a loopback
+port and one real WebSocket connection, and times each record from the frame to
+the `native_message_recorded` reply; the journal is read back to confirm that
+every record was stored. Each run stays inside the verb's own ingress quota (600
+records and 8 MiB per minute and principal), which is the real ceiling of
+sustained ingest and is reported with the result.
+
+```bash
+PYTHONPATH=src python benchmarks/native_message_record_benchmark.py
+```
+
+Output is written to `results/native_message_record_benchmark.json` with the
+host, the system load before and after, and the isolation state. The committed
+run was not isolated on reserved cores (load average about 9 on a shared
+workstation): it is a functional baseline, not a production claim. In that run
+the parser took a median of 3.9 µs for the short and 24.3 µs for the long text,
+and the durable round trip a median of 7.1 ms and 9.8 ms, with p99 of 80.8 ms
+and 87.9 ms.
+
 ## `sustained_write_benchmark.py`
 
 Profiles the durable event store itself under sustained write load on a real on-disk

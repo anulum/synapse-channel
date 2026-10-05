@@ -20,10 +20,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from websockets.asyncio.client import connect
 
 from hub_e2e_helpers import collect_available, read_until_type, running_hub, send_json
+from synapse_channel.core.acl import EVIDENCE, AclPolicy, AclRule
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.handlers.native_message import native_message_quota
 from synapse_channel.core.hub import SynapseHub
-from synapse_channel.core.journal import EventKind, replay
+from synapse_channel.core.journal import EventKind, record_claim, replay
 from synapse_channel.core.message_auth import (
     EventSignatureKey,
     EventSignatureTrustBundle,
@@ -31,6 +32,7 @@ from synapse_channel.core.message_auth import (
     sign_event_frame,
 )
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.state import TaskClaim
 
 SENDER = "GROUP-A/claude-aaaa"
 RECIPIENT = "GROUP-B/claude-bbbb"
@@ -223,6 +225,7 @@ async def test_hub_without_a_journal_refuses_the_record() -> None:
 
     assert refused["type"] == "native_message_rejected"
     assert refused["error_code"] == "native_record_unavailable"
+    assert refused["payload"] == "native message records require a durable hub"
 
 
 async def test_failed_journal_write_is_reported_and_nothing_is_claimed(tmp_path: Path) -> None:
@@ -315,3 +318,74 @@ async def test_record_ingress_is_rate_limited_per_principal(tmp_path: Path) -> N
     assert second["error_code"] == "native_record_rate_limited"
     assert len(_events(store)) == 1
     store.close()
+
+
+async def test_retry_of_a_stored_record_is_replayed_without_spending_quota(tmp_path: Path) -> None:
+    store = EventStore(tmp_path / "retry.db")
+    hub = SynapseHub(hub_id="native-test", journal=store)
+    native_message_quota(hub).max_events = 1
+    async with running_hub(hub) as (_, uri):
+        first, retry, third = await _record(uri, _frame(), _frame(), _frame())
+
+    assert first["type"] == retry["type"] == third["type"] == "native_message_recorded"
+    assert retry["audit_seq"] == third["audit_seq"] == first["audit_seq"]
+    assert len(_events(store)) == 1
+    store.close()
+
+
+async def test_enforced_acl_gates_the_verb_on_the_native_message_evidence_target(
+    tmp_path: Path,
+) -> None:
+    store = EventStore(tmp_path / "acl.db")
+    policy = AclPolicy(
+        [
+            AclRule(EVIDENCE, "evidence", "native-message", "GROUP-A", "may record its messages"),
+            AclRule(EVIDENCE, "evidence", "guard-denial", "GROUP-B", "another evidence target"),
+        ]
+    )
+    hub = SynapseHub(hub_id="native-acl", journal=store, acl_policy=policy, require_acl=True)
+    async with running_hub(hub) as (_, uri):
+        (allowed,) = await _record(uri, _frame())
+        (denied,) = await _record(uri, _frame(recorder=RECIPIENT, direction="received"))
+
+    assert allowed["type"] == "native_message_recorded"
+    assert denied["type"] == "error"
+    assert denied["acl_decision"] == "would_deny"
+    assert [event["recorder"] for event in _events(store)] == [SENDER]
+    store.close()
+
+
+async def test_record_is_refused_while_the_journal_needs_recovery(tmp_path: Path) -> None:
+    db = tmp_path / "recovery.db"
+    store = EventStore(db)
+    record_claim(
+        store,
+        TaskClaim(
+            task_id="SEED",
+            owner="seed-owner",
+            note="seed",
+            claimed_at=1000.0,
+            lease_expires_at=9_999_999_999.0,
+            status="claimed",
+            data_ref="",
+            worktree="wt",
+            paths=("src",),
+            epoch=1,
+        ),
+    )
+    damaged_seq = store.max_seq()
+    store.close()
+    writer = sqlite3.connect(db)
+    writer.execute("UPDATE events SET payload = 'not json' WHERE seq = ?", (damaged_seq,))
+    writer.commit()
+    writer.close()
+    reopened = EventStore(db)
+    hub = SynapseHub(hub_id="native-recovery", journal=reopened)
+    async with running_hub(hub) as (_, uri):
+        (refused,) = await _record(uri, _frame())
+
+    assert refused["type"] == "error"
+    assert refused["journal_recovery_required"] is True
+    assert refused["first_corrupt_seq"] == damaged_seq
+    assert _events(reopened) == []
+    reopened.close()

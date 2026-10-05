@@ -896,7 +896,8 @@ verb only to a hub that advertises wire version `7` or newer
 
 The record is stored as one durable `native_message` event. It enters no
 mailbox, produces no delivery receipt, wakes nobody and is not replayed to a
-reconnecting waiter. The verb requires a journal-backed hub.
+reconnecting waiter. The verb requires a journal-backed hub. Like every
+state-changing verb it is refused while the journal needs recovery.
 
 | Field | Meaning |
 |---|---|
@@ -925,6 +926,11 @@ channel whose send takes no caller idempotency key writes an `attempt` before th
 native send and an `outcome` after it; an attempt without an outcome marks a
 delivery whose result is unknown, and such a send must not be repeated or
 replaced by another route automatically.
+
+Ingress is limited per connection principal to 600 records and 8 MiB in any
+60 seconds; the surplus is refused with `native_record_rate_limited`. A repeated
+`idem_key` is replayed before that limit is charged. On an open loopback hub
+every local connection shares one principal, so the limit is host-wide there.
 
 `native_message_recorded` returns `audit_seq`, `text_sha256`, `phase` and
 `recorder_binding`. A repeated `idem_key` with the same content replays that
