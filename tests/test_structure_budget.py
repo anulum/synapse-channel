@@ -114,7 +114,7 @@ def repo(tmp_path: Path) -> Repo:
     assert code == 0, out
     assert "bootstrap: HEAD holds no ledger" in out
     assert '"pkg/long.py::listed" = 70' in made.ledger()
-    assert made.ledger().startswith("# SPDX-License-Identifier: AGPL-3.0-or-later\n")
+    assert made.ledger().startswith("# SPDX-License-" + "Identifier: AGPL-3.0-or-later\n")
     made.commit()
     return made
 
@@ -355,6 +355,98 @@ def test_raising_a_threshold_or_allowing_a_private_name_needs_an_exception(repo:
     assert "allowed_list_grown: configuration a._b" in out
     repo.write("budget.toml", grown + _exception("a._b", 0, future, measure="configuration"))
     assert repo.run("--check")[0] == 0
+
+
+@pytest.mark.parametrize("mode", ["--check", "--update"])
+@pytest.mark.parametrize("setting", ["threshold", "private-name"])
+def test_configuration_exception_expires_after_its_committed_admission(
+    repo: Repo, mode: str, setting: str
+) -> None:
+    """A standing allowance still expires after its admitted value enters the baseline."""
+    original = repo.ledger()
+    today = datetime.date.today().isoformat()
+    past = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    if setting == "threshold":
+        candidate = original.replace("constructor_parameters = 12", "constructor_parameters = 13")
+        unit, allowed = "constructor_parameters", 13
+        parameters = ", ".join(f"p{i}" for i in range(13))
+        repo.write(
+            "pkg/wide.py", f"class Wide:\n    def __init__(self, {parameters}):\n        pass\n"
+        )
+    else:
+        candidate = original.replace(
+            '["argparse._SubParsersAction"]', '["argparse._SubParsersAction", "hub._system"]'
+        )
+        unit, allowed = "hub._system", 0
+        repo.write("pkg/reach.py", "def reach(hub):\n    return hub._system()\n")
+    repo.write("budget.toml", candidate + _exception(unit, allowed, today, measure="configuration"))
+    assert repo.run("--check")[0] == 0
+    repo.commit()
+    repo.write("budget.toml", repo.ledger().replace(today, past))
+    before = repo.ledger()
+    code, out = repo.run(mode)
+    assert code == 1
+    assert f"exception_expired: configuration {unit}: review_by {past}" in out
+    assert repo.ledger() == before
+
+
+@pytest.mark.parametrize("mode", ["--check", "--update"])
+def test_configuration_exception_cannot_admit_a_larger_threshold(repo: Repo, mode: str) -> None:
+    """The numeric allowance remains a bound when the configuration grows again."""
+    future = (datetime.date.today() + datetime.timedelta(days=30)).isoformat()
+    original = repo.ledger()
+    candidate = original.replace("constructor_parameters = 12", "constructor_parameters = 14")
+    repo.write(
+        "budget.toml",
+        candidate + _exception("constructor_parameters", 13, future, measure="configuration"),
+    )
+    parameters = ", ".join(f"p{i}" for i in range(14))
+    repo.write("pkg/wide.py", f"class Wide:\n    def __init__(self, {parameters}):\n        pass\n")
+    before = repo.ledger()
+    code, out = repo.run(mode)
+    assert code == 1
+    assert "above_ceiling: configuration constructor_parameters: 14 is above the excepted 13" in out
+    assert repo.ledger() == before
+
+
+def test_configuration_exception_for_removed_private_allowance_is_unused(repo: Repo) -> None:
+    """A leftover private-name permission is visible after its allow-list entry is removed."""
+    future = (datetime.date.today() + datetime.timedelta(days=30)).isoformat()
+    repo.append_ledger(_exception("hub._system", 0, future, measure="configuration"))
+    code, out = repo.run("--check")
+    assert code == 1
+    assert "exception_unused: configuration hub._system" in out
+
+
+@pytest.mark.parametrize("mode", ["--check", "--update"])
+def test_measured_root_cannot_be_removed_to_hide_new_units(repo: Repo, mode: str) -> None:
+    """Replacing the source scope with an empty directory cannot make hidden growth green."""
+    repo.write("other/kept.py", "def kept():\n    return 1\n")
+    original = repo.ledger()
+    repo.write("budget.toml", original.replace('roots = ["pkg"]', 'roots = ["pkg", "other"]'))
+    assert repo.run("--check")[0] == 0
+    repo.commit()
+    parameters = ", ".join(f"p{i}" for i in range(13))
+    repo.write("pkg/wide.py", f"class Wide:\n    def __init__(self, {parameters}):\n        pass\n")
+    candidate = repo.ledger().replace('roots = ["pkg", "other"]', 'roots = ["other"]')
+    candidate = candidate.replace('"pkg/long.py::listed" = 70', "")
+    repo.write("budget.toml", candidate)
+    before = repo.ledger()
+    code, out = repo.run(mode)
+    assert code == 1
+    assert "roots_removed: configuration roots: measured roots removed: ['pkg']" in out
+    assert repo.ledger() == before
+
+
+def test_additional_measured_root_keeps_existing_growth_guards(repo: Repo) -> None:
+    """Extending measurement accepts clean sources and rejects real new private accesses."""
+    repo.write("other/kept.py", "def kept():\n    return 1\n")
+    repo.write("budget.toml", repo.ledger().replace('roots = ["pkg"]', 'roots = ["pkg", "other"]'))
+    assert repo.run("--check")[0] == 0
+    repo.write("other/kept.py", "def kept(hub):\n    return hub._system()\n")
+    code, out = repo.run("--check")
+    assert code == 1
+    assert "over_threshold_unlisted: private_access other/kept.py" in out
 
 
 @pytest.mark.parametrize(

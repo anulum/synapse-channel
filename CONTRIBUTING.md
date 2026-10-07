@@ -148,7 +148,11 @@ new unit above a threshold is refused: split it by responsibility. Moving a
 listed unit unchanged is recorded as a `[[moves]]` entry for that one commit. An
 `[[exceptions]]` entry with a reason, an owner and a review date is the only way
 to accept a unit above a threshold outside the ledger; it fails the check once
-its date has passed.
+its date has passed. Configuration exceptions also expire after their accepted
+values enter the baseline, and a threshold cannot exceed its recorded allowance.
+A measured root may be added but cannot be removed from the baseline's scope;
+otherwise unmeasured source growth could bypass the guard. Both `--check` and
+`--update` refuse these changes before the ledger is written.
 
 ## Pull requests
 

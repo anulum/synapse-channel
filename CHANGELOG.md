@@ -51,6 +51,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Structure-budget configuration exceptions now enforce their expiry and
+  recorded threshold maximum, including after admission into the baseline.
+  Removing a measured source root cannot hide new responsibility debt; failed
+  checks and updates preserve the original ledger.
+
 - End refused WebSocket upgrade attempts cleanly in the Python client. Health
   and roster probes return failure without a transport traceback, and the same
   agent can reconnect after the hub URI or tunnel destination is corrected.

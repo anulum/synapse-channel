@@ -49,7 +49,7 @@ SCHEMA = 1
 CONFIGURATION = "configuration"
 _EXCEPTION_FIELDS = ("unit", "measure", "allowed", "reason", "owner", "review_by")
 _HEADER = (
-    "# SPDX-License-Identifier: AGPL-3.0-or-later",
+    "# SPDX-License-" + "Identifier: AGPL-3.0-or-later",
     "# Commercial license available",
     "# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.",
     "# © Code 2020–2026 Miroslav Šotek. All rights reserved.",
@@ -298,12 +298,37 @@ def check_tree(ledger: Ledger, figures: Figures, today: datetime.date) -> list[V
         if figures[measure].get(unit, 0) <= ledger.thresholds[measure]:
             detail = "the unit is gone or no longer above its threshold; remove the exception"
             found.append(Violation("exception_unused", measure, unit, detail))
+    return found + _check_configuration_exceptions(ledger, today)
+
+
+def _check_configuration_exceptions(ledger: Ledger, today: datetime.date) -> list[Violation]:
+    """Hold standing configuration allowances to their date and recorded maximum."""
+    found: list[Violation] = []
+    for entry in ledger.exceptions:
+        if entry["measure"] != CONFIGURATION:
+            continue
+        unit = entry["unit"]
+        if datetime.date.fromisoformat(str(entry["review_by"])) < today:
+            detail = f"review_by {entry['review_by']}"
+            found.append(Violation("exception_expired", CONFIGURATION, unit, detail))
+        elif unit in ledger.thresholds:
+            figure = ledger.thresholds[unit]
+            if figure > entry["allowed"]:
+                detail = f"{figure} is above the excepted {entry['allowed']}"
+                found.append(Violation("above_ceiling", CONFIGURATION, unit, detail))
+        elif unit not in ledger.allowed_private:
+            detail = "the configuration allowance is unused; remove the exception"
+            found.append(Violation("exception_unused", CONFIGURATION, unit, detail))
     return found
 
 
 def _check_configuration(ledger: Ledger, baseline: Ledger) -> list[Violation]:
-    """Find thresholds raised and allowed private names added since the baseline."""
+    """Reject reduced measurement scope and unrecorded configuration growth."""
     found: list[Violation] = []
+    removed_roots = sorted(set(baseline.roots) - set(ledger.roots))
+    if removed_roots:
+        detail = f"measured roots removed: {removed_roots}"
+        found.append(Violation("roots_removed", CONFIGURATION, "roots", detail))
     for measure in MEASURES:
         before, after = baseline.thresholds[measure], ledger.thresholds[measure]
         if after > before and ledger.excepted(CONFIGURATION, measure) is None:
