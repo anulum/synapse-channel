@@ -28,8 +28,9 @@ state; nobody needs a database, a consensus protocol, or a cloud service to
 agree on who is doing what.
 
 It is deliberately **local-first and transport-light**: the core install has a
-single runtime dependency (`websockets`), everything else is the Python standard
-library, and the hub runs entirely on one machine. The MCP and A2A adapters are
+WebSocket transport dependency (`websockets`) and a typing backport on Python
+3.10 (`typing-extensions`). Everything else is the Python standard library, and
+the hub runs entirely on one machine. The MCP and A2A adapters are
 optional extras — your existing agents plug in without new code.
 
 ## The problem it removes

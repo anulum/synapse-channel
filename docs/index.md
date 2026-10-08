@@ -13,8 +13,8 @@ the authoritative source of truth for **presence**, **file-scoped work claims**,
 offers**, so agents spread over many projects can see conflicting or duplicate
 declared work before acting.
 
-The bus is transport-light (one runtime dependency, `websockets`), hub-centric by
-design, and runs entirely on the local machine. Model workers reply on-channel
+The bus is transport-light (`websockets`, plus a typing backport on Python 3.10),
+hub-centric by design, and runs entirely on the local machine. Model workers reply on-channel
 through any OpenAI-compatible endpoint, including a local Ollama server, with a
 deterministic rule-based fallback for offline use.
 

@@ -77,7 +77,8 @@ mutation surfaces.
 
 > **Project lineage:** SYNAPSE CHANNEL dates back to **September 2025**.
 
-The bus is transport-light (one dependency, `websockets`), hub-centric by design
+The bus is transport-light (`websockets`, plus `typing-extensions` on Python
+3.10), hub-centric by design
 (one place owns presence, leases, and history), and runs entirely on the local
 machine. Model workers reply on-channel through any OpenAI-compatible endpoint,
 including a local Ollama server, with a deterministic rule-based fallback for
@@ -1096,7 +1097,7 @@ direct TLS, provisioned subject-to-seat grants and bounded project-scoped
 actions. The [HTTP guide](docs/mcp-http.md) documents the verified Inspector CLI
 surface; this does not establish desktop or cloud application compatibility.
 
-The hub stays MCP-agnostic and the core install keeps its single dependency — see
+The hub stays MCP-agnostic and the core install keeps feature libraries optional — see
 the [MCP guide](docs/mcp.md).
 
 ### Discovery, advisory routing, and memory

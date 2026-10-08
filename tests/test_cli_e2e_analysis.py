@@ -29,11 +29,6 @@ def _scalar(db_path: Path, query: str) -> int:
         connection.close()
 
 
-def _max_seq(db_path: Path) -> int:
-    """Return the highest sequence written to the hub event store."""
-    return _scalar(db_path, "select max(seq) from events")
-
-
 def _claim_seq(db_path: Path) -> int:
     """Return the sequence of the first claim event in the log."""
     return _scalar(db_path, "select seq from events where kind='claim' limit 1")
@@ -64,10 +59,12 @@ def test_causality_effects_reads_the_written_log(tmp_path: Path) -> None:
     """``causality effects`` answers for a real sequence in the log."""
     with isolated_hub(tmp_path) as hub:
         _populate(hub.uri)
-        seq = _max_seq(hub.db_path)
+        seq = _claim_seq(hub.db_path)
         result = run_cli("causality", "effects", str(hub.db_path), str(seq))
         assert result.ok(), result.output
         assert f"seq {seq}" in result.stdout
+        assert "release" in result.stdout
+        assert "BUILD" in result.stdout
 
 
 def test_reliability_reports_no_signals_on_a_clean_log(tmp_path: Path) -> None:

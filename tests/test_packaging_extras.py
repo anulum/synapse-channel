@@ -7,8 +7,9 @@
 # SYNAPSE_CHANNEL — packaging extras drift guard and feature-module import smoke
 """Guard the optional-dependency extras and the modules that consume them.
 
-The wheel keeps a deliberately minimal runtime (`websockets` only); every feature
-library — cryptography, WASM, OTel, MCP, tree-sitter — lives behind a named extra so a base
+The wheel keeps a minimal runtime: WebSocket transport plus a Python 3.10 typing
+backport. Every feature library — cryptography, WASM, OTel, MCP, tree-sitter — lives
+behind a named extra so a base
 install stays lean and a feature install is explicit. Two failure modes are worth
 a permanent test: the runtime dependency set quietly growing a heavy library, and
 the `all` convenience extra drifting out of sync with the individual feature
@@ -28,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from packaging.requirements import Requirement
 
 _PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
@@ -81,11 +83,20 @@ def _extras() -> dict[str, list[str]]:
 
 
 def test_runtime_dependencies_stay_minimal() -> None:
-    # The runtime floor is a single dependency. A heavy feature library must live
-    # in an extra, never here, or a base install would pull it in unasked.
-    dependencies = _load_pyproject()["project"]["dependencies"]
-    names = [dep.split(">=")[0].split("==")[0].split("[")[0].strip() for dep in dependencies]
-    assert names == ["websockets"]
+    """Allow transport and the required 3.10 backport, keeping feature libraries optional."""
+    requirements = [Requirement(value) for value in _load_pyproject()["project"]["dependencies"]]
+    assert [requirement.name for requirement in requirements] == ["websockets", "typing-extensions"]
+    for version in ("3.10", "3.11", "3.12", "3.13"):
+        active = [
+            requirement.name
+            for requirement in requirements
+            if requirement.marker is None
+            or requirement.marker.evaluate({"python_version": version})
+        ]
+        assert active == (
+            ["websockets", "typing-extensions"] if version == "3.10" else ["websockets"]
+        )
+    assert str(requirements[1].specifier) == ">=4.16.0"
 
 
 def test_websockets_floor_supports_the_asyncio_api() -> None:

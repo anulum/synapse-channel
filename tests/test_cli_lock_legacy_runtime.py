@@ -238,8 +238,10 @@ async def test_published_hub_without_confirmation_refuses_manual_release(
                 cwd=repo,
                 env={"SYNAPSE_TOKEN": "", "SYNAPSE_TOKEN_FILE": ""},
             )
-            assert hook.ok(), hook.output
+            assert hook.returncode == 3, hook.output
             assert "hook command ran" in hook.stdout
+            assert "release unknown" in hook.stderr
+            assert "Do not replay release. Read-only recovery:" in hook.stderr
             with contextlib.closing(
                 sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)
             ) as reader:

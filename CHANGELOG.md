@@ -86,6 +86,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Regression journeys now exercise the documented uncertain cleanup exit on
+  legacy hubs, select a coordination event for causality queries, and validate
+  the Python 3.10 typing backport separately from modern runtime dependencies.
+
 - JavaScript and VS Code development locks use `source-map-js` 1.2.2, fixing
   indexed source-map denial of service (GHSA-68fv-2mgg-jv7q). Open VSX uses the
   already pinned VS Code packager, removing its vulnerable `braces` dependency
