@@ -29,7 +29,7 @@ class AdmissionReplyHub(SynapseHub):
         super().__init__(journal=journal)
         self.mode = mode
 
-    async def _send_json(self, websocket: Any, data: dict[str, Any]) -> None:
+    async def send_json(self, websocket: Any, data: dict[str, Any]) -> None:
         if "release_confirmation" in data:
             if self.mode == "drop":
                 return
@@ -46,7 +46,7 @@ class AdmissionReplyHub(SynapseHub):
                 else:
                     projection[self.mode] = "unrelated"
                     data = {**data, "release_confirmation": projection}
-        await super()._send_json(websocket, data)
+        await super().send_json(websocket, data)
 
 
 @pytest.mark.asyncio

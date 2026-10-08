@@ -35,30 +35,53 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.dead_letter_forwarding import (
     DeadLetterForwardingWireError,
     ForwardingNotice,
     decode_forwarding_notice,
     incoming_forwarding_notice,
 )
-from synapse_channel.core.journal import DEAD_LETTER_DIRECTION_IN, record_dead_letter_forwarding
+from synapse_channel.core.identity_namespace import project_of
+from synapse_channel.core.journal import (
+    DEAD_LETTER_DIRECTION_IN,
+    EventKind,
+    record_dead_letter_forwarding,
+)
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.multihub_serving import MultiHubServingPolicy
+    from synapse_channel.core.namespace_ownership import NamespaceOwnership
+
+    class DeadLetterForwardingContext(HandlerContext, Protocol):
+        """Capabilities consumed by dead letter forwarding handlers and their callees."""
+
+        @property
+        def multihub_serving_policy(self) -> MultiHubServingPolicy | None:
+            """Return the multihub serving policy used by this handler family."""
+            ...
+
+        @property
+        def namespace_ownership(self) -> NamespaceOwnership | None:
+            """Return the namespace ownership used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.messaging")
 
 
 async def handle_dead_letter_forwarding(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: DeadLetterForwardingContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Record a peer's dead-letter pointer and tell this hub's operators, or drop it fail-closed.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : DeadLetterForwardingContext
         The owning hub the pointer names; it journals the incoming forwarding and broadcasts it.
     sender : str
         The forwarding peer hub; the serving policy authorises the pointer against this
@@ -89,8 +112,8 @@ async def handle_dead_letter_forwarding(
                 "peer": sender,
             },
         )
-    await hub._broadcast(
-        hub._system(
+    await hub.broadcast(
+        hub.system(
             incoming_forwarding_notice(notice.target, notice.count, notice.origin_hub_id),
             msg_type=MessageType.DEAD_LETTER_FORWARDING,
             forwarding_target=notice.target,
@@ -100,7 +123,9 @@ async def handle_dead_letter_forwarding(
     )
 
 
-def _authorised(hub: SynapseHub, sender: str, notice: ForwardingNotice, websocket: Any) -> bool:
+def _authorised(
+    hub: DeadLetterForwardingContext, sender: str, notice: ForwardingNotice, websocket: Any
+) -> bool:
     """Return whether ``sender`` may forward ``notice`` to this hub, logging any refusal.
 
     Two deny-closed gates must both pass: the peer is authorised by the hub's serving policy (a hub
@@ -124,3 +149,19 @@ def _authorised(hub: SynapseHub, sender: str, notice: ForwardingNotice, websocke
         )
         return False
     return True
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.DEAD_LETTER_FORWARDING,),
+        handler=handle_dead_letter_forwarding,
+        reply_types=(MessageType.DEAD_LETTER_FORWARDING,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(EventKind.DEAD_LETTER_FORWARDING,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

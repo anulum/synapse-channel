@@ -36,14 +36,14 @@ class LostReleaseReplyHub(SynapseHub):
         self.committed = asyncio.Event()
         self.resume = asyncio.Event()
 
-    async def _broadcast(self, data: dict[str, Any]) -> frozenset[str]:
+    async def broadcast(self, data: dict[str, Any]) -> frozenset[str]:
         """Keep production mutation/persistence, injecting only response loss."""
         if data.get("type") == MessageType.RELEASE_GRANTED:
             self.committed.set()
             if self.hold:
                 await self.resume.wait()
             return frozenset()
-        return await super()._broadcast(data)
+        return await super().broadcast(data)
 
 
 class LostReleaseConfirmationHub(LostReleaseReplyHub):
@@ -81,14 +81,14 @@ class PrecommitReleaseReplyHub(LostReleaseReplyHub):
 class LegacyReleaseReplyHub(SynapseHub):
     """Exercise a real legacy wire profile without optional reply/query fields."""
 
-    async def _broadcast(self, data: dict[str, Any]) -> frozenset[str]:
+    async def broadcast(self, data: dict[str, Any]) -> frozenset[str]:
         if data.get("type") == MessageType.RELEASE_GRANTED:
             data = {
                 key: value
                 for key, value in data.items()
                 if key not in {"release_operation_id", "request_digest"}
             }
-        return await super()._broadcast(data)
+        return await super().broadcast(data)
 
     async def _route(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
@@ -101,16 +101,16 @@ class LegacyReleaseReplyHub(SynapseHub):
 class UnrelatedErrorReleaseReplyHub(LostReleaseReplyHub):
     """Emit an unrelated asynchronous error after commit, losing only the release reply."""
 
-    async def _broadcast(self, data: dict[str, Any]) -> frozenset[str]:
+    async def broadcast(self, data: dict[str, Any]) -> frozenset[str]:
         if data.get("type") == MessageType.RELEASE_GRANTED:
-            await super()._broadcast(
-                self._system(
+            await super().broadcast(
+                self.system(
                     "unrelated asynchronous error",
                     msg_type=MessageType.ERROR,
                     target=data["owner"],
                 )
             )
-        return await super()._broadcast(data)
+        return await super().broadcast(data)
 
 
 async def command(repo: Path, uri: str, *args: str) -> CliResult:

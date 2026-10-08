@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.claim_holder_presence import release_abandoned_claims
 from synapse_channel.core.handlers.leasing import apply_claim_async, claim_grant_fields
+from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_claim_wire import (
     ClaimForwardRequest,
     ClaimForwardResult,
@@ -53,22 +54,47 @@ from synapse_channel.core.multihub_claim_wire import (
     encode_claim_forward_result,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.event_row_recovery import CorruptEventRow
+    from synapse_channel.core.handlers.leasing import LeasingContext
+    from synapse_channel.core.multihub_serving import MultiHubServingPolicy
+    from synapse_channel.core.namespace_ownership import NamespaceOwnership
     from synapse_channel.core.state_models import TaskClaim
+
+    class MultihubClaimContext(LeasingContext, Protocol):
+        """Capabilities consumed by multihub claim handlers and their callees."""
+
+        @property
+        def journal_corrupt_rows(self) -> tuple[CorruptEventRow, ...]:
+            """Return the journal corrupt rows used by this handler family."""
+            ...
+
+        @property
+        def multihub_serving_policy(self) -> MultiHubServingPolicy | None:
+            """Return the multihub serving policy used by this handler family."""
+            ...
+
+        @property
+        def namespace_ownership(self) -> NamespaceOwnership | None:
+            """Return the namespace ownership used by this handler family."""
+            ...
+
 
 logger = logging.getLogger(__name__)
 
 
 async def handle_multihub_claim_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: MultihubClaimContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Grant a forwarded claim authoritatively and relay the verdict, or refuse fail-closed.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : MultihubClaimContext
         The owning hub whose lease state the claim is applied to; ``hub.hub_id`` stamps the
         result so the forwarding hub knows which hub answered.
     sender : str
@@ -83,9 +109,9 @@ async def handle_multihub_claim_request(
         request = decode_claim_forward_request(data)
     except ClaimWireError:
         logger.warning("Refused malformed multi-hub claim request from peer %r", sender)
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "Malformed multi-hub claim request",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -130,8 +156,8 @@ async def handle_multihub_claim_request(
         grant_fields = claim_grant_fields(application.claim)
         # The lease now authoritatively exists on this hub: tell its own agents, exactly as
         # a direct claim does, before relaying the grant back to the forwarding hub.
-        await hub._broadcast(
-            hub._system(application.message, msg_type=MessageType.CLAIM_GRANTED, **grant_fields)
+        await hub.broadcast(
+            hub.system(application.message, msg_type=MessageType.CLAIM_GRANTED, **grant_fields)
         )
         result = ClaimForwardResult(
             granted=True,
@@ -152,7 +178,9 @@ async def handle_multihub_claim_request(
     await _send_result(hub, websocket, sender, result)
 
 
-def _duplicate_forwarded_claim(hub: SynapseHub, request: ClaimForwardRequest) -> TaskClaim | None:
+def _duplicate_forwarded_claim(
+    hub: MultihubClaimContext, request: ClaimForwardRequest
+) -> TaskClaim | None:
     """Return the live existing lease for a duplicate forwarded claim, if present.
 
     The idempotency key for a forwarded grant is ``(task_id, claimant)``. If a peer retries
@@ -170,7 +198,7 @@ def _duplicate_forwarded_claim(hub: SynapseHub, request: ClaimForwardRequest) ->
 
 
 def _refuse_claim(
-    hub: SynapseHub, sender: str, request: ClaimForwardRequest, websocket: Any
+    hub: MultihubClaimContext, sender: str, request: ClaimForwardRequest, websocket: Any
 ) -> ClaimForwardResult | None:
     """Return a denial result when the peer or this hub may not grant the claim, else ``None``.
 
@@ -216,7 +244,7 @@ def _refuse_claim(
     return None
 
 
-def _peer_authorised(hub: SynapseHub, sender: str, websocket: Any) -> bool:
+def _peer_authorised(hub: MultihubClaimContext, sender: str, websocket: Any) -> bool:
     """Return whether the hub's serving policy permits ``sender`` to forward a claim.
 
     A forwarded claim mutates lease state, so the gate is stricter than the read-only log
@@ -230,7 +258,7 @@ def _peer_authorised(hub: SynapseHub, sender: str, websocket: Any) -> bool:
     return policy.authorise(sender=sender, websocket=websocket).allowed
 
 
-def _owns_namespace(hub: SynapseHub, namespace: str) -> bool:
+def _owns_namespace(hub: MultihubClaimContext, namespace: str) -> bool:
     """Return whether this hub authoritatively and uncontestedly owns ``namespace``.
 
     A hub with no :class:`~synapse_channel.core.namespace_ownership.NamespaceOwnership` map
@@ -244,15 +272,39 @@ def _owns_namespace(hub: SynapseHub, namespace: str) -> bool:
 
 
 async def _send_result(
-    hub: SynapseHub, websocket: Any, sender: str, result: ClaimForwardResult
+    hub: MultihubClaimContext, websocket: Any, sender: str, result: ClaimForwardResult
 ) -> None:
     """Send one private claim-forward result back to the forwarding peer."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Multi-hub claim result",
             msg_type=MessageType.MULTIHUB_CLAIM_RESULT,
             target=sender,
             **encode_claim_forward_result(result),
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.MULTIHUB_CLAIM_REQUEST,),
+        handler=handle_multihub_claim_request,
+        reply_types=(
+            MessageType.MULTIHUB_CLAIM_RESULT,
+            MessageType.CLAIM_GRANTED,
+            MessageType.RELEASE_GRANTED,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(
+            EventKind.CLAIM,
+            EventKind.CLAIM_DENIAL,
+            EventKind.RELEASE,
+        ),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

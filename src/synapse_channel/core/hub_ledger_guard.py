@@ -27,33 +27,17 @@ from synapse_channel.core.atomic_operations import (
     canonical_request_digest,
     idempotency_conflict_response,
 )
+from synapse_channel.core.handlers import VERBS
 from synapse_channel.core.idempotency import IdempotencyCache
 from synapse_channel.core.journal import record_idempotency
-from synapse_channel.core.protocol import RESOURCE_TYPE_ALIASES, SENDER_HUB, MessageType
+from synapse_channel.core.protocol import SENDER_HUB, MessageType
 
 if TYPE_CHECKING:
     from synapse_channel.core.persistence import EventStore
 
 
-_MUTATING_TYPES = (
-    frozenset(
-        {
-            MessageType.CLAIM,
-            MessageType.RELEASE,
-            MessageType.TASK_UPDATE,
-            MessageType.HANDOFF,
-            MessageType.CHECKPOINT,
-            MessageType.GUARD_DENIAL,
-            MessageType.LEDGER_TASK,
-            MessageType.LEDGER_TASK_UPDATE,
-            MessageType.LEDGER_PROGRESS,
-            MessageType.RECALL_LOG,
-            MessageType.FINDING,
-        }
-    )
-    | RESOURCE_TYPE_ALIASES
-)
-"""Inbound message types eligible for idempotent replay protection."""
+_MUTATING_TYPES = frozenset(request for request, spec in VERBS.items() if spec.replay_protected)
+"""Handler-declared request types eligible for idempotent replay protection."""
 
 
 @dataclass

@@ -69,6 +69,21 @@ representative modules, not every file.
 
 ## Coordination model
 
+### Handler capabilities
+
+`core.handler_context.HandlerContext` declares the state, journal and transport
+capabilities shared by handlers. Each family declares the additional
+collaborators it consumes, including capabilities needed by called handlers or
+forwarding helpers. References are read-only where a handler does not replace
+them; leasing retains its mutable wait graph and candidate-state contract.
+
+These are internal static protocols defined under `TYPE_CHECKING`, without
+runtime wrappers or new public exports. The dispatch registry retains a
+concrete `SynapseHub` argument, so strict type checking proves that the hub
+satisfies every registered family's requirements. Transport and mutation
+methods remain late-bound on the hub for each invocation; overrides made after
+composition still apply. The wire, CLI and public Python API are unchanged.
+
 The pieces compose into one coordination plane:
 
 1. **Plan.** Any agent declares work on the shared blackboard (`ledger`); the hub

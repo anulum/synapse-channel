@@ -36,7 +36,18 @@ from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import SynapseState
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+
+    class ClaimHolderContext(HandlerContext, Protocol):
+        """Capabilities consumed by claim holder presence handlers and their callees."""
+
+        @property
+        def claim_holders(self) -> ClaimHolderPresence:
+            """Return the claim holders used by this handler family."""
+            ...
+
 
 HOLDER_OFFLINE_ACTOR = "hub:holder-offline"
 """Identity a release of an abandoned claim is attributed to."""
@@ -134,7 +145,7 @@ def abandoned_claims(
     return found
 
 
-async def release_abandoned_claims(hub: SynapseHub) -> list[AbandonedRelease]:
+async def release_abandoned_claims(hub: ClaimHolderContext) -> list[AbandonedRelease]:
     """Release, journal and announce every claim of a holder offline past the window.
 
     Runs through the hub's serialized state actor, like any release, and selects the
@@ -143,7 +154,7 @@ async def release_abandoned_claims(hub: SynapseHub) -> list[AbandonedRelease]:
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : ClaimHolderContext
         The hub whose claims are checked.
 
     Returns
@@ -179,8 +190,8 @@ async def release_abandoned_claims(hub: SynapseHub) -> list[AbandonedRelease]:
     )
     for item in released:
         hub.counters.claims_released_abandoned += 1
-        await hub._broadcast(
-            hub._system(
+        await hub.broadcast(
+            hub.system(
                 f"Claim '{item.task_id}' released: holder {item.owner} offline for "
                 f"{item.offline_seconds:.0f}s, past the {presence.window:.0f}s lease window.",
                 msg_type=MessageType.RELEASE_GRANTED,

@@ -31,6 +31,21 @@ presence daemons add more, so a large fleet can reach the ceiling.
   socket momentarily; live agents reconnect on their own.
 - **Retry.** The cap is transient under churn; a moment later a slot usually frees.
 
+## A WebSocket handshake fails through an SSH tunnel
+
+The hub checks the exact HTTP Host authority before admitting a WebSocket
+upgrade. A tunnel that forwards a different local port sends that local port in
+Host; the hub can refuse it with HTTP `403` even though the SSH connection works.
+Keep the local forwarded port equal to the hub's listening port, or configure an
+explicit advertised authority for the intended route. See
+[exposure controls](paranoid-mode.md). Do not disable the Host check.
+
+The Python client ends the unsuccessful attempt, clears readiness and reports
+`WebSocket handshake failed` when verbose output is enabled. `synapse health`
+returns `1`; `synapse who` reports an unreachable hub and returns `1`. Neither
+prints a transport traceback. Correct the URI or forwarding destination before
+retrying; a failed handshake does not establish a registered agent.
+
 ## A waiter exits at once, or seems to loop re-arming
 
 `synapse wait` is a *one-shot* wake primitive — it is meant to exit and be re-armed:

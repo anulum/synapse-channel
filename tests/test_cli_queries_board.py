@@ -95,7 +95,7 @@ async def test_board_reports_unreachable_hub(capsys: pytest.CaptureFixture[str])
     assert "Could not reach hub" in capsys.readouterr().out
 
 
-async def test_board_query_quiet_when_no_matching_snapshot() -> None:
+async def test_board_query_fails_when_no_matching_snapshot() -> None:
     rendered: list[str] = []
     async with running_hub(SynapseHub()) as (_, uri):
         code = await cli_queries._query_hub(
@@ -107,7 +107,7 @@ async def test_board_query_quiet_when_no_matching_snapshot() -> None:
             render=lambda value: rendered.append(str(value)),
             attempts=1,
         )
-    assert code == 0
+    assert code == 1
     assert rendered == []
 
 

@@ -1,0 +1,326 @@
+{
+  "affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "benchmark_script_sha256": "944dd295562bf3b80339bcd9fb7c5f851bd0f8c6153a64363c5bdb8e9452b838",
+  "candidate_python_source_manifest_sha256": "decdad8288a77f00b2a1a9d339466235ad85da61d2f2ed7c741f16a9dea39b30",
+  "comparison": {
+    "baseline": {
+      "host": {
+        "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+        "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+        "python": "3.12.3"
+      },
+      "ingress_quota": {
+        "bytes": 8388608,
+        "events": 600,
+        "window_seconds": 60.0
+      },
+      "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
+      "load_average_after": [
+        20.94,
+        18.97,
+        25.46
+      ],
+      "load_average_before": [
+        21.29,
+        18.91,
+        25.54
+      ],
+      "parse": [
+        {
+          "count": 20000,
+          "max_us": 15112.266992218792,
+          "mean_us": 17.57470661541447,
+          "p50_us": 7.849070243537426,
+          "p95_us": 9.341049008071423,
+          "p99_us": 21.277926862239838,
+          "text_bytes": 256,
+          "throughput_per_second": 53711.357873993875
+        },
+        {
+          "count": 20000,
+          "max_us": 23102.568928152323,
+          "mean_us": 56.35902585927397,
+          "p50_us": 36.77397035062313,
+          "p95_us": 48.45205694437027,
+          "p99_us": 80.0589332357049,
+          "text_bytes": 32768,
+          "throughput_per_second": 17377.35299122956
+        }
+      ],
+      "round_trip": [
+        {
+          "count": 500,
+          "max_us": 99188.94502334297,
+          "mean_us": 15438.194498186931,
+          "p50_us": 10224.913945421576,
+          "p95_us": 50116.200000047684,
+          "p99_us": 88172.53191955388,
+          "stored_events": 500,
+          "text_bytes": 256,
+          "throughput_per_second": 64.59143053840378
+        },
+        {
+          "count": 200,
+          "max_us": 462636.05693820864,
+          "mean_us": 25451.643090927973,
+          "p50_us": 16519.342083483934,
+          "p95_us": 59860.66302284598,
+          "p99_us": 294884.04700532556,
+          "stored_events": 200,
+          "text_bytes": 32768,
+          "throughput_per_second": 38.987947422838786
+        }
+      ]
+    },
+    "baseline_hub_source_sha256": "b5be5c734c69d7978b5af993513d9845490c882cc47d0059e583ed4eb723e68e",
+    "baseline_scope": "exact original hub module plus same current imported dependencies; no whole old checkout",
+    "baseline_source_commit": "af68ebaf57668732652149be46e37d9be1e7ebb9",
+    "candidate_python_source_manifest_sha256": "decdad8288a77f00b2a1a9d339466235ad85da61d2f2ed7c741f16a9dea39b30",
+    "constructor_factory": {
+      "baseline": {
+        "count": 1000,
+        "mean_us": 2280.1260431297123,
+        "p50_us": 2181.766030844301,
+        "p95_us": 3846.590989269316,
+        "p99_us": 5916.423979215324
+      },
+      "candidate": {
+        "count": 1000,
+        "mean_us": 1118.5979507863522,
+        "p50_us": 971.6935455799103,
+        "p95_us": 1986.62793263793,
+        "p99_us": 4005.3370175883174
+      }
+    },
+    "library_probes": {
+      "baseline": {
+        "affinity": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "isolation": "none: shared workstation, no affinity or reserved CPU; source cohort completed before measurements",
+        "load_average_after": [
+          20.9384765625,
+          18.97021484375,
+          25.46044921875
+        ],
+        "load_average_before": [
+          19.57861328125,
+          18.533203125,
+          25.4609375
+        ],
+        "probes": [
+          {
+            "duration_seconds": 0.0717868939973414,
+            "iterations": 100,
+            "metrics": {
+              "p50_ms": 0.5379805224947631,
+              "p95_ms": 2.040353952907026,
+              "roundtrips_per_second": 1393.0119333997577
+            },
+            "name": "hub-roundtrip",
+            "notes": [
+              "who request to who_snapshot reply over a real loopback WebSocket"
+            ]
+          },
+          {
+            "duration_seconds": 0.7313687650021166,
+            "iterations": 100,
+            "metrics": {
+              "claims_per_second": 136.72992994130752,
+              "p50_ms": 6.149028020445257,
+              "p95_ms": 13.7585160555318
+            },
+            "name": "claim-grant",
+            "notes": [
+              "claim to claim_granted round-trip plus release, fresh task per iteration"
+            ]
+          },
+          {
+            "duration_seconds": 2.6099473469657823,
+            "iterations": 100,
+            "metrics": {
+              "claims_per_second": 38.31494919476283,
+              "event_loop_lag_max_ms": 20.78753598127514,
+              "event_loop_lag_p50_ms": 0.1559644481167197,
+              "event_loop_lag_p95_ms": 2.545330953784287,
+              "p50_ms": 21.9311389955692,
+              "p95_ms": 66.56230299267918
+            },
+            "name": "durable-claim-grant",
+            "notes": [
+              "claim-to-grant plus release with a real FULL-durability SQLite journal",
+              "event-loop lag is delay beyond a concurrent 1 ms scheduler interval"
+            ]
+          }
+        ]
+      },
+      "candidate": {
+        "affinity": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "isolation": "none: shared workstation, no affinity or reserved CPU; source cohort completed before measurements",
+        "load_average_after": [
+          21.89111328125,
+          19.29296875,
+          25.390625
+        ],
+        "load_average_before": [
+          20.9384765625,
+          18.97021484375,
+          25.46044921875
+        ],
+        "probes": [
+          {
+            "duration_seconds": 0.056867499952204525,
+            "iterations": 100,
+            "metrics": {
+              "p50_ms": 0.49259804654866457,
+              "p95_ms": 1.4199240831658244,
+              "roundtrips_per_second": 1758.4736463541933
+            },
+            "name": "hub-roundtrip",
+            "notes": [
+              "who request to who_snapshot reply over a real loopback WebSocket"
+            ]
+          },
+          {
+            "duration_seconds": 0.5430667049949989,
+            "iterations": 100,
+            "metrics": {
+              "claims_per_second": 184.13944195109679,
+              "p50_ms": 4.899187944829464,
+              "p95_ms": 9.348909952677786
+            },
+            "name": "claim-grant",
+            "notes": [
+              "claim to claim_granted round-trip plus release, fresh task per iteration"
+            ]
+          },
+          {
+            "duration_seconds": 2.654173835995607,
+            "iterations": 100,
+            "metrics": {
+              "claims_per_second": 37.676507334904464,
+              "event_loop_lag_max_ms": 8.014109964482486,
+              "event_loop_lag_p50_ms": 0.18369096890091893,
+              "event_loop_lag_p95_ms": 2.943365067243576,
+              "p50_ms": 22.624825011007488,
+              "p95_ms": 67.51401000656188
+            },
+            "name": "durable-claim-grant",
+            "notes": [
+              "claim-to-grant plus release with a real FULL-durability SQLite journal",
+              "event-loop lag is delay beyond a concurrent 1 ms scheduler interval"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "host": {
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3"
+  },
+  "ingress_quota": {
+    "bytes": 8388608,
+    "events": 600,
+    "window_seconds": 60.0
+  },
+  "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
+  "load_average_after": [
+    21.89,
+    19.29,
+    25.39
+  ],
+  "load_average_before": [
+    19.98,
+    18.8,
+    25.37
+  ],
+  "parse": [
+    {
+      "count": 20000,
+      "max_us": 467.26304572075605,
+      "mean_us": 5.617251404328272,
+      "p50_us": 4.524015821516514,
+      "p95_us": 8.177012205123901,
+      "p99_us": 9.199953638017178,
+      "text_bytes": 256,
+      "throughput_per_second": 174091.61771864878
+    },
+    {
+      "count": 20000,
+      "max_us": 7391.574094071984,
+      "mean_us": 40.53474690881558,
+      "p50_us": 39.22800533473492,
+      "p95_us": 44.64201629161835,
+      "p99_us": 63.31305485218763,
+      "text_bytes": 32768,
+      "throughput_per_second": 24545.960813712816
+    }
+  ],
+  "qualification_note": "Sequential baseline/candidate on a shared workstation, no reserved cores. Final owning cohort completed before measurements. Host load varied; all timings are local observations, no production performance claim.",
+  "recorded_at": "2026-10-08T14:39:06.928899+00:00",
+  "reproduction_command": "PYTHONPATH=src python benchmarks/native_message_record_benchmark.py; PYTHONPATH=src python -c \"from synapse_channel.benchmark.probes import run_probes; print(run_probes(['hub-roundtrip', 'claim-grant', 'durable-claim-grant']))\"",
+  "round_trip": [
+    {
+      "count": 500,
+      "max_us": 211697.43593782187,
+      "mean_us": 18835.859082406387,
+      "p50_us": 12729.304027743638,
+      "p95_us": 55218.816036358476,
+      "p99_us": 101057.73305986077,
+      "stored_events": 500,
+      "text_bytes": 256,
+      "throughput_per_second": 52.95883105334291
+    },
+    {
+      "count": 200,
+      "max_us": 120816.16499926895,
+      "mean_us": 24488.81516524125,
+      "p50_us": 15780.486050061882,
+      "p95_us": 73961.92802116275,
+      "p99_us": 118935.53601112217,
+      "stored_events": 200,
+      "text_bytes": 32768,
+      "throughput_per_second": 40.34348496397082
+    }
+  ],
+  "source_parent_commit": "af68ebaf57668732652149be46e37d9be1e7ebb9"
+}

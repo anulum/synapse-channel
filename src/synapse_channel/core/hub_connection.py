@@ -74,9 +74,9 @@ class HubConnection:
         The hub's frame router (``hub.handle_message``); the first authenticated
         frame and every subsequent frame are pumped through it.
     send_json : Callable[[Any, dict], Awaitable[None]]
-        The hub's per-socket send (``hub._send_json``), used to deliver the welcome.
+        The hub's per-socket send (``hub.send_json``), used to deliver the welcome.
     system : Callable[..., dict]
-        The hub's system-message factory (``hub._system``), used to stamp the
+        The hub's system-message factory (``hub.system``), used to stamp the
         welcome with the hub id.
     online_agents : Callable[[], list[str]]
         Returns the current roster of registered agent names for the welcome.

@@ -17,6 +17,7 @@ from typing import cast
 
 import pytest
 
+from hub_legacy_defaults import LEGACY_DEFAULTS
 from synapse_channel.core.attachment_serving import AttachmentServingPolicy
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import (
@@ -37,6 +38,7 @@ from synapse_channel.core.hub_config import (
     TakeoverDamping,
     config_fingerprint,
 )
+from synapse_channel.core.hub_constructor_options import HubLegacyOptions
 
 
 def _init_parameters() -> dict[str, inspect.Parameter]:
@@ -46,9 +48,13 @@ def _init_parameters() -> dict[str, inspect.Parameter]:
 
 
 def test_to_kwargs_covers_exactly_the_init_signature() -> None:
-    # A parameter added to SynapseHub.__init__ without a HubConfig field (or
-    # the reverse) must fail here, so the two surfaces cannot drift apart.
-    assert set(HubConfig().to_kwargs()) == set(_init_parameters())
+    # All original keyword names remain accepted through the typed boundary;
+    # the actual constructor now receives one canonical record.
+    assert set(HubConfig().to_kwargs()) == set(LEGACY_DEFAULTS)
+    assert set(HubLegacyOptions.__annotations__) == set(LEGACY_DEFAULTS)
+    parameters = _init_parameters()
+    assert set(parameters) == {"config", "legacy"}
+    assert parameters["legacy"].kind is inspect.Parameter.VAR_KEYWORD
 
 
 def test_no_field_name_is_claimed_twice() -> None:
@@ -68,9 +74,8 @@ def test_no_field_name_is_claimed_twice() -> None:
 
 
 def test_every_default_mirrors_the_init_default() -> None:
-    kwargs = HubConfig().to_kwargs()
-    for name, parameter in _init_parameters().items():
-        assert kwargs[name] == parameter.default, name
+    assert HubConfig().to_kwargs() == LEGACY_DEFAULTS
+    assert SynapseHub().configuration.to_kwargs() == LEGACY_DEFAULTS
 
 
 def test_default_config_builds_the_same_hub_as_bare_construction() -> None:

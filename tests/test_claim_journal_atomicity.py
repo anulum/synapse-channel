@@ -60,7 +60,7 @@ def test_new_claim_journal_failure_leaves_no_grant_wait_or_checkpoint_side_effec
 ) -> None:
     """A failed durable append cannot create a lease or consume resume state."""
     hub, store = _journalled_hub(tmp_path / "events.db")
-    hub._waits["A"] = {"T1", "T2"}
+    hub.waits["A"] = {"T1", "T2"}
     hub.state.expired_checkpoints["T1"] = "resume-token"
     epoch_before = hub.state._epoch_seq
     monkeypatch.setattr(leasing, "record_claim", _fail_record_claim)
@@ -71,7 +71,7 @@ def test_new_claim_journal_failure_leaves_no_grant_wait_or_checkpoint_side_effec
     assert "T1" not in hub.state.claims
     assert hub.state._epoch_seq == epoch_before
     assert hub.state.expired_checkpoints["T1"] == "resume-token"
-    assert hub._waits["A"] == {"T1", "T2"}
+    assert hub.waits["A"] == {"T1", "T2"}
     granted, _message = hub.state.claim("B", "T1", paths=["src/a.py"])
     assert granted
     assert not [event for event in store.read_all() if event.kind == EventKind.CLAIM]
@@ -89,7 +89,7 @@ def test_renewal_journal_failure_preserves_the_live_claim(
     assert granted
     original = hub.state.claims["T1"]
     original_snapshot = original.as_persisted_dict()
-    hub._waits["A"] = {"T2"}
+    hub.waits["A"] = {"T2"}
     monkeypatch.setattr(leasing, "record_claim", _fail_record_claim)
 
     with pytest.raises(OSError, match="journal unavailable"):
@@ -106,7 +106,7 @@ def test_renewal_journal_failure_preserves_the_live_claim(
 
     assert hub.state.claims["T1"] is original
     assert hub.state.claims["T1"].as_persisted_dict() == original_snapshot
-    assert hub._waits["A"] == {"T2"}
+    assert hub.waits["A"] == {"T2"}
     assert not [event for event in store.read_all() if event.kind == EventKind.CLAIM]
     store.close()
 
@@ -364,7 +364,7 @@ async def test_release_journal_failure_preserves_claim_checkpoint_and_waits(
     hub, store = _journalled_hub(tmp_path / "events.db")
     assert hub.state.claim("A", "T1", paths=["src/a.py"])[0]
     hub.state.claims["T1"].checkpoint = "resume-token"
-    hub._waits["B"] = {"T1", "T2"}
+    hub.waits["B"] = {"T1", "T2"}
     before = hub.state.claims["T1"]
     monkeypatch.setattr(leasing, "record_release", _fail_record_release)
 
@@ -373,7 +373,7 @@ async def test_release_journal_failure_preserves_claim_checkpoint_and_waits(
 
     assert hub.state.claims["T1"] is before
     assert hub.state.claims["T1"].checkpoint == "resume-token"
-    assert hub._waits["B"] == {"T1", "T2"}
+    assert hub.waits["B"] == {"T1", "T2"}
     assert not hub.state.claim("B", "T1", paths=["src/a.py"])[0]
     store.close()
 
@@ -386,7 +386,7 @@ async def test_handoff_journal_failure_preserves_owner_epoch_and_recipient_wait(
     assert hub.state.claim("A", "T1", note="before", paths=["src/a.py"])[0]
     before = hub.state.claims["T1"]
     hub.agent_sockets["B"] = object()
-    hub._waits["B"] = {"T1", "T2"}
+    hub.waits["B"] = {"T1", "T2"}
     monkeypatch.setattr(leasing, "record_handoff", _fail_record_claim)
 
     with pytest.raises(OSError, match="journal unavailable"):
@@ -399,7 +399,7 @@ async def test_handoff_journal_failure_preserves_owner_epoch_and_recipient_wait(
 
     assert hub.state.claims["T1"] is before
     assert hub.state.claims["T1"].owner == "A"
-    assert hub._waits["B"] == {"T1", "T2"}
+    assert hub.waits["B"] == {"T1", "T2"}
     assert "B" not in hub.state.last_seen
     store.close()
 

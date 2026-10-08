@@ -30,7 +30,6 @@ from synapse_channel.core.acl import (
     Target,
     evaluate_access,
 )
-from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.agent_liveness import waiter_owner, waiter_sidecar_names
 from synapse_channel.core.chat_dedupe import chat_digest
 from synapse_channel.core.dead_letter_escalation import (
@@ -53,6 +52,7 @@ from synapse_channel.core.handlers.delivery_feedback import (
     warn_stale_recipients,
 )
 from synapse_channel.core.hub_address import HUB_ADDRESS_SEPARATOR
+from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.journal import (
     DEAD_LETTER_DIRECTION_OUT,
     EventKind,
@@ -65,10 +65,164 @@ from synapse_channel.core.message_response import validate_semantic_response
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
 from synapse_channel.core.protocol import MessageType, is_recipient
+from synapse_channel.core.verb_access import message_access
+from synapse_channel.core.verb_registry import VerbSpec
 from synapse_channel.core.wake_capability import normalize_wake_capability
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.acl import AclPolicy
+    from synapse_channel.core.channels import ChannelRegistry
+    from synapse_channel.core.chat_dedupe import ChatDedupe
+    from synapse_channel.core.dead_letter_forwarding import DeadLetterForwarder
+    from synapse_channel.core.dead_letters import DeadLetterLedger
+    from synapse_channel.core.durable_ingress import DurableIngressQuota
+    from synapse_channel.core.handlers.delivery_feedback import DeliveryFeedbackContext
+    from synapse_channel.core.mailbox_pending import MailboxPendingTracker
+    from synapse_channel.core.message_forward_origin import ForwardOriginContext
+    from synapse_channel.core.namespace_ownership import NamespaceOwnership
+    from synapse_channel.core.operator_relay_transport import OperatorRelayPeer
+
+    class MessagingContext(DeliveryFeedbackContext, ForwardOriginContext, Protocol):
+        """Capabilities consumed by messaging handlers and their callees."""
+
+        @property
+        def acl_policy(self) -> AclPolicy | None:
+            """Return the acl policy used by this handler family."""
+            ...
+
+        async def broadcast_directed(
+            self, data: dict[str, Any], *, names: Iterable[str], sender_socket: Any
+        ) -> frozenset[str]:
+            """Return successful writes to recipients and granted observers only."""
+            ...
+
+        @property
+        def channels(self) -> ChannelRegistry:
+            """Return the channels used by this handler family."""
+            ...
+
+        @property
+        def chat_dedupe(self) -> ChatDedupe:
+            """Return the chat dedupe used by this handler family."""
+            ...
+
+        @property
+        def dead_letter_escalation_threshold(self) -> int:
+            """Return the dead letter escalation threshold used by this handler family."""
+            ...
+
+        @property
+        def dead_letter_forwarder(self) -> DeadLetterForwarder | None:
+            """Return the dead letter forwarder used by this handler family."""
+            ...
+
+        @property
+        def dead_letters(self) -> DeadLetterLedger:
+            """Return the dead letters used by this handler family."""
+            ...
+
+        @property
+        def durable_ingress_quota(self) -> DurableIngressQuota | None:
+            """Return the durable ingress quota used by this handler family."""
+            ...
+
+        @property
+        def mailbox_pending(self) -> MailboxPendingTracker:
+            """Return the mailbox pending used by this handler family."""
+            ...
+
+        async def mirror_to_relay(self, data: dict[str, Any]) -> None:
+            """Mirror one broadcast to the lite relay log via :class:`RelayMirror`.
+
+            Handler surface: the chat handler mirrors a channel-scoped message it
+            fans out itself; the append, lite encoding, and bounded trimming live in
+            :class:`~synapse_channel.core.hub_relay.RelayMirror`.
+            """
+            ...
+
+        @property
+        def namespace_ownership(self) -> NamespaceOwnership | None:
+            """Return the namespace ownership used by this handler family."""
+            ...
+
+        def next_msg_id(self) -> int:
+            """Return a strictly increasing per-hub message sequence number."""
+            ...
+
+        @property
+        def observed_asserting_hubs(self) -> Callable[[str], Iterable[str]] | None:
+            """Return the observed asserting hubs used by this handler family."""
+            ...
+
+        def observing_identities(self, target: str) -> tuple[str, ...]:
+            """Return connected identities the ACL policy grants ``observe`` on ``target``.
+
+            Under directed-message routing an observer (a live monitor or auditor) still
+            receives a directed message it is not a party to only when it holds an
+            ``observe`` grant. With no ACL policy configured there are no observers, so
+            directed routing narrows to the recipients alone; the grant is scoped to the
+            observer's own namespace, so an operator designates observers without opening
+            the traffic to everyone.
+            """
+            ...
+
+        def online_agents(self) -> list[str]:
+            """Return the sorted names of currently registered agents."""
+            ...
+
+        def permitted_role_claims(self, name: str, roles: tuple[str, ...]) -> tuple[str, ...]:
+            """Return the subset of declared ``roles`` ``name`` is permitted to bind.
+
+            With role-claim enforcement off — the default open/loopback posture — every
+            declared role is permitted, so a single-user dev hub binds roles exactly as
+            before. With ``--require-role-claim`` on, a role is kept when either:
+
+            - the role-grant store (``synapse role`` / ``--role-grants``) authorises
+            ``name`` for it, or
+            - the loaded ACL policy grants ``role-claim`` on target kind ``role`` for
+            that role value (namespace-scoped like every other ACL rule).
+
+            An unauthorised role is dropped and logged as a squatting attempt rather
+            than dropping the socket. Enforcement with no store and no matching ACL
+            rule denies the claim (fail closed). The gate keys off the self-reported
+            ``name``, so pair it with a connect token and identity binding to be a real
+            boundary.
+            """
+            ...
+
+        def recipients_without_live_waiter(self, recipients: Iterable[str]) -> tuple[str, ...]:
+            """Present recipients with no proof of liveness — the ones to warn about.
+
+            Thin wrapper over
+            :meth:`~synapse_channel.core.hub_liveness.HubLivenessView.recipients_without_live_waiter`,
+            kept because the chat handler and tests call ``hub.recipients_without_live_waiter``.
+            """
+            ...
+
+        @property
+        def relay_peers(self) -> dict[str, OperatorRelayPeer] | None:
+            """Return the relay peers used by this handler family."""
+            ...
+
+        def roles_of(self, name: str) -> tuple[str, ...]:
+            """Return the roles ``name`` currently answers to (empty tuple if none)."""
+            ...
+
+        def set_agent_roles(self, name: str, roles: tuple[str, ...]) -> None:
+            """Bind the roles an agent answers to, as declared on its registration heartbeat."""
+            ...
+
+        def set_wake_capability(self, name: str, capability: str) -> None:
+            """Bind the receiver wake capability declared on an identity's registration."""
+            ...
+
+        @property
+        def warn_stale_recipients(self) -> bool:
+            """Return the warn stale recipients used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.messaging")
 
@@ -188,24 +342,26 @@ class ChatRouting:
         return self.delivery
 
 
-async def handle_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
+async def handle_chat(
+    hub: MessagingContext, sender: str, data: dict[str, Any], websocket: Any
+) -> None:
     """Route one agent chat; see :func:`route_chat` for the full contract."""
     await route_chat(hub, sender, data, websocket)
 
 
 async def _refuse_chat(
-    hub: SynapseHub, sender: str, websocket: Any, refusal: str, *, report: bool
+    hub: MessagingContext, sender: str, websocket: Any, refusal: str, *, report: bool
 ) -> ChatRouting:
     """Refuse a chat, telling the sender on ``websocket`` when ``report`` is set."""
     if report:
-        await hub._send_json(
-            websocket, hub._system(refusal, msg_type=MessageType.ERROR, target=sender)
+        await hub.send_json(
+            websocket, hub.system(refusal, msg_type=MessageType.ERROR, target=sender)
         )
     return ChatRouting(refusal=refusal)
 
 
 async def route_chat(
-    hub: SynapseHub,
+    hub: MessagingContext,
     sender: str,
     data: dict[str, Any],
     websocket: Any,
@@ -235,7 +391,7 @@ async def route_chat(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : MessagingContext
         The hub routing the chat.
     sender : str
         The authenticated sender, or ``seat@origin_hub`` for a chat forwarded by a peer.
@@ -288,9 +444,9 @@ async def route_chat(
             # K4-WF8: the first copy was accepted; tell the sender instead of routing it
             # again. A system notice, since clients drop chat frames bearing their name.
             hub.counters.chat_duplicates_suppressed += 1
-            await hub._send_json(
+            await hub.send_json(
                 websocket,
-                hub._system(
+                hub.system(
                     f"Chat {client_msg_id!r} was already accepted as message "
                     f"{retry.original.get('msg_id')}; it was not routed again.",
                     target=sender,
@@ -317,7 +473,7 @@ async def route_chat(
             )
     data["type"] = MessageType.CHAT
     data["hub_id"] = hub.hub_id
-    data["msg_id"] = hub._next_msg_id()
+    data["msg_id"] = hub.next_msg_id()
     channel = str(data.get("channel") or "").strip()
     if channel:
         reached = await _route_channel_chat(hub, sender, data, websocket, channel)
@@ -408,9 +564,9 @@ async def route_chat(
         # still mirrored to the relay and journalled above, so the durable feed keeps
         # full visibility for dashboards and the federation follower.
         audience = _directed_audience(recipients, hub.observing_identities(target))
-        successful = await hub._broadcast_directed(data, names=audience, sender_socket=websocket)
+        successful = await hub.broadcast_directed(data, names=audience, sender_socket=websocket)
     else:
-        successful = await hub._broadcast(data)
+        successful = await hub.broadcast(data)
     previous_delivery = delivery.delivered
     delivery = classify_completed_delivery(delivery, successful)
     if directed and previous_delivery and not delivery.delivered:
@@ -462,7 +618,9 @@ async def route_chat(
     return ChatRouting(delivery=delivery, directed=directed)
 
 
-async def _escalate_dead_letter(hub: SynapseHub, *, target: str, count: int, sender: str) -> None:
+async def _escalate_dead_letter(
+    hub: MessagingContext, *, target: str, count: int, sender: str
+) -> None:
     """Escalate a dead-letter blackhole that has crossed its threshold.
 
     The escalation is an active signal, never a re-delivery (the ledger holds no message bodies):
@@ -484,8 +642,8 @@ async def _escalate_dead_letter(hub: SynapseHub, *, target: str, count: int, sen
             },
         )
     notice = escalation_notice(target, count, sender)
-    await hub._broadcast(
-        hub._system(
+    await hub.broadcast(
+        hub.system(
             notice,
             msg_type=MessageType.DEAD_LETTER_ESCALATION,
             escalation_target=target,
@@ -496,7 +654,7 @@ async def _escalate_dead_letter(hub: SynapseHub, *, target: str, count: int, sen
     await _forward_dead_letter_to_peer(hub, target=target, count=count)
 
 
-async def _forward_dead_letter_to_peer(hub: SynapseHub, *, target: str, count: int) -> None:
+async def _forward_dead_letter_to_peer(hub: MessagingContext, *, target: str, count: int) -> None:
     """Forward a blackhole signal to the peer hub whose domain owns the target, if any.
 
     The target's namespace is resolved through the same namespace-ownership and relay-route roster
@@ -547,7 +705,7 @@ async def _forward_dead_letter_to_peer(hub: SynapseHub, *, target: str, count: i
 
 
 async def _route_channel_chat(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any, channel: str
+    hub: MessagingContext, sender: str, data: dict[str, Any], websocket: Any, channel: str
 ) -> bool:
     """Deliver a channel-scoped chat to online members only, never broadcast.
 
@@ -559,9 +717,9 @@ async def _route_channel_chat(
     deduplication use this same verdict.
     """
     if not hub.channels.is_member(channel, sender):
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 f"not a member of channel '{channel}'",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -576,8 +734,8 @@ async def _route_channel_chat(
     hub.channels.retain_message(channel, data, max_messages=hub.max_history)
     if hub.journal is not None:
         record_chat(hub.journal, data)
-    await hub._mirror_to_relay(data)
-    completed = await asyncio.gather(*(hub._send_to_agent(member, data) for member in recipients))
+    await hub.mirror_to_relay(data)
+    completed = await asyncio.gather(*(hub.send_to_agent(member, data) for member in recipients))
     successful = [member for member, sent in zip(recipients, completed, strict=True) if sent]
     delivery = classify_completed_delivery(
         classify_delivery_liveness(recipients, ()), successful, include_waiters=False
@@ -642,7 +800,9 @@ def _matching_online_recipients(
     return sorted(recipients)
 
 
-async def handle_ack(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
+async def handle_ack(
+    hub: MessagingContext, sender: str, data: dict[str, Any], websocket: Any
+) -> None:
     """Settle a pending directed message with a deferred delivery receipt to its sender.
 
     A recipient that drained a receipt-requested directed message from its reconnect
@@ -690,7 +850,7 @@ backlog replay adds promptness, it does not replace the feed as the unbounded re
 
 
 async def _replay_directed_backlog(
-    hub: SynapseHub, name: str, recipient: str, since_seq: int, websocket: Any
+    hub: MessagingContext, name: str, recipient: str, since_seq: int, websocket: Any
 ) -> None:
     """Push the directed chats ``recipient`` missed while offline, from the durable journal.
 
@@ -727,10 +887,10 @@ async def _replay_directed_backlog(
         frame.pop("receipt_requested", None)
         frame["replayed"] = True
         frame["seq"] = event.seq
-        await hub._send_json(websocket, frame)
+        await hub.send_json(websocket, frame)
 
 
-def _mailbox_acl_allows(hub: SynapseHub, connection: str, requested: str) -> bool:
+def _mailbox_acl_allows(hub: MessagingContext, connection: str, requested: str) -> bool:
     """Return whether the ACL policy grants ``connection`` mailbox access to ``requested``.
 
     Consulted only when a policy is loaded. The grant is the policy-file finish of the
@@ -750,7 +910,7 @@ def _mailbox_acl_allows(hub: SynapseHub, connection: str, requested: str) -> boo
     return decision.decision == WOULD_ALLOW
 
 
-def _mailbox_recipient(connection: str, declared: Any, hub: SynapseHub | None = None) -> str:
+def _mailbox_recipient(connection: str, declared: Any, hub: MessagingContext | None = None) -> str:
     """Resolve whose directed backlog a mailbox heartbeat may replay onto ``connection``.
 
     A mailbox client may name, in ``declared`` (the heartbeat's ``mailbox_for``), an
@@ -783,7 +943,7 @@ def _mailbox_recipient(connection: str, declared: Any, hub: SynapseHub | None = 
 
 
 async def handle_heartbeat(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: MessagingContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Register any declared roles and replay a missed directed backlog on request.
 
@@ -794,7 +954,7 @@ async def handle_heartbeat(
     rejected, so a malformed field degrades to no roles instead of dropping the socket.
     When role-claim enforcement is on (``--require-role-claim``), a declared role the
     role-grant store does not authorise for this identity is dropped the same forgiving
-    way (see :meth:`~synapse_channel.core.hub.SynapseHub.permitted_role_claims`), so a
+    way (see :meth:`~synapse_channel.core.hub.MessagingContext.permitted_role_claims`), so a
     socket cannot squat a role no operator granted it. A keepalive with no ``roles``
     field leaves an earlier binding untouched.
 
@@ -833,3 +993,59 @@ async def handle_heartbeat(
             source="cursor",
         )
         await _replay_directed_backlog(hub, sender, recipient, since_seq, websocket)
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.CHAT,),
+        handler=handle_chat,
+        reply_types=(
+            MessageType.CHAT,
+            MessageType.DELIVERY_RECEIPT,
+            MessageType.DEAD_LETTER_ESCALATION,
+            MessageType.DEAD_LETTER_FORWARDING,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=message_access,
+        event_kinds=(
+            EventKind.CHAT,
+            EventKind.DEAD_LETTER_ESCALATION,
+            EventKind.DEAD_LETTER_FORWARDING,
+            EventKind.DELIVERY_RECEIPT_REQUESTED,
+            EventKind.DELIVERY_RECEIPT_IMMEDIATE,
+            EventKind.DELIVERY_RECEIPT_DEFERRED,
+            EventKind.DELIVERY_RECEIPT_EXPIRED,
+        ),
+        minimum_wire_version=1,
+        commands=("send",),
+    ),
+    VerbSpec(
+        request_types=(MessageType.ACK,),
+        handler=handle_ack,
+        reply_types=(MessageType.DELIVERY_RECEIPT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(
+            EventKind.MAILBOX_WATERMARK,
+            EventKind.DELIVERY_RECEIPT_DEFERRED,
+        ),
+        minimum_wire_version=2,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.HEARTBEAT,),
+        handler=handle_heartbeat,
+        reply_types=(MessageType.CHAT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(EventKind.MAILBOX_WATERMARK,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

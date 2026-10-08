@@ -12,11 +12,14 @@ import asyncio
 import contextlib
 import errno
 import json
-from collections.abc import Coroutine
+import sys
+from collections.abc import AsyncIterator, Coroutine
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
-from websockets.exceptions import ConnectionClosedError
+from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosedError, InvalidStatus
 from websockets.frames import Close
 
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
@@ -28,6 +31,113 @@ from synapse_channel.client.agent import (
     default_hub_uri,
 )
 from synapse_channel.client.agent_lifecycle import _received_close
+
+
+@contextlib.asynccontextmanager
+async def _forward_hub(uri: str) -> AsyncIterator[str]:
+    """Forward bytes to a real hub while preserving the tunnel's Host authority."""
+    port = urlsplit(uri).port
+    assert port is not None
+    connections: list[asyncio.Task[None]] = []
+
+    async def copy(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        while block := await reader.read(65536):
+            writer.write(block)
+            await writer.drain()
+        writer.write_eof()
+
+    async def relay(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        upstream_reader, upstream_writer = await asyncio.open_connection("localhost", port)
+        try:
+            await asyncio.gather(copy(reader, upstream_writer), copy(upstream_reader, writer))
+        finally:
+            upstream_writer.close()
+            writer.close()
+            await asyncio.gather(upstream_writer.wait_closed(), writer.wait_closed())
+
+    def accept(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        connections.append(asyncio.create_task(relay(reader, writer)))
+
+    server = await asyncio.start_server(accept, "127.0.0.1", 0)
+    try:
+        yield f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}"
+    finally:
+        server.close()
+        await server.wait_closed()
+        await asyncio.wait_for(asyncio.gather(*connections), timeout=3.0)
+
+
+@pytest.mark.parametrize("verbose", [False, True])
+async def test_rejected_tunnel_handshake_cleans_up_and_allows_retry(
+    verbose: bool, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async with running_hub() as (_, uri), _forward_hub(uri) as tunnel_uri:
+        with pytest.raises(InvalidStatus) as refusal:
+            async with connect(tunnel_uri):
+                pytest.fail("the hub admitted an untrusted tunnel authority")
+        assert refusal.value.response.status_code == 403
+        agent = SynapseAgent("handshake-retry", uri=tunnel_uri, verbose=verbose)
+        await asyncio.wait_for(agent.connect(), timeout=2.0)
+        assert agent.connection is None
+        assert not agent.running
+        assert not agent.ready_event.is_set()
+        assert not agent.delivery_ready_event.is_set()
+        assert agent.delivery_incarnation == ""
+        output = capsys.readouterr()
+        assert output.err == ""
+        assert ("WebSocket handshake failed" in output.out) is verbose
+        assert "origin/host not allowed" not in output.out
+
+        agent.uri = uri
+        task = asyncio.create_task(agent.connect())
+        try:
+            assert await agent.wait_until_ready(timeout=1.0)
+            peer = await connect_agent("handshake-peer", uri, wait_presence=False)
+            try:
+                await agent.chat("after refused upgrade", target="handshake-peer")
+                message = await peer.recorder.wait_for(
+                    lambda message: message.get("payload") == "after refused upgrade"
+                )
+                assert message["sender"] == "handshake-retry"
+            finally:
+                await close_agents(peer)
+        finally:
+            agent.running = False
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+
+@pytest.mark.parametrize("command", ["health", "who"])
+async def test_public_cli_rejected_tunnel_exits_one_without_traceback(command: str) -> None:
+    async with running_hub() as (_, uri), _forward_hub(uri) as tunnel_uri:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            "from synapse_channel.cli import main; raise SystemExit(main())",
+            command,
+            "--uri",
+            tunnel_uri,
+            "--name",
+            "handshake-cli",
+            "--ready-timeout",
+            "0.1",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=5.0)
+            assert process.returncode == 1
+            assert stderr == b""
+            assert b"Traceback" not in stdout
+            if command == "health":
+                assert stdout == b""
+            else:
+                assert b"Could not reach hub" in stdout
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.communicate()
 
 
 def test_defaults_and_heartbeat_clamp() -> None:

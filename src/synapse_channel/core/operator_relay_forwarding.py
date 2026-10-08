@@ -95,9 +95,9 @@ class OperatorRelayForwarding:
     journal : EventStore or None
         The durable store the outbound audit event is written to; ``None`` records nothing.
     send_json : Callable[[Any, dict], Awaitable[None]]
-        The hub's per-socket send (``hub._send_json``), used to reply to the requester.
+        The hub's per-socket send (``hub.send_json``), used to reply to the requester.
     system : Callable[..., dict]
-        The hub's system-message factory (``hub._system``), used to stamp each reply.
+        The hub's system-message factory (``hub.system``), used to stamp each reply.
     """
 
     def __init__(

@@ -68,10 +68,10 @@ class _FakeHub:
     def wake_capability_of(self, name: str) -> str:
         return self._caps.get(name, WAKE_UNKNOWN)
 
-    def _system(self, text: str, **fields: Any) -> dict[str, Any]:
+    def system(self, text: str, **fields: Any) -> dict[str, Any]:
         return {"text": text, **fields}
 
-    async def _send_json(self, websocket: Any, payload: dict[str, Any]) -> None:
+    async def send_json(self, websocket: Any, payload: dict[str, Any]) -> None:
         self.sent.append(payload)
 
 
@@ -338,7 +338,7 @@ class TestSendAndTrackDeliveryReceipt:
             attempted.append(payload)
             raise ConnectionError("sender offline")
 
-        monkeypatch.setattr(hub, "_send_json", fail_send)
+        monkeypatch.setattr(hub, "send_json", fail_send)
         await df.commit_delivery_receipt_verdict(
             _as_hub(hub),
             object(),
@@ -355,7 +355,7 @@ class TestSendAndTrackDeliveryReceipt:
         async def succeed_send(websocket: Any, payload: dict[str, Any]) -> None:
             attempted.append(payload)
 
-        monkeypatch.setattr(hub, "_send_json", succeed_send)
+        monkeypatch.setattr(hub, "send_json", succeed_send)
         await df.deliver_pending_receipt_notifications(
             _as_hub(hub), sender="ALICE", websocket=object()
         )

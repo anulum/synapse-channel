@@ -41,7 +41,7 @@ class HubBroadcaster:
         Mirror every broadcast is written to before it fans out, so a disconnected
         observer can catch up from the file later.
     system : Callable[..., dict]
-        The hub's system-message factory (``hub._system``), used to stamp a presence
+        The hub's system-message factory (``hub.system``), used to stamp a presence
         update with the hub id.
     online_agents : Callable[[], list[str]]
         Returns the current roster of registered agent names for the presence update.

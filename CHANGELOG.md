@@ -13,7 +13,93 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Record-only `native_message_record` verb (wire version 7). A seat leaves a
+  durable record of a message that travelled over a vendor's own channel, such
+  as a direct message between two Claude Code sessions or a queued Codex
+  message. The hub stores one `native_message` event and delivers nothing; it
+  stamps the recorder, the time and how the recorder's name was bound to the
+  connection, and accepts a record only from the seat on its own side.
+
+### Changed
+
+- Hub startup now uses an external composition root. `build_hub(config)` builds
+  typed collaborator families and installs them once; the CLI and base
+  `SynapseHub.from_config` use that path. Existing record and keyword callers
+  delegate to the same builder. Custom component factories can supply real
+  services, with checks for target/configuration custody and failure cleanup.
+
+- Hub verb declarations now live beside their handlers. Dispatch, idempotency
+  replay protection, ACL access mapping and the journal recovery guard derive
+  from that registry. The existing wire vocabulary and guard memberships remain
+  unchanged. ACL targets now follow `task_update`'s `task_id`/`id` precedence
+  and `release`'s `task_id`/`payload` precedence, preventing an unrelated payload
+  from authorizing a different task or blocking an authorized release.
+
+- Coalesce overlapping cross-hub chat attempts and terminal sender receipts per
+  durable forward. Cancellation releases transient ownership, late answers
+  preserve expiry, and independent chats remain concurrent. Offline receipts
+  stay pending across restart. Transport exceptions and peer error frames now
+  produce fixed diagnostics for chats, roster queries and delivery requests.
+
+- All hub handler families now declare structural capability contracts,
+  including requirements of their forwarding and claim-presence helpers.
+  Strict typing verifies the concrete hub at dispatch registration. Contracts
+  are internal and static; runtime dispatch, late-bound overrides, wire, CLI
+  and the public Python exports remain unchanged.
+
+- CLI hub queries and task-plan writes now fail with exit `1` when no matching
+  reply arrives, instead of silently returning `0`. The diagnostic explains
+  that a write may already have committed; no automatic retry is performed.
+
+
+- `synapse lock` now returns `1` for refused cleanup or `3` for uncertain cleanup
+  after a successful child. Nonzero child exits remain unchanged. Diagnostics
+  retain the child status and exact read-only recovery command without exposing
+  credentials embedded in the hub URI.
+
+- A structure budget now guards `src/synapse_channel` and `tools` against a unit
+  taking on a second responsibility. `tools/structure_budget.toml` lists every
+  class, function and module above a threshold of constructor parameters,
+  constructor attributes, constructed collaborators, function length, branches,
+  internal imports or access to another object's private members. The
+  pre-commit hook and the CI lint job refuse a new unit above a threshold and
+  any listed figure that rises; a figure that falls must be lowered in the
+  ledger in the same commit.
+
+- The methods of `SynapseHub` that the handler modules call carry public names:
+  `system`, `send_json`, `broadcast`, `broadcast_directed`, `send_to_agent`,
+  `mirror_to_relay`, `run_atomic_operation`, `settle_atomic_operation`,
+  `remember`, `next_msg_id` and the `message_seq` property replace the same
+  names with a leading underscore. Behaviour, the wire and the CLI are
+  unchanged. Code outside this repository that calls or overrides one of the
+  old names on a hub must use the new name; they were never part of the stable
+  Python API, which is the package export list. The static helper
+  `SynapseHub._optional_int` is now the function
+  `core.numeric_coercion.optional_int_field`, and the hub's wait graph is the
+  attribute `waits`. The identity members the handlers read are the public
+  attributes `identity_pins`, `static_identity_trust`,
+  `enrolled_identity_keys`, `enrollment_rate`, `clock` and `liveness`; an
+  enrolment, rotation or revocation takes effect in memory through
+  `SynapseHub.replace_enrolled_identity_keys`.
+
 ### Fixed
+
+- Lock cleanup uses a fresh client profile to read the epoch persisted by a
+  same-identity child renewal, instead of releasing with the parent's stale
+  epoch. One keyed release survives interrupted teardown; lost replies recover
+  through the exact durable operation without replaying the mutation. Invalid
+  readiness or cleanup deadlines fail before acquisition.
+
+- Structure-budget configuration exceptions now enforce their expiry and
+  recorded threshold maximum, including after admission into the baseline.
+  Removing a measured source root cannot hide new responsibility debt; failed
+  checks and updates preserve the original ledger.
+
+- End refused WebSocket upgrade attempts cleanly in the Python client. Health
+  and roster probes return failure without a transport traceback, and the same
+  agent can reconnect after the hub URI or tunnel destination is corrected.
 
 - Pin the Pi host's brace-expansion dependency to 5.0.12 and verify its actual
   installed files after `npm ci`. The upstream shrinkwrap could otherwise

@@ -97,16 +97,16 @@ class _FakeHub:
         self.sent: list[dict[str, Any]] = []
         self.remembered: list[tuple[dict[str, Any], dict[str, Any]]] = []
 
-    def _system(self, text: str, **fields: Any) -> dict[str, Any]:
+    def system(self, text: str, **fields: Any) -> dict[str, Any]:
         return {"text": text, **fields}
 
-    async def _broadcast(self, payload: dict[str, Any]) -> None:
+    async def broadcast(self, payload: dict[str, Any]) -> None:
         self.broadcasts.append(payload)
 
-    async def _send_json(self, websocket: Any, payload: dict[str, Any]) -> None:
+    async def send_json(self, websocket: Any, payload: dict[str, Any]) -> None:
         self.sent.append(payload)
 
-    def _remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
+    def remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
         self.remembered.append((data, response))
 
 

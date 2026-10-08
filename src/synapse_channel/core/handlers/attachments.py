@@ -23,12 +23,38 @@ from synapse_channel.core.acl import (
     Target,
     evaluate_access,
 )
-from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.attachment_store import MAX_CHUNK_BYTES, AttachmentError
+from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.protocol import MIN_ATTACHMENT_PROTOCOL_VERSION, MessageType
+from synapse_channel.core.verb_access import field_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.acl import AclPolicy
+    from synapse_channel.core.attachment_store import AttachmentStore
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.role_grants import RoleGrants
+
+    class AttachmentsContext(HandlerContext, Protocol):
+        """Capabilities consumed by attachments handlers and their callees."""
+
+        @property
+        def acl_policy(self) -> AclPolicy | None:
+            """Return the acl policy used by this handler family."""
+            ...
+
+        @property
+        def attachment_store(self) -> AttachmentStore | None:
+            """Return the attachment store used by this handler family."""
+            ...
+
+        @property
+        def role_grants(self) -> RoleGrants | None:
+            """Return the role grants used by this handler family."""
+            ...
+
 
 _PERMISSIONS = {
     MessageType.ATTACHMENT_BEGIN: ATTACHMENT_WRITE,
@@ -43,7 +69,7 @@ _PERMISSIONS = {
 
 
 async def handle_attachment(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: AttachmentsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Authorise one project-local operation and return a private result frame."""
     kind = str(data["type"])
@@ -135,7 +161,24 @@ async def handle_attachment(
         ValueError,
     ) as exc:
         result["error"] = str(exc) if isinstance(exc, AttachmentError) else "attachment unavailable"
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system("", msg_type=MessageType.ATTACHMENT_RESULT, target=sender, **result),
+        hub.system("", msg_type=MessageType.ATTACHMENT_RESULT, target=sender, **result),
     )
+
+
+VERB_SPECS = tuple(
+    VerbSpec(
+        request_types=(request,),
+        handler=handle_attachment,
+        reply_types=(MessageType.ATTACHMENT_RESULT,),
+        mutates=permission != ATTACHMENT_READ,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(permission, "attachment", "scope"),
+        event_kinds=(),
+        minimum_wire_version=MIN_ATTACHMENT_PROTOCOL_VERSION,
+        commands=(),
+    )
+    for request, permission in _PERMISSIONS.items()
+)

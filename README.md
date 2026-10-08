@@ -570,6 +570,16 @@ synapse hub --max-connections-per-host 4             # cap simultaneous sockets 
 synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
 ```
 
+Python embedders can configure a hub with `HubConfig` and use
+`SynapseHub.from_config(config)`. The explicit composition factory also supports
+substituting complete collaborator families; see [embedding a hub](docs/api.md#embedding-a-hub).
+
+CLI hub queries and `task` writes return `0` only after a matching reply.
+Missing replies return `1` with an unconfirmed-outcome diagnostic. A write may
+already have committed: inspect `synapse board` and retain the same `--idem-key`
+and unchanged request for any explicit retry. The CLI never retries a timed-out
+write automatically. See [query confirmation](docs/cli.md#query-confirmation-and-exit-status).
+
 For an observed cross-hub task revision, `task declare` and `task update` also
 accept `--causal-parent HUB_ID:SEQ:SHA256`. The SHA-256 is the complete event
 fingerprint exposed in multi-hub board provenance. A verified same-task parent
@@ -1571,6 +1581,9 @@ forwarded over pinned mutual TLS to that peer. The peer must grant the target's
 namespace. Chats are retried from a durable outbox until answered or expired,
 and the peer deduplicates retries so a chat is queued there only once
 ([protocol](docs/protocol.md#cross-hub-message-forwarding-wire-version-5)).
+Overlapping initial and retry attempts share one exchange per forward; other
+chats remain independent. Terminal receipts are coalesced and stay pending for
+an offline sender's next registration, including after restart.
 A stopped durable watcher can record explicit recovery with
 `synapse multihub recover` only after an operator accepts a new log generation or
 checkpoint; reconnect alone never clears quarantine. Network observed-peer pulls also carry cursor lag and peer welcome-frame
@@ -1755,12 +1768,12 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.37 |
 | Public API exports | 70 |
-| Package modules | 683 |
-| Classes | 1009 |
-| Wire message types | 111 |
-| CLI subcommands | 236 |
-| Test functions | 10876 |
-| Benchmark harnesses | 7 |
+| Package modules | 723 |
+| Classes | 1065 |
+| Wire message types | 114 |
+| CLI subcommands | 237 |
+| Test functions | 11052 |
+| Benchmark harnesses | 8 |
 | Documentation pages | 80 |
 | GitHub Actions workflows | 27 |
 | Optional-dependency groups | 14 |

@@ -81,9 +81,9 @@ class HubIdentityGate:
         signed-event trust). With binding required but no bundle configured the gate
         fails closed — it can verify nobody, so it admits nobody.
     send_json : Callable[[Any, dict], Awaitable[None]]
-        The hub's per-socket send (``hub._send_json``), used to deliver the denial.
+        The hub's per-socket send (``hub.send_json``), used to deliver the denial.
     system : Callable[..., dict]
-        The hub's system-message factory (``hub._system``), used to stamp the denial
+        The hub's system-message factory (``hub.system``), used to stamp the denial
         with the hub id.
     pin_store : IdentityPinStore or None, optional
         The durable name→key pin table for the trust-on-first-use posture.

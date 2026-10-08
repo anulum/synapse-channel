@@ -67,8 +67,8 @@ def _record_transport(hub: SynapseHub) -> tuple[list[dict[str, Any]], list[dict[
     async def send_json(_websocket: Any, message: dict[str, Any]) -> None:
         sends.append(message)
 
-    hub._broadcast = broadcast  # type: ignore[method-assign,assignment]
-    hub._send_json = send_json  # type: ignore[method-assign,assignment]
+    hub.broadcast = broadcast  # type: ignore[method-assign,assignment]
+    hub.send_json = send_json  # type: ignore[method-assign,assignment]
     return broadcasts, sends
 
 
@@ -88,7 +88,7 @@ async def test_handler_cancel_during_grant_broadcast_keeps_claim_aligned(tmp_pat
         started.set()
         await unblock.wait()
 
-    hub._broadcast = stalled_broadcast  # type: ignore[method-assign,assignment]
+    hub.broadcast = stalled_broadcast  # type: ignore[method-assign,assignment]
 
     task = asyncio.create_task(
         leasing.handle_claim(hub, "A", _claim_body("T1", "src/a.py"), _FakeSocket())
@@ -204,14 +204,14 @@ async def test_advisory_wait_needs_no_actor_gate_and_survives_in_flight_commit(
     # the complete pre-commit live state. The advisory wait is recorded directly,
     # without taking the actor gate.
     await leasing.handle_wait_request(hub, "W", {"task_id": "T1"}, _FakeSocket())
-    assert hub._waits.get("W") == {"T1"}
+    assert hub.waits.get("W") == {"T1"}
     assert sends and sends[-1]["task_id"] == "T1"
 
     # Publishing the unrelated durable commit does not touch the wait graph:
     # publish_from replaces SynapseState only, never the hub's advisory waits.
     allow_commit.set()
     await claim_task
-    assert hub._waits.get("W") == {"T1"}
+    assert hub.waits.get("W") == {"T1"}
     assert "T1" in hub.state.claims
     assert "T2" in hub.state.claims
     store.close()

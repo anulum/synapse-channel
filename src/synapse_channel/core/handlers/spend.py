@@ -32,23 +32,42 @@ from synapse_channel.core.spend_wire import (
     decode_spend_request,
     encode_spend_result,
 )
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.multihub_serving import MultiHubServingPolicy
+    from synapse_channel.core.spend_ledger import SpendLedger
+
+    class SpendContext(HandlerContext, Protocol):
+        """Capabilities consumed by spend handlers and their callees."""
+
+        @property
+        def multihub_serving_policy(self) -> MultiHubServingPolicy | None:
+            """Return the multihub serving policy used by this handler family."""
+            ...
+
+        @property
+        def spend_ledger(self) -> SpendLedger | None:
+            """Return the spend ledger used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.hub")
 
 
 async def handle_spend_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SpendContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Answer one peer spend request privately, or refuse it uniformly."""
     try:
         action, document = decode_spend_request(data)
     except SpendWireError:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system("Malformed spend request", msg_type=MessageType.ERROR, target=sender),
+            hub.system("Malformed spend request", msg_type=MessageType.ERROR, target=sender),
         )
         return
     result: dict[str, object] = dict(REFUSALS[action])
@@ -71,12 +90,28 @@ async def handle_spend_request(
                 result = await asyncio.to_thread(ledger.query, sender, document)
         except SpendLedgerError as exc:
             logger.error("spend ledger unavailable for %s from %r: %s", action, sender, exc)
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Spend result",
             msg_type=MessageType.SPEND_RESULT,
             target=sender,
             **encode_spend_result(action, result),
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.SPEND_REQUEST,),
+        handler=handle_spend_request,
+        reply_types=(MessageType.SPEND_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

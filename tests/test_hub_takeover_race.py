@@ -238,8 +238,8 @@ async def test_the_name_switches_to_the_new_owner_before_the_eviction_completes(
                     NAME,
                     challenger_ws,
                     takeover=True,
-                    send_json=hub._send_json,
-                    system=hub._system,
+                    send_json=hub.send_json,
+                    system=hub.system,
                 )
             )
             await asyncio.sleep(0)  # run the takeover up to the eviction await

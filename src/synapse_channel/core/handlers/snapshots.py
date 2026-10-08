@@ -18,17 +18,99 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.acl import RECALL
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.release_confirmation import read_release_confirmation
+from synapse_channel.core.verb_access import fixed_access, history_access
+from synapse_channel.core.verb_registry import VerbSpec
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.capability import CapabilityRegistry
+    from synapse_channel.core.claim_holder_presence import ClaimHolderPresence
+    from synapse_channel.core.dead_letters import DeadLetterLedger
+    from synapse_channel.core.handlers.inbox import InboxContext
+    from synapse_channel.core.ledger import Blackboard
+    from synapse_channel.core.mailbox_pending import MailboxPendingTracker
+    from synapse_channel.core.message_forward_origin import ForwardOriginContext
+    from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
+
+    class SnapshotsContext(ForwardOriginContext, InboxContext, Protocol):
+        """Capabilities consumed by snapshots handlers and their callees."""
+
+        @property
+        def agent_roles(self) -> dict[str, tuple[str, ...]]:
+            """Return the agent roles used by this handler family."""
+            ...
+
+        @property
+        def blackboard(self) -> Blackboard:
+            """Return the blackboard used by this handler family."""
+            ...
+
+        @property
+        def board_task_cap(self) -> int | None:
+            """Return the board task cap used by this handler family."""
+            ...
+
+        @property
+        def capabilities(self) -> CapabilityRegistry:
+            """Return the capabilities used by this handler family."""
+            ...
+
+        @property
+        def claim_holders(self) -> ClaimHolderPresence:
+            """Return the claim holders used by this handler family."""
+            ...
+
+        @property
+        def config_epoch(self) -> str:
+            """Return the config epoch used by this handler family."""
+            ...
+
+        @property
+        def connected_clients(self) -> set[Any]:
+            """Return the connected clients used by this handler family."""
+            ...
+
+        @property
+        def dead_letters(self) -> DeadLetterLedger:
+            """Return the dead letters used by this handler family."""
+            ...
+
+        @property
+        def mailbox_pending(self) -> MailboxPendingTracker:
+            """Return the mailbox pending used by this handler family."""
+            ...
+
+        def online_agents(self) -> list[str]:
+            """Return the sorted names of currently registered agents."""
+            ...
+
+        @property
+        def relay_approvals(self) -> RelayApprovalLedger:
+            """Return the relay approvals used by this handler family."""
+            ...
+
+        def roster_liveness(self) -> dict[str, dict[str, Any]]:
+            """Per-agent liveness annotation for the ``/who`` roster (handler surface).
+
+            Thin wrapper over
+            :meth:`~synapse_channel.core.hub_liveness.HubLivenessView.roster_liveness`, kept
+            because the who-snapshot handler and tests call ``hub.roster_liveness``.
+            """
+            ...
+
+        def wake_capability_of(self, name: str) -> str:
+            """Return the declared receiver wake capability for ``name``."""
+            ...
 
 
 async def handle_state_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SnapshotsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent a full state snapshot.
 
@@ -43,9 +125,9 @@ async def handle_state_request(
         else {}
     )
     if "release_confirmation" in data:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "Release confirmation",
                 msg_type=MessageType.STATE_SNAPSHOT,
                 target=sender,
@@ -64,9 +146,9 @@ async def handle_state_request(
         away = hub.claim_holders.offline_seconds(owner, online=owner in online, now=now)
         claim["holder_online"] = away is None
         claim["holder_offline_seconds"] = None if away is None else round(away, 3)
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "State snapshot",
             msg_type=MessageType.STATE_SNAPSHOT,
             target=sender,
@@ -81,7 +163,7 @@ async def handle_state_request(
 
 
 async def handle_who_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SnapshotsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent the online-agent roster and the hub's pinning tag.
 
@@ -93,7 +175,7 @@ async def handle_who_request(
     if isinstance(remote_hub, str) and remote_hub.strip():
         from synapse_channel.core.message_forward_origin import forward_who
 
-        await hub._send_json(websocket, await forward_who(hub, sender, remote_hub.strip()))
+        await hub.send_json(websocket, await forward_who(hub, sender, remote_hub.strip()))
         return
     # Lazy: the package __init__ pulls in the handler modules, so a top-level
     # import of __version__ would be circular; by call time it is initialised.
@@ -125,9 +207,9 @@ async def handle_who_request(
         }
         extra["delivery_sessions"] = delivery_sessions
 
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Who snapshot",
             msg_type=MessageType.WHO_SNAPSHOT,
             target=sender,
@@ -143,7 +225,7 @@ async def handle_who_request(
 
 
 async def handle_history_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SnapshotsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send recent chat history, optionally selecting an exact message first.
 
@@ -178,9 +260,9 @@ async def handle_history_request(
         n = max(1, limit)
         history = history[-n:]
         requested_limit = n
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "History snapshot",
             msg_type=MessageType.HISTORY_SNAPSHOT,
             target=sender,
@@ -191,7 +273,7 @@ async def handle_history_request(
 
 
 async def handle_resume_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SnapshotsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent every chat message after a cursor.
 
@@ -201,7 +283,7 @@ async def handle_resume_request(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : SnapshotsContext
         The hub whose chat history and transport the handler uses.
     sender : str
         The requesting agent.
@@ -213,9 +295,9 @@ async def handle_resume_request(
     # An absent, non-numeric, or overflowing cursor resumes from the start (0).
     since = safe_int(data.get("since"), default=0)
     tail = [m for m in hub.chat_history if int(m.get("msg_id", 0)) > since]
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Resume snapshot",
             msg_type=MessageType.RESUME_SNAPSHOT,
             target=sender,
@@ -226,12 +308,12 @@ async def handle_resume_request(
 
 
 async def handle_board_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SnapshotsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent a snapshot of the shared blackboard."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Board snapshot",
             msg_type=MessageType.BOARD_SNAPSHOT,
             target=sender,
@@ -241,15 +323,91 @@ async def handle_board_request(
 
 
 async def handle_manifest_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SnapshotsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent the capability manifest."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Manifest snapshot",
             msg_type=MessageType.MANIFEST_SNAPSHOT,
             target=sender,
             manifest=hub.capabilities.manifest(),
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.STATE_REQUEST,),
+        handler=handle_state_request,
+        reply_types=(MessageType.STATE_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=("state",),
+    ),
+    VerbSpec(
+        request_types=(MessageType.WHO_REQUEST,),
+        handler=handle_who_request,
+        reply_types=(MessageType.WHO_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=("who",),
+    ),
+    VerbSpec(
+        request_types=(MessageType.HISTORY_REQUEST,),
+        handler=handle_history_request,
+        reply_types=(MessageType.HISTORY_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=history_access,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.RESUME_REQUEST,),
+        handler=handle_resume_request,
+        reply_types=(MessageType.RESUME_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=fixed_access(RECALL, "history", "global"),
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.BOARD_REQUEST,),
+        handler=handle_board_request,
+        reply_types=(MessageType.BOARD_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=("board",),
+    ),
+    VerbSpec(
+        request_types=(MessageType.MANIFEST_REQUEST,),
+        handler=handle_manifest_request,
+        reply_types=(MessageType.MANIFEST_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=("manifest",),
+    ),
+)

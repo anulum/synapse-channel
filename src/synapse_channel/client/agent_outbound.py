@@ -14,6 +14,7 @@ from synapse_channel.client.agent_outbound_base import AgentSendMixin
 from synapse_channel.client.agent_outbound_capability import AgentCapabilityMixin
 from synapse_channel.client.agent_outbound_ledger import AgentLedgerMixin
 from synapse_channel.client.agent_outbound_memory import AgentMemoryMixin
+from synapse_channel.client.agent_outbound_native import AgentNativeMessageMixin
 from synapse_channel.client.agent_outbound_stream import AgentStreamMixin
 from synapse_channel.client.agent_outbound_tasks import AgentTaskMutationMixin
 from synapse_channel.client.agent_outbound_types import _OutboundAgent
@@ -28,6 +29,7 @@ class AgentOutboundMixin(
     AgentSendMixin,
     AgentDeliveryMixin,
     AgentMemoryMixin,
+    AgentNativeMessageMixin,
     AgentTaskMutationMixin,
     AgentLedgerMixin,
     AgentStreamMixin,

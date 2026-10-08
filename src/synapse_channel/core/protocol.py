@@ -30,7 +30,7 @@ from typing import Any
 SENDER_HUB = "SynapseHub"
 """Reserved sender name stamped on every hub-originated message."""
 
-WIRE_PROTOCOL_VERSION = 6
+WIRE_PROTOCOL_VERSION = 7
 """The version of the hub's wire protocol.
 
 Advertised in the ``WELCOME`` handshake so a client — including an out-of-tree
@@ -59,6 +59,7 @@ Version ``5`` adds hub-to-hub message forwarding: a hub forwards a chat or deliv
 addressed to ``PROJECT/seat@HUB_ID`` to that peer and relays its answer. The frames
 travel only between hubs; agent-facing frames are unchanged.
 Version ``6`` adds private recipient-granted attachment metadata and chunk reads between hubs.
+Version ``7`` adds the record-only ``native_message_record`` verb.
 """
 
 MIN_ACK_PROTOCOL_VERSION = 2
@@ -82,6 +83,9 @@ MIN_ATTACHMENT_PROTOCOL_VERSION = 4
 
 MIN_MESSAGE_FORWARD_PROTOCOL_VERSION = 5
 """Lowest wire version at which a hub serves forwarded messages from a peer hub."""
+
+MIN_NATIVE_MESSAGE_RECORD_PROTOCOL_VERSION = 7
+"""Lowest wire version at which a hub records a native vendor message."""
 
 
 @dataclass(frozen=True)
@@ -362,6 +366,7 @@ class MessageType:
     IDENTITY_REVOKE = "identity_revoke"
     ENTITLEMENT_ADVERT = "entitlement_advert"
     GUARD_DENIAL = "guard_denial"
+    NATIVE_MESSAGE_RECORD = "native_message_record"
     ATTACHMENT_BEGIN = "attachment_begin"
     ATTACHMENT_CHUNK = "attachment_chunk"
     ATTACHMENT_COMMIT = "attachment_commit"
@@ -378,6 +383,8 @@ class MessageType:
     CLAIM_GRANTED = "claim_granted"
     CLAIM_DENIED = "claim_denied"
     GUARD_DENIAL_RECORDED = "guard_denial_recorded"
+    NATIVE_MESSAGE_RECORDED = "native_message_recorded"
+    NATIVE_MESSAGE_REJECTED = "native_message_rejected"
     ATTACHMENT_RESULT = "attachment_result"
     RELEASE_GRANTED = "release_granted"
     RELEASE_DENIED = "release_denied"

@@ -1063,7 +1063,7 @@ async def test_wait_zero_config_machine_identity_pins_and_protects_the_waiter(
         )
         try:
             await _wait_for_presence(observer, "B-rx")
-            assert hub._identity_pins.pinned("B-rx") is not None
+            assert hub.identity_pins.pinned("B-rx") is not None
             await _send_chat(uri, "A", "B", "first-wake")
             assert await first == 0
         finally:

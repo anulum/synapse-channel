@@ -119,6 +119,9 @@ _FROZEN_WIRE_VALUES: dict[str, str] = {
     "SPEND_REQUEST": "spend_request",
     "SPEND_RESULT": "spend_result",
     "MULTIHUB_MESSAGE_FORWARD": "multihub_message_forward",
+    "NATIVE_MESSAGE_RECORD": "native_message_record",
+    "NATIVE_MESSAGE_RECORDED": "native_message_recorded",
+    "NATIVE_MESSAGE_REJECTED": "native_message_rejected",
     "MULTIHUB_MESSAGE_RESULT": "multihub_message_result",
     "MULTIHUB_LOG_REQUEST": "multihub_log_request",
     "MULTIHUB_LOG_SNAPSHOT": "multihub_log_snapshot",
@@ -190,6 +193,6 @@ def test_wire_envelope_carries_the_reserved_keys() -> None:
 
 
 def test_wire_protocol_version_is_frozen_at_the_current_baseline() -> None:
-    # The wire is at version 6 (recipient-granted attachment reads); a
+    # The wire is at version 7 (record-only native-message verb); a
     # bump is a wire vocabulary change and a deliberate edit, not an accident.
-    assert WIRE_PROTOCOL_VERSION == 6
+    assert WIRE_PROTOCOL_VERSION == 7

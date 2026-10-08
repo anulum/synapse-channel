@@ -83,7 +83,7 @@ async def test_hub_restart_replays_durable_state(tmp_path: Path) -> None:
     assert "T1" in hub_b.state.claims
     assert hub_b.state.claims["T1"].paths == ("src",)
     assert [m["payload"] for m in hub_b.chat_history] == ["persist me"]
-    assert hub_b._message_seq == 1
+    assert hub_b.message_seq == 1
 
 
 async def test_hub_restart_replays_the_idempotency_guard(tmp_path: Path) -> None:
@@ -366,7 +366,7 @@ async def test_wait_granted_preserves_every_holder() -> None:
             granted = await read_until_type(ws_b, "wait_granted")
             await send_json(ws_b, sender="B", type="wait_request", task_id="T2")
             second_grant = await read_until_type(ws_b, "wait_granted")
-            assert hub._waits["B"] == {"T1", "T2"}
+            assert hub.waits["B"] == {"T1", "T2"}
 
     assert granted["holder"] == "A"
     assert second_grant["holder"] == "C"
@@ -391,7 +391,7 @@ async def test_circular_wait_is_denied() -> None:
             assert (await read_until_type(ws_a, "wait_granted"))["holder"] == "B"
             await send_json(ws_a, sender="A", type="wait_request", task_id="T3")
             assert (await read_until_type(ws_a, "wait_granted"))["holder"] == "C"
-            assert hub._waits["A"] == {"T2", "T3"}
+            assert hub.waits["A"] == {"T2", "T3"}
             await send_json(ws_b, sender="B", type="wait_request", task_id="T1")
             denied = await read_until_type(ws_b, "wait_denied")
 
@@ -410,22 +410,22 @@ async def test_wait_clears_only_when_the_waited_task_is_claimed() -> None:
             await _read_claim_grant(ws_a, "T1", "A")
             await send_json(ws_b, sender="B", type="wait_request", task_id="T1")
             await read_until_type(ws_b, "wait_granted")
-            assert hub._waits["B"] == {"T1"}
+            assert hub.waits["B"] == {"T1"}
             # An unrelated claim must NOT erase the still-open wait (WF-4).
             await send_json(ws_b, sender="B", type="claim", task_id="T3", paths=["docs"])
             await _read_claim_grant(ws_b, "T3", "B")
-            assert hub._waits["B"] == {"T1"}
+            assert hub.waits["B"] == {"T1"}
             # Claiming the WAITED task clears exactly that edge.
             await send_json(ws_a, sender="A", type="release", task_id="T1")
             await read_until_type(ws_a, "release_granted")
             await send_json(ws_b, sender="B", type="claim", task_id="T1")
             await _read_claim_grant(ws_b, "T1", "B")
 
-    assert "B" not in hub._waits
+    assert "B" not in hub.waits
 
 
 def test_drop_waits_removes_only_the_waiters_own_edges() -> None:
     hub = SynapseHub(hub_id="syn-test")
-    hub._waits = {"X": {"T1"}, "Z": {"T1", "T2"}, "W": {"T2"}}
+    hub.waits = {"X": {"T1"}, "Z": {"T1", "T2"}, "W": {"T2"}}
     hub._drop_waits("X")
-    assert hub._waits == {"Z": {"T1", "T2"}, "W": {"T2"}}
+    assert hub.waits == {"Z": {"T1", "T2"}, "W": {"T2"}}

@@ -10,18 +10,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 import sys
 from pathlib import Path
-from typing import Any, cast
 
 import pytest
 
 from cli_e2e_helpers import git_repo, run_cli
+from cli_lock_release_helpers import release_reply_proxy
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel import cli, cli_locking
-from synapse_channel.cli_locking import AgentFactory
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.mcp.git_claim import resolve_mcp_git_claim_scope
 
@@ -287,191 +286,136 @@ def test_cmd_lock_dispatches_real_command(capsys: pytest.CaptureFixture[str]) ->
     assert "Could not reach hub" in capsys.readouterr().out
 
 
-# --- scripted-agent paths a live hub cannot exercise deterministically ---
-
-
-class _ScriptedLockAgent:
-    """Feeds a scripted claim verdict per ``claim()`` call, without a hub."""
-
-    def __init__(
-        self,
-        name: str,
-        callback: Any,
-        **_kwargs: Any,
-    ) -> None:
-        self.name = name
-        self.callback = callback
-        self.running = True
-        self.last_close_code: int | None = None
-        self.last_close_reason = ""
-        self.claim_calls = 0
-        self.release_error: Exception | None = None
-
-    async def connect(self) -> None:
-        # Park until the lock path cancels the connect task on teardown.
-        # Prefer Event.wait over sleep(3600): cancel is immediate and clean.
-        await asyncio.Event().wait()
-
-    async def wait_until_ready(self, timeout: float) -> bool:
-        del timeout
-        return True
-
-    async def claim(self, task_id: str, **_kwargs: Any) -> None:
-        self.claim_calls += 1
-        if self.claim_calls == 1:
-            # foreign frames the collector must ignore before the real verdict
-            await self.callback({"type": MessageType.CLAIM_GRANTED, "task_id": "other"})
-            await self.callback(
-                {"type": MessageType.CLAIM_GRANTED, "task_id": task_id, "owner": "someone-else"}
-            )
-            await self.callback(
-                {"type": MessageType.CLAIM_DENIED, "task_id": task_id, "payload": "held"}
-            )
-            return
-        await self.callback(
-            {"type": MessageType.CLAIM_GRANTED, "task_id": task_id, "owner": self.name}
-        )
-
-    async def release(self, task_id: str, **_kwargs: Any) -> None:
-        if self.release_error is not None:
-            raise self.release_error
-        # mirror the real hub: the release is confirmed back to its owner
-        await self.callback(
-            {"type": MessageType.RELEASE_GRANTED, "task_id": task_id, "owner": self.name}
-        )
-
-
 async def test_lock_retries_after_a_denial_and_wins_the_second_round() -> None:
-    """A denied first claim sleeps the retry interval and re-claims — and a
-    grant for another task or another owner never counts as ours."""
-    ran: list[list[str]] = []
-
-    async def runner(command: list[str]) -> int:
-        ran.append(command)
-        return 0
-
-    code = await cli_locking._lock(
-        uri="ws://unused",
-        name="X",
-        task_id="g",
-        command=["c"],
-        paths=[],
-        wait_timeout=30.0,
-        retry_interval=0.01,
-        poll_interval=0.001,
-        agent_factory=cast("AgentFactory", _ScriptedLockAgent),
-        runner=runner,
-    )
-    assert code == 0
-    assert ran == [["c"]]
-
-
-async def test_lock_logs_a_teardown_release_failure_at_debug(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """A release that fails on teardown leaves a debug trace, never masks the result."""
-
-    class _GrantThenFailRelease(_ScriptedLockAgent):
-        def __init__(self, name: str, callback: Any, **kwargs: Any) -> None:
-            super().__init__(name, callback, **kwargs)
-            self.claim_calls = 1  # grant immediately on the first claim
-            self.release_error = RuntimeError("release refused during teardown")
-
-    async def runner(_command: list[str]) -> int:
-        return 0
-
-    with caplog.at_level(logging.DEBUG, logger="synapse.lock"):
-        code = await cli_locking._lock(
-            uri="ws://unused",
-            name="X",
-            task_id="g",
-            command=["c"],
-            paths=[],
-            wait_timeout=1.0,
-            poll_interval=0.001,
-            agent_factory=cast("AgentFactory", _GrantThenFailRelease),
-            runner=runner,
-        )
-    assert code == 0
-    assert "best-effort release of 'g' failed on teardown" in caplog.text
-
-
-async def test_lock_teardown_waits_for_the_release_confirmation() -> None:
-    """The process exits only after the hub confirms the release — the durable
-    log already carries it, so a follow-up step never races the teardown."""
-    seen: dict[str, float] = {}
-
-    class _SlowConfirmRelease(_ScriptedLockAgent):
-        def __init__(self, name: str, callback: Any, **kwargs: Any) -> None:
-            super().__init__(name, callback, **kwargs)
-            self.claim_calls = 1  # grant immediately on the first claim
-
-        async def release(self, task_id: str, **_kwargs: Any) -> None:
-            seen["released_at"] = asyncio.get_event_loop().time()
-
-            async def confirm_later() -> None:
-                await asyncio.sleep(0.05)
-                await self.callback(
-                    {
-                        "type": MessageType.RELEASE_GRANTED,
-                        "task_id": task_id,
-                        "owner": self.name,
-                    }
+    """An actual denied first attempt retries only after the real holder releases."""
+    async with running_hub() as (hub, uri):
+        holder = await connect_agent("first-owner", uri)
+        try:
+            await holder.agent.claim("g", worktree="g")
+            await holder.recorder.wait_for(
+                lambda frame: frame.get("type") == MessageType.CLAIM_GRANTED
+            )
+            async with release_reply_proxy(uri, drop_confirmation=False) as (proxy, fault):
+                fault["active"] = False
+                operation = asyncio.create_task(
+                    asyncio.to_thread(
+                        run_cli,
+                        "lock",
+                        "g",
+                        "--name",
+                        "second-owner",
+                        "--wait-timeout",
+                        "5",
+                        "--",
+                        sys.executable,
+                        "-c",
+                        "print('command-ran')",
+                        uri=proxy,
+                    )
                 )
-                seen["confirmed_at"] = asyncio.get_event_loop().time()
+                deadline = asyncio.get_running_loop().time() + 5
+                while not fault["claim_denied"]:
+                    assert not operation.done()
+                    assert asyncio.get_running_loop().time() < deadline
+                    await asyncio.sleep(0.01)
+                assert hub.state.claims["g"].owner == "first-owner"
+                await holder.agent.release("g")
+                await holder.recorder.wait_for(
+                    lambda frame: frame.get("type") == MessageType.RELEASE_GRANTED
+                )
+                result = await asyncio.wait_for(operation, 10)
+                assert result.returncode == 0, result.output
+                assert result.stdout.strip() == "command-ran"
+                assert "g" not in hub.state.claims
+        finally:
+            await close_agents(holder)
 
-            asyncio.get_event_loop().create_task(confirm_later())
 
-    async def runner(_command: list[str]) -> int:
-        return 0
+async def test_lock_exposes_cleanup_failure_separately_from_child_exit() -> None:
+    """Real loss of both confirmation paths cannot silently return the child's zero."""
+    async with running_hub() as (_hub, uri):
+        async with release_reply_proxy(uri, drop_confirmation=True) as (proxy, _fault):
+            result = await asyncio.to_thread(
+                run_cli,
+                "lock",
+                "g",
+                "--name",
+                "owner",
+                "--release-timeout",
+                "0.1",
+                "--",
+                sys.executable,
+                "-c",
+                "pass",
+                uri=proxy,
+            )
+            assert result.returncode == 3, result.output
+            assert "lock: release unknown" in result.stderr
+            assert "child exit=0" in result.stderr
+            assert "Do not replay release" in result.stderr
 
-    code = await cli_locking._lock(
-        uri="ws://unused",
-        name="X",
-        task_id="g",
-        command=["c"],
-        paths=[],
-        wait_timeout=1.0,
-        poll_interval=0.01,
-        agent_factory=cast("AgentFactory", _SlowConfirmRelease),
-        runner=runner,
-    )
 
-    assert code == 0
-    assert "confirmed_at" in seen  # teardown waited through the late confirmation
+async def test_lock_teardown_waits_for_the_release_confirmation(tmp_path: Path) -> None:
+    """A delayed real grant keeps the CLI alive until actual confirmation arrives."""
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (hub, uri):
+            async with release_reply_proxy(uri, drop_confirmation=False, grant_delay=0.2) as (
+                proxy,
+                fault,
+            ):
+                fault["active"] = False
+                operation = asyncio.create_task(
+                    asyncio.to_thread(
+                        run_cli,
+                        "lock",
+                        "g",
+                        "--name",
+                        "owner",
+                        "--",
+                        sys.executable,
+                        "-c",
+                        "pass",
+                        uri=proxy,
+                    )
+                )
+                deadline = asyncio.get_running_loop().time() + 5
+                while not fault["release_seen"]:
+                    assert not operation.done()
+                    assert asyncio.get_running_loop().time() < deadline
+                    await asyncio.sleep(0.01)
+                assert not operation.done(), "CLI must await the delayed keyed confirmation"
+                result = await asyncio.wait_for(operation, 10)
+                assert result.returncode == 0, result.output
+                assert "g" not in hub.state.claims
+                assert any(row.kind == "release" for row in journal.iter_events())
+    finally:
+        journal.close()
 
 
 async def test_lock_teardown_wait_is_bounded_without_a_confirmation() -> None:
-    """A hub that never confirms costs only the bounded wait, never a hang."""
-
-    class _NeverConfirmRelease(_ScriptedLockAgent):
-        def __init__(self, name: str, callback: Any, **kwargs: Any) -> None:
-            super().__init__(name, callback, **kwargs)
-            self.claim_calls = 1
-
-        async def release(self, task_id: str, **_kwargs: Any) -> None:
-            del task_id  # fire-and-forget with no confirmation ever arriving
-
-    async def runner(_command: list[str]) -> int:
-        return 0
-
-    code = await asyncio.wait_for(
-        cli_locking._lock(
-            uri="ws://unused",
-            name="X",
-            task_id="g",
-            command=["c"],
-            paths=[],
-            wait_timeout=1.0,
-            attempts=3,
-            poll_interval=0.01,
-            agent_factory=cast("AgentFactory", _NeverConfirmRelease),
-            runner=runner,
-        ),
-        timeout=5.0,
-    )
-
-    assert code == 0
+    """A real volatile hub and lost grant finish boundedly with explicit uncertainty."""
+    async with running_hub() as (_hub, uri):
+        async with release_reply_proxy(uri, drop_confirmation=False) as (proxy, _fault):
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    run_cli,
+                    "lock",
+                    "g",
+                    "--name",
+                    "owner",
+                    "--release-timeout",
+                    "0.1",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "pass",
+                    uri=proxy,
+                ),
+                10,
+            )
+            assert result.returncode == 3, result.output
+            assert "lock: release unknown" in result.stderr
 
 
 def test_parser_lock_release_timeout() -> None:
@@ -481,41 +425,30 @@ def test_parser_lock_release_timeout() -> None:
     assert default.release_timeout is None
 
 
-async def test_release_timeout_bounds_the_teardown_wait() -> None:
-    """An explicit timeout replaces the default poll budget — and stays bounded."""
-    polls: list[float] = []
-
-    class _NeverConfirm(_ScriptedLockAgent):
-        def __init__(self, name: str, callback: Any, **kwargs: Any) -> None:
-            super().__init__(name, callback, **kwargs)
-            self.claim_calls = 1
-
-        async def release(self, task_id: str, **_kwargs: Any) -> None:
-            del task_id  # no confirmation ever arrives
-
-    async def runner(_command: list[str]) -> int:
-        return 0
-
-    original_sleep = asyncio.sleep
-
-    async def counting_sleep(delay: float) -> None:
-        polls.append(delay)
-        await original_sleep(0)
-
-    code = await asyncio.wait_for(
-        cli_locking._lock(
-            uri="ws://unused",
-            name="X",
-            task_id="g",
-            command=["c"],
-            paths=[],
-            wait_timeout=1.0,
-            poll_interval=0.05,
-            release_timeout=0.2,  # 4 polls at 0.05s, instead of the default 40
-            agent_factory=cast("AgentFactory", _NeverConfirm),
-            runner=runner,
-        ),
-        timeout=5.0,
-    )
-
-    assert code == 0
+async def test_release_timeout_bounds_the_teardown_wait(tmp_path: Path) -> None:
+    """The explicit real deadline leads to exact recovery of one delayed operation."""
+    journal = EventStore(tmp_path / "hub.db")
+    try:
+        async with running_hub(SynapseHub(journal=journal)) as (_hub, uri):
+            async with release_reply_proxy(uri, drop_confirmation=False) as (proxy, _fault):
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        run_cli,
+                        "lock",
+                        "g",
+                        "--name",
+                        "owner",
+                        "--release-timeout",
+                        "1",
+                        "--",
+                        sys.executable,
+                        "-c",
+                        "pass",
+                        uri=proxy,
+                    ),
+                    10,
+                )
+                assert result.returncode == 0, result.output
+                assert len([row for row in journal.iter_events() if row.kind == "release"]) == 1
+    finally:
+        journal.close()
