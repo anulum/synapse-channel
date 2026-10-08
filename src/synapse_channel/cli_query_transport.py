@@ -4,13 +4,14 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — read-only CLI hub-query transport
-"""Shared connect, request, poll, and cleanup flow for read-only CLI queries."""
+# SYNAPSE_CHANNEL — shared CLI hub-query transport
+"""Shared connect, request, poll, and cleanup flow for CLI queries and confirmed task writes."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import sys
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -51,19 +52,7 @@ async def _query_attempt(
     conn_task = asyncio.create_task(agent.connect())
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
-            identity_refused = is_identity_refused_close(
-                agent.last_close_code, agent.last_close_reason
-            )
-            if not (identity_refused and suppress_identity_refusal):
-                print(
-                    describe_connect_failure(
-                        failure_name,
-                        uri,
-                        close_code=agent.last_close_code,
-                        close_reason=agent.last_close_reason,
-                    )
-                )
-            return 1, identity_refused
+            return _connection_failure(agent, failure_name, uri, suppress_identity_refusal)
         await request(agent)
         for _ in range(attempts):
             if results or (surface_error and errors):
@@ -78,20 +67,14 @@ async def _query_attempt(
             print(errors[-1])
             return 1, False
         if agent.last_close_code is not None:
-            identity_refused = is_identity_refused_close(
-                agent.last_close_code, agent.last_close_reason
-            )
-            if not (identity_refused and suppress_identity_refusal):
-                print(
-                    describe_connect_failure(
-                        failure_name,
-                        uri,
-                        close_code=agent.last_close_code,
-                        close_reason=agent.last_close_reason,
-                    )
-                )
-            return 1, identity_refused
-        return 0, False
+            return _connection_failure(agent, failure_name, uri, suppress_identity_refusal)
+        print(
+            "synapse: no matching reply before the response deadline; "
+            "request outcome is unconfirmed and any write may already have been applied. "
+            "Inspect the hub state before retrying; no automatic retry was made.",
+            file=sys.stderr,
+        )
+        return 1, False
     finally:
         agent.running = False
         # Finish the WebSocket close handshake before cancelling the listener.
@@ -107,6 +90,20 @@ async def _query_attempt(
             conn_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await conn_task
+
+
+def _connection_failure(
+    agent: SynapseAgent, name: str, uri: str, suppress_identity_refusal: bool
+) -> tuple[int, bool]:
+    """Classify a closed connection without treating timeout as identity refusal."""
+    identity_refused = is_identity_refused_close(agent.last_close_code, agent.last_close_reason)
+    if not (identity_refused and suppress_identity_refusal):
+        print(
+            describe_connect_failure(
+                name, uri, close_code=agent.last_close_code, close_reason=agent.last_close_reason
+            )
+        )
+    return 1, identity_refused
 
 
 async def _drop_message(_data: dict[str, Any]) -> None:
@@ -173,8 +170,11 @@ async def _query_hub(
     Returns
     -------
     int
-        ``0`` once a reply is rendered (or none arrives), ``1`` when the hub is
-        unreachable or, with ``surface_error``, when the hub refuses the request.
+        ``0`` only once a matching reply is rendered. ``1`` when the hub is
+        unreachable, closes, sends a surfaced refusal, or no matching reply
+        arrives before the response deadline. A missing reply leaves the request
+        outcome unconfirmed: a write may have committed. It is never retried
+        automatically or treated as an identity refusal.
     """
     fallback = str(identity_fallback_name or "").strip()
     primary_code, identity_refused = await _query_attempt(

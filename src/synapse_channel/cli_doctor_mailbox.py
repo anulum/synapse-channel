@@ -44,7 +44,7 @@ async def fetch_doctor_roster(
     agent_factory: AgentFactory,
     ready_timeout: float = 5.0,
 ) -> DoctorRoster | None:
-    """Return the live WHO projection, or ``None`` when the hub is unreachable."""
+    """Return the live WHO projection, or ``None`` without a matching hub reply."""
     captured: list[DoctorRoster] = []
     code = await _query_hub(
         uri=uri,

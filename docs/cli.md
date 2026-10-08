@@ -2730,6 +2730,26 @@ Unsupported or externally gated:
   across bridge restarts or multiple bridge replicas, and terminal recovered
   tasks reject subscription with a problem response.
 
+## Query confirmation and exit status
+
+`who`, `state`, `dead-letters`, `approvals`, `board`, `manifest` and
+`a2a-card` return `0` only after receiving and rendering a matching hub reply.
+An empty snapshot is a valid reply. A missing reply exits `1` and prints
+`no matching reply` to stderr; connection readiness alone does not confirm a
+request. The shared reply deadline is 50 polls of 50 ms (2.5 seconds), separate
+from the welcome-handshake deadline.
+
+`task declare`, `task update` and `task progress` wait for their matching
+confirmation for 60 polls of 50 ms (3 seconds). They return `0` only after
+printing that confirmation; unreachable hubs, refusals and missing confirmations
+return `1`. A timeout leaves the result unconfirmed: the write may already have
+been applied. Inspect `synapse board` before retrying. No automatic write retry
+or identity fallback occurs after a missing reply. On a durable hub, retain the
+same `--idem-key` and unchanged request if an explicit retry is required.
+
+These are per-request results; `synapse health` remains a welcome-handshake
+liveness probe. Doctor's roster query also treats a missing reply as unavailable.
+
 ## Managing the task plan
 
 `synapse task` lets a human drive the shared blackboard from the command line —

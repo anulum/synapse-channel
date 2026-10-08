@@ -78,7 +78,9 @@ async def _task_action(
     -------
     int
         ``0`` once the confirmation is printed, ``1`` when the hub is
-        unreachable or refuses the write (the refusal text is printed).
+        unreachable, refuses the write, or does not confirm it before the
+        response deadline. A missing confirmation does not prove the write
+        failed; inspect the board before retrying. No write is retried here.
     """
     return await _query_hub(
         uri=uri,

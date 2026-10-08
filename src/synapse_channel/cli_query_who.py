@@ -75,7 +75,8 @@ async def _who(
     Returns
     -------
     int
-        ``0`` once a roster is printed, ``1`` when the hub could not be reached.
+        ``0`` once a roster is printed, ``1`` when the hub is unreachable
+        or no matching reply arrives.
     """
     query_name = f"{name}-who" if me else name
     fallback_name = who_query_identity(query_name)

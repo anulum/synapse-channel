@@ -154,7 +154,8 @@ async def _state(
     Returns
     -------
     int
-        ``0`` once the claims are printed, ``1`` when the hub could not be reached.
+        ``0`` once the claims are printed, ``1`` when the hub is unreachable
+        or no matching reply arrives.
     """
     observed = await fetch_observed_peers(
         observed_peers,
@@ -231,7 +232,8 @@ async def _dead_letters(
     Returns
     -------
     int
-        ``0`` once the ledger is printed, ``1`` when the hub could not be reached.
+        ``0`` once the ledger is printed, ``1`` when the hub is unreachable
+        or no matching reply arrives.
     """
     return await _query_hub(
         uri=uri,
@@ -288,7 +290,8 @@ async def _approvals(
     Returns
     -------
     int
-        ``0`` once the pending set is printed, ``1`` when the hub could not be reached.
+        ``0`` once the pending set is printed, ``1`` when the hub is unreachable
+        or no matching reply arrives.
     """
     return await _query_hub(
         uri=uri,
@@ -340,7 +343,8 @@ async def _board(
     Returns
     -------
     int
-        ``0`` once a snapshot is printed, ``1`` when the hub could not be reached.
+        ``0`` once a snapshot is printed, ``1`` when the hub is unreachable
+        or no matching reply arrives.
     """
     return await _query_hub(
         uri=uri,
@@ -386,7 +390,8 @@ async def _manifest(
     Returns
     -------
     int
-        ``0`` once a manifest is printed, ``1`` when the hub could not be reached.
+        ``0`` once a manifest is printed, ``1`` when the hub is unreachable
+        or no matching reply arrives.
     """
     return await _query_hub(
         uri=uri,

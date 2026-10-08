@@ -24,6 +24,11 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- CLI hub queries and task-plan writes now fail with exit `1` when no matching
+  reply arrives, instead of silently returning `0`. The diagnostic explains
+  that a write may already have committed; no automatic retry is performed.
+
+
 - `synapse lock` now returns `1` for refused cleanup or `3` for uncertain cleanup
   after a successful child. Nonzero child exits remain unchanged. Diagnostics
   retain the child status and exact read-only recovery command without exposing

@@ -262,7 +262,7 @@ async def test_task_action_returns_one_when_hub_unreachable(
     assert "SHOULD-NOT-PRINT" not in out
 
 
-async def test_task_action_returns_quietly_when_no_confirmation(
+async def test_task_action_fails_when_no_confirmation(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     async def send(agent: SynapseAgent) -> None:
@@ -279,5 +279,5 @@ async def test_task_action_returns_quietly_when_no_confirmation(
             attempts=1,
         )
 
-    assert code == 0
+    assert code == 1
     assert "SHOULD-NOT-PRINT" not in capsys.readouterr().out

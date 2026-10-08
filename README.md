@@ -570,6 +570,12 @@ synapse hub --max-connections-per-host 4             # cap simultaneous sockets 
 synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
 ```
 
+CLI hub queries and `task` writes return `0` only after a matching reply.
+Missing replies return `1` with an unconfirmed-outcome diagnostic. A write may
+already have committed: inspect `synapse board` and retain the same `--idem-key`
+and unchanged request for any explicit retry. The CLI never retries a timed-out
+write automatically. See [query confirmation](docs/cli.md#query-confirmation-and-exit-status).
+
 For an observed cross-hub task revision, `task declare` and `task update` also
 accept `--causal-parent HUB_ID:SEQ:SHA256`. The SHA-256 is the complete event
 fingerprint exposed in multi-hub board provenance. A verified same-task parent
@@ -1759,7 +1765,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 1012 |
 | Wire message types | 114 |
 | CLI subcommands | 237 |
-| Test functions | 10989 |
+| Test functions | 10991 |
 | Benchmark harnesses | 8 |
 | Documentation pages | 80 |
 | GitHub Actions workflows | 27 |
