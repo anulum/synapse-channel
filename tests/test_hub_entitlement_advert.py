@@ -110,6 +110,20 @@ async def test_a_hub_without_a_journal_or_proof_refuses(
     assert result["applied"] is False and detail in result["payload"]
 
 
+async def test_a_pinned_owner_is_proven_and_its_pin_key_is_recorded(tmp_path: Path) -> None:
+    machines = Machines(tmp_path / "machines")
+    # no binding requirement: the owner is proven by the key the hub pinned at first use
+    hub = _hub(tmp_path, machines, bound=False)
+    owner_key_id, _public = machines.public("owner")
+    async with running_hub(hub) as (_hub_ref, uri):
+        async with _connected(OWNER, uri, machines.kwargs("owner")) as (owner, inbox):
+            result = await _send(owner, inbox, _advert())
+    hub.journal.close()
+    assert result["applied"] is True, result
+    [row] = _rows(tmp_path)
+    assert row["advertiser_key_id"] == owner_key_id
+
+
 def _factory(key: dict[str, Any]) -> Any:
     def build(name: str, callback: Any, **kwargs: Any) -> SynapseAgent:
         return SynapseAgent(name, callback, machine_identity=False, **key, **kwargs)

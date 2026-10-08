@@ -83,7 +83,7 @@ async def test_manifest_reports_unreachable_hub(capsys: pytest.CaptureFixture[st
     assert "Could not reach hub" in capsys.readouterr().out
 
 
-async def test_manifest_returns_quietly_when_no_snapshot(
+async def test_manifest_fails_when_no_snapshot(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     async with running_hub(SynapseHub()) as (_hub, uri):
@@ -98,7 +98,7 @@ async def test_manifest_returns_quietly_when_no_snapshot(
             attempts=1,
         )
 
-    assert code == 0
+    assert code == 1
     assert "Agents" not in capsys.readouterr().out
 
 

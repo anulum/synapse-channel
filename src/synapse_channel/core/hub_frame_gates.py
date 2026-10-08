@@ -101,9 +101,9 @@ class HubFrameGates:
         This hub's stable id, stamped as the forwarding hub's local id on a forwarded
         claim.
     send_json : Callable[[Any, dict], Awaitable[None]]
-        The hub's per-socket send (``hub._send_json``), used to deliver each denial.
+        The hub's per-socket send (``hub.send_json``), used to deliver each denial.
     system : Callable[..., dict]
-        The hub's system-message factory (``hub._system``), used to stamp each denial
+        The hub's system-message factory (``hub.system``), used to stamp each denial
         with the hub id.
     """
 

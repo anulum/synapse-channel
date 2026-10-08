@@ -245,7 +245,7 @@ async def test_release_receipt_progress_is_not_broadcast_when_the_board_refuses(
         broadcasts.append(data)
         return frozenset()
 
-    hub._broadcast = record_broadcast  # type: ignore[method-assign]
+    hub.broadcast = record_broadcast  # type: ignore[method-assign]
     hub.blackboard.post_progress = (  # type: ignore[method-assign]
         lambda **_kwargs: (False, "quota exhausted")
     )
@@ -267,7 +267,7 @@ async def test_release_receipt_progress_broadcasts_without_a_journal() -> None:
         broadcasts.append(data)
         return frozenset()
 
-    hub._broadcast = record_broadcast  # type: ignore[method-assign]
+    hub.broadcast = record_broadcast  # type: ignore[method-assign]
     receipt = build_release_receipt(task_id="T1", owner="alice")
     await _record_release_receipt_progress(hub, receipt)
     assert len(broadcasts) == 1
@@ -290,7 +290,7 @@ async def test_release_receipt_progress_records_into_a_journal(tmp_path: Path) -
             broadcasts.append(data)
             return frozenset()
 
-        hub._broadcast = record_broadcast  # type: ignore[method-assign]
+        hub.broadcast = record_broadcast  # type: ignore[method-assign]
         receipt = build_release_receipt(task_id="T1", owner="alice")
         await _record_release_receipt_progress(hub, receipt)
         assert len(broadcasts) == 1

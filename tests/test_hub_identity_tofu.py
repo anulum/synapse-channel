@@ -106,9 +106,9 @@ async def test_zero_config_first_use_pins_the_name_to_the_machine_key(tmp_path: 
         await _await_bound(hub, NAME)
         loop = asyncio.get_event_loop()
         deadline = loop.time() + 3.0
-        while loop.time() < deadline and hub._identity_pins.pinned(NAME) is None:
+        while loop.time() < deadline and hub.identity_pins.pinned(NAME) is None:
             await asyncio.sleep(0.01)
-        pin = hub._identity_pins.pinned(NAME)
+        pin = hub.identity_pins.pinned(NAME)
         assert pin is not None
         assert pin.key_id.startswith(MACHINE_KEY_ID_PREFIX)
         assert pins.is_file(), "the pin was not persisted"
@@ -135,7 +135,7 @@ async def test_reserved_hub_identity_is_refused_before_tofu_can_pin_it(tmp_path:
         code, reason = await _await_refused(attacker)
         assert code == 4009
         assert reason == "reserved identity"
-        assert hub._identity_pins.pinned(reserved_name) is None
+        assert hub.identity_pins.pinned(reserved_name) is None
         assert reserved_name not in hub.agent_sockets
         refusal = next(frame for frame in refusals if frame.get("type") == "name_conflict")
         assert "reserved for hub protocol provenance" in refusal["payload"]
@@ -225,7 +225,7 @@ async def test_names_that_never_sign_keep_classic_first_come_semantics(tmp_path:
         classic = SynapseAgent(NAME, None, uri=uri, verbose=False, machine_identity=False)
         task = await _run_until_closed_or_ready(classic)
         await _await_bound(hub, NAME)
-        assert hub._identity_pins.pinned(NAME) is None
+        assert hub.identity_pins.pinned(NAME) is None
         await _close(classic, task)
         await _await_unbound(hub, NAME)
 
@@ -233,7 +233,7 @@ async def test_names_that_never_sign_keep_classic_first_come_semantics(tmp_path:
         next_task = await _run_until_closed_or_ready(next_comer)
         await _await_bound(hub, NAME)
         assert next_comer.last_close_code is None
-        assert hub._identity_pins.pinned(NAME) is None
+        assert hub.identity_pins.pinned(NAME) is None
         await _close(next_comer, next_task)
 
 
@@ -281,7 +281,7 @@ async def test_a_broken_proof_is_refused_and_never_pins(tmp_path: Path) -> None:
             except ConnectionClosed as exc:
                 closed_code = getattr(exc.rcvd, "code", None)
             assert closed_code == IDENTITY_CLOSE
-        assert hub._identity_pins.pinned(NAME) is None
+        assert hub.identity_pins.pinned(NAME) is None
 
 
 async def test_operator_bundle_enforcement_still_takes_precedence(tmp_path: Path) -> None:
@@ -301,7 +301,7 @@ async def test_operator_bundle_enforcement_still_takes_precedence(tmp_path: Path
         code, reason = await _await_refused(signer)
         assert code == IDENTITY_CLOSE
         assert reason == "identity binding failed"
-        assert hub._identity_pins.pinned(NAME) is None
+        assert hub.identity_pins.pinned(NAME) is None
         task.cancel()
 
 
@@ -349,7 +349,7 @@ async def test_a_hub_without_cryptography_degrades_open_instead_of_crashing(
                 await websocket.send(jsonlib.dumps(frame))
                 await _await_bound(hub, NAME)
         assert hub.clients.agent_sockets.get(NAME) is not None
-        assert hub._identity_pins.pinned(NAME) is None
+        assert hub.identity_pins.pinned(NAME) is None
         assert any("trust-on-first-use" in record.message for record in caplog.records)
 
 
@@ -375,7 +375,7 @@ async def test_a_pinned_name_stays_usable_by_default_constructed_agents(
         )
         arm_task = await _run_until_closed_or_ready(arm_style)
         await _await_bound(hub, NAME)
-        pin = hub._identity_pins.pinned(NAME)
+        pin = hub.identity_pins.pinned(NAME)
         assert pin is not None and pin.key_id.startswith(MACHINE_KEY_ID_PREFIX)
         await _close(arm_style, arm_task)
         await _await_unbound(hub, NAME)

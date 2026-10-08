@@ -17,7 +17,17 @@ from synapse_channel.core.journal import EventKind
 from synapse_channel.core.protocol import MessageType, is_recipient
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+
+    class InboxContext(HandlerContext, Protocol):
+        """Capabilities consumed by inbox handlers and their callees."""
+
+        def roles_of(self, name: str) -> tuple[str, ...]:
+            """Return the roles ``name`` currently answers to (empty tuple if none)."""
+            ...
+
 
 INBOX_SCAN_LIMIT = 1000
 """Maximum journal rows inspected by one inbox request."""
@@ -27,13 +37,13 @@ INBOX_PAGE_BYTES = 7 * 1024 * 1024
 
 
 async def handle_inbox_query(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: InboxContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Answer an additive ``history_request.inbox_query`` with a durable page.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : InboxContext
         Authoritative hub whose journal is read.
     sender : str
         Connection identity already admitted by the hub's identity and ACL gates.
@@ -131,9 +141,9 @@ async def handle_inbox_query(
         if isinstance(request_id, str) and 0 < len(request_id) <= 128
         else {}
     )
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Durable inbox page",
             msg_type=MessageType.HISTORY_SNAPSHOT,
             target=sender,

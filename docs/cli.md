@@ -105,6 +105,7 @@ everything, since they need the whole command table.
 | `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
 | `synapse release` | Manually drop a claim you own (e.g. an `--auto-release-on manual` claim). |
 | `synapse task` | Declare and update the shared task plan. |
+| `synapse native-record` | Record a message that travelled over a vendor's own channel; the hub stores it and delivers nothing. |
 | `synapse workflow` | Validate and compile a declarative workflow into blackboard tasks (`validate`/`compile`/`plan`/`run`); `contention` weighs overlapping live claims involving the workflow's tasks. |
 
 Programmatic provider selection and the routed deliberation loop use the
@@ -350,6 +351,11 @@ disables metrics query tokens and the insecure off-loopback override, and prints
 the hardening hooks that remain outside the profile. Keep token and HMAC entries
 in owner-only files; see [Paranoid mode](paranoid-mode.md) before exposing a hub.
 
+Hub startup constructs and validates its dependency graph before serving.
+A refused start releases the checkpoint connection and the CLI-owned stores;
+it preserves the journal and checkpoint files for inspection. Python embedding
+and component substitution use the same [composition factory](api.md#embedding-a-hub).
+
 The loopback-only `--metrics-query-token-ok` compatibility flag is deprecated,
 warns when parsed, and is scheduled for removal in 0.101.0. Send metrics tokens
 in the `Authorization: Bearer` header instead; URL credentials can leak into
@@ -407,7 +413,12 @@ notes, and optional A2A task counts. It also carries the live hub's pinning tag 
 `hub_version` (the package version) and `config_epoch` (a fingerprint of the hub's
 configuration posture) — so a cockpit can badge which hub build and configuration
 it is watching and notice a deploy or a config drift; the hub's own `/health`
-endpoint reports the same two values. Pass `--a2a-state-file <path>` to
+endpoint reports the same two values. The epoch tracks whether metrics
+authentication is enabled, without hashing the metrics token. Rotating that
+token leaves the epoch unchanged; enabling or disabling it changes the epoch.
+Upgrading a hub that previously hashed a nonempty metrics token changes its
+epoch once to the credential-independent representation.
+Pass `--a2a-state-file <path>` to
 summarise a persisted `synapse a2a-serve --state-file <path>` store in that
 section. The task-dependency graph is read-only and does not mutate the
 blackboard. Dashboard branch conflicts use the same declared-claim metadata as
@@ -644,7 +655,7 @@ id, so the others wait their turn instead of clobbering each other:
 ```bash
 synapse lock quantum:git -- git push          # holds quantum:git while pushing
 synapse lock quantum:git --wait-timeout 0 -- git push   # fail fast if someone holds it
-synapse lock quantum:git --release-timeout 10 -- git push  # hold the exit up to 10s for the release confirmation (slow links)
+synapse lock quantum:git --release-timeout 10 -- git push  # allow 10s per confirmation exchange (slow links)
 ```
 
 A lock is a named mutex keyed by its id: `quantum:git` and `physics:git` are
@@ -657,14 +668,39 @@ If the wrapped executable or its interpreter cannot be found, `lock` reports
 the launch error on stderr and returns `127`. Other OS execution refusals, such
 as permission denial or an invalid executable format, return `126`. The acquired
 claim follows the same bounded release confirmation as a completed command.
-Arguments are passed directly without shell expansion; a normal child exit
-status is preserved.
+Arguments are passed directly without shell expansion. A nonzero child exit
+status is preserved. After a successful child, `lock` returns `0` only for a
+confirmed release, `1` for an explicit release refusal, or `3` when cleanup is
+unconfirmed. This replaces the earlier behavior that silently returned the
+child's `0` even when the lease remained held. Cleanup failures are reported
+on stderr together with the original child status.
+If the fresh client profile cannot be loaded after the command finishes, cleanup
+is reported as unknown and the original nonzero child status is still preserved.
 
 After the grant, `lock` closes its hub connection while the command runs; the
 durable task claim remains held until release or its TTL expires. This lets Git
 hooks connect using the same owner identity. After the command, `lock` reconnects
-as that owner and waits boundedly for release confirmation. A reconnect failure
-leaves the claim visible until its TTL; it preserves the command's exit code.
+as that owner using a fresh client profile and waits boundedly for release
+confirmation. The fresh profile reads an epoch persisted by a same-identity
+child renewal under the connected hub, instead of reusing the parent's stale
+in-memory epoch. If no stored epoch is available, it uses the actual original
+grant. Server ownership and fencing checks still apply; a refused epoch is
+never guessed, incremented, or retried with a different value.
+
+Each cleanup dispatches at most one keyed release. A lost reply may be recovered
+by reading the exact durable operation; lease absence alone is not confirmation.
+Interrupted cleanup retains the original operation and resumes with a read-only
+confirmation query, including when interruption occurs during dispatch.
+An unknown outcome prints its operation key, request digest, and a
+`synapse release --confirm-only ...` recovery command. Preserve that output and
+run the read-only command; do not send another release to discover the result.
+The recovery command uses the existing authentication profile. A hub URI with
+user information, query parameters or a fragment is omitted from diagnostics;
+restore it privately in `SYNAPSE_URI` before running the printed recovery command.
+Legacy hubs without exact reply binding cannot provide this
+guarantee and may return an unknown result. A reconnect failure leaves the claim
+visible until its TTL. Readiness and release timeouts must be finite, positive,
+and at most 300 seconds; an invalid timeout returns `2` before acquisition.
 On cancellation, the command is terminated and reaped before release, with a
 grace period of up to five seconds before forced termination. Shutdown that also
 cancels cleanup work forces termination immediately. On POSIX this also terminates
@@ -1401,6 +1437,10 @@ so an empty response is a pass, not a failure. Read `$?` (or rely on the contain
 healthcheck) rather than the output. When you want a human-readable account of what
 is or is not wired — identity, hub exposure, waiters — run `synapse doctor` instead;
 `health` answers "is the hub up?", `doctor` answers "is my setup right?".
+
+A refused WebSocket upgrade, including an HTTP `403` from a mismatched tunnel
+Host authority, returns `1` without a traceback. Check the forwarded port and
+destination as described in [troubleshooting](troubleshooting.md#a-websocket-handshake-fails-through-an-ssh-tunnel).
 
 ## Selecting the hub
 
@@ -2700,6 +2740,26 @@ Unsupported or externally gated:
   across bridge restarts or multiple bridge replicas, and terminal recovered
   tasks reject subscription with a problem response.
 
+## Query confirmation and exit status
+
+`who`, `state`, `dead-letters`, `approvals`, `board`, `manifest` and
+`a2a-card` return `0` only after receiving and rendering a matching hub reply.
+An empty snapshot is a valid reply. A missing reply exits `1` and prints
+`no matching reply` to stderr; connection readiness alone does not confirm a
+request. The shared reply deadline is 50 polls of 50 ms (2.5 seconds), separate
+from the welcome-handshake deadline.
+
+`task declare`, `task update` and `task progress` wait for their matching
+confirmation for 60 polls of 50 ms (3 seconds). They return `0` only after
+printing that confirmation; unreachable hubs, refusals and missing confirmations
+return `1`. A timeout leaves the result unconfirmed: the write may already have
+been applied. Inspect `synapse board` before retrying. No automatic write retry
+or identity fallback occurs after a missing reply. On a durable hub, retain the
+same `--idem-key` and unchanged request if an explicit retry is required.
+
+These are per-request results; `synapse health` remains a welcome-handshake
+liveness probe. Doctor's roster query also treats a missing reply as unavailable.
+
 ## Managing the task plan
 
 `synapse task` lets a human drive the shared blackboard from the command line —
@@ -2758,6 +2818,41 @@ Use the `event_fingerprint` in multi-hub board provenance. The fold verifies the
 parent identity, complete-event fingerprint, and task id before suppressing the
 ancestor. A missing or invalid parent remains an unresolved head and is not
 treated as proof that the updates were concurrent.
+
+## Recording native vendor messages
+
+Some agent clients reach another session without the hub: a Claude Code session
+messages another Claude Code session, a Codex client queues a message into a
+running thread. `synapse native-record` leaves a durable record of such a
+message. The hub stores one event; it delivers nothing and wakes nobody. The
+command needs a journal-backed hub at wire version `7` or newer.
+
+```bash
+synapse native-record --channel claude_cross_session --direction sent \
+  --phase outcome --outcome queued \
+  --seat PROJECT/claude-aaaa --peer-seat OTHER/claude-bbbb \
+  --native-message-id aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee \
+  --text-file ./message.txt
+```
+
+`--seat` is the recording seat: the sender of a `sent` message, the recipient of
+a `received` one. The command connects under that name, and the hub accepts a
+record only from the seat on its own side. The hub lets one connection own a
+name, so run the command from the seat's own tooling, not beside a second
+process that holds the same name.
+
+`--phase attempt` is written before a native send whose channel offers no retry
+key, `--phase outcome` (with `--outcome queued`, `refused` or `uncertain`) after
+it. `--text` or `--text-file` gives the exact text; `--hash-only` records digest
+and size without it, and a text above 65,536 bytes is recorded by hash
+automatically. Without `--idem-key` the retry key is derived from the record, so
+repeating the same call stores one event.
+
+The exit status is `0` only when the hub answered `native_message_recorded`. A
+refusal, an older hub, an unreachable hub and a missing answer exit `1`. Read the
+records with `synapse event-query` or from the event store by kind
+`native_message`. Wire details:
+[Native message records](protocol.md#native-message-records-wire-version-7).
 
 ## synapse dispatch
 

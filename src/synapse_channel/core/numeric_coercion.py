@@ -4,19 +4,20 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — tolerant coercion of untrusted numeric fields to bounded int/float
-"""Tolerant coercion of an untrusted numeric field to a bounded ``int``/``float``.
+# SYNAPSE_CHANNEL — coercion of untrusted numeric fields to bounded int/float
+"""Coercion of an untrusted numeric field to a bounded ``int``/``float``.
 
 Two numeric-coercion contracts live in the hub and must not be conflated:
 
-* **Tolerant** (this module) — a client-supplied *limit* or *cursor* that should be read
+* **Tolerant** — a client-supplied *limit* or *cursor* that should be read
   as leniently as ``int()``/``float()`` do (a numeric string, a truncating float, even a
   ``bool``) and fall back to a caller default when it is unusable. Use
   :func:`safe_int` / :func:`safe_float`.
-* **Strict guard field** (``finding_coercion._opt_int`` / ``_opt_float`` and
-  ``SynapseHub._optional_int``) — a field that must be a genuine finite number or count as
-  *absent*, so a stray ``true`` or ``"5"`` is rejected rather than coerced. Those stay
-  separate by design; do not fold them into these helpers.
+* **Strict guard field** (:func:`optional_int_field` here, and
+  ``finding_coercion._opt_int`` / ``_opt_float``) — a field that must be a genuine finite
+  number or count as *absent*, so a stray ``true`` or ``"5"`` is rejected rather than
+  coerced. The two contracts stay separate functions by design; a guard field is never
+  read with the tolerant helpers directly.
 
 Both contracts reject the non-finite hazard: ``json.loads`` yields ``inf``/``nan`` from the
 ``Infinity``/``NaN`` tokens, and a JSON integer too large for a double overflows on
@@ -29,7 +30,7 @@ from __future__ import annotations
 import math
 from typing import Any, overload
 
-__all__ = ["safe_float", "safe_int"]
+__all__ = ["optional_int_field", "safe_float", "safe_int"]
 
 
 @overload
@@ -153,3 +154,31 @@ def safe_float(
     if finite and not math.isfinite(result):
         return default
     return result
+
+
+def optional_int_field(data: dict[str, Any], key: str) -> int | None:
+    """Read an optional integer guard field from a decoded message, or ``None``.
+
+    The strict contract: booleans and non-numeric values are treated as absent so
+    a stray ``true`` or a numeric string is never read as a guard value; a
+    non-finite float (``inf``/``nan``, which a JSON ``1e400`` decodes to) is
+    treated as absent too, since ``int()`` of it raises and would otherwise escape
+    the frame handler as an unhandled error.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The decoded message.
+    key : str
+        The field to read.
+
+    Returns
+    -------
+    int or None
+        The integer value, or ``None`` when the field is absent, not numeric,
+        or a non-finite float.
+    """
+    value = data.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return safe_int(value, default=None, allow_bool=False)

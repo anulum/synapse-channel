@@ -263,7 +263,7 @@ async def test_send_to_agent_reports_a_recipient_whose_socket_died_in_flight() -
         # Freeze the race window: the socket died but the map still names it.
         hub.clients.agent_sockets[name] = server_ws
         try:
-            delivered = await hub._send_to_agent(name, {"type": "chat", "payload": "ping"})
+            delivered = await hub.send_to_agent(name, {"type": "chat", "payload": "ping"})
         finally:
             hub.clients.agent_sockets.pop(name, None)
 

@@ -92,12 +92,28 @@ async def http_get(
 
 @contextlib.asynccontextmanager
 async def running_hub(hub: SynapseHub | None = None) -> AsyncIterator[tuple[SynapseHub, str]]:
+    """Start a real hub on its kernel-assigned socket and join it on exit.
+
+    Parameters
+    ----------
+    hub : SynapseHub or None, optional
+        Concrete hub to serve; otherwise construct an isolated test hub.
+
+    Yields
+    ------
+    tuple[SynapseHub, str]
+        The serving hub and its actual loopback WebSocket address.
+
+    Raises
+    ------
+    TimeoutError
+        If the hub does not signal bind readiness within its normal deadline.
+    """
     actual = hub if hub is not None else SynapseHub(hub_id="syn-test")
-    port = _free_port()
-    task = asyncio.create_task(actual.serve("localhost", port))
+    task = asyncio.create_task(actual.serve("127.0.0.1", 0))
     try:
-        await _await_listening(port)
-        yield actual, f"ws://localhost:{port}"
+        host, port = await actual.wait_until_serving()
+        yield actual, f"ws://{host}:{port}"
     finally:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

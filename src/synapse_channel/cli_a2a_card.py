@@ -65,7 +65,8 @@ async def _a2a_card(
     Returns
     -------
     int
-        ``0`` once a card is printed, ``1`` when the hub could not be reached.
+        ``0`` once a card is printed, ``1`` when the hub is unreachable
+        or no matching reply arrives.
     """
 
     def render(manifest: list[dict[str, Any]]) -> None:

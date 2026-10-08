@@ -47,10 +47,25 @@ from synapse_channel.core.wake_capability import (
 )
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.pending_receipts import PendingReceipts
+
+    class DeliveryFeedbackContext(HandlerContext, Protocol):
+        """Capabilities consumed by delivery feedback handlers and their callees."""
+
+        @property
+        def pending_receipts(self) -> PendingReceipts:
+            """Return the pending receipts used by this handler family."""
+            ...
+
+        def wake_capability_of(self, name: str) -> str:
+            """Return the declared receiver wake capability for ``name``."""
+            ...
 
 
-def _recipient_wake_capability(hub: SynapseHub, recipient: str) -> str:
+def _recipient_wake_capability(hub: DeliveryFeedbackContext, recipient: str) -> str:
     """Return the best declared wake capability for one logical recipient."""
     direct = hub.wake_capability_of(recipient)
     if direct != WAKE_UNKNOWN:
@@ -62,7 +77,9 @@ def _recipient_wake_capability(hub: SynapseHub, recipient: str) -> str:
     return hub.wake_capability_of(mailbox)
 
 
-def _recipient_wake_capabilities(hub: SynapseHub, recipients: Iterable[str]) -> dict[str, str]:
+def _recipient_wake_capabilities(
+    hub: DeliveryFeedbackContext, recipients: Iterable[str]
+) -> dict[str, str]:
     """Return normalized wake capabilities keyed by logical recipient name."""
     return {recipient: _recipient_wake_capability(hub, recipient) for recipient in recipients}
 
@@ -85,7 +102,7 @@ def _failure_payload(target: str, decision: DeliveryLiveness) -> str:
 
 
 def _delivery_receipt_frame(
-    hub: SynapseHub,
+    hub: DeliveryFeedbackContext,
     *,
     sender: str,
     target: str,
@@ -121,7 +138,7 @@ def _delivery_receipt_frame(
         client_msg_id=client_msg_id,
     )
     correlation = {"client_msg_id": client_msg_id} if client_msg_id else {}
-    frame = hub._system(
+    frame = hub.system(
         text,
         msg_type=MessageType.DELIVERY_RECEIPT,
         target=sender,
@@ -142,7 +159,7 @@ def _delivery_receipt_frame(
 
 
 async def warn_stale_recipients(
-    hub: SynapseHub,
+    hub: DeliveryFeedbackContext,
     websocket: Any,
     *,
     sender: str,
@@ -154,7 +171,7 @@ async def warn_stale_recipients(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : DeliveryFeedbackContext
         Hub transport and wake-capability view.
     websocket : object
         Sender socket receiving the private warning.
@@ -184,9 +201,9 @@ async def warn_stale_recipients(
         )
     if not decision.delivered:
         clauses.append("delivery classified no_live_recipient and dead-lettered")
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "; ".join(clauses) + "; a directed message may sit unread",
             msg_type=MessageType.RECIPIENT_LIVENESS_WARNING,
             target=sender,
@@ -204,7 +221,7 @@ async def warn_stale_recipients(
 
 
 async def send_delivery_receipt(
-    hub: SynapseHub,
+    hub: DeliveryFeedbackContext,
     websocket: Any,
     *,
     sender: str,
@@ -219,7 +236,7 @@ async def send_delivery_receipt(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : DeliveryFeedbackContext
         Hub transport and optional durable journal.
     websocket : object
         Sender socket receiving the private receipt.
@@ -248,11 +265,11 @@ async def send_delivery_receipt(
     )
     if hub.journal is not None and message_seq is not None:
         record_delivery_receipt_immediate(hub.journal, audit)
-    await hub._send_json(websocket, frame)
+    await hub.send_json(websocket, frame)
 
 
 def commit_delivery_receipt_request(
-    hub: SynapseHub,
+    hub: DeliveryFeedbackContext,
     *,
     chat: dict[str, Any],
     sender: str,
@@ -276,7 +293,7 @@ def commit_delivery_receipt_request(
 
 
 async def commit_delivery_receipt_verdict(
-    hub: SynapseHub,
+    hub: DeliveryFeedbackContext,
     websocket: Any,
     *,
     sender: str,
@@ -339,13 +356,13 @@ async def commit_delivery_receipt_verdict(
 
 
 def _expired_receipt_transition(
-    hub: SynapseHub, message_seq: int, entry: ReceiptEntry
+    hub: DeliveryFeedbackContext, message_seq: int, entry: ReceiptEntry
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build a bounded-window expiry event and deduplicable sender notification."""
     audit = expired_receipt_payload(
         entry=entry, message_seq=message_seq, reason="pending_window_evicted"
     )
-    frame = hub._system(
+    frame = hub.system(
         "delivery receipt expired before acknowledgement",
         msg_type=MessageType.DELIVERY_RECEIPT,
         target=entry.sender,
@@ -363,7 +380,7 @@ def _expired_receipt_transition(
 
 
 async def settle_delivery_receipt(
-    hub: SynapseHub,
+    hub: DeliveryFeedbackContext,
     *,
     message_seq: int,
     entry: ReceiptEntry,
@@ -374,7 +391,7 @@ async def settle_delivery_receipt(
         hub.pending_receipts.claim(message_seq)
         return
     audit = deferred_receipt_payload(entry=entry, message_seq=message_seq, recipient=recipient)
-    frame = hub._system(
+    frame = hub.system(
         f"delivered to {recipient} on reconnect",
         msg_type=MessageType.DELIVERY_RECEIPT,
         target=entry.sender,
@@ -397,7 +414,7 @@ async def settle_delivery_receipt(
 
 
 async def deliver_pending_receipt_notifications(
-    hub: SynapseHub,
+    hub: DeliveryFeedbackContext,
     *,
     sender: str,
     websocket: Any | None = None,
@@ -409,17 +426,17 @@ async def deliver_pending_receipt_notifications(
         delivered = False
         if websocket is not None:
             try:
-                await hub._send_json(websocket, pending.frame)
+                await hub.send_json(websocket, pending.frame)
                 delivered = True
             except Exception:
                 delivered = False
         else:
-            delivered = await hub._send_to_agent(sender, pending.frame)
+            delivered = await hub.send_to_agent(sender, pending.frame)
         hub.journal.mark_delivery_notification_attempt(pending.notification_id, delivered=delivered)
 
 
 async def send_and_track_delivery_receipt(
-    hub: SynapseHub,
+    hub: DeliveryFeedbackContext,
     websocket: Any,
     *,
     sender: str,
@@ -434,7 +451,7 @@ async def send_and_track_delivery_receipt(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : DeliveryFeedbackContext
         Hub receipt journal and bounded pending-receipt store.
     websocket : object
         Sender socket receiving the immediate verdict.

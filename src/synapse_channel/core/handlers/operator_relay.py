@@ -80,10 +80,44 @@ from synapse_channel.core.operator_relay_wire import (
 )
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import SynapseState
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.multihub_serving import MultiHubServingPolicy
+    from synapse_channel.core.namespace_ownership import NamespaceOwnership
     from synapse_channel.core.persistence import EventStore
+
+    class OperatorRelayContext(HandlerContext, Protocol):
+        """Capabilities consumed by operator relay handlers and their callees."""
+
+        @property
+        def multihub_serving_policy(self) -> MultiHubServingPolicy | None:
+            """Return the multihub serving policy used by this handler family."""
+            ...
+
+        @property
+        def namespace_ownership(self) -> NamespaceOwnership | None:
+            """Return the namespace ownership used by this handler family."""
+            ...
+
+        @property
+        def relay_approvals(self) -> RelayApprovalLedger:
+            """Return the relay approvals used by this handler family."""
+            ...
+
+        @property
+        def require_relay_reason(self) -> bool:
+            """Return the require relay reason used by this handler family."""
+            ...
+
+        @property
+        def require_two_person_relay(self) -> bool:
+            """Return the require two person relay used by this handler family."""
+            ...
+
 
 logger = logging.getLogger(__name__)
 
@@ -106,13 +140,13 @@ class _RelayAuthorisation:
 
 
 async def handle_operator_relay_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: OperatorRelayContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Apply a relayed operator action behind the deny-by-default gate, or refuse fail-closed.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : OperatorRelayContext
         The acting hub whose state the action mutates; ``hub.hub_id`` stamps the result.
     sender : str
         The relaying peer hub; the result is addressed privately to it, and the serving
@@ -127,9 +161,9 @@ async def handle_operator_relay_request(
         request = decode_relay_request(data)
     except RelayWireError:
         logger.warning("Refused malformed operator relay request from peer %r", sender)
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "Malformed operator relay request",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -201,7 +235,7 @@ def _relay_operation_data(data: dict[str, Any], principal: str) -> dict[str, Any
 
 
 async def _send_atomic_execution(
-    hub: SynapseHub,
+    hub: OperatorRelayContext,
     websocket: Any,
     sender: str,
     data: dict[str, Any],
@@ -211,9 +245,9 @@ async def _send_atomic_execution(
     if execution.outcome in {"replayed", "conflict"}:
         if execution.response is None:
             raise RuntimeError("atomic operator relay returned no replay response")
-        await hub._send_json(websocket, execution.response)
+        await hub.send_json(websocket, execution.response)
         if execution.outcome == "replayed":
-            await hub._settle_atomic_operation(data)
+            await hub.settle_atomic_operation(data)
         return
     application = execution.mutation
     if not isinstance(application, (_ReleaseApplication, _TwoPersonApplication)):
@@ -226,11 +260,11 @@ async def _send_atomic_execution(
         response=execution.response,
     )
     if execution.outcome == "inserted":
-        await hub._settle_atomic_operation(data)
+        await hub.settle_atomic_operation(data)
 
 
 def _authorise(
-    hub: SynapseHub, sender: str, request: RelayActionRequest, websocket: Any
+    hub: OperatorRelayContext, sender: str, request: RelayActionRequest, websocket: Any
 ) -> _RelayAuthorisation:
     """Compose the peer, scope, and ownership gates into one relay authorisation decision.
 
@@ -268,7 +302,7 @@ def _authorise(
 
 
 async def _apply_with_two_person_async(
-    hub: SynapseHub, sender: str, request: RelayActionRequest, principal: str
+    hub: OperatorRelayContext, sender: str, request: RelayActionRequest, principal: str
 ) -> RelayActionResult:
     """Serialize unkeyed approval and lease state with their durable audit."""
     journal = hub.journal
@@ -432,14 +466,14 @@ def _persist_two_person_application(
         record_operator_relay(journal, payload)
 
 
-def _publish_two_person(hub: SynapseHub, candidate: _TwoPersonSubject) -> None:
+def _publish_two_person(hub: OperatorRelayContext, candidate: _TwoPersonSubject) -> None:
     """Publish committed lease and approval-ledger candidates without yielding."""
     hub.state.publish_from(candidate.state)
     hub.relay_approvals.publish_from(candidate.approvals)
 
 
 async def _apply_release_async(
-    hub: SynapseHub,
+    hub: OperatorRelayContext,
     sender: str,
     request: RelayActionRequest,
     *,
@@ -477,7 +511,7 @@ async def _apply_release_async(
 
 
 async def _apply_release_atomic_async(
-    hub: SynapseHub,
+    hub: OperatorRelayContext,
     sender: str,
     request: RelayActionRequest,
     data: dict[str, Any],
@@ -506,7 +540,7 @@ async def _apply_release_atomic_async(
             },
         )
 
-    return await hub._run_atomic_operation(data, mutate, prepare)
+    return await hub.run_atomic_operation(data, mutate, prepare)
 
 
 def _persist_release_application(
@@ -518,7 +552,7 @@ def _persist_release_application(
 
 
 async def _apply_with_two_person_atomic_async(
-    hub: SynapseHub,
+    hub: OperatorRelayContext,
     sender: str,
     request: RelayActionRequest,
     principal: str,
@@ -565,7 +599,7 @@ async def _apply_with_two_person_atomic_async(
     def publish_candidate(candidate: _TwoPersonSubject) -> None:
         _publish_two_person(hub, candidate)
 
-    return await hub._run_atomic_operation(
+    return await hub.run_atomic_operation(
         data,
         mutate,
         subject=subject,
@@ -629,7 +663,7 @@ def _approved_noop_audit_payload(
 
 
 async def _send_result(
-    hub: SynapseHub,
+    hub: OperatorRelayContext,
     websocket: Any,
     sender: str,
     result: RelayActionResult,
@@ -643,25 +677,49 @@ async def _send_result(
     discovering it only on its next failed action.
     """
     if result.applied:
-        await hub._broadcast(
-            hub._system(
+        await hub.broadcast(
+            hub.system(
                 f"Task {result.task_id!r} in {result.namespace!r} was released by operator "
                 f"relay: {result.detail}",
                 msg_type=MessageType.RELEASE_GRANTED,
                 task_id=result.task_id,
             )
         )
-    await hub._send_json(
+    await hub.send_json(
         websocket,
         response if response is not None else _result_message(hub, sender, result),
     )
 
 
-def _result_message(hub: SynapseHub, sender: str, result: RelayActionResult) -> dict[str, Any]:
+def _result_message(
+    hub: OperatorRelayContext, sender: str, result: RelayActionResult
+) -> dict[str, Any]:
     """Build the exact private verdict committed for a keyed operator relay."""
-    return hub._system(
+    return hub.system(
         "Operator relay result",
         msg_type=MessageType.OPERATOR_RELAY_RESULT,
         target=sender,
         **encode_relay_result(result),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.OPERATOR_RELAY_REQUEST,),
+        handler=handle_operator_relay_request,
+        reply_types=(
+            MessageType.OPERATOR_RELAY_RESULT,
+            MessageType.RELEASE_GRANTED,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(
+            EventKind.OPERATOR_RELAY,
+            EventKind.RELEASE,
+        ),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

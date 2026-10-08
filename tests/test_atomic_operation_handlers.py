@@ -61,15 +61,15 @@ class _RecordingHub(SynapseHub):
         self.broadcasts: list[dict[str, Any]] = []
         self.legacy_remembered: list[tuple[dict[str, Any], dict[str, Any]]] = []
 
-    async def _send_json(self, _websocket: Any, data: dict[str, Any]) -> None:
+    async def send_json(self, _websocket: Any, data: dict[str, Any]) -> None:
         self.sent.append(data)
 
-    async def _broadcast(self, data: dict[str, Any]) -> frozenset[str]:
+    async def broadcast(self, data: dict[str, Any]) -> frozenset[str]:
         """Record the frame without claiming any completed recipient writes."""
         self.broadcasts.append(data)
         return frozenset()
 
-    def _remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
+    def remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
         self.legacy_remembered.append((data, response))
 
 
@@ -124,7 +124,7 @@ async def test_hub_atomic_finalizer_publishes_only_durable_candidate(
         )
 
     async def execute(frame: dict[str, Any]) -> Any:
-        return await hub._run_atomic_operation(
+        return await hub.run_atomic_operation(
             frame, lambda state: state.claim("A", "T-finalized"), prepare
         )
 
@@ -166,7 +166,7 @@ async def test_hub_atomic_finalizer_failure_discards_candidate(tmp_path: Path) -
         raise OSError("signer unavailable")
 
     with pytest.raises(OSError, match="signer unavailable"):
-        await hub._run_atomic_operation(
+        await hub.run_atomic_operation(
             _frame("A", "claim", "finalizer-failed"),
             lambda state: state.claim("A", "not-published"),
             lambda _result: OperationDraft(

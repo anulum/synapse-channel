@@ -43,7 +43,7 @@ from synapse_channel.core.message_auth import (
 )
 from synapse_channel.core.message_auth_durable import DurableMessageAuthReplayStore
 from synapse_channel.core.persistence import EventStore
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.protocol import WIRE_PROTOCOL_VERSION, MessageType
 from synapse_channel.core.role_grants import RoleGrants
 
 SENDER = "proj/alice"
@@ -426,7 +426,7 @@ async def test_python_agent_attachment_entry_point_reaches_secure_hub(tmp_path: 
             task = asyncio.create_task(agent.connect())
             try:
                 assert await agent.wait_until_ready(3)
-                assert agent.hub_protocol_version == 6
+                assert agent.hub_protocol_version == WIRE_PROTOCOL_VERSION
                 await agent.send_attachment(
                     MessageType.ATTACHMENT_BEGIN,
                     scope="proj",

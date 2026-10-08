@@ -86,6 +86,7 @@ class EventKind:
     CLAIM = "claim"
     CLAIM_DENIAL = "claim_denial"
     GUARD_DENIAL = "guard_denial"
+    NATIVE_MESSAGE = "native_message"
     RELEASE = "release"
     TASK_UPDATE = "task_update"
     CHECKPOINT = "checkpoint"

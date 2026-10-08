@@ -49,6 +49,11 @@ The ACL model and its evaluation are implemented in
   stays the per-message authentication layer; this is the authorisation layer.
   Enforcement is opt-in and off by default, ungated verbs and read surfaces still
   pass, and a missing policy or shared-token local hub is unchanged.
+  The mapping belongs to each handler's verb declaration. For lease mutations,
+  `task_update` checks `task_id` or its `id` fallback, while `release` checks
+  `task_id` or its `payload` fallback. The first non-empty accepted target wins;
+  another payload cannot borrow permission for a different task. This also
+  permits a payload-based release when its actual task is granted.
 - **Hub-authoritative name-ownership lease** (`core/name_ownership.py`): a name
   has exactly one owner across reconnects, not merely per socket. A registration
   that declares `lease: true` on a free name is granted an opaque `owner_lease`

@@ -17,7 +17,7 @@ applied once. On a secured hub, the first message of a connection must carry a
 `token`.
 
 The hub advertises its wire-protocol version in the `welcome` handshake as
-`protocol_version` (an integer; the current wire is version `6`), and it is also
+`protocol_version` (an integer; the current wire is version `7`), and it is also
 reported by `/health` as `protocol_version`. It is decoupled from the package
 version on purpose — a patch or feature release that leaves the wire shapes
 unchanged does not bump it, so it is a stable compatibility signal a client can
@@ -69,6 +69,18 @@ ordinary envelopes. Signed registration fields bind a connection name to a
 machine key or operator trust bundle, and opt-in ACL evaluation refuses
 unauthorised mutating frames before state changes. These additive fields and
 checks do not replace the connect token or change the default local wire flow.
+
+Hub routing, replay protection and ACL/journal guards derive from `VerbSpec`
+declarations beside each handler family. Their dispositions are independent:
+history and resume have ACL mappings without being mutation-guarded, while the
+legacy mutation guard includes attachment reads. This refactor preserves those
+memberships and the wire vocabulary. A new verb needs its family declaration,
+the relevant vocabulary constants, independent freeze tests and documentation;
+it does not need separate dispatch, replay and enforcement table entries.
+
+For lease mutations, ACL admission follows the target the handler actually uses.
+`task_update` resolves `task_id` before `id`; `release` resolves `task_id` before
+`payload`. Supplying a second field cannot substitute another task's grant.
 
 The [signed capability cards runtime](signed-capability-cards.md) keeps
 `advertise` and `manifest_request` as ordinary discovery messages while optionally
@@ -129,6 +141,10 @@ does not add agent grades to protocol envelopes.
   - It decides in its owner-only ledger, never in the replicated journal.
 - **Guard evidence:** `guard_denial` admits one content-minimized native
   file-guard refusal; `guard_denial_recorded` acknowledges its durable sequence.
+- **Native message records:** `native_message_record` stores the record of a
+  message that travelled over a vendor's own channel; `native_message_recorded`
+  or `native_message_rejected` answers it. Nothing is delivered. See
+  [Native message records](#native-message-records-wire-version-7).
   The authenticated durable contract is defined below.
 
 ### Exact history selection
@@ -729,6 +745,16 @@ frame with an `error`, which settles the forward as refused (`peer_rejected`)
 without further retries. A receipt reports transport facts only. It never means
 the recipient acted on the message.
 
+The running origin hub coalesces overlapping initial and retry exchanges for
+one `forward_id`, while unrelated forwards remain independent. Cancellation
+releases transient ownership and a late peer reply cannot revive an expired
+entry. Overlapping terminal notifications are coalesced too: only a successful
+local sender send marks the notification complete. An offline sender's pending
+notification survives restart. Interrupted or uncertain sends retain the
+at-least-once recovery contract. Transport exceptions and peer error frames
+produce fixed local diagnostics; raw peer diagnostics and connection details
+are not relayed to the sender.
+
 **Delivery intents.** A `delivery_request` whose `target` is
 `PROJECT/seat@HUB_ID` is forwarded synchronously. The peer admits it against its
 own recipient session, exactly as for a local requester named
@@ -880,6 +906,63 @@ on its private `state_snapshot`; missing/invalid ids remain absent. This additiv
 field does not change the wire version. Clients must match the requesting identity
 and exact id before treating that snapshot as confirmation. See
 [claim outcomes and recovery](git-claims.md#claim-outcomes-and-recovery).
+
+## Native message records (wire version 7)
+
+Some agent clients reach another session without the hub: a Claude Code session
+messages another Claude Code session, a Codex client queues a message into a
+running thread. The hub does not carry such a message. The side that sent or
+received it writes a record with `native_message_record`; a client sends the
+verb only to a hub that advertises wire version `7` or newer
+(`MIN_NATIVE_MESSAGE_RECORD_PROTOCOL_VERSION`).
+
+The record is stored as one durable `native_message` event. It enters no
+mailbox, produces no delivery receipt, wakes nobody and is not replayed to a
+reconnecting waiter. The verb requires a journal-backed hub. Like every
+state-changing verb it is refused while the journal needs recovery.
+
+| Field | Meaning |
+|---|---|
+| `channel` | `claude_cross_session`, `codex_queue`, `acp` or `server` |
+| `direction` | `sent` or `received`: the recorder's side of the message |
+| `phase` | `attempt` (before a native send) or `outcome` (after it) |
+| `outcome` | `queued`, `refused` or `uncertain`; with `phase: outcome` only |
+| `sender_seat`, `recipient_seat` | Fleet seats; the other side's seat may be absent |
+| `sender_native_session`, `recipient_native_session`, `recipient_address`, `execution_host` | Optional native addressing |
+| `native_message_id`, `native_call_id`, `source_msg_seq` | Optional identifiers of the native message, of the recorder's call, and of the hub message a wake belongs to |
+| `sent_at` | UTC, `YYYY-MM-DDTHH:MM:SS[.ffffff]Z` |
+| `text_sha256`, `text_bytes` | SHA-256 and size of the exact UTF-8 message text |
+| `text` | Optional. When present it must hash to `text_sha256`; at most 65,536 bytes. A longer message is recorded by hash |
+| `tool_result` | Optional strict JSON, at most 4,096 bytes serialised |
+| `idem_key` | Required retry key |
+
+The hub stamps three fields a recorder cannot set: `recorder` (the name bound to
+the socket), `recorded_at`, and `recorder_binding`, which says how that name was
+established: `auth_token` (the socket presented a credential), `identity_proof`
+(its registration was signed by an operator-enrolled key) or `socket_name` (an
+open hub: the socket holds the name and nothing proves more).
+
+A record is accepted only from the seat on its own side: `recorder` must equal
+`sender_seat` of a `sent` record and `recipient_seat` of a `received` one. A
+channel whose send takes no caller idempotency key writes an `attempt` before the
+native send and an `outcome` after it; an attempt without an outcome marks a
+delivery whose result is unknown, and such a send must not be repeated or
+replaced by another route automatically.
+
+Ingress is limited per connection principal to 600 records and 8 MiB in any
+60 seconds; the surplus is refused with `native_record_rate_limited`. A repeated
+`idem_key` is replayed before that limit is charged. On an open loopback hub
+every local connection shares one principal, so the limit is host-wide there.
+
+`native_message_recorded` returns `audit_seq`, `text_sha256`, `phase` and
+`recorder_binding`. A repeated `idem_key` with the same content replays that
+reply; with different content the hub answers `idempotency_conflict`.
+`native_message_rejected` carries `error_code`: `native_record_unavailable`,
+`native_record_invalid`, `native_record_text_mismatch`,
+`native_record_text_too_large`, `native_record_idem_key_required`,
+`native_record_not_own_side` or `native_record_rate_limited`. Under
+`--require-acl` the verb needs the `evidence` permission on target
+`evidence:native-message`.
 
 ## Durable inbox query
 

@@ -17,15 +17,34 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.acl import MESSAGE
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_access import field_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.channels import ChannelRegistry
+    from synapse_channel.core.handler_context import HandlerContext
+
+    class ChannelsContext(HandlerContext, Protocol):
+        """Capabilities consumed by channels handlers and their callees."""
+
+        @property
+        def channels(self) -> ChannelRegistry:
+            """Return the channels used by this handler family."""
+            ...
+
+        @property
+        def max_history(self) -> int:
+            """Return the max history used by this handler family."""
+            ...
 
 
 async def _reply(
-    hub: SynapseHub,
+    hub: ChannelsContext,
     websocket: Any,
     *,
     sender: str,
@@ -46,9 +65,9 @@ async def _reply(
         if ok and hub.channels.is_member(channel, sender)
         else []
     )
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             message,
             msg_type=MessageType.CHANNEL_RESULT,
             target=sender,
@@ -60,7 +79,7 @@ async def _reply(
 
 
 async def handle_channel_create(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: ChannelsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Create a private channel owned by the requester."""
     channel = str(data.get("channel") or "").strip()
@@ -70,7 +89,7 @@ async def handle_channel_create(
 
 
 async def handle_channel_invite(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: ChannelsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Record an owner-issued invite granting one join to another agent.
 
@@ -85,7 +104,7 @@ async def handle_channel_invite(
 
 
 async def handle_channel_join(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: ChannelsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Join the requester to a private channel it was invited to."""
     channel = str(data.get("channel") or "").strip()
@@ -94,7 +113,7 @@ async def handle_channel_join(
 
 
 async def handle_channel_leave(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: ChannelsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Remove the requester from a private channel."""
     channel = str(data.get("channel") or "").strip()
@@ -103,13 +122,13 @@ async def handle_channel_leave(
 
 
 async def handle_channel_list_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: ChannelsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Return the channels the requester is a member of."""
     del data
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "channel list",
             msg_type=MessageType.CHANNEL_LIST,
             target=sender,
@@ -119,7 +138,7 @@ async def handle_channel_list_request(
 
 
 async def handle_channel_history_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: ChannelsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Return retained channel history visible to the requester."""
     channel = str(data.get("channel") or "").strip()
@@ -135,9 +154,9 @@ async def handle_channel_history_request(
             message=f"not a member of channel '{channel}'",
         )
         return
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "channel history",
             msg_type=MessageType.CHANNEL_HISTORY,
             target=sender,
@@ -146,3 +165,82 @@ async def handle_channel_history_request(
             retention={"max_messages": hub.max_history},
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.CHANNEL_CREATE,),
+        handler=handle_channel_create,
+        reply_types=(MessageType.CHANNEL_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(MESSAGE, "channel", "channel"),
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.CHANNEL_INVITE,),
+        handler=handle_channel_invite,
+        reply_types=(MessageType.CHANNEL_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(MESSAGE, "channel", "channel"),
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.CHANNEL_JOIN,),
+        handler=handle_channel_join,
+        reply_types=(MessageType.CHANNEL_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(MESSAGE, "channel", "channel"),
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.CHANNEL_LEAVE,),
+        handler=handle_channel_leave,
+        reply_types=(MessageType.CHANNEL_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(MESSAGE, "channel", "channel"),
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.CHANNEL_LIST_REQUEST,),
+        handler=handle_channel_list_request,
+        reply_types=(MessageType.CHANNEL_LIST,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.CHANNEL_HISTORY_REQUEST,),
+        handler=handle_channel_history_request,
+        reply_types=(
+            MessageType.CHANNEL_HISTORY,
+            MessageType.CHANNEL_RESULT,
+        ),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

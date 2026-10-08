@@ -358,7 +358,7 @@ async def test_release_rejects_a_malformed_receipt_file(
 class _IncompleteReleaseReplyHub(SynapseHub):
     """Inject malformed replies only after the real runtime release mutation."""
 
-    async def _broadcast(self, data: dict[str, Any]) -> frozenset[str]:
+    async def broadcast(self, data: dict[str, Any]) -> frozenset[str]:
         if data.get("type") == MessageType.RELEASE_GRANTED:
             for changed in (
                 {"sender": "malicious-peer"},
@@ -367,9 +367,9 @@ class _IncompleteReleaseReplyHub(SynapseHub):
                 {"owner": "someone-else"},
                 {"receipt": "invalid"},
             ):
-                await super()._broadcast({**data, **changed})
+                await super().broadcast({**data, **changed})
             return frozenset()
-        return await super()._broadcast(data)
+        return await super().broadcast(data)
 
 
 async def test_release_receipt_json_remains_unknown_when_the_hub_echoes_none(

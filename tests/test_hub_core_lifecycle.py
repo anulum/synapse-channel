@@ -69,5 +69,5 @@ async def test_online_agents_sorted_end_to_end() -> None:
 def test_message_seq_is_monotonic(seq: int) -> None:
     hub = SynapseHub(hub_id="syn-test")
     for _ in range(seq):
-        value = hub._next_msg_id()
+        value = hub.next_msg_id()
     assert value == seq
