@@ -24,6 +24,11 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- `synapse lock` now returns `1` for refused cleanup or `3` for uncertain cleanup
+  after a successful child. Nonzero child exits remain unchanged. Diagnostics
+  retain the child status and exact read-only recovery command without exposing
+  credentials embedded in the hub URI.
+
 - A structure budget now guards `src/synapse_channel` and `tools` against a unit
   taking on a second responsibility. `tools/structure_budget.toml` lists every
   class, function and module above a threshold of constructor parameters,
@@ -50,6 +55,12 @@ All notable changes to this project are documented here.
   `SynapseHub.replace_enrolled_identity_keys`.
 
 ### Fixed
+
+- Lock cleanup uses a fresh client profile to read the epoch persisted by a
+  same-identity child renewal, instead of releasing with the parent's stale
+  epoch. One keyed release survives interrupted teardown; lost replies recover
+  through the exact durable operation without replaying the mutation. Invalid
+  readiness or cleanup deadlines fail before acquisition.
 
 - Structure-budget configuration exceptions now enforce their expiry and
   recorded threshold maximum, including after admission into the baseline.

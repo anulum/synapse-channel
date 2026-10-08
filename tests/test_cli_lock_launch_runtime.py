@@ -34,7 +34,7 @@ async def test_launch_failure_releases_durable_lock(tmp_path: Path, failure: str
         executable.write_text("not an executable format\n", encoding="utf-8")
         executable.chmod(0o700)
     elif failure == "interpreter":
-        executable.write_text(f"#!{tmp_path / 'absent-interpreter'}\n", encoding="utf-8")
+        executable.write_text("#!./absent-interpreter\n", encoding="utf-8")
         executable.chmod(0o700)
     elif failure == "directory":
         executable.mkdir()
@@ -53,6 +53,7 @@ async def test_launch_failure_releases_durable_lock(tmp_path: Path, failure: str
                 str(executable),
                 "argument-must-not-be-printed",
                 uri=uri,
+                cwd=tmp_path,
             )
             assert result.returncode == (127 if failure in {"missing", "interpreter"} else 126), (
                 result.output

@@ -21,13 +21,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import math
 import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
 from synapse_channel.cli_lock_process import run_locked_subprocess
+from synapse_channel.cli_lock_release import LockRelease, display_hub_uri, valid_lock_timeouts
 from synapse_channel.cli_release import (
     _load_release_receipt as _load_release_receipt,
 )
@@ -119,9 +119,18 @@ async def _lock(
     Returns
     -------
     int
-        The command's exit code, or ``1`` when the hub was unreachable or the lease
-        could not be acquired within ``wait_timeout``.
+        Preserve a nonzero command exit. A successful command returns ``0`` only
+        after confirmed cleanup, ``1`` after an explicit release refusal, or
+        ``3`` when cleanup is uncertain. Invalid timeouts return ``2`` before
+        acquisition; unreachable or refused acquisition returns ``1``.
     """
+    reply_timeout = release_timeout if release_timeout is not None else attempts * poll_interval
+    if not valid_lock_timeouts(wait_timeout, ready_timeout, reply_timeout):
+        print(
+            "lock: timeouts must be finite; readiness and release must be within (0, 300]",
+            file=sys.stderr,
+        )
+        return 2
     lock_worktree = task_id
     lock_paths = paths
     path_identity: dict[str, object] | None = None
@@ -153,19 +162,21 @@ async def _lock(
             return
         if data.get("type") == MessageType.CLAIM_GRANTED and data.get("owner") == name:
             outcome["granted"] = True
+            outcome["epoch"] = data.get("epoch")
         elif data.get("type") == MessageType.CLAIM_DENIED:
             outcome["denied"] = str(data.get("payload") or "held by another agent")
-        elif data.get("type") == MessageType.RELEASE_GRANTED and data.get("owner") == name:
-            outcome["released"] = True
 
     agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
     conn_task = asyncio.create_task(agent.connect())
+    child_code: int | None = None
+    cleanup_code = 0
+    release: LockRelease | None = None
     try:
         if not await agent.wait_until_ready(timeout=ready_timeout):
             print(
                 describe_connect_failure(
                     name,
-                    uri,
+                    display_hub_uri(uri),
                     close_code=agent.last_close_code,
                     close_reason=agent.last_close_reason,
                 )
@@ -194,7 +205,7 @@ async def _lock(
                 print(
                     explain_silent_outcome(
                         name,
-                        uri,
+                        display_hub_uri(uri),
                         close_code=agent.last_close_code,
                         close_reason=agent.last_close_reason,
                         fallback=f"Could not acquire lock '{task_id}': hub connection closed",
@@ -205,7 +216,7 @@ async def _lock(
                 print(
                     explain_silent_outcome(
                         name,
-                        uri,
+                        display_hub_uri(uri),
                         close_code=agent.last_close_code,
                         close_reason=agent.last_close_reason,
                         fallback=(
@@ -221,48 +232,31 @@ async def _lock(
         # this same authenticated identity without a concurrent-name conflict.
         conn_task.cancel()
         await asyncio.gather(conn_task, return_exceptions=True)
-        return await runner(command)
+        child_code = await runner(command)
     finally:
+        if outcome.get("granted"):
+            epoch = outcome.get("epoch")
+            release = LockRelease(
+                uri=uri,
+                name=name,
+                task_id=task_id,
+                initial_epoch=epoch
+                if isinstance(epoch, int) and not isinstance(epoch, bool)
+                else None,
+                token=token,
+                agent_factory=agent_factory,
+                ready_timeout=ready_timeout,
+                reply_timeout=reply_timeout,
+            )
 
         async def teardown() -> None:
-            """Finish reconnect, release and socket cleanup despite repeated interrupts."""
-            nonlocal conn_task
-            try:
-                if not outcome.get("granted"):
-                    return
-                if conn_task.done():
-                    conn_task = asyncio.create_task(agent.connect())
-                    if not await agent.wait_until_ready(timeout=ready_timeout):
-                        raise ConnectionError("could not reconnect to release the held claim")
-                outcome.pop("released", None)
-                await agent.release(task_id)
-                # The release frame itself is fire-and-forget on the wire, and the
-                # hub persists the release BEFORE broadcasting the grant — so
-                # waiting boundedly for the confirmation here means that when the
-                # process exits, the lease is gone and the durable log already
-                # carries the release. Without the wait, a follow-up step reading
-                # the log (or contending for the lease) can race the hub. A
-                # missing confirmation only costs this bounded wait: the TTL
-                # remains the backstop, and teardown never hangs the command's
-                # outcome.
-                release_polls = (
-                    attempts
-                    if release_timeout is None
-                    else max(1, math.ceil(release_timeout / poll_interval))
-                )
-                for _ in range(release_polls):
-                    if outcome.get("released") or conn_task.done():
-                        break
-                    await asyncio.sleep(poll_interval)
-            except Exception:
-                # Teardown must not mask the held command's outcome, but a lease
-                # that could not be dropped stays visible until its TTL — leave a
-                # trace instead of losing the failure entirely.
-                logger.debug("best-effort release of %r failed on teardown", task_id, exc_info=True)
-            finally:
-                agent.running = False
-                conn_task.cancel()
-                await asyncio.gather(conn_task, return_exceptions=True)
+            """Join the original socket before a fresh profile settles the retained intent."""
+            nonlocal cleanup_code
+            agent.running = False
+            conn_task.cancel()
+            await asyncio.gather(conn_task, return_exceptions=True)
+            if release is not None:
+                cleanup_code = await release.run()
 
         interrupted = False
         while True:
@@ -277,8 +271,12 @@ async def _lock(
                 continue
             cleanup.result()
             break
+        if cleanup_code and release is not None:
+            print(release.diagnostic(cleanup_code, child_code), file=sys.stderr)
         if interrupted:
             raise asyncio.CancelledError
+    assert child_code is not None
+    return child_code or cleanup_code
 
 
 def _cmd_lock(args: argparse.Namespace) -> int:
@@ -358,8 +356,8 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         metavar="SECONDS",
         help=(
-            "Seconds the exit waits for the hub's release confirmation (default "
-            "~2s); always bounded, lease TTL remains the backstop. Distinct from "
+            "Seconds per bounded release or exact read-only confirmation exchange "
+            "(default ~2s; 0 < seconds <= 300). Lease TTL remains the backstop. Distinct from "
             "--wait-timeout, which bounds ACQUIRING the lease."
         ),
     )

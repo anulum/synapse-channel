@@ -645,7 +645,7 @@ id, so the others wait their turn instead of clobbering each other:
 ```bash
 synapse lock quantum:git -- git push          # holds quantum:git while pushing
 synapse lock quantum:git --wait-timeout 0 -- git push   # fail fast if someone holds it
-synapse lock quantum:git --release-timeout 10 -- git push  # hold the exit up to 10s for the release confirmation (slow links)
+synapse lock quantum:git --release-timeout 10 -- git push  # allow 10s per confirmation exchange (slow links)
 ```
 
 A lock is a named mutex keyed by its id: `quantum:git` and `physics:git` are
@@ -658,14 +658,39 @@ If the wrapped executable or its interpreter cannot be found, `lock` reports
 the launch error on stderr and returns `127`. Other OS execution refusals, such
 as permission denial or an invalid executable format, return `126`. The acquired
 claim follows the same bounded release confirmation as a completed command.
-Arguments are passed directly without shell expansion; a normal child exit
-status is preserved.
+Arguments are passed directly without shell expansion. A nonzero child exit
+status is preserved. After a successful child, `lock` returns `0` only for a
+confirmed release, `1` for an explicit release refusal, or `3` when cleanup is
+unconfirmed. This replaces the earlier behavior that silently returned the
+child's `0` even when the lease remained held. Cleanup failures are reported
+on stderr together with the original child status.
+If the fresh client profile cannot be loaded after the command finishes, cleanup
+is reported as unknown and the original nonzero child status is still preserved.
 
 After the grant, `lock` closes its hub connection while the command runs; the
 durable task claim remains held until release or its TTL expires. This lets Git
 hooks connect using the same owner identity. After the command, `lock` reconnects
-as that owner and waits boundedly for release confirmation. A reconnect failure
-leaves the claim visible until its TTL; it preserves the command's exit code.
+as that owner using a fresh client profile and waits boundedly for release
+confirmation. The fresh profile reads an epoch persisted by a same-identity
+child renewal under the connected hub, instead of reusing the parent's stale
+in-memory epoch. If no stored epoch is available, it uses the actual original
+grant. Server ownership and fencing checks still apply; a refused epoch is
+never guessed, incremented, or retried with a different value.
+
+Each cleanup dispatches at most one keyed release. A lost reply may be recovered
+by reading the exact durable operation; lease absence alone is not confirmation.
+Interrupted cleanup retains the original operation and resumes with a read-only
+confirmation query, including when interruption occurs during dispatch.
+An unknown outcome prints its operation key, request digest, and a
+`synapse release --confirm-only ...` recovery command. Preserve that output and
+run the read-only command; do not send another release to discover the result.
+The recovery command uses the existing authentication profile. A hub URI with
+user information, query parameters or a fragment is omitted from diagnostics;
+restore it privately in `SYNAPSE_URI` before running the printed recovery command.
+Legacy hubs without exact reply binding cannot provide this
+guarantee and may return an unknown result. A reconnect failure leaves the claim
+visible until its TTL. Readiness and release timeouts must be finite, positive,
+and at most 300 seconds; an invalid timeout returns `2` before acquisition.
 On cancellation, the command is terminated and reaped before release, with a
 grace period of up to five seconds before forced termination. Shutdown that also
 cancels cleanup work forces termination immediately. On POSIX this also terminates
