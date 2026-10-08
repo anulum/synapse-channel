@@ -43,20 +43,30 @@ from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Protocol
 
-    from synapse_channel.core.hub import SynapseHub
+    from synapse_channel.core.handler_context import HandlerContext
+
+    class FederationOfferContext(HandlerContext, Protocol):
+        """Capabilities consumed by federation offer handlers and their callees."""
+
+        @property
+        def federation_offer_path(self) -> Path | None:
+            """Return the federation offer path used by this handler family."""
+            ...
+
 
 logger = logging.getLogger(__name__)
 
 
 async def handle_federation_offer_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: FederationOfferContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Answer a peer operator's request for this hub's federation-bundle material.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : FederationOfferContext
         The hub whose ``federation_offer_path`` names the offered bundle file, or ``None``
         when no offer is configured.
     sender : str
@@ -108,7 +118,9 @@ def _read_offer(path: Path) -> FederationPeer:
     return decode_federation_offer(raw)
 
 
-async def _send_error(hub: SynapseHub, sender: str, websocket: Any, message: str) -> None:
+async def _send_error(
+    hub: FederationOfferContext, sender: str, websocket: Any, message: str
+) -> None:
     """Send one private error frame back to the requesting socket."""
     await hub.send_json(
         websocket,

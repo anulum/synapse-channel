@@ -34,13 +34,31 @@ from synapse_channel.core.spend_wire import (
 )
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.multihub_serving import MultiHubServingPolicy
+    from synapse_channel.core.spend_ledger import SpendLedger
+
+    class SpendContext(HandlerContext, Protocol):
+        """Capabilities consumed by spend handlers and their callees."""
+
+        @property
+        def multihub_serving_policy(self) -> MultiHubServingPolicy | None:
+            """Return the multihub serving policy used by this handler family."""
+            ...
+
+        @property
+        def spend_ledger(self) -> SpendLedger | None:
+            """Return the spend ledger used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.hub")
 
 
 async def handle_spend_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SpendContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Answer one peer spend request privately, or refuse it uniformly."""
     try:

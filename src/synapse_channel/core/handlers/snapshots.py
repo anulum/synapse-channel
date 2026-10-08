@@ -24,11 +24,90 @@ from synapse_channel.core.release_confirmation import read_release_confirmation
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.capability import CapabilityRegistry
+    from synapse_channel.core.claim_holder_presence import ClaimHolderPresence
+    from synapse_channel.core.dead_letters import DeadLetterLedger
+    from synapse_channel.core.handlers.inbox import InboxContext
+    from synapse_channel.core.ledger import Blackboard
+    from synapse_channel.core.mailbox_pending import MailboxPendingTracker
+    from synapse_channel.core.message_forward_origin import ForwardOriginContext
+    from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
+
+    class SnapshotsContext(ForwardOriginContext, InboxContext, Protocol):
+        """Capabilities consumed by snapshots handlers and their callees."""
+
+        @property
+        def agent_roles(self) -> dict[str, tuple[str, ...]]:
+            """Return the agent roles used by this handler family."""
+            ...
+
+        @property
+        def blackboard(self) -> Blackboard:
+            """Return the blackboard used by this handler family."""
+            ...
+
+        @property
+        def board_task_cap(self) -> int | None:
+            """Return the board task cap used by this handler family."""
+            ...
+
+        @property
+        def capabilities(self) -> CapabilityRegistry:
+            """Return the capabilities used by this handler family."""
+            ...
+
+        @property
+        def claim_holders(self) -> ClaimHolderPresence:
+            """Return the claim holders used by this handler family."""
+            ...
+
+        @property
+        def config_epoch(self) -> str:
+            """Return the config epoch used by this handler family."""
+            ...
+
+        @property
+        def connected_clients(self) -> set[Any]:
+            """Return the connected clients used by this handler family."""
+            ...
+
+        @property
+        def dead_letters(self) -> DeadLetterLedger:
+            """Return the dead letters used by this handler family."""
+            ...
+
+        @property
+        def mailbox_pending(self) -> MailboxPendingTracker:
+            """Return the mailbox pending used by this handler family."""
+            ...
+
+        def online_agents(self) -> list[str]:
+            """Return the sorted names of currently registered agents."""
+            ...
+
+        @property
+        def relay_approvals(self) -> RelayApprovalLedger:
+            """Return the relay approvals used by this handler family."""
+            ...
+
+        def roster_liveness(self) -> dict[str, dict[str, Any]]:
+            """Per-agent liveness annotation for the ``/who`` roster (handler surface).
+
+            Thin wrapper over
+            :meth:`~synapse_channel.core.hub_liveness.HubLivenessView.roster_liveness`, kept
+            because the who-snapshot handler and tests call ``hub.roster_liveness``.
+            """
+            ...
+
+        def wake_capability_of(self, name: str) -> str:
+            """Return the declared receiver wake capability for ``name``."""
+            ...
 
 
 async def handle_state_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SnapshotsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent a full state snapshot.
 
@@ -81,7 +160,7 @@ async def handle_state_request(
 
 
 async def handle_who_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SnapshotsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent the online-agent roster and the hub's pinning tag.
 
@@ -143,7 +222,7 @@ async def handle_who_request(
 
 
 async def handle_history_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SnapshotsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send recent chat history, optionally selecting an exact message first.
 
@@ -191,7 +270,7 @@ async def handle_history_request(
 
 
 async def handle_resume_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SnapshotsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent every chat message after a cursor.
 
@@ -201,7 +280,7 @@ async def handle_resume_request(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : SnapshotsContext
         The hub whose chat history and transport the handler uses.
     sender : str
         The requesting agent.
@@ -226,7 +305,7 @@ async def handle_resume_request(
 
 
 async def handle_board_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SnapshotsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent a snapshot of the shared blackboard."""
     await hub.send_json(
@@ -241,7 +320,7 @@ async def handle_board_request(
 
 
 async def handle_manifest_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: SnapshotsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Send the requesting agent the capability manifest."""
     await hub.send_json(

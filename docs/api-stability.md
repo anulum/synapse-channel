@@ -61,6 +61,12 @@ The manifest pins counts, which catches an addition or removal; the freeze tests
 pin identities and values, which catches a rename that keeps a count constant.
 The two together close the gap either leaves open alone.
 
+The handler protocols in `core.handler_context` and individual handler modules
+are internal static contracts, defined only under `TYPE_CHECKING`. They are not
+runtime imports or additions to the package `__all__`. The concrete hub is
+checked against each protocol at dispatch registration. These contracts do not
+change the stable Python API, message vocabulary or CLI surface.
+
 ### Error taxonomy
 
 The Python `SynapseAgent.connect()` lifecycle treats refused or invalid

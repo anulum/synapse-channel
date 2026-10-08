@@ -27,7 +27,36 @@ from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.acl import AclPolicy
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.hub_liveness import HubLivenessView
+    from synapse_channel.core.identity_pins import IdentityPinStore
+
+    class IdentityPinsContext(HandlerContext, Protocol):
+        """Capabilities consumed by identity pins handlers and their callees."""
+
+        @property
+        def acl_policy(self) -> AclPolicy | None:
+            """Return the acl policy used by this handler family."""
+            ...
+
+        @property
+        def identity_pins(self) -> IdentityPinStore:
+            """Return the identity pins used by this handler family."""
+            ...
+
+        @property
+        def liveness(self) -> HubLivenessView:
+            """Return the liveness used by this handler family."""
+            ...
+
+        @property
+        def require_identity_binding(self) -> bool:
+            """Return the require identity binding used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.hub")
 
@@ -36,7 +65,7 @@ PIN_RECLAIM_CLOSE_CODE = 4017
 
 
 async def handle_identity_pin_reclaim(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: IdentityPinsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Reclaim one exact pin after every governance gate passes.
 
@@ -214,7 +243,7 @@ async def handle_identity_pin_reclaim(
     )
 
 
-def _acl_allows(hub: SynapseHub, sender: str, pin_name: str) -> bool:
+def _acl_allows(hub: IdentityPinsContext, sender: str, pin_name: str) -> bool:
     """Return whether the always-on reclaim grant authorises this exact target."""
     if hub.acl_policy is None:
         return False
@@ -229,7 +258,7 @@ def _acl_allows(hub: SynapseHub, sender: str, pin_name: str) -> bool:
 
 
 async def _send_result(
-    hub: SynapseHub,
+    hub: IdentityPinsContext,
     websocket: Any,
     sender: str,
     *,

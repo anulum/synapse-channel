@@ -24,6 +24,12 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- All hub handler families now declare structural capability contracts,
+  including requirements of their forwarding and claim-presence helpers.
+  Strict typing verifies the concrete hub at dispatch registration. Contracts
+  are internal and static; runtime dispatch, late-bound overrides, wire, CLI
+  and the public Python exports remain unchanged.
+
 - CLI hub queries and task-plan writes now fail with exit `1` when no matching
   reply arrives, instead of silently returning `0`. The diagnostic explains
   that a write may already have committed; no automatic retry is performed.

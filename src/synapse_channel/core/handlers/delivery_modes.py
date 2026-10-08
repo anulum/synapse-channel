@@ -36,7 +36,30 @@ from synapse_channel.core.message_forward_origin import (
 from synapse_channel.core.protocol import MIN_DELIVERY_PROTOCOL_VERSION, MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.acl import AclPolicy
+    from synapse_channel.core.auth import TokenAuthenticator
+    from synapse_channel.core.message_forward_origin import ForwardOriginContext
+
+    class DeliveryModesContext(ForwardOriginContext, Protocol):
+        """Capabilities consumed by delivery modes handlers and their callees."""
+
+        @property
+        def acl_policy(self) -> AclPolicy | None:
+            """Return the acl policy used by this handler family."""
+            ...
+
+        @property
+        def authenticator(self) -> TokenAuthenticator | None:
+            """Return the authenticator used by this handler family."""
+            ...
+
+        @property
+        def stable_delivery_hub_id(self) -> str | None:
+            """Return the stable delivery hub id used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.delivery")
 
@@ -60,7 +83,11 @@ def _correlation(data: dict[str, Any]) -> str:
 
 
 async def _refuse(
-    hub: SynapseHub, websocket: Any, sender: str, data: dict[str, Any], refusal: DeliveryRefusal
+    hub: DeliveryModesContext,
+    websocket: Any,
+    sender: str,
+    data: dict[str, Any],
+    refusal: DeliveryRefusal,
 ) -> None:
     """Send one stable reason code without echoing the request body or secrets."""
     await hub.send_json(
@@ -76,14 +103,16 @@ async def _refuse(
     )
 
 
-def _require_profile(hub: SynapseHub, sender: str, data: dict[str, Any]) -> None:
+def _require_profile(hub: DeliveryModesContext, sender: str, data: dict[str, Any]) -> None:
     """Require a durable stable hub and a version-three registered peer."""
     if hub.clients.protocol_version_of(sender) < MIN_DELIVERY_PROTOCOL_VERSION:
         raise DeliveryRefusal("unsupported_protocol", "peer did not negotiate delivery version 3")
     require_delivery_profile(hub, data)
 
 
-def require_delivery_profile(hub: SynapseHub, data: dict[str, Any]) -> DeliveryPersistence:
+def require_delivery_profile(
+    hub: DeliveryModesContext, data: dict[str, Any]
+) -> DeliveryPersistence:
     """Require a version-three frame and a durable hub with a stable id.
 
     The connection half of the profile (the sender negotiated version three) is checked by
@@ -92,7 +121,7 @@ def require_delivery_profile(hub: SynapseHub, data: dict[str, Any]) -> DeliveryP
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : DeliveryModesContext
         The hub asked to act on the delivery.
     data : dict[str, Any]
         The delivery frame.
@@ -117,14 +146,14 @@ def require_delivery_profile(hub: SynapseHub, data: dict[str, Any]) -> DeliveryP
     return hub.journal.delivery
 
 
-def _ledger(hub: SynapseHub) -> DeliveryPersistence:
+def _ledger(hub: DeliveryModesContext) -> DeliveryPersistence:
     """Return the durable delivery store or a typed fail-closed refusal."""
     if hub.journal is None:
         raise DeliveryRefusal("unsupported_profile", "delivery requires a durable hub")
     return hub.journal.delivery
 
 
-def _control_authorized(hub: SynapseHub, intent: DeliveryIntent) -> bool:
+def _control_authorized(hub: DeliveryModesContext, intent: DeliveryIntent) -> bool:
     """Check always-on ACL and a live exact recipient claim for steer/interrupt."""
     if hub.authenticator is None or hub.acl_policy is None or not intent.task_id:
         return False
@@ -147,7 +176,7 @@ def _control_authorized(hub: SynapseHub, intent: DeliveryIntent) -> bool:
 
 
 def _status(
-    hub: SynapseHub, record: StoredDelivery, *, viewer: str | None = None
+    hub: DeliveryModesContext, record: StoredDelivery, *, viewer: str | None = None
 ) -> dict[str, Any]:
     """Describe receiver, session, message and task stages as separate facts."""
     target = record.request["target"]
@@ -198,7 +227,7 @@ def _offer(intent: DeliveryIntent, selected_mode: str, quality: str) -> dict[str
     }
 
 
-async def _publish_queued_offer(hub: SynapseHub, record: StoredDelivery) -> None:
+async def _publish_queued_offer(hub: DeliveryModesContext, record: StoredDelivery) -> None:
     """Retry one stable offer only to its exact, unexpired recipient session."""
     if record.stage != "queued" or record.request["deadline"] <= time.time():
         return
@@ -220,7 +249,7 @@ async def _publish_queued_offer(hub: SynapseHub, record: StoredDelivery) -> None
 
 
 async def handle_delivery_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: DeliveryModesContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Admit, deduplicate and offer one session-bound intent through the real hub.
 
@@ -260,13 +289,13 @@ class DeliveryAdmission:
 
 
 async def admit_delivery_request(
-    hub: SynapseHub, *, sender: str, origin_hub: str, data: dict[str, Any]
+    hub: DeliveryModesContext, *, sender: str, origin_hub: str, data: dict[str, Any]
 ) -> DeliveryAdmission:
     """Admit, deduplicate and offer one intent to a local recipient session.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : DeliveryModesContext
         The hub that hosts the recipient.
     sender : str
         The requester: a local seat, or ``seat@origin_hub`` for a peer's forward.
@@ -336,7 +365,7 @@ def _operation_key(data: dict[str, Any]) -> str:
 
 
 async def handle_delivery_status_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: DeliveryModesContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Return a private status without confusing reachability with completion.
 
@@ -358,13 +387,13 @@ async def handle_delivery_status_request(
 
 
 async def delivery_status_frame(
-    hub: SynapseHub, *, requester: str, data: dict[str, Any]
+    hub: DeliveryModesContext, *, requester: str, data: dict[str, Any]
 ) -> dict[str, Any]:
     """Return the requester's private status for one locally admitted delivery.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : DeliveryModesContext
         The hub that admitted the delivery.
     requester : str
         The requester; only the delivery's sender or recipient may see it.
@@ -450,7 +479,7 @@ def _mutation_digest(
     return hashlib.sha256(encoded.encode("ascii")).hexdigest()
 
 
-def _recipient_record(hub: SynapseHub, sender: str, key: str) -> StoredDelivery:
+def _recipient_record(hub: DeliveryModesContext, sender: str, key: str) -> StoredDelivery:
     """Bind a transition to the exact target identity and current incarnation."""
     record = _ledger(hub).get(key)
     if record is None:
@@ -479,7 +508,7 @@ def _outcome_stage(data: dict[str, Any]) -> DeliveryStage:
     raise DeliveryRefusal("invalid_shape", "executor outcome stage is unsupported")
 
 
-async def _notify_record(hub: SynapseHub, record: StoredDelivery, audience: str) -> None:
+async def _notify_record(hub: DeliveryModesContext, record: StoredDelivery, audience: str) -> None:
     """Publish an already committed stable notification to its live audience."""
     ledger = _ledger(hub)
     notification_id = f"delivery:{record.operation_key}:{record.ordinal}"
@@ -498,7 +527,7 @@ async def _notify_record(hub: SynapseHub, record: StoredDelivery, audience: str)
         ledger.mark_notification_delivered(notification_id)
 
 
-async def expire_due_deliveries(hub: SynapseHub) -> int:
+async def expire_due_deliveries(hub: DeliveryModesContext) -> int:
     """Commit elapsed deadlines, including queued requests after hub restart."""
     if hub.journal is None or not hub.stable_delivery_hub_id:
         return 0
@@ -535,7 +564,9 @@ async def expire_due_deliveries(hub: SynapseHub) -> int:
                 await _notify_record(hub, write.record, write.record.sender)
 
 
-async def supersede_old_delivery_sessions(hub: SynapseHub, *, target: str, incarnation: str) -> int:
+async def supersede_old_delivery_sessions(
+    hub: DeliveryModesContext, *, target: str, incarnation: str
+) -> int:
     """Terminally resolve unfinished work for a replaced recipient process."""
     if hub.journal is None or not hub.stable_delivery_hub_id:
         return 0
@@ -574,7 +605,7 @@ async def supersede_old_delivery_sessions(hub: SynapseHub, *, target: str, incar
                 await _notify_record(hub, write.record, write.record.sender)
 
 
-async def delivery_expiry_loop(hub: SynapseHub) -> None:
+async def delivery_expiry_loop(hub: DeliveryModesContext) -> None:
     """Sweep deadlines while the hub serves; cancellation ends with the server."""
     while True:
         await expire_due_deliveries(hub)
@@ -582,7 +613,7 @@ async def delivery_expiry_loop(hub: SynapseHub) -> None:
 
 
 async def deliver_pending_delivery_notifications(
-    hub: SynapseHub, *, sender: str, websocket: Any
+    hub: DeliveryModesContext, *, sender: str, websocket: Any
 ) -> None:
     """Replay bounded v3 notifications and exact-incarnation queued offers."""
     if hub.journal is None or hub.clients.protocol_version_of(sender) < 3:
@@ -627,7 +658,7 @@ async def deliver_pending_delivery_notifications(
 
 
 async def handle_delivery_stage(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: DeliveryModesContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Commit a recipient boundary, explicit ACK, or outcome from its live session."""
     try:
@@ -693,7 +724,7 @@ async def handle_delivery_stage(
 
 
 async def handle_delivery_cancel(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: DeliveryModesContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Record a sender cancellation request and notify the responsible executor.
 
@@ -713,13 +744,13 @@ async def handle_delivery_cancel(
 
 
 async def cancel_delivery(
-    hub: SynapseHub, *, requester: str, data: dict[str, Any]
+    hub: DeliveryModesContext, *, requester: str, data: dict[str, Any]
 ) -> dict[str, Any]:
     """Record the sender's cancellation of one locally admitted delivery.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : DeliveryModesContext
         The hub that admitted the delivery.
     requester : str
         The requester; only the delivery's sender may cancel it.

@@ -26,11 +26,22 @@ from synapse_channel.core.state_models import ResourceOffer
 from synapse_channel.core.waiter_identity import waiter_owner
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.capability import CapabilityRegistry
+    from synapse_channel.core.handler_context import HandlerContext
+
+    class OfferingsContext(HandlerContext, Protocol):
+        """Capabilities consumed by offerings handlers and their callees."""
+
+        @property
+        def capabilities(self) -> CapabilityRegistry:
+            """Return the capabilities used by this handler family."""
+            ...
 
 
 async def handle_advertise(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: OfferingsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Store an agent's capability card and broadcast it to the channel.
 
@@ -150,7 +161,7 @@ async def handle_advertise(
 
 
 async def handle_resource(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: OfferingsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Register a resource offer and broadcast it, or reject bad input."""
     kind = str(data.get("kind") or data.get("resource_kind") or "").strip()

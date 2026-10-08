@@ -46,7 +46,92 @@ from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from collections.abc import Callable
+    from typing import Protocol
+
+    from synapse_channel.core.acl import AclPolicy
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.identity_enrollments import EnrollmentRateLimiter
+    from synapse_channel.core.identity_pins import IdentityPinStore
+    from synapse_channel.core.message_auth import EventSignatureTrustBundle
+    from synapse_channel.core.role_grants import RoleGrants
+
+    class IdentityEnrollmentsContext(HandlerContext, Protocol):
+        """Capabilities consumed by identity enrollments handlers and their callees."""
+
+        @property
+        def acl_policy(self) -> AclPolicy | None:
+            """Return the acl policy used by this handler family."""
+            ...
+
+        @property
+        def clock(self) -> Callable[[], float]:
+            """Return the clock used by this handler family."""
+            ...
+
+        @property
+        def enrolled_identity_keys(self) -> dict[str, EventSignatureKey]:
+            """Return the enrolled identity keys used by this handler family."""
+            ...
+
+        @property
+        def enrollment_rate(self) -> EnrollmentRateLimiter:
+            """Return the enrollment rate used by this handler family."""
+            ...
+
+        @property
+        def identity_enrollment_namespaces(self) -> frozenset[str]:
+            """Return the identity enrollment namespaces used by this handler family."""
+            ...
+
+        @property
+        def identity_enrollment_path(self) -> Path | None:
+            """Return the identity enrollment path used by this handler family."""
+            ...
+
+        @property
+        def identity_pins(self) -> IdentityPinStore:
+            """Return the identity pins used by this handler family."""
+            ...
+
+        def replace_enrolled_identity_keys(self, enrolled: dict[str, EventSignatureKey]) -> None:
+            """Make ``enrolled`` the hub's online-enrolled identity keys (handler surface).
+
+            The single place where an enrolment, rotation or revocation takes effect
+            in memory. Three things must agree afterwards: the enrolled keys, the
+            effective trust bundle (the operator's static bundle merged with them),
+            and the bundle the identity gate verifies later registrations against.
+            The caller has already written the audit record and persisted the store.
+
+            Parameters
+            ----------
+            enrolled : dict[str, EventSignatureKey]
+            Every enrolled key by key id, revoked ones included.
+
+            Raises
+            ------
+            ValueError
+            When the hub has no static identity trust bundle to merge with.
+            IdentityEnrollmentError
+            When the merge is refused; nothing has changed in that case.
+            """
+            ...
+
+        @property
+        def require_identity_binding(self) -> bool:
+            """Return the require identity binding used by this handler family."""
+            ...
+
+        @property
+        def role_grants(self) -> RoleGrants | None:
+            """Return the role grants used by this handler family."""
+            ...
+
+        @property
+        def static_identity_trust(self) -> EventSignatureTrustBundle | None:
+            """Return the static identity trust used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.hub")
 
@@ -84,7 +169,7 @@ class _Authority:
         )
 
 
-def _authority(hub: SynapseHub, sender: str, name: str) -> _Authority:
+def _authority(hub: IdentityEnrollmentsContext, sender: str, name: str) -> _Authority:
     requester_pin = hub.identity_pins.pinned(sender)
     moment = hub.clock()
     return _Authority(
@@ -105,7 +190,7 @@ def _authority(hub: SynapseHub, sender: str, name: str) -> _Authority:
 
 
 async def handle_identity_enroll(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: IdentityEnrollmentsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Enrol, or rotate, one identity key after every governance gate passes."""
     expires_at = data.get("expires_at")
@@ -176,7 +261,7 @@ async def handle_identity_enroll(
 
 
 async def handle_identity_revoke(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: IdentityEnrollmentsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Revoke one enrolled identity key, without a replacement, after every gate passes."""
     name = str(data.get("name") or "").strip()
@@ -228,7 +313,7 @@ class _Result:
 
 
 async def _refuse(
-    hub: SynapseHub,
+    hub: IdentityEnrollmentsContext,
     websocket: Any,
     sender: str,
     authority: _Authority,
@@ -256,7 +341,7 @@ async def _refuse(
 
 
 async def _apply(
-    hub: SynapseHub,
+    hub: IdentityEnrollmentsContext,
     websocket: Any,
     sender: str,
     authority: _Authority,
@@ -330,7 +415,7 @@ async def _apply(
     )
 
 
-def _acl_allows(hub: SynapseHub, sender: str, name: str) -> bool:
+def _acl_allows(hub: IdentityEnrollmentsContext, sender: str, name: str) -> bool:
     """Return whether the always-on enrolment grant authorises this exact name."""
     if hub.acl_policy is None:
         return False
@@ -345,7 +430,7 @@ def _acl_allows(hub: SynapseHub, sender: str, name: str) -> bool:
 
 
 async def _send_result(
-    hub: SynapseHub,
+    hub: IdentityEnrollmentsContext,
     websocket: Any,
     sender: str,
     result: _Result,

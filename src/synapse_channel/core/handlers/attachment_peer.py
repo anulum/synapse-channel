@@ -18,11 +18,34 @@ from synapse_channel.core.federation import ScopeGrant
 from synapse_channel.core.protocol import MIN_ATTACHMENT_PEER_PROTOCOL_VERSION, MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.attachment_serving import AttachmentServingPolicy
+    from synapse_channel.core.attachment_store import AttachmentStore
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.multihub_serving import MultiHubServingPolicy
+
+    class AttachmentPeerContext(HandlerContext, Protocol):
+        """Capabilities consumed by attachment peer handlers and their callees."""
+
+        @property
+        def attachment_serving_policy(self) -> AttachmentServingPolicy | None:
+            """Return the attachment serving policy used by this handler family."""
+            ...
+
+        @property
+        def attachment_store(self) -> AttachmentStore | None:
+            """Return the attachment store used by this handler family."""
+            ...
+
+        @property
+        def multihub_serving_policy(self) -> MultiHubServingPolicy | None:
+            """Return the multihub serving policy used by this handler family."""
+            ...
 
 
 async def handle_attachment_peer(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: AttachmentPeerContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Return metadata or one bounded chunk privately; every refusal has the same shape."""
     result: dict[str, Any] = {"ok": False, "error": "attachment unavailable"}

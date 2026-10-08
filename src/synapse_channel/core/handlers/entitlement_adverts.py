@@ -30,13 +30,36 @@ from synapse_channel.core.journal import record_entitlement_advert
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.acl import AclPolicy
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.identity_pins import IdentityPinStore
+
+    class EntitlementAdvertsContext(HandlerContext, Protocol):
+        """Capabilities consumed by entitlement adverts handlers and their callees."""
+
+        @property
+        def acl_policy(self) -> AclPolicy | None:
+            """Return the acl policy used by this handler family."""
+            ...
+
+        @property
+        def identity_pins(self) -> IdentityPinStore:
+            """Return the identity pins used by this handler family."""
+            ...
+
+        @property
+        def require_identity_binding(self) -> bool:
+            """Return the require identity binding used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.hub")
 
 
 async def handle_entitlement_advert(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: EntitlementAdvertsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Journal one advertisement after every gate passes; answer the sender privately."""
     raw = data.get("advert")
@@ -79,7 +102,7 @@ async def handle_entitlement_advert(
     )
 
 
-def _acl_allows(hub: SynapseHub, sender: str, alias: str) -> bool:
+def _acl_allows(hub: EntitlementAdvertsContext, sender: str, alias: str) -> bool:
     """Return whether the always-on grant authorises advertising ``alias``."""
     if hub.acl_policy is None or not alias:
         return False
@@ -94,7 +117,7 @@ def _acl_allows(hub: SynapseHub, sender: str, alias: str) -> bool:
 
 
 async def _send_result(
-    hub: SynapseHub,
+    hub: EntitlementAdvertsContext,
     websocket: Any,
     sender: str,
     alias: str,

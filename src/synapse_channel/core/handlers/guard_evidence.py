@@ -19,11 +19,28 @@ from synapse_channel.core.journal import EventKind, record_guard_denial
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.auth import TokenAuthenticator
+    from synapse_channel.core.durable_ingress import DurableIngressQuota
+    from synapse_channel.core.handler_context import HandlerContext
+
+    class GuardEvidenceContext(HandlerContext, Protocol):
+        """Capabilities consumed by guard evidence handlers and their callees."""
+
+        @property
+        def authenticator(self) -> TokenAuthenticator | None:
+            """Return the authenticator used by this handler family."""
+            ...
+
+        @property
+        def guard_evidence_quota(self) -> DurableIngressQuota:
+            """Return the guard evidence quota used by this handler family."""
+            ...
 
 
 async def handle_guard_denial(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: GuardEvidenceContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Journal one authenticated guard refusal and return its durable sequence."""
     if hub.authenticator is None or hub.journal is None:

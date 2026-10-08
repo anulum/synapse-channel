@@ -21,11 +21,27 @@ from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.channels import ChannelRegistry
+    from synapse_channel.core.handler_context import HandlerContext
+
+    class ChannelsContext(HandlerContext, Protocol):
+        """Capabilities consumed by channels handlers and their callees."""
+
+        @property
+        def channels(self) -> ChannelRegistry:
+            """Return the channels used by this handler family."""
+            ...
+
+        @property
+        def max_history(self) -> int:
+            """Return the max history used by this handler family."""
+            ...
 
 
 async def _reply(
-    hub: SynapseHub,
+    hub: ChannelsContext,
     websocket: Any,
     *,
     sender: str,
@@ -60,7 +76,7 @@ async def _reply(
 
 
 async def handle_channel_create(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: ChannelsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Create a private channel owned by the requester."""
     channel = str(data.get("channel") or "").strip()
@@ -70,7 +86,7 @@ async def handle_channel_create(
 
 
 async def handle_channel_invite(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: ChannelsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Record an owner-issued invite granting one join to another agent.
 
@@ -85,7 +101,7 @@ async def handle_channel_invite(
 
 
 async def handle_channel_join(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: ChannelsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Join the requester to a private channel it was invited to."""
     channel = str(data.get("channel") or "").strip()
@@ -94,7 +110,7 @@ async def handle_channel_join(
 
 
 async def handle_channel_leave(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: ChannelsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Remove the requester from a private channel."""
     channel = str(data.get("channel") or "").strip()
@@ -103,7 +119,7 @@ async def handle_channel_leave(
 
 
 async def handle_channel_list_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: ChannelsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Return the channels the requester is a member of."""
     del data
@@ -119,7 +135,7 @@ async def handle_channel_list_request(
 
 
 async def handle_channel_history_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: ChannelsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Return retained channel history visible to the requester."""
     channel = str(data.get("channel") or "").strip()

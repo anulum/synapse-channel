@@ -32,7 +32,7 @@ from synapse_channel.core.native_message import (
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from synapse_channel.core.handler_context import HandlerContext
 
 __all__ = ["handle_native_message_record", "native_message_quota", "recorder_binding"]
 
@@ -40,11 +40,11 @@ QUOTA_EVENTS = 600
 QUOTA_BYTES = 8_388_608
 QUOTA_WINDOW_SECONDS = 60.0
 
-_QUOTAS: WeakKeyDictionary[SynapseHub, DurableIngressQuota] = WeakKeyDictionary()
+_QUOTAS: WeakKeyDictionary[HandlerContext, DurableIngressQuota] = WeakKeyDictionary()
 _JOURNAL_FAILURES = (sqlite3.Error, TypeError, ValueError, OSError)
 
 
-def native_message_quota(hub: SynapseHub) -> DurableIngressQuota:
+def native_message_quota(hub: HandlerContext) -> DurableIngressQuota:
     """Return the hub's ingress quota for native-message records.
 
     The quota belongs to this verb, so it lives beside the handler and is
@@ -52,7 +52,7 @@ def native_message_quota(hub: SynapseHub) -> DurableIngressQuota:
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : HandlerContext
         The coordination hub.
 
     Returns
@@ -71,12 +71,12 @@ def native_message_quota(hub: SynapseHub) -> DurableIngressQuota:
     return quota
 
 
-def recorder_binding(hub: SynapseHub, websocket: Any, principal: str) -> str:
+def recorder_binding(hub: HandlerContext, websocket: Any, principal: str) -> str:
     """Name how the recorder's identity was established on this connection.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : HandlerContext
         The coordination hub.
     websocket : Any
         The recorder's socket.
@@ -98,7 +98,7 @@ def recorder_binding(hub: SynapseHub, websocket: Any, principal: str) -> str:
     return "socket_name"
 
 
-async def _reject(hub: SynapseHub, websocket: Any, sender: str, text: str, reason: str) -> None:
+async def _reject(hub: HandlerContext, websocket: Any, sender: str, text: str, reason: str) -> None:
     await hub.send_json(
         websocket,
         hub.system(
@@ -111,13 +111,13 @@ async def _reject(hub: SynapseHub, websocket: Any, sender: str, text: str, reaso
 
 
 async def handle_native_message_record(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: HandlerContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Record one native message durably, or privately refuse it.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : HandlerContext
         The coordination hub.
     sender : str
         The name bound to the recorder's socket; stored as ``recorder``.

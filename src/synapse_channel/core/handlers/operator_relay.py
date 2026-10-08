@@ -82,8 +82,41 @@ from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import SynapseState
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.multihub_serving import MultiHubServingPolicy
+    from synapse_channel.core.namespace_ownership import NamespaceOwnership
     from synapse_channel.core.persistence import EventStore
+
+    class OperatorRelayContext(HandlerContext, Protocol):
+        """Capabilities consumed by operator relay handlers and their callees."""
+
+        @property
+        def multihub_serving_policy(self) -> MultiHubServingPolicy | None:
+            """Return the multihub serving policy used by this handler family."""
+            ...
+
+        @property
+        def namespace_ownership(self) -> NamespaceOwnership | None:
+            """Return the namespace ownership used by this handler family."""
+            ...
+
+        @property
+        def relay_approvals(self) -> RelayApprovalLedger:
+            """Return the relay approvals used by this handler family."""
+            ...
+
+        @property
+        def require_relay_reason(self) -> bool:
+            """Return the require relay reason used by this handler family."""
+            ...
+
+        @property
+        def require_two_person_relay(self) -> bool:
+            """Return the require two person relay used by this handler family."""
+            ...
+
 
 logger = logging.getLogger(__name__)
 
@@ -106,13 +139,13 @@ class _RelayAuthorisation:
 
 
 async def handle_operator_relay_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: OperatorRelayContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Apply a relayed operator action behind the deny-by-default gate, or refuse fail-closed.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : OperatorRelayContext
         The acting hub whose state the action mutates; ``hub.hub_id`` stamps the result.
     sender : str
         The relaying peer hub; the result is addressed privately to it, and the serving
@@ -201,7 +234,7 @@ def _relay_operation_data(data: dict[str, Any], principal: str) -> dict[str, Any
 
 
 async def _send_atomic_execution(
-    hub: SynapseHub,
+    hub: OperatorRelayContext,
     websocket: Any,
     sender: str,
     data: dict[str, Any],
@@ -230,7 +263,7 @@ async def _send_atomic_execution(
 
 
 def _authorise(
-    hub: SynapseHub, sender: str, request: RelayActionRequest, websocket: Any
+    hub: OperatorRelayContext, sender: str, request: RelayActionRequest, websocket: Any
 ) -> _RelayAuthorisation:
     """Compose the peer, scope, and ownership gates into one relay authorisation decision.
 
@@ -268,7 +301,7 @@ def _authorise(
 
 
 async def _apply_with_two_person_async(
-    hub: SynapseHub, sender: str, request: RelayActionRequest, principal: str
+    hub: OperatorRelayContext, sender: str, request: RelayActionRequest, principal: str
 ) -> RelayActionResult:
     """Serialize unkeyed approval and lease state with their durable audit."""
     journal = hub.journal
@@ -432,14 +465,14 @@ def _persist_two_person_application(
         record_operator_relay(journal, payload)
 
 
-def _publish_two_person(hub: SynapseHub, candidate: _TwoPersonSubject) -> None:
+def _publish_two_person(hub: OperatorRelayContext, candidate: _TwoPersonSubject) -> None:
     """Publish committed lease and approval-ledger candidates without yielding."""
     hub.state.publish_from(candidate.state)
     hub.relay_approvals.publish_from(candidate.approvals)
 
 
 async def _apply_release_async(
-    hub: SynapseHub,
+    hub: OperatorRelayContext,
     sender: str,
     request: RelayActionRequest,
     *,
@@ -477,7 +510,7 @@ async def _apply_release_async(
 
 
 async def _apply_release_atomic_async(
-    hub: SynapseHub,
+    hub: OperatorRelayContext,
     sender: str,
     request: RelayActionRequest,
     data: dict[str, Any],
@@ -518,7 +551,7 @@ def _persist_release_application(
 
 
 async def _apply_with_two_person_atomic_async(
-    hub: SynapseHub,
+    hub: OperatorRelayContext,
     sender: str,
     request: RelayActionRequest,
     principal: str,
@@ -629,7 +662,7 @@ def _approved_noop_audit_payload(
 
 
 async def _send_result(
-    hub: SynapseHub,
+    hub: OperatorRelayContext,
     websocket: Any,
     sender: str,
     result: RelayActionResult,
@@ -657,7 +690,9 @@ async def _send_result(
     )
 
 
-def _result_message(hub: SynapseHub, sender: str, result: RelayActionResult) -> dict[str, Any]:
+def _result_message(
+    hub: OperatorRelayContext, sender: str, result: RelayActionResult
+) -> dict[str, Any]:
     """Build the exact private verdict committed for a keyed operator relay."""
     return hub.system(
         "Operator relay result",

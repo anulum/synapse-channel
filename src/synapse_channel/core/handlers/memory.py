@@ -41,9 +41,20 @@ from synapse_channel.core.journal import EventKind, record_finding, record_recal
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
     from synapse_channel.core.hub_ledger_guard import FindingQuota
     from synapse_channel.core.persistence import EventStore
+
+    class MemoryContext(HandlerContext, Protocol):
+        """Capabilities consumed by memory handlers and their callees."""
+
+        @property
+        def finding_quota(self) -> FindingQuota:
+            """Return the finding quota used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.memory")
 
@@ -66,7 +77,7 @@ def _required_response(execution: AtomicExecution) -> dict[str, Any]:
 
 
 async def _send_journal_failure(
-    hub: SynapseHub,
+    hub: MemoryContext,
     websocket: Any,
     *,
     sender: str,
@@ -88,7 +99,7 @@ async def _send_journal_failure(
 
 
 async def handle_recall_log(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: MemoryContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Journal one recall query-stream event and privately acknowledge the sender.
 
@@ -99,7 +110,7 @@ async def handle_recall_log(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : MemoryContext
         The coordination hub.
     sender : str
         The authenticated identity of the producing agent (used as ``by``).
@@ -182,7 +193,7 @@ async def handle_recall_log(
 
 
 async def handle_finding(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: MemoryContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Admit one finding to the durable memory spine, or privately reject it.
 
@@ -197,7 +208,7 @@ async def handle_finding(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : MemoryContext
         The coordination hub.
     sender : str
         The authenticated identity of the producing agent; stamped as the origin.

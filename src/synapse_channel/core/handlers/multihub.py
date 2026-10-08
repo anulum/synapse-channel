@@ -41,13 +41,25 @@ from synapse_channel.core.multihub_wire import (
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.multihub_serving import MultiHubServingPolicy
+
+    class MultihubContext(HandlerContext, Protocol):
+        """Capabilities consumed by multihub handlers and their callees."""
+
+        @property
+        def multihub_serving_policy(self) -> MultiHubServingPolicy | None:
+            """Return the multihub serving policy used by this handler family."""
+            ...
+
 
 logger = logging.getLogger(__name__)
 
 
 async def handle_multihub_log_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: MultihubContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Answer a peer hub's request for events past a cursor with one log snapshot.
 
@@ -60,7 +72,7 @@ async def handle_multihub_log_request(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : MultihubContext
         The hub whose durable event log is served; ``hub.journal`` is the
         :class:`~synapse_channel.core.persistence.EventStore`, or ``None`` when the hub runs
         without persistence.
@@ -93,7 +105,7 @@ async def handle_multihub_log_request(
     )
 
 
-def _serving_authorised(hub: SynapseHub, sender: str, websocket: Any) -> bool:
+def _serving_authorised(hub: MultihubContext, sender: str, websocket: Any) -> bool:
     """Return whether the hub's serving policy permits ``sender`` to pull the log.
 
     A hub with no :class:`~synapse_channel.core.multihub_serving.MultiHubServingPolicy`
@@ -116,12 +128,12 @@ def _serving_authorised(hub: SynapseHub, sender: str, websocket: Any) -> bool:
     return decision.allowed
 
 
-def _read_snapshot(hub: SynapseHub, request: LogRequest) -> LogSnapshot:
+def _read_snapshot(hub: MultihubContext, request: LogRequest) -> LogSnapshot:
     """Read the events past the request cursor and pair them with a resume high-water.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : MultihubContext
         The hub whose ``journal`` is read.
     request : LogRequest
         The validated cursor and optional batch cap.

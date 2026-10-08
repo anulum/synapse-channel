@@ -33,7 +33,18 @@ from synapse_channel.core.task_causality import (
 )
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+
+    class PlanningContext(HandlerContext, Protocol):
+        """Capabilities consumed by planning handlers and their callees."""
+
+        @property
+        def blackboard(self) -> Blackboard:
+            """Return the blackboard used by this handler family."""
+            ...
+
 
 _JOURNAL_FAILURES = (sqlite3.Error, TypeError, ValueError, OSError)
 """Exception classes a journal append may surface to a planning handler."""
@@ -44,7 +55,7 @@ logger = logging.getLogger("synapse.hub.planning")
 
 
 async def _run_board_operation(
-    hub: SynapseHub,
+    hub: PlanningContext,
     data: dict[str, Any],
     mutate: Callable[[Blackboard], _BoardResult],
     prepare: Callable[[_BoardResult], OperationDraft | None],
@@ -73,7 +84,7 @@ async def _run_board_operation(
 
 
 async def _send_journal_failure(
-    hub: SynapseHub,
+    hub: PlanningContext,
     websocket: Any,
     *,
     sender: str,
@@ -120,7 +131,7 @@ def _expected_version(data: dict[str, Any]) -> tuple[int | None, str | None]:
 
 
 async def _causal_parent(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: PlanningContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> tuple[TaskCausalParent | None, bool]:
     """Privately echo authored parent refusals and log unexpected parser faults."""
     try:
@@ -138,7 +149,7 @@ async def _causal_parent(
 
 
 async def handle_ledger_task(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: PlanningContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Declare or re-declare a plan task and broadcast it, or reject it."""
     task_id = str(data.get("task_id") or "").strip()
@@ -218,7 +229,7 @@ async def handle_ledger_task(
 
 
 async def handle_ledger_task_update(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: PlanningContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Apply a plan-status/suggested-owner change and broadcast it, or reject."""
     task_id = str(data.get("task_id") or "").strip()
@@ -299,7 +310,7 @@ async def handle_ledger_task_update(
 
 
 async def handle_ledger_progress(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: PlanningContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Append a structured progress note and broadcast it, or reject the kind."""
 

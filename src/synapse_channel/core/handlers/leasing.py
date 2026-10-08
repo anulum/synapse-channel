@@ -57,8 +57,33 @@ from synapse_channel.core.state import GitContext, SynapseState
 from synapse_channel.core.state_transaction import durable_state_transaction
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from synapse_channel.core.claim_holder_presence import ClaimHolderContext
+    from synapse_channel.core.ledger import Blackboard
     from synapse_channel.core.state_models import TaskClaim
+
+    class LeasingContext(ClaimHolderContext, Protocol):
+        """Capabilities consumed by leasing handlers and their callees."""
+
+        @property
+        def agent_sockets(self) -> dict[str, Any]:
+            """Return the agent sockets used by this handler family."""
+            ...
+
+        @property
+        def blackboard(self) -> Blackboard:
+            """Return the blackboard used by this handler family."""
+            ...
+
+        journal: EventStore | None
+
+        @property
+        def require_fencing_epoch(self) -> bool:
+            """Return the require fencing epoch used by this handler family."""
+            ...
+
+        state: SynapseState
+
+        waits: dict[str, set[str]]
 
 
 class _ClaimMutationHub(Protocol):
@@ -112,7 +137,7 @@ FENCING_EPOCH_REQUIRED = (
 
 
 async def _refuse_unfenced(
-    hub: SynapseHub,
+    hub: LeasingContext,
     sender: str,
     data: dict[str, Any],
     websocket: Any,
@@ -214,7 +239,7 @@ def apply_claim(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : LeasingContext
         The hub whose state and journal the claim is applied to.
     claimant : str
         The agent the lease is granted under — the direct sender, or the original claimant
@@ -307,7 +332,7 @@ def apply_claim(
 
 
 async def apply_claim_async(
-    hub: SynapseHub,
+    hub: LeasingContext,
     claimant: str,
     body: Mapping[str, Any],
     *,
@@ -395,7 +420,9 @@ def claim_grant_fields(claim: TaskClaim) -> dict[str, Any]:
     return fields
 
 
-async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> None:
+async def handle_claim(
+    hub: LeasingContext, sender: str, data: dict[str, Any], websocket: Any
+) -> None:
     """Apply a scoped claim request and broadcast the grant, or deny the sender.
 
     Claims of holders that have stayed offline past the lease window are released first
@@ -500,7 +527,7 @@ async def handle_claim(hub: SynapseHub, sender: str, data: dict[str, Any], webso
 
 
 async def handle_task_update(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: LeasingContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Apply an owner's status/note/data-ref update and broadcast it."""
     task_id = str(data.get("task_id") or data.get("id") or "").strip()
@@ -592,7 +619,7 @@ async def handle_task_update(
 
 
 async def handle_release(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: LeasingContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Release a task and broadcast it, or deny the sender."""
     task_id = str(data.get("task_id") or data.get("payload") or "").strip()
@@ -706,7 +733,7 @@ async def handle_release(
     )
 
 
-async def _record_release_receipt_progress(hub: SynapseHub, receipt: ReleaseReceipt) -> None:
+async def _record_release_receipt_progress(hub: LeasingContext, receipt: ReleaseReceipt) -> None:
     """Record a release receipt as a blackboard assessment note."""
     ok, result = hub.blackboard.post_progress(
         task_id=str(receipt["task_id"]),
@@ -728,7 +755,7 @@ async def _record_release_receipt_progress(hub: SynapseHub, receipt: ReleaseRece
     )
 
 
-async def _broadcast_progress(hub: SynapseHub, note: ProgressNote, message: str) -> None:
+async def _broadcast_progress(hub: LeasingContext, note: ProgressNote, message: str) -> None:
     """Broadcast a progress note already committed with an atomic operation."""
     await hub.broadcast(
         hub.system(
@@ -740,7 +767,7 @@ async def _broadcast_progress(hub: SynapseHub, note: ProgressNote, message: str)
 
 
 async def handle_handoff(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: LeasingContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Transfer an owned task to an online agent and broadcast it, or deny.
 
@@ -889,7 +916,7 @@ async def handle_handoff(
 
 
 async def _record_handoff_progress(
-    hub: SynapseHub, task_id: str, from_agent: str, to_agent: str, context: str
+    hub: LeasingContext, task_id: str, from_agent: str, to_agent: str, context: str
 ) -> None:
     """Log a handoff as a progress note and broadcast it to observers."""
     text = f"handed off to {to_agent}: {context}" if context else f"handed off to {to_agent}"
@@ -906,7 +933,7 @@ async def _record_handoff_progress(
 
 
 async def handle_checkpoint(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: LeasingContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Save a resume checkpoint on an owned task, acking the owner, or deny.
 
@@ -991,7 +1018,7 @@ async def handle_checkpoint(
 
 
 async def handle_wait_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: LeasingContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Register an advisory wait for a held task, refusing deadlock.
 
@@ -1003,7 +1030,7 @@ async def handle_wait_request(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : LeasingContext
         The hub whose wait graph and transport the handler uses.
     sender : str
         The agent requesting to wait.

@@ -46,19 +46,37 @@ from synapse_channel.core.journal import DEAD_LETTER_DIRECTION_IN, record_dead_l
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.multihub_serving import MultiHubServingPolicy
+    from synapse_channel.core.namespace_ownership import NamespaceOwnership
+
+    class DeadLetterForwardingContext(HandlerContext, Protocol):
+        """Capabilities consumed by dead letter forwarding handlers and their callees."""
+
+        @property
+        def multihub_serving_policy(self) -> MultiHubServingPolicy | None:
+            """Return the multihub serving policy used by this handler family."""
+            ...
+
+        @property
+        def namespace_ownership(self) -> NamespaceOwnership | None:
+            """Return the namespace ownership used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.messaging")
 
 
 async def handle_dead_letter_forwarding(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: DeadLetterForwardingContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Record a peer's dead-letter pointer and tell this hub's operators, or drop it fail-closed.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : DeadLetterForwardingContext
         The owning hub the pointer names; it journals the incoming forwarding and broadcasts it.
     sender : str
         The forwarding peer hub; the serving policy authorises the pointer against this
@@ -100,7 +118,9 @@ async def handle_dead_letter_forwarding(
     )
 
 
-def _authorised(hub: SynapseHub, sender: str, notice: ForwardingNotice, websocket: Any) -> bool:
+def _authorised(
+    hub: DeadLetterForwardingContext, sender: str, notice: ForwardingNotice, websocket: Any
+) -> bool:
     """Return whether ``sender`` may forward ``notice`` to this hub, logging any refusal.
 
     Two deny-closed gates must both pass: the peer is authorised by the hub's serving policy (a hub

@@ -61,7 +61,25 @@ from synapse_channel.core.multihub_serving import MultiHubServingPolicy
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.event_row_recovery import CorruptEventRow
+    from synapse_channel.core.handlers.delivery_modes import DeliveryModesContext
+    from synapse_channel.core.handlers.messaging import MessagingContext
+
+    class MessageForwardContext(MessagingContext, DeliveryModesContext, Protocol):
+        """Capabilities consumed by message forward handlers and their callees."""
+
+        @property
+        def journal_corrupt_rows(self) -> tuple[CorruptEventRow, ...]:
+            """Return the journal corrupt rows used by this handler family."""
+            ...
+
+        @property
+        def multihub_serving_policy(self) -> MultiHubServingPolicy | None:
+            """Return the multihub serving policy used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.message_forward")
 
@@ -76,13 +94,13 @@ class _Refused(Exception):
 
 
 async def handle_multihub_message_forward(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: MessageForwardContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Act on one forward from an authenticated peer hub and answer it once.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : MessageForwardContext
         The hub hosting the target seat.
     sender : str
         The forwarding peer's registered id; this is the authenticated origin hub.
@@ -134,7 +152,7 @@ async def handle_multihub_message_forward(
 
 
 def _refusal(
-    hub: SynapseHub, request: MessageForwardRequest, code: str, detail: str
+    hub: MessageForwardContext, request: MessageForwardRequest, code: str, detail: str
 ) -> MessageForwardResult:
     """Build a refusal result."""
     return MessageForwardResult(
@@ -146,7 +164,9 @@ def _refusal(
     )
 
 
-async def _send(hub: SynapseHub, websocket: Any, peer: str, fields: dict[str, Any]) -> None:
+async def _send(
+    hub: MessageForwardContext, websocket: Any, peer: str, fields: dict[str, Any]
+) -> None:
     """Send one private result frame back to the forwarding peer."""
     await hub.send_json(
         websocket,
@@ -159,7 +179,7 @@ async def _send(hub: SynapseHub, websocket: Any, peer: str, fields: dict[str, An
     )
 
 
-def _authorise(hub: SynapseHub, peer: str, websocket: Any, namespace: str) -> None:
+def _authorise(hub: MessageForwardContext, peer: str, websocket: Any, namespace: str) -> None:
     """Refuse unless the serving policy lets ``peer`` address ``namespace`` right now."""
     policy = hub.multihub_serving_policy
     if policy is None:
@@ -174,7 +194,7 @@ def _authorise(hub: SynapseHub, peer: str, websocket: Any, namespace: str) -> No
 
 
 async def _act(
-    hub: SynapseHub, peer: str, request: MessageForwardRequest, websocket: Any
+    hub: MessageForwardContext, peer: str, request: MessageForwardRequest, websocket: Any
 ) -> dict[str, Any]:
     """Perform one authorised forward and return its result payload."""
     # Checked first: the origin id becomes part of every name built below, and a peer
@@ -216,7 +236,7 @@ async def _act(
         raise _Refused(refusal.code, str(refusal)) from refusal
 
 
-def _refuse_while_degraded(hub: SynapseHub) -> None:
+def _refuse_while_degraded(hub: MessageForwardContext) -> None:
     """Refuse an authorised forward that appends durable state while replay is incomplete.
 
     This is the rule the journal recovery gate applies to local mutations. It is checked
@@ -226,7 +246,9 @@ def _refuse_while_degraded(hub: SynapseHub) -> None:
         raise _Refused("journal_recovery_required", "durable journal recovery is required")
 
 
-def _authorise_connection(hub: SynapseHub, peer: str, websocket: Any) -> MultiHubServingPolicy:
+def _authorise_connection(
+    hub: MessageForwardContext, peer: str, websocket: Any
+) -> MultiHubServingPolicy:
     """Return the serving policy when it authorises ``peer`` at all; refuse otherwise."""
     policy = hub.multihub_serving_policy
     if policy is None or not policy.authorise(sender=peer, websocket=websocket).allowed:
@@ -235,7 +257,7 @@ def _authorise_connection(hub: SynapseHub, peer: str, websocket: Any) -> MultiHu
 
 
 def _roster(
-    hub: SynapseHub, peer: str, websocket: Any, policy: MultiHubServingPolicy
+    hub: MessageForwardContext, peer: str, websocket: Any, policy: MultiHubServingPolicy
 ) -> dict[str, Any]:
     """Return the online seats and delivery sessions in namespaces the peer may address."""
     granted: dict[str, bool] = {}
@@ -263,7 +285,11 @@ def _roster(
 
 
 async def _deliver_chat(
-    hub: SynapseHub, peer: str, sender: str, request: MessageForwardRequest, websocket: Any
+    hub: MessageForwardContext,
+    peer: str,
+    sender: str,
+    request: MessageForwardRequest,
+    websocket: Any,
 ) -> dict[str, Any]:
     """Route a forwarded chat locally and return its live-recipient verdict."""
     body = request.body

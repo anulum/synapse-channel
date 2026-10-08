@@ -127,10 +127,10 @@ async def test_unanswered_forwards_stay_pending_until_the_peer_is_removed() -> N
         alice = await _agent(uri, "PROJ/alice")
         try:
             await _chat(alice, "PROJ/bob@laptop", receipt=False)
-            for _ in range(200):
-                if hub.message_forward_ledger.pending_counts():
-                    break
-                await asyncio.sleep(0.01)
+            # A pending row is inserted before the first peer exchange completes.
+            # Fence on this real connection before testing a subsequent retry.
+            await alice.send(json.dumps({"sender": "PROJ/alice", "type": MessageType.WHO_REQUEST}))
+            await read_until_type(alice, MessageType.WHO_SNAPSHOT, limit=_READ_LIMIT)
             assert hub.message_forward_ledger.pending_counts() == {"laptop": 1}
             assert await run_forward_retries(hub, now=time.time() + 3600) == 0
             (entry,) = hub.message_forward_ledger.due(time.time() + 7200)

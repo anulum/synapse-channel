@@ -14,6 +14,12 @@ takes the hub as its first argument and reaches the shared state, journal, and
 transport through it — so adding a verb is one table entry plus one function, and
 the routing core stays a lookup rather than a growing ``if`` ladder. Every
 resource alias maps to the single resource handler.
+
+Handlers consume the internal structural ``HandlerContext`` contract or a
+family extension, including capabilities required by their callees. ``Handler``
+keeps the concrete ``SynapseHub`` argument so the type checker verifies each
+registered handler against the actual hub. Contracts and their imports exist
+only under ``TYPE_CHECKING``; dispatch still invokes the live hub's methods.
 """
 
 from __future__ import annotations
