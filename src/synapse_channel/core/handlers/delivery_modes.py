@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl import DELIVERY_CONTROL, WOULD_ALLOW, Target, evaluate_access
-from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.delivery_modes import (
     DeliveryIntent,
     DeliveryRefusal,
@@ -28,12 +27,16 @@ from synapse_channel.core.delivery_modes import (
 )
 from synapse_channel.core.delivery_persistence import DeliveryPersistence, StoredDelivery
 from synapse_channel.core.hub_address import HUB_ADDRESS_SEPARATOR
+from synapse_channel.core.identity_namespace import project_of
+from synapse_channel.core.journal import EventKind
 from synapse_channel.core.lifecycle import TaskStatus
 from synapse_channel.core.message_forward_origin import (
     forward_delivery_followup,
     forward_delivery_request,
 )
 from synapse_channel.core.protocol import MIN_DELIVERY_PROTOCOL_VERSION, MessageType
+from synapse_channel.core.verb_access import message_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -786,3 +789,76 @@ async def cancel_delivery(
     if write.disposition == "inserted":
         await _notify_record(hub, write.record, write.record.request["target"])
     return _status(hub, write.record, viewer=requester)
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.DELIVERY_REQUEST,),
+        handler=handle_delivery_request,
+        reply_types=(
+            MessageType.DELIVERY_STATUS,
+            MessageType.DELIVERY_OFFER,
+            MessageType.DELIVERY_REFUSED,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=message_access,
+        event_kinds=(
+            EventKind.DELIVERY_INTENT_ACCEPTED,
+            EventKind.DELIVERY_INTENT_QUEUED,
+            EventKind.DELIVERY_INTENT_TRANSITION,
+        ),
+        minimum_wire_version=3,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(
+            MessageType.DELIVERY_BOUNDARY,
+            MessageType.DELIVERY_ACK,
+            MessageType.DELIVERY_OUTCOME,
+        ),
+        handler=handle_delivery_stage,
+        reply_types=(
+            MessageType.DELIVERY_STATUS,
+            MessageType.DELIVERY_REFUSED,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(EventKind.DELIVERY_INTENT_TRANSITION,),
+        minimum_wire_version=3,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.DELIVERY_CANCEL,),
+        handler=handle_delivery_cancel,
+        reply_types=(
+            MessageType.DELIVERY_STATUS,
+            MessageType.DELIVERY_REFUSED,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(EventKind.DELIVERY_CANCEL_REQUESTED,),
+        minimum_wire_version=3,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.DELIVERY_STATUS_REQUEST,),
+        handler=handle_delivery_status_request,
+        reply_types=(
+            MessageType.DELIVERY_STATUS,
+            MessageType.DELIVERY_REFUSED,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(EventKind.DELIVERY_INTENT_TRANSITION,),
+        minimum_wire_version=3,
+        commands=(),
+    ),
+)

@@ -70,6 +70,18 @@ machine key or operator trust bundle, and opt-in ACL evaluation refuses
 unauthorised mutating frames before state changes. These additive fields and
 checks do not replace the connect token or change the default local wire flow.
 
+Hub routing, replay protection and ACL/journal guards derive from `VerbSpec`
+declarations beside each handler family. Their dispositions are independent:
+history and resume have ACL mappings without being mutation-guarded, while the
+legacy mutation guard includes attachment reads. This refactor preserves those
+memberships and the wire vocabulary. A new verb needs its family declaration,
+the relevant vocabulary constants, independent freeze tests and documentation;
+it does not need separate dispatch, replay and enforcement table entries.
+
+For lease mutations, ACL admission follows the target the handler actually uses.
+`task_update` resolves `task_id` before `id`; `release` resolves `task_id` before
+`payload`. Supplying a second field cannot substitute another task's grant.
+
 The [signed capability cards runtime](signed-capability-cards.md) keeps
 `advertise` and `manifest_request` as ordinary discovery messages while optionally
 adding a domain-separated Ed25519 signature and manifest digest. The hub binds the

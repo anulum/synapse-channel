@@ -23,9 +23,11 @@ from synapse_channel.core.acl import (
     Target,
     evaluate_access,
 )
-from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.attachment_store import MAX_CHUNK_BYTES, AttachmentError
+from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.protocol import MIN_ATTACHMENT_PROTOCOL_VERSION, MessageType
+from synapse_channel.core.verb_access import field_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -163,3 +165,20 @@ async def handle_attachment(
         websocket,
         hub.system("", msg_type=MessageType.ATTACHMENT_RESULT, target=sender, **result),
     )
+
+
+VERB_SPECS = tuple(
+    VerbSpec(
+        request_types=(request,),
+        handler=handle_attachment,
+        reply_types=(MessageType.ATTACHMENT_RESULT,),
+        mutates=permission != ATTACHMENT_READ,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(permission, "attachment", "scope"),
+        event_kinds=(),
+        minimum_wire_version=MIN_ATTACHMENT_PROTOCOL_VERSION,
+        commands=(),
+    )
+    for request, permission in _PERMISSIONS.items()
+)

@@ -21,6 +21,7 @@ import time
 from typing import TYPE_CHECKING, Any
 from weakref import WeakKeyDictionary
 
+from synapse_channel.core.acl import EVIDENCE
 from synapse_channel.core.atomic_operations import OperationDraft
 from synapse_channel.core.durable_ingress import DurableIngressQuota, chat_frame_bytes
 from synapse_channel.core.journal import EventKind
@@ -30,6 +31,8 @@ from synapse_channel.core.native_message import (
     parse_native_message_record,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_access import fixed_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from synapse_channel.core.handler_context import HandlerContext
@@ -223,3 +226,22 @@ async def handle_native_message_record(
     # A replay or a conflict is answered before dispatch; one that arrives here lost a
     # race to the same operation, whose settlement this repeats without changing it.
     await hub.settle_atomic_operation(data)
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.NATIVE_MESSAGE_RECORD,),
+        handler=handle_native_message_record,
+        reply_types=(
+            MessageType.NATIVE_MESSAGE_RECORDED,
+            MessageType.NATIVE_MESSAGE_REJECTED,
+        ),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=fixed_access(EVIDENCE, "evidence", "native-message"),
+        event_kinds=(EventKind.NATIVE_MESSAGE,),
+        minimum_wire_version=7,
+        commands=("native-record",),
+    ),
+)

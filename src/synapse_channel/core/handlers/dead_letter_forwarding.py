@@ -35,15 +35,20 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.dead_letter_forwarding import (
     DeadLetterForwardingWireError,
     ForwardingNotice,
     decode_forwarding_notice,
     incoming_forwarding_notice,
 )
-from synapse_channel.core.journal import DEAD_LETTER_DIRECTION_IN, record_dead_letter_forwarding
+from synapse_channel.core.identity_namespace import project_of
+from synapse_channel.core.journal import (
+    DEAD_LETTER_DIRECTION_IN,
+    EventKind,
+    record_dead_letter_forwarding,
+)
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -144,3 +149,19 @@ def _authorised(
         )
         return False
     return True
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.DEAD_LETTER_FORWARDING,),
+        handler=handle_dead_letter_forwarding,
+        reply_types=(MessageType.DEAD_LETTER_FORWARDING,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(EventKind.DEAD_LETTER_FORWARDING,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

@@ -80,6 +80,7 @@ from synapse_channel.core.operator_relay_wire import (
 )
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.state import SynapseState
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -700,3 +701,25 @@ def _result_message(
         target=sender,
         **encode_relay_result(result),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.OPERATOR_RELAY_REQUEST,),
+        handler=handle_operator_relay_request,
+        reply_types=(
+            MessageType.OPERATOR_RELAY_RESULT,
+            MessageType.RELEASE_GRANTED,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(
+            EventKind.OPERATOR_RELAY,
+            EventKind.RELEASE,
+        ),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

@@ -30,7 +30,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from synapse_channel.core.acl import IDENTITY_ENROLL, WOULD_ALLOW, Target, evaluate_access
-from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.identity_enrollments import (
     ENROLLER_ROLE,
     EnrollmentRequest,
@@ -40,10 +39,13 @@ from synapse_channel.core.identity_enrollments import (
     revocation_denial,
     write_enrolled_keys,
 )
+from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.journal import EventKind, record_identity_enrollment
 from synapse_channel.core.message_auth import EventSignatureKey
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_access import field_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -451,3 +453,37 @@ async def _send_result(
             audit_seq=audit_seq,
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.IDENTITY_ENROLL,),
+        handler=handle_identity_enroll,
+        reply_types=(
+            MessageType.IDENTITY_ENROLL_RESULT,
+            MessageType.SYSTEM,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(IDENTITY_ENROLL, "agent", "name"),
+        event_kinds=(EventKind.IDENTITY_ENROLLMENT,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.IDENTITY_REVOKE,),
+        handler=handle_identity_revoke,
+        reply_types=(
+            MessageType.IDENTITY_REVOKE_RESULT,
+            MessageType.SYSTEM,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(IDENTITY_ENROLL, "agent", "name"),
+        event_kinds=(EventKind.IDENTITY_ENROLLMENT,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

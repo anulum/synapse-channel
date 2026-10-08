@@ -24,10 +24,12 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl import ENTITLEMENT_ADVERTISE, WOULD_ALLOW, Target, evaluate_access
-from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.entitlement_advert import EntitlementAdvertError, validate_advert
-from synapse_channel.core.journal import record_entitlement_advert
+from synapse_channel.core.identity_namespace import project_of
+from synapse_channel.core.journal import EventKind, record_entitlement_advert
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_access import nested_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -137,3 +139,19 @@ async def _send_result(
             audit_seq=audit_seq,
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.ENTITLEMENT_ADVERT,),
+        handler=handle_entitlement_advert,
+        reply_types=(MessageType.ENTITLEMENT_ADVERT_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=nested_access(ENTITLEMENT_ADVERTISE, "pool-alias", "advert", "pool_alias"),
+        event_kinds=(EventKind.ENTITLEMENT_ADVERT,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

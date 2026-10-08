@@ -38,7 +38,6 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.delivery_modes import DeliveryRefusal
 from synapse_channel.core.handlers.delivery_modes import (
     admit_delivery_request,
@@ -48,6 +47,8 @@ from synapse_channel.core.handlers.delivery_modes import (
 )
 from synapse_channel.core.handlers.messaging import route_chat
 from synapse_channel.core.hub_address import federated_sender, is_single_seat, is_valid_hub_id
+from synapse_channel.core.identity_namespace import project_of
+from synapse_channel.core.journal import EventKind
 from synapse_channel.core.message_forward_ledger import request_digest
 from synapse_channel.core.message_forward_wire import (
     MessageForwardRequest,
@@ -59,6 +60,7 @@ from synapse_channel.core.message_forward_wire import (
 )
 from synapse_channel.core.multihub_serving import MultiHubServingPolicy
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -325,3 +327,34 @@ async def _deliver_chat(
         "reason": delivery.reason,
         "dead_lettered": routing.directed and not delivery.delivered,
     }
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.MULTIHUB_MESSAGE_FORWARD,),
+        handler=handle_multihub_message_forward,
+        reply_types=(
+            MessageType.MULTIHUB_MESSAGE_RESULT,
+            MessageType.CHAT,
+            MessageType.DELIVERY_RECEIPT,
+            MessageType.DELIVERY_OFFER,
+            MessageType.DELIVERY_STATUS,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(
+            EventKind.CHAT,
+            EventKind.DELIVERY_INTENT_ACCEPTED,
+            EventKind.DELIVERY_INTENT_QUEUED,
+            EventKind.DELIVERY_INTENT_TRANSITION,
+            EventKind.DELIVERY_CANCEL_REQUESTED,
+            EventKind.DELIVERY_RECEIPT_REQUESTED,
+            EventKind.DELIVERY_RECEIPT_IMMEDIATE,
+            EventKind.DELIVERY_RECEIPT_DEFERRED,
+        ),
+        minimum_wire_version=5,
+        commands=(),
+    ),
+)

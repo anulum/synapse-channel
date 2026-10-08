@@ -24,6 +24,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Hub verb declarations now live beside their handlers. Dispatch, idempotency
+  replay protection, ACL access mapping and the journal recovery guard derive
+  from that registry. The existing wire vocabulary and guard memberships remain
+  unchanged. ACL targets now follow `task_update`'s `task_id`/`id` precedence
+  and `release`'s `task_id`/`payload` precedence, preventing an unrelated payload
+  from authorizing a different task or blocking an authorized release.
+
 - Coalesce overlapping cross-hub chat attempts and terminal sender receipts per
   durable forward. Cancellation releases transient ownership, late answers
   preserve expiry, and independent chats remain concurrent. Offline receipts

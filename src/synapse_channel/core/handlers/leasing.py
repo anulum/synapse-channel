@@ -24,6 +24,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
+from synapse_channel.core.acl import CLAIM
 from synapse_channel.core.atomic_operations import OperationDraft
 from synapse_channel.core.claim_holder_presence import release_abandoned_claims
 from synapse_channel.core.deadlock import prune_waits, would_create_cycle
@@ -55,6 +56,13 @@ from synapse_channel.core.release_confirmation import release_reply_binding
 from synapse_channel.core.scoping import normalize_paths
 from synapse_channel.core.state import GitContext, SynapseState
 from synapse_channel.core.state_transaction import durable_state_transaction
+from synapse_channel.core.verb_access import (
+    claim_access,
+    field_access,
+    release_access,
+    task_update_access,
+)
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from synapse_channel.core.claim_holder_presence import ClaimHolderContext
@@ -1090,3 +1098,113 @@ async def handle_wait_request(
             holder=holder,
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.CLAIM,),
+        handler=handle_claim,
+        reply_types=(
+            MessageType.CLAIM_GRANTED,
+            MessageType.CLAIM_DENIED,
+            MessageType.RELEASE_GRANTED,
+        ),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=claim_access,
+        event_kinds=(
+            EventKind.CLAIM,
+            EventKind.CLAIM_DENIAL,
+            EventKind.RELEASE,
+        ),
+        minimum_wire_version=1,
+        commands=(
+            "git-claim",
+            "lock",
+        ),
+    ),
+    VerbSpec(
+        request_types=(MessageType.RELEASE,),
+        handler=handle_release,
+        reply_types=(
+            MessageType.RELEASE_GRANTED,
+            MessageType.RELEASE_DENIED,
+            MessageType.LEDGER_PROGRESS_POSTED,
+        ),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=release_access,
+        event_kinds=(
+            EventKind.RELEASE,
+            EventKind.LEDGER_PROGRESS,
+        ),
+        minimum_wire_version=1,
+        commands=(
+            "release",
+            "git-release",
+        ),
+    ),
+    VerbSpec(
+        request_types=(MessageType.WAIT_REQUEST,),
+        handler=handle_wait_request,
+        reply_types=(
+            MessageType.WAIT_GRANTED,
+            MessageType.WAIT_DENIED,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.TASK_UPDATE,),
+        handler=handle_task_update,
+        reply_types=(MessageType.TASK_UPDATED,),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=task_update_access,
+        event_kinds=(EventKind.TASK_UPDATE,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.HANDOFF,),
+        handler=handle_handoff,
+        reply_types=(
+            MessageType.HANDOFF_GRANTED,
+            MessageType.HANDOFF_DENIED,
+            MessageType.LEDGER_PROGRESS_POSTED,
+        ),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=claim_access,
+        event_kinds=(
+            EventKind.HANDOFF,
+            EventKind.LEDGER_PROGRESS,
+        ),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.CHECKPOINT,),
+        handler=handle_checkpoint,
+        reply_types=(
+            MessageType.CHECKPOINT_SAVED,
+            MessageType.CHECKPOINT_DENIED,
+        ),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=field_access(CLAIM, "claim", "task_id", strip=True),
+        event_kinds=(EventKind.CHECKPOINT,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

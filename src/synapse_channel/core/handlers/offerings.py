@@ -17,12 +17,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from synapse_channel.core.acl_enforcement import project_of
+from synapse_channel.core.acl import BOARD
 from synapse_channel.core.atomic_operations import OperationDraft
+from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.journal import EventKind, record_resource
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.protocol import RESOURCE_TYPE_ALIASES, MessageType
 from synapse_channel.core.state import SynapseState
 from synapse_channel.core.state_models import ResourceOffer
+from synapse_channel.core.verb_access import field_access
+from synapse_channel.core.verb_registry import VerbSpec
 from synapse_channel.core.waiter_identity import waiter_owner
 
 if TYPE_CHECKING:
@@ -261,3 +264,31 @@ async def handle_resource(
     await hub.broadcast(offered)
     if execution is not None:
         await hub.settle_atomic_operation(data)
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.ADVERTISE,),
+        handler=handle_advertise,
+        reply_types=(MessageType.CAPABILITY_ADVERTISED,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(BOARD, "capability", "agent", fallback="*"),
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=tuple(sorted(RESOURCE_TYPE_ALIASES)),
+        handler=handle_resource,
+        reply_types=(MessageType.RESOURCE_OFFERED,),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=field_access(BOARD, "resource", "name", fallback="*"),
+        event_kinds=(EventKind.RESOURCE,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

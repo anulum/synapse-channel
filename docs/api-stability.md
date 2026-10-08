@@ -56,6 +56,7 @@ fails CI rather than reaching a release:
 | First-use and usage profiles | exact concepts, journey, dependency extras, activation/deactivation boundaries, and full-surface preservation | `tests/test_surface_taxonomy.py`, `tests/test_cli_e2e_journey.py` |
 | Capability counts | class, module, wire-type, subcommand, and test counts | the capability manifest (`tools/capability_manifest.py --check`) |
 | Error taxonomy codes | every domain exception's class→`code` pair | `tests/test_core_errors.py` |
+| Hub verb routing and guards | request aliases, concrete handlers, replay protection and ACL/journal guard membership | `tests/test_verb_registry.py`, `tests/test_verb_registry_runtime.py` |
 
 The manifest pins counts, which catches an addition or removal; the freeze tests
 pin identities and values, which catches a rename that keeps a count constant.
@@ -66,6 +67,19 @@ are internal static contracts, defined only under `TYPE_CHECKING`. They are not
 runtime imports or additions to the package `__all__`. The concrete hub is
 checked against each protocol at dispatch registration. These contracts do not
 change the stable Python API, message vocabulary or CLI surface.
+
+Handler-owned `VerbSpec` declarations and the collected `handlers.VERBS`
+registry are internal contracts. Request/reply vocabulary, event kinds, wire
+introduction floors and known CLI entry points accompany the concrete handler.
+Dispatch and both guard sets derive from these declarations; duplicate requests
+and guarded declarations without an ACL mapper fail during collection. Wire
+introduction metadata does not add a new protocol-negotiation gate.
+
+ACL admission resolves lease targets using the handler's accepted aliases:
+`task_update` uses `task_id`, then `id`; `release` uses `task_id`, then `payload`.
+An unrelated `payload` no longer authorizes an id-based task update. These
+corrections retain the envelope and reply shapes while enforcing the existing
+target-scoped permission contract.
 
 ### Error taxonomy
 

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from synapse_channel.core.attachment_store import AttachmentError
 from synapse_channel.core.federation import ScopeGrant
 from synapse_channel.core.protocol import MIN_ATTACHMENT_PEER_PROTOCOL_VERSION, MessageType
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -101,3 +102,19 @@ async def handle_attachment_peer(
         websocket,
         hub.system("", msg_type=MessageType.ATTACHMENT_PEER_RESULT, target=sender, **result),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.ATTACHMENT_PEER_REQUEST,),
+        handler=handle_attachment_peer,
+        reply_types=(MessageType.ATTACHMENT_PEER_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=6,
+        commands=(),
+    ),
+)

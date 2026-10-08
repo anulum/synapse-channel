@@ -304,7 +304,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/client/provider_budget.py::ProviderQuote.load" = 22
 "src/synapse_channel/client/provider_http.py::_merge_anthropic" = 21
 "src/synapse_channel/codex_mcp_package.py::apply_codex_package" = 39
-"src/synapse_channel/core/acl_enforcement.py::required_accesses" = 32
 "src/synapse_channel/core/aef_emission.py::AefReceiptLog._build_receipt" = 28
 "src/synapse_channel/core/aef_verification.py::verify_aef_inclusion" = 17
 "src/synapse_channel/core/aef_verification.py::verify_aef_receipt" = 21

@@ -12,11 +12,14 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.acl import EVIDENCE
 from synapse_channel.core.atomic_operations import OperationDraft
 from synapse_channel.core.durable_ingress import chat_frame_bytes
 from synapse_channel.core.guard_evidence import GuardEvidenceError, parse_guard_denial
 from synapse_channel.core.journal import EventKind, record_guard_denial
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_access import fixed_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -138,3 +141,19 @@ async def handle_guard_denial(
     )
     hub.remember(data, recorded)
     await hub.send_json(websocket, recorded)
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.GUARD_DENIAL,),
+        handler=handle_guard_denial,
+        reply_types=(MessageType.GUARD_DENIAL_RECORDED,),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=fixed_access(EVIDENCE, "evidence", "guard-denial"),
+        event_kinds=(EventKind.GUARD_DENIAL,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

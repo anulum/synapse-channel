@@ -34,11 +34,14 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from synapse_channel.core.acl import BOARD
 from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
 from synapse_channel.core.emit_gate import REJECT, admit
 from synapse_channel.core.finding import Finding
 from synapse_channel.core.journal import EventKind, record_finding, record_recall
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_access import field_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -313,3 +316,34 @@ async def handle_finding(
     await hub.broadcast(response)
     if execution.outcome == "inserted":
         await hub.settle_atomic_operation(data)
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.RECALL_LOG,),
+        handler=handle_recall_log,
+        reply_types=(MessageType.RECALL_LOGGED,),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(EventKind.RECALL,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.FINDING,),
+        handler=handle_finding,
+        reply_types=(
+            MessageType.FINDING_RECORDED,
+            MessageType.FINDING_REJECTED,
+        ),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=field_access(BOARD, "board", "task_id", fallback="*"),
+        event_kinds=(EventKind.FINDING,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

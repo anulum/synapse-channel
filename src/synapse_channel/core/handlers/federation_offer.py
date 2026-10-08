@@ -40,6 +40,7 @@ from synapse_channel.core.federation_wire import (
     encode_federation_offer,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -126,3 +127,19 @@ async def _send_error(
         websocket,
         hub.system(message, msg_type=MessageType.ERROR, target=sender),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.FEDERATION_OFFER_REQUEST,),
+        handler=handle_federation_offer_request,
+        reply_types=(MessageType.FEDERATION_OFFER,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

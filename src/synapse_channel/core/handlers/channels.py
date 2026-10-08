@@ -17,8 +17,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.acl import MESSAGE
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_access import field_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -162,3 +165,82 @@ async def handle_channel_history_request(
             retention={"max_messages": hub.max_history},
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.CHANNEL_CREATE,),
+        handler=handle_channel_create,
+        reply_types=(MessageType.CHANNEL_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(MESSAGE, "channel", "channel"),
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.CHANNEL_INVITE,),
+        handler=handle_channel_invite,
+        reply_types=(MessageType.CHANNEL_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(MESSAGE, "channel", "channel"),
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.CHANNEL_JOIN,),
+        handler=handle_channel_join,
+        reply_types=(MessageType.CHANNEL_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(MESSAGE, "channel", "channel"),
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.CHANNEL_LEAVE,),
+        handler=handle_channel_leave,
+        reply_types=(MessageType.CHANNEL_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(MESSAGE, "channel", "channel"),
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.CHANNEL_LIST_REQUEST,),
+        handler=handle_channel_list_request,
+        reply_types=(MessageType.CHANNEL_LIST,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.CHANNEL_HISTORY_REQUEST,),
+        handler=handle_channel_history_request,
+        reply_types=(
+            MessageType.CHANNEL_HISTORY,
+            MessageType.CHANNEL_RESULT,
+        ),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

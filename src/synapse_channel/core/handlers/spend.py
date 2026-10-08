@@ -32,6 +32,7 @@ from synapse_channel.core.spend_wire import (
     decode_spend_request,
     encode_spend_result,
 )
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -98,3 +99,19 @@ async def handle_spend_request(
             **encode_spend_result(action, result),
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.SPEND_REQUEST,),
+        handler=handle_spend_request,
+        reply_types=(MessageType.SPEND_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

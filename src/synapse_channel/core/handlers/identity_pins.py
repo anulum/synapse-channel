@@ -20,11 +20,13 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from synapse_channel.core.acl import PIN_RECLAIM, WOULD_ALLOW, Target, evaluate_access
-from synapse_channel.core.acl_enforcement import project_of
+from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.identity_pin_governance import pin_reclaim_denial
 from synapse_channel.core.journal import EventKind, record_identity_pin_reclaim
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_access import field_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -283,3 +285,22 @@ async def _send_result(
             audit_seq=audit_seq,
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.IDENTITY_PIN_RECLAIM,),
+        handler=handle_identity_pin_reclaim,
+        reply_types=(
+            MessageType.IDENTITY_PIN_RECLAIM_RESULT,
+            MessageType.SYSTEM,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(PIN_RECLAIM, "agent", "pin_name"),
+        event_kinds=(EventKind.IDENTITY_PIN_RECLAIM,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

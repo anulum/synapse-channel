@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.claim_holder_presence import release_abandoned_claims
 from synapse_channel.core.handlers.leasing import apply_claim_async, claim_grant_fields
+from synapse_channel.core.journal import EventKind
 from synapse_channel.core.multihub_claim_wire import (
     ClaimForwardRequest,
     ClaimForwardResult,
@@ -53,6 +54,7 @@ from synapse_channel.core.multihub_claim_wire import (
     encode_claim_forward_result,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -282,3 +284,27 @@ async def _send_result(
             **encode_claim_forward_result(result),
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.MULTIHUB_CLAIM_REQUEST,),
+        handler=handle_multihub_claim_request,
+        reply_types=(
+            MessageType.MULTIHUB_CLAIM_RESULT,
+            MessageType.CLAIM_GRANTED,
+            MessageType.RELEASE_GRANTED,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(
+            EventKind.CLAIM,
+            EventKind.CLAIM_DENIAL,
+            EventKind.RELEASE,
+        ),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

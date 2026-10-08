@@ -39,6 +39,7 @@ from synapse_channel.core.multihub_wire import (
     encode_log_snapshot,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -152,3 +153,19 @@ def _read_snapshot(hub: MultihubContext, request: LogRequest) -> LogSnapshot:
     events = tuple(hub.journal.read_since(request.after_seq, limit=request.limit))
     next_cursor = events[-1].seq if events else request.after_seq
     return LogSnapshot(events=events, next_cursor=next_cursor, log_end_seq=log_end_seq)
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.MULTIHUB_LOG_REQUEST,),
+        handler=handle_multihub_log_request,
+        reply_types=(MessageType.MULTIHUB_LOG_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

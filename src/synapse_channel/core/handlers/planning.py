@@ -21,6 +21,7 @@ import sqlite3
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from synapse_channel.core.acl import BOARD
 from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
 from synapse_channel.core.journal import EventKind, record_ledger_progress, record_ledger_task
 from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
@@ -31,6 +32,8 @@ from synapse_channel.core.task_causality import (
     parse_task_causal_parent,
     task_event_payload,
 )
+from synapse_channel.core.verb_access import field_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -365,3 +368,43 @@ async def handle_ledger_progress(
     await hub.broadcast(posted)
     if execution.outcome == "inserted":
         await hub.settle_atomic_operation(data)
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.LEDGER_TASK,),
+        handler=handle_ledger_task,
+        reply_types=(MessageType.LEDGER_TASK_POSTED,),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=field_access(BOARD, "board", "task_id", fallback="*"),
+        event_kinds=(EventKind.LEDGER_TASK,),
+        minimum_wire_version=1,
+        commands=("task declare",),
+    ),
+    VerbSpec(
+        request_types=(MessageType.LEDGER_TASK_UPDATE,),
+        handler=handle_ledger_task_update,
+        reply_types=(MessageType.LEDGER_TASK_UPDATED,),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=field_access(BOARD, "board", "task_id", fallback="*"),
+        event_kinds=(EventKind.LEDGER_TASK,),
+        minimum_wire_version=1,
+        commands=("task update",),
+    ),
+    VerbSpec(
+        request_types=(MessageType.LEDGER_PROGRESS,),
+        handler=handle_ledger_progress,
+        reply_types=(MessageType.LEDGER_PROGRESS_POSTED,),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=field_access(BOARD, "board", "task_id", fallback="*"),
+        event_kinds=(EventKind.LEDGER_PROGRESS,),
+        minimum_wire_version=1,
+        commands=("task progress",),
+    ),
+)

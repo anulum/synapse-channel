@@ -30,7 +30,6 @@ from synapse_channel.core.acl import (
     Target,
     evaluate_access,
 )
-from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.agent_liveness import waiter_owner, waiter_sidecar_names
 from synapse_channel.core.chat_dedupe import chat_digest
 from synapse_channel.core.dead_letter_escalation import (
@@ -53,6 +52,7 @@ from synapse_channel.core.handlers.delivery_feedback import (
     warn_stale_recipients,
 )
 from synapse_channel.core.hub_address import HUB_ADDRESS_SEPARATOR
+from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.journal import (
     DEAD_LETTER_DIRECTION_OUT,
     EventKind,
@@ -65,6 +65,8 @@ from synapse_channel.core.message_response import validate_semantic_response
 from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.operator_relay_routing import RelayRouteKind, route_operator_relay
 from synapse_channel.core.protocol import MessageType, is_recipient
+from synapse_channel.core.verb_access import message_access
+from synapse_channel.core.verb_registry import VerbSpec
 from synapse_channel.core.wake_capability import normalize_wake_capability
 
 if TYPE_CHECKING:
@@ -991,3 +993,59 @@ async def handle_heartbeat(
             source="cursor",
         )
         await _replay_directed_backlog(hub, sender, recipient, since_seq, websocket)
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.CHAT,),
+        handler=handle_chat,
+        reply_types=(
+            MessageType.CHAT,
+            MessageType.DELIVERY_RECEIPT,
+            MessageType.DEAD_LETTER_ESCALATION,
+            MessageType.DEAD_LETTER_FORWARDING,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=message_access,
+        event_kinds=(
+            EventKind.CHAT,
+            EventKind.DEAD_LETTER_ESCALATION,
+            EventKind.DEAD_LETTER_FORWARDING,
+            EventKind.DELIVERY_RECEIPT_REQUESTED,
+            EventKind.DELIVERY_RECEIPT_IMMEDIATE,
+            EventKind.DELIVERY_RECEIPT_DEFERRED,
+            EventKind.DELIVERY_RECEIPT_EXPIRED,
+        ),
+        minimum_wire_version=1,
+        commands=("send",),
+    ),
+    VerbSpec(
+        request_types=(MessageType.ACK,),
+        handler=handle_ack,
+        reply_types=(MessageType.DELIVERY_RECEIPT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(
+            EventKind.MAILBOX_WATERMARK,
+            EventKind.DELIVERY_RECEIPT_DEFERRED,
+        ),
+        minimum_wire_version=2,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.HEARTBEAT,),
+        handler=handle_heartbeat,
+        reply_types=(MessageType.CHAT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(EventKind.MAILBOX_WATERMARK,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

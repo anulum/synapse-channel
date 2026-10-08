@@ -186,8 +186,17 @@ revisions: 20,000 parser validations for each text size, plus 500 short and 200
 long durable records. All records are stored under the unchanged ingress quota.
 Both runs share the workstation without reserved cores. Their recorded timings
 are local regression observations and do not establish a production throughput,
-latency improvement or regression. The JSON retains the baseline and candidate
-source revisions and results; rerun on an isolated runner for performance claims.
+latency improvement or regression. The JSON retains the baseline Git revision,
+candidate Python source-manifest digest and results; a content digest identifies
+the measured candidate without a self-referential commit hash. Rerun on an
+isolated runner for performance claims.
+
+The handler-registry comparison also runs the library's `hub-roundtrip`,
+`claim-grant` and `durable-claim-grant` probes against both sources at their
+unchanged defaults of 100 iterations each. These exercise actual routing and
+lease operations; their measurements and imported-module hashes are retained
+under `comparison.library_probes` in the same result. The other standalone
+harnesses time unchanged state, store, codec, bridge or routing-library paths.
 
 ## `sustained_write_benchmark.py`
 

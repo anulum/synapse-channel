@@ -18,9 +18,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.acl import RECALL
 from synapse_channel.core.numeric_coercion import safe_int
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.release_confirmation import read_release_confirmation
+from synapse_channel.core.verb_access import fixed_access, history_access
+from synapse_channel.core.verb_registry import VerbSpec
 from synapse_channel.core.wake_capability import WAKE_UNKNOWN
 
 if TYPE_CHECKING:
@@ -332,3 +335,79 @@ async def handle_manifest_request(
             manifest=hub.capabilities.manifest(),
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.STATE_REQUEST,),
+        handler=handle_state_request,
+        reply_types=(MessageType.STATE_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=("state",),
+    ),
+    VerbSpec(
+        request_types=(MessageType.WHO_REQUEST,),
+        handler=handle_who_request,
+        reply_types=(MessageType.WHO_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=("who",),
+    ),
+    VerbSpec(
+        request_types=(MessageType.HISTORY_REQUEST,),
+        handler=handle_history_request,
+        reply_types=(MessageType.HISTORY_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=history_access,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.RESUME_REQUEST,),
+        handler=handle_resume_request,
+        reply_types=(MessageType.RESUME_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=fixed_access(RECALL, "history", "global"),
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.BOARD_REQUEST,),
+        handler=handle_board_request,
+        reply_types=(MessageType.BOARD_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=("board",),
+    ),
+    VerbSpec(
+        request_types=(MessageType.MANIFEST_REQUEST,),
+        handler=handle_manifest_request,
+        reply_types=(MessageType.MANIFEST_SNAPSHOT,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=("manifest",),
+    ),
+)

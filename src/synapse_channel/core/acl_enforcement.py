@@ -32,190 +32,41 @@ from __future__ import annotations
 
 from typing import Any
 
-from synapse_channel.core.acl import (
-    ATTACHMENT_ADMIN,
-    ATTACHMENT_READ,
-    ATTACHMENT_WRITE,
-    BOARD,
-    CLAIM,
-    ENTITLEMENT_ADVERTISE,
-    EVIDENCE,
-    IDENTITY_ENROLL,
-    MAILBOX,
-    MESSAGE,
-    PIN_RECLAIM,
-    RECALL,
-    RELEASE,
-    AclDecision,
-    AclPolicy,
-    Target,
-    evaluate_access,
-)
-from synapse_channel.core.protocol import RESOURCE_TYPE_ALIASES, MessageType
-from synapse_channel.core.scoping import MAX_DECLARED_PATHS, normalize_paths
+from synapse_channel.core.acl import AclDecision, AclPolicy, Target, evaluate_access
+from synapse_channel.core.handlers import VERBS
+from synapse_channel.core.identity_namespace import project_of as project_of
 
-_BOARD_TYPES = frozenset(
-    {
-        MessageType.LEDGER_TASK,
-        MessageType.LEDGER_TASK_UPDATE,
-        MessageType.LEDGER_PROGRESS,
-        MessageType.FINDING,
-    }
-)
-_CHANNEL_TYPES = frozenset(
-    {
-        MessageType.CHANNEL_CREATE,
-        MessageType.CHANNEL_INVITE,
-        MessageType.CHANNEL_JOIN,
-        MessageType.CHANNEL_LEAVE,
-    }
-)
-_RECALL_TYPES = frozenset({MessageType.HISTORY_REQUEST, MessageType.RESUME_REQUEST})
-"""Read verbs that pull the hub's global chat history / resume backlog.
+GATED_MUTATIONS = frozenset(request for request, spec in VERBS.items() if spec.mutation_guarded)
+"""Legacy ACL/journal guard types, including attachment reads but not history reads.
 
-Unlike :data:`GATED_MUTATIONS` these do not mutate state, but they are ACL-gated
-reads: under ``--require-acl`` a deny-by-default policy governs them through the
-``RECALL`` permission, so a secured hub no longer serves its full history to any
-authenticated agent. With enforcement off they stay ungated like every other read."""
-_TASK_PAYLOAD_FALLBACK = frozenset(
-    {MessageType.CLAIM, MessageType.TASK_UPDATE, MessageType.HANDOFF}
-)
-_ATTACHMENT_ACCESS = {
-    MessageType.ATTACHMENT_BEGIN: ATTACHMENT_WRITE,
-    MessageType.ATTACHMENT_CHUNK: ATTACHMENT_WRITE,
-    MessageType.ATTACHMENT_COMMIT: ATTACHMENT_WRITE,
-    MessageType.ATTACHMENT_ABORT: ATTACHMENT_WRITE,
-    MessageType.ATTACHMENT_REF: ATTACHMENT_WRITE,
-    MessageType.ATTACHMENT_INFO: ATTACHMENT_READ,
-    MessageType.ATTACHMENT_READ: ATTACHMENT_READ,
-    MessageType.ATTACHMENT_GC: ATTACHMENT_ADMIN,
-}
-
-GATED_MUTATIONS = (
-    frozenset(
-        {
-            MessageType.CHAT,
-            MessageType.DELIVERY_REQUEST,
-            MessageType.CLAIM,
-            MessageType.TASK_UPDATE,
-            MessageType.HANDOFF,
-            MessageType.CHECKPOINT,
-            MessageType.RELEASE,
-            MessageType.ADVERTISE,
-            MessageType.IDENTITY_PIN_RECLAIM,
-            MessageType.IDENTITY_ENROLL,
-            MessageType.IDENTITY_REVOKE,
-            MessageType.ENTITLEMENT_ADVERT,
-            MessageType.GUARD_DENIAL,
-            MessageType.NATIVE_MESSAGE_RECORD,
-        }
-    )
-    | _BOARD_TYPES
-    | _CHANNEL_TYPES
-    | frozenset(_ATTACHMENT_ACCESS)
-    | RESOURCE_TYPE_ALIASES
-)
-"""Every agent->hub frame type that mutates or broadcasts state and is ACL-gated.
-
-A frame outside this set is a read/query/keepalive and passes, with the sole
-exception of the :data:`_RECALL_TYPES` history/resume reads, which are ACL-gated
-too (they expose the full chat backlog). A future mutating type MUST be added here
-and mapped in :func:`required_accesses`, which the
-``test_every_gated_mutation_is_mapped`` test enforces so a new mutation cannot be
-silently ungated."""
-
-
-def project_of(subject: str) -> str:
-    """Return the project namespace prefix of an identity, or ``""``.
-
-    ``SYNAPSE-CHANNEL/claude-e57b`` resolves to ``SYNAPSE-CHANNEL``; a bare name
-    with no ``/`` has no namespace.
-    """
-    name = str(subject or "")
-    return name.split("/", 1)[0] if "/" in name else ""
-
-
-def _string_list(data: dict[str, Any], key: str) -> list[str]:
-    """Return a frame field as a list of non-empty strings."""
-    value = data.get(key)
-    if not isinstance(value, list):
-        return []
-    return [str(item) for item in value if str(item).strip()]
-
-
-def _task_id(msg_type: str, data: dict[str, Any]) -> str:
-    """Resolve a frame's task id exactly as the claim/release handlers do."""
-    if msg_type in _TASK_PAYLOAD_FALLBACK:
-        return str(data.get("task_id") or data.get("payload") or "").strip()
-    return str(data.get("task_id") or "").strip()
+The dispositions belong to handler specs. A guarded declaration without an ACL
+mapper is refused while collecting the registry, before any hub can route it.
+"""
 
 
 def required_accesses(msg_type: str, data: dict[str, Any]) -> list[tuple[str, Target]]:
-    """Return the ACL accesses a frame requires; an empty list means ungated.
+    """Return the accesses declared by the matching handler; unknown types are ungated.
 
-    The accesses are derived from the values the handler actually acts on, not the
-    raw frame, so the gate cannot be bypassed by a mapper/handler divergence: the
-    task id uses the same ``task_id``-or-``payload`` fallback, and paths are
-    normalised with the same :func:`normalize_paths` the claim handler applies
-    (so ``src/..`` widening to the worktree root is checked as the root scope,
-    not as the literal ``src/..``). A claim needs its task-id access *and* each
-    normalised path access; the authoriser requires all of them.
+    A claim's task/payload fallback and normalized paths match its handler.
+    Task updates resolve task_id/id, and releases resolve task_id/payload, so
+    an alternate field cannot authorize a different task from the one mutated.
+    History reads distinguish mailbox queries from global recall. Each family
+    selects its own mapper; enforcement never maintains another wire-type ladder.
 
     Parameters
     ----------
     msg_type : str
-        The inbound message type.
+        Normalized inbound message type, with existing unknown-type behavior.
     data : dict[str, Any]
-        The frame payload.
+        The frame fields consumed by the handler.
 
     Returns
     -------
     list[tuple[str, Target]]
-        One ``(permission, target)`` per access the frame needs.
+        Every required access, or an empty list for an unmapped request.
     """
-    if msg_type in _ATTACHMENT_ACCESS:
-        return [(_ATTACHMENT_ACCESS[msg_type], Target("attachment", str(data.get("scope") or "")))]
-    if msg_type in (MessageType.CHAT, MessageType.DELIVERY_REQUEST):
-        channel = str(data.get("channel") or "").strip()
-        if channel:
-            return [(MESSAGE, Target("channel", channel))]
-        return [(MESSAGE, Target("agent", str(data.get("target") or "all")))]
-    if msg_type in (MessageType.CLAIM, MessageType.TASK_UPDATE, MessageType.HANDOFF):
-        accesses = [(CLAIM, Target("claim", _task_id(msg_type, data)))]
-        for path in normalize_paths(_string_list(data, "paths"), MAX_DECLARED_PATHS):
-            accesses.append((CLAIM, Target("path", path)))
-        return accesses
-    if msg_type == MessageType.CHECKPOINT:
-        return [(CLAIM, Target("claim", _task_id(msg_type, data)))]
-    if msg_type == MessageType.RELEASE:
-        return [(RELEASE, Target("claim", _task_id(msg_type, data)))]
-    if msg_type in _BOARD_TYPES:
-        return [(BOARD, Target("board", str(data.get("task_id") or "*")))]
-    if msg_type in RESOURCE_TYPE_ALIASES:
-        return [(BOARD, Target("resource", str(data.get("name") or "*")))]
-    if msg_type == MessageType.ADVERTISE:
-        return [(BOARD, Target("capability", str(data.get("agent") or "*")))]
-    if msg_type == MessageType.IDENTITY_PIN_RECLAIM:
-        return [(PIN_RECLAIM, Target("agent", str(data.get("pin_name") or "")))]
-    if msg_type == MessageType.ENTITLEMENT_ADVERT:
-        advert = data.get("advert")
-        alias = advert.get("pool_alias") if isinstance(advert, dict) else None
-        return [(ENTITLEMENT_ADVERTISE, Target("pool-alias", str(alias or "")))]
-    if msg_type in (MessageType.IDENTITY_ENROLL, MessageType.IDENTITY_REVOKE):
-        return [(IDENTITY_ENROLL, Target("agent", str(data.get("name") or "")))]
-    if msg_type == MessageType.GUARD_DENIAL:
-        return [(EVIDENCE, Target("evidence", "guard-denial"))]
-    if msg_type == MessageType.NATIVE_MESSAGE_RECORD:
-        return [(EVIDENCE, Target("evidence", "native-message"))]
-    if msg_type in _CHANNEL_TYPES:
-        return [(MESSAGE, Target("channel", str(data.get("channel") or "")))]
-    if msg_type in _RECALL_TYPES:
-        if msg_type == MessageType.HISTORY_REQUEST and "inbox_query" in data:
-            query = data.get("inbox_query")
-            identity = query.get("identity") if isinstance(query, dict) else None
-            return [(MAILBOX, Target("agent", identity if isinstance(identity, str) else ""))]
-        return [(RECALL, Target("history", "global"))]
-    return []
+    spec = VERBS.get(msg_type)
+    return spec.accesses(data) if spec is not None and spec.accesses is not None else []
 
 
 def authorise_frame(
