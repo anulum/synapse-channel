@@ -37,10 +37,10 @@ class _FakeHub:
         self.federation_offer_path = federation_offer_path
         self.sent: list[dict[str, Any]] = []
 
-    def _system(self, text: str, **fields: Any) -> dict[str, Any]:
+    def system(self, text: str, **fields: Any) -> dict[str, Any]:
         return {"text": text, **fields}
 
-    async def _send_json(self, websocket: Any, payload: dict[str, Any]) -> None:
+    async def send_json(self, websocket: Any, payload: dict[str, Any]) -> None:
         self.sent.append(payload)
 
 

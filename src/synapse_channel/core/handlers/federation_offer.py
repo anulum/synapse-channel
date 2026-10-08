@@ -40,23 +40,34 @@ from synapse_channel.core.federation_wire import (
     encode_federation_offer,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Protocol
 
-    from synapse_channel.core.hub import SynapseHub
+    from synapse_channel.core.handler_context import HandlerContext
+
+    class FederationOfferContext(HandlerContext, Protocol):
+        """Capabilities consumed by federation offer handlers and their callees."""
+
+        @property
+        def federation_offer_path(self) -> Path | None:
+            """Return the federation offer path used by this handler family."""
+            ...
+
 
 logger = logging.getLogger(__name__)
 
 
 async def handle_federation_offer_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: FederationOfferContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Answer a peer operator's request for this hub's federation-bundle material.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : FederationOfferContext
         The hub whose ``federation_offer_path`` names the offered bundle file, or ``None``
         when no offer is configured.
     sender : str
@@ -78,9 +89,9 @@ async def handle_federation_offer_request(
         message = "The federation offer on this hub is unavailable."
         await _send_error(hub, sender, websocket, message)
         return
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             "Federation-bundle offer",
             msg_type=MessageType.FEDERATION_OFFER,
             target=sender,
@@ -108,9 +119,27 @@ def _read_offer(path: Path) -> FederationPeer:
     return decode_federation_offer(raw)
 
 
-async def _send_error(hub: SynapseHub, sender: str, websocket: Any, message: str) -> None:
+async def _send_error(
+    hub: FederationOfferContext, sender: str, websocket: Any, message: str
+) -> None:
     """Send one private error frame back to the requesting socket."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(message, msg_type=MessageType.ERROR, target=sender),
+        hub.system(message, msg_type=MessageType.ERROR, target=sender),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.FEDERATION_OFFER_REQUEST,),
+        handler=handle_federation_offer_request,
+        reply_types=(MessageType.FEDERATION_OFFER,),
+        mutates=False,
+        replay_protected=False,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

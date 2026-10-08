@@ -142,7 +142,7 @@ async def test_normal_reclaim_waits_for_the_ownership_ttl_then_allows_repin(
         )
         target_task = await _start(target)
         await _await_registry(hub, PIN_NAME, online=True)
-        pin = hub._identity_pins.pinned(PIN_NAME)
+        pin = hub.identity_pins.pinned(PIN_NAME)
         assert pin is not None
         expected_key_id = pin.key_id
         await _stop(target, target_task)
@@ -162,7 +162,7 @@ async def test_normal_reclaim_waits_for_the_ownership_ttl_then_allows_repin(
             agent_factory=operator_factory,
         )
         assert refused == 1
-        assert hub._identity_pins.pinned(PIN_NAME) is not None
+        assert hub.identity_pins.pinned(PIN_NAME) is not None
         await _await_registry(hub, OPERATOR, online=False)
 
         clock.now += 10.0
@@ -181,14 +181,14 @@ async def test_normal_reclaim_waits_for_the_ownership_ttl_then_allows_repin(
         )
         assert applied == 0
         assert "ownership lease is still live" in capsys.readouterr().out
-        assert hub._identity_pins.pinned(PIN_NAME) is None
+        assert hub.identity_pins.pinned(PIN_NAME) is None
 
         replacement = SynapseAgent(
             PIN_NAME, None, uri=uri, verbose=False, **_machine(tmp_path, "replacement")
         )
         replacement_task = await _start(replacement)
         await _await_registry(hub, PIN_NAME, online=True)
-        replacement_pin = hub._identity_pins.pinned(PIN_NAME)
+        replacement_pin = hub.identity_pins.pinned(PIN_NAME)
         assert replacement_pin is not None and replacement_pin.key_id != expected_key_id
         await _stop(replacement, replacement_task)
 
@@ -229,7 +229,7 @@ async def test_break_glass_is_required_to_evict_a_live_exact_pin(tmp_path: Path)
         operator_task = await _start(operator)
         target_task = await _start(target)
         await _await_registry(hub, PIN_NAME, online=True)
-        pin = hub._identity_pins.pinned(PIN_NAME)
+        pin = hub.identity_pins.pinned(PIN_NAME)
         assert pin is not None
 
         previous = len(replies)
@@ -256,7 +256,7 @@ async def test_break_glass_is_required_to_evict_a_live_exact_pin(tmp_path: Path)
         mismatch = await _await_result(replies, previous)
         assert mismatch["applied"] is False
         assert "expected key" in mismatch["payload"]
-        assert hub._identity_pins.pinned(PIN_NAME) is not None
+        assert hub.identity_pins.pinned(PIN_NAME) is not None
 
         previous = len(replies)
         await operator.send_message(
@@ -276,7 +276,7 @@ async def test_break_glass_is_required_to_evict_a_live_exact_pin(tmp_path: Path)
             await asyncio.sleep(0.01)
         assert target.last_close_code == PIN_RECLAIM_CLOSE_CODE
         assert target.last_close_reason == "identity pin reclaimed"
-        assert hub._identity_pins.pinned(PIN_NAME) is None
+        assert hub.identity_pins.pinned(PIN_NAME) is None
         assert not hub.clients.ownership.is_leased(PIN_NAME)
         await _stop(operator, operator_task)
         await _stop(target, target_task)
@@ -314,7 +314,7 @@ async def test_reclaim_acl_is_enforced_even_when_general_acl_enforcement_is_off(
         operator_task = await _start(operator)
         target_task = await _start(target)
         await _await_registry(hub, PIN_NAME, online=True)
-        pin = hub._identity_pins.pinned(PIN_NAME)
+        pin = hub.identity_pins.pinned(PIN_NAME)
         assert pin is not None
         await _stop(target, target_task)
         await _await_registry(hub, PIN_NAME, online=False)
@@ -329,7 +329,7 @@ async def test_reclaim_acl_is_enforced_even_when_general_acl_enforcement_is_off(
         denied = await _await_result(replies, previous)
         assert denied["applied"] is False
         assert "ACL grant" in denied["payload"]
-        assert hub._identity_pins.pinned(PIN_NAME) is not None
+        assert hub.identity_pins.pinned(PIN_NAME) is not None
 
         hub.acl_policy = None
         previous = len(replies)
@@ -375,7 +375,7 @@ async def test_reclaim_storage_failure_and_cas_race_stay_not_applied(
         operator_task = await _start(operator)
         target_task = await _start(target)
         await _await_registry(hub, PIN_NAME, online=True)
-        pin = hub._identity_pins.pinned(PIN_NAME)
+        pin = hub.identity_pins.pinned(PIN_NAME)
         assert pin is not None
         await _stop(target, target_task)
         await _await_registry(hub, PIN_NAME, online=False)
@@ -384,7 +384,7 @@ async def test_reclaim_storage_failure_and_cas_race_stay_not_applied(
             del expected_key_id
             raise OSError("disk unavailable")
 
-        monkeypatch.setattr(hub._identity_pins, "reclaim", fail_reclaim)
+        monkeypatch.setattr(hub.identity_pins, "reclaim", fail_reclaim)
         previous = len(replies)
         await operator.send_message(
             MessageType.IDENTITY_PIN_RECLAIM,
@@ -397,7 +397,7 @@ async def test_reclaim_storage_failure_and_cas_race_stay_not_applied(
         assert failed["payload"] == "could not persist the reclaimed pin table"
 
         monkeypatch.setattr(
-            hub._identity_pins,
+            hub.identity_pins,
             "reclaim",
             lambda _name, *, expected_key_id: None,
         )
@@ -411,7 +411,7 @@ async def test_reclaim_storage_failure_and_cas_race_stay_not_applied(
         raced = await _await_result(replies, previous)
         assert raced["applied"] is False
         assert "changed before" in raced["payload"]
-        assert hub._identity_pins.pinned(PIN_NAME) is not None
+        assert hub.identity_pins.pinned(PIN_NAME) is not None
         await _stop(operator, operator_task)
 
     audits = [event for event in store.read_all() if event.kind == EventKind.IDENTITY_PIN_RECLAIM]

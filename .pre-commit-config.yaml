@@ -78,6 +78,13 @@ repos:
         stages: [pre-commit]
         always_run: true
         pass_filenames: false
+      - id: structure-budget
+        name: structure budget holds and no ceiling rose
+        entry: python -m tools.check_structure_budget --check --baseline HEAD
+        language: system
+        stages: [pre-commit]
+        always_run: true
+        pass_filenames: false
       - id: pre-push-capability-manifest
         name: capability snapshot is current before push
         entry: python tools/capability_manifest.py --check

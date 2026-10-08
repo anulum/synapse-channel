@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # SYNAPSE CHANNEL — runtime dependencies.
-# The bus runs on the standard library plus one transport dependency. The
+# The bus uses the standard library, WebSocket transport and a typing backport
+# on Python 3.10. The
 # authoritative declaration is in pyproject.toml; this file mirrors it for
 # pip-based installs.
 websockets>=13.0
+typing-extensions>=4.16.0; python_version < "3.11"

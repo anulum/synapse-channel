@@ -496,6 +496,21 @@ peer's federation peering.
   `accepted`, `duplicate`, `refused` or `expired`. A settlement reaches an offline
   sender on its next registration.
 
+On a running origin hub, an initial attempt and overlapping retry sweeps share
+one exchange for the same durable forward. Other forwards remain independent.
+Cancellation releases that exchange's transient ownership; a later retry keeps
+the same `forward_id`. Expiry remains final even if an already running peer
+exchange answers later.
+
+Terminal sender notifications also share one owner. A successful local send
+marks the notification complete; an unavailable sender leaves it pending for
+registration, including after an origin restart. This prevents duplicate
+healthy projections; it does not turn an interrupted or uncertain send into an
+exactly-once guarantee. Transport failures and peer error frames produce fixed
+diagnostics rather than exposing raw exceptions or peer connection details.
+The existing health and metrics backlog counts include pending entries whose
+exchange is currently running; transient ownership adds no durable outbox state.
+
 `synapse who --hub HUB_ID` shows a peer's roster as far as the peer lets this hub see it.
 Forwarding is one hop between configured peers, with no relay chain, cross-hub broadcast
 or discovery. The wire contract is in the

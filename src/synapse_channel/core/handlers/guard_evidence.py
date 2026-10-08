@@ -12,24 +12,44 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING, Any
 
+from synapse_channel.core.acl import EVIDENCE
 from synapse_channel.core.atomic_operations import OperationDraft
 from synapse_channel.core.durable_ingress import chat_frame_bytes
 from synapse_channel.core.guard_evidence import GuardEvidenceError, parse_guard_denial
 from synapse_channel.core.journal import EventKind, record_guard_denial
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_access import fixed_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.auth import TokenAuthenticator
+    from synapse_channel.core.durable_ingress import DurableIngressQuota
+    from synapse_channel.core.handler_context import HandlerContext
+
+    class GuardEvidenceContext(HandlerContext, Protocol):
+        """Capabilities consumed by guard evidence handlers and their callees."""
+
+        @property
+        def authenticator(self) -> TokenAuthenticator | None:
+            """Return the authenticator used by this handler family."""
+            ...
+
+        @property
+        def guard_evidence_quota(self) -> DurableIngressQuota:
+            """Return the guard evidence quota used by this handler family."""
+            ...
 
 
 async def handle_guard_denial(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: GuardEvidenceContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Journal one authenticated guard refusal and return its durable sequence."""
     if hub.authenticator is None or hub.journal is None:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "guard denial evidence requires an authenticated durable hub",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -40,9 +60,9 @@ async def handle_guard_denial(
     try:
         evidence = parse_guard_denial(data)
     except GuardEvidenceError as exc:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 str(exc),
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -53,9 +73,9 @@ async def handle_guard_denial(
 
     principal = hub.clients.quota_principal(websocket, fallback_agent=sender)
     if not principal.startswith("auth-token:"):
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "guard denial evidence requires authenticated credential provenance",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -68,9 +88,9 @@ async def handle_guard_denial(
         nbytes=chat_frame_bytes(data),
     )
     if quota_reason:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 "guard denial evidence ingress limit exceeded",
                 msg_type=MessageType.ERROR,
                 target=sender,
@@ -87,7 +107,7 @@ async def handle_guard_denial(
         return evidence
 
     def prepare(result: dict[str, Any]) -> OperationDraft:
-        recorded = hub._system(
+        recorded = hub.system(
             "Guard denial evidence recorded.",
             msg_type=MessageType.GUARD_DENIAL_RECORDED,
             target=sender,
@@ -102,16 +122,16 @@ async def handle_guard_denial(
             response_event_seq_field="audit_seq",
         )
 
-    execution = await hub._run_atomic_operation(data, mutate, prepare)
+    execution = await hub.run_atomic_operation(data, mutate, prepare)
     if execution is not None:
         assert execution.response is not None
-        await hub._send_json(websocket, execution.response)
+        await hub.send_json(websocket, execution.response)
         if execution.outcome == "inserted":
-            await hub._settle_atomic_operation(data)
+            await hub.settle_atomic_operation(data)
         return
 
     seq = record_guard_denial(hub.journal, evidence)
-    recorded = hub._system(
+    recorded = hub.system(
         "Guard denial evidence recorded.",
         msg_type=MessageType.GUARD_DENIAL_RECORDED,
         target=sender,
@@ -119,5 +139,21 @@ async def handle_guard_denial(
         call_sha256=evidence["call_sha256"],
         reason_code=evidence["reason_code"],
     )
-    hub._remember(data, recorded)
-    await hub._send_json(websocket, recorded)
+    hub.remember(data, recorded)
+    await hub.send_json(websocket, recorded)
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.GUARD_DENIAL,),
+        handler=handle_guard_denial,
+        reply_types=(MessageType.GUARD_DENIAL_RECORDED,),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=fixed_access(EVIDENCE, "evidence", "guard-denial"),
+        event_kinds=(EventKind.GUARD_DENIAL,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

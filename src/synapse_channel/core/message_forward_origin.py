@@ -45,6 +45,7 @@ from synapse_channel.core.hub_address import (
     parse_hub_qualified,
 )
 from synapse_channel.core.journal import record_chat
+from synapse_channel.core.message_forward_attempts import own_forward_work
 from synapse_channel.core.message_forward_ledger import OutboxEntry, RemoteDelivery
 from synapse_channel.core.message_forward_transport import (
     MessageForwardRejectedError,
@@ -61,7 +62,50 @@ from synapse_channel.core.message_forward_wire import (
 from synapse_channel.core.protocol import MessageType
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.message_forward_ledger import MessageForwardLedger
+    from synapse_channel.core.message_forward_transport import MessageForwarder, MessageForwardPeer
+
+    class ForwardOriginContext(HandlerContext, Protocol):
+        """Capabilities consumed by message forward origin handlers and their callees."""
+
+        @property
+        def chat_history(self) -> list[dict[str, Any]]:
+            """Return the chat history used by this handler family."""
+            ...
+
+        @property
+        def max_history(self) -> int:
+            """Return the max history used by this handler family."""
+            ...
+
+        @property
+        def message_forward_ledger(self) -> MessageForwardLedger:
+            """Return the message forward ledger used by this handler family."""
+            ...
+
+        @property
+        def message_forward_ttl(self) -> float:
+            """Return the message forward ttl used by this handler family."""
+            ...
+
+        @property
+        def message_forwarder(self) -> MessageForwarder:
+            """Return the message forwarder used by this handler family."""
+            ...
+
+        @property
+        def message_peers(self) -> dict[str, MessageForwardPeer] | None:
+            """Return the message peers used by this handler family."""
+            ...
+
+        @property
+        def private_directed_messages(self) -> bool:
+            """Return the private directed messages used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.message_forward")
 
@@ -121,12 +165,14 @@ def chat_target_refusal(target: str) -> str:
     return ""
 
 
-async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any) -> bool:
+async def forward_chat(
+    hub: ForwardOriginContext, sender: str, data: dict[str, Any], websocket: Any
+) -> bool:
     """Accept one agent chat addressed to a seat on a peer hub and forward it.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : ForwardOriginContext
         The origin hub. ``data`` has already passed the sender's quota and been stamped with
         ``timestamp``, ``msg_id`` and ``hub_id``.
     sender : str
@@ -148,8 +194,8 @@ async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], webso
     if not refusal and address is not None and address.hub_id not in peers:
         refusal = f"Hub '{address.hub_id}' is not a configured message peer of this hub."
     if refusal or address is None:
-        await hub._send_json(
-            websocket, hub._system(refusal, msg_type=MessageType.ERROR, target=sender)
+        await hub.send_json(
+            websocket, hub.system(refusal, msg_type=MessageType.ERROR, target=sender)
         )
         return False
     data["target"] = str(address)
@@ -173,9 +219,9 @@ async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], webso
             )
         )
     except MessageForwardWireError as exc:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(
+            hub.system(
                 f"Chat cannot be forwarded: {exc}", msg_type=MessageType.ERROR, target=sender
             ),
         )
@@ -199,21 +245,29 @@ async def forward_chat(hub: SynapseHub, sender: str, data: dict[str, Any], webso
     )
     hub.counters.chat_directed += 1
     if not hub.private_directed_messages:
-        await hub._broadcast(data)
+        await hub.broadcast(data)
     settled = await attempt_forward(hub, entry)
     if entry.notify_sender:
-        await hub._send_json(websocket, forward_receipt_frame(hub, settled, data))
-        if settled.state != "pending":
-            hub.message_forward_ledger.mark_sender_notified(settled.forward_id, now=time.time())
+        await _initial_forward_receipt(hub, settled, data, websocket)
     return True
 
 
-async def attempt_forward(hub: SynapseHub, entry: OutboxEntry) -> OutboxEntry:
+async def _initial_forward_receipt(
+    hub: ForwardOriginContext, entry: OutboxEntry, chat: dict[str, Any], websocket: Any
+) -> None:
+    """Report initial queueing privately or project the shared terminal receipt once."""
+    if entry.state == "pending":
+        await hub.send_json(websocket, forward_receipt_frame(hub, entry, chat))
+    else:
+        await _notify_sender(hub, entry, chat=chat)
+
+
+async def attempt_forward(hub: ForwardOriginContext, entry: OutboxEntry) -> OutboxEntry:
     """Make one attempt to forward a pending outbox entry and record the outcome.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : ForwardOriginContext
         The origin hub.
     entry : OutboxEntry
         A pending entry.
@@ -224,6 +278,16 @@ async def attempt_forward(hub: SynapseHub, entry: OutboxEntry) -> OutboxEntry:
         The entry after this attempt: settled on an answer or a peer rejection, still pending
         with a rescheduled attempt on a transport failure.
     """
+    ledger = hub.message_forward_ledger
+    with own_forward_work(ledger, entry.forward_id, "attempt") as owned:
+        current = ledger.outbox_entry(entry.forward_id) or entry
+        if not owned or current.state != "pending":
+            return current
+        return await _attempt_owned_forward(hub, current)
+
+
+async def _attempt_owned_forward(hub: ForwardOriginContext, entry: OutboxEntry) -> OutboxEntry:
+    """Perform the peer exchange while holding this forward's transient ownership."""
     ledger = hub.message_forward_ledger
     peer = (hub.message_peers or {}).get(entry.peer_hub)
     if peer is None:
@@ -239,9 +303,11 @@ async def attempt_forward(hub: SynapseHub, entry: OutboxEntry) -> OutboxEntry:
     try:
         request = decode_message_forward_request(entry.request)
         result = await hub.message_forwarder(request, peer=peer, local_id=hub.hub_id)
-    except MessageForwardRejectedError as exc:
+    except MessageForwardRejectedError:
         settled = ledger.settle(
-            entry.forward_id, "refused", {"reason_code": "peer_rejected", "detail": str(exc)}
+            entry.forward_id,
+            "refused",
+            {"reason_code": "peer_rejected", "detail": "The peer refused this forward."},
         )
         return settled or entry
     except (MessageForwardTransportError, MessageForwardWireError) as exc:
@@ -251,10 +317,12 @@ async def attempt_forward(hub: SynapseHub, entry: OutboxEntry) -> OutboxEntry:
             entry.forward_id,
             entry.peer_hub,
             attempts,
-            exc,
+            type(exc).__name__,
         )
         updated = ledger.record_failed_attempt(
-            entry.forward_id, next_attempt_at=time.time() + retry_delay(attempts), error=str(exc)
+            entry.forward_id,
+            next_attempt_at=time.time() + retry_delay(attempts),
+            error="The peer connection failed or returned an invalid answer.",
         )
         return updated or entry
     settled = ledger.settle(
@@ -263,12 +331,12 @@ async def attempt_forward(hub: SynapseHub, entry: OutboxEntry) -> OutboxEntry:
     return settled or entry
 
 
-async def run_forward_retries(hub: SynapseHub, *, now: float) -> int:
+async def run_forward_retries(hub: ForwardOriginContext, *, now: float) -> int:
     """Expire overdue forwards, retry due ones, and tell waiting senders what settled.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : ForwardOriginContext
         The origin hub.
     now : float
         Current wall-clock time.
@@ -281,8 +349,11 @@ async def run_forward_retries(hub: SynapseHub, *, now: float) -> int:
     ledger = hub.message_forward_ledger
     settled: list[OutboxEntry] = list(ledger.expire_due(now))
     for entry in ledger.due(now):
+        current = ledger.outbox_entry(entry.forward_id)
+        if current is None or current.state != "pending":
+            continue
         outcome = await attempt_forward(hub, entry)
-        if outcome.state != "pending":
+        if outcome.state not in ("pending", "expired"):
             settled.append(outcome)
     for entry in settled:
         if entry.notify_sender:
@@ -291,13 +362,13 @@ async def run_forward_retries(hub: SynapseHub, *, now: float) -> int:
 
 
 async def message_forward_retry_loop(
-    hub: SynapseHub, *, interval: float = RETRY_SWEEP_INTERVAL_SECONDS
+    hub: ForwardOriginContext, *, interval: float = RETRY_SWEEP_INTERVAL_SECONDS
 ) -> None:
     """Run :func:`run_forward_retries` until cancelled.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : ForwardOriginContext
         The origin hub.
     interval : float, optional
         Seconds between sweeps.
@@ -307,7 +378,7 @@ async def message_forward_retry_loop(
         await run_forward_retries(hub, now=time.time())
 
 
-async def deliver_pending_forward_receipts(hub: SynapseHub, *, sender: str) -> None:
+async def deliver_pending_forward_receipts(hub: ForwardOriginContext, *, sender: str) -> None:
     """Send ``sender`` every settled forward outcome it asked for and has not received.
 
     Called when a seat registers, so a sender that was offline when its forward settled still
@@ -316,7 +387,7 @@ async def deliver_pending_forward_receipts(hub: SynapseHub, *, sender: str) -> N
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : ForwardOriginContext
         The origin hub.
     sender : str
         The seat that just registered.
@@ -325,20 +396,26 @@ async def deliver_pending_forward_receipts(hub: SynapseHub, *, sender: str) -> N
         await _notify_sender(hub, entry)
 
 
-async def _notify_sender(hub: SynapseHub, entry: OutboxEntry) -> None:
+async def _notify_sender(
+    hub: ForwardOriginContext, entry: OutboxEntry, *, chat: dict[str, Any] | None = None
+) -> None:
     """Send a settled outcome to its sender when online; otherwise it waits for registration."""
-    if await hub._send_to_agent(entry.sender, forward_receipt_frame(hub, entry)):
-        hub.message_forward_ledger.mark_sender_notified(entry.forward_id, now=time.time())
+    ledger = hub.message_forward_ledger
+    with own_forward_work(ledger, entry.forward_id, "notification") as owned:
+        if not owned or not ledger.sender_notification_pending(entry.forward_id):
+            return
+        if await hub.send_to_agent(entry.sender, forward_receipt_frame(hub, entry, chat)):
+            ledger.mark_sender_notified(entry.forward_id, now=time.time())
 
 
 def forward_receipt_frame(
-    hub: SynapseHub, entry: OutboxEntry, chat: dict[str, Any] | None = None
+    hub: ForwardOriginContext, entry: OutboxEntry, chat: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """Build the ``delivery_receipt`` a sender receives for a forwarded chat.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : ForwardOriginContext
         The origin hub.
     entry : OutboxEntry
         The forward's current outbox state.
@@ -407,7 +484,7 @@ def forward_receipt_frame(
     client_msg_id = body.get("client_msg_id")
     if isinstance(client_msg_id, str) and client_msg_id:
         fields["client_msg_id"] = client_msg_id
-    return hub._system(text, msg_type=MessageType.DELIVERY_RECEIPT, target=entry.sender, **fields)
+    return hub.system(text, msg_type=MessageType.DELIVERY_RECEIPT, target=entry.sender, **fields)
 
 
 def _object(value: object) -> dict[str, Any]:
@@ -440,7 +517,7 @@ DELIVERY_FORWARD_FIELDS = (
 
 
 async def _forward_once(
-    hub: SynapseHub, peer_hub: str, request: MessageForwardRequest
+    hub: ForwardOriginContext, peer_hub: str, request: MessageForwardRequest
 ) -> dict[str, Any]:
     """Forward one synchronous request and return the peer's result payload.
 
@@ -457,9 +534,9 @@ async def _forward_once(
     try:
         result = await hub.message_forwarder(request, peer=peer, local_id=hub.hub_id)
     except MessageForwardTransportError as exc:
-        raise DeliveryRefusal("peer_unreachable", str(exc)) from exc
+        raise DeliveryRefusal("peer_unreachable", "The peer connection failed.") from exc
     except MessageForwardRejectedError as exc:
-        raise DeliveryRefusal("peer_rejected", str(exc)) from exc
+        raise DeliveryRefusal("peer_rejected", "The peer refused this request.") from exc
     if result.disposition == "refused":
         raise DeliveryRefusal(result.reason_code, result.detail or "peer refused the request")
     return dict(result.result)
@@ -479,7 +556,9 @@ def _relayed_status(payload: dict[str, Any], *, sender: str, peer_hub: str) -> d
     return relayed
 
 
-def _refuse_shadowing_key(hub: SynapseHub, key: str, *, sender: str, peer_hub: str) -> None:
+def _refuse_shadowing_key(
+    hub: ForwardOriginContext, key: str, *, sender: str, peer_hub: str
+) -> None:
     """Refuse a peer-issued operation key that would redirect another delivery's follow-ups.
 
     Status and cancel requests are routed by operation key, so a key the peer returns must
@@ -498,7 +577,7 @@ def _refuse_shadowing_key(hub: SynapseHub, key: str, *, sender: str, peer_hub: s
 
 
 async def forward_delivery_request(
-    hub: SynapseHub, sender: str, data: dict[str, Any]
+    hub: ForwardOriginContext, sender: str, data: dict[str, Any]
 ) -> dict[str, Any]:
     """Forward a delivery intent for ``PROJECT/seat@HUB_ID`` and relay the peer's status.
 
@@ -508,7 +587,7 @@ async def forward_delivery_request(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : ForwardOriginContext
         The origin hub.
     sender : str
         The local requester (already profile-checked).
@@ -559,13 +638,13 @@ async def forward_delivery_request(
 
 
 async def forward_delivery_followup(
-    hub: SynapseHub, sender: str, data: dict[str, Any], *, kind: ForwardKind
+    hub: ForwardOriginContext, sender: str, data: dict[str, Any], *, kind: ForwardKind
 ) -> dict[str, Any]:
     """Forward a status query or cancellation for a delivery admitted by a peer.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : ForwardOriginContext
         The origin hub.
     sender : str
         The local requester; only the seat that requested the delivery may follow it up.
@@ -601,12 +680,12 @@ async def forward_delivery_followup(
     return _relayed_status(payload, sender=sender, peer_hub=route.peer_hub)
 
 
-async def forward_who(hub: SynapseHub, sender: str, peer_hub: str) -> dict[str, Any]:
+async def forward_who(hub: ForwardOriginContext, sender: str, peer_hub: str) -> dict[str, Any]:
     """Return a peer hub's roster, as far as that peer lets this hub see it.
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : ForwardOriginContext
         The origin hub.
     sender : str
         The local requester.
@@ -625,7 +704,7 @@ async def forward_who(hub: SynapseHub, sender: str, peer_hub: str) -> dict[str, 
         payload = await _forward_once(hub, peer_hub, request)
     except (DeliveryRefusal, MessageForwardWireError) as exc:
         code = exc.code if isinstance(exc, DeliveryRefusal) else "invalid_shape"
-        return hub._system(
+        return hub.system(
             f"Roster of hub '{peer_hub}' unavailable ({code}): {exc}",
             msg_type=MessageType.ERROR,
             target=sender,
@@ -636,7 +715,7 @@ async def forward_who(hub: SynapseHub, sender: str, peer_hub: str) -> dict[str, 
     for name, session in sessions_raw.items():
         if isinstance(name, str) and name and isinstance(session, dict):
             sessions[f"{name}@{peer_hub}"] = {**session, "hub_id": peer_hub}
-    return hub._system(
+    return hub.system(
         f"Who snapshot of hub {peer_hub}",
         msg_type=MessageType.WHO_SNAPSHOT,
         target=sender,

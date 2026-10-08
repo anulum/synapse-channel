@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
-from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.numeric_coercion import optional_int_field
 from synapse_channel.core.state import GitContext
 
 
@@ -124,16 +124,47 @@ async def test_task_update_with_stale_epoch_errors_end_to_end() -> None:
             await close_agents(alpha)
 
 
+async def test_handoff_with_stale_epoch_is_denied_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        alpha = await connect_agent("A", uri)
+        beta = await connect_agent("B", uri)
+        try:
+            await alpha.agent.claim("T1")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            await alpha.agent.handoff("T1", "B", epoch=999)
+            denied = await alpha.recorder.wait_for(lambda m: m.get("type") == "handoff_denied")
+            assert "epoch is stale" in denied["payload"]
+            assert hub.state.claims["T1"].owner == "A"
+        finally:
+            await close_agents(alpha, beta)
+
+
+async def test_checkpoint_with_stale_epoch_is_denied_end_to_end() -> None:
+    async with running_hub() as (hub, uri):
+        alpha = await connect_agent("A", uri)
+        try:
+            await alpha.agent.claim("T1")
+            await alpha.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+            await alpha.agent.save_checkpoint("T1", "cursor=5", epoch=999)
+            denied = await alpha.recorder.wait_for(lambda m: m.get("type") == "checkpoint_denied")
+            assert "epoch is stale" in denied["payload"]
+            assert hub.state.claims["T1"].checkpoint == ""
+        finally:
+            await close_agents(alpha)
+
+
 def test_optional_int_parsing() -> None:
-    assert SynapseHub._optional_int({"epoch": 5}, "epoch") == 5
-    assert SynapseHub._optional_int({"epoch": 7.0}, "epoch") == 7
-    assert SynapseHub._optional_int({"epoch": True}, "epoch") is None
-    assert SynapseHub._optional_int({"epoch": "x"}, "epoch") is None
-    assert SynapseHub._optional_int({}, "epoch") is None
+    assert optional_int_field({"epoch": 5}, "epoch") == 5
+    assert optional_int_field({"epoch": 7.0}, "epoch") == 7
+    assert optional_int_field({"epoch": True}, "epoch") is None
+    assert optional_int_field({"epoch": "x"}, "epoch") is None
+    # A numeric string is not a number: the strict reader never coerces it.
+    assert optional_int_field({"epoch": "5"}, "epoch") is None
+    assert optional_int_field({}, "epoch") is None
     # A non-finite float (a JSON 1e400 decodes to inf) is treated as absent: int()
     # of it raises, which would otherwise escape the frame handler as a crash.
-    assert SynapseHub._optional_int({"epoch": float("inf")}, "epoch") is None
-    assert SynapseHub._optional_int({"epoch": float("-inf")}, "epoch") is None
-    assert SynapseHub._optional_int({"epoch": float("nan")}, "epoch") is None
+    assert optional_int_field({"epoch": float("inf")}, "epoch") is None
+    assert optional_int_field({"epoch": float("-inf")}, "epoch") is None
+    assert optional_int_field({"epoch": float("nan")}, "epoch") is None
     # A large integer is finite and lossless (Python ints are arbitrary precision).
-    assert SynapseHub._optional_int({"epoch": 10**400}, "epoch") == 10**400
+    assert optional_int_field({"epoch": 10**400}, "epoch") == 10**400

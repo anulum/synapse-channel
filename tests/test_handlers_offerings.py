@@ -39,15 +39,15 @@ class _RecordingHub(SynapseHub):
         self.broadcasts: list[dict[str, Any]] = []
         self.remembered: list[tuple[dict[str, Any], dict[str, Any]]] = []
 
-    async def _send_json(self, websocket: Any, data: dict[str, Any]) -> None:
+    async def send_json(self, websocket: Any, data: dict[str, Any]) -> None:
         self.sent.append((websocket, data))
 
-    async def _broadcast(self, data: dict[str, Any]) -> frozenset[str]:
+    async def broadcast(self, data: dict[str, Any]) -> frozenset[str]:
         """Record the frame without claiming any completed recipient writes."""
         self.broadcasts.append(data)
         return frozenset()
 
-    def _remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
+    def remember(self, data: dict[str, Any], response: dict[str, Any]) -> None:
         self.remembered.append((data, response))
 
 

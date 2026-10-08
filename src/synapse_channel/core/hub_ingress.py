@@ -73,10 +73,10 @@ class HubIngress:
         When ``True`` the exposure guard warns and proceeds instead of raising
         :class:`~synapse_channel.core.hub_exposure.InsecureBindError`.
     send_json : Callable[[Any, dict], Awaitable[None]]
-        The hub's per-socket send (``hub._send_json``), used to deliver the
+        The hub's per-socket send (``hub.send_json``), used to deliver the
         auth-denied and name-conflict replies.
     system : Callable[..., dict]
-        The hub's system-message factory (``hub._system``), used to stamp those
+        The hub's system-message factory (``hub.system``), used to stamp those
         replies with the hub id.
     """
 

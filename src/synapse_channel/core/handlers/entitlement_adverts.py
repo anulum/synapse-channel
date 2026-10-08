@@ -24,25 +24,50 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl import ENTITLEMENT_ADVERTISE, WOULD_ALLOW, Target, evaluate_access
-from synapse_channel.core.acl_enforcement import project_of
 from synapse_channel.core.entitlement_advert import EntitlementAdvertError, validate_advert
-from synapse_channel.core.journal import record_entitlement_advert
+from synapse_channel.core.identity_namespace import project_of
+from synapse_channel.core.journal import EventKind, record_entitlement_advert
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_access import nested_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.acl import AclPolicy
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.identity_pins import IdentityPinStore
+
+    class EntitlementAdvertsContext(HandlerContext, Protocol):
+        """Capabilities consumed by entitlement adverts handlers and their callees."""
+
+        @property
+        def acl_policy(self) -> AclPolicy | None:
+            """Return the acl policy used by this handler family."""
+            ...
+
+        @property
+        def identity_pins(self) -> IdentityPinStore:
+            """Return the identity pins used by this handler family."""
+            ...
+
+        @property
+        def require_identity_binding(self) -> bool:
+            """Return the require identity binding used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.hub")
 
 
 async def handle_entitlement_advert(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: EntitlementAdvertsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Journal one advertisement after every gate passes; answer the sender privately."""
     raw = data.get("advert")
     alias = raw.get("pool_alias") if isinstance(raw, dict) else None
     alias_text = alias if isinstance(alias, str) else ""
-    requester_pin = hub._identity_pins.pinned(sender)
+    requester_pin = hub.identity_pins.pinned(sender)
     denial = ""
     if hub.journal is None:
         denial = "advertisements need a hub with a durable journal"
@@ -79,7 +104,7 @@ async def handle_entitlement_advert(
     )
 
 
-def _acl_allows(hub: SynapseHub, sender: str, alias: str) -> bool:
+def _acl_allows(hub: EntitlementAdvertsContext, sender: str, alias: str) -> bool:
     """Return whether the always-on grant authorises advertising ``alias``."""
     if hub.acl_policy is None or not alias:
         return False
@@ -94,7 +119,7 @@ def _acl_allows(hub: SynapseHub, sender: str, alias: str) -> bool:
 
 
 async def _send_result(
-    hub: SynapseHub,
+    hub: EntitlementAdvertsContext,
     websocket: Any,
     sender: str,
     alias: str,
@@ -103,9 +128,9 @@ async def _send_result(
     audit_seq: int | None,
 ) -> None:
     """Send the private verdict to the advertiser."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             detail,
             msg_type=MessageType.ENTITLEMENT_ADVERT_RESULT,
             target=sender,
@@ -114,3 +139,19 @@ async def _send_result(
             audit_seq=audit_seq,
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.ENTITLEMENT_ADVERT,),
+        handler=handle_entitlement_advert,
+        reply_types=(MessageType.ENTITLEMENT_ADVERT_RESULT,),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=nested_access(ENTITLEMENT_ADVERTISE, "pool-alias", "advert", "pool_alias"),
+        event_kinds=(EventKind.ENTITLEMENT_ADVERT,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

@@ -160,6 +160,52 @@ python benchmarks/coding_fleet_benchmark.py
 | Replay events | 10 |
 | Post-release claims | 0 |
 
+## `native_message_record_benchmark.py`
+
+Measures what one `native_message_record` costs. The parser is timed over a
+256-byte and a 32,768-byte text, because the digest check grows with the text.
+The durable round trip runs a real hub with an on-disk WAL journal on a loopback
+port and one real WebSocket connection, and times each record from the frame to
+the `native_message_recorded` reply; the journal is read back to confirm that
+every record was stored. Each run stays inside the verb's own ingress quota (600
+records and 8 MiB per minute and principal), which is the real ceiling of
+sustained ingest and is reported with the result.
+
+```bash
+PYTHONPATH=src python benchmarks/native_message_record_benchmark.py
+```
+
+Output is written to `results/native_message_record_benchmark.json`. The
+committed comparison records the host, system load, CPU affinity, governor,
+source revision and isolation state.
+The timed loop includes first sender registration, so changes to registration
+require rerunning this benchmark even when record parsing is unchanged.
+
+The committed composition-root comparison executes the same full workload
+against the grouped-record baseline and externally composed hub: 20,000 parser
+validations for each text size, plus 500 short and 200
+long durable records. All records are stored under the unchanged ingress quota.
+Both runs share the workstation without reserved cores. Their recorded timings
+are local regression observations and do not establish a production throughput,
+latency improvement or regression. The JSON retains the baseline Git revision,
+candidate Python source-manifest digest and results; a content digest identifies
+the measured candidate without a self-referential commit hash. The baseline
+loads the exact original hub module; both variants use the same unchanged
+runtime dependencies. A separate 1,000-construction measurement compares
+baseline `from_config` with `build_hub`, including configuration fingerprinting
+and graph installation. CLI argument processing is not timed. Rerun on an
+isolated runner for performance claims.
+
+The comparison also runs the library's `hub-roundtrip`,
+`claim-grant` and `durable-claim-grant` probes against both sources at their
+unchanged defaults of 100 iterations each. These exercise actual routing and
+lease operations; their measurements are retained
+under `comparison.library_probes` and the complete candidate source manifest
+digest is retained in the same result. These measurements run
+after the final owning source cohort, sequentially by variant; the workstation
+still shares CPU and storage with other work. The other standalone
+harnesses time unchanged state, store, codec, bridge or routing-library paths.
+
 ## `sustained_write_benchmark.py`
 
 Profiles the durable event store itself under sustained write load on a real on-disk

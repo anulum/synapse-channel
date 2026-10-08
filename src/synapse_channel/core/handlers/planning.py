@@ -21,6 +21,7 @@ import sqlite3
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from synapse_channel.core.acl import BOARD
 from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
 from synapse_channel.core.journal import EventKind, record_ledger_progress, record_ledger_task
 from synapse_channel.core.ledger import Blackboard, LedgerTask, ProgressNote
@@ -31,9 +32,22 @@ from synapse_channel.core.task_causality import (
     parse_task_causal_parent,
     task_event_payload,
 )
+from synapse_channel.core.verb_access import field_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
+
+    class PlanningContext(HandlerContext, Protocol):
+        """Capabilities consumed by planning handlers and their callees."""
+
+        @property
+        def blackboard(self) -> Blackboard:
+            """Return the blackboard used by this handler family."""
+            ...
+
 
 _JOURNAL_FAILURES = (sqlite3.Error, TypeError, ValueError, OSError)
 """Exception classes a journal append may surface to a planning handler."""
@@ -44,7 +58,7 @@ logger = logging.getLogger("synapse.hub.planning")
 
 
 async def _run_board_operation(
-    hub: SynapseHub,
+    hub: PlanningContext,
     data: dict[str, Any],
     mutate: Callable[[Blackboard], _BoardResult],
     prepare: Callable[[_BoardResult], OperationDraft | None],
@@ -52,7 +66,7 @@ async def _run_board_operation(
 ) -> AtomicExecution:
     """Run one board write under the shared mutation actor and optional atomic key."""
     if hub.journal is not None and str(data.get("idem_key") or ""):
-        execution = await hub._run_atomic_operation(
+        execution = await hub.run_atomic_operation(
             data,
             mutate,
             prepare,
@@ -73,7 +87,7 @@ async def _run_board_operation(
 
 
 async def _send_journal_failure(
-    hub: SynapseHub,
+    hub: PlanningContext,
     websocket: Any,
     *,
     sender: str,
@@ -86,9 +100,9 @@ async def _send_journal_failure(
         subject,
         exc_info=(type(exc), exc, exc.__traceback__),
     )
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             f"{subject} was not journalled; mutation rolled back.",
             msg_type=MessageType.ERROR,
             target=sender,
@@ -120,7 +134,7 @@ def _expected_version(data: dict[str, Any]) -> tuple[int | None, str | None]:
 
 
 async def _causal_parent(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: PlanningContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> tuple[TaskCausalParent | None, bool]:
     """Privately echo authored parent refusals and log unexpected parser faults."""
     try:
@@ -130,15 +144,15 @@ async def _causal_parent(
     except Exception:
         logger.exception("Unexpected causal parent validation failure")
         reason = "Causal parent validation failed; task was not changed."
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(reason, msg_type=MessageType.ERROR, target=sender),
+        hub.system(reason, msg_type=MessageType.ERROR, target=sender),
     )
     return None, False
 
 
 async def handle_ledger_task(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: PlanningContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Declare or re-declare a plan task and broadcast it, or reject it."""
     task_id = str(data.get("task_id") or "").strip()
@@ -146,9 +160,9 @@ async def handle_ledger_task(
     depends_on = [str(d) for d in raw_deps] if isinstance(raw_deps, list) else []
     expected, version_error = _expected_version(data)
     if version_error is not None:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(version_error, msg_type=MessageType.ERROR, target=sender),
+            hub.system(version_error, msg_type=MessageType.ERROR, target=sender),
         )
         return
     causal_parent, parent_valid = await _causal_parent(hub, sender, data, websocket)
@@ -180,7 +194,7 @@ async def handle_ledger_task(
         ok, message, task = result
         if not ok or task is None:
             return None
-        posted = hub._system(
+        posted = hub.system(
             message,
             msg_type=MessageType.LEDGER_TASK_POSTED,
             task=task.as_dict(),
@@ -200,25 +214,25 @@ async def handle_ledger_task(
         )
         return
     if execution.outcome in {"replayed", "conflict"}:
-        await hub._send_json(websocket, _required_atomic_response(execution))
+        await hub.send_json(websocket, _required_atomic_response(execution))
         return
     ok, message, task = execution.mutation
     draft = prepare((ok, message, task))
     if draft is None:
-        await hub._send_json(
-            websocket, hub._system(message, msg_type=MessageType.ERROR, target=sender)
+        await hub.send_json(
+            websocket, hub.system(message, msg_type=MessageType.ERROR, target=sender)
         )
         return
     posted = execution.response or draft.response
     if execution.outcome == "uncommitted":
-        hub._remember(data, posted)
-    await hub._broadcast(posted)
+        hub.remember(data, posted)
+    await hub.broadcast(posted)
     if execution.outcome == "inserted":
-        await hub._settle_atomic_operation(data)
+        await hub.settle_atomic_operation(data)
 
 
 async def handle_ledger_task_update(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: PlanningContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Apply a plan-status/suggested-owner change and broadcast it, or reject."""
     task_id = str(data.get("task_id") or "").strip()
@@ -227,9 +241,9 @@ async def handle_ledger_task_update(
     project = data.get("project")
     expected, version_error = _expected_version(data)
     if version_error is not None:
-        await hub._send_json(
+        await hub.send_json(
             websocket,
-            hub._system(version_error, msg_type=MessageType.ERROR, target=sender),
+            hub.system(version_error, msg_type=MessageType.ERROR, target=sender),
         )
         return
     causal_parent, parent_valid = await _causal_parent(hub, sender, data, websocket)
@@ -258,7 +272,7 @@ async def handle_ledger_task_update(
         ok, message, task = result
         if not ok or task is None:
             return None
-        updated = hub._system(
+        updated = hub.system(
             message,
             msg_type=MessageType.LEDGER_TASK_UPDATED,
             task=task.as_dict(),
@@ -281,25 +295,25 @@ async def handle_ledger_task_update(
         )
         return
     if execution.outcome in {"replayed", "conflict"}:
-        await hub._send_json(websocket, _required_atomic_response(execution))
+        await hub.send_json(websocket, _required_atomic_response(execution))
         return
     ok, message, task = execution.mutation
     draft = prepare((ok, message, task))
     if draft is None:
-        await hub._send_json(
-            websocket, hub._system(message, msg_type=MessageType.ERROR, target=sender)
+        await hub.send_json(
+            websocket, hub.system(message, msg_type=MessageType.ERROR, target=sender)
         )
         return
     updated = execution.response or draft.response
     if execution.outcome == "uncommitted":
-        hub._remember(data, updated)
-    await hub._broadcast(updated)
+        hub.remember(data, updated)
+    await hub.broadcast(updated)
     if execution.outcome == "inserted":
-        await hub._settle_atomic_operation(data)
+        await hub.settle_atomic_operation(data)
 
 
 async def handle_ledger_progress(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: PlanningContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Append a structured progress note and broadcast it, or reject the kind."""
 
@@ -319,7 +333,7 @@ async def handle_ledger_progress(
         ok, note = result
         if not ok or not isinstance(note, ProgressNote):
             return None
-        posted = hub._system(
+        posted = hub.system(
             f"Progress from {sender}",
             msg_type=MessageType.LEDGER_PROGRESS_POSTED,
             note=note.as_dict(),
@@ -339,18 +353,58 @@ async def handle_ledger_progress(
         await _send_journal_failure(hub, websocket, sender=sender, subject="Progress note", exc=exc)
         return
     if execution.outcome in {"replayed", "conflict"}:
-        await hub._send_json(websocket, _required_atomic_response(execution))
+        await hub.send_json(websocket, _required_atomic_response(execution))
         return
     ok, result = execution.mutation
     draft = prepare((ok, result))
     if draft is None:
-        await hub._send_json(
-            websocket, hub._system(str(result), msg_type=MessageType.ERROR, target=sender)
+        await hub.send_json(
+            websocket, hub.system(str(result), msg_type=MessageType.ERROR, target=sender)
         )
         return
     posted = execution.response or draft.response
     if execution.outcome == "uncommitted":
-        hub._remember(data, posted)
-    await hub._broadcast(posted)
+        hub.remember(data, posted)
+    await hub.broadcast(posted)
     if execution.outcome == "inserted":
-        await hub._settle_atomic_operation(data)
+        await hub.settle_atomic_operation(data)
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.LEDGER_TASK,),
+        handler=handle_ledger_task,
+        reply_types=(MessageType.LEDGER_TASK_POSTED,),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=field_access(BOARD, "board", "task_id", fallback="*"),
+        event_kinds=(EventKind.LEDGER_TASK,),
+        minimum_wire_version=1,
+        commands=("task declare",),
+    ),
+    VerbSpec(
+        request_types=(MessageType.LEDGER_TASK_UPDATE,),
+        handler=handle_ledger_task_update,
+        reply_types=(MessageType.LEDGER_TASK_UPDATED,),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=field_access(BOARD, "board", "task_id", fallback="*"),
+        event_kinds=(EventKind.LEDGER_TASK,),
+        minimum_wire_version=1,
+        commands=("task update",),
+    ),
+    VerbSpec(
+        request_types=(MessageType.LEDGER_PROGRESS,),
+        handler=handle_ledger_progress,
+        reply_types=(MessageType.LEDGER_PROGRESS_POSTED,),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=field_access(BOARD, "board", "task_id", fallback="*"),
+        event_kinds=(EventKind.LEDGER_PROGRESS,),
+        minimum_wire_version=1,
+        commands=("task progress",),
+    ),
+)

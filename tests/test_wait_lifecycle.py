@@ -52,10 +52,10 @@ async def test_unrelated_claim_preserves_the_wait_and_the_cycle_check_sees_it() 
         try:
             await _claim(a, "T1")
             await _wait_granted(b, "T1")
-            assert hub._waits["B"] == {"T1"}
+            assert hub.waits["B"] == {"T1"}
 
             await _claim(b, "T2")
-            assert hub._waits["B"] == {"T1"}  # survived the unrelated claim
+            assert hub.waits["B"] == {"T1"}  # survived the unrelated claim
 
             # The preserved edge is real: A waiting on B's task closes the loop.
             await _wait_denied(a, "T2", "would deadlock")
@@ -73,7 +73,7 @@ async def test_renewal_preserves_the_wait_edge() -> None:
             await _wait_granted(b, "T1")
             await _claim(b, "T2")
             await _claim(b, "T2")  # renewal
-            assert hub._waits["B"] == {"T1"}
+            assert hub.waits["B"] == {"T1"}
         finally:
             await close_agents(a, b)
 
@@ -90,7 +90,7 @@ async def test_satisfied_wait_is_cleared_by_claiming_that_task() -> None:
             await _wait_granted(b, "T9")
             await _release(a, "T1")
             await _claim(b, "T1")
-            assert hub._waits["B"] == {"T9"}
+            assert hub.waits["B"] == {"T9"}
         finally:
             await close_agents(a, b)
 
@@ -110,7 +110,7 @@ async def test_handoff_repoints_the_wait_at_the_new_holder() -> None:
                 lambda m: m.get("type") == "handoff_granted" and m.get("task_id") == "T1"
             )
             # C now holds T1 and waits on it was satisfied by the handoff itself...
-            assert "C" not in hub._waits or "T1" not in hub._waits.get("C", set())
+            assert "C" not in hub.waits or "T1" not in hub.waits.get("C", set())
             # ...and B's reciprocal wait on A is now SAFE: nothing points at A.
             await _wait_granted(b, "T1")  # B waits on C's task — fine, no cycle
         finally:
@@ -126,7 +126,7 @@ async def test_release_prunes_the_wait_edge_and_kills_false_deadlocks() -> None:
             await _claim(a, "T1")
             await _wait_granted(b, "T1")
             await _release(a, "T1")
-            assert "B" not in hub._waits or "T1" not in hub._waits.get("B", set())
+            assert "B" not in hub.waits or "T1" not in hub.waits.get("B", set())
 
             # With the stale edge gone, reciprocal waits on fresh tasks are legal.
             await _claim(a, "T3")
@@ -149,11 +149,11 @@ async def test_disconnect_drops_only_the_waiters_own_edges() -> None:
             await _wait_granted(c, "T1")
             await b.close()
             for _ in range(100):
-                if "B" not in hub._waits:
+                if "B" not in hub.waits:
                     break
                 await asyncio.sleep(0.02)
-            assert "B" not in hub._waits
-            assert hub._waits.get("C") == {"T1"}
+            assert "B" not in hub.waits
+            assert hub.waits.get("C") == {"T1"}
         finally:
             await close_agents(a, c)
 
@@ -168,7 +168,7 @@ async def test_claiming_the_only_waited_task_pops_the_waiter() -> None:
             await _wait_granted(b, "T1")
             await _release(a, "T1")
             await _claim(b, "T1")
-            assert "B" not in hub._waits
+            assert "B" not in hub.waits
         finally:
             await close_agents(a, b)
 
@@ -185,7 +185,7 @@ async def test_handoff_of_the_only_waited_task_pops_the_recipient() -> None:
             await a.recorder.wait_for(
                 lambda m: m.get("type") == "handoff_granted" and m.get("task_id") == "T1"
             )
-            assert "B" not in hub._waits
+            assert "B" not in hub.waits
         finally:
             await close_agents(a, b)
 
@@ -200,17 +200,17 @@ async def test_expiry_prunes_the_wait_edge_on_the_next_heartbeat() -> None:
         try:
             await _claim(a, "T1")
             await _wait_granted(b, "T1")
-            assert hub._waits["B"] == {"T1"}
+            assert hub.waits["B"] == {"T1"}
             # Backdate the lease (heap-scheduled) so the next frame's heartbeat
             # expires it and prunes B's edge.
             hub.state.claim("A", "T1", ttl_seconds=30.0, now=time.time() - 40.0)
             await a.agent.chat("tick")
             for _ in range(200):
-                if "T1" not in hub.state.claims and "B" not in hub._waits:
+                if "T1" not in hub.state.claims and "B" not in hub.waits:
                     break
                 await asyncio.sleep(0.02)
             assert "T1" not in hub.state.claims
-            assert "B" not in hub._waits
+            assert "B" not in hub.waits
         finally:
             await close_agents(a, b)
 
@@ -222,14 +222,14 @@ def test_claim_discard_clears_the_edge_even_without_a_prior_prune() -> None:
 
     hub = SynapseHub(hub_id="syn-test")
     hub.state.claim("A", "T1")
-    hub._waits["B"] = {"T1", "T9"}
+    hub.waits["B"] = {"T1", "T9"}
     del hub.state.claims["T1"]  # freed out-of-band: no release/expiry prune ran
     application = apply_claim(hub, "B", {"task_id": "T1"})
     assert application.claim is not None
-    assert hub._waits["B"] == {"T9"}
+    assert hub.waits["B"] == {"T9"}
     application2 = apply_claim(hub, "B", {"task_id": "T9"})
     assert application2.claim is not None
-    assert "B" not in hub._waits
+    assert "B" not in hub.waits
 
 
 async def test_handoff_discards_only_the_handed_task_from_a_multi_edge_wait() -> None:
@@ -246,6 +246,6 @@ async def test_handoff_discards_only_the_handed_task_from_a_multi_edge_wait() ->
             await a.recorder.wait_for(
                 lambda m: m.get("type") == "handoff_granted" and m.get("task_id") == "T1"
             )
-            assert hub._waits["B"] == {"T9"}
+            assert hub.waits["B"] == {"T9"}
         finally:
             await close_agents(a, b)

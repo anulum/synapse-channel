@@ -39,9 +39,9 @@ async def test_live_hub_alerts_an_unarmed_claimant_and_realerts_after_waiter_los
     hub._dark_seats = DarkSeatMonitor(
         claims=lambda: hub.state.claims,
         tasks=lambda: hub.blackboard.tasks,
-        has_live_waiter=hub._liveness.has_live_waiter,
-        broadcast=hub._broadcast,
-        system=hub._system,
+        has_live_waiter=hub.liveness.has_live_waiter,
+        broadcast=hub.broadcast,
+        system=hub.system,
         grace_seconds=0.0,
         poll_seconds=0.01,
     )

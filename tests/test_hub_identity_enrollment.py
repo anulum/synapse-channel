@@ -19,7 +19,7 @@ import asyncio
 import contextlib
 import json
 import stat
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,7 @@ from synapse_channel.core.acl import IDENTITY_ENROLL, AclPolicy, AclRule
 from synapse_channel.core.handlers.identity_enrollments import KEY_ROTATED_CLOSE_CODE
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.identity_binding import load_identity_trust_bundle
+from synapse_channel.core.identity_enrollments import DEFAULT_ENROLLMENT_WINDOW_SECONDS
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
@@ -80,8 +81,12 @@ def _hub(
     static: tuple[tuple[str, str], ...] = (("operator", OPERATOR),),
     require_binding: bool = True,
     acl: bool = True,
+    clock: Callable[[], float] | None = None,
+    window: float = DEFAULT_ENROLLMENT_WINDOW_SECONDS,
 ) -> SynapseHub:
     return SynapseHub(
+        clock=clock,
+        identity_enrollment_window_seconds=window,
         journal=EventStore(tmp_path / "events.db"),
         identity_trust_bundle=load_identity_trust_bundle(_trust(tmp_path, machines, *static)),
         require_identity_binding=require_binding,
@@ -372,6 +377,86 @@ async def test_a_store_that_cannot_be_written_changes_nothing(tmp_path: Path) ->
     assert [entry["status"] for entry in _audit(tmp_path)] == ["approved", "not_applied"]
 
 
+async def test_an_applied_enrolment_updates_the_keys_and_the_effective_bundle(
+    tmp_path: Path,
+) -> None:
+    machines = Machines(tmp_path / "machines")
+    hub = _hub(tmp_path, machines)
+    seat_key_id, _public = machines.public("seat")
+    assert hub.identity_trust_bundle is not None
+    assert seat_key_id not in hub.identity_trust_bundle.keys
+    async with running_hub(hub) as (_hub_ref, uri):
+        async with _connected(OPERATOR, uri, machines.kwargs("operator")) as (operator, inbox):
+            result = await _enrol(inbox, operator, **_seat_request(machines))
+    assert hub.journal is not None
+    hub.journal.close()
+    assert result["applied"] is True, result
+    assert set(hub.enrolled_identity_keys) == {seat_key_id}
+    assert hub.identity_trust_bundle is not None
+    assert seat_key_id in hub.identity_trust_bundle.keys
+    # the operator's own bundle is the base of every merge and never gains a key
+    assert hub.static_identity_trust is not None
+    assert seat_key_id not in hub.static_identity_trust.keys
+
+
+async def test_an_applied_enrolment_counts_against_the_rate_limit(tmp_path: Path) -> None:
+    machines = Machines(tmp_path / "machines")
+    hub = _hub(tmp_path, machines, rate=1)
+    async with running_hub(hub) as (_hub_ref, uri):
+        async with _connected(OPERATOR, uri, machines.kwargs("operator")) as (operator, inbox):
+            first = await _enrol(inbox, operator, **_seat_request(machines))
+            second = await _enrol(
+                inbox, operator, **_seat_request(machines, "other", name="PROJ/other")
+            )
+    assert hub.journal is not None
+    hub.journal.close()
+    assert first["applied"] is True, first
+    assert second["applied"] is False
+    assert "rate limit" in second["payload"]
+
+
+async def test_the_rate_limit_window_follows_the_hub_clock(tmp_path: Path) -> None:
+    machines = Machines(tmp_path / "machines")
+    now = [1000.0]
+    hub = _hub(tmp_path, machines, rate=1, clock=lambda: now[0], window=60.0)
+    other = _seat_request(machines, "other", name="PROJ/other")
+    async with running_hub(hub) as (_hub_ref, uri):
+        async with _connected(OPERATOR, uri, machines.kwargs("operator")) as (operator, inbox):
+            first = await _enrol(inbox, operator, **_seat_request(machines))
+            inside = await _enrol(inbox, operator, **other)
+            now[0] += 61.0
+            after = await _enrol(inbox, operator, **other)
+    assert hub.journal is not None
+    hub.journal.close()
+    assert first["applied"] is True, first
+    assert inside["applied"] is False and "rate limit" in inside["payload"]
+    assert after["applied"] is True, after
+
+
+async def test_a_pinned_requester_is_proven_and_its_pin_key_is_audited(tmp_path: Path) -> None:
+    machines = Machines(tmp_path / "machines")
+    # no binding requirement: the operator is proven by the key the hub pinned at first use
+    hub = _hub(tmp_path, machines, require_binding=False)
+    operator_key_id, _public = machines.public("operator")
+    async with running_hub(hub) as (_hub_ref, uri):
+        async with _connected(OPERATOR, uri, machines.kwargs("operator")) as (operator, inbox):
+            result = await _enrol(inbox, operator, **_seat_request(machines))
+    assert hub.journal is not None
+    hub.journal.close()
+    assert result["applied"] is True, result
+    audit = _audit(tmp_path)
+    assert [entry["status"] for entry in audit] == ["approved", "applied"]
+    assert audit[-1]["operator_key_id"] == operator_key_id
+
+
+def test_replacing_enrolled_keys_needs_a_static_trust_bundle() -> None:
+    hub = SynapseHub()
+    with pytest.raises(ValueError, match="identity trust bundle"):
+        hub.replace_enrolled_identity_keys({})
+    assert hub.enrolled_identity_keys == {}
+    assert hub.identity_trust_bundle is None
+
+
 async def _revoke(recorder: Recorder, agent: SynapseAgent, **fields: Any) -> dict[str, Any]:
     recorder.messages.clear()
     await agent.send_message(MessageType.IDENTITY_REVOKE, target="System", **fields)
@@ -427,6 +512,32 @@ async def test_a_revoked_key_is_refused_and_its_socket_closed(tmp_path: Path) ->
     applied = [entry for entry in _audit(tmp_path) if entry["status"] == "applied"]
     assert [entry["action"] for entry in applied] == ["enroll", "revoke"]
     assert applied[-1]["evicted_live_socket"] is True
+
+
+async def test_revoking_one_key_keeps_the_other_enrolled_keys(tmp_path: Path) -> None:
+    machines = Machines(tmp_path / "machines")
+    hub = _hub(tmp_path, machines)
+    seat_key_id, _ = machines.public("seat")
+    other_key_id, _ = machines.public("other")
+    async with running_hub(hub) as (_hub_ref, uri):
+        async with _connected(OPERATOR, uri, machines.kwargs("operator")) as (operator, inbox):
+            assert (await _enrol(inbox, operator, **_seat_request(machines)))["applied"]
+            other = _seat_request(machines, "other", name="PROJ/other")
+            assert (await _enrol(inbox, operator, **other))["applied"]
+            revoked = await _revoke(
+                inbox, operator, name=SEAT, key_id=seat_key_id, reason="laptop stolen"
+            )
+        assert "identity binding failed" in await _refused(SEAT, uri, machines.kwargs("seat"))
+        async with _connected("PROJ/other", uri, machines.kwargs("other")):
+            pass
+    assert hub.journal is not None
+    hub.journal.close()
+    assert revoked["applied"] is True, revoked
+    assert set(hub.enrolled_identity_keys) == {seat_key_id, other_key_id}
+    stored = json.loads((tmp_path / "enrolled.json").read_text(encoding="utf-8"))
+    assert sorted((entry["key_id"], entry["revoked"]) for entry in stored["keys"]) == sorted(
+        [(seat_key_id, True), (other_key_id, False)]
+    )
 
 
 async def test_an_enroller_revoking_its_own_key_stays_connected(tmp_path: Path) -> None:

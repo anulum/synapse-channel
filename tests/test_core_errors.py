@@ -343,6 +343,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "guard_evidence",
         ValueError,
     ),
+    "NativeMessageError": (
+        "synapse_channel.core.native_message",
+        "native_message",
+        ValueError,
+    ),
     "HubTLSConfigError": ("synapse_channel.core.tls", "hub_tls_config", ValueError),
     "IdentityBindingError": (
         "synapse_channel.core.identity_binding",

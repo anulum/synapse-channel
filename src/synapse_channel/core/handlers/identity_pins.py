@@ -20,14 +20,45 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from synapse_channel.core.acl import PIN_RECLAIM, WOULD_ALLOW, Target, evaluate_access
-from synapse_channel.core.acl_enforcement import project_of
+from synapse_channel.core.identity_namespace import project_of
 from synapse_channel.core.identity_pin_governance import pin_reclaim_denial
 from synapse_channel.core.journal import EventKind, record_identity_pin_reclaim
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_access import field_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.acl import AclPolicy
+    from synapse_channel.core.handler_context import HandlerContext
+    from synapse_channel.core.hub_liveness import HubLivenessView
+    from synapse_channel.core.identity_pins import IdentityPinStore
+
+    class IdentityPinsContext(HandlerContext, Protocol):
+        """Capabilities consumed by identity pins handlers and their callees."""
+
+        @property
+        def acl_policy(self) -> AclPolicy | None:
+            """Return the acl policy used by this handler family."""
+            ...
+
+        @property
+        def identity_pins(self) -> IdentityPinStore:
+            """Return the identity pins used by this handler family."""
+            ...
+
+        @property
+        def liveness(self) -> HubLivenessView:
+            """Return the liveness used by this handler family."""
+            ...
+
+        @property
+        def require_identity_binding(self) -> bool:
+            """Return the require identity binding used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.hub")
 
@@ -36,7 +67,7 @@ PIN_RECLAIM_CLOSE_CODE = 4017
 
 
 async def handle_identity_pin_reclaim(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: IdentityPinsContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Reclaim one exact pin after every governance gate passes.
 
@@ -50,15 +81,15 @@ async def handle_identity_pin_reclaim(
     expected_key_id = str(data.get("expected_key_id") or "").strip()
     reason = str(data.get("reason") or "").strip()
     break_glass = data.get("break_glass") is True
-    pin = hub._identity_pins.pinned(pin_name)
+    pin = hub.identity_pins.pinned(pin_name)
     owner_socket = hub.clients.agent_sockets.get(pin_name)
     owner_online = owner_socket is not None
     lease_live = hub.clients.ownership.is_leased(pin_name)
-    stale_owner_reclaimable = owner_online and hub._liveness.stale_owner_reclaimable(
+    stale_owner_reclaimable = owner_online and hub.liveness.stale_owner_reclaimable(
         pin_name,
         ttl_seconds=hub.clients.ownership.offline_ttl,
     )
-    requester_pin = hub._identity_pins.pinned(sender)
+    requester_pin = hub.identity_pins.pinned(sender)
     requester_bound = hub.require_identity_binding or requester_pin is not None
     journal = hub.journal
     denial = pin_reclaim_denial(
@@ -111,7 +142,7 @@ async def handle_identity_pin_reclaim(
         journal, {**provenance, "status": "approved", "applied": False}
     )
     try:
-        removed = hub._identity_pins.reclaim(pin_name, expected_key_id=expected_key_id)
+        removed = hub.identity_pins.reclaim(pin_name, expected_key_id=expected_key_id)
     except OSError:
         logger.exception("Identity pin reclaim persistence failed")
         detail = "could not persist the reclaimed pin table"
@@ -189,8 +220,8 @@ async def handle_identity_pin_reclaim(
             code=PIN_RECLAIM_CLOSE_CODE,
             reason="identity pin reclaimed",
         )
-    await hub._broadcast(
-        hub._system(
+    await hub.broadcast(
+        hub.system(
             f"Identity pin for {pin_name!r} was reclaimed by operator {sender!r}.",
             msg_type=MessageType.SYSTEM,
             event_kind=EventKind.IDENTITY_PIN_RECLAIM,
@@ -214,7 +245,7 @@ async def handle_identity_pin_reclaim(
     )
 
 
-def _acl_allows(hub: SynapseHub, sender: str, pin_name: str) -> bool:
+def _acl_allows(hub: IdentityPinsContext, sender: str, pin_name: str) -> bool:
     """Return whether the always-on reclaim grant authorises this exact target."""
     if hub.acl_policy is None:
         return False
@@ -229,7 +260,7 @@ def _acl_allows(hub: SynapseHub, sender: str, pin_name: str) -> bool:
 
 
 async def _send_result(
-    hub: SynapseHub,
+    hub: IdentityPinsContext,
     websocket: Any,
     sender: str,
     *,
@@ -241,9 +272,9 @@ async def _send_result(
     audit_seq: int | None = None,
 ) -> None:
     """Send one private typed reclaim verdict to the requesting operator."""
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             detail,
             msg_type=MessageType.IDENTITY_PIN_RECLAIM_RESULT,
             target=sender,
@@ -254,3 +285,22 @@ async def _send_result(
             audit_seq=audit_seq,
         ),
     )
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.IDENTITY_PIN_RECLAIM,),
+        handler=handle_identity_pin_reclaim,
+        reply_types=(
+            MessageType.IDENTITY_PIN_RECLAIM_RESULT,
+            MessageType.SYSTEM,
+        ),
+        mutates=True,
+        replay_protected=False,
+        mutation_guarded=True,
+        accesses=field_access(PIN_RECLAIM, "agent", "pin_name"),
+        event_kinds=(EventKind.IDENTITY_PIN_RECLAIM,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

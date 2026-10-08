@@ -34,16 +34,30 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from synapse_channel.core.acl import BOARD
 from synapse_channel.core.atomic_operations import AtomicExecution, OperationDraft
 from synapse_channel.core.emit_gate import REJECT, admit
 from synapse_channel.core.finding import Finding
 from synapse_channel.core.journal import EventKind, record_finding, record_recall
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.verb_access import field_access
+from synapse_channel.core.verb_registry import VerbSpec
 
 if TYPE_CHECKING:
-    from synapse_channel.core.hub import SynapseHub
+    from typing import Protocol
+
+    from synapse_channel.core.handler_context import HandlerContext
     from synapse_channel.core.hub_ledger_guard import FindingQuota
     from synapse_channel.core.persistence import EventStore
+
+    class MemoryContext(HandlerContext, Protocol):
+        """Capabilities consumed by memory handlers and their callees."""
+
+        @property
+        def finding_quota(self) -> FindingQuota:
+            """Return the finding quota used by this handler family."""
+            ...
+
 
 logger = logging.getLogger("synapse.memory")
 
@@ -66,7 +80,7 @@ def _required_response(execution: AtomicExecution) -> dict[str, Any]:
 
 
 async def _send_journal_failure(
-    hub: SynapseHub,
+    hub: MemoryContext,
     websocket: Any,
     *,
     sender: str,
@@ -77,9 +91,9 @@ async def _send_journal_failure(
     logger.error(
         "%s journal commit failed; memory mutation was not published", subject, exc_info=exc
     )
-    await hub._send_json(
+    await hub.send_json(
         websocket,
-        hub._system(
+        hub.system(
             f"{subject} was not journalled; mutation rolled back.",
             msg_type=MessageType.ERROR,
             target=sender,
@@ -88,7 +102,7 @@ async def _send_journal_failure(
 
 
 async def handle_recall_log(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: MemoryContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Journal one recall query-stream event and privately acknowledge the sender.
 
@@ -99,7 +113,7 @@ async def handle_recall_log(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : MemoryContext
         The coordination hub.
     sender : str
         The authenticated identity of the producing agent (used as ``by``).
@@ -126,7 +140,7 @@ async def handle_recall_log(
         return _MemoryWrite(
             accepted=True,
             record=record,
-            response=hub._system(
+            response=hub.system(
                 "recall logged",
                 msg_type=MessageType.RECALL_LOGGED,
                 target=sender,
@@ -149,7 +163,7 @@ async def handle_recall_log(
         if hub.journal is not None and str(data.get("idem_key") or ""):
             execution = cast(
                 AtomicExecution,
-                await hub._run_atomic_operation(
+                await hub.run_atomic_operation(
                     data,
                     mutate,
                     prepare,
@@ -170,19 +184,19 @@ async def handle_recall_log(
         return
 
     if execution.outcome in {"replayed", "conflict"}:
-        await hub._send_json(websocket, _required_response(execution))
+        await hub.send_json(websocket, _required_response(execution))
         if execution.outcome == "replayed":
-            await hub._settle_atomic_operation(data)
+            await hub.settle_atomic_operation(data)
         return
     result = cast(_MemoryWrite, execution.mutation)
     response = execution.response or result.response
-    await hub._send_json(websocket, response)
+    await hub.send_json(websocket, response)
     if execution.outcome == "inserted":
-        await hub._settle_atomic_operation(data)
+        await hub.settle_atomic_operation(data)
 
 
 async def handle_finding(
-    hub: SynapseHub, sender: str, data: dict[str, Any], websocket: Any
+    hub: MemoryContext, sender: str, data: dict[str, Any], websocket: Any
 ) -> None:
     """Admit one finding to the durable memory spine, or privately reject it.
 
@@ -197,7 +211,7 @@ async def handle_finding(
 
     Parameters
     ----------
-    hub : SynapseHub
+    hub : MemoryContext
         The coordination hub.
     sender : str
         The authenticated identity of the producing agent; stamped as the origin.
@@ -209,13 +223,13 @@ async def handle_finding(
     """
     decision = admit(Finding.from_dict(data))
     if decision.verdict == REJECT or decision.finding is None:
-        denied = hub._system(
+        denied = hub.system(
             "; ".join(decision.reasons) or "finding rejected",
             msg_type=MessageType.FINDING_REJECTED,
             target=sender,
             reasons=list(decision.reasons),
         )
-        await hub._send_json(websocket, denied)
+        await hub.send_json(websocket, denied)
         return
     finding = decision.finding
     journal = cast("EventStore", hub.journal)
@@ -229,7 +243,7 @@ async def handle_finding(
             return _MemoryWrite(
                 accepted=False,
                 record=None,
-                response=hub._system(
+                response=hub.system(
                     quota_message,
                     msg_type=MessageType.FINDING_REJECTED,
                     target=sender,
@@ -240,7 +254,7 @@ async def handle_finding(
         return _MemoryWrite(
             accepted=True,
             record=record,
-            response=hub._system(
+            response=hub.system(
                 "; ".join(decision.reasons) if decision.reasons else "finding recorded",
                 msg_type=MessageType.FINDING_RECORDED,
                 verdict=decision.verdict,
@@ -269,7 +283,7 @@ async def handle_finding(
         if hub.journal is not None and str(data.get("idem_key") or ""):
             execution = cast(
                 AtomicExecution,
-                await hub._run_atomic_operation(
+                await hub.run_atomic_operation(
                     data,
                     mutate,
                     prepare,
@@ -290,15 +304,46 @@ async def handle_finding(
         return
 
     if execution.outcome in {"replayed", "conflict"}:
-        await hub._send_json(websocket, _required_response(execution))
+        await hub.send_json(websocket, _required_response(execution))
         if execution.outcome == "replayed":
-            await hub._settle_atomic_operation(data)
+            await hub.settle_atomic_operation(data)
         return
     result = cast(_MemoryWrite, execution.mutation)
     if not result.accepted:
-        await hub._send_json(websocket, result.response)
+        await hub.send_json(websocket, result.response)
         return
     response = execution.response or result.response
-    await hub._broadcast(response)
+    await hub.broadcast(response)
     if execution.outcome == "inserted":
-        await hub._settle_atomic_operation(data)
+        await hub.settle_atomic_operation(data)
+
+
+VERB_SPECS = (
+    VerbSpec(
+        request_types=(MessageType.RECALL_LOG,),
+        handler=handle_recall_log,
+        reply_types=(MessageType.RECALL_LOGGED,),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=False,
+        accesses=None,
+        event_kinds=(EventKind.RECALL,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+    VerbSpec(
+        request_types=(MessageType.FINDING,),
+        handler=handle_finding,
+        reply_types=(
+            MessageType.FINDING_RECORDED,
+            MessageType.FINDING_REJECTED,
+        ),
+        mutates=True,
+        replay_protected=True,
+        mutation_guarded=True,
+        accesses=field_access(BOARD, "board", "task_id", fallback="*"),
+        event_kinds=(EventKind.FINDING,),
+        minimum_wire_version=1,
+        commands=(),
+    ),
+)

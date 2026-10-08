@@ -103,7 +103,7 @@ async def test_relay_log_is_bounded_by_trimming(tmp_path: Path) -> None:
 
 async def test_no_relay_log_leaves_mirror_a_noop(tmp_path: Path) -> None:
     hub = SynapseHub(hub_id="syn-test", relay_log=None)
-    await hub._mirror_to_relay({"type": "chat", "sender": "A", "payload": "x"})
+    await hub.mirror_to_relay({"type": "chat", "sender": "A", "payload": "x"})
     assert hub.relay_log is None
     assert not list(tmp_path.iterdir())
 
@@ -158,10 +158,10 @@ async def test_handoff_clears_recipient_wait() -> None:
             await read_until_type(ws_a, "claim_granted")
             await send_json(ws_b, sender="B", type="wait_request", task_id="T1")
             await read_until_type(ws_b, "wait_granted")
-            assert hub._waits["B"] == {"T1"}
+            assert hub.waits["B"] == {"T1"}
             await send_json(ws_a, sender="A", type="handoff", task_id="T1", to_agent="B")
             await read_until_type(ws_a, "handoff_granted")
-            assert "B" not in hub._waits
+            assert "B" not in hub.waits
 
 
 async def test_duplicate_handoff_is_not_reapplied() -> None:

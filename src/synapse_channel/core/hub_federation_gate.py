@@ -87,10 +87,10 @@ class HubFederationGate:
         Whether the hub holds an Ed25519 event-signature trust bundle; without one no
         signature can have been verified, so no cross-domain frame is authorised.
     system : Callable[..., dict]
-        The hub's system-message factory (``hub._system``), used to stamp the denial
+        The hub's system-message factory (``hub.system``), used to stamp the denial
         error returned to a refused sender.
     send_json : Callable[[Any, dict], Awaitable[None]]
-        Sends one message to a single socket (``hub._send_json``); used for the
+        Sends one message to a single socket (``hub.send_json``); used for the
         denial error.
     """
 

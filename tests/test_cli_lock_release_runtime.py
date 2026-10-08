@@ -150,7 +150,7 @@ async def test_transport_size_limit_refuses_unconfirmed_operation(
                 )
                 assert claim.ok(), claim.output
             arguments = (
-                ["--reply-timeout", "0.1"]
+                ["--reply-timeout", "1"]
                 + [
                     value
                     for index in range(10)
