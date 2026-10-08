@@ -175,13 +175,19 @@ sustained ingest and is reported with the result.
 PYTHONPATH=src python benchmarks/native_message_record_benchmark.py
 ```
 
-Output is written to `results/native_message_record_benchmark.json` with the
-host, the system load before and after, and the isolation state. The committed
-run was not isolated on reserved cores (load average about 9 on a shared
-workstation): it is a functional baseline, not a production claim. In that run
-the parser took a median of 3.9 µs for the short and 24.3 µs for the long text,
-and the durable round trip a median of 7.1 ms and 9.8 ms, with p99 of 80.8 ms
-and 87.9 ms.
+Output is written to `results/native_message_record_benchmark.json`. The
+committed comparison records the host, system load, CPU affinity, governor,
+source revision and isolation state.
+The timed loop includes first sender registration, so changes to registration
+require rerunning this benchmark even when record parsing is unchanged.
+
+The committed comparison executes the same full workload against both source
+revisions: 20,000 parser validations for each text size, plus 500 short and 200
+long durable records. All records are stored under the unchanged ingress quota.
+Both runs share the workstation without reserved cores. Their recorded timings
+are local regression observations and do not establish a production throughput,
+latency improvement or regression. The JSON retains the baseline and candidate
+source revisions and results; rerun on an isolated runner for performance claims.
 
 ## `sustained_write_benchmark.py`
 

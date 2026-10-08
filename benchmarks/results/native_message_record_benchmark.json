@@ -1,4 +1,122 @@
 {
+  "affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "benchmark_script_sha256": "944dd295562bf3b80339bcd9fb7c5f851bd0f8c6153a64363c5bdb8e9452b838",
+  "comparison": {
+    "baseline": {
+      "host": {
+        "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+        "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+        "python": "3.12.3"
+      },
+      "ingress_quota": {
+        "bytes": 8388608,
+        "events": 600,
+        "window_seconds": 60.0
+      },
+      "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
+      "load_average_after": [
+        30.19,
+        20.34,
+        25.81
+      ],
+      "load_average_before": [
+        16.27,
+        17.27,
+        24.97
+      ],
+      "parse": [
+        {
+          "count": 20000,
+          "max_us": 8112.389943562448,
+          "mean_us": 10.0469667930156,
+          "p50_us": 7.165013812482357,
+          "p95_us": 9.480048902332783,
+          "p99_us": 18.758000805974007,
+          "text_bytes": 256,
+          "throughput_per_second": 98020.62586825334
+        },
+        {
+          "count": 20000,
+          "max_us": 21735.689020715654,
+          "mean_us": 70.41223010746762,
+          "p50_us": 36.7029570043087,
+          "p95_us": 54.826028645038605,
+          "p99_us": 263.73902801424265,
+          "text_bytes": 32768,
+          "throughput_per_second": 14153.733280240162
+        }
+      ],
+      "round_trip": [
+        {
+          "count": 500,
+          "max_us": 136180.98304141313,
+          "mean_us": 17580.158991739154,
+          "p50_us": 11990.654049441218,
+          "p95_us": 51240.290980786085,
+          "p99_us": 102155.6300111115,
+          "stored_events": 500,
+          "text_bytes": 256,
+          "throughput_per_second": 56.68088606529891
+        },
+        {
+          "count": 200,
+          "max_us": 250400.96999146044,
+          "mean_us": 23779.842634685338,
+          "p50_us": 16167.275025509298,
+          "p95_us": 64936.42902933061,
+          "p99_us": 177538.69597800076,
+          "stored_events": 200,
+          "text_bytes": 32768,
+          "throughput_per_second": 41.12227593659486
+        }
+      ]
+    },
+    "baseline_benchmark_script_sha256": "944dd295562bf3b80339bcd9fb7c5f851bd0f8c6153a64363c5bdb8e9452b838",
+    "baseline_source_commit": "effef33cf380509bfefef73819745ab8c8ed89b4",
+    "scope": "Same workload and interpreter on a shared host; functional parity, not a production performance comparison."
+  },
+  "evidence_scope": "Non-isolated functional/local regression only; elapsed differences do not establish causal performance change.",
+  "frequency_khz_after": {
+    "0": "3800000",
+    "1": "3800000",
+    "10": "3799961",
+    "11": "3799961",
+    "2": "3800000",
+    "3": "3800038",
+    "4": "3800000",
+    "5": "3800000",
+    "6": "3799656",
+    "7": "3800000",
+    "8": "3799961",
+    "9": "3800038"
+  },
+  "governor_after": {
+    "0": "powersave",
+    "1": "powersave",
+    "10": "powersave",
+    "11": "powersave",
+    "2": "powersave",
+    "3": "powersave",
+    "4": "powersave",
+    "5": "powersave",
+    "6": "powersave",
+    "7": "powersave",
+    "8": "powersave",
+    "9": "powersave"
+  },
   "host": {
     "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
     "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
@@ -11,59 +129,63 @@
   },
   "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
   "load_average_after": [
-    8.65,
-    7.59,
-    7.21
+    36.8,
+    22.53,
+    26.42
   ],
   "load_average_before": [
-    9.49,
-    7.71,
-    7.24
+    30.19,
+    20.34,
+    25.81
   ],
+  "other_heavy_jobs": "Shared host; no CPU reservation or workload isolation.",
   "parse": [
     {
       "count": 20000,
-      "max_us": 73.34299152716994,
-      "mean_us": 4.0604860201710835,
-      "p50_us": 3.8500293157994747,
-      "p95_us": 5.4879928939044476,
-      "p99_us": 7.206981536000967,
+      "max_us": 38139.65700101107,
+      "mean_us": 19.76177414180711,
+      "p50_us": 7.229042239487171,
+      "p95_us": 12.062955647706985,
+      "p99_us": 22.741034626960754,
       "text_bytes": 256,
-      "throughput_per_second": 240911.62404309976
+      "throughput_per_second": 50198.97947023528
     },
     {
       "count": 20000,
-      "max_us": 440.1109763421118,
-      "mean_us": 25.619819591520354,
-      "p50_us": 24.287961423397064,
-      "p95_us": 32.567011658102274,
-      "p99_us": 38.66397310048342,
+      "max_us": 113295.89900560677,
+      "mean_us": 113.085232663434,
+      "p50_us": 35.74893344193697,
+      "p95_us": 56.98506720364094,
+      "p99_us": 2089.0100859105587,
       "text_bytes": 32768,
-      "throughput_per_second": 38869.96907107377
+      "throughput_per_second": 8777.532442305439
     }
   ],
+  "recorded_at": "2026-10-08T07:44:50.862032+00:00",
+  "reproduction_command": "PYTHONPATH=src python benchmarks/native_message_record_benchmark.py --parse-count 20000 --text-sizes 256 32768 --round-trip 256 500 --round-trip 32768 200",
   "round_trip": [
     {
       "count": 500,
-      "max_us": 121006.46697217599,
-      "mean_us": 10075.961957802065,
-      "p50_us": 7114.150968845934,
-      "p95_us": 19428.246014285833,
-      "p99_us": 80846.17502754554,
+      "max_us": 207557.43596237153,
+      "mean_us": 19282.812518067658,
+      "p50_us": 12543.068965896964,
+      "p95_us": 51536.53398156166,
+      "p99_us": 135348.96890632808,
       "stored_events": 500,
       "text_bytes": 256,
-      "throughput_per_second": 98.97603435036942
+      "throughput_per_second": 51.67562624490072
     },
     {
       "count": 200,
-      "max_us": 89490.95901334658,
-      "mean_us": 13931.562919751741,
-      "p50_us": 9821.356041356921,
-      "p95_us": 46309.48801059276,
-      "p99_us": 87904.12999223918,
+      "max_us": 308582.7720351517,
+      "mean_us": 27284.40295381006,
+      "p50_us": 18382.8710578382,
+      "p95_us": 76258.94900411367,
+      "p99_us": 204777.95600891113,
       "stored_events": 200,
       "text_bytes": 32768,
-      "throughput_per_second": 71.06525520952387
+      "throughput_per_second": 36.08284299219246
     }
-  ]
+  ],
+  "source_commit": "42fed059428f1effd4d342010182a28918ecd844"
 }
