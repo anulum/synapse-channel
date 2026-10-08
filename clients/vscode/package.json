@@ -152,5 +152,10 @@
     "typescript": "^7.0.2",
     "vitest": "^5.0.1",
     "ws": "^8.21.3"
+  },
+  "overrides": {
+    "ovsx": {
+      "@vscode/vsce": "$@vscode/vsce"
+    }
   }
 }

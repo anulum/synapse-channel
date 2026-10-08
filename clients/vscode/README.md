@@ -90,7 +90,7 @@ JSON, query parameter, source file, or workspace file.
 
 Use VS Code 1.101 or newer (or an editor with a Node 22 extension host).
 Build with Node 22.12 or newer from the extension directory; the dedicated CI
-workflow uses Node 22.23.2. The VSIX contains no development dependencies.
+workflow uses Node 22.23.3. The VSIX contains no development dependencies.
 
 Build from the extension directory:
 
@@ -98,6 +98,13 @@ Build from the extension directory:
 npm ci
 npm run package:vsix
 ```
+
+The Open VSX CLI uses the same pinned `@vscode/vsce` packager as the direct
+VS Code packaging command through an npm override. This removes its older
+`secretlint`/`globby` dependency chain, which includes the unpatched `braces`
+stack exhaustion vulnerability (GHSA-vfj7-8cjw-p6xm). Keep the override tied to
+the direct packager pin and verify both CLIs and real VSIX packaging on updates.
+
 
 Install the exact artifact in VS Code:
 

@@ -86,6 +86,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- JavaScript and VS Code development locks use `source-map-js` 1.2.2, fixing
+  indexed source-map denial of service (GHSA-68fv-2mgg-jv7q). Open VSX uses the
+  already pinned VS Code packager, removing its vulnerable `braces` dependency
+  chain (GHSA-vfj7-8cjw-p6xm).
+
 - Read Codex vendor-watch evidence from its official stable-release API and
   validate its exact release-tag prefix. Documentation layout changes no longer
   make the source unavailable; strict source and review checks remain enforced.
