@@ -168,12 +168,19 @@ class SynapseHub(HubConfigView):
 
     Parameters
     ----------
-    config : HubConfig or None, optional
+    config : HubConfig or HubComponents or None, optional
         Canonical grouped construction input. Family records own defaults and
         normalized writable settings. Supply either this record or the legacy
         keyword options below; combining them raises ``TypeError``. A supplied
         record stamps ``config_epoch``; bare or legacy construction leaves it
         empty. Journals, attachment and replay stores remain caller-owned.
+        A composed graph must be bound to this target and is installed once.
+    **legacy : Unpack[HubLegacyOptions]
+        Original keyword options, accepted when no grouped record or composed
+        graph is supplied. Their meanings and defaults are listed below.
+
+    Other Parameters
+    ----------------
     default_ttl_seconds : float, optional
         Lease TTL passed to the underlying :class:`SynapseState`. Defaults to
         ``3600.0``.

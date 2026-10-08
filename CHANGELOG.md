@@ -86,6 +86,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Render grouped hub construction and legacy keyword options in their correct
+  API-reference sections, and resolve the benchmark guide link on the docs site.
+  The strict documentation build remains enabled.
+
 - Lock cleanup uses a fresh client profile to read the epoch persisted by a
   same-identity child renewal, instead of releasing with the parent's stale
   epoch. One keyed release survives interrupted teardown; lost replies recover
