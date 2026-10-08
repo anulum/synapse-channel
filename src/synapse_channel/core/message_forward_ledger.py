@@ -515,6 +515,27 @@ class MessageForwardLedger:
             )
         )
 
+    def sender_notification_pending(self, forward_id: str) -> bool:
+        """Return whether this settled forward still needs its requested sender receipt.
+
+        Parameters
+        ----------
+        forward_id : str
+            The durable forward identifier.
+
+        Returns
+        -------
+        bool
+            False for a missing, pending, receipt-disabled or already notified forward.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM message_forward_outbox WHERE forward_id = ? "
+                "AND notify_sender = 1 AND sender_notified_at IS NULL AND state != 'pending'",
+                (forward_id,),
+            ).fetchone()
+        return row is not None
+
     def pending_counts(self) -> dict[str, int]:
         """Return the number of pending forwarded chats per peer hub.
 

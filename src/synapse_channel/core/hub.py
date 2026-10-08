@@ -1760,7 +1760,7 @@ class SynapseHub:
             )
 
             await deliver_pending_delivery_notifications(self, sender=sender, websocket=websocket)
-        if not was_bound and self.message_peers:
+        if not was_bound:
             # A forwarded chat that settled while its sender was offline is reported now.
             from synapse_channel.core.message_forward_origin import (
                 deliver_pending_forward_receipts,

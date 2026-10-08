@@ -24,6 +24,12 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Coalesce overlapping cross-hub chat attempts and terminal sender receipts per
+  durable forward. Cancellation releases transient ownership, late answers
+  preserve expiry, and independent chats remain concurrent. Offline receipts
+  stay pending across restart. Transport exceptions and peer error frames now
+  produce fixed diagnostics for chats, roster queries and delivery requests.
+
 - All hub handler families now declare structural capability contracts,
   including requirements of their forwarding and claim-presence helpers.
   Strict typing verifies the concrete hub at dispatch registration. Contracts

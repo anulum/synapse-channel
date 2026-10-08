@@ -1577,6 +1577,9 @@ forwarded over pinned mutual TLS to that peer. The peer must grant the target's
 namespace. Chats are retried from a durable outbox until answered or expired,
 and the peer deduplicates retries so a chat is queued there only once
 ([protocol](docs/protocol.md#cross-hub-message-forwarding-wire-version-5)).
+Overlapping initial and retry attempts share one exchange per forward; other
+chats remain independent. Terminal receipts are coalesced and stay pending for
+an offline sender's next registration, including after restart.
 A stopped durable watcher can record explicit recovery with
 `synapse multihub recover` only after an operator accepts a new log generation or
 checkpoint; reconnect alone never clears quarantine. Network observed-peer pulls also carry cursor lag and peer welcome-frame
@@ -1761,11 +1764,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.37 |
 | Public API exports | 70 |
-| Package modules | 689 |
+| Package modules | 690 |
 | Classes | 1038 |
 | Wire message types | 114 |
 | CLI subcommands | 237 |
-| Test functions | 10994 |
+| Test functions | 11004 |
 | Benchmark harnesses | 8 |
 | Documentation pages | 80 |
 | GitHub Actions workflows | 27 |

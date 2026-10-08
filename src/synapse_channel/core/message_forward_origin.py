@@ -45,6 +45,7 @@ from synapse_channel.core.hub_address import (
     parse_hub_qualified,
 )
 from synapse_channel.core.journal import record_chat
+from synapse_channel.core.message_forward_attempts import own_forward_work
 from synapse_channel.core.message_forward_ledger import OutboxEntry, RemoteDelivery
 from synapse_channel.core.message_forward_transport import (
     MessageForwardRejectedError,
@@ -247,10 +248,18 @@ async def forward_chat(
         await hub.broadcast(data)
     settled = await attempt_forward(hub, entry)
     if entry.notify_sender:
-        await hub.send_json(websocket, forward_receipt_frame(hub, settled, data))
-        if settled.state != "pending":
-            hub.message_forward_ledger.mark_sender_notified(settled.forward_id, now=time.time())
+        await _initial_forward_receipt(hub, settled, data, websocket)
     return True
+
+
+async def _initial_forward_receipt(
+    hub: ForwardOriginContext, entry: OutboxEntry, chat: dict[str, Any], websocket: Any
+) -> None:
+    """Report initial queueing privately or project the shared terminal receipt once."""
+    if entry.state == "pending":
+        await hub.send_json(websocket, forward_receipt_frame(hub, entry, chat))
+    else:
+        await _notify_sender(hub, entry, chat=chat)
 
 
 async def attempt_forward(hub: ForwardOriginContext, entry: OutboxEntry) -> OutboxEntry:
@@ -270,6 +279,16 @@ async def attempt_forward(hub: ForwardOriginContext, entry: OutboxEntry) -> Outb
         with a rescheduled attempt on a transport failure.
     """
     ledger = hub.message_forward_ledger
+    with own_forward_work(ledger, entry.forward_id, "attempt") as owned:
+        current = ledger.outbox_entry(entry.forward_id) or entry
+        if not owned or current.state != "pending":
+            return current
+        return await _attempt_owned_forward(hub, current)
+
+
+async def _attempt_owned_forward(hub: ForwardOriginContext, entry: OutboxEntry) -> OutboxEntry:
+    """Perform the peer exchange while holding this forward's transient ownership."""
+    ledger = hub.message_forward_ledger
     peer = (hub.message_peers or {}).get(entry.peer_hub)
     if peer is None:
         settled = ledger.settle(
@@ -284,9 +303,11 @@ async def attempt_forward(hub: ForwardOriginContext, entry: OutboxEntry) -> Outb
     try:
         request = decode_message_forward_request(entry.request)
         result = await hub.message_forwarder(request, peer=peer, local_id=hub.hub_id)
-    except MessageForwardRejectedError as exc:
+    except MessageForwardRejectedError:
         settled = ledger.settle(
-            entry.forward_id, "refused", {"reason_code": "peer_rejected", "detail": str(exc)}
+            entry.forward_id,
+            "refused",
+            {"reason_code": "peer_rejected", "detail": "The peer refused this forward."},
         )
         return settled or entry
     except (MessageForwardTransportError, MessageForwardWireError) as exc:
@@ -296,10 +317,12 @@ async def attempt_forward(hub: ForwardOriginContext, entry: OutboxEntry) -> Outb
             entry.forward_id,
             entry.peer_hub,
             attempts,
-            exc,
+            type(exc).__name__,
         )
         updated = ledger.record_failed_attempt(
-            entry.forward_id, next_attempt_at=time.time() + retry_delay(attempts), error=str(exc)
+            entry.forward_id,
+            next_attempt_at=time.time() + retry_delay(attempts),
+            error="The peer connection failed or returned an invalid answer.",
         )
         return updated or entry
     settled = ledger.settle(
@@ -326,8 +349,11 @@ async def run_forward_retries(hub: ForwardOriginContext, *, now: float) -> int:
     ledger = hub.message_forward_ledger
     settled: list[OutboxEntry] = list(ledger.expire_due(now))
     for entry in ledger.due(now):
+        current = ledger.outbox_entry(entry.forward_id)
+        if current is None or current.state != "pending":
+            continue
         outcome = await attempt_forward(hub, entry)
-        if outcome.state != "pending":
+        if outcome.state not in ("pending", "expired"):
             settled.append(outcome)
     for entry in settled:
         if entry.notify_sender:
@@ -370,10 +396,16 @@ async def deliver_pending_forward_receipts(hub: ForwardOriginContext, *, sender:
         await _notify_sender(hub, entry)
 
 
-async def _notify_sender(hub: ForwardOriginContext, entry: OutboxEntry) -> None:
+async def _notify_sender(
+    hub: ForwardOriginContext, entry: OutboxEntry, *, chat: dict[str, Any] | None = None
+) -> None:
     """Send a settled outcome to its sender when online; otherwise it waits for registration."""
-    if await hub.send_to_agent(entry.sender, forward_receipt_frame(hub, entry)):
-        hub.message_forward_ledger.mark_sender_notified(entry.forward_id, now=time.time())
+    ledger = hub.message_forward_ledger
+    with own_forward_work(ledger, entry.forward_id, "notification") as owned:
+        if not owned or not ledger.sender_notification_pending(entry.forward_id):
+            return
+        if await hub.send_to_agent(entry.sender, forward_receipt_frame(hub, entry, chat)):
+            ledger.mark_sender_notified(entry.forward_id, now=time.time())
 
 
 def forward_receipt_frame(
@@ -502,9 +534,9 @@ async def _forward_once(
     try:
         result = await hub.message_forwarder(request, peer=peer, local_id=hub.hub_id)
     except MessageForwardTransportError as exc:
-        raise DeliveryRefusal("peer_unreachable", str(exc)) from exc
+        raise DeliveryRefusal("peer_unreachable", "The peer connection failed.") from exc
     except MessageForwardRejectedError as exc:
-        raise DeliveryRefusal("peer_rejected", str(exc)) from exc
+        raise DeliveryRefusal("peer_rejected", "The peer refused this request.") from exc
     if result.disposition == "refused":
         raise DeliveryRefusal(result.reason_code, result.detail or "peer refused the request")
     return dict(result.result)

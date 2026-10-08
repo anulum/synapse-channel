@@ -733,6 +733,16 @@ frame with an `error`, which settles the forward as refused (`peer_rejected`)
 without further retries. A receipt reports transport facts only. It never means
 the recipient acted on the message.
 
+The running origin hub coalesces overlapping initial and retry exchanges for
+one `forward_id`, while unrelated forwards remain independent. Cancellation
+releases transient ownership and a late peer reply cannot revive an expired
+entry. Overlapping terminal notifications are coalesced too: only a successful
+local sender send marks the notification complete. An offline sender's pending
+notification survives restart. Interrupted or uncertain sends retain the
+at-least-once recovery contract. Transport exceptions and peer error frames
+produce fixed local diagnostics; raw peer diagnostics and connection details
+are not relayed to the sender.
+
 **Delivery intents.** A `delivery_request` whose `target` is
 `PROJECT/seat@HUB_ID` is forwarded synchronously. The peer admits it against its
 own recipient session, exactly as for a local requester named

@@ -21,12 +21,13 @@ import json
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from websockets.asyncio.client import ClientConnection, connect
+from websockets.asyncio.server import ServerConnection, serve
 
-from hub_e2e_helpers import _await_listening, _free_port, read_until_type
+from hub_e2e_helpers import _await_listening, _free_port, read_until_type, running_hub
 from message_forward_peer_helpers import error_frame, result_frame, scripted_peer
 from synapse_channel.core.handlers.messaging import ChatRouting
 from synapse_channel.core.hub import SynapseHub
@@ -446,3 +447,80 @@ async def test_the_forward_backlog_is_visible_in_metrics_and_health() -> None:
     assert list(backlog) == ["laptop"]
     assert backlog["laptop"]["pending"] == 1
     assert 0.0 <= backlog["laptop"]["oldest_pending_seconds"] < 60.0
+
+
+@pytest.mark.parametrize("kind", ["chat", "who", "delivery"])
+@pytest.mark.parametrize("failure", ["closed", "rejected"])
+async def test_peer_diagnostics_do_not_escape_through_chat_roster_or_delivery(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    kind: Literal["chat", "who", "delivery"],
+    failure: Literal["closed", "rejected"],
+) -> None:
+    """Actual socket failures and error frames retain named refusals without raw diagnostics."""
+    diagnostic = "private-peer-diagnostic-CRR10"
+
+    async def peer(socket: ServerConnection) -> None:
+        await asyncio.wait_for(socket.recv(), 3)
+        if failure == "closed":
+            await socket.close(code=1011, reason=diagnostic)
+        else:
+            await socket.send(json.dumps({"type": "error", "payload": diagnostic}))
+
+    journal = EventStore(tmp_path / "error.db")
+    try:
+        async with serve(peer, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            hub = SynapseHub(
+                hub_id="origin",
+                journal=journal,
+                message_peers={"peer": MessageForwardPeer(f"ws://127.0.0.1:{port}")},
+            )
+            async with running_hub(hub) as (_, uri), connect(uri) as sender:
+                await read_until_type(sender, "welcome")
+                await sender.send(
+                    json.dumps(
+                        {"sender": "PROJ/sender", "type": "heartbeat", "protocol_version": 3}
+                    )
+                )
+                request: dict[str, Any] = {"sender": "PROJ/sender"}
+                if kind == "chat":
+                    request.update(
+                        type="chat",
+                        target="PROJ/recipient@peer",
+                        payload="hi",
+                        receipt_requested=True,
+                    )
+                    response_type = "delivery_receipt"
+                elif kind == "who":
+                    request.update(type="who_request", hub="peer")
+                    response_type = "error"
+                else:
+                    request.update(
+                        type="delivery_request",
+                        target="PROJ/recipient@peer",
+                        protocol_version=3,
+                        request_id="error-request",
+                        idempotency_key="error-key",
+                        target_incarnation="i-1",
+                        mode="follow_up",
+                        allowed_fallbacks=["next_turn"],
+                        task_id="T-1",
+                        body="hi",
+                        deadline=time.time() + 60,
+                    )
+                    response_type = "delivery_refused"
+                await sender.send(json.dumps(request))
+                response = await read_until_type(sender, response_type)
+                assert diagnostic not in json.dumps(response) and diagnostic not in caplog.text
+                if kind == "chat":
+                    assert response["forward_state"] == (
+                        "pending" if failure == "closed" else "refused"
+                    )
+                    entry = hub.message_forward_ledger.outbox_entry(response["forward_id"])
+                    assert entry is not None and diagnostic not in json.dumps(entry.result)
+                else:
+                    expected = "peer_unreachable" if failure == "closed" else "peer_rejected"
+                    assert expected in json.dumps(response)
+    finally:
+        journal.close()
