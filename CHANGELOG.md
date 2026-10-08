@@ -24,6 +24,10 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Update cockpit Node.js type declarations to 26.6.4, the GitHub App's
+  hash-locked verification dependencies, and the image SBOM action to 0.24.3.
+  The image scanner remains explicitly pinned to Syft 1.50.0.
+
 - CLI mailbox wakes coalesce repeated copies of each durable hub/sequence
   pair while retaining distinct events with identical text and legacy frames
   without valid sequence metadata. Waiters join connection cleanup before
