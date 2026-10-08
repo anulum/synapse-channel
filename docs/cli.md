@@ -351,6 +351,11 @@ disables metrics query tokens and the insecure off-loopback override, and prints
 the hardening hooks that remain outside the profile. Keep token and HMAC entries
 in owner-only files; see [Paranoid mode](paranoid-mode.md) before exposing a hub.
 
+Hub startup constructs and validates its dependency graph before serving.
+A refused start releases the checkpoint connection and the CLI-owned stores;
+it preserves the journal and checkpoint files for inspection. Python embedding
+and component substitution use the same [composition factory](api.md#embedding-a-hub).
+
 The loopback-only `--metrics-query-token-ok` compatibility flag is deprecated,
 warns when parsed, and is scheduled for removal in 0.101.0. Send metrics tokens
 in the `Authorization: Bearer` header instead; URL credentials can leak into

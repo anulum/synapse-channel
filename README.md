@@ -570,6 +570,10 @@ synapse hub --max-connections-per-host 4             # cap simultaneous sockets 
 synapse send --token s3cret --name USER "hello"      # agents present the token to a secured hub
 ```
 
+Python embedders can configure a hub with `HubConfig` and use
+`SynapseHub.from_config(config)`. The explicit composition factory also supports
+substituting complete collaborator families; see [embedding a hub](docs/api.md#embedding-a-hub).
+
 CLI hub queries and `task` writes return `0` only after a matching reply.
 Missing replies return `1` with an unconfirmed-outcome diagnostic. A write may
 already have committed: inspect `synapse board` and retain the same `--idem-key`
@@ -1764,11 +1768,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.37 |
 | Public API exports | 70 |
-| Package modules | 713 |
-| Classes | 1056 |
+| Package modules | 723 |
+| Classes | 1065 |
 | Wire message types | 114 |
 | CLI subcommands | 237 |
-| Test functions | 11044 |
+| Test functions | 11052 |
 | Benchmark harnesses | 8 |
 | Documentation pages | 80 |
 | GitHub Actions workflows | 27 |

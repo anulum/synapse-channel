@@ -24,6 +24,12 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Hub startup now uses an external composition root. `build_hub(config)` builds
+  typed collaborator families and installs them once; the CLI and base
+  `SynapseHub.from_config` use that path. Existing record and keyword callers
+  delegate to the same builder. Custom component factories can supply real
+  services, with checks for target/configuration custody and failure cleanup.
+
 - Hub verb declarations now live beside their handlers. Dispatch, idempotency
   replay protection, ACL access mapping and the journal recovery guard derive
   from that registry. The existing wire vocabulary and guard memberships remain

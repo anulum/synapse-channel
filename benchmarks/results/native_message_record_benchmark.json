@@ -14,7 +14,7 @@
     11
   ],
   "benchmark_script_sha256": "944dd295562bf3b80339bcd9fb7c5f851bd0f8c6153a64363c5bdb8e9452b838",
-  "candidate_python_source_manifest_sha256": "721e4b4ac71655ee8b54b133b6a6f44722d64686f01d7f1044202a8ea6b4a84f",
+  "candidate_python_source_manifest_sha256": "decdad8288a77f00b2a1a9d339466235ad85da61d2f2ed7c741f16a9dea39b30",
   "comparison": {
     "baseline": {
       "host": {
@@ -29,66 +29,82 @@
       },
       "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
       "load_average_after": [
-        21.78,
-        24.79,
-        22.55
+        20.94,
+        18.97,
+        25.46
       ],
       "load_average_before": [
-        23.43,
-        25.26,
-        22.66
+        21.29,
+        18.91,
+        25.54
       ],
       "parse": [
         {
           "count": 20000,
-          "max_us": 3958.799992688,
-          "mean_us": 8.639091934310272,
-          "p50_us": 7.1480171754956245,
-          "p95_us": 11.553056538105011,
-          "p99_us": 18.839025869965553,
+          "max_us": 15112.266992218792,
+          "mean_us": 17.57470661541447,
+          "p50_us": 7.849070243537426,
+          "p95_us": 9.341049008071423,
+          "p99_us": 21.277926862239838,
           "text_bytes": 256,
-          "throughput_per_second": 113904.50455401534
+          "throughput_per_second": 53711.357873993875
         },
         {
           "count": 20000,
-          "max_us": 1736.5239327773452,
-          "mean_us": 32.79137521167286,
-          "p50_us": 31.785923056304455,
-          "p95_us": 42.22802817821503,
-          "p99_us": 55.42510189116001,
+          "max_us": 23102.568928152323,
+          "mean_us": 56.35902585927397,
+          "p50_us": 36.77397035062313,
+          "p95_us": 48.45205694437027,
+          "p99_us": 80.0589332357049,
           "text_bytes": 32768,
-          "throughput_per_second": 30333.90520760633
+          "throughput_per_second": 17377.35299122956
         }
       ],
       "round_trip": [
         {
           "count": 500,
-          "max_us": 132555.2399503067,
-          "mean_us": 14592.290160711855,
-          "p50_us": 10298.517998307943,
-          "p95_us": 45489.80202525854,
-          "p99_us": 81365.4309604317,
+          "max_us": 99188.94502334297,
+          "mean_us": 15438.194498186931,
+          "p50_us": 10224.913945421576,
+          "p95_us": 50116.200000047684,
+          "p99_us": 88172.53191955388,
           "stored_events": 500,
           "text_bytes": 256,
-          "throughput_per_second": 68.27501851080117
+          "throughput_per_second": 64.59143053840378
         },
         {
           "count": 200,
-          "max_us": 157785.11995449662,
-          "mean_us": 20111.712239449844,
-          "p50_us": 13528.990093618631,
-          "p95_us": 60987.27905191481,
-          "p99_us": 95995.6570295617,
+          "max_us": 462636.05693820864,
+          "mean_us": 25451.643090927973,
+          "p50_us": 16519.342083483934,
+          "p95_us": 59860.66302284598,
+          "p99_us": 294884.04700532556,
           "stored_events": 200,
           "text_bytes": 32768,
-          "throughput_per_second": 49.16374908653087
+          "throughput_per_second": 38.987947422838786
         }
       ]
     },
-    "baseline_hub_source_sha256": "5c7bf2498ea66589f6d12841c8e7e2d80f28fb7b6239c621d1dafbb0ab4d6fb3",
-    "baseline_scope": "Exact SynapseHub source module at baseline revision; unchanged imported runtime dependencies shared with candidate checkout. CLI stages and config_fingerprint are not timed by these bare-hub probes.",
-    "baseline_source_commit": "8370a8bf6762025af3ed80486fb9cb7d686fea9e",
-    "candidate_python_source_manifest_sha256": "721e4b4ac71655ee8b54b133b6a6f44722d64686f01d7f1044202a8ea6b4a84f",
+    "baseline_hub_source_sha256": "b5be5c734c69d7978b5af993513d9845490c882cc47d0059e583ed4eb723e68e",
+    "baseline_scope": "exact original hub module plus same current imported dependencies; no whole old checkout",
+    "baseline_source_commit": "af68ebaf57668732652149be46e37d9be1e7ebb9",
+    "candidate_python_source_manifest_sha256": "decdad8288a77f00b2a1a9d339466235ad85da61d2f2ed7c741f16a9dea39b30",
+    "constructor_factory": {
+      "baseline": {
+        "count": 1000,
+        "mean_us": 2280.1260431297123,
+        "p50_us": 2181.766030844301,
+        "p95_us": 3846.590989269316,
+        "p99_us": 5916.423979215324
+      },
+      "candidate": {
+        "count": 1000,
+        "mean_us": 1118.5979507863522,
+        "p50_us": 971.6935455799103,
+        "p95_us": 1986.62793263793,
+        "p99_us": 4005.3370175883174
+      }
+    },
     "library_probes": {
       "baseline": {
         "affinity": [
@@ -105,22 +121,25 @@
           10,
           11
         ],
-        "elapsed_seconds": 5.568754780921154,
-        "hub_source_sha256": "5c7bf2498ea66589f6d12841c8e7e2d80f28fb7b6239c621d1dafbb0ab4d6fb3",
-        "isolation": "none: shared workstation; unchanged default probe counts",
-        "load_average": [
-          26.02880859375,
-          28.98046875,
-          27.81201171875
+        "isolation": "none: shared workstation, no affinity or reserved CPU; source cohort completed before measurements",
+        "load_average_after": [
+          20.9384765625,
+          18.97021484375,
+          25.46044921875
+        ],
+        "load_average_before": [
+          19.57861328125,
+          18.533203125,
+          25.4609375
         ],
         "probes": [
           {
-            "duration_seconds": 0.037899998016655445,
+            "duration_seconds": 0.0717868939973414,
             "iterations": 100,
             "metrics": {
-              "p50_ms": 0.3510355018079281,
-              "p95_ms": 0.481416005641222,
-              "roundtrips_per_second": 2638.5225655171334
+              "p50_ms": 0.5379805224947631,
+              "p95_ms": 2.040353952907026,
+              "roundtrips_per_second": 1393.0119333997577
             },
             "name": "hub-roundtrip",
             "notes": [
@@ -128,12 +147,12 @@
             ]
           },
           {
-            "duration_seconds": 1.4079763509798795,
+            "duration_seconds": 0.7313687650021166,
             "iterations": 100,
             "metrics": {
-              "claims_per_second": 71.02392020320875,
-              "p50_ms": 8.312290476169437,
-              "p95_ms": 47.02370392624289
+              "claims_per_second": 136.72992994130752,
+              "p50_ms": 6.149028020445257,
+              "p95_ms": 13.7585160555318
             },
             "name": "claim-grant",
             "notes": [
@@ -141,15 +160,15 @@
             ]
           },
           {
-            "duration_seconds": 3.8496495209401473,
+            "duration_seconds": 2.6099473469657823,
             "iterations": 100,
             "metrics": {
-              "claims_per_second": 25.97639069636094,
-              "event_loop_lag_max_ms": 104.6268010288477,
-              "event_loop_lag_p50_ms": 0.22908956836909053,
-              "event_loop_lag_p95_ms": 5.432987982407212,
-              "p50_ms": 30.396187969017774,
-              "p95_ms": 84.7947089932859
+              "claims_per_second": 38.31494919476283,
+              "event_loop_lag_max_ms": 20.78753598127514,
+              "event_loop_lag_p50_ms": 0.1559644481167197,
+              "event_loop_lag_p95_ms": 2.545330953784287,
+              "p50_ms": 21.9311389955692,
+              "p95_ms": 66.56230299267918
             },
             "name": "durable-claim-grant",
             "notes": [
@@ -174,22 +193,25 @@
           10,
           11
         ],
-        "elapsed_seconds": 5.627440282027237,
-        "hub_source_sha256": "b5be5c734c69d7978b5af993513d9845490c882cc47d0059e583ed4eb723e68e",
-        "isolation": "none: shared workstation; unchanged default probe counts",
-        "load_average": [
-          31.15185546875,
-          29.99365234375,
-          28.146484375
+        "isolation": "none: shared workstation, no affinity or reserved CPU; source cohort completed before measurements",
+        "load_average_after": [
+          21.89111328125,
+          19.29296875,
+          25.390625
+        ],
+        "load_average_before": [
+          20.9384765625,
+          18.97021484375,
+          25.46044921875
         ],
         "probes": [
           {
-            "duration_seconds": 0.052805206971243024,
+            "duration_seconds": 0.056867499952204525,
             "iterations": 100,
             "metrics": {
-              "p50_ms": 0.5105254822410643,
-              "p95_ms": 0.6674609612673521,
-              "roundtrips_per_second": 1893.7526379634985
+              "p50_ms": 0.49259804654866457,
+              "p95_ms": 1.4199240831658244,
+              "roundtrips_per_second": 1758.4736463541933
             },
             "name": "hub-roundtrip",
             "notes": [
@@ -197,12 +219,12 @@
             ]
           },
           {
-            "duration_seconds": 0.5783800680655986,
+            "duration_seconds": 0.5430667049949989,
             "iterations": 100,
             "metrics": {
-              "claims_per_second": 172.89669115751448,
-              "p50_ms": 5.191938020288944,
-              "p95_ms": 11.483678012154996
+              "claims_per_second": 184.13944195109679,
+              "p50_ms": 4.899187944829464,
+              "p95_ms": 9.348909952677786
             },
             "name": "claim-grant",
             "notes": [
@@ -210,15 +232,15 @@
             ]
           },
           {
-            "duration_seconds": 4.513475468964316,
+            "duration_seconds": 2.654173835995607,
             "iterations": 100,
             "metrics": {
-              "claims_per_second": 22.155875375333874,
-              "event_loop_lag_max_ms": 106.3060929775238,
-              "event_loop_lag_p50_ms": 0.2653284939005971,
-              "event_loop_lag_p95_ms": 5.704475963488221,
-              "p50_ms": 31.382090935949236,
-              "p95_ms": 114.85023703426123
+              "claims_per_second": 37.676507334904464,
+              "event_loop_lag_max_ms": 8.014109964482486,
+              "event_loop_lag_p50_ms": 0.18369096890091893,
+              "event_loop_lag_p95_ms": 2.943365067243576,
+              "p50_ms": 22.624825011007488,
+              "p95_ms": 67.51401000656188
             },
             "name": "durable-claim-grant",
             "notes": [
@@ -242,63 +264,63 @@
   },
   "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
   "load_average_after": [
-    24.58,
-    25.73,
-    22.74
+    21.89,
+    19.29,
+    25.39
   ],
   "load_average_before": [
-    23.48,
-    25.57,
-    22.66
+    19.98,
+    18.8,
+    25.37
   ],
   "parse": [
     {
       "count": 20000,
-      "max_us": 1964.4430140033364,
-      "mean_us": 8.318915957352147,
-      "p50_us": 7.470953278243542,
-      "p95_us": 9.001931175589561,
-      "p99_us": 15.684054233133793,
+      "max_us": 467.26304572075605,
+      "mean_us": 5.617251404328272,
+      "p50_us": 4.524015821516514,
+      "p95_us": 8.177012205123901,
+      "p99_us": 9.199953638017178,
       "text_bytes": 256,
-      "throughput_per_second": 117707.014624333
+      "throughput_per_second": 174091.61771864878
     },
     {
       "count": 20000,
-      "max_us": 2137.9999816417694,
-      "mean_us": 33.37254384532571,
-      "p50_us": 32.44099207222462,
-      "p95_us": 43.69707312434912,
-      "p99_us": 59.6300233155489,
+      "max_us": 7391.574094071984,
+      "mean_us": 40.53474690881558,
+      "p50_us": 39.22800533473492,
+      "p95_us": 44.64201629161835,
+      "p99_us": 63.31305485218763,
       "text_bytes": 32768,
-      "throughput_per_second": 29732.877064657532
+      "throughput_per_second": 24545.960813712816
     }
   ],
-  "qualification_note": "Shared workstation without reserved cores. Broad owning test activity overlaps the library probes. Native measurements were sequential. Mean/tail changes are observations, not production performance claims.",
-  "recorded_at": "2026-10-08T12:39:28.160173+00:00",
+  "qualification_note": "Sequential baseline/candidate on a shared workstation, no reserved cores. Final owning cohort completed before measurements. Host load varied; all timings are local observations, no production performance claim.",
+  "recorded_at": "2026-10-08T14:39:06.928899+00:00",
   "reproduction_command": "PYTHONPATH=src python benchmarks/native_message_record_benchmark.py; PYTHONPATH=src python -c \"from synapse_channel.benchmark.probes import run_probes; print(run_probes(['hub-roundtrip', 'claim-grant', 'durable-claim-grant']))\"",
   "round_trip": [
     {
       "count": 500,
-      "max_us": 118418.50797645748,
-      "mean_us": 13099.985200213268,
-      "p50_us": 8912.320015951991,
-      "p95_us": 40208.86495709419,
-      "p99_us": 88754.7880411148,
+      "max_us": 211697.43593782187,
+      "mean_us": 18835.859082406387,
+      "p50_us": 12729.304027743638,
+      "p95_us": 55218.816036358476,
+      "p99_us": 101057.73305986077,
       "stored_events": 500,
       "text_bytes": 256,
-      "throughput_per_second": 76.08796250992972
+      "throughput_per_second": 52.95883105334291
     },
     {
       "count": 200,
-      "max_us": 134425.76199304312,
-      "mean_us": 19445.958445430733,
-      "p50_us": 13252.142001874745,
-      "p95_us": 51019.65006906539,
-      "p99_us": 130827.24693231285,
+      "max_us": 120816.16499926895,
+      "mean_us": 24488.81516524125,
+      "p50_us": 15780.486050061882,
+      "p95_us": 73961.92802116275,
+      "p99_us": 118935.53601112217,
       "stored_events": 200,
       "text_bytes": 32768,
-      "throughput_per_second": 50.848206341631034
+      "throughput_per_second": 40.34348496397082
     }
   ],
-  "source_parent_commit": "8370a8bf6762025af3ed80486fb9cb7d686fea9e"
+  "source_parent_commit": "af68ebaf57668732652149be46e37d9be1e7ebb9"
 }

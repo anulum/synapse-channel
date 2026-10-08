@@ -23,16 +23,11 @@ routing core stays a table lookup rather than a growing branch ladder.
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import json
 import logging
-import math
 import ssl
 import sys
-import time
-import uuid
 from collections.abc import Callable, Iterable, Mapping
-from pathlib import Path
 from typing import Any
 
 if sys.version_info >= (3, 11):
@@ -51,11 +46,6 @@ from synapse_channel.core.acl import (
     evaluate_access,
 )
 from synapse_channel.core.acl_enforcement import project_of
-from synapse_channel.core.agent_liveness import (
-    DEFAULT_RECIPIENT_LIVENESS_WINDOW,
-    DEFAULT_WAITER_LIVENESS_WINDOW,
-    RecipientLiveness,
-)
 from synapse_channel.core.at_rest_guard import guard_at_rest
 from synapse_channel.core.atomic_operations import (
     AtomicExecution,
@@ -64,25 +54,16 @@ from synapse_channel.core.atomic_operations import (
     canonical_request_digest,
     idempotency_conflict_response,
 )
-from synapse_channel.core.capability import CapabilityRegistry
-from synapse_channel.core.channels import ChannelRegistry
-from synapse_channel.core.chat_dedupe import ChatDedupe
-from synapse_channel.core.claim_holder_presence import ClaimHolderPresence
-from synapse_channel.core.dark_seat import DarkSeatMonitor
-from synapse_channel.core.dead_letter_escalation import DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD
-from synapse_channel.core.dead_letters import DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS, DeadLetterLedger
 from synapse_channel.core.deadlock import prune_waits
 from synapse_channel.core.delivery_modes import DeliveryRefusal
 from synapse_channel.core.delivery_registration import bind_delivery_registration
-from synapse_channel.core.durable_ingress import DurableIngressQuota
 from synapse_channel.core.handlers import DISPATCH
-from synapse_channel.core.hub_broadcast import HubBroadcaster
-from synapse_channel.core.hub_clients import HubClientRegistry
+from synapse_channel.core.hub_component_callbacks import HubComponentCallbacks
+from synapse_channel.core.hub_components import HubComponents
 from synapse_channel.core.hub_config import HubConfig, config_fingerprint
 from synapse_channel.core.hub_config_view import HubConfigView
 from synapse_channel.core.hub_connection import HubConnection
 from synapse_channel.core.hub_constructor_options import HubLegacyOptions, resolve_hub_config
-from synapse_channel.core.hub_counters import HubCounters
 from synapse_channel.core.hub_defaults import (
     DEFAULT_AUTH_TIMEOUT,
     DEFAULT_COMPACT_HINT_THRESHOLD,
@@ -109,44 +90,20 @@ from synapse_channel.core.hub_exposure import (
     InsecureBindError,
     is_loopback_host,
 )
-from synapse_channel.core.hub_federation_gate import FrameDisposition, HubFederationGate
-from synapse_channel.core.hub_frame_gates import HubFrameGates
+from synapse_channel.core.hub_federation_gate import FrameDisposition
 from synapse_channel.core.hub_http import http_endpoint_response
-from synapse_channel.core.hub_identity_gate import HubIdentityGate
 from synapse_channel.core.hub_ingress import HubIngress
-from synapse_channel.core.hub_journal_recovery_gate import HubJournalRecoveryGate
-from synapse_channel.core.hub_ledger_guard import FindingQuota, HubLedgerGuard
-from synapse_channel.core.hub_liveness import HubLivenessView
-from synapse_channel.core.hub_relay import RelayMirror
-from synapse_channel.core.hub_state_seed import SeededHubState, seed_hub_state
+from synapse_channel.core.hub_ledger_guard import FindingQuota
 from synapse_channel.core.identity_enrollments import (
-    EnrollmentRateLimiter,
-    load_enrolled_keys,
     merge_enrolled_keys,
 )
-from synapse_channel.core.identity_pins import IdentityPinStore
-from synapse_channel.core.mailbox_pending import MailboxPendingTracker
 from synapse_channel.core.merkle_checkpoint import (
     LiveCheckpoint,
     MerkleCheckpointStore,
-    checkpoint_path_for,
 )
 from synapse_channel.core.message_auth import (
-    DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
     EventSignatureKey,
-    MessageReplayCache,
 )
-from synapse_channel.core.message_auth_durable import (
-    SequenceFloorMode,
-)
-from synapse_channel.core.message_forward_ledger import MessageForwardLedger
-from synapse_channel.core.message_forward_origin import DEFAULT_FORWARD_TTL_SECONDS
-from synapse_channel.core.multihub_serving import (
-    check_identity_grants,
-)
-from synapse_channel.core.numeric_coercion import safe_float, safe_int
-from synapse_channel.core.operator_relay_forwarding import OperatorRelayForwarding
-from synapse_channel.core.pending_receipts import PendingReceipts
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.persistence_sqlcipher import sqlcipher_available
 from synapse_channel.core.protected_write_proposal import ProtectedWriteProposalLimits
@@ -166,7 +123,6 @@ from synapse_channel.core.protocol import (
     system_message,
 )
 from synapse_channel.core.role_grants import RoleGrants
-from synapse_channel.core.state_transaction import SerializedStateMutationActor
 from synapse_channel.core.terminal_text import terminal_text
 
 logger = logging.getLogger("synapse.hub")
@@ -487,470 +443,160 @@ class SynapseHub(HubConfigView):
         them refuses protected history; supplying them does not enable dispatch.
     """
 
-    def __init__(self, config: HubConfig | None = None, **legacy: Unpack[HubLegacyOptions]) -> None:
-        """Construct from grouped records or the compatible legacy keyword surface."""
-        resolved = resolve_hub_config(config, legacy)
-        self.configuration = resolved
+    def __init__(
+        self,
+        config: HubConfig | HubComponents | None = None,
+        **legacy: Unpack[HubLegacyOptions],
+    ) -> None:
+        """Receive a composed graph or delegate the thin legacy startup boundary.
+
+        The injected path creates no collaborator. The graph must be built for
+        this exact target and requested record; installing it twice is refused.
+        The external composition root owns acquisition and failure cleanup.
+        """
+        if "_connection" in vars(self):
+            raise ValueError("hub components are already installed")
         self._live_checkpoint: LiveCheckpoint | None = None
+        if isinstance(config, HubComponents):
+            if legacy:
+                raise TypeError("cannot combine hub components and legacy keyword options")
+            components = config
+            resolved = components.requested
+            if components.callbacks.owner is not self:
+                raise ValueError("hub components belong to another target")
+        else:
+            resolved = resolve_hub_config(config, legacy)
+            from synapse_channel.core.hub_factory import build_components
+
+            components = build_components(resolved, self.component_callbacks())
         try:
-            self._initialise_attachments(resolved)
-            self._initialise_checkpoint(resolved)
-            self._initialise_transport(resolved)
-            self._initialise_authentication(resolved)
-            self._initialise_identity(resolved)
-            self._initialise_liveness(resolved)
-            self._initialise_routing(resolved)
-            self._initialise_clients(resolved)
-            self._initialise_limits(resolved)
-            self._initialise_broadcasting(resolved)
-            self._initialise_ingress(resolved)
-            self._initialise_connection(resolved)
-            self._initialise_gates(resolved)
-            seeded = self._initialise_state(resolved)
-            self._initialise_state_views(resolved, seeded)
+            self.configuration = components.configuration
+            self._receive_lifetime(components)
+            self._receive_security(components)
+            self._receive_clients(components)
+            self._receive_routing(components)
+            self._receive_delivery(components)
+            self._receive_state(components)
+            self.config_epoch = config_fingerprint(resolved) if config is not None else ""
         except BaseException:
-            live = self._live_checkpoint
             self._live_checkpoint = None
-            if live is not None:
-                live.close()
+            if components.lifetime.live_checkpoint is not None:
+                components.lifetime.live_checkpoint.close()
             raise
-        self.config_epoch = config_fingerprint(resolved) if config is not None else ""
 
-    def _initialise_attachments(self, config: HubConfig) -> None:
-        """Initialize the existing attachments responsibility from family records."""
-        if config.attachment_store is not None and (
-            not (
-                config.auth.authenticator is not None
-                and config.auth.require_identity_binding
-                and (config.auth.identity_trust_bundle is not None)
-                and config.auth.require_per_message_auth
-                and config.auth.per_message_auth_keys
-                and (config.auth.per_message_auth_replay_store is not None)
-                and config.auth.require_acl
-                and (config.auth.acl_policy is not None)
-                and (config.auth.role_grants is not None)
-                and (config.journal is not None)
-            )
-        ):
-            raise ValueError(
-                "attachments require token, bound identity, durable signed frames, "
-                "ACL, roles, and journal"
-            )
-        if config.attachment_serving_policy is not None:
-            if config.attachment_store is None or config.multihub.multihub_serving_policy is None:
-                raise ValueError(
-                    "attachment recipient policy requires attachments and peer serving policy"
-                )
-            config.attachment_serving_policy.load()
-        self.attachment_serving_policy = config.attachment_serving_policy
-        self.attachment_store = config.attachment_store
-        self.journal = config.journal
+    def component_callbacks(self) -> HubComponentCallbacks:
+        """Capture deferred callbacks for the external composition root.
 
-    def _initialise_checkpoint(self, config: HubConfig) -> None:
-        """Initialize the existing checkpoint responsibility from family records."""
-        interval = float(config.checkpoint_interval)
-        if not (math.isfinite(interval) and interval > 0.0):
-            raise ValueError("checkpoint_interval must be a positive finite number of seconds")
-        self.checkpoint_interval = interval
-        self._checkpoint_path: Path | None = None
-        self._live_checkpoint = None
-        if (
-            config.anti_rollback_checkpoint
-            and isinstance(config.journal, EventStore)
-            and (config.journal.path != ":memory:")
-        ):
-            self._checkpoint_path = (
-                Path(config.checkpoint_store_path)
-                if config.checkpoint_store_path
-                else checkpoint_path_for(config.journal.path)
-            )
-            self._open_live_checkpoint(config.journal)
-
-    def _initialise_transport(self, config: HubConfig) -> None:
-        """Initialize the existing transport responsibility from family records."""
-        self.enable_metrics = bool(config.metrics.enable_metrics)
-        self.auth_timeout = max(
-            safe_float(config.auth.auth_timeout, default=DEFAULT_AUTH_TIMEOUT), 0.1
+        This method is safe before installation: it never reads live state or
+        executes a callback. State sources remain late-bound so replacement of
+        the state or blackboard retains the previous runtime behavior.
+        """
+        return HubComponentCallbacks(
+            owner=self,
+            system=self.system,
+            send_json=self.send_json,
+            online_agents=self.online_agents,
+            handle_message=self.handle_message,
+            broadcast=self.broadcast,
+            broadcast_presence=self._broadcast_presence,
+            drop_waits=self._drop_waits,
+            agent_left=self._claim_holder_left,
+            claims=lambda: self.state.claims,
+            tasks=lambda: self.blackboard.tasks,
         )
-        self.metrics_token = config.metrics.metrics_token or None
-        self.metrics_query_token_ok = bool(config.metrics.metrics_query_token_ok)
-        from synapse_channel.core.hub_handshake import normalise_allow_origins
 
-        self.allowed_origins = normalise_allow_origins(tuple(config.metrics.allowed_origins or ()))
-        self.advertised_host = (config.metrics.advertised_host or "").strip() or None
+    def _receive_lifetime(self, components: HubComponents) -> None:
+        """Install already acquired transport synchronization and owned resources."""
+        lifetime = components.lifetime
+        self.attachment_serving_policy = components.requested.attachment_serving_policy
+        self.attachment_store = components.requested.attachment_store
+        self.journal = components.requested.journal
+        self._checkpoint_path = lifetime.checkpoint_path
+        self._live_checkpoint = lifetime.live_checkpoint
+        self._serving = lifetime.serving
+        self.guard_evidence_quota = lifetime.guard_evidence_quota
+        self.clock = lifetime.clock
+        self._started = lifetime.started
+        self.relay_log = lifetime.relay_log
         self._bind_host = DEFAULT_HOST
         self._bind_port = DEFAULT_PORT
         self._bound_address: tuple[str, int] | None = None
-        self._serving = asyncio.Event()
-        self.insecure_off_loopback = bool(config.auth.insecure_off_loopback)
-        self.insecure_plaintext_at_rest = bool(config.auth.insecure_plaintext_at_rest)
-        self.rate_limiter = config.rate_limiter
-        self.host_rate_limiter = config.host_rate_limiter
-        self.durable_ingress_quota = config.durable_ingress_quota
-        self.guard_evidence_quota = DurableIngressQuota(
-            max_events=100, max_bytes=262144, window_seconds=60.0
-        )
 
-    def _initialise_authentication(self, config: HubConfig) -> None:
-        """Initialize the existing authentication responsibility from family records."""
-        self.authenticator = config.auth.authenticator
-        if isinstance(config.auth.per_message_auth_keys, Mapping):
-            self.per_message_auth_keys = dict(config.auth.per_message_auth_keys)
-        else:
-            self.per_message_auth_keys = {
-                key.key_id: key for key in config.auth.per_message_auth_keys or []
-            }
-        self.require_per_message_auth = bool(config.auth.require_per_message_auth)
-        self.per_message_auth_replay_store = config.auth.per_message_auth_replay_store
-        self.per_message_auth_sequence_floor_mode = SequenceFloorMode(
-            config.auth.per_message_auth_sequence_floor_mode
-        )
-        self._message_replay = MessageReplayCache(
-            window_seconds=safe_float(
-                config.auth.per_message_auth_window_seconds,
-                default=DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS,
-            ),
-            max_entries=safe_int(
-                config.auth.per_message_auth_replay_capacity, default=4096, min_value=1
-            ),
-            durable=self.per_message_auth_replay_store,
-            sequence_floor_mode=self.per_message_auth_sequence_floor_mode,
-        )
-        self.signed_event_trust_bundle = config.auth.signed_event_trust_bundle
-        self.capability_card_trust_bundle = config.auth.capability_card_trust_bundle
-        self.acl_policy = config.auth.acl_policy
-        self.require_acl = bool(config.auth.require_acl)
-        self.role_grants = config.auth.role_grants
-        self.require_role_claim = bool(config.auth.require_role_claim)
-        self.require_fencing_epoch = bool(config.auth.require_fencing_epoch)
+    def _receive_security(self, components: HubComponents) -> None:
+        """Retain the graph's actual replay, enrollment and pinning services."""
+        security = components.security
+        self.per_message_auth_keys = security.message_keys
+        self.per_message_auth_sequence_floor_mode = security.sequence_floor
+        self._message_replay = security.message_replay
+        self.static_identity_trust = components.requested.auth.identity_trust_bundle
+        self.identity_enrollment_path = security.enrollment_path
+        self.enrolled_identity_keys = security.enrolled_keys
+        self.identity_trust_bundle = security.identity_trust
+        self.identity_enrollment_namespaces = security.enrollment_namespaces
+        self.enrollment_rate = security.enrollment_rate
+        self.identity_pin_path = security.pin_path
+        self.identity_pins = security.pins
 
-    def _initialise_identity(self, config: HubConfig) -> None:
-        """Initialize the existing identity responsibility from family records."""
-        if config.auth.identity_enrollment_path and (
-            config.auth.identity_trust_bundle is None or config.journal is None
-        ):
-            raise ValueError(
-                "online identity enrolment needs an identity trust bundle and a durable "
-                "journal: pass --identity-trust and --db with --identity-enrollments"
-            )
-        self.static_identity_trust = config.auth.identity_trust_bundle
-        self.identity_enrollment_path = (
-            Path(config.auth.identity_enrollment_path).expanduser()
-            if config.auth.identity_enrollment_path
-            else None
-        )
-        self.enrolled_identity_keys = (
-            load_enrolled_keys(self.identity_enrollment_path)
-            if self.identity_enrollment_path is not None
-            else {}
-        )
-        self.identity_trust_bundle = (
-            merge_enrolled_keys(config.auth.identity_trust_bundle, self.enrolled_identity_keys)
-            if config.auth.identity_trust_bundle is not None
-            and self.identity_enrollment_path is not None
-            else config.auth.identity_trust_bundle
-        )
-        self.identity_enrollment_namespaces = frozenset(
-            namespace.strip()
-            for namespace in config.auth.identity_enrollment_namespaces
-            if namespace.strip()
-        )
-        self.enrollment_rate = EnrollmentRateLimiter(
-            limit=max(0, int(config.auth.identity_enrollment_rate)),
-            window_seconds=max(0.0, float(config.auth.identity_enrollment_window_seconds)),
-        )
-        self.require_identity_binding = bool(config.auth.require_identity_binding)
-        self.identity_pin_path = (
-            Path(config.auth.identity_pin_path).expanduser()
-            if config.auth.identity_pin_path
-            else None
-        )
-        self.identity_pins = IdentityPinStore(path=self.identity_pin_path)
-        self.private_directed_messages = bool(config.auth.private_directed_messages)
-
-    def _initialise_liveness(self, config: HubConfig) -> None:
-        """Initialize the existing liveness responsibility from family records."""
-        self.warn_stale_recipients = bool(config.liveness.warn_stale_recipients)
-        self.recipient_liveness_window = max(
-            safe_float(
-                config.liveness.recipient_liveness_window, default=DEFAULT_RECIPIENT_LIVENESS_WINDOW
-            ),
-            0.0,
-        )
-        self.waiter_liveness_window = max(
-            safe_float(
-                config.liveness.waiter_liveness_window, default=DEFAULT_WAITER_LIVENESS_WINDOW
-            ),
-            0.0,
-        )
-        self._recipient_liveness = RecipientLiveness(window_seconds=self.recipient_liveness_window)
-
-    def _initialise_routing(self, config: HubConfig) -> None:
-        """Initialize the existing routing responsibility from family records."""
-        if config.multihub.multihub_serving_policy is not None:
-            check_identity_grants(
-                config.multihub.multihub_serving_policy,
-                identity_trust_bundle=self.identity_trust_bundle,
-                require_identity_binding=self.require_identity_binding,
-            )
-        self.multihub_serving_policy = config.multihub.multihub_serving_policy
-        self.spend_ledger = config.multihub.spend_ledger
-        self.namespace_ownership = config.multihub.namespace_ownership
-        self.claim_peers = (
-            dict(config.multihub.claim_peers) if config.multihub.claim_peers else None
-        )
-        self.claim_forwarder = config.multihub.claim_forwarder
-        self.relay_peers = (
-            dict(config.multihub.relay_peers) if config.multihub.relay_peers else None
-        )
-        self.relay_forwarder = config.multihub.relay_forwarder
-        self.message_peers = (
-            dict(config.multihub.message_peers) if config.multihub.message_peers else None
-        )
-        self.message_forwarder = config.multihub.message_forwarder
-        self.message_forward_ttl = max(
-            1.0,
-            safe_float(config.multihub.message_forward_ttl, default=DEFAULT_FORWARD_TTL_SECONDS),
-        )
-        self.message_forward_ledger = (
-            config.journal.message_forward
-            if config.journal is not None
-            else MessageForwardLedger.in_memory()
-        )
-        self.require_relay_reason = bool(config.multihub.require_relay_reason)
-        self.require_two_person_relay = bool(config.multihub.require_two_person_relay)
-        self.observed_asserting_hubs = config.multihub.observed_asserting_hubs
-        self.federation_bundle = config.federation.federation_bundle
-        self.federation_cert_source = config.federation.federation_cert_source
-        self.federation_offer_path = (
-            Path(config.federation.federation_offer_path)
-            if config.federation.federation_offer_path is not None
-            else None
-        )
-        self._federation_gate = HubFederationGate(
-            config.federation.federation_bundle,
-            cert_source=config.federation.federation_cert_source,
-            require_per_message_auth=self.require_per_message_auth,
-            signed_event_trust=config.auth.signed_event_trust_bundle is not None,
-            system=self.system,
-            send_json=self.send_json,
-        )
-
-    def _initialise_clients(self, config: HubConfig) -> None:
-        """Initialize the existing clients responsibility from family records."""
-        self.channels = ChannelRegistry()
-        self.max_msg_bytes = safe_int(
-            config.limits.max_msg_bytes, default=DEFAULT_MAX_MSG_BYTES, min_value=1
-        )
-        self.clock = config.clock or time.monotonic
-        self._started = self.clock()
-        self.counters = HubCounters()
-        if self.journal is not None:
-            self.counters.operation_outbox_pending = self.journal.pending_operation_outbox_count()
-        self.clients = HubClientRegistry(
-            counters=self.counters,
-            max_clients=config.limits.max_clients,
-            max_unauth_clients=config.limits.max_unauth_clients,
-            max_connections_per_host=config.limits.max_connections_per_host,
-            takeover_cooldown=config.takeover.takeover_cooldown,
-            clock=self.clock,
-            takeover_oscillation_window=config.takeover.takeover_oscillation_window,
-            takeover_oscillation_threshold=config.takeover.takeover_oscillation_threshold,
-            takeover_quarantine=config.takeover.takeover_quarantine,
-            lease_offline_ttl=config.takeover.lease_offline_ttl,
-        )
-        self.max_clients = self.clients.max_clients
+    def _receive_clients(self, components: HubComponents) -> None:
+        """Install shared client services and their existing public alias objects."""
+        clients = components.clients
+        self.channels = clients.channels
+        self.counters = clients.counters
+        self.clients = clients.clients
         self.max_unauth_clients = self.clients.max_unauth_clients
-        self.max_connections_per_host = self.clients.max_connections_per_host
-        self.takeover_cooldown = self.clients.takeover_cooldown
-        self.takeover_oscillation_window = self.clients.takeover_oscillation_window
-        self.takeover_oscillation_threshold = self.clients.takeover_oscillation_threshold
-        self.takeover_quarantine = self.clients.takeover_quarantine
-        self.lease_offline_ttl = self.clients.ownership.offline_ttl
-        if self.multihub_serving_policy is not None:
-            self.multihub_serving_policy = dataclasses.replace(
-                self.multihub_serving_policy, identity_source=self.clients.identity_proof
-            )
-        self.claim_holders = ClaimHolderPresence(
-            clock=self.clock, started_at=self._started, window=self.lease_offline_ttl
-        )
-
-    def _initialise_limits(self, config: HubConfig) -> None:
-        """Initialize the existing limits responsibility from family records."""
-        self.shutdown_close_timeout = max(
-            safe_float(config.shutdown_close_timeout, default=DEFAULT_SHUTDOWN_CLOSE_TIMEOUT), 0.1
-        )
-        self.max_history = safe_int(
-            config.limits.max_history, default=DEFAULT_MAX_HISTORY, min_value=1
-        )
-        self.max_findings_per_agent = safe_int(
-            config.limits.max_findings_per_agent,
-            default=DEFAULT_MAX_FINDINGS_PER_AGENT,
-            min_value=1,
-        )
-        self.compact_hint_threshold = safe_int(
-            config.limits.compact_hint_threshold,
-            default=DEFAULT_COMPACT_HINT_THRESHOLD,
-            min_value=1,
-        )
-        self.dead_letter_escalation_threshold = safe_int(
-            config.limits.dead_letter_escalation_threshold,
-            default=DEFAULT_DEAD_LETTER_ESCALATION_THRESHOLD,
-            min_value=0,
-        )
-        self.dead_letter_forwarder = config.multihub.dead_letter_forwarder
-        self.board_task_cap = (
-            safe_int(config.limits.board_task_cap, default=1, min_value=1)
-            if config.limits.board_task_cap is not None
-            else None
-        )
-        self.relay_log = Path(config.relay_log) if config.relay_log else None
-        self.relay_max_lines = safe_int(
-            config.relay_max_lines, default=DEFAULT_RELAY_MAX_LINES, min_value=1
-        )
-
-    def _initialise_broadcasting(self, config: HubConfig) -> None:
-        """Initialize the existing broadcasting responsibility from family records."""
-        self.dead_letters = DeadLetterLedger(max_age_seconds=DEFAULT_DEAD_LETTER_MAX_AGE_SECONDS)
-        self.pending_receipts = PendingReceipts()
-        self.mailbox_pending = MailboxPendingTracker(self.journal)
-        self._relay = RelayMirror(self.relay_log, self.relay_max_lines)
-        self._broadcaster = HubBroadcaster(
-            self.clients, self._relay, system=self.system, online_agents=self.online_agents
-        )
-        self.hub_id = config.hub_id or f"syn-{uuid.uuid4().hex[:8]}"
-        self.stable_delivery_hub_id = config.hub_id
-
-    def _initialise_ingress(self, config: HubConfig) -> None:
-        """Initialize the existing ingress responsibility from family records."""
-        self._ingress = HubIngress(
-            self.clients,
-            authenticator=self.authenticator,
-            enable_metrics=self.enable_metrics,
-            metrics_token=self.metrics_token,
-            metrics_query_token_ok=self.metrics_query_token_ok,
-            insecure_off_loopback=self.insecure_off_loopback,
-            send_json=self.send_json,
-            system=self.system,
-        )
-        self._identity_gate = HubIdentityGate(
-            require_identity_binding=self.require_identity_binding,
-            identity_trust_bundle=self.identity_trust_bundle,
-            send_json=self.send_json,
-            system=self.system,
-            pin_store=self.identity_pins,
-        )
+        self.claim_holders = clients.claim_holders
+        self.capabilities = clients.capabilities
+        self.waits = clients.waits
         self.connected_clients = self.clients.connected_clients
         self.unauth_clients = self.clients.unauth_clients
         self.agent_sockets = self.clients.agent_sockets
         self.agent_roles = self.clients.agent_roles
         self.socket_agent = self.clients.socket_agent
-        self.waits: dict[str, set[str]] = {}
-        self.capabilities = CapabilityRegistry(
-            trust_bundle=config.auth.capability_card_trust_bundle
-        )
 
-    def _initialise_connection(self, config: HubConfig) -> None:
-        """Initialize the existing connection responsibility from family records."""
-        self._connection = HubConnection(
-            self.clients,
-            self.capabilities,
-            authenticator=self.authenticator,
-            auth_timeout=self.auth_timeout,
-            rate_limiter=self.rate_limiter,
-            handle_message=self.handle_message,
-            send_json=self.send_json,
-            system=self.system,
-            online_agents=self.online_agents,
-            broadcast_presence=self._broadcast_presence,
-            drop_waits=self._drop_waits,
-            forget_liveness=self._recipient_liveness.forget,
-            abort_uploads=self.attachment_store.abort_sender if self.attachment_store else None,
-            agent_left=self._claim_holder_left,
-        )
+    def _receive_routing(self, components: HubComponents) -> None:
+        """Install the graph's forwarding services and private peer-map copies."""
+        routing = components.routing
+        self.claim_peers = routing.claim_peers
+        self.relay_peers = routing.relay_peers
+        self.message_peers = routing.message_peers
+        self.message_forward_ledger = routing.message_forward_ledger
+        self.federation_offer_path = routing.federation_offer_path
+        self._federation_gate = routing.federation_gate
+        self.multihub_serving_policy = routing.serving_policy
+        self.hub_id = components.hub_id
+        self.stable_delivery_hub_id = components.requested.hub_id
 
-    def _initialise_gates(self, config: HubConfig) -> None:
-        """Initialize the existing gates responsibility from family records."""
-        self._frame_gates = HubFrameGates(
-            require_per_message_auth=self.require_per_message_auth,
-            per_message_auth_keys=self.per_message_auth_keys,
-            message_replay=self._message_replay,
-            signed_event_trust_bundle=self.signed_event_trust_bundle,
-            require_acl=self.require_acl,
-            acl_policy=self.acl_policy,
-            namespace_ownership=self.namespace_ownership,
-            observed_asserting_hubs=self.observed_asserting_hubs,
-            claim_peers=self.claim_peers,
-            claim_forwarder=self.claim_forwarder,
-            counters=self.counters,
-            hub_id=self.hub_id,
-            send_json=self.send_json,
-            system=self.system,
-        )
-        self._relay_forwarding = OperatorRelayForwarding(
-            namespace_ownership=self.namespace_ownership,
-            relay_peers=self.relay_peers,
-            relay_forwarder=self.relay_forwarder,
-            observed_asserting_hubs=self.observed_asserting_hubs,
-            hub_id=self.hub_id,
-            journal=self.journal,
-            send_json=self.send_json,
-            system=self.system,
-        )
+    def _receive_delivery(self, components: HubComponents) -> None:
+        """Install the delivery and admission services without reconstructing them."""
+        delivery = components.delivery
+        gates = components.gates
+        self.dead_letters = delivery.dead_letters
+        self.pending_receipts = delivery.pending_receipts
+        self.mailbox_pending = delivery.mailbox_pending
+        self._relay = delivery.relay
+        self._broadcaster = delivery.broadcaster
+        self._ingress = gates.ingress
+        self._identity_gate = gates.identity
+        self._connection = gates.connection
+        self._frame_gates = gates.frames
+        self._relay_forwarding = gates.relay_forwarding
 
-    def _initialise_state(self, config: HubConfig) -> SeededHubState:
-        """Initialize the existing state responsibility from family records."""
-        seeded = seed_hub_state(
-            config.journal,
-            default_ttl_seconds=config.default_ttl_seconds,
-            max_history=self.max_history,
-            max_progress=config.limits.max_progress,
-            max_progress_per_author=config.limits.max_progress_per_author,
-            max_progress_per_task=config.limits.max_progress_per_task,
-            max_claims_per_agent=config.limits.max_claims_per_agent,
-            max_offers_per_agent=config.limits.max_offers_per_agent,
-            max_paths_per_claim=config.limits.max_paths_per_claim,
-            compact_hint_threshold=self.compact_hint_threshold,
-            protected_write_policies=config.protected_write_policies,
-        )
+    def _receive_state(self, components: HubComponents) -> None:
+        """Install resumed state, mutation actor and views over that exact state."""
+        state = components.state
+        seeded = state.seeded
         self.state = seeded.state
         self.relay_approvals = seeded.relay_approvals
-        self.state_mutations = SerializedStateMutationActor()
+        self.state_mutations = state.mutations
         self.journal_corrupt_rows = seeded.corrupt_rows
-        self._journal_recovery_gate = HubJournalRecoveryGate(
-            self.journal_corrupt_rows, send_json=self.send_json, system=self.system
-        )
-        return seeded
-
-    def _initialise_state_views(self, config: HubConfig, seeded: SeededHubState) -> None:
-        """Initialize the existing state views responsibility from family records."""
-        self.liveness = HubLivenessView(
-            self._recipient_liveness,
-            enabled=self.warn_stale_recipients,
-            waiter_window_seconds=self.waiter_liveness_window,
-            online_agents=self.online_agents,
-            agent_sockets=self.agent_sockets,
-            last_seen=self.state.last_seen,
-            clock=self.clock,
-        )
+        self._journal_recovery_gate = state.recovery_gate
+        self._recipient_liveness = state.reactions
+        self.liveness = state.liveness
         self.chat_history = seeded.chat_history
-        self.chat_dedupe = ChatDedupe()
-        self.pending_receipts.restore(seeded.pending_receipts)
+        self.chat_dedupe = state.chat_dedupe
         self.blackboard = seeded.blackboard
-        self._dark_seats = DarkSeatMonitor(
-            claims=lambda: self.state.claims,
-            tasks=lambda: self.blackboard.tasks,
-            has_live_waiter=self.liveness.has_live_waiter,
-            broadcast=self.broadcast,
-            system=self.system,
-        )
-        self._ledger = HubLedgerGuard(
-            max_findings_per_agent=self.max_findings_per_agent,
-            journal=self.journal,
-            message_seq=seeded.message_seq,
-            finding_counts=seeded.finding_counts,
-            idempotency_seed=seeded.idempotency_seed,
-        )
+        self._dark_seats = state.dark_seats
+        self._ledger = state.ledger
         self._idempotency = self._ledger.idempotency
 
     @classmethod
@@ -966,12 +612,14 @@ class SynapseHub(HubConfigView):
             preserve their existing keyword-only constructors. This factory
             always stamps the configuration fingerprint.
         """
-        from synapse_channel.core.hub_config import HubConfig, config_fingerprint
-
         resolved = config if config is not None else HubConfig()
         # The base hub receives records directly. Existing subclasses may still
         # override the original keyword-only constructor; keep that boundary.
-        hub = cls(resolved) if cls is SynapseHub else cls(**resolved.to_kwargs())
+        if cls is SynapseHub:
+            from synapse_channel.core.hub_factory import build_hub
+
+            return build_hub(resolved)
+        hub = cls(**resolved.to_kwargs())
         hub.config_epoch = config_fingerprint(resolved)
         return hub
 
@@ -2083,13 +1731,9 @@ class SynapseHub(HubConfigView):
         checkpoint connection it opened.
         """
         assert self._checkpoint_path is not None
-        store = MerkleCheckpointStore(self._checkpoint_path)
-        try:
-            store.verify(journal)
-            self._live_checkpoint = LiveCheckpoint(store, journal)
-        except BaseException:
-            store.close()
-            raise
+        from synapse_channel.core.hub_component_lifetime import open_checkpoint
+
+        self._live_checkpoint = open_checkpoint(journal, self._checkpoint_path)
 
     async def _checkpoint_anchor_loop(self, live: LiveCheckpoint) -> None:
         """Anchor the live log every ``checkpoint_interval`` seconds while serving.

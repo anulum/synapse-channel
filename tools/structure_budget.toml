@@ -459,7 +459,7 @@ names = ["argparse._SubParsersAction"]
 "tools/vendor_watch.py::load_matrix" = 22
 
 [ceilings.module_internal_imports]
-"src/synapse_channel/core/hub.py" = 60
+"src/synapse_channel/core/hub.py" = 37
 "src/synapse_channel/core/hub_config.py" = 31
 "src/synapse_channel/dashboard.py" = 29
 "src/synapse_channel/participants/__init__.py" = 45

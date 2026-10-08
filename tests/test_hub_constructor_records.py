@@ -21,7 +21,7 @@ else:
 
 import pytest
 
-from synapse_channel.core import hub as hub_module
+from synapse_channel.core import hub_component_lifetime as checkpoint_module
 from synapse_channel.core.attachment_serving import AttachmentServingPolicy
 from synapse_channel.core.attachment_store import AttachmentStore
 from synapse_channel.core.hub import SynapseHub
@@ -117,7 +117,7 @@ def test_partial_constructor_failure_releases_checkpoint_but_not_caller_journal(
             super().__init__(path)
             checkpoints.append(self)
 
-    monkeypatch.setattr(hub_module, "MerkleCheckpointStore", ObservedCheckpoint)
+    monkeypatch.setattr(checkpoint_module, "MerkleCheckpointStore", ObservedCheckpoint)
     with EventStore(tmp_path / "events.db") as journal:
         config = HubConfig(
             journal=journal,

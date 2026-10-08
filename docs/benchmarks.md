@@ -20,9 +20,10 @@ evidence rather than an isolated-core claim. See the
 ## Hub construction comparison
 
 The [native-message benchmark](../benchmarks/README.md#native_message_record_benchmarkpy)
-also compares the original hub constructor with grouped-record construction,
+also compares grouped-record hub construction with the external composition root,
 using 700 durable records per variant and the library's WHO, claim and durable
-claim probes at their default counts. The committed JSON retains both results,
+claim probes at their default counts, plus 1,000 explicit factory constructions
+per variant. The committed JSON retains both results,
 source fingerprints and shared-workstation context. Mean and tail timings vary
 in different directions; these runs do not establish a production performance
 improvement or regression.

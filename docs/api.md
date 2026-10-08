@@ -110,15 +110,17 @@ and [manual CLI recovery](cli.md) define the bounded operator workflow.
 
 ## Embedding a hub
 
-To run the hub in-process (tests, a bundled tool), pass a `HubConfig` directly
-to `SynapseHub`. Family records own defaults; `hub.configuration` contains the
+To run the hub in-process (tests, a bundled tool), use the composition factory
+or pass a `HubConfig` directly to `SynapseHub`. Family records own defaults;
+`hub.configuration` contains the
 normalized settings. Existing writable names such as `hub.max_clients` update
 that hub's record without changing a record shared with another hub.
 
 ```python
-from synapse_channel import SynapseHub, HubConfig
+from synapse_channel import HubConfig
+from synapse_channel.core.hub_factory import build_hub
 
-hub = SynapseHub(HubConfig())
+hub = build_hub(HubConfig())
 ```
 
 Existing keyword calls such as `SynapseHub(max_clients=32)` remain supported.
@@ -127,6 +129,23 @@ Supply a record or keyword options; combining them raises `TypeError`.
 `SynapseHub.from_config(config)` preserves their keyword-only constructors.
 Record construction and `from_config` stamp `config_epoch`; bare and legacy
 keyword construction retain an empty epoch.
+
+`build_hub(config)` constructs the complete collaborator graph outside the
+hub, then installs it once. The base `SynapseHub.from_config` and `synapse hub`
+use this factory. Direct record and legacy keyword construction delegate to
+the same composition function. No protocol vocabulary or CLI flags change.
+
+Embedders can pass a typed `component_factory=` to `build_hub`. Its inputs are
+the requested `HubConfig` and a `HubComponentCallbacks` record bound to the
+allocated target; its result is a complete `HubComponents` graph. Build with
+`build_components(config, callbacks)` and replace a family or service as
+needed. Keep shared registries consistent and defer every target callback until
+installation completes. The receiving constructor accepts that graph through
+its existing first argument, rejects another target's graph and refuses a
+second installation. The factory also refuses a graph built for another
+configuration record. Supplied component factories own their acquisitions
+until they return; the factory releases the returned target's checkpoint if
+installation fails, and leaves a foreign target's checkpoint untouched.
 
 The hub owns its checkpoint connection. After stopping and awaiting serving,
 call `hub.close()` to anchor and release it, including when a constructed hub
