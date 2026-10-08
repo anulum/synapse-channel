@@ -44,10 +44,7 @@ def _source_payload(name: str, version: str, notes: str = "Routine fix") -> byte
             f'<Update label="{version}" description="September 19, 2026">\n{notes}\n</Update>'
         ).encode()
     if name == "codex-cli":
-        return (
-            "<time>2026-09-19</time><h3>Codex CLI "
-            f"<span data-release-title>{version}</span></h3><div>{notes}</div>"
-        ).encode()
+        return _release(f"rust-v{version}", notes)
     return _release(version, notes)
 
 
@@ -57,7 +54,11 @@ def test_official_document_parsers_refuse_missing_and_prerelease() -> None:
         "2.1.278",
         "September 19, 2026",
     )
-    assert parse_release("codex-html", _source_payload("codex-cli", "0.155.1"))[:2] == (
+    historical_codex = (
+        b"<time>2026-09-19</time><h3>Codex CLI "
+        b"<span data-release-title>0.155.1</span></h3><div>Routine fix</div>"
+    )
+    assert parse_release("codex-html", historical_codex)[:2] == (
         "0.155.1",
         "2026-09-19",
     )
@@ -80,6 +81,22 @@ def test_official_document_parsers_refuse_missing_and_prerelease() -> None:
         )
     with pytest.raises(VendorWatchError):
         parse_release("unknown", b"{}")
+
+
+def test_codex_release_uses_the_official_stable_repository_and_exact_tag_prefix() -> None:
+    """A layout change cannot hide releases or admit another vendor's tag format."""
+    assert SOURCES["codex-cli"][:2] == (
+        "codex-release",
+        "https://api.github.com/repos/openai/codex/releases/latest",
+    )
+    assert parse_release("codex-release", _release("rust-v0.161.0"))[:2] == (
+        "0.161.0",
+        "2026-09-19",
+    )
+    with pytest.raises(VendorWatchError, match="unexpected shape"):
+        parse_release("codex-release", _release("v0.161.0"))
+    with pytest.raises(VendorWatchError, match="unexpected shape"):
+        parse_release("github-release", _release("rust-v0.161.0"))
 
 
 def test_report_distinguishes_drift_unchanged_source_loss_and_priority() -> None:

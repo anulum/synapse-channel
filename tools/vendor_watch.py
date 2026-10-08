@@ -34,8 +34,8 @@ SOURCES: dict[str, tuple[str, str, tuple[str, ...] | None]] = {
         ("claude", "--version"),
     ),
     "codex-cli": (
-        "codex-html",
-        "https://learn.chatgpt.com/docs/changelog",
+        "codex-release",
+        "https://api.github.com/repos/openai/codex/releases/latest",
         ("codex", "--version"),
     ),
     "gemini-cli": (
@@ -111,21 +111,25 @@ def parse_release(kind: str, data: bytes) -> tuple[str, str, str]:
         section = text[match.end() :].split("data-release-entry-id=", 1)[0]
         clean = html.unescape(re.sub(r"<[^>]+>", " ", section))
         return match.group(1), dates[-1] if dates else "unknown", clean[:100_000]
-    if kind == "github-release":
+    if kind in {"github-release", "codex-release"}:
         release = json.loads(text)
         if not isinstance(release, dict) or release.get("prerelease") is not False:
             raise VendorWatchError("GitHub latest is not a stable release object")
         tag = release.get("tag_name")
         published = release.get("published_at")
         body = release.get("body")
-        if not isinstance(tag, str) or not re.fullmatch(
-            r"v?(?:\d+\.\d+\.\d+|\d{4}-\d{2}-\d{2})", tag
-        ):
+        pattern = (
+            r"rust-v\d+\.\d+\.\d+"
+            if kind == "codex-release"
+            else r"v?(?:\d+\.\d+\.\d+|\d{4}-\d{2}-\d{2})"
+        )
+        if not isinstance(tag, str) or not re.fullmatch(pattern, tag):
             raise VendorWatchError("GitHub release tag has an unexpected shape")
         if not isinstance(published, str) or not isinstance(body, str):
             raise VendorWatchError("GitHub release evidence is incomplete")
         date.fromisoformat(published[:10])
-        return tag.removeprefix("v"), published[:10], body[:100_000]
+        prefix = "rust-v" if kind == "codex-release" else "v"
+        return tag.removeprefix(prefix), published[:10], body[:100_000]
     raise VendorWatchError("unknown official source kind")
 
 

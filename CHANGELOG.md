@@ -86,6 +86,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Read Codex vendor-watch evidence from its official stable-release API and
+  validate its exact release-tag prefix. Documentation layout changes no longer
+  make the source unavailable; strict source and review checks remain enforced.
+
 - Render grouped hub construction and legacy keyword options in their correct
   API-reference sections, and resolve the benchmark guide link on the docs site.
   The strict documentation build remains enabled.

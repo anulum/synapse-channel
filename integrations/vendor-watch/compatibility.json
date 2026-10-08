@@ -14,11 +14,11 @@
     },
     "codex-cli": {
       "verified_version": "0.156.0",
-      "reviewed_notes_sha256": "9f9f71c5cbf7b15a62797344b633808a7906ac69f9e65fee216844ad3de61c0b",
+      "reviewed_notes_sha256": "24a99d4e9e15b7f29ce1245018e3e0cf3b447a890fc2971061ee446a35a67278",
       "verification": "Exact 0.156.0 isolated Linux Codex app-server: stdio tool inventory, live local-hub state, claim, conflicting-identity refusal and release",
       "capability_class": "manual",
       "owning_adapter": "src/synapse_channel/adapters",
-      "migration_decision": "2026-10-02 review: 0.160.0 fixes queued-input reconnection and duplicate handling, SQLite initialization, Windows PowerShell/sandbox ACL repairs and background console windows, and preserves provider settings. Its security wording includes maintenance-line account-security reminders and provider credential-storage documentation; these notes do not report a vulnerability in the exercised local stdio adapter. Retain the host-tested 0.156.0 manual Linux stdio profile. Guardian history/handoff retrieval is opt-in and remote MCP, new Windows sandbox behavior and paid model turns are not admitted. Native Windows setup must record its actual CLI/OS and exercise the local profile before claiming support. Exact newer-host acceptance remains separate."
+      "migration_decision": "2026-10-08 review: official 0.161.0 notes change MCP sign-in, launch/background permission preservation, Windows elevated launch/path handling, resume/corruption recovery and retry behavior. Security-related changes are triaged; no newer host acceptance is claimed. Retain the exercised 0.156.0 Linux manual stdio profile. Remote MCP, new sandbox paths, cloud/provider routing and optional Cyber controls require separate exact-host admission; do not widen permissions or run paid model turns during this review."
     },
     "gemini-cli": {
       "verified_version": null,

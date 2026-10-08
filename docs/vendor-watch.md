@@ -33,6 +33,13 @@ flag possible security or breaking changes. Release-note keyword
 priority is an advisory triage hint, not proof of a security vulnerability.
 The report stores no release body, credentials or provider text.
 
+Codex release evidence comes from the official `openai/codex` repository's
+stable-release API. Its `rust-vX.Y.Z` tag is validated separately from other
+vendors' tags. The general documentation changelog can change layout or omit
+CLI release entries; the watch uses structured release metadata instead.
+The exact URL allowlist, redirect-host check, size bound and prerelease refusal
+remain enforced.
+
 The daily `.github/workflows/vendor-watch.yml` workflow publishes
 the same report as a short-lived Actions artifact and job summary. The Core
 maintenance seat reviews the report at least weekly and before each integration
