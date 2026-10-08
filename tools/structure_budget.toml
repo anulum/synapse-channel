@@ -27,18 +27,15 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/client/agent.py::SynapseAgent" = 30
 "src/synapse_channel/client/dispatcher.py::DispatcherWorker" = 15
 "src/synapse_channel/client/llm_worker.py::SynapseLLMWorker" = 20
-"src/synapse_channel/core/hub.py::SynapseHub" = 86
 "src/synapse_channel/core/hub_connection.py::HubConnection" = 14
 "src/synapse_channel/core/hub_frame_gates.py::HubFrameGates" = 14
 "src/synapse_channel/core/multihub_watch.py::MultiHubWatch" = 13
 
 [ceilings.init_attributes]
 "src/synapse_channel/client/agent.py::SynapseAgent" = 43
-"src/synapse_channel/core/hub.py::SynapseHub" = 123
 "src/synapse_channel/core/hub_clients.py::HubClientRegistry" = 25
 
 [ceilings.init_constructions]
-"src/synapse_channel/core/hub.py::SynapseHub" = 30
 
 [ceilings.function_body_lines]
 "src/synapse_channel/a2a_http.py::build_a2a_handler" = 471
@@ -93,7 +90,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/cli_multihub.py::add_parsers" = 75
 "src/synapse_channel/cli_participants_deliberate.py::_dry_run_report" = 77
 "src/synapse_channel/cli_participants_deliberate.py::add_parsers" = 64
-"src/synapse_channel/cli_processes_hub.py::_cmd_hub" = 753
 "src/synapse_channel/cli_processes_parsers.py::add_parsers" = 654
 "src/synapse_channel/cli_processes_security_args.py::add_hub_security_arguments" = 297
 "src/synapse_channel/cli_query_parsers.py::add_parsers" = 118
@@ -157,7 +153,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/core/handlers/operator_relay.py::handle_operator_relay_request" = 65
 "src/synapse_channel/core/handlers/planning.py::handle_ledger_task" = 74
 "src/synapse_channel/core/handlers/planning.py::handle_ledger_task_update" = 75
-"src/synapse_channel/core/hub.py::SynapseHub.__init__" = 371
 "src/synapse_channel/core/hub.py::SynapseHub.handle_message" = 270
 "src/synapse_channel/core/hub.py::SynapseHub.serve" = 94
 "src/synapse_channel/core/hub_clients.py::HubClientRegistry.resolve_sender" = 143
@@ -288,7 +283,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/cli_participants_deliberate.py::_cmd_convene" = 17
 "src/synapse_channel/cli_participants_deliberate.py::_dry_run_report" = 21
 "src/synapse_channel/cli_pid_monitor.py::_cmd_pid_monitor" = 18
-"src/synapse_channel/cli_processes_hub.py::_cmd_hub" = 168
 "src/synapse_channel/cli_query_rendering.py::_render_who" = 16
 "src/synapse_channel/cli_query_transport.py::_query_attempt" = 16
 "src/synapse_channel/cli_release.py::_release" = 67
@@ -343,7 +337,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/core/handlers/offerings.py::handle_resource" = 20
 "src/synapse_channel/core/handlers/planning.py::handle_ledger_task" = 21
 "src/synapse_channel/core/handlers/planning.py::handle_ledger_task_update" = 18
-"src/synapse_channel/core/hub.py::SynapseHub.__init__" = 49
 "src/synapse_channel/core/hub.py::SynapseHub.handle_message" = 48
 "src/synapse_channel/core/hub.py::SynapseHub.serve" = 20
 "src/synapse_channel/core/identity_enrollments.py::_request_denial" = 19
@@ -466,8 +459,7 @@ names = ["argparse._SubParsersAction"]
 "tools/vendor_watch.py::load_matrix" = 22
 
 [ceilings.module_internal_imports]
-"src/synapse_channel/cli_processes_hub.py" = 45
-"src/synapse_channel/core/hub.py" = 76
+"src/synapse_channel/core/hub.py" = 60
 "src/synapse_channel/core/hub_config.py" = 31
 "src/synapse_channel/dashboard.py" = 29
 "src/synapse_channel/participants/__init__.py" = 45

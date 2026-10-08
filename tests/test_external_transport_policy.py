@@ -39,6 +39,7 @@ from synapse_channel.core.hub import (
     SynapseHub,
 )
 from synapse_channel.core.hub_config import HubConfig
+from synapse_channel.core.hub_constructor_options import HubLegacyOptions
 from synapse_channel.core.multihub_transport import DEFAULT_FETCH_TIMEOUT
 from synapse_channel.dashboard_operator_writes import MAX_OPERATOR_BODY_BYTES
 from synapse_channel.dashboard_setup_contract import MAX_SETUP_REQUEST_BYTES
@@ -118,7 +119,8 @@ def test_contract_is_an_evidence_projection_not_a_second_config_surface() -> Non
         "evidence",
     )
     constructor_parameters = set(inspect.signature(SynapseHub.__init__).parameters)
-    assert set(HubConfig().to_kwargs()) == constructor_parameters - {"self"}
+    assert constructor_parameters == {"self", "config", "legacy"}
+    assert set(HubConfig().to_kwargs()) == set(HubLegacyOptions.__annotations__)
 
 
 @pytest.mark.parametrize(

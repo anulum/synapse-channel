@@ -14,7 +14,7 @@
     11
   ],
   "benchmark_script_sha256": "944dd295562bf3b80339bcd9fb7c5f851bd0f8c6153a64363c5bdb8e9452b838",
-  "candidate_python_source_manifest_sha256": "40139f30576789cdf52e7877b18ed13db1375bc8969f44543d16aebc2b211d96",
+  "candidate_python_source_manifest_sha256": "721e4b4ac71655ee8b54b133b6a6f44722d64686f01d7f1044202a8ea6b4a84f",
   "comparison": {
     "baseline": {
       "host": {
@@ -29,64 +29,66 @@
       },
       "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
       "load_average_after": [
-        24.5,
-        20.98,
-        20.69
+        21.78,
+        24.79,
+        22.55
       ],
       "load_average_before": [
-        24.35,
-        20.82,
-        20.64
+        23.43,
+        25.26,
+        22.66
       ],
       "parse": [
         {
           "count": 20000,
-          "max_us": 25.298097170889378,
-          "mean_us": 4.573372285813093,
-          "p50_us": 3.9959559217095375,
-          "p95_us": 6.961985491216183,
-          "p99_us": 11.317082680761814,
+          "max_us": 3958.799992688,
+          "mean_us": 8.639091934310272,
+          "p50_us": 7.1480171754956245,
+          "p95_us": 11.553056538105011,
+          "p99_us": 18.839025869965553,
           "text_bytes": 256,
-          "throughput_per_second": 214456.4721168606
+          "throughput_per_second": 113904.50455401534
         },
         {
           "count": 20000,
-          "max_us": 3079.4600024819374,
-          "mean_us": 33.22822923655622,
-          "p50_us": 32.92690962553024,
-          "p95_us": 41.70101601630449,
-          "p99_us": 51.04101728647947,
+          "max_us": 1736.5239327773452,
+          "mean_us": 32.79137521167286,
+          "p50_us": 31.785923056304455,
+          "p95_us": 42.22802817821503,
+          "p99_us": 55.42510189116001,
           "text_bytes": 32768,
-          "throughput_per_second": 29943.328175462826
+          "throughput_per_second": 30333.90520760633
         }
       ],
       "round_trip": [
         {
           "count": 500,
-          "max_us": 196054.3249733746,
-          "mean_us": 14401.131082093343,
-          "p50_us": 10029.817000031471,
-          "p95_us": 34001.55308190733,
-          "p99_us": 89740.38099404424,
+          "max_us": 132555.2399503067,
+          "mean_us": 14592.290160711855,
+          "p50_us": 10298.517998307943,
+          "p95_us": 45489.80202525854,
+          "p99_us": 81365.4309604317,
           "stored_events": 500,
           "text_bytes": 256,
-          "throughput_per_second": 69.19707198625032
+          "throughput_per_second": 68.27501851080117
         },
         {
           "count": 200,
-          "max_us": 99085.0729867816,
-          "mean_us": 18351.62509116344,
-          "p50_us": 12695.209006778896,
-          "p95_us": 55479.20300159603,
-          "p99_us": 95854.70904130489,
+          "max_us": 157785.11995449662,
+          "mean_us": 20111.712239449844,
+          "p50_us": 13528.990093618631,
+          "p95_us": 60987.27905191481,
+          "p99_us": 95995.6570295617,
           "stored_events": 200,
           "text_bytes": 32768,
-          "throughput_per_second": 53.77998403200262
+          "throughput_per_second": 49.16374908653087
         }
       ]
     },
-    "baseline_source_commit": "07bba680fde3294fb99980c50b4f7e8ea3cdd60e",
-    "candidate_python_source_manifest_sha256": "40139f30576789cdf52e7877b18ed13db1375bc8969f44543d16aebc2b211d96",
+    "baseline_hub_source_sha256": "5c7bf2498ea66589f6d12841c8e7e2d80f28fb7b6239c621d1dafbb0ab4d6fb3",
+    "baseline_scope": "Exact SynapseHub source module at baseline revision; unchanged imported runtime dependencies shared with candidate checkout. CLI stages and config_fingerprint are not timed by these bare-hub probes.",
+    "baseline_source_commit": "8370a8bf6762025af3ed80486fb9cb7d686fea9e",
+    "candidate_python_source_manifest_sha256": "721e4b4ac71655ee8b54b133b6a6f44722d64686f01d7f1044202a8ea6b4a84f",
     "library_probes": {
       "baseline": {
         "affinity": [
@@ -103,32 +105,22 @@
           10,
           11
         ],
-        "elapsed_seconds": 3.9863948822021484,
+        "elapsed_seconds": 5.568754780921154,
+        "hub_source_sha256": "5c7bf2498ea66589f6d12841c8e7e2d80f28fb7b6239c621d1dafbb0ab4d6fb3",
         "isolation": "none: shared workstation; unchanged default probe counts",
         "load_average": [
-          25.9013671875,
-          21.32568359375,
-          20.80615234375
+          26.02880859375,
+          28.98046875,
+          27.81201171875
         ],
-        "origins": {
-          "synapse_channel.core.acl_enforcement": {
-            "sha256": "ab1b5d8888eea7bb380cf6f12fdf081e0ae8a4f3cebc4313f6c6f6c854728e7c"
-          },
-          "synapse_channel.core.handlers": {
-            "sha256": "9f9cacaa79ccc884f0f56ab4d4d1e74580e51e0ead58ca798f58411e49e19c75"
-          },
-          "synapse_channel.core.hub": {
-            "sha256": "5c7bf2498ea66589f6d12841c8e7e2d80f28fb7b6239c621d1dafbb0ab4d6fb3"
-          }
-        },
         "probes": [
           {
-            "duration_seconds": 0.08373671502340585,
+            "duration_seconds": 0.037899998016655445,
             "iterations": 100,
             "metrics": {
-              "p50_ms": 0.5798254278488457,
-              "p95_ms": 2.1425820887088776,
-              "roundtrips_per_second": 1194.219285674728
+              "p50_ms": 0.3510355018079281,
+              "p95_ms": 0.481416005641222,
+              "roundtrips_per_second": 2638.5225655171334
             },
             "name": "hub-roundtrip",
             "notes": [
@@ -136,12 +128,12 @@
             ]
           },
           {
-            "duration_seconds": 0.8634823340689763,
+            "duration_seconds": 1.4079763509798795,
             "iterations": 100,
             "metrics": {
-              "claims_per_second": 115.81012842355597,
-              "p50_ms": 7.520735030993819,
-              "p95_ms": 19.1271259682253
+              "claims_per_second": 71.02392020320875,
+              "p50_ms": 8.312290476169437,
+              "p95_ms": 47.02370392624289
             },
             "name": "claim-grant",
             "notes": [
@@ -149,15 +141,15 @@
             ]
           },
           {
-            "duration_seconds": 2.795024140039459,
+            "duration_seconds": 3.8496495209401473,
             "iterations": 100,
             "metrics": {
-              "claims_per_second": 35.77786630443494,
-              "event_loop_lag_max_ms": 20.30861801560968,
-              "event_loop_lag_p50_ms": 0.19792204350233075,
-              "event_loop_lag_p95_ms": 3.581868997775018,
-              "p50_ms": 23.66898994660005,
-              "p95_ms": 60.84541499149054
+              "claims_per_second": 25.97639069636094,
+              "event_loop_lag_max_ms": 104.6268010288477,
+              "event_loop_lag_p50_ms": 0.22908956836909053,
+              "event_loop_lag_p95_ms": 5.432987982407212,
+              "p50_ms": 30.396187969017774,
+              "p95_ms": 84.7947089932859
             },
             "name": "durable-claim-grant",
             "notes": [
@@ -165,8 +157,7 @@
               "event-loop lag is delay beyond a concurrent 1 ms scheduler interval"
             ]
           }
-        ],
-        "source_label": "before"
+        ]
       },
       "candidate": {
         "affinity": [
@@ -183,32 +174,22 @@
           10,
           11
         ],
-        "elapsed_seconds": 3.8021934032440186,
+        "elapsed_seconds": 5.627440282027237,
+        "hub_source_sha256": "b5be5c734c69d7978b5af993513d9845490c882cc47d0059e583ed4eb723e68e",
         "isolation": "none: shared workstation; unchanged default probe counts",
         "load_average": [
-          26.123046875,
-          21.6767578125,
-          20.93310546875
+          31.15185546875,
+          29.99365234375,
+          28.146484375
         ],
-        "origins": {
-          "synapse_channel.core.acl_enforcement": {
-            "sha256": "3c4807a088a240f68e1fc9b0878076775af61cce0e6de55fdfff2903b3f4aa67"
-          },
-          "synapse_channel.core.handlers": {
-            "sha256": "e68c441e74b3bea4c78b73523fd35088324308fca7e7ec0667724eb292a72a68"
-          },
-          "synapse_channel.core.hub": {
-            "sha256": "5c7bf2498ea66589f6d12841c8e7e2d80f28fb7b6239c621d1dafbb0ab4d6fb3"
-          }
-        },
         "probes": [
           {
-            "duration_seconds": 0.08857750496827066,
+            "duration_seconds": 0.052805206971243024,
             "iterations": 100,
             "metrics": {
-              "p50_ms": 0.5756769678555429,
-              "p95_ms": 3.4146930556744337,
-              "roundtrips_per_second": 1128.954806706522
+              "p50_ms": 0.5105254822410643,
+              "p95_ms": 0.6674609612673521,
+              "roundtrips_per_second": 1893.7526379634985
             },
             "name": "hub-roundtrip",
             "notes": [
@@ -216,12 +197,12 @@
             ]
           },
           {
-            "duration_seconds": 0.8241634720470756,
+            "duration_seconds": 0.5783800680655986,
             "iterations": 100,
             "metrics": {
-              "claims_per_second": 121.33515181353253,
-              "p50_ms": 7.1912899147719145,
-              "p95_ms": 16.987530048936605
+              "claims_per_second": 172.89669115751448,
+              "p50_ms": 5.191938020288944,
+              "p95_ms": 11.483678012154996
             },
             "name": "claim-grant",
             "notes": [
@@ -229,15 +210,15 @@
             ]
           },
           {
-            "duration_seconds": 2.684445508988574,
+            "duration_seconds": 4.513475468964316,
             "iterations": 100,
             "metrics": {
-              "claims_per_second": 37.25164085661671,
-              "event_loop_lag_max_ms": 18.473135005682707,
-              "event_loop_lag_p50_ms": 0.18708302034065125,
-              "event_loop_lag_p95_ms": 2.9817519718781114,
-              "p50_ms": 23.226520977914333,
-              "p95_ms": 52.59724601637572
+              "claims_per_second": 22.155875375333874,
+              "event_loop_lag_max_ms": 106.3060929775238,
+              "event_loop_lag_p50_ms": 0.2653284939005971,
+              "event_loop_lag_p95_ms": 5.704475963488221,
+              "p50_ms": 31.382090935949236,
+              "p95_ms": 114.85023703426123
             },
             "name": "durable-claim-grant",
             "notes": [
@@ -245,26 +226,9 @@
               "event-loop lag is delay beyond a concurrent 1 ms scheduler interval"
             ]
           }
-        ],
-        "source_label": "after"
+        ]
       }
-    },
-    "scope": "same complete native harness and three default-count live-hub probes; shared workstation, observational only"
-  },
-  "evidence_scope": "Functional regression and non-isolated local timings; no causal or production performance claim. Candidate content manifest is code-only to avoid a self-referential commit SHA.",
-  "governor_observed_after": {
-    "0": "powersave",
-    "1": "powersave",
-    "10": "powersave",
-    "11": "powersave",
-    "2": "powersave",
-    "3": "powersave",
-    "4": "powersave",
-    "5": "powersave",
-    "6": "powersave",
-    "7": "powersave",
-    "8": "powersave",
-    "9": "powersave"
+    }
   },
   "host": {
     "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
@@ -278,62 +242,63 @@
   },
   "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
   "load_average_after": [
-    26.48,
-    21.67,
-    20.93
+    24.58,
+    25.73,
+    22.74
   ],
   "load_average_before": [
-    25.9,
-    21.33,
-    20.81
+    23.48,
+    25.57,
+    22.66
   ],
   "parse": [
     {
       "count": 20000,
-      "max_us": 14434.86800417304,
-      "mean_us": 10.695206187665462,
-      "p50_us": 7.333001121878624,
-      "p95_us": 9.680050425231457,
-      "p99_us": 16.657053492963314,
+      "max_us": 1964.4430140033364,
+      "mean_us": 8.318915957352147,
+      "p50_us": 7.470953278243542,
+      "p95_us": 9.001931175589561,
+      "p99_us": 15.684054233133793,
       "text_bytes": 256,
-      "throughput_per_second": 92244.31306472876
+      "throughput_per_second": 117707.014624333
     },
     {
       "count": 20000,
-      "max_us": 18101.460998877883,
-      "mean_us": 56.02453809697181,
-      "p50_us": 37.417979910969734,
-      "p95_us": 47.68301732838154,
-      "p99_us": 157.55498316138983,
+      "max_us": 2137.9999816417694,
+      "mean_us": 33.37254384532571,
+      "p50_us": 32.44099207222462,
+      "p95_us": 43.69707312434912,
+      "p99_us": 59.6300233155489,
       "text_bytes": 32768,
-      "throughput_per_second": 17760.35852808963
+      "throughput_per_second": 29732.877064657532
     }
   ],
-  "recorded_at": "2026-10-08T09:28:43.239909+00:00",
+  "qualification_note": "Shared workstation without reserved cores. Broad owning test activity overlaps the library probes. Native measurements were sequential. Mean/tail changes are observations, not production performance claims.",
+  "recorded_at": "2026-10-08T12:39:28.160173+00:00",
   "reproduction_command": "PYTHONPATH=src python benchmarks/native_message_record_benchmark.py; PYTHONPATH=src python -c \"from synapse_channel.benchmark.probes import run_probes; print(run_probes(['hub-roundtrip', 'claim-grant', 'durable-claim-grant']))\"",
   "round_trip": [
     {
       "count": 500,
-      "max_us": 154953.4380901605,
-      "mean_us": 13948.286012746394,
-      "p50_us": 10303.630959242582,
-      "p95_us": 31150.046037510037,
-      "p99_us": 80982.69707988948,
+      "max_us": 118418.50797645748,
+      "mean_us": 13099.985200213268,
+      "p50_us": 8912.320015951991,
+      "p95_us": 40208.86495709419,
+      "p99_us": 88754.7880411148,
       "stored_events": 500,
       "text_bytes": 256,
-      "throughput_per_second": 71.42747692392989
+      "throughput_per_second": 76.08796250992972
     },
     {
       "count": 200,
-      "max_us": 138711.0649375245,
-      "mean_us": 19716.137440991588,
-      "p50_us": 14540.227013640106,
-      "p95_us": 63864.724012091756,
-      "p99_us": 105183.44410229474,
+      "max_us": 134425.76199304312,
+      "mean_us": 19445.958445430733,
+      "p50_us": 13252.142001874745,
+      "p95_us": 51019.65006906539,
+      "p99_us": 130827.24693231285,
       "stored_events": 200,
       "text_bytes": 32768,
-      "throughput_per_second": 50.05230733920016
+      "throughput_per_second": 50.848206341631034
     }
   ],
-  "source_parent_commit": "07bba680fde3294fb99980c50b4f7e8ea3cdd60e"
+  "source_parent_commit": "8370a8bf6762025af3ed80486fb9cb7d686fea9e"
 }

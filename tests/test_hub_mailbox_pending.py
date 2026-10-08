@@ -126,6 +126,10 @@ async def test_live_mailbox_delivery_is_acknowledged_without_model_claim(tmp_pat
                         message.get("type") == MessageType.CHAT and message.get("payload") == "live"
                     )
                 )
+                # The callback follows sending ACK, not the hub accepting it.
+                # A WHO on that same connection fences ACK before a different
+                # socket queries the durable pending-count projection.
+                await _who_count(sidecar, 0)
                 snapshot = await _who_count(sender, 0)
             finally:
                 await close_agents(sender, sidecar)

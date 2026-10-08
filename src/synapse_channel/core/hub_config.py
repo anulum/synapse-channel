@@ -7,21 +7,19 @@
 # SYNAPSE_CHANNEL — grouped, typed construction record for SynapseHub
 """Grouped configuration record for :class:`~synapse_channel.core.hub.SynapseHub`.
 
-``SynapseHub.__init__`` accepts every knob as one flat keyword surface — the
-right shape for the CLI, which maps flags one-to-one, but a heavy burden for a
-library consumer who embeds a hub and wants to see which of the forty-odd
-parameters belong together. :class:`HubConfig` groups them into their opt-in
+``SynapseHub.__init__`` accepts a :class:`HubConfig` record as its canonical
+input. Existing keyword callers remain supported through the typed
+``HubLegacyOptions`` boundary. :class:`HubConfig` groups settings into their
 families — ceilings (:class:`HubLimits`), name-takeover damping
 (:class:`TakeoverDamping`), authentication and access control
 (:class:`HubAuthConfig`), the HTTP metrics endpoint
 (:class:`HubMetricsConfig`), the stale-recipient delivery gate
 (:class:`HubLiveness`), multi-hub claim routing (:class:`MultiHubConfig`),
-and cross-domain federation (:class:`FederationConfig`) — while
-:meth:`HubConfig.to_kwargs` flattens the record back into exactly the keyword
-arguments ``SynapseHub.__init__`` accepts. Behaviour is identical by
-construction: every field name matches its keyword parameter, every default
-mirrors the parameter default, and contract tests pin both against the live
-signature so the two surfaces cannot drift apart.
+and cross-domain federation (:class:`FederationConfig`). Family records own
+defaults. The hub retains normalized settings in its configuration record and
+keeps live state separately. :meth:`HubConfig.to_kwargs` supplies the original
+keyword surface for embedding subclasses and other legacy callers. Contract
+tests pin all 86 original names, types and defaults independently.
 
 Construct a hub from a record with
 :meth:`~synapse_channel.core.hub.SynapseHub.from_config`::
@@ -138,9 +136,8 @@ __all__ = [
 class HubLimits:
     """Every ceiling the hub enforces: retention, quotas, and transport bounds.
 
-    Field names and defaults match the ``SynapseHub.__init__`` keyword
-    parameters of the same names; see that signature's documentation for the
-    meaning and failure mode of each bound.
+    Field names retain the original ``SynapseHub`` keywords. See the hub's
+    parameter documentation for the meaning and failure mode of each bound.
     """
 
     max_history: int = DEFAULT_MAX_HISTORY
@@ -330,10 +327,10 @@ class HubConfig:
         Returns
         -------
         dict[str, Any]
-            One entry per ``SynapseHub.__init__`` keyword parameter: the
+            One entry per original ``SynapseHub`` keyword option: the
             nested family fields spread under their own names, then the
             direct fields. Contract tests pin the key set and the defaults
-            against the live signature.
+            against the typed compatibility boundary and original defaults.
         """
         kwargs: dict[str, Any] = {}
         for family_name in _FAMILY_FIELDS:
@@ -352,7 +349,7 @@ class HubConfig:
         The inverse of :meth:`to_kwargs`: each family field regroups under its
         family, every other key is a direct field, and an omitted key takes its
         default — so a caller can hand over the **partial** keyword set it
-        actually assembled (for example the CLI's subset of the ~40 parameters)
+        actually assembled (for example an embedding caller's subset)
         and still get a complete record to fingerprint or reconstruct from. On
         the full key set it round-trips with :meth:`to_kwargs`.
 
@@ -407,7 +404,9 @@ def config_fingerprint(config: HubConfig) -> str:
         for spec in fields(family):
             value = getattr(family, spec.name)
             key = f"{family_name}.{spec.name}"
-            if value is None or isinstance(value, (bool, int, float, str)):
+            if key == "metrics.metrics_token":
+                posture[key] = "<set:metrics-token>" if value else None
+            elif value is None or isinstance(value, (bool, int, float, str)):
                 posture[key] = value
             else:
                 posture[key] = f"<set:{type(value).__name__}>"

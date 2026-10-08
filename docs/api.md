@@ -110,16 +110,28 @@ and [manual CLI recovery](cli.md) define the bounded operator workflow.
 
 ## Embedding a hub
 
-To run the hub in-process (tests, a bundled tool), construct `SynapseHub` from a
-`HubConfig`. `HubConfig().to_kwargs()` maps one-to-one onto the `SynapseHub`
-constructor — a contract the test suite enforces — so config built one way is
-always accepted by the hub.
+To run the hub in-process (tests, a bundled tool), pass a `HubConfig` directly
+to `SynapseHub`. Family records own defaults; `hub.configuration` contains the
+normalized settings. Existing writable names such as `hub.max_clients` update
+that hub's record without changing a record shared with another hub.
 
 ```python
 from synapse_channel import SynapseHub, HubConfig
 
-hub = SynapseHub(**HubConfig().to_kwargs())
+hub = SynapseHub(HubConfig())
 ```
+
+Existing keyword calls such as `SynapseHub(max_clients=32)` remain supported.
+Supply a record or keyword options; combining them raises `TypeError`.
+`HubConfig.to_kwargs()` remains available for legacy embedding subclasses.
+`SynapseHub.from_config(config)` preserves their keyword-only constructors.
+Record construction and `from_config` stamp `config_epoch`; bare and legacy
+keyword construction retain an empty epoch.
+
+The hub owns its checkpoint connection. After stopping and awaiting serving,
+call `hub.close()` to anchor and release it, including when a constructed hub
+was never served. A failed constructor releases its checkpoint automatically.
+Supplied journal, attachment and replay stores remain caller-owned.
 
 For an embedded disposable hub, pass port `0` and wait for the live address;
 this keeps socket selection and binding atomic:
