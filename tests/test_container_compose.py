@@ -288,7 +288,7 @@ def test_release_image_is_attested_and_bound_to_release_assets() -> None:
         "id-token": "write",
         "packages": "write",
     }
-    assert "anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26" in source
+    assert "anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c" in source
     assert "syft-version: v1.50.0" in source
     assert source.count("actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6") == 2
     assert source.count("push-to-registry: true") == 2

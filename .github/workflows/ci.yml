@@ -286,13 +286,63 @@ jobs:
           assert os.environ["REFUSED_OUTCOME"] == "failure"
           PY
 
+  python-lock-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --require-hashes -r .github/requirements/requirements.txt
+      - name: Audit every committed Python lock and requirement input
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files -z -- ':(glob)**/requirements*.txt' > "$RUNNER_TEMP/python-locks.list"
+          test -s "$RUNNER_TEMP/python-locks.list"
+          audit_status=0
+          while IFS= read -r -d '' lock; do
+            audit_flags=()
+            if grep -q -- '--hash=' "$lock"; then
+              audit_flags=(--disable-pip --require-hashes)
+            fi
+            if ! python -m pip_audit "${audit_flags[@]}" \
+                -r "$lock" --desc --progress-spinner=off; then
+              audit_status=1
+            fi
+          done < "$RUNNER_TEMP/python-locks.list"
+          exit "$audit_status"
+
+  node-lock-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.3"
+      - name: Audit every committed npm lock without installing packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files -z -- ':(glob)**/package-lock.json' > "$RUNNER_TEMP/node-locks.list"
+          test -s "$RUNNER_TEMP/node-locks.list"
+          audit_status=0
+          while IFS= read -r -d '' lock; do
+            if ! (cd "$(dirname "$lock")" && npm audit --package-lock-only); then
+              audit_status=1
+            fi
+          done < "$RUNNER_TEMP/node-locks.list"
+          exit "$audit_status"
+
   # Single required status check for branch protection. It always runs (even when an
   # upstream job fails), so the `ci` context posts on every pull request and push,
   # and it fails unless every gated job succeeded — matrix-drift-proof, unlike pinning
   # each individual job as a required context.
   ci:
     name: ci
-    needs: [lint, typecheck, test, reuse, audit, git-hooks, pi-integration, marketplace-action]
+    needs: [lint, typecheck, test, reuse, audit, git-hooks, pi-integration, marketplace-action, python-lock-audit, node-lock-audit]
     if: always()
     runs-on: ubuntu-latest
     steps:

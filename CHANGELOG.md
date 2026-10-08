@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Blocking CI jobs audit every committed Python requirement lock and npm lock,
+  including client and integration dependencies, on every main push and PR.
+  Newly tracked locks join the audits automatically.
+
 - Record-only `native_message_record` verb (wire version 7). A seat leaves a
   durable record of a message that travelled over a vendor's own channel, such
   as a direct message between two Claude Code sessions or a queued Codex
