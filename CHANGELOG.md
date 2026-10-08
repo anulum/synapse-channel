@@ -24,6 +24,15 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- CLI mailbox wakes coalesce repeated copies of each durable hub/sequence
+  pair while retaining distinct events with identical text and legacy frames
+  without valid sequence metadata. Waiters join connection cleanup before
+  persisting their surfaced cursor.
+
+- Lock teardown catches asyncio timeouts on Python 3.10 as well as newer
+  interpreters, allowing exact read-only confirmation after a lost release
+  reply without replaying the mutation.
+
 - Hub startup now uses an external composition root. `build_hub(config)` builds
   typed collaborator families and installs them once; the CLI and base
   `SynapseHub.from_config` use that path. Existing record and keyword callers

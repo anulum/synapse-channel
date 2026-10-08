@@ -104,6 +104,53 @@ def _load_dispatch_card(path: Path) -> dict[str, Any] | None:
     return kwargs
 
 
+def _matches_waiter(
+    data: dict[str, Any],
+    *,
+    name: str,
+    for_name: str,
+    directed_only: bool,
+    roles: tuple[str, ...],
+    wake_capability: str,
+) -> bool:
+    """Return whether one frame wakes this waiter.
+
+    The SAME predicate gates the wake collection and the agent's mailbox
+    cursor advance, so the two can never drift: a frame this waiter will
+    not surface is never consumed from the mailbox either.
+
+    A pane bridge is stricter than a passive waiter.  Its successful wake
+    becomes text submitted to an interactive provider, so a priority or
+    CEO broadcast must remain durable inbox traffic instead of consuming a
+    provider turn in every open terminal.  Exact identity, role, and group
+    targets still wake the pane immediately.
+    """
+    sender = str(data.get("sender", ""))
+    target = str(data.get("target", "all"))
+    pane_bridge_directed = (
+        wake_capability == WAKE_PANE_BRIDGE
+        and directed_only
+        and is_directed(target, for_name, roles)
+    )
+    return (
+        data.get("type") == MessageType.CHAT
+        and sender != name
+        and sender != for_name  # ignore our own sends (the agent sends as for_name)
+        and (
+            pane_bridge_directed
+            if wake_capability == WAKE_PANE_BRIDGE and directed_only
+            else wakes(
+                target,
+                for_name,
+                directed_only=directed_only,
+                sender=sender,
+                priority=bool(data.get("priority")),
+                roles=roles,
+            )
+        )
+    )
+
+
 async def _wait(
     *,
     uri: str,
@@ -218,47 +265,28 @@ async def _wait(
         must stop and surface the governed recovery path, never re-arm).
     """
     received: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
 
     def matches(data: dict[str, Any]) -> bool:
-        """Return whether one frame wakes this waiter.
-
-        The SAME predicate gates the wake collection and the agent's mailbox
-        cursor advance, so the two can never drift: a frame this waiter will
-        not surface is never consumed from the mailbox either.
-
-        A pane bridge is stricter than a passive waiter.  Its successful wake
-        becomes text submitted to an interactive provider, so a priority or
-        CEO broadcast must remain durable inbox traffic instead of consuming a
-        provider turn in every open terminal.  Exact identity, role, and group
-        targets still wake the pane immediately.
-        """
-        sender = str(data.get("sender", ""))
-        target = str(data.get("target", "all"))
-        pane_bridge_directed = (
-            wake_capability == WAKE_PANE_BRIDGE
-            and directed_only
-            and is_directed(target, for_name, roles)
-        )
-        return (
-            data.get("type") == MessageType.CHAT
-            and sender != name
-            and sender != for_name  # ignore our own sends (the agent sends as for_name)
-            and (
-                pane_bridge_directed
-                if wake_capability == WAKE_PANE_BRIDGE and directed_only
-                else wakes(
-                    target,
-                    for_name,
-                    directed_only=directed_only,
-                    sender=sender,
-                    priority=bool(data.get("priority")),
-                    roles=roles,
-                )
-            )
+        """Bind one target predicate for collection and mailbox advancement."""
+        return _matches_waiter(
+            data,
+            name=name,
+            for_name=for_name,
+            directed_only=directed_only,
+            roles=roles,
+            wake_capability=wake_capability,
         )
 
     async def collect(data: dict[str, Any]) -> None:
+        """Collect each durable mailbox event once within its connected hub."""
         if matches(data):
+            seq = data.get("seq")
+            if mailbox and isinstance(seq, int) and not isinstance(seq, bool) and seq > 0:
+                event = (agent.hub_id, seq)
+                if event in seen:
+                    return
+                seen.add(event)
             received.append(data)
 
     # A re-arming waiter takes over its own name, evicting a ghost holder of
@@ -416,6 +444,7 @@ async def _wait(
     finally:
         agent.running = False
         conn_task.cancel()
+        await asyncio.gather(conn_task, return_exceptions=True)
         if mailbox and mailbox_cursor_path is not None:
             # Persist a resume point covering exactly what this waiter SURFACED,
             # never merely what its socket saw: a matching frame that arrived too

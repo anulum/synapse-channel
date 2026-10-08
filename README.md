@@ -870,6 +870,10 @@ the waiter on directed messages that arrived while it was disconnected — the
 reconnect or re-arm gap — by asking the hub to replay them on connect, resuming
 from a per-identity cursor under `~/synapse/mailbox-cursor/` so a re-arm does not
 replay the whole backlog (off by default; needs a wire version `2` hub).
+Within each mailbox wake, repeated copies of the same durable hub/sequence
+pair print once. Separate events with identical text still print separately;
+legacy frames without a valid positive sequence remain visible. The waiter
+joins its connection cleanup before persisting the surfaced cursor.
 Agent-tmux uses a distinct `<identity>-pane-rx` receiver, so the mailbox arm can
 stay online beside live pane injection without either sidecar taking over the
 other's name. `synapse release` can attach a hub-echoed receipt with evidence, artifacts,
@@ -1773,7 +1777,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 1065 |
 | Wire message types | 114 |
 | CLI subcommands | 237 |
-| Test functions | 11053 |
+| Test functions | 11054 |
 | Benchmark harnesses | 8 |
 | Documentation pages | 80 |
 | GitHub Actions workflows | 27 |
