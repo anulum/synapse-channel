@@ -69,6 +69,7 @@ nav:
   - Why SYNAPSE: why-synapse.md
   - Group and project map: ecosystem.md
   - Terminal label: terminal-label.md
+  - Wake relay: wake-relay.md
   - Installation: installation.md
   - Machine-readable setup: machine-readable-setup.md
   - Quick start: quickstart.md

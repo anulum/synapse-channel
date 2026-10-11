@@ -163,6 +163,7 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "service_query",
         RuntimeError,
     ),
+    "WakeMarkError": ("synapse_channel.wake_marks", "wake_mark", ValueError),
     "WakerConfigError": ("synapse_channel.waker_config", "waker_config", ValueError),
     "WakerLockError": ("synapse_channel.waker_lock", "waker_lock", ValueError),
     "WakerTransitionError": ("synapse_channel.waker_transition", "waker_transition", ValueError),
