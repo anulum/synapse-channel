@@ -20,9 +20,9 @@ whose exit the client reports. Each way is a **wake adapter**. The relay tries
 adapters in order and stops at the first one that takes the wake.
 
 !!! note "State of this part"
-    This page describes the relay's foundation: the adapter contract, the
-    durable marks and the order of attempts. No adapter is shipped with it yet
-    and no service calls it. The existing pane bridge works as before.
+    This page describes the relay's foundation and its first adapter. No
+    service calls the relay yet; the existing pane bridge service works as
+    before.
 
 ## What an adapter may answer
 
@@ -74,6 +74,25 @@ directory must be on a file system with hard links. Marks are kept until the
 oldest of a seat are pruned; pruning keeps the newest ones, because a message
 whose marks were removed could be woken for again if the hub delivered it
 again.
+
+## The pane bridge adapter
+
+`pane_bridge` wraps the existing pane bridge and changes nothing in it. The
+bridge types its own fixed prompt into the provider's composer and reports
+success only after it saw the prompt consumed; that is `accepted`, proving
+`typed_into_idle_composer`.
+
+The bridge keeps a wake of its own: whenever it is asked and cannot finish
+(the pane is busy, a dialog is open, the submit was not acknowledged) it
+marks a pending wake and delivers it later by itself. So:
+
+- The adapter asks the bridge only when the session exists, is bound to the
+  seat, runs the agent and shows an idle composer. Otherwise it is
+  unavailable: the bridge is not touched, nothing is pending, and another
+  adapter may run.
+- Once the bridge was asked, the answer is `accepted` or `uncertain`, never
+  `refused`: the bridge may still deliver the wake it now holds, and a second
+  adapter would wake the seat twice.
 
 ## What an adapter receives
 
