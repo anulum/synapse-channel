@@ -44,6 +44,16 @@ class _ClassifiedRunView(Protocol):
     run: _WorkflowRunView
 
 
+_WORKFLOW_IDS = {
+    "ci": 299538792,
+    "docs": 299538793,
+    "actions-history-audit": 299538794,
+    "Dependabot Updates": 299538861,
+    "Dependency Graph": 300449968,
+}
+"""One number per workflow name used by the constructed rows of this file."""
+
+
 def _run(
     database_id: int,
     conclusion: str | None,
@@ -52,17 +62,24 @@ def _run(
     workflow: str = "ci",
     branch: str = "main",
     status: str = "completed",
+    event: str = "push",
+    title: str | None = None,
+    workflow_id: int | None = None,
 ) -> dict[str, object]:
-    return {
+    row: dict[str, object] = {
         "databaseId": database_id,
         "conclusion": conclusion,
         "status": status,
         "workflowName": workflow,
+        "workflowDatabaseId": _WORKFLOW_IDS[workflow] if workflow_id is None else workflow_id,
         "headSha": f"sha-{database_id}",
         "headBranch": branch,
         "createdAt": created_at,
-        "event": "push",
+        "event": event,
     }
+    if title is not None:
+        row["displayTitle"] = title
+    return row
 
 
 def _classify(
@@ -207,7 +224,7 @@ def test_json_output_is_deterministic_and_contains_summary() -> None:
 
     assert first == second
     decoded = json.loads(first)
-    assert decoded["schema"] == "synapse-actions-history-audit.v1"
+    assert decoded["schema"] == "synapse-actions-history-audit.v2"
     assert decoded["excludedWorkflows"] == ["a", "z"]
     assert decoded["summary"] == {"clean_success": 1, "resolved_failure": 1}
     assert [row["databaseId"] for row in decoded["runs"]] == [80, 81]
@@ -264,3 +281,329 @@ def test_cli_reads_stdin_and_excludes_itself(
     decoded = json.loads(capsys.readouterr().out)
     assert decoded["runs"] == []
     assert decoded["excludedWorkflows"] == ["actions-history-audit"]
+
+
+# Records of the public repository's own history, as the run-list query returned
+# them. The scheduled run 38047574697 was later removed from the host; its
+# record is kept here as it was archived.
+SCHEDULED_FAILURE = {
+    "databaseId": 38047574697,
+    "conclusion": "failure",
+    "status": "completed",
+    "workflowName": "vendor-watch",
+    "workflowDatabaseId": 365136139,
+    "headSha": "bbc9c427ae42ebd0c6abcb4ef3c35f33c1b530de",
+    "headBranch": "main",
+    "createdAt": "2026-10-10T11:12:13Z",
+    "event": "schedule",
+    "displayTitle": "vendor-watch",
+}
+MANUAL_SUCCESS = {
+    "databaseId": 38148576401,
+    "conclusion": "success",
+    "status": "completed",
+    "workflowName": "vendor-watch",
+    "workflowDatabaseId": 365136139,
+    "headSha": "d1e6d0629156a2b0830ee0c1418ba27e43ffa567",
+    "headBranch": "main",
+    "createdAt": "2026-10-11T14:46:57Z",
+    "event": "workflow_dispatch",
+    "displayTitle": "vendor-watch",
+}
+UPDATE_FAILURE_ONE_DIRECTORY = {
+    "databaseId": 36967686236,
+    "conclusion": "failure",
+    "status": "completed",
+    "workflowName": "Dependabot Updates",
+    "workflowDatabaseId": 299538861,
+    "headSha": "c5c2638bd31e2f5fcc35add5f2dcffddd47cc602",
+    "headBranch": "main",
+    "createdAt": "2026-10-02T05:09:33Z",
+    "event": "dynamic",
+    "displayTitle": "npm_and_yarn in /integrations/pi for brace-expansion - Update #1604460772",
+}
+UPDATE_SUCCESS_OTHER_DIRECTORY = {
+    "databaseId": 37803817359,
+    "conclusion": "success",
+    "status": "completed",
+    "workflowName": "Dependabot Updates",
+    "workflowDatabaseId": 299538861,
+    "headSha": "70186b75455837eab5ed77cf9673f6104e226132",
+    "headBranch": "main",
+    "createdAt": "2026-10-08T15:48:49Z",
+    "event": "dynamic",
+    "displayTitle": "npm_and_yarn in /clients/vscode for source-map-js - Update #1617630999",
+}
+
+
+def _buckets(rows: list[dict[str, object]]) -> dict[int, str]:
+    return {item.run.database_id: item.bucket for item in _classify(rows)}
+
+
+def test_manual_success_does_not_repair_a_scheduled_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rows: list[dict[str, object]] = [dict(SCHEDULED_FAILURE), dict(MANUAL_SUCCESS)]
+    assert _buckets(rows) == {38047574697: "unresolved_failure", 38148576401: "clean_success"}
+
+    history = tmp_path / "history.json"
+    history.write_text(json.dumps(rows), encoding="utf-8")
+    assert main(["--input", str(history)]) == 1
+    assert json.loads(capsys.readouterr().out)["summary"] == {
+        "clean_success": 1,
+        "unresolved_failure": 1,
+    }
+
+
+def test_later_scheduled_success_repairs_the_scheduled_failure() -> None:
+    later = {**SCHEDULED_FAILURE, "databaseId": 38200000001, "conclusion": "success"}
+    later["createdAt"] = "2026-10-12T11:12:13Z"
+    rows: list[dict[str, object]] = [dict(SCHEDULED_FAILURE), dict(MANUAL_SUCCESS), later]
+
+    assert _buckets(rows)[38047574697] == "resolved_failure"
+    assert not has_unresolved_runs(_classify(rows))
+
+
+def test_scheduled_success_does_not_repair_a_manual_failure() -> None:
+    rows = [
+        _run(1, "failure", "2026-07-11T00:00:00Z", event="workflow_dispatch"),
+        _run(2, "success", "2026-07-11T01:00:00Z", event="schedule"),
+    ]
+    assert _buckets(rows)[1] == "unresolved_failure"
+
+
+def test_update_success_in_another_directory_does_not_repair(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rows: list[dict[str, object]] = [
+        dict(UPDATE_FAILURE_ONE_DIRECTORY),
+        dict(UPDATE_SUCCESS_OTHER_DIRECTORY),
+    ]
+    assert _buckets(rows) == {36967686236: "unresolved_failure", 37803817359: "clean_success"}
+
+    history = tmp_path / "history.json"
+    history.write_text(json.dumps(rows), encoding="utf-8")
+    assert main(["--input", str(history)]) == 1
+    decoded = json.loads(capsys.readouterr().out)
+    assert [row["surface"] for row in decoded["runs"]] == [
+        "npm_and_yarn in /integrations/pi for brace-expansion",
+        "npm_and_yarn in /clients/vscode for source-map-js",
+    ]
+    assert decoded["runs"][0]["displayTitle"] == UPDATE_FAILURE_ONE_DIRECTORY["displayTitle"]
+
+
+def test_later_update_of_the_same_surface_repairs_with_another_counter() -> None:
+    title = "npm_and_yarn in /integrations/pi for brace-expansion - Update #1699999999"
+    later = {**UPDATE_FAILURE_ONE_DIRECTORY, "databaseId": 38200000002, "conclusion": "success"}
+    later.update(createdAt="2026-10-12T05:09:33Z", displayTitle=title)
+    rows: list[dict[str, object]] = [dict(UPDATE_FAILURE_ONE_DIRECTORY), later]
+
+    assert _buckets(rows)[36967686236] == "resolved_failure"
+
+
+def test_same_directory_other_dependency_does_not_repair() -> None:
+    title = "npm_and_yarn in /integrations/pi for minimatch - Update #1699999998"
+    later = {**UPDATE_FAILURE_ONE_DIRECTORY, "databaseId": 38200000003, "conclusion": "success"}
+    later.update(createdAt="2026-10-12T05:09:33Z", displayTitle=title)
+
+    assert _buckets([dict(UPDATE_FAILURE_ONE_DIRECTORY), later])[36967686236] == (
+        "unresolved_failure"
+    )
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        None,
+        "",
+        "Dependabot Updates",
+        "#1604460772",
+        "npm_and_yarn in /integrations/pi",
+        "Dependabot Updates #1",
+        "opaque #2",
+        "Dependabot Updates - Update #1604460772",
+        "npm_and_yarn in integrations/pi - Update #1604460772",
+        "npm_and_yarn in /integrations/pi for  - Update #1604460772",
+        "Graph Update: pip #1617567829",
+        "Unconfigured Graph Update: pip in /. #1617567829",
+        "npm_and_yarn in /integrations/pi - Update #",
+    ],
+)
+def test_dynamic_failure_without_a_counted_title_fails_closed(title: str | None) -> None:
+    rows = [
+        _run(1, "failure", "2026-07-11T00:00:00Z", event="dynamic", title=title),
+        _run(2, "success", "2026-07-11T01:00:00Z", event="dynamic", title=title),
+    ]
+    classified = _classify(rows)
+
+    assert [item.bucket for item in classified] == ["unresolved_ambiguous", "clean_success"]
+    assert has_unresolved_runs(classified)
+
+
+def test_run_list_collected_without_titles_resolves_no_dynamic_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rows: list[dict[str, object]] = []
+    for record in (UPDATE_FAILURE_ONE_DIRECTORY, UPDATE_SUCCESS_OTHER_DIRECTORY):
+        rows.append({key: value for key, value in record.items() if key != "displayTitle"})
+    history = tmp_path / "history.json"
+    history.write_text(json.dumps(rows), encoding="utf-8")
+
+    assert main(["--input", str(history)]) == 1
+    decoded = json.loads(capsys.readouterr().out)
+    assert decoded["summary"] == {"clean_success": 1, "unresolved_ambiguous": 1}
+    assert decoded["runs"][0]["surface"] is None
+
+
+def test_cancelled_dynamic_run_of_unknown_surface_is_ambiguous_not_superseded() -> None:
+    rows = [
+        _run(1, "cancelled", "2026-07-11T00:00:00Z", event="dynamic"),
+        _run(2, "success", "2026-07-11T01:00:00Z", event="dynamic"),
+    ]
+    assert _buckets(rows)[1] == "unresolved_ambiguous"
+
+
+def test_graph_update_surfaces_are_told_apart_by_manifest() -> None:
+    rows = [
+        _run(
+            1,
+            "failure",
+            "2026-07-11T00:00:00Z",
+            workflow="Dependency Graph",
+            event="dynamic",
+            title="Configured Graph Update: pip in /. #1617567829",
+        ),
+        _run(
+            2,
+            "success",
+            "2026-07-11T01:00:00Z",
+            workflow="Dependency Graph",
+            event="dynamic",
+            title="Configured Graph Update: pip in /integrations/github-app #1618190634",
+        ),
+        _run(
+            3,
+            "success",
+            "2026-07-11T02:00:00Z",
+            workflow="Dependency Graph",
+            event="dynamic",
+            title="Configured Graph Update: pip in /. #1699999997",
+        ),
+    ]
+    assert _buckets(rows[:2])[1] == "unresolved_failure"
+    assert _buckets(rows)[1] == "resolved_failure"
+
+
+def test_title_of_a_non_dynamic_run_does_not_split_its_history() -> None:
+    rows = [
+        _run(1, "failure", "2026-07-11T00:00:00Z", title="fix: one thing #12"),
+        _run(2, "success", "2026-07-11T01:00:00Z", title="feat: another thing #13"),
+    ]
+    assert _buckets(rows)[1] == "resolved_failure"
+    assert json.loads(audit_to_json(_classify(rows)))["runs"][0]["surface"] == ""
+
+
+def test_display_title_of_the_wrong_kind_is_refused() -> None:
+    row = _run(1, "success", "2026-07-11T00:00:00Z")
+    row["displayTitle"] = 7
+    with pytest.raises(ValueError, match="displayTitle"):
+        workflow_run_from_mapping(row)
+
+
+@pytest.mark.parametrize("field", ["status", "workflowName", "headSha", "headBranch", "event"])
+@pytest.mark.parametrize("value", [None, "", 3])
+def test_missing_or_empty_required_field_is_refused(field: str, value: object) -> None:
+    row = _run(1, "success", "2026-07-11T00:00:00Z")
+    row[field] = value
+    with pytest.raises(ValueError, match=field):
+        workflow_run_from_mapping(row)
+
+
+@pytest.mark.parametrize(
+    ("title", "surface"),
+    [
+        ("pip in /. - Update #1611599235", "pip in /."),
+        (
+            "github_actions in / for a/b, c/d - Update #1602928208",
+            "github_actions in / for a/b, c/d",
+        ),
+        (
+            "Graph Update: go_modules in /clients/go/synapse #1605017505",
+            "Graph Update: go_modules in /clients/go/synapse",
+        ),
+        ("Configured Graph Update: pip in /. #1617567829", "Configured Graph Update: pip in /."),
+    ],
+)
+def test_recognised_dynamic_titles_give_their_surface(title: str, surface: str) -> None:
+    rows = [_run(1, "success", "2026-07-11T00:00:00Z", event="dynamic", title=title)]
+    assert json.loads(audit_to_json(_classify(rows)))["runs"][0]["surface"] == surface
+
+
+def test_same_name_under_another_workflow_number_does_not_repair(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rows = [
+        _run(1, "failure", "2026-07-11T00:00:00Z", workflow_id=501),
+        _run(2, "success", "2026-07-11T01:00:00Z", workflow_id=502),
+    ]
+    history = tmp_path / "history.json"
+    history.write_text(json.dumps(rows), encoding="utf-8")
+
+    assert main(["--input", str(history)]) == 1
+    decoded = json.loads(capsys.readouterr().out)
+    assert decoded["summary"] == {"clean_success": 1, "unresolved_failure": 1}
+    assert [row["workflowDatabaseId"] for row in decoded["runs"]] == [501, 502]
+    assert {row["workflowName"] for row in decoded["runs"]} == {"ci"}
+
+
+def test_renamed_workflow_with_one_number_still_repairs() -> None:
+    rows = [
+        _run(1, "failure", "2026-07-11T00:00:00Z", workflow="ci", workflow_id=501),
+        _run(2, "success", "2026-07-11T01:00:00Z", workflow="docs", workflow_id=501),
+    ]
+    assert _buckets(rows)[1] == "resolved_failure"
+
+
+@pytest.mark.parametrize("conclusion", ["failure", "cancelled", "timed_out"])
+def test_run_list_without_workflow_numbers_resolves_nothing(
+    conclusion: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rows = [
+        _run(1, conclusion, "2026-07-11T00:00:00Z"),
+        _run(2, "success", "2026-07-11T01:00:00Z"),
+    ]
+    for row in rows:
+        del row["workflowDatabaseId"]
+    history = tmp_path / "history.json"
+    history.write_text(json.dumps(rows), encoding="utf-8")
+
+    assert main(["--input", str(history)]) == 1
+    decoded = json.loads(capsys.readouterr().out)
+    assert decoded["summary"] == {"clean_success": 1, "unresolved_ambiguous": 1}
+    assert "no workflow number" in decoded["runs"][0]["reason"]
+    assert decoded["runs"][0]["workflowDatabaseId"] is None
+
+
+def test_success_without_a_workflow_number_does_not_repair_an_identified_failure() -> None:
+    rows = [
+        _run(1, "failure", "2026-07-11T00:00:00Z"),
+        _run(2, "success", "2026-07-11T01:00:00Z"),
+    ]
+    rows[1]["workflowDatabaseId"] = None
+    assert _buckets(rows) == {1: "unresolved_failure", 2: "clean_success"}
+
+
+@pytest.mark.parametrize("value", [True, "299538792", 0, -4, 1.5])
+def test_workflow_number_of_the_wrong_kind_is_refused(value: object) -> None:
+    row = _run(1, "success", "2026-07-11T00:00:00Z")
+    row["workflowDatabaseId"] = value
+    with pytest.raises(ValueError, match="workflowDatabaseId"):
+        workflow_run_from_mapping(row)
+
+
+def test_ambiguous_reason_names_the_title_when_the_number_is_present() -> None:
+    rows = [_run(1, "failure", "2026-07-11T00:00:00Z", event="dynamic", title="opaque #2")]
+    assert (
+        "dynamic title of no recognised form"
+        in json.loads(audit_to_json(_classify(rows)))["runs"][0]["reason"]
+    )

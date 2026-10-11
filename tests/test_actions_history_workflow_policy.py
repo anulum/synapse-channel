@@ -36,8 +36,8 @@ def test_history_query_and_classifier_are_bounded_and_fail_visible() -> None:
     assert "--branch main" in text
     assert "--limit 500" in text
     assert (
-        "--json databaseId,conclusion,status,workflowName,headSha,headBranch,createdAt,event"
-        in text
+        "--json databaseId,conclusion,status,workflowName,workflowDatabaseId,headSha,"
+        "headBranch,createdAt,event,displayTitle\n" in text
     )
     assert "--input actions-history.json" in text
     assert "--exclude-workflow actions-history-audit" in text

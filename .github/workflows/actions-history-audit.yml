@@ -38,7 +38,7 @@ jobs:
           --repo "${{ github.repository }}"
           --branch main
           --limit 500
-          --json databaseId,conclusion,status,workflowName,headSha,headBranch,createdAt,event
+          --json databaseId,conclusion,status,workflowName,workflowDatabaseId,headSha,headBranch,createdAt,event,displayTitle
           > actions-history.json
       - name: Fail on unresolved workflow history
         run: >-
