@@ -20,8 +20,9 @@ All notable changes to this project are documented here.
   qualification level with its evidence) and a catalogue that lists them and
   admits only operations that were run for real, for exactly the client and
   version asked. A client version never seen admits nothing. A secret is
-  never an argument value, only a reference. No command and no hub verb uses
-  it yet. See `docs/operations.md`.
+  never an argument value, only a reference. `synapse ops list` and
+  `synapse ops describe` read a catalogue file; nothing runs an operation
+  yet. See `docs/operations.md`.
 
 - Foundation of the wake relay: a seat is woken for a message over the first
   adapter that takes it, at most once. Before an adapter is asked its attempt

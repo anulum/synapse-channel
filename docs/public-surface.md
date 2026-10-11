@@ -100,7 +100,7 @@ enforcement or widen trust.
 Newer or advisory surfaces still settling; shape may change before 1.0. Use them,
 but pin to a version if you depend on their exact behaviour.
 
-`app-task`  `attention`  `auto-action`  `benchmark`  `claim-parse`  `deliberate`  `dispatch`  `label`  `memory-recall`  `native-hook`  `native-record`  `native-seat`  `participant`  `resource-bids`  `route-task`  `spend`
+`app-task`  `attention`  `auto-action`  `benchmark`  `claim-parse`  `deliberate`  `dispatch`  `label`  `memory-recall`  `native-hook`  `native-record`  `native-seat`  `ops`  `participant`  `resource-bids`  `route-task`  `spend`
 `sandbox`  `service`  `ttl-advice`  `workflow`
 
 `claim-parse` is an opt-in provider-backed draft, not a reservation. See

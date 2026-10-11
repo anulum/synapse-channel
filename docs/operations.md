@@ -18,8 +18,9 @@ well each is known.
 
 !!! note "State of this part"
     This page describes the catalogue's foundation: the description of one
-    operation and the catalogue that holds them. No command, no hub verb and
-    no adapter uses it yet.
+    operation, the catalogue that holds them, and two commands that read a
+    catalogue file. Nothing runs an operation yet: there is no hub verb and no
+    adapter for it.
 
 ## Being listed grants nothing
 
@@ -68,6 +69,31 @@ A client version the catalogue does not know admits nothing. Its operations
 can be shown as *candidates*: copies of the rows of the newest known version
 of that client on that host, marked `unverified`, without evidence. Candidates
 are not added to the catalogue.
+
+## Reading a catalogue
+
+```bash
+synapse ops list                                   # every listed operation, one per line
+synapse ops list --vendor codex --json
+synapse ops describe session.queue_message --host workstation
+```
+
+Both commands read a catalogue file on this host, by default
+`$XDG_DATA_HOME/synapse/operations/catalogue.json` (`--catalogue` names
+another), and print what it holds. Nothing is run and nothing is sent.
+
+```text
+1 operation(s)
+workstation codex 0.159.1 linux  session.queue_message  cli/session  run_once (may run)
+```
+
+`describe` prints every row of the named operation in full: client, transport,
+scope, the permission needed, arguments with their types, side effects and the
+qualification with its evidence. It exits `1` when the operation is not
+listed. A file that is missing, too large, not JSON or not a catalogue exits
+`2` with the reason. The catalogue file is plain data in the form
+`{"schema": "operation-catalogue-v1", "operations": [...]}`; nothing writes it
+for you yet.
 
 ## Arguments and secrets
 
