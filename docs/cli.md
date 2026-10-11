@@ -1548,6 +1548,7 @@ synapse event-query ./synapse.db "conflicts at seq 120" --json
 synapse event-query ./synapse.db "channel ops between seq 1 999999"
 synapse event-query ./synapse.db "receipts ALICE" --json
 synapse event-query ./synapse.db "universal-receipts all" --json
+synapse event-query ./synapse.db "native-messages all"
 synapse event-query ./synapse.db 'timeline("TASK-1").'
 synapse event-query ./synapse.db 'MATCH (task:TASK {id:"TASK-1"}) RETURN timeline'
 synapse postmortem ./synapse.db TASK-1
@@ -2968,6 +2969,32 @@ directory; the hub's own-side rule still decides whether a record is accepted.
 The hub token is `--token`, else `--token-file` (an owner-only file), else
 `SYNAPSE_TOKEN`. Only the sending side is recorded by this hook; a record of
 the receiving side needs the recipient's own call of `synapse native-record`.
+
+### Which messages have both sides
+
+The sender's record says that the channel accepted a message; only the
+receiver's record says that it arrived. `synapse event-query` pairs the two:
+
+```bash
+synapse event-query ~/synapse/hub.db "native-messages all"
+synapse event-query ~/synapse/hub.db "native-messages PROJECT/seat-aaaa" --json
+```
+
+```text
+native messages all: paired 1, sender only 1, receiver only 2, attempts without outcome 0
+sender only (no receiver's record):
+  2026-10-11T12:01:00.000000Z claude_cross_session PROJECT/seat-aaaa -> night-shift [a1b2c3] sha256 9f2c41d07a3e outcome queued
+```
+
+Two records are of one message when they name the same channel and the same
+text digest and agree on the native session of the sender and of the recipient
+wherever both state it; at least one of the two sessions must be stated by
+both. A receiver's record of either phase counts as the receiver's side. All
+records are paired first and the seat is applied afterwards to whole pairs, so
+a pair is found by its receiver's seat even when the sender recorded only a
+raw address. `--limit N` cuts each list to its newest `N` entries and leaves
+the counts whole. The message text and the tool result are never printed; a
+record names its text by digest and size.
 
 ## synapse dispatch
 

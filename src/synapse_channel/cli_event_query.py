@@ -14,16 +14,30 @@ import json
 import sys
 
 from synapse_channel.core.event_query import render_human, result_to_json, run_query
+from synapse_channel.native_query import render_human as render_native
+from synapse_channel.native_query import result_to_json as native_to_json
+from synapse_channel.native_query import run_native_query, selector_of
 
 
 def _cmd_event_query(args: argparse.Namespace) -> int:
     """Run one temporal event-log query and print the result."""
+    key_file = getattr(args, "db_key_file", None)
     try:
+        if selector_of(args.query) is not None:
+            # Native-message records have their own reader: the temporal query
+            # parser and executor are at their size limits.
+            native = run_native_query(args.db, args.query, key_file=key_file)
+            if args.json:
+                data = native_to_json(native, limit=args.limit)
+                print(json.dumps(data, indent=2, sort_keys=True))
+            else:
+                print(render_native(native, limit=args.limit))
+            return 0
         result = run_query(
             args.db,
             args.query,
             limit=args.limit,
-            key_file=getattr(args, "db_key_file", None),
+            key_file=key_file,
         )
     except (ValueError, OSError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
@@ -52,8 +66,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Query string: 'task T timeline', 'task T at seq N', "
             "'task T at time SECONDS', 'path PATH between START END', or "
-            "'conflicts at seq N', 'receipts AGENT', or "
-            "'universal-receipts all'. Prototype aliases include "
+            "'conflicts at seq N', 'receipts AGENT', "
+            "'universal-receipts all', or 'native-messages SEAT' "
+            "('native-messages all'). Prototype aliases include "
             "'timeline(\"T\").' "
             "and 'MATCH (task:TASK {id:\"T\"}) RETURN timeline'."
         ),

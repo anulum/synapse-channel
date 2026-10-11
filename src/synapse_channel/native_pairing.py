@@ -18,6 +18,11 @@ stored records and sorts them into:
 * **receiver only**: received, with no sender's record;
 * **attempts without outcome**: a send that was announced and never reported.
 
+The record schema gives a receiver no phase of its own: its record is valid
+as an ``attempt`` or as an ``outcome``. Either one is the receiver's record
+here. When a receiver wrote both for one message, identified by its native
+message id or else by its sent time, the outcome is kept.
+
 Two records are of the same message when they name the same channel and the
 same text digest, and agree on the native session of the sender and of the
 recipient wherever both state it. At least one of the two session identifiers
@@ -30,6 +35,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
+
+from synapse_channel.core.terminal_text import terminal_text
 
 Record = Mapping[str, Any]
 
@@ -81,6 +88,28 @@ def _call(record: Record) -> tuple[object, object, object, object]:
     )
 
 
+def _receiver_records(stored: list[Record]) -> list[Record]:
+    """Return one record per received message, by time; an outcome beats an attempt."""
+    kept: dict[tuple[object, ...], Record] = {}
+    for record in sorted(stored, key=_time):
+        if record.get("direction") != "received":
+            continue
+        if record.get("phase") not in {"attempt", "outcome"}:
+            continue
+        message = (
+            record.get("channel"),
+            record.get("text_sha256"),
+            record.get("sender_native_session"),
+            record.get("recipient_native_session"),
+            record.get("recorder"),
+            record.get("native_message_id") or record.get("sent_at"),
+        )
+        earlier = kept.get(message)
+        if earlier is None or (earlier.get("phase"), record.get("phase")) == ("attempt", "outcome"):
+            kept[message] = record
+    return sorted(kept.values(), key=_time)
+
+
 def pair_records(records: Iterable[object]) -> PairingReport:
     """Sort stored native-message records by whether the other side recorded too.
 
@@ -95,13 +124,14 @@ def pair_records(records: Iterable[object]) -> PairingReport:
     -------
     PairingReport
         Every outcome record appears exactly once: in a pair, as sender only
-        or as receiver only. An attempt appears only when no outcome record
-        of the same call exists.
+        or as receiver only. A sender's attempt appears only when no outcome
+        record of the same call exists. A receiver's record of either phase
+        appears once, in a pair or as receiver only.
     """
     stored: list[Record] = [record for record in records if isinstance(record, Mapping)]
     outcomes = [record for record in stored if record.get("phase") == "outcome"]
     sent = sorted((r for r in outcomes if r.get("direction") == "sent"), key=_time)
-    received = sorted((r for r in outcomes if r.get("direction") == "received"), key=_time)
+    received = _receiver_records(stored)
     taken: set[int] = set()
     pairs: list[tuple[Record, Record]] = []
     alone: list[Record] = []
@@ -124,7 +154,7 @@ def pair_records(records: Iterable[object]) -> PairingReport:
         record
         for record in stored
         if record.get("phase") == "attempt"
-        and record.get("direction") in {"sent", "received"}
+        and record.get("direction") == "sent"
         and _call(record) not in reported
     ]
     return PairingReport(
@@ -136,7 +166,11 @@ def pair_records(records: Iterable[object]) -> PairingReport:
 
 
 def render(report: PairingReport) -> list[str]:
-    """Return the report as operator-facing lines."""
+    """Return the report as operator-facing lines, safe to print.
+
+    Seats, addresses and channel names are client-chosen text; every line is
+    passed through the terminal text filter.
+    """
 
     def line(record: Record) -> str:
         digest = str(record.get("text_sha256") or "")[:12]
@@ -161,4 +195,4 @@ def render(report: PairingReport) -> list[str]:
         if group:
             lines.append(f"{title}:")
             lines.extend(f"  {line(record)}" for record in group)
-    return lines
+    return [terminal_text(text) for text in lines]

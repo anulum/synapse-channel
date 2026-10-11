@@ -151,3 +151,52 @@ def test_nothing_stored_gives_an_empty_report_and_unknown_names_show_a_question_
     assert render(pair_records([dict(bare, recipient_address=None)]))[2].endswith(
         "? -> ? sha256 abababababab outcome -"
     )
+
+
+def test_a_receivers_record_of_either_phase_is_the_receivers_side() -> None:
+    sent = _record("sent", "1", "2026-10-11T12:00:00Z")
+    arrived = _record("received", "1", "2026-10-11T12:00:01Z", phase="attempt", outcome=None)
+    unmatched = _record("received", "2", "2026-10-11T12:02:00Z", phase="attempt", outcome=None)
+
+    report = pair_records([unmatched, arrived, sent])
+
+    assert report.paired == ((sent, arrived),)
+    assert report.receiver_only == (unmatched,)
+    # A receiver announced nothing; its record is never an open attempt.
+    assert report.attempts_without_outcome == ()
+
+
+def test_a_receiver_that_wrote_both_phases_of_one_message_counts_once() -> None:
+    sent = _record("sent", "1", "2026-10-11T12:00:00Z")
+    first = _record(
+        "received", "1", "2026-10-11T12:00:01Z", phase="attempt", outcome=None, recorder="P/b"
+    )
+    second = _record("received", "1", "2026-10-11T12:00:01Z", outcome="queued", recorder="P/b")
+    by_id_attempt = _record(
+        "received",
+        "2",
+        "2026-10-11T12:03:00Z",
+        phase="attempt",
+        outcome=None,
+        native_message_id="m-2",
+    )
+    by_id_outcome = _record(
+        "received", "2", "2026-10-11T12:03:09Z", outcome="queued", native_message_id="m-2"
+    )
+    other_phase = _record("received", "3", "2026-10-11T12:04:00Z", phase="other")
+
+    for order in ([first, second], [second, first]):
+        report = pair_records([sent, *order, by_id_outcome, by_id_attempt, other_phase])
+        assert report.paired == ((sent, second),)
+        assert report.receiver_only == (by_id_outcome,)
+
+
+def test_the_lines_cannot_carry_terminal_control_sequences() -> None:
+    hostile = _record(
+        "sent", "1", "2026-10-11T12:00:00Z", sender_seat="P/a\x1b[2J", recipient_seat="P/b\rX"
+    )
+
+    lines = render(pair_records([hostile]))
+
+    assert all("\x1b" not in line and "\r" not in line for line in lines)
+    assert "P/a" in lines[2] and "sha256 111111111111" in lines[2]

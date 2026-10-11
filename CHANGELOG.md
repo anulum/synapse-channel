@@ -25,6 +25,9 @@ All notable changes to this project are documented here.
   run at once: an entry is created without replacing an existing one, and one
   flush runs at a time. Retry is bounded and a refusal of the record is
   final. `native-hook flush` and `native-hook status` work on the spool.
+  `synapse event-query <db> "native-messages <seat|all>"` pairs the sender's
+  and the receiver's record of each message and lists the one-sided ones,
+  without printing any message text.
   `synapse native-seat` keeps the local register that says which seat a
   native session is. See `docs/cli.md`, "Recording from a client hook".
 
