@@ -290,8 +290,11 @@ def test_installed_probe_and_strict_report_cli(
     assert watch.installed_version((sys.executable, "--version")) is not None
     assert watch.installed_version(("missing-vendor-executable-12345", "--version")) is None
     assert watch.installed_version(None) is None
+    matrix = load_matrix(DEFAULT_MATRIX)
+    matrix["reviewed_at"] = "2026-09-22"
+    matrix["next_review_at"] = "2026-09-29"
     report = build_report(
-        load_matrix(DEFAULT_MATRIX),
+        matrix,
         fetch=lambda url: _source_payload(
             next(name for name, source in SOURCES.items() if source[1] == url), "0.0.1"
         ),

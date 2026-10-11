@@ -103,6 +103,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Review current official client release notes and record explicit host upgrade
+  and security acceptance boundaries. Reviewed notes do not admit newer hosts
+  or change the installed client profiles.
+
 - Conflict prediction repeats a missing read-only state query once within its
   existing response deadline and joins its connection shutdown. Persistent
   snapshot loss still refuses the prediction; lease mutations are never replayed.

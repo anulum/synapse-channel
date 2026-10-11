@@ -1,48 +1,48 @@
 {
   "schema": 1,
   "review_owner": "SYNAPSE-CHANNEL/codex-01a0f28e",
-  "reviewed_at": "2026-10-02",
+  "reviewed_at": "2026-10-11",
   "review_interval_days": 7,
   "surfaces": {
     "claude-code": {
       "verified_version": "2.1.284",
-      "reviewed_notes_sha256": "a0bd09c7a558b713a285e7f9945df633b180178af09eb465ce9a0d8cf031d6b9",
+      "reviewed_notes_sha256": "168552749e2dc5cdb9f380f6c9baaa3861d3138ad0264e27a2984a51fd5da389",
       "verification": "Exact 2.1.284 Linux host validator, isolated plugin load, MCP hub/claim and allowed/denied hook test",
       "capability_class": "native",
       "owning_adapter": "integrations/claude-code",
-      "migration_decision": "2026-10-01 review: 2.1.286 changes credential redaction, MCP re-authentication and host lifecycle. Retain the host-tested 2.1.284 Linux local plugin profile and 2.1.280 rollback; 2.1.286 is not admitted. Do not place credentials in tool payloads or diagnostic transcripts; remote-control/cloud behavior and new redaction guarantees remain outside this profile. Upgrade admission requires the exact host plugin/hook/MCP acceptance, tracked in C03."
+      "migration_decision": "2026-10-11 review: 2.1.296 changes managed PreToolUse denial/turn termination, PostToolUse output, disabled headless MCP startup, plugin hook identity, secret redaction and BASH_ARGV0 approval. These are security-relevant host boundaries. Keep the exercised 2.1.284 local plugin/MCP claim profile distinct from unverified 2.1.296; no cloud, auto-mode, gateway, shared-transcript redaction or Windows permission guarantee is admitted. Do not use native allow rules as a substitute for the Synapse claim guard or export credential-bearing logs. C03 exact-host hook denial/plugin/MCP acceptance must precede a host upgrade."
     },
     "codex-cli": {
       "verified_version": "0.156.0",
-      "reviewed_notes_sha256": "24a99d4e9e15b7f29ce1245018e3e0cf3b447a890fc2971061ee446a35a67278",
+      "reviewed_notes_sha256": "50f8671b5adbd8e0035a385c1b61fb245d5ac8da85bb9541eec4dba119f19ad9",
       "verification": "Exact 0.156.0 isolated Linux Codex app-server: stdio tool inventory, live local-hub state, claim, conflicting-identity refusal and release",
       "capability_class": "manual",
       "owning_adapter": "src/synapse_channel/adapters",
-      "migration_decision": "2026-10-08 review: official 0.161.0 notes change MCP sign-in, launch/background permission preservation, Windows elevated launch/path handling, resume/corruption recovery and retry behavior. Security-related changes are triaged; no newer host acceptance is claimed. Retain the exercised 0.156.0 Linux manual stdio profile. Remote MCP, new sandbox paths, cloud/provider routing and optional Cyber controls require separate exact-host admission; do not widen permissions or run paid model turns during this review."
+      "migration_decision": "2026-10-11 review: official stable 0.162.1 fixes multiline asynchronous TUI questions and background-server feature compatibility. The earlier 0.161.0 MCP/authentication/permission/recovery review remains applicable. Keep the exercised 0.156.0 Linux manual stdio profile; no new host, sandbox, cloud or remote MCP acceptance is implied by release-note review. C03 owns exact-host stdio inventory/live claim/release and queue/session acceptance before an upgrade; never restart an active native history writer for this review."
     },
     "gemini-cli": {
       "verified_version": null,
-      "reviewed_notes_sha256": "35fcb7651f1d82f96fbc3a7bb342334bc4012bcc603eb0650fa86984af8b9ce4",
+      "reviewed_notes_sha256": "bb2886f6c5d8beb157fa14a4e1e227da383110aa735b0103fbf0f8a14b4eddb8",
       "verification": "No packaged Gemini extension acceptance yet",
       "capability_class": "unsupported",
       "owning_adapter": "C15 integration catalog",
-      "migration_decision": "2026-10-01 review: 0.62.0 includes OAuth refresh retention, MCP/ACP formatting and PTY lifecycle changes. No packaged Gemini extension is admitted; retain unsupported classification and require a real packaged-host acceptance before changing it."
+      "migration_decision": "2026-10-11 review: 0.63.0 changes MCP malformed-config diagnosis, stdin restoration, output memory bounds, ACP session/config ordering, auth-loop recovery and background-shell cleanup. No packaged Gemini adapter is verified. Retain unsupported classification; require packaged real-host/tool/permission/session acceptance before admission, and do not represent native approvals or authenticated provider calls as automatically supported."
     },
     "pi": {
       "verified_version": "0.87.1",
-      "reviewed_notes_sha256": "250aca304e48f190600ad3bedf521b3edc5c9b4047c520b4db5042b2329b16be",
+      "reviewed_notes_sha256": "ffa3fd34fdb7d356b07e9b570d26fa4e1c5e505fa769c7433699143265ecd4a9",
       "verification": "Exact 0.87.1 RPC, local Ollama turn and resume; native extension typecheck, host load, focused live-hub guard suite",
       "capability_class": "native",
       "owning_adapter": "integrations/pi",
-      "migration_decision": "2026-10-01 review: 0.99.2 changes MCP exposure, OAuth/provider authentication and tool-name collision handling. Retain the exercised 0.87.1 RPC/extension profile and 0.86.0 rollback; do not adopt deferred MCP, provider-token authentication or new host APIs without exact-host acceptance."
+      "migration_decision": "2026-10-11 review: 1.1.0 adds OSC 7501 activity states, additive/subtractive tool selection and aborted settlement, and changes OAuth cancellation/timeouts, launch-directory environment loading, provider retries and long-prompt cost accounting. Keep the exercised 0.87.1 RPC/claim extension and 0.86.0 rollback; the 1.x tool/auth/status/usage schema is unverified. C03 must test exact RPC/extension tool inventory, denied writes, cancellation/session resume and cost/usage attribution before upgrading. Classifier/provider features require their own credentials and finite authorised spend, not a discovery-driven activation."
     },
     "opencode": {
       "verified_version": "1.18.32",
-      "reviewed_notes_sha256": "43a480f18f5fa70593d08987abebcdcac759f1dd2f011bb042a1675adf25ca26",
+      "reviewed_notes_sha256": "5e6de3371e0f53918b74e51346cd2887b2dbf47e86c83281d65c2c0d5dc23dff",
       "verification": "Exact 1.18.32 Linux JSONL, ACP, authenticated server, compatibility smoke and real hub claim-guard journeys",
       "capability_class": "native",
       "owning_adapter": "integrations/opencode",
-      "migration_decision": "2026-10-01 review: 1.18.34 adds model-request identity headers and macOS signing changes. Retain the exercised 1.18.32 Linux JSONL/ACP/authenticated-server profile and 1.18.31 rollback. New macOS archives remain outside accepted Linux evidence and require platform admission."
+      "migration_decision": "2026-10-11 review: 1.19.0 validates PTY origins and tickets before existence checks and changes updates to explicit /update or upgrade --major for version 2. Keep exercised 1.18.32 Linux JSONL/ACP/authenticated-server and 1.18.31 rollback distinct from unverified 1.19.0/2.x. No public PTY exposure or newly fixed origin guarantees are claimed for the old host; maintain authenticated loopback-only serving. C03 requires exact-host JSONL/ACP/guard/cancellation and authenticated origin/ticket acceptance before upgrade; never opt into a major version implicitly."
     },
     "mcp-spec": {
       "verified_version": null,
@@ -50,7 +50,7 @@
       "verification": "Versioned remote MCP admission remains C09; local stdio is separate",
       "capability_class": "manual",
       "owning_adapter": "src/synapse_channel/mcp_server",
-      "migration_decision": "2026-10-01 review: stable 2026-07-28 notes remain unchanged. Local stdio is separate; C09 owns versioned remote-transport admission. No remote MCP guarantee is added."
+      "migration_decision": "2026-10-11 review: stable 2026-07-28 release notes are unchanged. Local stdio remains separate from C09 versioned remote-transport admission; no remote MCP version/security guarantee is added."
     }
   }
 }
