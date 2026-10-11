@@ -22,7 +22,8 @@ All notable changes to this project are documented here.
   attempt left without an outcome by a process that died reads as uncertain.
   Adapters receive one fixed prompt and never a message. Two adapters exist:
   `pane_bridge` wraps the existing pane bridge unchanged, and `native_queue`
-  queues the prompt through the Codex client's own daemon. No service uses
+  queues the prompt through the Codex client's own daemon. Adapters can be
+  ordered per seat by the measured median time to acceptance. No service uses
   the relay yet. See `docs/wake-relay.md`.
 
 - `synapse native-hook claude` records a message one session sends to another

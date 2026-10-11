@@ -119,6 +119,24 @@ The adapter's tests start a stand-in program as a real child process; the
 vendor's client is not run by them. The command and its two observed answers
 come from a manual qualification of 2026-10-04 on one route.
 
+## Order of adapters
+
+The configuration gives the order in which a seat's adapters are tried. For
+every accepted wake the time from the hub's event to the adapter's acceptance
+can be recorded per seat and adapter. Once an adapter has enough samples (five
+by default) its median counts:
+
+- adapters with enough samples are sorted among themselves by median, the
+  fastest first, and take the places that measured adapters hold in the
+  configured order;
+- an adapter without enough samples keeps its configured place, so it is
+  neither pushed to the end, where it would never be measured, nor to the
+  front;
+- a tie keeps the configured order.
+
+The newest fifty samples per seat and adapter are kept beside the seat's wake
+marks. A samples file that cannot be read counts as no samples.
+
 ## What an adapter receives
 
 The exact target (seat, native session identifier, execution host), the wake
