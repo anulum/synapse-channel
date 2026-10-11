@@ -705,7 +705,9 @@ without end.
   listener and the waker reconnect inside their process and use a start only
   when the process itself dies.
 - **A hub outage longer than the listener budget** leaves presence holders
-  failed. After the hub is back, start them again (see below).
+  failed. After the hub is back, start them again (see below);
+  [`synapse service status`](#seeing-what-needs-attention-synapse-service-status)
+  names them.
 
 To see what has stopped trying, and to start it again:
 
@@ -734,6 +736,49 @@ Units installed by an earlier release keep their old text, which restarts
 without limit, until they are regenerated with `synapse init
 --install-user-services`, `synapse arm install` or `synapse waker install` and
 restarted. Installation does not restart running units.
+
+## Seeing what needs attention: `synapse service status`
+
+`synapse service status` reads from systemd every `synapse-*` user unit and
+every unit related to the hub, and prints one line per unit: what is wanted of
+it, what it does, and the start limit it was loaded with. It changes nothing.
+
+```text
+$ synapse service status
+synapse-hub.service: wanted enabled, is active/running, restarts 0, result success, start limit 10 starts in 10min
+  owns: the hub process
+synapse-presence@myproject.service [WantedBy, Before]: wanted enabled, is failed/failed, restarts 30, result exit-code, start limit 30 starts in 30min
+  owns: one presence listener process for %I
+  attention: enabled but failed: it stopped trying; reset and start it
+tmux server pid 4810 is in tmux-server-4810.scope
+units: 2, needing attention: 1
+to bring back units that are enabled but not running, after checking why:
+  systemctl --user reset-failed -- synapse-presence@myproject.service
+  systemctl --user start -- synapse-presence@myproject.service
+```
+
+A unit gets an `attention` line when it is:
+
+- **enabled but failed**: it used up its [start budget](#start-budgets-when-a-unit-stops-trying)
+  or could not start. This is what a presence holder looks like after a hub
+  outage longer than its budget;
+- **enabled but not running**;
+- **restarting**, with the number of restarts so far;
+- **restarting without a start limit**: the unit was installed before start
+  budgets existed and would restart without end. Regenerate it.
+
+The report also says where the tmux server lives and flags a server inside a
+service unit; see [The tmux server and unit stops](#the-tmux-server-and-unit-stops).
+
+The command prints the `reset-failed` and `start` commands for units that are
+enabled but not running. It does not run them: why a unit stopped trying is
+for the operator to check first. Recovery after a long hub outage is therefore
+a visible, manual step, not an automatic one.
+
+The exit status is 0 when nothing needs attention, 1 when something does, and
+2 when the service manager does not answer. `--json` prints the same report
+with a `healthy` flag and an `attention` list, as a feed for a dashboard or a
+monitoring check.
 
 ## The tmux server and unit stops
 

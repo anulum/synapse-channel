@@ -15,6 +15,14 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- `synapse service status` prints, for every Synapse user unit, what is
+  wanted of it and what it does: enablement, state, restart count, last
+  result, the start limit it was loaded with and the processes its unit file
+  says it owns. It names units that are enabled but failed or not running,
+  units that restart, and units that still restart without a start limit,
+  prints the recovery commands without running them, and reports where the
+  tmux server lives. `--json` gives the same report to a dashboard.
+
 - The tmux server no longer lives in the control group of the unit that
   started it. When `synapse agent-tmux start` or `synapse worker-session`
   would create the tmux server, it starts in a transient systemd scope of its

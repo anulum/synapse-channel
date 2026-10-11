@@ -148,6 +148,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "verification_probe",
         RuntimeError,
     ),
+    "ServiceQueryError": (
+        "synapse_channel.service_dependencies",
+        "service_query",
+        RuntimeError,
+    ),
     "WakerConfigError": ("synapse_channel.waker_config", "waker_config", ValueError),
     "WakerLockError": ("synapse_channel.waker_lock", "waker_lock", ValueError),
     "WakerTransitionError": ("synapse_channel.waker_transition", "waker_transition", ValueError),

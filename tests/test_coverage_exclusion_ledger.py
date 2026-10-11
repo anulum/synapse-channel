@@ -124,6 +124,7 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_a2a_grpc_security_profiles.py": (1, "optional-dep-guard"),
     "tests/test_a2a_outbound_response.py": (2, "platform-guard"),
     "tests/test_a2a_store.py": (3, "platform-guard"),
+    "tests/test_hub_restart.py": (2, "platform-guard"),
     "tests/test_read_owner_only_file_bytes.py": (3, "platform-guard"),
     "tests/test_analysis_sqlcipher_readers.py": (1, "optional-dep-guard"),
     "tests/test_at_rest.py": (3, "platform-guard"),
@@ -185,11 +186,14 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_reliability_workflow_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_secret_files.py": (8, "platform-guard"),
     "tests/test_secure_path.py": (5, "platform-guard"),
+    "tests/test_service_status.py": (1, "platform-guard"),
+    "tests/test_service_templates.py": (2, "platform-guard"),
     "tests/test_session_capability_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_setup_executor.py": (2, "platform-guard"),
     "tests/test_setup_verifier.py": (6, "platform-guard"),
     "tests/test_shared_host_regression.py": (1, "platform-guard"),
     "tests/test_shell_integration.py": (1, "optional-dep-guard"),
+    "tests/test_tmux_server.py": (2, "platform-guard"),
     "tests/test_worker_session.py": (1, "platform-guard"),
 }
 

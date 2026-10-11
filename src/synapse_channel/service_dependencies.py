@@ -29,6 +29,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.terminal_text import terminal_text
 
 HUB_UNIT = "synapse-hub.service"
@@ -57,8 +58,10 @@ class CommandRunner(Protocol):
         """Run ``args`` and return its completed process."""
 
 
-class ServiceQueryError(RuntimeError):
+class ServiceQueryError(SynapseError, RuntimeError):
     """The service manager did not answer a query, or answered incompletely."""
+
+    code = "service_query"
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +111,7 @@ class StateChange:
     after: UnitState
 
 
-def _query(command: list[str], *, runner: CommandRunner) -> str:
+def query_service_manager(command: list[str], *, runner: CommandRunner) -> str:
     """Run one read-only service-manager query and return its output."""
     rendered = " ".join(command)
     try:
@@ -167,7 +170,7 @@ def hub_dependents(*, runner: CommandRunner, hub_unit: str = HUB_UNIT) -> tuple[
         hub_unit,
     ]
     found: dict[str, list[str]] = {}
-    for line in _query(command, runner=runner).splitlines():
+    for line in query_service_manager(command, runner=runner).splitlines():
         relation, separator, value = line.partition("=")
         if not separator or relation not in relations:
             continue
@@ -219,7 +222,7 @@ def unit_states(units: Iterable[str], *, runner: CommandRunner) -> dict[str, Uni
         *wanted,
     ]
     states: dict[str, UnitState] = {}
-    for block in _query(command, runner=runner).split("\n\n"):
+    for block in query_service_manager(command, runner=runner).split("\n\n"):
         fields = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
         unit = fields.get("Id", "")
         if not unit:

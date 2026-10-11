@@ -14,12 +14,16 @@ with one service-manager job.
 ``synapse service tmux-server`` prints which unit's control group holds the
 tmux server. With ``--move`` it moves a server found inside a service unit
 into a scope of its own, without restarting it.
+
+``synapse service status`` prints, per unit, what is wanted of it and what it
+does, and names the units that need an operator.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -38,6 +42,7 @@ from synapse_channel.hub_restart import (
     restart_hub,
 )
 from synapse_channel.service_dependencies import HUB_UNIT, CommandRunner, ServiceQueryError
+from synapse_channel.service_status import UNIT_PATTERN, collect, render
 from synapse_channel.tmux_server import move_to_own_scope, placement
 from synapse_channel.waker_commands import DEFAULT_COMMAND_TIMEOUT, run_waker_command
 
@@ -134,6 +139,31 @@ def _cmd_tmux_server(args: argparse.Namespace) -> int:
     return 0 if result.moved else 1
 
 
+def _cmd_status(args: argparse.Namespace) -> int:
+    """Dispatch ``synapse service status``.
+
+    Returns 0 when no unit needs attention, 1 when one does, and 2 when the
+    service manager did not answer.
+    """
+    bounded = partial(run_waker_command, timeout=args.command_timeout)
+    try:
+        report = collect(
+            runner=bounded,
+            tmux_server=placement(args.tmux_bin, runner=bounded),
+            hub_unit=args.hub_unit,
+            pattern=args.pattern,
+        )
+    except ServiceQueryError as exc:
+        print(f"synapse service status: {exc}")
+        return 2
+    if args.json:
+        print(json.dumps(report.to_json(), indent=2, sort_keys=True))
+    else:
+        for line in render(report):
+            print(line)
+    return 0 if report.healthy else 1
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``service`` command group."""
     group = subparsers.add_parser(
@@ -143,6 +173,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     nested = group.add_subparsers(dest="service_command", required=True)
     _add_hub_restart(nested)
     _add_tmux_server(nested)
+    _add_status(nested)
 
 
 def _add_hub_restart(nested: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -216,3 +247,24 @@ def _add_tmux_server(nested: argparse._SubParsersAction[argparse.ArgumentParser]
         help="Seconds to wait for each command.",
     )
     tmux_server.set_defaults(func=_cmd_tmux_server)
+
+
+def _add_status(nested: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register ``service status``."""
+    status = nested.add_parser(
+        "status",
+        help="Show wanted and actual state of the Synapse user units and what needs attention.",
+    )
+    status.add_argument("--json", action="store_true", help="Print the report as JSON.")
+    status.add_argument("--hub-unit", default=HUB_UNIT, help="Exact hub user unit name.")
+    status.add_argument(
+        "--pattern", default=UNIT_PATTERN, help="Name pattern of the units to list."
+    )
+    status.add_argument("--tmux-bin", default="tmux", help="tmux executable to ask.")
+    status.add_argument(
+        "--command-timeout",
+        type=float,
+        default=DEFAULT_COMMAND_TIMEOUT,
+        help="Seconds to wait for each command.",
+    )
+    status.set_defaults(func=_cmd_status)
