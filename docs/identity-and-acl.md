@@ -101,6 +101,9 @@ The ACL model and its evaluation are implemented in
   An unsupported filesystem or invalid companion refuses startup rather than
   switching to an in-memory store. Existing companions are never overwritten
   during initialisation.
+  For implicit pin selection, the journal path must be missing or a regular
+  file. Other filesystem errors, including symlink loops, refuse startup before
+  SQLite opens the journal; they are never treated as an absent database.
   The parent directory entry is also flushed on POSIX before journal creation;
   Windows has no equivalent Python directory descriptor to flush.
 

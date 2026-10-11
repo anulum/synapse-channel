@@ -10,12 +10,29 @@
 from __future__ import annotations
 
 import os
+import stat
 import sys
 import tempfile
 from pathlib import Path
 
 from synapse_channel.cli_hub_startup import HubStartup, HubStartupRefused
 from synapse_channel.core.identity_pins import IdentityPinStore
+
+
+def _journal_exists(path: Path) -> bool:
+    """Distinguish a missing journal from inaccessible paths and invalid file kinds.
+
+    ``Path.exists()`` may return false for a symlink loop. Only a genuinely
+    missing file can initialise a new trust namespace; other stat failures
+    must reach the startup refusal before SQLite opens the path.
+    """
+    try:
+        metadata = path.stat()
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError("journal path must be a regular file")
+    return True
 
 
 def _sync_parent(directory: Path) -> None:
@@ -82,11 +99,12 @@ def prepare_hub_identity_pins(ctx: HubStartup) -> None:
         return
     try:
         database = Path(ctx.args.db).resolve()
+        database_exists = _journal_exists(database)
         if database == (legacy.parent / "hub.db").resolve():
             ctx.args.identity_pins = str(legacy)
             return
         companion = Path(f"{database}.identity-pins.json")
-        if database.exists() and legacy.exists() and not companion.exists():
+        if database_exists and legacy.exists() and not companion.exists():
             print(
                 "synapse hub: refused to choose identity pins for an existing journal. "
                 f"Legacy file: {legacy}; isolated companion: {companion}. "

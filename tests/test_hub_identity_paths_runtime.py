@@ -275,6 +275,13 @@ def test_invalid_or_unwritable_companion_refuses_before_creating_journal(tmp_pat
     assert "No in-memory fallback" in refusal.stderr
     assert blocker.read_text() == "keep"
     assert not list(database.parent.glob("*.tmp"))
+    directory = home / "directory.db"
+    directory.mkdir()
+    refusal = refused_hub(home, directory)
+    assert refusal.returncode == 2
+    assert "Traceback" not in refusal.stderr
+    assert directory.is_dir()
+    assert not Path(f"{directory}.identity-pins.json").exists()
     if os.name == "posix":
         loop = home / "loop.db"
         loop.symlink_to(loop)

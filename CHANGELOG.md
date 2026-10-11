@@ -155,6 +155,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Implicit identity-pin selection now checks journal paths with `stat` before
+  opening SQLite. Symlink loops on Python 3.13 and directory paths get the
+  controlled startup refusal instead of a traceback; only a genuinely missing
+  journal can initialise a new pin namespace.
+
 - Separate custom hub journals now use separate default identity-pin files,
   including journals in one directory. Startup publishes an empty companion
   atomically without overwriting existing pins; an ambiguous upgrade requires
