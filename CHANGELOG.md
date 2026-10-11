@@ -19,9 +19,11 @@ All notable changes to this project are documented here.
   over the client's own channel, without anyone calling `native-record`: run
   as a `PostToolUse` hook, it reads the tool call from standard input, writes
   the sender's record to a spool on disk and then tries the hub. It prints
-  nothing and exits `0`, so it cannot block or fail the send. The record
-  leaves `pending/` only after the hub confirmed it; the same call delivered
-  twice gives one event; retry is bounded and a refusal of the record is
+  nothing and exits `0`; the send has already happened and the hook cannot
+  fail it. The record leaves `pending/` only after the hub confirmed it. The
+  same call gives one entry and one event, also when several hook processes
+  run at once: an entry is created without replacing an existing one, and one
+  flush runs at a time. Retry is bounded and a refusal of the record is
   final. `native-hook flush` and `native-hook status` work on the spool.
   `synapse native-seat` keeps the local register that says which seat a
   native session is. See `docs/cli.md`, "Recording from a client hook".

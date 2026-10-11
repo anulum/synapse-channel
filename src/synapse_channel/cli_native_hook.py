@@ -10,7 +10,9 @@
 ``native-hook claude`` is what an agent client runs after a session-send tool
 call: it reads the call from standard input, writes the record to a spool on
 disk, and then tries to put the spool on the hub. It prints nothing and always
-exits 0, so it can neither block nor fail the send. The hub token is read only
+exits 0: the send has already happened and the hook cannot fail it. The client
+does wait for the hook, for as long as the spool's lock and the hub's answer
+take, up to the waits given and the client's own hook timeout. The hub token is read only
 after the record is on disk: an unreadable token file leaves the record
 pending instead of losing it.
 
@@ -48,6 +50,7 @@ from synapse_channel.native_seat_register import (
 )
 from synapse_channel.native_spool import (
     DEFAULT_MAX_ATTEMPTS,
+    Sender,
     SendResult,
     counts,
     default_spool_dir,
@@ -134,6 +137,22 @@ def _directories(args: argparse.Namespace) -> tuple[Path, Path]:
     return spool, seats
 
 
+def _flush_command(args: argparse.Namespace, spool: Path, send: Sender) -> int:
+    """Run ``native-hook flush`` and print what it did."""
+    revived = retry_failed(spool) if args.retry_failed else 0
+    report = None if revived is None else flush(spool, send, max_attempts=args.max_attempts)
+    if report is None or report.busy:
+        print(f"nothing flushed: another flush is running; pending {counts(spool)['pending']}")
+        return 1
+    print(
+        f"recorded {report.recorded}, failed {report.failed}, "
+        f"pending {report.left_pending}"
+        + (f", revived {revived}" if args.retry_failed else "")
+        + ("; stopped early, the hub did not answer" if report.stopped_early else "")
+    )
+    return 0 if report.left_pending == 0 and report.failed == 0 else 1
+
+
 def _cmd_native_hook(args: argparse.Namespace) -> int:
     """Dispatch ``synapse native-hook``."""
     spool, seats = _directories(args)
@@ -159,15 +178,7 @@ def _cmd_native_hook(args: argparse.Namespace) -> int:
         )
         return 0
     if args.hook_command == "flush":
-        revived = retry_failed(spool) if args.retry_failed else 0
-        report = flush(spool, completing_sender(seats, send), max_attempts=args.max_attempts)
-        print(
-            f"recorded {report.recorded}, failed {report.failed}, "
-            f"pending {report.left_pending}"
-            + (f", revived {revived}" if args.retry_failed else "")
-            + ("; stopped early, the hub did not answer" if report.stopped_early else "")
-        )
-        return 0 if report.left_pending == 0 and report.failed == 0 else 1
+        return _flush_command(args, spool, completing_sender(seats, send))
     for state, count in counts(spool).items():
         print(f"{state}: {count}")
     return 0

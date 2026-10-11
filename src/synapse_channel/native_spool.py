@@ -7,9 +7,9 @@
 # SYNAPSE_CHANNEL — write-ahead spool for records of native messages
 """Keep a native-message record on disk until the hub has taken it.
 
-A hook that records a message must never lose it and must never block the
-send it follows. So the record is written to a spool file and flushed to disk
-**before** the hub is contacted, and the file moves to ``recorded/`` only
+A hook that records a message runs after the send has happened and must not
+lose the record while the hub is away. So the record is written to a spool
+file and flushed to disk **before** the hub is contacted, and the file moves to ``recorded/`` only
 **after** the hub answered that it stored the record.
 
 Layout below the spool directory::
@@ -31,6 +31,38 @@ refusal by the hub is final at once. A flush stops after two failures in a
 row that reached for the hub; a failure decided before the hub was contacted
 counts an attempt of its entry and does not hold the entries behind it.
 Nothing in ``failed/`` is retried unless asked for.
+
+Several hook processes may run at once. Three things keep them apart:
+
+* A pending entry is created by a hard link from a finished temporary file.
+  A link never replaces an existing name, so a second creator of the same
+  entry cannot overwrite the first one's record; it learns that the entry
+  exists.
+* Every change of what exists is made under one short lock
+  (``.spool.lock``): a creator's check of the other states together with its
+  creation, and each move of an entry from one state to another. So a
+  creator never sees an entry between its two places and never recreates an
+  entry that has just been recorded. The lock is waited for; it is never held
+  across a call to the hub.
+* One flush runs at a time (``.flush.lock``, never waited for). A second
+  flush, or a retry of failed entries during a flush, does nothing and says
+  so; the entries wait for the running flush or the next one.
+
+The locks are advisory file locks: ``flock`` on POSIX, a byte-range lock
+through ``msvcrt`` on Windows. Every directory of the spool is created and
+checked as owner-only by :func:`~synapse_channel.core.private_dir.ensure_private_dir`
+(modes on POSIX, the access list on Windows); files are created with mode
+0600 inside it.
+
+What is synced, on POSIX: each file before it gets its name; the directory
+of an entry after the entry is created and after each half of a move; and
+the parent of every directory this module had to create. No power-loss test
+has been made; this is a statement of the syncs requested, not of a
+guarantee measured.
+
+A creator waits for the creation lock without a deadline. The lock is held
+only while files are written and renamed, never across a call to the hub,
+so the wait is as long as those writes.
 """
 
 from __future__ import annotations
@@ -40,11 +72,17 @@ import json
 import os
 import re
 import secrets
-from collections.abc import Callable
+import stat
+import sys
+import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from synapse_channel.core.private_dir import ensure_private_dir
 
 SCHEMA = "native-spool-entry-v1"
 """Schema name written into every spool entry."""
@@ -54,6 +92,12 @@ DEFAULT_MAX_ATTEMPTS = 20
 
 MAX_CONSECUTIVE_FAILURES = 2
 """Transport failures in a row after which one flush stops: the hub is down."""
+
+SPOOL_LOCK = ".spool.lock"
+"""Lock file held, briefly, for every creation and every move of an entry."""
+
+FLUSH_LOCK = ".flush.lock"
+"""Lock file held by the one running flush."""
 
 _UNSAFE = re.compile(r"[^0-9A-Za-z._-]+")
 _STATES = ("pending", "recorded", "failed", "skipped")
@@ -88,6 +132,8 @@ class FlushReport:
     failed: int = 0
     left_pending: int = 0
     stopped_early: bool = False
+    busy: bool = False
+    """True when another flush was running and this one tried nothing."""
 
 
 Sender = Callable[[dict[str, Any]], SendResult]
@@ -110,20 +156,143 @@ def entry_stem(native_session: str, call_id: str) -> str:
     return f"{label}__{digest}"
 
 
-def _write_atomic(path: Path, data: bytes) -> None:
-    """Write ``data`` through a flushed owner-only temporary file and a rename."""
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    temporary = path.parent / f".tmp-{os.getpid()}-{secrets.token_hex(6)}"
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+def _private_dir(path: Path) -> None:
+    """Create ``path`` owner-only and sync the parent of each directory made."""
+    missing = []
+    current = path
+    while not current.is_dir():
+        missing.append(current)
+        current = current.parent
+    ensure_private_dir(path, parents=True, purpose="native message spool")
+    for created in missing:
+        _sync_directory(created.parent)
+
+
+def _sync_directory_posix(directory: Path) -> None:
+    """Make a finished create, rename or removal in ``directory`` durable."""
+    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+# A directory cannot be opened for syncing outside POSIX.
+_sync_directory: Callable[[Path], None] = (
+    _sync_directory_posix if os.name == "posix" else (lambda directory: None)
+)
+
+
+@contextmanager
+def _temporary(directory: Path, data: bytes) -> Iterator[Path]:
+    """Yield a new flushed owner-only file holding ``data``; remove it afterwards.
+
+    The caller renames or links it to its final name inside the block. Whatever
+    happens, no temporary file is left behind.
+    """
+    _private_dir(directory)
+    temporary = directory / f".tmp-{os.getpid()}-{secrets.token_hex(6)}"
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        temporary.replace(path)
-    except BaseException:
+        yield temporary
+    finally:
         temporary.unlink(missing_ok=True)
-        raise
+
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Put ``data`` at ``path`` through a temporary file, a rename and a sync."""
+    with _temporary(path.parent, data) as temporary:
+        temporary.replace(path)
+    _sync_directory(path.parent)
+
+
+def _create_new(path: Path, data: bytes) -> bool:
+    """Create ``path`` with ``data`` unless it exists; say whether it was created.
+
+    The data goes to a flushed owner-only temporary file, which is then hard
+    linked to ``path``. A link fails when the name exists, so an existing file
+    is never replaced, and a reader never sees a partly written one.
+    """
+    with _temporary(path.parent, data) as temporary:
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            if not path.is_file():
+                raise
+            return False
+    _sync_directory(path.parent)
+    return True
+
+
+if sys.platform == "win32":
+    import errno
+    import msvcrt
+
+    _HELD_BY_ANOTHER = (errno.EACCES, errno.EDEADLK)
+    """What the C runtime reports for a region locked by someone else."""
+
+    def _take(descriptor: int, blocking: bool) -> bool:
+        """Lock the first byte; a blocking request asks again until it has it.
+
+        Only a region held by someone else is waited for or reported as busy.
+        Any other error of the descriptor or the file system is raised.
+        """
+        while True:
+            try:
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                return True
+            except OSError as exc:
+                if exc.errno not in _HELD_BY_ANOTHER:
+                    raise
+                if not blocking:
+                    return False
+                time.sleep(0.02)
+
+    def _release(descriptor: int) -> None:
+        """Unlock the first byte."""
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+
+else:
+    import fcntl
+
+    def _take(descriptor: int, blocking: bool) -> bool:
+        """Take an exclusive ``flock``; a blocking request waits for it."""
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+        except BlockingIOError:
+            return False
+        return True
+
+    def _release(descriptor: int) -> None:
+        """Give the ``flock`` back."""
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+
+
+@contextmanager
+def _lock(directory: Path, name: str, *, blocking: bool) -> Iterator[bool]:
+    """Hold an advisory lock on a file of the spool directory.
+
+    Yields whether the lock is held; a blocking request always holds it. The
+    lock ends with the block, and with the process if it dies.
+    """
+    _private_dir(directory)
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    descriptor = os.open(directory / name, flags, 0o600)
+    try:
+        held = _take(descriptor, blocking)
+        try:
+            yield held
+        finally:
+            if held:
+                _release(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _dump(entry: dict[str, Any]) -> bytes:
@@ -132,9 +301,9 @@ def _dump(entry: dict[str, Any]) -> bytes:
     )
 
 
-def find_entry(directory: Path, stem: str) -> Path | None:
-    """Return the entry of ``stem`` in whichever state it is, or None."""
-    for state in _STATES:
+def find_entry(directory: Path, stem: str, states: tuple[str, ...] = _STATES) -> Path | None:
+    """Return the entry of ``stem`` in whichever of ``states`` it is, or None."""
+    for state in states:
         base = directory / state
         if not base.is_dir():
             continue
@@ -156,6 +325,10 @@ def spool(
 ) -> tuple[Path, bool]:
     """Write one record as a pending entry, unless its call already has an entry.
 
+    The entry is never written over an existing one: of several processes
+    that spool the same call at once, one creates the entry and the others
+    are told that it exists.
+
     Returns
     -------
     tuple of (pathlib.Path, bool)
@@ -164,10 +337,6 @@ def spool(
     """
     moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     stem = entry_stem(native_session, call_id or secrets.token_hex(12))
-    if call_id:
-        existing = find_entry(directory, stem)
-        if existing is not None:
-            return existing, False
     path = directory / "pending" / f"{stem}.json"
     entry = {
         "schema": SCHEMA,
@@ -178,8 +347,14 @@ def spool(
         "attempts": [],
         "record": record,
     }
-    _write_atomic(path, _dump(entry))
-    return path, True
+    # The link in ``_create_new`` is what protects an existing pending entry;
+    # the lock makes the check of the other states and the creation one step
+    # against every move.
+    with _lock(directory, SPOOL_LOCK, blocking=True):
+        settled = find_entry(directory, stem, _STATES[1:])
+        if settled is not None:
+            return settled, False
+        return path, _create_new(path, _dump(entry))
 
 
 def set_aside(
@@ -202,8 +377,17 @@ def pending_entries(directory: Path) -> list[Path]:
     base = directory / "pending"
     if not base.is_dir():
         return []
-    entries = [path for path in base.glob("*.json") if path.is_file()]
-    return sorted(entries, key=lambda path: (path.stat().st_mtime_ns, path.name))
+    entries = []
+    for path in base.glob("*.json"):
+        try:
+            info = path.stat()
+        except FileNotFoundError:
+            # Moved away by a running flush between the listing and the look.
+            # Any other error is the directory's own problem and is raised.
+            continue
+        if stat.S_ISREG(info.st_mode):
+            entries.append((info.st_mtime_ns, path.name, path))
+    return [path for _, _, path in sorted(entries)]
 
 
 def _load(path: Path) -> dict[str, Any] | None:
@@ -218,10 +402,16 @@ def _load(path: Path) -> dict[str, Any] | None:
     return data
 
 
-def _move(path: Path, entry: dict[str, Any], destination: Path) -> None:
-    """Write the entry at its new place, then remove the old file."""
-    _write_atomic(destination, _dump(entry))
-    path.unlink(missing_ok=True)
+def _move(directory: Path, path: Path, entry: dict[str, Any], destination: Path) -> None:
+    """Write the entry at its new place durably, then remove the old file.
+
+    Both steps happen under the creation lock, so no creator sees the entry
+    in neither place or recreates it in between.
+    """
+    with _lock(directory, SPOOL_LOCK, blocking=True):
+        _write_atomic(destination, _dump(entry))
+        path.unlink(missing_ok=True)
+        _sync_directory(path.parent)
 
 
 def flush(
@@ -252,8 +442,24 @@ def flush(
     FlushReport
         Counts. ``stopped_early`` is true when two attempts in a row reached
         for the hub and failed in transport, and the rest was left for a later
-        flush.
+        flush. ``busy`` is true when another flush was running and nothing was
+        tried.
     """
+    with _lock(directory, FLUSH_LOCK, blocking=False) as held:
+        if not held:
+            return FlushReport(left_pending=len(pending_entries(directory)), busy=True)
+        return _flush_held(directory, send, max_attempts=max_attempts, limit=limit, now=now)
+
+
+def _flush_held(
+    directory: Path,
+    send: Sender,
+    *,
+    max_attempts: int,
+    limit: int,
+    now: Callable[[], datetime],
+) -> FlushReport:
+    """Try the pending entries; the caller holds the flush lock."""
     recorded = failed = consecutive = 0
     stopped = False
     entries = pending_entries(directory)
@@ -276,13 +482,18 @@ def flush(
         if result.recorded:
             entry["state"] = "recorded"
             entry["audit_seq"] = result.audit_seq
-            _move(path, entry, directory / "recorded" / moment.strftime("%Y-%m-%d") / path.name)
+            _move(
+                directory,
+                path,
+                entry,
+                directory / "recorded" / moment.strftime("%Y-%m-%d") / path.name,
+            )
             recorded += 1
             consecutive = 0
             continue
         if result.final or len(entry["attempts"]) >= max_attempts:
             entry["state"] = "failed"
-            _move(path, entry, directory / "failed" / path.name)
+            _move(directory, path, entry, directory / "failed" / path.name)
             failed += 1
         else:
             _write_atomic(path, _dump(entry))
@@ -301,25 +512,31 @@ def flush(
     )
 
 
-def retry_failed(directory: Path) -> int:
+def retry_failed(directory: Path) -> int | None:
     """Move every failed entry back to pending with its attempts cleared.
 
     The earlier attempts are kept under ``earlier_attempts``; nothing is lost.
+
+    Returns
+    -------
+    int or None
+        How many entries were moved; None when a flush is running, and
+        nothing was touched.
     """
-    base = directory / "failed"
-    moved = 0
-    if not base.is_dir():
-        return 0
-    for path in sorted(base.glob("*.json")):
-        entry = _load(path)
-        if entry is None:
-            continue
-        entry.setdefault("earlier_attempts", []).extend(entry["attempts"])
-        entry["attempts"] = []
-        entry["state"] = "pending"
-        _move(path, entry, directory / "pending" / path.name)
-        moved += 1
-    return moved
+    with _lock(directory, FLUSH_LOCK, blocking=False) as held:
+        if not held:
+            return None
+        moved = 0
+        for path in sorted((directory / "failed").glob("*.json")):
+            entry = _load(path)
+            if entry is None:
+                continue
+            entry.setdefault("earlier_attempts", []).extend(entry["attempts"])
+            entry["attempts"] = []
+            entry["state"] = "pending"
+            _move(directory, path, entry, directory / "pending" / path.name)
+            moved += 1
+        return moved
 
 
 def counts(directory: Path) -> dict[str, int]:

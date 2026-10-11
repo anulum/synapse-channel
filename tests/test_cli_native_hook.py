@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -37,6 +39,7 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.secure_path import apply_owner_only_file
 from synapse_channel.native_hook_claude import record_from_hook
 from synapse_channel.native_seat_register import Registration
 from synapse_channel.native_spool import counts
@@ -290,13 +293,30 @@ async def test_a_hub_that_cannot_record_exhausts_the_attempts_and_a_retry_brings
     store.close()
 
 
+def _token_access(path: Path, *, owner_only: bool) -> None:
+    """Set real platform permissions on the owned token fixture."""
+    if os.name == "nt":
+        tool = Path(os.environ["SYSTEMROOT"]) / "System32" / "icacls.exe"
+        operation = ["/remove:g", "*S-1-1-0"] if owner_only else ["/grant:r", "*S-1-1-0:R"]
+        subprocess.run(  # noqa: S603 - system ACL tool and an owned fixture path
+            [str(tool), str(path), *operation],
+            check=True,
+            capture_output=True,
+            timeout=10,
+        )
+        if owner_only:
+            apply_owner_only_file(path)
+    else:
+        path.chmod(0o600 if owner_only else 0o644)
+
+
 async def test_a_secured_hub_takes_the_token_from_a_file_the_flag_or_the_environment(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _register(tmp_path)
     secret = tmp_path / "token"
     secret.write_text("hub-secret\n", encoding="utf-8")
-    secret.chmod(0o644)
+    _token_access(secret, owner_only=False)
     store = EventStore(tmp_path / "hub.db")
     hub = SynapseHub(
         hub_id="secured", journal=store, authenticator=TokenAuthenticator(["hub-secret"])
@@ -314,14 +334,14 @@ async def test_a_secured_hub_takes_the_token_from_a_file_the_flag_or_the_environ
         blocked = await _flush(tmp_path, uri, "--token-file", str(secret))
         assert capsys.readouterr().out.endswith("recorded 0, failed 0, pending 2\n")
 
-        secret.chmod(0o600)
+        _token_access(secret, owner_only=True)
         by_file = await _flush(tmp_path, uri, "--token-file", str(secret))
         by_flag = await _call(
             tmp_path, monkeypatch, uri, _hook("toolu_c", "c", "msg-c"), "--token", "hub-secret"
         )
         unusable = tmp_path / "other-token"
         unusable.write_text("wrong\n", encoding="utf-8")
-        unusable.chmod(0o644)
+        _token_access(unusable, owner_only=False)
         flag_first = await _call(
             tmp_path,
             monkeypatch,
@@ -370,6 +390,49 @@ async def test_an_older_hub_and_a_held_seat_name_leave_the_record_pending(
     assert "record path unavailable" in attempts[1]["detail"]
     assert len(_events(store)) == 1
     store.close()
+
+
+async def test_a_flush_beside_a_running_flush_does_nothing_and_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real flush is held open by a peer that welcomes and then stays silent."""
+
+    async def quiet(websocket: Any) -> None:
+        await websocket.send(
+            json.dumps({"sender": "SynapseHub", "type": "welcome", "protocol_version": 7})
+        )
+        await websocket.wait_closed()
+
+    _register(tmp_path)
+    async with serve(quiet, "localhost", 0) as server:
+        uri = f"ws://localhost:{server.sockets[0].getsockname()[1]}"
+        monkeypatch.setattr(sys, "stdin", _Stdin(_hook()))
+        first = asyncio.create_task(
+            _run(["native-hook", "claude", "--uri", uri, "--reply-timeout", "3", *_dirs(tmp_path)])
+        )
+        lock = tmp_path / "spool" / ".flush.lock"
+        for _ in range(200):
+            if lock.exists() and _state(tmp_path) == {"pending": 1}:
+                break
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.3)
+        capsys.readouterr()
+        beside = await _flush(tmp_path, uri)
+        retried = await _flush(tmp_path, uri, "--retry-failed")
+        monkeypatch.setattr(sys, "stdin", _Stdin(_hook("toolu_2", "second", "msg-2")))
+        hook_beside = await _run(["native-hook", "claude", "--uri", uri, *_dirs(tmp_path)])
+        out = capsys.readouterr().out
+        assert await first == 0
+
+    assert (beside, retried, hook_beside) == (1, 1, 0)
+    assert out == (
+        "nothing flushed: another flush is running; pending 1\n"
+        "nothing flushed: another flush is running; pending 1\n"
+    )
+    assert _state(tmp_path) == {"pending": 2}
+    entries = sorted((tmp_path / "spool" / "pending").glob("*.json"))
+    attempts = [len(json.loads(e.read_text(encoding="utf-8"))["attempts"]) for e in entries]
+    assert sorted(attempts) == [0, 1]
 
 
 @pytest.mark.parametrize("welcomes", [False, True])

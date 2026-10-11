@@ -2892,9 +2892,11 @@ for the tool `SendMessage`:
 The command reads the call from standard input and writes the sender's
 `outcome` record: `queued` only when the tool reported success, `refused` when
 it reported failure, `uncertain` otherwise. It prints nothing and exits `0`
-whatever happens, so it cannot block or fail the send it follows. A wrong
-option is the one exception: the argument parser exits `2` before the command
-runs.
+whatever happens: the send has already happened and the hook cannot fail it.
+The client does wait for the hook, for as long as the spool's lock and the
+hub's answer take, bounded by the waits below and by the hook's `timeout`. A
+wrong option is the one exception to the exit status: the argument parser
+exits `2` before the command runs.
 
 **The record is on disk before the hub is asked.** The spool lives in
 `$XDG_DATA_HOME/synapse/native-spool` (`--spool-dir` overrides it):
@@ -2908,7 +2910,12 @@ runs.
 | `unparsed/` | input that was not JSON |
 
 An entry is named after the native session and the tool call, so the same call
-delivered twice makes one entry and one event. Each hook call also tries the
+delivered twice makes one entry and one event. This holds when several hook
+processes run at once: an entry is created by a hard link, which never
+replaces an existing file, so of several simultaneous creators one creates the
+entry and the others learn that it exists. One flush runs at a time; a hook
+call or a `flush` that finds another flush running tries nothing and leaves
+the entries to it. Each hook call also tries the
 older pending entries, oldest first, and stops after two failures in a row
 that reached for the hub. While the hub is down a send therefore waits for up
 to two ready timeouts before the hook returns. A hub that is down, a hub older than wire version `7`, a hub that
@@ -2926,8 +2933,19 @@ synapse native-hook flush --retry-failed   # also try the failed ones again
 ```
 
 `flush` exits `0` when it left nothing pending and moved nothing to `failed/`.
-Nothing flushes on a timer: a pending entry waits for the next hook call or
-the next `flush`.
+Beside a running flush it prints `nothing flushed: another flush is running`
+and exits `1`. Nothing flushes on a timer: a pending entry waits for the next
+hook call or the next `flush`.
+
+The spool directories are created and checked as owner-only (modes `0700` on
+POSIX, the access list on Windows) and the files in them are created with mode
+`0600`. The spool must be on a file system with hard links. On POSIX each
+file is synced before it gets its name, the directory of an entry is synced
+after the entry is created and after each half of a move, and so is the
+parent of every directory the spool had to create. No power-loss test has
+been made. The locks are `flock` on POSIX and a byte-range lock on Windows; a
+creator waits for the short creation lock without a deadline, and that lock
+is never held across a call to the hub.
 
 The hook knows a native session identifier, not a seat. `synapse native-seat`
 keeps that link in `$XDG_DATA_HOME/synapse/native-seats`, one file per

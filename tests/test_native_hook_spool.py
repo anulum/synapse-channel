@@ -20,6 +20,9 @@ import hashlib
 import json
 import os
 import stat
+import subprocess
+import sys
+import threading
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -45,6 +48,7 @@ from synapse_channel.native_seat_register import (
     seat_of_session,
 )
 from synapse_channel.native_spool import (
+    SPOOL_LOCK,
     SendResult,
     counts,
     default_spool_dir,
@@ -118,8 +122,9 @@ def test_each_registration_is_a_new_owner_only_file_and_the_newest_wins(tmp_path
     same_instant = register(directory, native_session="s1", seat="P/c", now=_T0)
 
     assert len({first, second, same_instant}) == 3
-    assert stat.S_IMODE(first.stat().st_mode) == 0o600
-    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+    if os.name == "posix":
+        assert stat.S_IMODE(first.stat().st_mode) == 0o600
+        assert stat.S_IMODE(directory.stat().st_mode) == 0o700
     registrations = load(directory)
     # Two registrations of the same microsecond are ordered by file name, the newest is last.
     assert sorted(item.seat for item in registrations[:2]) == ["P/a", "P/c"]
@@ -174,6 +179,7 @@ def test_the_register_lives_under_the_data_directory(
     assert default_spool_dir() == tmp_path / "synapse" / "native-spool"
     monkeypatch.delenv("XDG_DATA_HOME")
     monkeypatch.setenv("HOME", str(tmp_path / "h"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "h"))
     assert (
         default_register_dir() == tmp_path / "h" / ".local" / "share" / "synapse" / "native-seats"
     )
@@ -339,8 +345,9 @@ def test_the_record_is_on_disk_before_the_hub_is_asked_and_moves_only_after_it_a
     path, created = spool(directory, native_session=_SESSION, call_id=_CALL, record=record, now=_T0)
 
     assert created and path.parent.name == "pending"
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
-    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+    if os.name == "posix":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
     stored = json.loads(path.read_text(encoding="utf-8"))
     assert stored["record"] == record and stored["attempts"] == [] and stored["state"] == "pending"
 
@@ -406,6 +413,14 @@ def test_the_same_call_delivered_twice_makes_one_entry_in_any_state(tmp_path: Pa
     two, _ = spool(directory, native_session=_SESSION, call_id="", record=record)
     assert one != two
     assert find_entry(directory, "absent") is None
+    assert find_entry(directory, other.stem) == other
+
+    # A refused entry is still the entry of its call.
+    flush(directory, Hub(_REFUSED))
+    refused, created_refused = spool(
+        directory, native_session=_SESSION, call_id="toolu_2", record=record
+    )
+    assert not created_refused and refused == directory / "failed" / other.name
 
 
 def test_a_hub_that_is_down_leaves_the_entry_pending_and_stops_the_flush(tmp_path: Path) -> None:
@@ -657,7 +672,8 @@ def test_no_exception_leaves_the_hook(tmp_path: Path) -> None:
 def test_a_failed_write_leaves_no_temporary_file_and_no_entry(tmp_path: Path) -> None:
     directory = tmp_path / "spool"
     record = _record(tmp_path)
-    # A directory sits where the entry file must go, so the final rename fails.
+    # A directory sits where the entry file must go: that is not an entry, so the
+    # call must fail and not report that the entry exists.
     (directory / "pending" / f"{entry_stem(_SESSION, _CALL)}.json").mkdir(parents=True)
 
     with pytest.raises(OSError):
@@ -667,3 +683,171 @@ def test_a_failed_write_leaves_no_temporary_file_and_no_entry(tmp_path: Path) ->
         f"{entry_stem(_SESSION, _CALL)}.json"
     ]
     assert pending_entries(directory) == []
+    # A name that vanishes between the listing and the look is passed over.
+    if os.name == "posix":
+        (directory / "pending" / "gone.json").symlink_to(directory / "pending" / "absent")
+        assert pending_entries(directory) == []
+
+
+# ---------------------------------------------------------------------------
+# Several processes at once
+# ---------------------------------------------------------------------------
+
+
+def test_of_many_simultaneous_spools_of_one_call_one_creates_and_none_overwrites(
+    tmp_path: Path,
+) -> None:
+    """Real threads, each with its own lock handle, through the public function."""
+    base = _record(tmp_path)
+    for round_number in range(25):
+        directory = tmp_path / f"spool-{round_number}"
+        results = _spool_at_once(directory, base, 6)
+
+        creators = [number for number, _, created in results if created]
+        assert len(results) == 6 and len(creators) == 1
+        assert len({path for _, path, _ in results}) == 1
+        (entry,) = pending_entries(directory)
+        kept = json.loads(entry.read_text(encoding="utf-8"))["record"]["sent_at"]
+        assert kept == f"2026-10-11T12:00:0{creators[0]}.000000Z"
+        names = sorted(p.name for p in (directory / "pending").iterdir())
+        assert names == [entry.name]
+
+
+def _spool_at_once(
+    directory: Path, base: dict[str, Any], count: int
+) -> list[tuple[int, Path, bool]]:
+    start = threading.Barrier(count)
+    results: list[tuple[int, Path, bool]] = []
+
+    def one(number: int) -> None:
+        record = {**base, "sent_at": f"2026-10-11T12:00:0{number}.000000Z"}
+        start.wait()
+        path, created = spool(directory, native_session=_SESSION, call_id=_CALL, record=record)
+        results.append((number, path, created))
+
+    threads = [threading.Thread(target=one, args=(number,)) for number in range(count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return results
+
+
+_HOLD_LOCK = """
+import os, sys
+descriptor = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)
+if sys.platform == "win32":
+    import msvcrt
+    msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+else:
+    import fcntl
+    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+print("held", flush=True)
+sys.stdin.readline()
+"""
+
+
+def test_a_creator_and_a_move_wait_while_another_process_holds_the_creation_lock(
+    tmp_path: Path,
+) -> None:
+    """Another process holds the operating system's lock on the spool's lock file."""
+    directory = tmp_path / "spool"
+    record = _record(tmp_path)
+    spool(directory, native_session=_SESSION, call_id=_CALL, record=record)
+    holder = subprocess.Popen(  # noqa: S603 - this interpreter, a fixed script
+        [sys.executable, "-c", _HOLD_LOCK, str(directory / SPOOL_LOCK)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert holder.stdout is not None and holder.stdin is not None
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        created = threading.Event()
+        flushed: list[Any] = []
+
+        def create() -> None:
+            spool(directory, native_session=_SESSION, call_id="toolu_2", record=record)
+            created.set()
+
+        creator = threading.Thread(target=create)
+        flusher = threading.Thread(target=lambda: flushed.append(flush(directory, Hub())))
+        creator.start()
+        flusher.start()
+
+        assert not created.wait(timeout=0.5)
+        # The hub was asked, but the entry has not moved and no second one exists.
+        assert flushed == [] and counts(directory)["pending"] == 1
+        assert counts(directory)["recorded"] == 0
+    finally:
+        holder.stdin.write("\n")
+        holder.stdin.close()
+        holder.wait(timeout=20)
+        holder.stdout.close()
+    creator.join(timeout=20)
+    flusher.join(timeout=20)
+    assert created.is_set() and len(flushed) == 1
+    assert counts(directory)["pending"] + counts(directory)["recorded"] == 2
+
+
+class SlowHub(Hub):
+    """A hub boundary whose answer waits until the test lets it go."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.asked = threading.Event()
+        self.answer = threading.Event()
+
+    def __call__(self, record: dict[str, Any]) -> SendResult:
+        self.asked.set()
+        assert self.answer.wait(timeout=20)
+        return super().__call__(record)
+
+
+def test_one_flush_runs_at_a_time_and_the_second_touches_nothing(tmp_path: Path) -> None:
+    directory = tmp_path / "spool"
+    record = _record(tmp_path)
+    spool(directory, native_session=_SESSION, call_id=_CALL, record=record)
+    spool(directory, native_session=_SESSION, call_id="toolu_2", record=record)
+    slow, second = SlowHub(), Hub()
+    reports: list[Any] = []
+    running = threading.Thread(target=lambda: reports.append(flush(directory, slow)))
+    running.start()
+    assert slow.asked.wait(timeout=20)
+
+    before = {path.name: path.read_bytes() for path in pending_entries(directory)}
+    skipped = flush(directory, second)
+    revived = retry_failed(directory)
+    # A new entry can still be spooled while the flush is running.
+    late, created = spool(directory, native_session=_SESSION, call_id="toolu_3", record=record)
+
+    assert (skipped.busy, skipped.left_pending, skipped.recorded) == (True, 2, 0)
+    assert revived is None and second.sent == [] and created
+    assert {p.name: p.read_bytes() for p in pending_entries(directory) if p != late} == before
+    slow.answer.set()
+    running.join()
+    assert (reports[0].recorded, reports[0].busy) == (2, False)
+    after = flush(directory, second)
+    assert (after.recorded, after.busy, len(second.sent)) == (1, False, 1)
+
+
+def test_a_step_that_fails_leaves_no_temporary_file_and_the_entry_where_it_was(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "spool"
+    spool(directory, native_session=_SESSION, call_id=_CALL, record=_record(tmp_path), now=_T0)
+    (entry,) = pending_entries(directory)
+    before = entry.read_bytes()
+    # A directory that is not empty sits where the recorded entry must go.
+    (directory / "recorded" / "2026-10-11" / entry.name / "occupied").mkdir(parents=True)
+
+    with pytest.raises(OSError):
+        flush(directory, Hub(), now=lambda: _T0)
+
+    assert pending_entries(directory) == [entry] and entry.read_bytes() == before
+    leftovers = [p for p in directory.rglob(".tmp-*")]
+    assert leftovers == []
+    # The flush lock was given back: a later flush runs.
+    (directory / "recorded" / "2026-10-11" / entry.name / "occupied").rmdir()
+    (directory / "recorded" / "2026-10-11" / entry.name).rmdir()
+    assert flush(directory, Hub(), now=lambda: _T0).recorded == 1
