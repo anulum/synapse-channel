@@ -10,6 +10,10 @@
 ``synapse service hub-restart`` prints what a hub restart would touch. It
 restarts the hub only when given the exact current hub process id, and then
 with one service-manager job.
+
+``synapse service tmux-server`` prints which unit's control group holds the
+tmux server. With ``--move`` it moves a server found inside a service unit
+into a scope of its own, without restarting it.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ from synapse_channel.hub_restart import (
     restart_hub,
 )
 from synapse_channel.service_dependencies import HUB_UNIT, CommandRunner, ServiceQueryError
+from synapse_channel.tmux_server import move_to_own_scope, placement
 from synapse_channel.waker_commands import DEFAULT_COMMAND_TIMEOUT, run_waker_command
 
 PROBE_NAME = "service-hub-restart-probe"
@@ -106,6 +111,29 @@ def _cmd_hub_restart(
     return 1 if report.restarted else 2
 
 
+def _cmd_tmux_server(args: argparse.Namespace) -> int:
+    """Dispatch ``synapse service tmux-server``.
+
+    Returns 0 when the server is safe from a unit stop or no server runs, 1
+    when it lives in a service unit and was not moved.
+    """
+    bounded = partial(run_waker_command, timeout=args.command_timeout)
+    found = placement(args.tmux_bin, runner=bounded)
+    if not found.running:
+        print("no tmux server answers")
+        return 0
+    print(f"tmux server pid {found.pid} is in {found.unit or 'no service or scope unit'}")
+    if not found.in_service_unit:
+        return 0
+    print(f"stopping {found.unit} would kill the tmux server and every session on it")
+    if not args.move:
+        print("to move it into a scope of its own, without a restart: add --move")
+        return 1
+    result = move_to_own_scope(args.tmux_bin, runner=bounded)
+    print(result.detail)
+    return 0 if result.moved else 1
+
+
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``service`` command group."""
     group = subparsers.add_parser(
@@ -113,7 +141,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Inspect and operate the local Synapse user services.",
     )
     nested = group.add_subparsers(dest="service_command", required=True)
+    _add_hub_restart(nested)
+    _add_tmux_server(nested)
 
+
+def _add_hub_restart(nested: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register ``service hub-restart``."""
     restart = nested.add_parser(
         "hub-restart",
         help="Show what a hub restart touches; restart it as one job when authorised.",
@@ -162,3 +195,24 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Seconds to wait for each service-manager command.",
     )
     restart.set_defaults(func=_cmd_hub_restart)
+
+
+def _add_tmux_server(nested: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register ``service tmux-server``."""
+    tmux_server = nested.add_parser(
+        "tmux-server",
+        help="Show which unit holds the tmux server; move it out of a service unit.",
+    )
+    tmux_server.add_argument("--tmux-bin", default="tmux", help="tmux executable to ask.")
+    tmux_server.add_argument(
+        "--move",
+        action="store_true",
+        help="Move a server found inside a service unit into a scope of its own.",
+    )
+    tmux_server.add_argument(
+        "--command-timeout",
+        type=float,
+        default=DEFAULT_COMMAND_TIMEOUT,
+        help="Seconds to wait for each command.",
+    )
+    tmux_server.set_defaults(func=_cmd_tmux_server)

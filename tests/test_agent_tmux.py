@@ -193,13 +193,19 @@ def test_build_wake_prompt_excludes_raw_payload() -> None:
 def test_start_session_launches_the_configured_agent_command(tmp_path: Path) -> None:
     config = _config(tmp_path, agent_command=("kimi",))
     runner = RecordingRunner(
-        [_result(["tmux", "has-session"], 1), _result(["tmux", "new-session"], 0)]
+        [
+            _result(["tmux", "has-session"], 1),
+            _result(["tmux", "display-message"], 0, stdout="4242\n"),
+            _result(["tmux", "new-session"], 0),
+        ]
     )
 
     result = start_session(config, runner=runner)
 
     assert result.started is True
-    assert runner.calls[1] == [
+    # A tmux server already answers, so the command only talks to it.
+    assert runner.calls[1] == ["tmux", "display-message", "-p", "#{pid}"]
+    assert runner.calls[2] == [
         "tmux",
         "new-session",
         "-d",
@@ -225,13 +231,17 @@ def test_start_session_launches_the_configured_agent_command(tmp_path: Path) -> 
 def test_start_session_centrally_manages_codex_update_checks(tmp_path: Path) -> None:
     config = _config(tmp_path, agent_command=("/opt/codex",))
     runner = RecordingRunner(
-        [_result(["tmux", "has-session"], 1), _result(["tmux", "new-session"], 0)]
+        [
+            _result(["tmux", "has-session"], 1),
+            _result(["tmux", "display-message"], 0, stdout="4242\n"),
+            _result(["tmux", "new-session"], 0),
+        ]
     )
 
     result = start_session(config, runner=runner)
 
     assert result.started is True
-    assert runner.calls[1][-1].endswith("/opt/codex --config check_for_update_on_startup=false")
+    assert runner.calls[2][-1].endswith("/opt/codex --config check_for_update_on_startup=false")
 
 
 def test_start_session_preserves_an_explicit_codex_update_policy(tmp_path: Path) -> None:
@@ -240,14 +250,58 @@ def test_start_session_preserves_an_explicit_codex_update_policy(tmp_path: Path)
         agent_command=("codex", "--config", "check_for_update_on_startup=true"),
     )
     runner = RecordingRunner(
-        [_result(["tmux", "has-session"], 1), _result(["tmux", "new-session"], 0)]
+        [
+            _result(["tmux", "has-session"], 1),
+            _result(["tmux", "display-message"], 0, stdout="4242\n"),
+            _result(["tmux", "new-session"], 0),
+        ]
     )
 
     result = start_session(config, runner=runner)
 
     assert result.started is True
-    assert runner.calls[1][-1].count("check_for_update_on_startup") == 1
-    assert runner.calls[1][-1].endswith("check_for_update_on_startup=true")
+    assert runner.calls[2][-1].count("check_for_update_on_startup") == 1
+    assert runner.calls[2][-1].endswith("check_for_update_on_startup=true")
+
+
+def test_start_session_puts_a_new_tmux_server_in_a_scope_of_its_own(tmp_path: Path) -> None:
+    config = _config(tmp_path, agent_command=("kimi",))
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "has-session"], 1),
+            _result(["tmux", "display-message"], 1, stderr="no server running\n"),
+            _result(["systemctl", "--user", "show"], 0, stdout="255\n"),
+            _result(["systemd-run"], 0),
+        ]
+    )
+
+    result = start_session(config, runner=runner)
+
+    assert result.started is True
+    assert runner.calls[2] == ["systemctl", "--user", "show", "--property=Version", "--value"]
+    started = runner.calls[3]
+    assert started[:5] == ["systemd-run", "--user", "--scope", "--quiet", "--collect"]
+    assert started[5].startswith("--unit=synapse-tmux-server-") and started[5].endswith(".scope")
+    assert started[6].startswith("--description=tmux server in a scope of its own")
+    assert started[7:12] == ["--", "tmux", "new-session", "-d", "-s"]
+    assert started[-1].endswith(" kimi")
+
+
+def test_start_session_starts_tmux_plainly_without_a_user_manager(tmp_path: Path) -> None:
+    config = _config(tmp_path, agent_command=("kimi",))
+    runner = RecordingRunner(
+        [
+            _result(["tmux", "has-session"], 1),
+            _result(["tmux", "display-message"], 1, stderr="no server running\n"),
+            _result(["systemctl", "--user", "show"], 1, stderr="Failed to connect to bus\n"),
+            _result(["tmux", "new-session"], 0),
+        ]
+    )
+
+    result = start_session(config, runner=runner)
+
+    assert result.started is True
+    assert runner.calls[3][:3] == ["tmux", "new-session", "-d"]
 
 
 def test_start_session_does_not_duplicate_existing_session(tmp_path: Path) -> None:
@@ -284,7 +338,11 @@ def test_start_session_refuses_an_existing_session_bound_to_another_identity(
 def test_start_session_refuses_a_new_session_when_tmux_drops_its_binding(tmp_path: Path) -> None:
     config = _config(tmp_path)
     runner = RecordingRunner(
-        [_result(["tmux", "has-session"], 1), _result(["tmux", "new-session"], 0)],
+        [
+            _result(["tmux", "has-session"], 1),
+            _result(["tmux", "display-message"], 0, stdout="4242\n"),
+            _result(["tmux", "new-session"], 0),
+        ],
         session_environment=None,
     )
 

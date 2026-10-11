@@ -735,6 +735,49 @@ without limit, until they are regenerated with `synapse init
 --install-user-services`, `synapse arm install` or `synapse waker install` and
 restarted. Installation does not restart running units.
 
+## The tmux server and unit stops
+
+The first `tmux new-session` on a host forks the tmux server, and the server
+stays in the control group of whoever ran that command. When that is a systemd
+service unit, for example a hand-written unit that runs `synapse agent-tmux
+start`, stopping the unit kills the server and with it every session of every
+seat on the host.
+
+Synapse keeps the server out of every other unit in two ways:
+
+- **A new server starts in a scope of its own.** When `synapse agent-tmux
+  start` or `synapse worker-session` would create the tmux server, the command
+  runs under `systemd-run --user --scope`, in a transient scope named
+  `synapse-tmux-server-<id>.scope`. When a server already runs, the command
+  only talks to it and nothing changes. Without a systemd user manager tmux
+  starts as it always did.
+- **A running server can be moved.** `synapse service tmux-server` prints
+  where the server lives:
+
+  ```text
+  $ synapse service tmux-server
+  tmux server pid 4810 is in my-bridge.service
+  stopping my-bridge.service would kill the tmux server and every session on it
+  to move it into a scope of its own, without a restart: add --move
+  $ synapse service tmux-server --move
+  tmux server pid 4810 is in my-bridge.service
+  stopping my-bridge.service would kill the tmux server and every session on it
+  tmux server pid 4810 moved from my-bridge.service to tmux-server-4810.scope
+  ```
+
+  The move asks the user service manager for a new transient scope that holds
+  the server process. The server is not restarted and no session is touched.
+  The command reports the move only after it has read the server's control
+  group back. It exits 1 while the server is in a service unit and 0 otherwise.
+
+Only the server process is placed. A tmux built with systemd support, 3.4 and
+later, already runs every pane in a scope of its own. With an older tmux the
+panes stay children of the server in the original control group, and a stop of
+that unit still ends them.
+
+The generated waker unit never starts tmux, so it cannot own the server; see
+its `# Owns:` line.
+
 ## Restarting the hub safely
 
 The hub restarts cleanly because both ends are built for it. With `--db`, a restart

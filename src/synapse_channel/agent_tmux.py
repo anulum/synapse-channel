@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Protocol
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.tmux_server import new_server_prefix
 from synapse_channel.waiter_identity import pane_waiter_name
 
 DEFAULT_AGENT_PANE_COMMANDS = frozenset(
@@ -690,6 +691,12 @@ def start_session(
 ) -> AgentTmuxWakeResult:
     """Start the tmux session running the agent when it is missing.
 
+    When this command would also create the tmux server, the server is started
+    in a transient systemd scope of its own, so that it does not live in the
+    control group of the caller. A server inside a service unit is killed, with
+    every session on it, when that unit is stopped. Without a systemd user
+    manager the server starts as tmux starts it.
+
     Parameters
     ----------
     config : AgentTmuxConfig
@@ -728,6 +735,7 @@ def start_session(
     command = shlex.join(["env", *provider_env, *_managed_agent_command(config)])
     proc = runner(
         [
+            *new_server_prefix(config.tmux_bin, runner=runner),
             config.tmux_bin,
             "new-session",
             "-d",

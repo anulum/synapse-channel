@@ -15,6 +15,14 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- The tmux server no longer lives in the control group of the unit that
+  started it. When `synapse agent-tmux start` or `synapse worker-session`
+  would create the tmux server, it starts in a transient systemd scope of its
+  own, so stopping the calling unit no longer kills every session on the
+  host. `synapse service tmux-server` prints which unit holds the server and,
+  with `--move`, moves a running server out of a service unit without
+  restarting it. Without a systemd user manager tmux starts as before.
+
 - `synapse service hub-restart` reads from systemd which user units depend on
   the hub and prints what a restart would do to each. Given the exact process
   id of the running hub it restarts the hub as one service-manager job, never

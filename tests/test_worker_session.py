@@ -137,6 +137,9 @@ binding = record.with_name(record.name + ".binding")
 
 if sys.argv[1:2] == ["has-session"]:
     raise SystemExit(1)
+if sys.argv[1:2] == ["display-message"]:
+    # A tmux server answers, so starting a session creates no new server.
+    print(4242)
 if sys.argv[1:2] == ["new-session"]:
     values = []
     args = sys.argv[1:]
@@ -404,16 +407,17 @@ pathlib.Path({str(provider_record)!r}).write_text("direct provider ran", encodin
     tmux_calls = _read_json_when_ready(tmux_record)
     synapse_calls = _read_json_when_ready(synapse_record)
     assert tmux_calls[0][:3] == ["has-session", "-t", "synapse-repo_codex-main"]
-    assert tmux_calls[1][:4] == ["new-session", "-d", "-s", "synapse-repo_codex-main"]
-    assert "-c" in tmux_calls[1]
-    assert ["-e", "SYN_PROJECT=repo"] == tmux_calls[1][4:6]
-    assert ["-e", "SYN_IDENTITY=repo/codex-main"] == tmux_calls[1][6:8]
-    assert ["-e", "SYN_TMUX_PROVIDER=1"] == tmux_calls[1][8:10]
-    assert ["-e", "SYNAPSE_AUTO_CONNECT=0"] == tmux_calls[1][10:12]
-    assert "SYN_PROJECT=repo" in tmux_calls[1][-1]
-    assert "SYN_IDENTITY=repo/codex-main" in tmux_calls[1][-1]
-    assert "SYNAPSE_AUTO_CONNECT=0" in tmux_calls[1][-1]
-    assert str(provider) in tmux_calls[1][-1]
+    assert tmux_calls[1] == ["display-message", "-p", "#{pid}"]
+    assert tmux_calls[2][:4] == ["new-session", "-d", "-s", "synapse-repo_codex-main"]
+    assert "-c" in tmux_calls[2]
+    assert ["-e", "SYN_PROJECT=repo"] == tmux_calls[2][4:6]
+    assert ["-e", "SYN_IDENTITY=repo/codex-main"] == tmux_calls[2][6:8]
+    assert ["-e", "SYN_TMUX_PROVIDER=1"] == tmux_calls[2][8:10]
+    assert ["-e", "SYNAPSE_AUTO_CONNECT=0"] == tmux_calls[2][10:12]
+    assert "SYN_PROJECT=repo" in tmux_calls[2][-1]
+    assert "SYN_IDENTITY=repo/codex-main" in tmux_calls[2][-1]
+    assert "SYNAPSE_AUTO_CONNECT=0" in tmux_calls[2][-1]
+    assert str(provider) in tmux_calls[2][-1]
     assert tmux_calls[-1] == ["attach-session", "-t", "synapse-repo_codex-main"]
     assert synapse_calls == [
         [
