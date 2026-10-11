@@ -148,6 +148,16 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "verification_probe",
         RuntimeError,
     ),
+    "OperationRefusedError": (
+        "synapse_channel.operations.catalogue",
+        "operation_refused",
+        LookupError,
+    ),
+    "OperationSpecError": (
+        "synapse_channel.operations.spec",
+        "operation_spec",
+        ValueError,
+    ),
     "ProfileError": (
         "synapse_channel.terminal_label",
         "terminal_label_profile",

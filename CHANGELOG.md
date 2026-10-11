@@ -15,6 +15,14 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Foundation of the operations catalogue: a description of one operation of
+  one vendor client on one host (vocabularies, typed arguments, a
+  qualification level with its evidence) and a catalogue that lists them and
+  admits only operations that were run for real, for exactly the client and
+  version asked. A client version never seen admits nothing. A secret is
+  never an argument value, only a reference. No command and no hub verb uses
+  it yet. See `docs/operations.md`.
+
 - Foundation of the wake relay: a seat is woken for a message over the first
   adapter that takes it, at most once. Before an adapter is asked its attempt
   is marked on disk, after it the outcome; `accepted` or `uncertain` ends the
