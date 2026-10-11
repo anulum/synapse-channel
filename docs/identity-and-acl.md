@@ -54,6 +54,10 @@ The ACL model and its evaluation are implemented in
   `task_id` or its `payload` fallback. The first non-empty accepted target wins;
   another payload cannot borrow permission for a different task. This also
   permits a payload-based release when its actual task is granted.
+  `handoff` checks only its stripped `task_id`; `payload` and `id` do not
+  select a task. Its declared path checks remain in force. With ACL enforcement,
+  a payload-only handoff is refused for the empty task before handler dispatch,
+  rather than passing an unrelated ACL target and then receiving a handler denial.
 - **Hub-authoritative name-ownership lease** (`core/name_ownership.py`): a name
   has exactly one owner across reconnects, not merely per socket. A registration
   that declares `lease: true` on a free name is granted an opaque `owner_lease`

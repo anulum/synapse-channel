@@ -119,6 +119,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Handoff ACL checks now use the stripped `task_id` consumed by the handler,
+  preserving declared path checks. Ignored `payload` and `id` aliases cannot
+  select a different permission target; malformed payload-only requests are
+  refused before dispatch.
+
 - Document the group and project map with SVG, PNG and JPG exports, separating
   existing optional adapters from claims of joint qualification.
 

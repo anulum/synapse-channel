@@ -59,6 +59,7 @@ from synapse_channel.core.state_transaction import durable_state_transaction
 from synapse_channel.core.verb_access import (
     claim_access,
     field_access,
+    handoff_access,
     release_access,
     task_update_access,
 )
@@ -1184,7 +1185,7 @@ VERB_SPECS = (
         mutates=True,
         replay_protected=True,
         mutation_guarded=True,
-        accesses=claim_access,
+        accesses=handoff_access,
         event_kinds=(
             EventKind.HANDOFF,
             EventKind.LEDGER_PROGRESS,

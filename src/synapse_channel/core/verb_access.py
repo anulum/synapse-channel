@@ -72,6 +72,12 @@ def task_update_access(data: dict[str, Any]) -> list[tuple[str, Target]]:
     return _claim_targets(data, task_id)
 
 
+def handoff_access(data: dict[str, object]) -> list[tuple[str, Target]]:
+    """Authorise only the stripped task_id consumed by the handoff handler."""
+    task_id = str(data.get("task_id") or "").strip()
+    return _claim_targets(data, task_id)
+
+
 def release_access(data: dict[str, Any]) -> list[tuple[str, Target]]:
     """Authorize the task_id/payload target the release handler actually releases."""
     task_id = str(data.get("task_id") or data.get("payload") or "").strip()
@@ -79,7 +85,7 @@ def release_access(data: dict[str, Any]) -> list[tuple[str, Target]]:
 
 
 def _claim_targets(data: dict[str, Any], task_id: str) -> list[tuple[str, Target]]:
-    """Preserve claim and task-update path checks after resolving their task key."""
+    """Preserve declared path checks after resolving the handler's actual task key."""
     accesses = [(CLAIM, Target("claim", task_id))]
     value = data.get("paths")
     paths = [str(item) for item in value if str(item).strip()] if isinstance(value, list) else []
