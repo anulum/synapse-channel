@@ -103,11 +103,13 @@ marks a pending wake and delivers it later by itself. So:
 `native_queue` wakes a Codex session through the client's own queue: it runs
 `codex queue --thread <session> --message <fixed prompt>` from a fixed
 absolute path, with an argument vector and no shell. The adapter owns what the
-command starts: on POSIX the command leads a process group of its own, on
-Windows it is put into a job object. When the time limit passes the whole
-group or job is ended, also when the command itself has already exited and
-only a process it started still holds the output open; the wait for the
-remaining output is bounded too. When the command ends in time, nothing is
+command starts, from before the command runs: on POSIX it is started as the
+leader of a process group of its own; on Windows it is created suspended, put
+into a job object and only then resumed. When that ownership cannot be
+established, the command is ended before it ran and the wake is `refused`.
+When the time limit passes the whole group or job is ended, also when the
+command itself has already exited and only a process it started still holds
+the output open; the wait for the remaining output is bounded too. When the command ends in time, nothing is
 ended. A daemon that this very call started and that stayed in the group or
 job is ended with it; a daemon that was running before is not touched. The session is named by its
 identifier alone, and only when that is a UUID in canonical lower-case form;
@@ -156,8 +158,7 @@ adapter.
 
 ## Limits
 
-- The job object used on Windows for the queue adapter has not been run by
-  its author; a process started before the job assignment took effect is not
-  in the job.
+- The Windows path of the queue adapter (suspended start, job object, resume)
+  has not been run by its author.
 - The syncs are requested as described; no power-loss test has been made.
 - The time limit is given to the adapter; keeping it is the adapter's duty.

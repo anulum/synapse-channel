@@ -29,13 +29,19 @@ adapter is strict about what it calls what:
 
 The session is named by its identifier alone, and only when it is a UUID; a
 session *name* is never passed. The command runs from a fixed absolute path,
-with an argument vector and no shell. The adapter owns what the command
-starts: on POSIX the command leads a process group of its own, on Windows it
-is put into a job object. When the time limit passes, the whole group or job
-is ended, also when the command itself has already exited and only a process
-it started still holds the output open. The wait for the remaining output is
-bounded as well, so the adapter returns even when a descendant left the group
-or the job. When the command ends in time, nothing is ended.
+with an argument vector and no shell.
+
+The adapter owns what the command starts, from before the command runs. On
+POSIX the command is started as the leader of a process group of its own. On
+Windows it is created suspended, put into a job object and only then resumed.
+When that ownership cannot be established, the command is ended before it ran
+and the wake is refused.
+
+When the time limit passes, the whole group or job is ended, also when the
+command itself has already exited and only a process it started still holds
+the output open. The wait for the remaining output is bounded as well, so the
+adapter returns even when a descendant left the group or the job. When the
+command ends in time, nothing is ended.
 
 Ending the group or job also ends a daemon that this very call started and
 that stayed in it; a daemon that was running before is not touched.
@@ -133,17 +139,11 @@ class CodexQueueAdapter:
             return WakeOutcome(REFUSED, "", "not started: the session identifier is not a UUID")
         argv = [str(self._executable), "queue", "--thread", session, "--message", prompt]
         try:
-            child = subprocess.Popen(  # noqa: S603  # nosec B603 - fixed path, argument vector
-                argv,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                start_new_session=True,
-            )
+            child, owned = _start_owned(argv)
+        except _NoCustody:
+            return WakeOutcome(REFUSED, "", "not started: the process tree could not be owned")
         except OSError as exc:
             return WakeOutcome(REFUSED, "", f"not started: {type(exc).__name__}")
-        owned = _own(child)
         try:
             output, errors = child.communicate(timeout=deadline_seconds)
         except subprocess.TimeoutExpired:
@@ -168,9 +168,47 @@ class CodexQueueAdapter:
         return WakeOutcome(UNCERTAIN, "", f"exit status {status} with an unknown error text")
 
 
+class _NoCustody(OSError):
+    """The command was created but could not be owned; it was ended before it ran."""
+
+
+def _popen(argv: list[str], *, creationflags: int = 0) -> subprocess.Popen[str]:
+    """Create the command with no input and both outputs captured."""
+    return subprocess.Popen(  # noqa: S603  # nosec B603 - fixed path, argument vector
+        argv,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+        creationflags=creationflags,
+    )
+
+
 if sys.platform == "win32":
     import ctypes
     from ctypes import wintypes
+
+    _CREATE_SUSPENDED = 0x00000004
+    _ASSIGN_RIGHTS = 0x0100 | 0x0001
+    """PROCESS_SET_QUOTA and PROCESS_TERMINATE: what assigning to a job needs."""
+    _TH32CS_SNAPTHREAD = 0x00000004
+    _THREAD_SUSPEND_RESUME = 0x0002
+    _INVALID_HANDLE = wintypes.HANDLE(-1).value
+    _RESUME_FAILED = 0xFFFFFFFF
+
+    class _ThreadEntry(ctypes.Structure):
+        """THREADENTRY32 of the tool-help thread snapshot."""
+
+        _fields_ = (
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ThreadID", wintypes.DWORD),
+            ("th32OwnerProcessID", wintypes.DWORD),
+            ("tpBasePri", wintypes.LONG),
+            ("tpDeltaPri", wintypes.LONG),
+            ("dwFlags", wintypes.DWORD),
+        )
 
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     _kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
@@ -183,21 +221,23 @@ if sys.platform == "win32":
     _kernel32.CloseHandle.restype = wintypes.BOOL
     _kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     _kernel32.OpenProcess.restype = wintypes.HANDLE
+    _kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    _kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    _kernel32.Thread32First.argtypes = [wintypes.HANDLE, ctypes.POINTER(_ThreadEntry)]
+    _kernel32.Thread32First.restype = wintypes.BOOL
+    _kernel32.Thread32Next.argtypes = [wintypes.HANDLE, ctypes.POINTER(_ThreadEntry)]
+    _kernel32.Thread32Next.restype = wintypes.BOOL
+    _kernel32.OpenThread.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    _kernel32.OpenThread.restype = wintypes.HANDLE
+    _kernel32.ResumeThread.argtypes = [wintypes.HANDLE]
+    _kernel32.ResumeThread.restype = wintypes.DWORD
 
-    _ASSIGN_RIGHTS = 0x0100 | 0x0001
-    """PROCESS_SET_QUOTA and PROCESS_TERMINATE: what assigning to a job needs."""
-
-    def _own(child: subprocess.Popen[str]) -> object:
-        """Put the child into a job object of its own; None when that fails.
-
-        Processes the child starts afterwards belong to the job too, also when
-        the child itself has exited. A process started before the assignment
-        took effect is not in the job.
-        """
+    def _job_holding(pid: int) -> object:
+        """Return a new job object that holds the process, or None."""
         job = _kernel32.CreateJobObjectW(None, None)
         if not job:
             return None
-        process = _kernel32.OpenProcess(_ASSIGN_RIGHTS, False, child.pid)
+        process = _kernel32.OpenProcess(_ASSIGN_RIGHTS, False, pid)
         assigned = bool(process) and bool(_kernel32.AssignProcessToJobObject(job, process))
         if process:
             _kernel32.CloseHandle(process)
@@ -206,26 +246,68 @@ if sys.platform == "win32":
             return None
         return job
 
+    def _resume(pid: int) -> int:
+        """Resume the threads of a process created suspended; return how many."""
+        snapshot = _kernel32.CreateToolhelp32Snapshot(_TH32CS_SNAPTHREAD, 0)
+        if not snapshot or snapshot == _INVALID_HANDLE:
+            return 0
+        resumed = 0
+        entry = _ThreadEntry()
+        entry.dwSize = ctypes.sizeof(_ThreadEntry)
+        more = _kernel32.Thread32First(snapshot, ctypes.byref(entry))
+        while more:
+            if entry.th32OwnerProcessID == pid:
+                thread = _kernel32.OpenThread(_THREAD_SUSPEND_RESUME, False, entry.th32ThreadID)
+                if thread:
+                    if _kernel32.ResumeThread(thread) != _RESUME_FAILED:
+                        resumed += 1
+                    _kernel32.CloseHandle(thread)
+            more = _kernel32.Thread32Next(snapshot, ctypes.byref(entry))
+        _kernel32.CloseHandle(snapshot)
+        return resumed
+
+    def _start_owned(argv: list[str]) -> tuple[subprocess.Popen[str], object]:
+        """Create the command suspended, put it into a job of its own, then let it run.
+
+        The command executes nothing before the job holds it, so everything it
+        starts belongs to the job. When the job cannot be created or assigned,
+        or no thread could be resumed, the process is ended before it ran and
+        :class:`_NoCustody` is raised.
+        """
+        child = _popen(argv, creationflags=_CREATE_SUSPENDED)
+        job = _job_holding(child.pid)
+        if job is not None and _resume(child.pid) > 0:
+            return child, job
+        if job is not None:
+            _kernel32.TerminateJobObject(job, 1)
+            _kernel32.CloseHandle(job)
+        child.kill()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            child.communicate(timeout=END_WAIT_SECONDS)
+        raise _NoCustody("the process tree could not be owned")
+
     def _end_owned(owned: object, child: subprocess.Popen[str]) -> None:
-        """End every process of the job; without a job, the direct child only."""
-        if owned is None:
-            child.kill()
-            return
+        """End every process of the job, also when the command itself has exited."""
+        del child
         _kernel32.TerminateJobObject(owned, 1)
 
     def _disown(owned: object) -> None:
         """Give the job handle back without ending anything."""
-        if owned is not None:
-            _kernel32.CloseHandle(owned)
+        _kernel32.CloseHandle(owned)
 
 else:
 
-    def _own(child: subprocess.Popen[str]) -> object:
-        """Return the child's process group, which it leads since its start."""
-        return child.pid
+    def _start_owned(argv: list[str]) -> tuple[subprocess.Popen[str], object]:
+        """Start the command as the leader of a process group of its own.
+
+        The group exists before the command's program is executed, so
+        everything it starts belongs to the group unless it leaves on purpose.
+        """
+        child = _popen(argv)
+        return child, child.pid
 
     def _end_owned(owned: object, child: subprocess.Popen[str]) -> None:
-        """Kill the child's process group, also when the child itself has exited."""
+        """Kill the command's process group, also when the command itself has exited."""
         del owned
         # The group may already be gone; that is the wanted state.
         with contextlib.suppress(ProcessLookupError):

@@ -1,7 +1,7 @@
 {
   "metrics": {
     "benchmark_harnesses": 8,
-    "classes": 1105,
+    "classes": 1107,
     "cli_subcommands": 251,
     "documentation_pages": 84,
     "optional_dependency_groups": 14,
