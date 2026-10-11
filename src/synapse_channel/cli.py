@@ -224,6 +224,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_auto_action:add_parsers", ("auto-action",)),
     ("synapse_channel.cli_tasks:add_parsers", ("task",)),
     ("synapse_channel.cli_native_record:add_parsers", ("native-record",)),
+    ("synapse_channel.cli_native_hook:add_parsers", ("native-hook", "native-seat")),
     ("synapse_channel.cli_workflow:add_parsers", ("workflow",)),
     ("synapse_channel.cli_doctor:add_parsers", ("doctor",)),
 )

@@ -41,7 +41,7 @@ from synapse_channel.core.native_message import (
 )
 from synapse_channel.core.protocol import MessageType
 
-__all__ = ["add_parsers", "build_record"]
+__all__ = ["add_parsers", "build_record", "exchange_record"]
 
 AgentFactory = Callable[..., SynapseAgent]
 
@@ -184,6 +184,61 @@ async def _exchange(
             await connection_task
 
 
+def exchange_record(
+    record: dict[str, Any],
+    *,
+    uri: str,
+    seat: str,
+    token: str | None,
+    idem_key: str | None = None,
+    agent_factory: AgentFactory = SynapseAgent,
+    ready_timeout: float = 5.0,
+    reply_timeout: float = 10.0,
+) -> tuple[dict[str, Any] | None, str]:
+    """Send one record as ``seat`` and return the hub's verdict, or why there is none.
+
+    Parameters
+    ----------
+    record : dict[str, Any]
+        The record fields.
+    uri, seat, token : str
+        Hub address, the recording seat the connection is made as, and the
+        shared-secret token of a secured hub.
+    idem_key : str or None
+        Retry key; derived from the record when omitted.
+    agent_factory : callable
+        Client factory.
+    ready_timeout, reply_timeout : float
+        Seconds to wait for the hub's welcome and for its verdict.
+
+    Returns
+    -------
+    tuple[dict[str, Any] | None, str]
+        The hub's reply frame and an empty text, or None and the failure. A
+        name still held from the seat's previous record is retried a few times.
+    """
+    attempts = 0
+    while True:
+        verdict, failure, close_code = asyncio.run(
+            _exchange(
+                uri=uri,
+                name=seat,
+                token=token,
+                record=record,
+                idem_key=idem_key,
+                agent_factory=agent_factory,
+                ready_timeout=ready_timeout,
+                reply_timeout=reply_timeout,
+            )
+        )
+        # The hub lets one connection own a name. Right after the seat's previous
+        # record it may still hold the name; the retry key makes a repeat safe.
+        attempts += 1
+        if close_code != NAME_CONFLICT_CLOSE_CODE or attempts >= NAME_BUSY_ATTEMPTS:
+            return verdict, failure
+        time.sleep(NAME_BUSY_BACKOFF_SECONDS)
+
+
 def _cmd_native_record(
     args: argparse.Namespace, *, agent_factory: AgentFactory = SynapseAgent
 ) -> int:
@@ -193,26 +248,16 @@ def _cmd_native_record(
     except (OSError, ValueError) as exc:
         print(f"record refused before sending: {exc}")
         return 1
-    attempts = 0
-    while True:
-        verdict, failure, close_code = asyncio.run(
-            _exchange(
-                uri=args.uri,
-                name=args.seat,
-                token=args.token,
-                record=record,
-                idem_key=args.idem_key,
-                agent_factory=agent_factory,
-                ready_timeout=args.ready_timeout,
-                reply_timeout=args.reply_timeout,
-            )
-        )
-        # The hub lets one connection own a name. Right after the seat's previous
-        # record it may still hold the name; the retry key makes a repeat safe.
-        attempts += 1
-        if close_code != NAME_CONFLICT_CLOSE_CODE or attempts >= NAME_BUSY_ATTEMPTS:
-            break
-        time.sleep(NAME_BUSY_BACKOFF_SECONDS)
+    verdict, failure = exchange_record(
+        record,
+        uri=args.uri,
+        seat=args.seat,
+        token=args.token,
+        idem_key=args.idem_key,
+        agent_factory=agent_factory,
+        ready_timeout=args.ready_timeout,
+        reply_timeout=args.reply_timeout,
+    )
     if verdict is None:
         print(failure)
         return 1

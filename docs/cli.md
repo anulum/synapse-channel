@@ -110,6 +110,8 @@ everything, since they need the whole command table.
 | `synapse release` | Manually drop a claim you own (e.g. an `--auto-release-on manual` claim). |
 | `synapse task` | Declare and update the shared task plan. |
 | `synapse native-record` | Record a message that travelled over a vendor's own channel; the hub stores it and delivers nothing. |
+| `synapse native-hook` | Record session-send tool calls from an agent client's hook: `claude` reads one call from standard input, spools it on disk and tries the hub, printing nothing and exiting `0`; `flush` tries the spool again; `status` counts its entries. |
+| `synapse native-seat` | Keep the local register of which seat a vendor's native session is (`register`/`resolve`/`list`). |
 | `synapse workflow` | Validate and compile a declarative workflow into blackboard tasks (`validate`/`compile`/`plan`/`run`); `contention` weighs overlapping live claims involving the workflow's tasks. |
 
 `synapse conflicts` repeats its read-only snapshot request at most once if the
@@ -2866,6 +2868,88 @@ refusal, an older hub, an unreachable hub and a missing answer exit `1`. Read th
 records with `synapse event-query` or from the event store by kind
 `native_message`. Wire details:
 [Native message records](protocol.md#native-message-records-wire-version-7).
+
+### Recording from a client hook
+
+`synapse native-record` is one explicit call. `synapse native-hook claude`
+makes the record without anyone calling it: the client runs it after every use
+of its session-send tool. Configure it as a `PostToolUse` hook of Claude Code
+for the tool `SendMessage`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "SendMessage",
+        "hooks": [{"type": "command", "command": "synapse native-hook claude", "timeout": 30}]
+      }
+    ]
+  }
+}
+```
+
+The command reads the call from standard input and writes the sender's
+`outcome` record: `queued` only when the tool reported success, `refused` when
+it reported failure, `uncertain` otherwise. It prints nothing and exits `0`
+whatever happens, so it cannot block or fail the send it follows. A wrong
+option is the one exception: the argument parser exits `2` before the command
+runs.
+
+**The record is on disk before the hub is asked.** The spool lives in
+`$XDG_DATA_HOME/synapse/native-spool` (`--spool-dir` overrides it):
+
+| Directory | Holds |
+|---|---|
+| `pending/` | written, not yet confirmed by the hub |
+| `recorded/<date>/` | the hub answered `native_message_recorded`; the entry carries the event's sequence number |
+| `failed/` | refused by the hub, or out of attempts |
+| `skipped/<date>/` | a send call with nothing to record, for example without text |
+| `unparsed/` | input that was not JSON |
+
+An entry is named after the native session and the tool call, so the same call
+delivered twice makes one entry and one event. Each hook call also tries the
+older pending entries, oldest first, and stops after two failures in a row
+that reached for the hub. While the hub is down a send therefore waits for up
+to two ready timeouts before the hook returns. A hub that is down, a hub older than wire version `7`, a hub that
+answers that it cannot record or that the recorder is rate limited, a missing
+answer and an unreadable token file leave the entry pending and count one
+attempt; after `--max-attempts` (default 20) the entry moves to `failed/`. A
+refusal of the record itself moves it there at once. The waits are short
+(`--ready-timeout` 3 s, `--reply-timeout` 5 s) because the client waits for
+the hook.
+
+```bash
+synapse native-hook status                 # entries per state
+synapse native-hook flush                  # try the pending entries now
+synapse native-hook flush --retry-failed   # also try the failed ones again
+```
+
+`flush` exits `0` when it left nothing pending and moved nothing to `failed/`.
+Nothing flushes on a timer: a pending entry waits for the next hook call or
+the next `flush`.
+
+The hook knows a native session identifier, not a seat. `synapse native-seat`
+keeps that link in `$XDG_DATA_HOME/synapse/native-seats`, one file per
+statement, newest wins:
+
+```bash
+synapse native-seat register --session-id 0f3c9a52-… --seat PROJECT/seat-aaaa --name day-shift
+synapse native-seat resolve --name day-shift
+synapse native-seat list
+```
+
+`--name` is the name other sessions address the session by; it resolves the
+recipient of a send. A call from a session that is not registered stays
+pending, counting one attempt at each flush and holding no other entry back;
+register the session before the attempts run out, or bring the entry back
+with `flush --retry-failed`. A recipient that is not registered is recorded
+by its raw address. The register is a local statement by whoever can write the
+directory; the hub's own-side rule still decides whether a record is accepted.
+
+The hub token is `--token`, else `--token-file` (an owner-only file), else
+`SYNAPSE_TOKEN`. Only the sending side is recorded by this hook; a record of
+the receiving side needs the recipient's own call of `synapse native-record`.
 
 ## synapse dispatch
 

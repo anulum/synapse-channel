@@ -153,6 +153,11 @@ FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
         "terminal_label_profile",
         ValueError,
     ),
+    "SeatRegisterError": (
+        "synapse_channel.native_seat_register",
+        "native_seat_register",
+        ValueError,
+    ),
     "ServiceQueryError": (
         "synapse_channel.service_dependencies",
         "service_query",
