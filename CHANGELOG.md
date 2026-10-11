@@ -15,6 +15,15 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- `synapse label` sets the tab label and the status lines of the tmux session
+  it runs in, so that a terminal says which group, project, vendor and seat
+  work in it. The tab label is short; the status lines carry every detail and
+  wrap to the terminal width, again after a resize. Group abbreviations come
+  from a profile file. Text is displayed and never run: control characters
+  are removed and `#` is doubled before a value reaches a tmux format. Only
+  the one session is changed, and `--restore` puts its earlier label and
+  status back. See `docs/terminal-label.md`.
+
 - `synapse service status` prints, for every Synapse user unit, what is
   wanted of it and what it does: enablement, state, restart count, last
   result, the start limit it was loaded with and the processes its unit file
