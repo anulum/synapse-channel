@@ -42,6 +42,7 @@ everything, since they need the whole command table.
 | `synapse agent-tmux` | Wake an existing terminal-agent tmux session (Codex, Kimi, …) with a fixed safe prompt. |
 | `synapse codex-tmux` | Codex-defaulted alias of `agent-tmux`. |
 | `synapse waker` | Install, inspect, persistently inhibit, or explicitly resume a systemd-supervised exact-seat `agent-tmux` bridge. The service restarts the bridge, never the provider terminal. |
+| `synapse service hub-restart` | Print which user units depend on the hub and what a restart would do to them. With `--authorized-hub-pid <pid>` naming the running hub, restart it as one service-manager job, wait until it answers, and report each dependent as unchanged, restarted, stopped, started or changed. Refuses when systemd would restart other units with the hub, unless `--allow-dependent-restart` is given. See [Restarting the hub safely](deployment.md#restarting-the-hub-safely). |
 | `synapse dashboard` | Serve a loopback-only read-only live cockpit (fleet graph, board, claims, risk guidance, stream, receipts) over hub snapshots, plus `/snapshot.json`; `--feeds-db` adds durable store feeds including `/postmortem.json?task=ID` and `/receipts.json`, and `--observed-peer HUB=URI` adds advisory peer-hub rows. |
 | `synapse route-task` | Recommend agents for a board task using local capability signals. |
 | `synapse resource-bids` | Rank live resource offers for a board task without reserving capacity. |

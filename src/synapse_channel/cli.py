@@ -172,6 +172,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_deliberate:add_parsers", ("deliberate",)),
     ("synapse_channel.cli_memory_projection:add_parsers", ("memory-recall",)),
     ("synapse_channel.cli_services:add_parsers", ("init", "worker-session")),
+    ("synapse_channel.cli_service:add_parsers", ("service",)),
     ("synapse_channel.cli_agent_tmux:add_parsers", ("agent-tmux",)),
     ("synapse_channel.cli_channels:add_parsers", ("channel",)),
     ("synapse_channel.cli_encrypt_key:add_parsers", ("encrypt-key",)),

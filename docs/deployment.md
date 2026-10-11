@@ -772,9 +772,70 @@ message payloads: accepted takeovers, cooldown refusals, plain name conflicts,
 and name-switch denials include the sender name, remote host, and close reason.
 
 So a coordinated restart is safe when every live client is on 0.28.1+: announce,
-restart the service, and the fleet re-arms against the fresh hub on its own. Pick a
+restart the service with the command below, and the fleet re-arms against the
+fresh hub on its own. Pick a
 quiet moment, announce before and after, and never start a restart that would strand
 a client too old to exit-on-drop.
+
+### One job, checked before and after: `synapse service hub-restart`
+
+`synapse service hub-restart` reads from systemd which user units depend on the
+hub and prints the plan. It changes nothing:
+
+```text
+$ synapse service hub-restart
+hub unit: synapse-hub.service — active/running pid 4711, restarts 0
+dependent service units: 6
+systemd would stop or restart with the hub: 1:
+  my-bridge.service [RequiredBy, Before] active/running pid 4802
+left alone by systemd: 5 (6 of all dependents running now)
+no restart requested; to restart, pass the hub pid shown above: --authorized-hub-pid 4711
+```
+
+Two kinds of dependent behave differently:
+
+- A unit with `Requires=`, `BindsTo=` or `PartOf=` on the hub is **stopped or
+  restarted by systemd together with the hub**, with everything in its control
+  group. The command refuses to restart the hub while such a unit exists.
+  Replace the requirement with `After=synapse-hub.service`, or pass
+  `--allow-dependent-restart` when restarting that unit too is intended.
+- A unit with only `After=` or `Wants=` is left alone by systemd. Its process
+  reconnects, or exits and is restarted within its
+  [start budget](#start-budgets-when-a-unit-stops-trying).
+
+To restart, pass the process id from the plan:
+
+```bash
+synapse service hub-restart --authorized-hub-pid 4711
+```
+
+The command then:
+
+1. refuses if the hub no longer runs as that process, so an authorisation
+   cannot be replayed against a later hub;
+2. takes the host-local lock `$XDG_RUNTIME_DIR/synapse-channel-redeploy.lock`,
+   the same one the redeploy checklist command takes, and refuses if it is held;
+3. sends **one** `systemctl --user restart` job for the hub unit. It never
+   stops the hub as a separate step: a separate stop lets units that want the
+   hub start it again in the gap and leaves units that require it stopped;
+4. waits until the hub answers a roster question (`--answer-timeout`, default
+   60 seconds);
+5. waits for dependents that were running to run again (`--settle-timeout`,
+   default 45 seconds) and prints what happened to each one.
+
+It starts, stops and resets no other unit. When a dependent is left not
+running, the command prints the `reset-failed` and `start` commands for it and
+exits 1.
+
+| Exit status | Meaning |
+| --- | --- |
+| 0 | The plan was printed, or the hub was restarted, answers, and no dependent that was running is left not running. |
+| 1 | The restart job was sent, but the hub did not answer or a dependent stayed down. |
+| 2 | Refused, or the service manager did not answer; nothing was restarted. |
+
+A restart job that times out is reported as `uncertain`: systemd may still
+carry it out. Run the command again without `--authorized-hub-pid` to see the
+state before deciding anything further.
 
 ### Warm-start reconnect storm (mass waiter re-arm)
 

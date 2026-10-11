@@ -15,6 +15,14 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- `synapse service hub-restart` reads from systemd which user units depend on
+  the hub and prints what a restart would do to each. Given the exact process
+  id of the running hub it restarts the hub as one service-manager job, never
+  as a separate stop and start, waits until the hub answers, and reports each
+  dependent as unchanged, restarted, stopped, started or changed. It refuses
+  when systemd would restart other units with the hub, unless that is
+  explicitly allowed, and it starts, stops or resets no other unit.
+
 - Blocking CI jobs audit every committed Python requirement lock and npm lock,
   including client and integration dependencies, on every main push and PR.
   Newly tracked locks join the audits automatically.

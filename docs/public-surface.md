@@ -101,7 +101,7 @@ Newer or advisory surfaces still settling; shape may change before 1.0. Use them
 but pin to a version if you depend on their exact behaviour.
 
 `app-task`  `attention`  `auto-action`  `benchmark`  `claim-parse`  `deliberate`  `dispatch`  `memory-recall`  `native-record`  `participant`  `resource-bids`  `route-task`  `spend`
-`sandbox`  `ttl-advice`  `workflow`
+`sandbox`  `service`  `ttl-advice`  `workflow`
 
 `claim-parse` is an opt-in provider-backed draft, not a reservation. See
 [Git claim drafting](git-claims.md#natural-language-claim-drafts) for validation,
