@@ -82,7 +82,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.core.private_dir import PrivateDirError, ensure_private_dir
+from synapse_channel.durable_dir import private_dir, sync_directory
 
 SCHEMA = "native-spool-entry-v1"
 """Schema name written into every spool entry."""
@@ -158,31 +158,10 @@ def entry_stem(native_session: str, call_id: str) -> str:
 
 def _private_dir(path: Path) -> None:
     """Create ``path`` owner-only and sync the parent of each directory made."""
-    missing = []
-    current = path
-    while not current.is_dir():
-        if current == current.parent:
-            raise PrivateDirError("native message spool: filesystem root is unavailable")
-        missing.append(current)
-        current = current.parent
-    ensure_private_dir(path, parents=True, purpose="native message spool")
-    for created in missing:
-        _sync_directory(created.parent)
+    private_dir(path, purpose="native message spool")
 
 
-def _sync_directory_posix(directory: Path) -> None:
-    """Make a finished create, rename or removal in ``directory`` durable."""
-    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
-# A directory cannot be opened for syncing outside POSIX.
-_sync_directory: Callable[[Path], None] = (
-    _sync_directory_posix if os.name == "posix" else (lambda directory: None)
-)
+_sync_directory = sync_directory
 
 
 @contextmanager

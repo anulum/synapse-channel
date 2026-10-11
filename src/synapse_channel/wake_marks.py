@@ -21,7 +21,10 @@ Layout below the marks directory::
     <seat key>/<wake id>/<nn>-<adapter>.outcome.json
 
 ``wake id`` is the hub's sequence number of the message. ``nn`` is the order
-of the attempt. Every mark is created by a hard link from a finished
+of the attempt, written with two digits up to 99 and with as many as it needs
+beyond; marks are read in the order of that number. The seat's and the
+message's directories are created with the parent of each new directory
+synced, before any adapter is asked. Every mark is created by a hard link from a finished
 temporary file, which never replaces an existing name: a mark, once written,
 is not rewritten.
 
@@ -52,7 +55,7 @@ from pathlib import Path
 
 from synapse_channel.advisory_lock import locked
 from synapse_channel.core.errors import SynapseError
-from synapse_channel.core.private_dir import ensure_private_dir
+from synapse_channel.durable_dir import private_dir, sync_directory
 from synapse_channel.wake_adapters import KIND_PATTERN, STATES, UNCERTAIN, WakeOutcome
 
 SCHEMA = "wake-mark-v1"
@@ -62,7 +65,7 @@ OPEN = "attempt"
 """State of an attempt that has no outcome mark."""
 
 _UNSAFE = re.compile(r"[^0-9A-Za-z._-]+")
-_MARK_NAME = re.compile(r"(\d{2})-([a-z][a-z0-9_]{0,31})\.(attempt|outcome)\.json")
+_MARK_NAME = re.compile(r"(\d{2,})-([a-z][a-z0-9_]{0,31})\.(attempt|outcome)\.json")
 _MAX_TEXT = 300
 
 
@@ -104,18 +107,6 @@ def _wake_dir(directory: Path, seat: str, wake_id: int) -> Path:
     return directory / seat_key(seat) / str(wake_id)
 
 
-def _sync_directory_posix(directory: Path) -> None:
-    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
-# A directory cannot be opened for syncing outside POSIX.
-_sync_directory = _sync_directory_posix if os.name == "posix" else (lambda directory: None)
-
-
 def _create(path: Path, content: dict[str, object]) -> None:
     """Create the mark ``path``; an existing mark is an error, never replaced."""
     temporary = path.parent / f".tmp-{os.getpid()}-{secrets.token_hex(6)}"
@@ -128,7 +119,7 @@ def _create(path: Path, content: dict[str, object]) -> None:
         os.link(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
-    _sync_directory(path.parent)
+    sync_directory(path.parent)
 
 
 def _stamp(moment: datetime) -> str:
@@ -160,7 +151,7 @@ def begin(directory: Path, seat: str, wake_id: int, adapter: str, *, now: dateti
     if KIND_PATTERN.fullmatch(adapter) is None:
         raise WakeMarkError("an adapter kind is lower-case letters, digits and underscores")
     base = _wake_dir(directory, seat, wake_id)
-    ensure_private_dir(base, parents=True, purpose="wake marks directory")
+    private_dir(base, purpose="wake marks directory")
     order = len(read(directory, seat, wake_id)) + 1
     content = {"schema": SCHEMA, "seat": seat, "wake_id": wake_id, "adapter": adapter}
     _create(base / f"{order:02d}-{adapter}.attempt.json", {**content, "at": _stamp(now)})
@@ -212,12 +203,15 @@ def read(directory: Path, seat: str, wake_id: int) -> tuple[Mark, ...]:
     if not base.is_dir():
         return ()
     names = {path.name for path in base.iterdir()}
-    marks = []
-    for name in sorted(names):
+    attempts = []
+    for name in names:
         match = _MARK_NAME.fullmatch(name)
-        if match is None or match.group(3) != "attempt":
-            continue
-        order, adapter = int(match.group(1)), match.group(2)
+        if match is not None and match.group(3) == "attempt":
+            attempts.append((int(match.group(1)), match.group(2)))
+    marks = []
+    # By number, not by name: the order is written with two digits up to 99
+    # and with more beyond, and names would sort "100" before "99".
+    for order, adapter in sorted(attempts):
         outcome_name = f"{order:02d}-{adapter}.outcome.json"
         if outcome_name not in names:
             marks.append(Mark(order, adapter, OPEN))

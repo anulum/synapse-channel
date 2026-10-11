@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import stat
 import sys
 import time
@@ -63,6 +64,18 @@ elif mode == "silent":
 elif mode == "fail":
     sys.stderr.write("connection reset" + chr(10))
     sys.exit(3)
+elif mode == "escape":
+    # A descendant in a session of its own keeps the output open after the group is killed.
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True
+    )
+    open(os.path.join(here, "grandchild"), "w").write(str(child.pid))
+    time.sleep(120)
+elif mode == "root-exits":
+    # The command ends at once; a process it started keeps the output open.
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    open(os.path.join(here, "grandchild"), "w").write(str(child.pid))
+    sys.exit(0)
 elif mode == "hang":
     child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
     open(os.path.join(here, "grandchild"), "w").write(str(child.pid))
@@ -199,3 +212,46 @@ def test_another_host_and_a_program_that_is_not_at_its_place(
     not_started = adapter.wake(TARGET, 1, "fixed prompt", 20.0)
     assert (not_started.state, not_started.detail) == (REFUSED, "not started: PermissionError")
     assert client.calls() == []
+
+
+def test_a_descendant_that_escaped_cannot_hold_the_adapter_past_its_bounds(
+    client: Client,
+) -> None:
+    client.mode("escape")
+    adapter = CodexQueueAdapter(client.program, host=HOST, end_wait_seconds=1.0)
+    started = time.monotonic()
+
+    outcome = adapter.wake(TARGET, 1, "fixed prompt", 1.0)
+
+    elapsed = time.monotonic() - started
+    grandchild = int((client.directory / "grandchild").read_text(encoding="utf-8"))
+    try:
+        assert (outcome.state, outcome.proves) == (UNCERTAIN, "")
+        assert outcome.detail == "no answer within the time limit; it may be queued"
+        # The time limit, then the bounded wait for output, and no more.
+        assert 2.0 <= elapsed < 8.0
+    finally:
+        os.kill(grandchild, signal.SIGKILL)
+
+
+def test_what_the_command_started_is_ended_also_when_the_command_itself_has_exited(
+    client: Client,
+) -> None:
+    client.mode("root-exits")
+    adapter = CodexQueueAdapter(client.program, host=HOST, end_wait_seconds=2.0)
+    started = time.monotonic()
+
+    outcome = adapter.wake(TARGET, 1, "fixed prompt", 1.5)
+
+    elapsed = time.monotonic() - started
+    grandchild = int((client.directory / "grandchild").read_text(encoding="utf-8"))
+    for _ in range(200):
+        if not Path(f"/proc/{grandchild}").exists():
+            break
+        time.sleep(0.02)
+    assert (outcome.state, outcome.detail) == (
+        UNCERTAIN,
+        "no answer within the time limit; it may be queued",
+    )
+    assert not Path(f"/proc/{grandchild}").exists()
+    assert elapsed < 6.0

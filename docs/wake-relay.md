@@ -49,7 +49,11 @@ disk, under `$XDG_DATA_HOME/synapse/wake-marks/<seat>/<wake id>/`:
 1. Before an adapter is asked, an **attempt** mark is written and synced.
 2. After the adapter answered, an **outcome** mark is written.
 
-The wake id is the hub's sequence number of the message. Then:
+The wake id is the hub's sequence number of the message. Attempts are
+numbered in order; the number is written with two digits up to 99 and with
+more beyond, and marks are read by that number. The seat's and the message's
+directories are created with the parent of each new directory synced, before
+any adapter is asked. Then:
 
 - A message with an `accepted` or `uncertain` outcome is finished. A second
   delivery of the same message, or a restart, sends nothing.
@@ -98,8 +102,14 @@ marks a pending wake and delivers it later by itself. So:
 
 `native_queue` wakes a Codex session through the client's own queue: it runs
 `codex queue --thread <session> --message <fixed prompt>` from a fixed
-absolute path, with an argument vector and no shell, in a process group of
-its own that is ended when the time limit passes. The session is named by its
+absolute path, with an argument vector and no shell. The adapter owns what the
+command starts: on POSIX the command leads a process group of its own, on
+Windows it is put into a job object. When the time limit passes the whole
+group or job is ended, also when the command itself has already exited and
+only a process it started still holds the output open; the wait for the
+remaining output is bounded too. When the command ends in time, nothing is
+ended. A daemon that this very call started and that stayed in the group or
+job is ended with it; a daemon that was running before is not touched. The session is named by its
 identifier alone, and only when that is a UUID in canonical lower-case form;
 a session name is never passed. The session must run on this host.
 
@@ -146,6 +156,8 @@ adapter.
 
 ## Limits
 
-- The Windows lock has not been run by this project's tests on Windows yet.
+- The job object used on Windows for the queue adapter has not been run by
+  its author; a process started before the job assignment took effect is not
+  in the job.
 - The syncs are requested as described; no power-loss test has been made.
 - The time limit is given to the adapter; keeping it is the adapter's duty.

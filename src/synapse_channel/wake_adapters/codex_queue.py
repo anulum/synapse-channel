@@ -29,8 +29,16 @@ adapter is strict about what it calls what:
 
 The session is named by its identifier alone, and only when it is a UUID; a
 session *name* is never passed. The command runs from a fixed absolute path,
-with an argument vector and no shell, in a process group of its own that is
-ended when the time limit passes.
+with an argument vector and no shell. The adapter owns what the command
+starts: on POSIX the command leads a process group of its own, on Windows it
+is put into a job object. When the time limit passes, the whole group or job
+is ended, also when the command itself has already exited and only a process
+it started still holds the output open. The wait for the remaining output is
+bounded as well, so the adapter returns even when a descendant left the group
+or the job. When the command ends in time, nothing is ended.
+
+Ending the group or job also ends a daemon that this very call started and
+that stayed in it; a daemon that was running before is not touched.
 """
 
 from __future__ import annotations
@@ -41,6 +49,7 @@ import re
 import signal
 import socket
 import subprocess  # nosec B404
+import sys
 import uuid
 from pathlib import Path
 
@@ -61,6 +70,9 @@ PROVES = "queued_by_native_daemon"
 
 DEFAULT_REFUSALS = ("no rollout found",)
 """Error texts that mean the daemon did not queue the message."""
+
+END_WAIT_SECONDS = 5.0
+"""Longest wait for the output of a child that was ended at the time limit."""
 
 _QUEUED = re.compile(r"Queued message (\S+) for thread (\S+)")
 _MAX_DETAIL = 200
@@ -88,10 +100,12 @@ class CodexQueueAdapter:
         *,
         host: str | None = None,
         refusals: tuple[str, ...] = DEFAULT_REFUSALS,
+        end_wait_seconds: float = END_WAIT_SECONDS,
     ) -> None:
         self._executable = executable
         self._host = socket.gethostname() if host is None else host
         self._refusals = refusals
+        self._end_wait = end_wait_seconds
 
     @property
     def kind(self) -> str:
@@ -129,11 +143,14 @@ class CodexQueueAdapter:
             )
         except OSError as exc:
             return WakeOutcome(REFUSED, "", f"not started: {type(exc).__name__}")
+        owned = _own(child)
         try:
             output, errors = child.communicate(timeout=deadline_seconds)
         except subprocess.TimeoutExpired:
-            _end(child)
+            _end(owned, child, self._end_wait)
             return WakeOutcome(UNCERTAIN, "", "no answer within the time limit; it may be queued")
+        finally:
+            _disown(owned)
         return self._judge(child.returncode, output, errors, session)
 
     def _judge(self, status: int, output: str, errors: str, session: str) -> WakeOutcome:
@@ -151,12 +168,84 @@ class CodexQueueAdapter:
         return WakeOutcome(UNCERTAIN, "", f"exit status {status} with an unknown error text")
 
 
-def _end(child: subprocess.Popen[str]) -> None:
-    """End the child and what it started, and wait for it."""
-    if os.name == "posix":
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+    _kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    _kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    _kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+    _kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    _kernel32.TerminateJobObject.restype = wintypes.BOOL
+    _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _kernel32.CloseHandle.restype = wintypes.BOOL
+    _kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    _kernel32.OpenProcess.restype = wintypes.HANDLE
+
+    _ASSIGN_RIGHTS = 0x0100 | 0x0001
+    """PROCESS_SET_QUOTA and PROCESS_TERMINATE: what assigning to a job needs."""
+
+    def _own(child: subprocess.Popen[str]) -> object:
+        """Put the child into a job object of its own; None when that fails.
+
+        Processes the child starts afterwards belong to the job too, also when
+        the child itself has exited. A process started before the assignment
+        took effect is not in the job.
+        """
+        job = _kernel32.CreateJobObjectW(None, None)
+        if not job:
+            return None
+        process = _kernel32.OpenProcess(_ASSIGN_RIGHTS, False, child.pid)
+        assigned = bool(process) and bool(_kernel32.AssignProcessToJobObject(job, process))
+        if process:
+            _kernel32.CloseHandle(process)
+        if not assigned:
+            _kernel32.CloseHandle(job)
+            return None
+        return job
+
+    def _end_owned(owned: object, child: subprocess.Popen[str]) -> None:
+        """End every process of the job; without a job, the direct child only."""
+        if owned is None:
+            child.kill()
+            return
+        _kernel32.TerminateJobObject(owned, 1)
+
+    def _disown(owned: object) -> None:
+        """Give the job handle back without ending anything."""
+        if owned is not None:
+            _kernel32.CloseHandle(owned)
+
+else:
+
+    def _own(child: subprocess.Popen[str]) -> object:
+        """Return the child's process group, which it leads since its start."""
+        return child.pid
+
+    def _end_owned(owned: object, child: subprocess.Popen[str]) -> None:
+        """Kill the child's process group, also when the child itself has exited."""
+        del owned
         # The group may already be gone; that is the wanted state.
         with contextlib.suppress(ProcessLookupError):
             os.killpg(child.pid, signal.SIGKILL)
-    else:
-        child.kill()
-    child.communicate()
+
+    def _disown(owned: object) -> None:
+        """Nothing is held for a process group."""
+        del owned
+
+
+def _end(owned: object, child: subprocess.Popen[str], wait_seconds: float) -> None:
+    """End the child and what it started, and wait for it for a bounded time.
+
+    A descendant that left the group or the job can keep the output pipes
+    open; the wait for the output is therefore bounded too, and the pipes are
+    closed when it runs out.
+    """
+    _end_owned(owned, child)
+    try:
+        child.communicate(timeout=wait_seconds)
+    except subprocess.TimeoutExpired:
+        for stream in filter(None, (child.stdout, child.stderr)):
+            stream.close()

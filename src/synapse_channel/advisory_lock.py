@@ -21,7 +21,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from synapse_channel.core.private_dir import ensure_private_dir
+from synapse_channel.durable_dir import private_dir
 
 __all__ = ["locked"]
 
@@ -79,7 +79,8 @@ def locked(path: Path, *, blocking: bool, purpose: str = "lock directory") -> It
     ----------
     path : pathlib.Path
         Lock file; created owner-only when absent, in a directory that is
-        created and checked as owner-only.
+        created and checked as owner-only, with the parent of every directory
+        made for it synced.
     blocking : bool
         Wait for the lock, or report at once that someone else holds it.
     purpose : str
@@ -90,7 +91,7 @@ def locked(path: Path, *, blocking: bool, purpose: str = "lock directory") -> It
     bool
         Whether the lock is held. A blocking request always holds it.
     """
-    ensure_private_dir(path.parent, parents=True, purpose=purpose)
+    private_dir(path.parent, purpose=purpose)
     flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
     descriptor = os.open(path, flags, 0o600)
     try:

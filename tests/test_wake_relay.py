@@ -441,3 +441,44 @@ def test_pruning_keeps_the_newest_messages_of_a_seat(tmp_path: Path) -> None:
 
     assert wake_marks.read(marks, SEAT, 100) == () and wake_marks.read(marks, "P/other", 5)
     assert (marks / wake_marks.seat_key(SEAT) / ".lock").is_file()
+
+
+def test_a_hundredth_attempt_is_read_like_the_first(tmp_path: Path) -> None:
+    """Ninety-nine refusals and then an acceptance: the order has three digits."""
+    effects = tmp_path / "effects"
+    refusing = [
+        FileAdapter(f"refuser_{number:03d}", effects, WakeOutcome(REFUSED, "", "no"))
+        for number in range(99)
+    ]
+    taking = FileAdapter("native_queue", effects)
+
+    first = _relay(tmp_path, 300, *refusing, taking)
+    again = _relay(tmp_path, 300)
+    with_adapters = _relay(tmp_path, 300, *refusing, taking)
+
+    assert (first.state, first.wake_path, first.sent_now) == (ACCEPTED, "native_queue", True)
+    assert [mark.order for mark in first.attempts] == list(range(1, 101))
+    assert (first.attempts[98].state, first.attempts[99].state) == (REFUSED, ACCEPTED)
+    for later in (again, with_adapters):
+        assert (later.state, later.wake_path, later.sent_now) == (ACCEPTED, "native_queue", False)
+    assert len(_effects(effects)) == 100
+    names = sorted(
+        p.name for p in (tmp_path / "marks" / wake_marks.seat_key(SEAT) / "300").iterdir()
+    )
+    assert "100-native_queue.outcome.json" in names and "99-refuser_098.attempt.json" in names
+
+
+def test_more_than_a_hundred_refusals_fail_once_and_stay_failed(tmp_path: Path) -> None:
+    effects = tmp_path / "effects"
+    refusing = [
+        FileAdapter(f"refuser_{number:03d}", effects, WakeOutcome(REFUSED, "", "no"))
+        for number in range(120)
+    ]
+
+    first = _relay(tmp_path, 301, *refusing)
+    again = _relay(tmp_path, 301, *refusing)
+
+    assert (first.state, len(first.attempts), first.sent_now) == (WAKE_FAILED, 120, True)
+    assert (again.state, again.sent_now, again.attempts) == (WAKE_FAILED, False, first.attempts)
+    assert [mark.order for mark in again.attempts] == list(range(1, 121))
+    assert len(_effects(effects)) == 120
