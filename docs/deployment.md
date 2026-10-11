@@ -743,11 +743,16 @@ restarted. Installation does not restart running units.
 every unit related to the hub, and prints one line per unit: what is wanted of
 it, what it does, and the start limit it was loaded with. It changes nothing.
 
+"Wanted" is read from the unit-file state: only `enabled` and
+`enabled-runtime` mean that the operator asked for the unit to run. A unit
+that is merely `linked`, `static`, `disabled` or transient is reported with
+that state and is not counted as wanted.
+
 ```text
 $ synapse service status
-synapse-hub.service: wanted enabled, is active/running, restarts 0, result success, start limit 10 starts in 10min
+synapse-hub.service: unit file enabled, is active/running, restarts 0, result success, start limit 10 starts in 10min
   owns: the hub process
-synapse-presence@myproject.service [WantedBy, Before]: wanted enabled, is failed/failed, restarts 30, result exit-code, start limit 30 starts in 30min
+synapse-presence@myproject.service [WantedBy, Before]: unit file enabled, is failed/failed, restarts 30, result exit-code, start limit 30 starts in 30min
   owns: one presence listener process for %I
   attention: enabled but failed: it stopped trying; reset and start it
 tmux server pid 4810 is in tmux-server-4810.scope

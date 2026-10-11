@@ -62,6 +62,7 @@ class Owned:
     def __init__(self) -> None:
         self.tag = uuid.uuid4().hex[:10]
         self.units: list[str] = []
+        self.linked: list[str] = []
 
     @property
     def pattern(self) -> str:
@@ -89,6 +90,21 @@ class Owned:
         self.units.append(unit)
         return unit
 
+    def link(self, name: str, directory: Path) -> str:
+        """Link a unit file into the user manager without enabling or starting it."""
+        unit = self.unit(name)
+        path = directory / unit
+        path.write_text(
+            "# Owns: nothing; a linked test unit\n[Service]\nExecStart=/usr/bin/sleep infinity\n",
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            ["systemctl", "--user", "link", str(path)], capture_output=True, text=True, check=False
+        )
+        assert completed.returncode == 0, completed.stderr
+        self.linked.append(unit)
+        return unit
+
 
 @pytest.fixture
 def owned() -> Iterator[Owned]:
@@ -98,6 +114,10 @@ def owned() -> Iterator[Owned]:
     try:
         yield units
     finally:
+        for unit in units.linked:
+            subprocess.run(
+                ["systemctl", "--user", "disable", unit], capture_output=True, check=False
+            )
         for unit in reversed(units.units):
             subprocess.run(["systemctl", "--user", "stop", unit], capture_output=True, check=False)
             subprocess.run(
@@ -120,7 +140,9 @@ def _wait_for(unit: str, active_state: str) -> None:
     raise AssertionError(f"{unit} did not become {active_state}")
 
 
-def test_real_units_are_reported_with_their_state_limit_and_relation(owned: Owned) -> None:
+def test_real_units_are_reported_with_their_state_limit_and_relation(
+    owned: Owned, tmp_path: Path
+) -> None:
     sleep = ["/usr/bin/sleep", "infinity"]
     hub = owned.start("hub", [], sleep)
     ordered = owned.start("ordered", [f"After={hub}"], sleep)
@@ -141,16 +163,24 @@ def test_real_units_are_reported_with_their_state_limit_and_relation(owned: Owne
     _wait_for(spent, "failed")
     _wait_for(looping, "activating")
     _wait_for(limited, "activating")
+    # A unit file that is linked, never enabled and never started.
+    linked = owned.link("linked", tmp_path)
 
     report = collect(runner=_RUNNER, tmux_server=_NO_TMUX, hub_unit=hub, pattern=owned.pattern)
 
     rows = {row.unit: row for row in report.rows}
     assert [row.unit for row in report.rows] == [hub, *sorted(rows.keys() - {hub})]
-    assert set(rows) == {hub, ordered, requiring, spent, looping, limited}
+    assert set(rows) == {hub, ordered, requiring, spent, looping, limited, linked}
+    assert (rows[linked].desired, rows[linked].wanted_running) == ("linked", False)
+    assert (rows[linked].active_state, rows[linked].attention) == ("inactive", "")
+    assert rows[linked].owns == "nothing; a linked test unit"
     assert rows[hub].hub_relations == () and rows[hub].active_state == "active"
     assert rows[ordered].hub_relations == ("Before",)
     assert rows[requiring].hub_relations == ("RequiredBy", "Before")
-    assert all(row.desired == "transient" and row.owns is None for row in report.rows)
+    assert all(
+        row.desired == "transient" and row.owns is None for row in report.rows if row.unit != linked
+    )
+    assert not any(row.wanted_running for row in report.rows)
     assert rows[hub].attention == "" and rows[ordered].attention == ""
 
     assert (rows[spent].active_state, rows[spent].restarts) == ("failed", 2)
@@ -169,7 +199,7 @@ def test_real_units_are_reported_with_their_state_limit_and_relation(owned: Owne
     assert listed_units(runner=_RUNNER, pattern=owned.pattern) == tuple(sorted(rows))
     # Transient units are not enabled, so no recovery command is offered for them.
     assert recovery_commands(report.rows) == []
-    assert render(report)[-1] == "units: 6, needing attention: 3"
+    assert render(report)[-1] == "units: 7, needing attention: 3"
 
 
 def test_the_command_prints_text_or_json_and_signals_attention(
@@ -186,7 +216,7 @@ def test_the_command_prints_text_or_json_and_signals_attention(
 
     assert cli_main(base) == 0
     assert capsys.readouterr().out.splitlines() == [
-        f"{hub}: wanted transient, is active/running, restarts 0, result success, "
+        f"{hub}: unit file transient, is active/running, restarts 0, result success, "
         "start limit 5 starts in 10s",
         "no tmux server answers",
         "units: 1, needing attention: 0",
@@ -209,6 +239,7 @@ def test_the_command_prints_text_or_json_and_signals_attention(
         "unit": spent,
         "hub_relations": [],
         "desired": "transient",
+        "wanted_running": False,
         "active_state": "failed",
         "sub_state": "failed",
         "restarts": 1,
@@ -232,8 +263,9 @@ def test_the_command_returns_two_when_the_service_manager_does_not_answer(
 class Recorded:
     """Replay recorded ``systemctl`` output by the kind of question asked."""
 
-    def __init__(self, *, relations: str, listing: str, shown: str) -> None:
+    def __init__(self, *, relations: str, listing: str, shown: str, unit_files: str = "") -> None:
         self.relations, self.listing, self.shown = relations, listing, shown
+        self.unit_files = unit_files
 
     def __call__(
         self,
@@ -245,6 +277,8 @@ class Recorded:
     ) -> subprocess.CompletedProcess[str]:
         if "list-units" in args:
             return subprocess.CompletedProcess(args, 0, self.listing, "")
+        if "list-unit-files" in args:
+            return subprocess.CompletedProcess(args, 0, self.unit_files, "")
         if "--property=RequiredBy" in args:
             return subprocess.CompletedProcess(args, 0, self.relations, "")
         return subprocess.CompletedProcess(args, 0, self.shown, "")
@@ -284,10 +318,18 @@ def test_enabled_units_that_are_down_get_recovery_commands(tmp_path: Path) -> No
             "synapse-old.service loaded active running old\n"
             "synapse-odd.timer loaded active waiting timer\n"
         ),
+        unit_files=(
+            "synapse-idle.service linked-runtime enabled\n"
+            "synapse-arm@.service indirect enabled\n"
+            "synapse-hub.service enabled enabled\n"
+            "\n"
+            "synapse-odd.timer enabled enabled\n"
+        ),
         shown="\n".join(
             [
                 _shown("synapse-hub.service", "enabled", "active", "running"),
-                _shown("synapse-arm@a.service", "enabled", "inactive", "dead"),
+                _shown("synapse-arm@a.service", "enabled-runtime", "inactive", "dead"),
+                _shown("synapse-idle.service", "linked-runtime", "inactive", "dead"),
                 _shown("synapse-arm@b.service", "disabled", "failed", "failed"),
                 _shown(
                     "synapse-old.service",
@@ -318,6 +360,7 @@ def test_enabled_units_that_are_down_get_recovery_commands(tmp_path: Path) -> No
         "synapse-hub.service",
         "synapse-arm@a.service",
         "synapse-arm@b.service",
+        "synapse-idle.service",
         "synapse-old.service",
         spent,
     ]
@@ -326,6 +369,7 @@ def test_enabled_units_that_are_down_get_recovery_commands(tmp_path: Path) -> No
         unit=spent,
         hub_relations=("WantedBy", "Before"),
         desired="enabled",
+        wanted_running=True,
         active_state="failed",
         sub_state="failed",
         restarts=30,
@@ -337,11 +381,17 @@ def test_enabled_units_that_are_down_get_recovery_commands(tmp_path: Path) -> No
     assert rows["synapse-arm@a.service"].attention == "enabled but not running"
     assert rows["synapse-arm@b.service"].attention == "failed"
     assert rows["synapse-arm@b.service"].desired == "disabled"
-    assert rows["synapse-old.service"].desired == "enabled"
+    # A linked unit file is known to the manager, not enabled: nothing is wanted of it.
+    assert rows["synapse-old.service"].desired == "linked"
+    assert not rows["synapse-old.service"].wanted_running
+    assert rows["synapse-arm@a.service"].desired == "enabled-runtime"
+    assert rows["synapse-arm@a.service"].wanted_running
+    assert rows["synapse-idle.service"].desired == "linked-runtime"
+    assert rows["synapse-idle.service"].attention == ""
     assert rows["synapse-old.service"].start_limit == "unlimited"
     assert rows["synapse-old.service"].attention == "" and rows["synapse-old.service"].owns is None
     assert rows["synapse-hub.service"].attention == ""
-    assert "synapse-odd.timer" not in rows
+    assert "synapse-odd.timer" not in rows and "synapse-arm@.service" not in rows
 
     assert recovery_commands(report.rows) == [
         "systemctl --user reset-failed -- synapse-arm@a.service "
@@ -351,7 +401,7 @@ def test_enabled_units_that_are_down_get_recovery_commands(tmp_path: Path) -> No
     ]
     lines = render(report)
     assert (
-        f"{spent} [WantedBy, Before]: wanted enabled, is failed/failed, restarts 30, "
+        f"{spent} [WantedBy, Before]: unit file enabled, is failed/failed, restarts 30, "
         in lines[lines.index("  owns: one presence listener process for %I") - 1]
     )
     assert "  attention: enabled but failed: it stopped trying; reset and start it" in lines
@@ -360,7 +410,7 @@ def test_enabled_units_that_are_down_get_recovery_commands(tmp_path: Path) -> No
         "  attention: stopping bridge.service would kill every tmux session; "
         "run: synapse service tmux-server --move"
     ) in lines
-    assert "units: 5, needing attention: 3" in lines
+    assert "units: 6, needing attention: 3" in lines
     assert lines[-3] == (
         "to bring back units that are enabled but not running, after checking why:"
     )
@@ -380,6 +430,7 @@ def test_a_tmux_server_inside_a_service_unit_alone_makes_the_report_unhealthy() 
         "synapse-hub.service",
         (),
         "enabled",
+        True,
         "active",
         "running",
         0,
@@ -441,6 +492,7 @@ def test_unusual_property_values_are_read_without_guessing(
         assert row.start_limit == limit
         assert row.owns is None and row.restarts == 0
         assert row.desired == ("unknown" if "UnitFileState" in fields else "enabled")
+        assert row.wanted_running == ("UnitFileState" not in fields)
 
 
 def test_an_answer_for_other_units_than_asked_is_refused() -> None:

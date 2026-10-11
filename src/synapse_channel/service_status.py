@@ -11,8 +11,9 @@ The report is the feed for ``synapse service status`` and for a dashboard. It
 is read from the service manager and from the unit files it names; nothing is
 started, stopped or reset. For every unit it gives:
 
-* **desired**: whether the unit is enabled, so that the operator wants it
-  running;
+* **desired**: the unit-file state as the service manager reports it, and
+  whether it means that the operator wants the unit running (``enabled`` or
+  ``enabled-runtime`` only);
 * **effective**: the active state, the restart count and the last result;
 * **start limit**: the budget the loaded unit carries, or ``unlimited`` for a
   unit that would restart without end;
@@ -55,8 +56,13 @@ _PROPERTIES = (
     "StartLimitIntervalUSec",
 )
 
-_ENABLED_STATES = frozenset({"enabled", "enabled-runtime", "linked", "linked-runtime", "alias"})
-"""Unit-file states in which the operator has asked for the unit to run."""
+_ENABLED_STATES = frozenset({"enabled", "enabled-runtime"})
+"""Unit-file states in which the operator has asked for the unit to run.
+
+``linked`` and ``linked-runtime`` only make a unit file known to the manager;
+``alias``, ``static``, ``indirect``, ``generated`` and ``transient`` say nothing
+about the operator's wish either. They are reported as they are.
+"""
 
 OWNS_PREFIX = "# Owns: "
 """Start of the unit-file line that names the processes a unit owns."""
@@ -69,6 +75,7 @@ class ServiceRow:
     unit: str
     hub_relations: tuple[str, ...]
     desired: str
+    wanted_running: bool
     active_state: str
     sub_state: str
     restarts: int
@@ -112,24 +119,24 @@ class ServiceReport:
 
 
 def listed_units(*, runner: CommandRunner, pattern: str = UNIT_PATTERN) -> tuple[str, ...]:
-    """Return the loaded service units whose name matches ``pattern``."""
-    command = [
-        "systemctl",
-        "--user",
-        "list-units",
-        "--all",
-        "--plain",
-        "--no-legend",
-        "--type=service",
-        "--",
-        pattern,
-    ]
-    names = (
-        line.split(None, 1)[0]
-        for line in query_service_manager(command, runner=runner).splitlines()
-        if line
-    )
-    return tuple(sorted(name for name in names if name.endswith(".service")))
+    """Return the service units whose name matches ``pattern``.
+
+    Both loaded units and unit files are asked for: a unit file that is
+    enabled or linked but was never started is not loaded, and would be
+    missing from a list of loaded units alone. Template files, whose name
+    ends in ``@.service``, are not units and are left out.
+    """
+    found: set[str] = set()
+    for query in (
+        ["list-units", "--all", "--plain", "--no-legend", "--type=service"],
+        ["list-unit-files", "--plain", "--no-legend", "--type=service"],
+    ):
+        command = ["systemctl", "--user", *query, "--", pattern]
+        for line in query_service_manager(command, runner=runner).splitlines():
+            name = line.split(None, 1)[0] if line.strip() else ""
+            if name.endswith(".service") and not name.endswith("@.service"):
+                found.add(name)
+    return tuple(sorted(found))
 
 
 def _start_limit(burst: str, interval: str) -> str:
@@ -153,13 +160,13 @@ def _owns(fragment: str) -> str | None:
     return None
 
 
-def _attention(desired: str, active: str, sub: str, restarts: int, limit: str) -> str:
+def _attention(wanted: bool, active: str, sub: str, restarts: int, limit: str) -> str:
     """Return why a unit needs an operator, or an empty string."""
     if active == "failed":
-        if desired == "enabled":
+        if wanted:
             return "enabled but failed: it stopped trying; reset and start it"
         return "failed"
-    if desired == "enabled" and active == "inactive":
+    if wanted and active == "inactive":
         return "enabled but not running"
     if active == "activating" and sub == "auto-restart":
         if limit == "unlimited":
@@ -180,7 +187,7 @@ def collect(
     Parameters
     ----------
     runner : CommandRunner
-        Bounded command boundary; three read-only queries are made.
+        Bounded command boundary; four read-only queries are made.
     tmux_server : TmuxServerPlacement
         Where the tmux server lives, as read by the caller.
     hub_unit : str
@@ -228,7 +235,8 @@ def collect(
     for unit in wanted:
         fields = found[unit]
         state = fields.get("UnitFileState", "")
-        desired = "enabled" if state in _ENABLED_STATES else (state or "unknown")
+        desired = state or "unknown"
+        wants_running = state in _ENABLED_STATES
         active = fields.get("ActiveState", "unknown")
         sub = fields.get("SubState", "unknown")
         count = fields.get("NRestarts", "")
@@ -241,13 +249,14 @@ def collect(
                 unit=unit,
                 hub_relations=relations.get(unit, ()),
                 desired=desired,
+                wanted_running=wants_running,
                 active_state=active,
                 sub_state=sub,
                 restarts=restarts,
                 result=fields.get("Result", "unknown"),
                 start_limit=limit,
                 owns=_owns(fields.get("FragmentPath", "")),
-                attention=_attention(desired, active, sub, restarts, limit),
+                attention=_attention(wants_running, active, sub, restarts, limit),
             )
         )
     return ServiceReport(hub_unit=hub_unit, rows=tuple(rows), tmux_server=tmux_server)
@@ -258,7 +267,7 @@ def recovery_commands(rows: Sequence[ServiceRow]) -> list[str]:
     down = [
         row.unit
         for row in rows
-        if row.desired == "enabled" and row.active_state in {"failed", "inactive"}
+        if row.wanted_running and row.active_state in {"failed", "inactive"}
     ]
     if not down:
         return []
@@ -275,7 +284,7 @@ def render(report: ServiceReport) -> list[str]:
     for row in report.rows:
         relation = f" [{', '.join(row.hub_relations)}]" if row.hub_relations else ""
         lines.append(
-            f"{terminal_text(row.unit)}{relation}: wanted {row.desired}, "
+            f"{terminal_text(row.unit)}{relation}: unit file {row.desired}, "
             f"is {row.active_state}/{row.sub_state}, restarts {row.restarts}, "
             f"result {row.result}, start limit {row.start_limit}"
         )
