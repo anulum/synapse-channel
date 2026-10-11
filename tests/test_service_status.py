@@ -303,8 +303,7 @@ def _shown(unit: str, state: str, active: str, sub: str, **extra: str) -> str:
 def test_enabled_units_that_are_down_get_recovery_commands(tmp_path: Path) -> None:
     fragment = tmp_path / "synapse-presence@.service"
     fragment.write_text(
-        "# SPDX-License-Identifier: AGPL-3.0-or-later\n"
-        "# Owns: one presence listener process for %I\n\n[Unit]\n",
+        "# generated unit\n# Owns: one presence listener process for %I\n\n[Unit]\n",
         encoding="utf-8",
     )
     spent = "synapse-presence@SC\\x2dNEUROCORE.service"
