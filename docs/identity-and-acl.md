@@ -80,8 +80,12 @@ The ACL model and its evaluation are implemented in
   connect provisions a per-machine Ed25519 keypair under
   `$XDG_DATA_HOME/synapse/identity/`, the registration is signed with it and
   carries `identity_public_key`, and the hub pins the name to the first key
-  that proves it — persisted in `--identity-pins` (default
-  `~/synapse/identity-pins.json`) so the pin survives hub restarts. A pinned
+  that proves it — persisted in `--identity-pins` so the pin survives hub
+  restarts. The conventional `~/synapse/hub.db` and a hub without `--db`
+  retain `~/synapse/identity-pins.json`, as does SQLite `--db :memory:`.
+  Any other `--db` gets its own
+  `<resolved-database-path>.identity-pins.json`, including distinct databases
+  in the same directory. A pinned
   name refuses a missing signature or any other key with close code `4013`
   (`identity pin mismatch`) and names the observed key id plus the governed
   recovery command; unsigned names keep classic semantics;
@@ -89,6 +93,37 @@ The ACL model and its evaluation are implemented in
   operator-bundle behaviour. Together with the ownership lease this closes the
   name-squatting class: the lease covers reconnect gaps with a bearer token,
   the pin covers restarts with a proof of key possession.
+
+  A new custom journal gets an atomically published empty companion before
+  opening the journal or accepting clients, so a restart before the first
+  registration retains its separate namespace. On POSIX the new file has mode
+  `0600`; on Windows keep its parent directory restricted to the hub's account.
+  An unsupported filesystem or invalid companion refuses startup rather than
+  switching to an in-memory store. Existing companions are never overwritten
+  during initialisation.
+  The parent directory entry is also flushed on POSIX before journal creation;
+  Windows has no equivalent Python directory descriptor to flush.
+
+  **Upgrading an existing custom journal:** if the legacy home file exists
+  and there is no companion, startup refuses before opening the journal and
+  names both paths. Pin rows have no hub identifier, so automatic copying or
+  partitioning cannot establish which names belong to that hub. Select
+  `--identity-pins "PATH-TO-LEGACY-FILE"` to keep the complete old trust table
+  (which may include names from other hubs). For isolation, prepare a separate
+  file containing the hub's verified name/key bindings and select
+  `--identity-pins "PATH-TO-PREPARED-FILE"`. Preserve the original as evidence;
+  do not delete pins to bypass the refusal. Explicit paths keep their previous
+  meaning; `--identity-pins ""` deliberately retains pins only for the process
+  lifetime. Multiple hubs without a journal still share the historical home
+  default: give each an explicit separate file when isolation is required.
+  For a throwaway no-journal or `:memory:` hub, pass `--identity-pins ""`
+  and use an isolated home/key profile; the historical implicit default can
+  still load and rewrite the account's legacy file.
+  Migration checks only the current account's home. If a service changes its
+  `HOME`, account or container mount, keep an explicit path to its original
+  pin table; absence under the new home cannot prove that the old hub had no
+  pins. A new journal directory follows the process umask: provision its parent
+  with the intended account permissions before starting the hub.
 - **Every client verb signs uniformly**: `SynapseAgent` presents the machine
   identity by default, so any verb that connects — send, listen, arm, queries,
   the bridges — proves the same key. Before this default only `arm` and `wait`
@@ -265,8 +300,8 @@ permission vocabulary should stay small and auditable:
 
 | Permission | Scope |
 | --- | --- |
-| `message` | Send chat, direct messages, handoffs, and checkpoints to allowed targets. |
-| `claim` | Create or update claims for allowed path target patterns. |
+| `message` | Send chat and direct messages to allowed targets. |
+| `claim` | Create, update, hand off, or checkpoint claims for allowed task targets. Verbs declaring path accesses also check those paths. |
 | `release` | Release claims and publish release receipts; this is the release permission. |
 | `board` | Create and update blackboard tasks or findings. |
 | `metrics` | Read live or historical operational metrics; this is the metrics permission. |

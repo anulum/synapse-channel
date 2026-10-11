@@ -33,6 +33,7 @@ from synapse_channel.core.logging_setup import configure_logging
 from synapse_channel.core.message_auth_durable import DurableMessageAuthReplayStore
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.tls import _require_certificate_pin_support, build_server_ssl_context
+from synapse_channel.hub_identity_paths import prepare_hub_identity_pins
 
 
 def _cmd_hub(
@@ -69,6 +70,7 @@ def _cmd_hub(
         try:
             apply_hub_profiles(ctx)
             prepare_hub_transport(ctx)
+            prepare_hub_identity_pins(ctx)
             prepare_hub_journal(ctx)
             configure_ingress_limits(ctx)
             prepare_hub_trust(ctx)

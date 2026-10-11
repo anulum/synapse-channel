@@ -144,6 +144,13 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Separate custom hub journals now use separate default identity-pin files,
+  including journals in one directory. Startup publishes an empty companion
+  atomically without overwriting existing pins; an ambiguous upgrade requires
+  explicit operator selection before opening the journal. Conventional and
+  explicit defaults retain their contract. See `docs/identity-and-acl.md` for
+  migration and Windows directory permissions.
+
 - Handoff ACL checks now use the stripped `task_id` consumed by the handler,
   preserving declared path checks. Ignored `payload` and `id` aliases cannot
   select a different permission target; malformed payload-only requests are

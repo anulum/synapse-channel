@@ -108,5 +108,6 @@ jobs:
           tests/test_cli_lock_transport_runtime.py
           tests/test_cli_lock_legacy_runtime.py
           tests/test_coverage_exclusion_ledger.py
+          tests/test_hub_identity_paths_runtime.py
           tests/test_path_identity.py
           tests/test_terminal_text.py

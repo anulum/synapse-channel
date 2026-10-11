@@ -502,6 +502,16 @@ owner recovery, and full multi-tenant IAM remain outside this runtime. Identity
 and ACL do not replace per-message authentication, signed events, TLS, or host
 process isolation.
 
+CLI hubs with separate custom journals use separate default identity-pin
+companions, atomically initialised without overwriting existing trust. An
+upgrade with an existing journal, a legacy home pin file and no companion
+refuses to infer which names belong to the hub. The operator must explicitly
+select the legacy table or prepare verified isolated bindings; no pins are
+automatically copied or reset. The conventional/no-journal home default and
+explicit overrides remain compatible. This isolates persistence namespaces;
+it does not authenticate first use or sandbox clients. See
+[identity-pin migration](docs/identity-and-acl.md).
+
 The global agent names `SynapseHub`, `Synapse`, and `system` are reserved
 case-insensitively for hub and protocol provenance. The hub refuses their
 registration before authentication, trust-on-first-use pinning, takeover, or

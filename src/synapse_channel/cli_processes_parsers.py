@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import math
-from pathlib import Path
 
 from synapse_channel.cli_processes_hub import _cmd_hub
 from synapse_channel.cli_processes_security_args import add_hub_security_arguments
@@ -339,9 +338,9 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     hub.add_argument(
         "--identity-pins",
-        default=str(Path.home() / "synapse" / "identity-pins.json"),
         help="JSON file persisting trust-on-first-use name-to-key identity pins; "
-        "pass an empty string to keep pins in memory only.",
+        "defaults beside a custom --db, or to ~/synapse/identity-pins.json for the "
+        "conventional/no-db hub; an empty string keeps pins in memory only.",
     )
     hub.add_argument(
         "--lease-offline-ttl",

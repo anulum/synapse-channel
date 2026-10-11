@@ -866,6 +866,13 @@ first connect provisions a per-machine Ed25519 key, the hub pins each signed
 name to it on first use (durable across hub restarts, `--identity-pins`), and
 a claim from any other machine is refused until the operator clears the pin.
 One name, one owner, across reconnects and restarts.
+Each custom `hub --db FILE` now owns `FILE.identity-pins.json` (the resolved
+database path), so separate journals in one directory cannot rewrite each
+other's default pins. The conventional `~/synapse/hub.db` and no-db hub keep
+the historical home default, as does SQLite `--db :memory:`. An existing
+custom journal with legacy pins needs an explicit file selection on upgrade; see
+[pin migration](docs/identity-and-acl.md). Explicit `--identity-pins FILE`
+and `--identity-pins ""` keep their file-backed and process-only meanings.
 While the hub is running, it also watches every unexpired claim and assigned
 non-terminal board task. If that exact owner has no fresh `-rx` waiter for 30
 continuous seconds, the hub broadcasts one machine-readable `dark_seat_alert`
@@ -1798,11 +1805,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.37 |
 | Public API exports | 70 |
-| Package modules | 733 |
+| Package modules | 734 |
 | Classes | 1084 |
 | Wire message types | 114 |
 | CLI subcommands | 242 |
-| Test functions | 11162 |
+| Test functions | 11171 |
 | Benchmark harnesses | 8 |
 | Documentation pages | 82 |
 | GitHub Actions workflows | 27 |
