@@ -108,6 +108,11 @@ everything, since they need the whole command table.
 | `synapse native-record` | Record a message that travelled over a vendor's own channel; the hub stores it and delivers nothing. |
 | `synapse workflow` | Validate and compile a declarative workflow into blackboard tasks (`validate`/`compile`/`plan`/`run`); `contention` weighs overlapping live claims involving the workflow's tasks. |
 
+`synapse conflicts` repeats its read-only snapshot request at most once if the
+first reply is missing. Both reads share the original two-second response
+deadline. A persistent missing snapshot exits `1` and never reports a clean
+prediction. This recovery does not retry claims, releases or other mutations.
+
 Programmatic provider selection and the routed deliberation loop use the
 [participant routing policy](participant-routing.md). Its cost ceiling checks an
 estimated quote for one turn; `synapse participant` does not enforce a billing

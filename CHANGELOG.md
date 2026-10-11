@@ -103,6 +103,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Conflict prediction repeats a missing read-only state query once within its
+  existing response deadline and joins its connection shutdown. Persistent
+  snapshot loss still refuses the prediction; lease mutations are never replayed.
+
 - Regression journeys now exercise the documented uncertain cleanup exit on
   legacy hubs, select a coordination event for causality queries, and validate
   the Python 3.10 typing backport separately from modern runtime dependencies.

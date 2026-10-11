@@ -18,7 +18,6 @@ ordinary state snapshot and never runs git.
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -31,7 +30,7 @@ from synapse_channel.core.path_identity import (
     claim_scope_covers_path,
     parse_optional_claim_scope_identity,
 )
-from synapse_channel.core.protocol import MessageType
+from synapse_channel.git.conflict_snapshot import read_conflict_snapshot
 from synapse_channel.git.gitclaim import AgentFactory, GitError, GitRunner, _default_git_runner
 from synapse_channel.git.semantic_diff import SemanticDiffRecord, resolve_git_diff
 
@@ -411,9 +410,11 @@ async def run_conflicts(
     ready_timeout : float, optional
         Seconds to wait for hub connection readiness.
     attempts : int, optional
-        Number of state snapshot polling attempts.
+        Original state response allowance; combined with ``poll_interval`` this
+        sets the total read deadline, including at most one read-only retry.
     poll_interval : float, optional
-        Seconds to sleep between state snapshot polls.
+        Seconds per original polling attempt. Snapshot delivery now wakes the
+        reader directly; the combined deadline is unchanged.
 
     Returns
     -------
@@ -424,51 +425,42 @@ async def run_conflicts(
         codes let ``synapse conflicts && <merge>`` proceed only on a clean,
         successfully checked result.
     """
-    snapshots: list[dict[str, Any]] = []
+    ready, snapshot = await read_conflict_snapshot(
+        uri=uri,
+        name=name,
+        token=token,
+        agent_factory=agent_factory,
+        ready_timeout=ready_timeout,
+        attempts=attempts,
+        poll_interval=poll_interval,
+    )
+    if not ready:
+        print(f"[{name}] Could not reach hub at {uri}.")
+        return 1
+    if snapshot is None:
+        print("Conflict evidence unavailable: no state snapshot received.")
+        return 1
+    claims = snapshot.get("active_claims") or []
+    conflicts = find_conflicts(claims)
+    if check_diff and not check_semantic:
+        conflicts = _refine_with_diff(conflicts, runner=runner)
+    if check_semantic:
+        root = repo_root or Path.cwd()
 
-    async def collect(data: dict[str, Any]) -> None:
-        """Capture hub state without inferring success from other messages."""
-        if data.get("type") == MessageType.STATE_SNAPSHOT:
-            snapshots.append(data.get("snapshot", {}))
+        def semantic_runner(args: list[str]) -> str:
+            """Read pinned branch evidence from the selected repository."""
+            return runner(["-C", str(root), *args])
 
-    agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    conn_task = asyncio.create_task(agent.connect())
-    try:
-        if not await agent.wait_until_ready(timeout=ready_timeout):
-            print(f"[{name}] Could not reach hub at {uri}.")
-            return 1
-        await agent.request_state()
-        for _ in range(attempts):
-            if snapshots:
-                break
-            await asyncio.sleep(poll_interval)
-        if not snapshots:
-            print("Conflict evidence unavailable: no state snapshot received.")
-            return 1
-        claims = snapshots[-1].get("active_claims") or []
-        conflicts = find_conflicts(claims)
-        if check_diff and not check_semantic:
-            conflicts = _refine_with_diff(conflicts, runner=runner)
-        if check_semantic:
-            root = repo_root or Path.cwd()
-
-            def semantic_runner(args: list[str]) -> str:
-                """Read pinned branch evidence from the selected repository."""
-                return runner(["-C", str(root), *args])
-
-            conflicts = _refine_with_semantic(
-                conflicts,
-                repo_root=root,
-                runner=semantic_runner,
-                resolver=semantic_resolver,
-            )
-        if not conflicts:
-            print("No predicted conflicts.")
-            return 0
-        print(f"Predicted conflicts ({len(conflicts)}):")
-        for conflict in conflicts:
-            print(f"  {conflict.describe()}")
-        return 2
-    finally:
-        agent.running = False
-        conn_task.cancel()
+        conflicts = _refine_with_semantic(
+            conflicts,
+            repo_root=root,
+            runner=semantic_runner,
+            resolver=semantic_resolver,
+        )
+    if not conflicts:
+        print("No predicted conflicts.")
+        return 0
+    print(f"Predicted conflicts ({len(conflicts)}):")
+    for conflict in conflicts:
+        print(f"  {conflict.describe()}")
+    return 2
