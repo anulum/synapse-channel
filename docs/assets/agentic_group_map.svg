@@ -1,0 +1,133 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Commercial license available -->
+<!-- © Concepts 1996–2026 Miroslav Šotek. All rights reserved. -->
+<!-- © Code 2020–2026 Miroslav Šotek. All rights reserved. -->
+<!-- ORCID: 0009-0009-3560-0851 -->
+<!-- Contact: www.anulum.li | protoscience@anulum.li -->
+<!-- SYNAPSE CHANNEL — group schematic of Agentic Coordination, Assurance and Continuity Systems -->
+
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1455" viewBox="0 0 1600 1455" role="img" aria-labelledby="title desc">
+<title id="title">Agentic Coordination, Assurance and Continuity Systems — group and repository map</title>
+<desc id="desc">Ten independent repositories: nine projects in three areas and one supporting tool. SYNAPSE-CHANNEL is the coordination layer. Coordination: SYNAPSE-CHANNEL-FLEET, SYNAPSE-POLICY-CHECK-ACTION. Assurance: DIRECTOR-AI, DIRECTOR-CLASS-AI, DIRECTOR-AI-CLOUD, RIGOR-FOUNDRY. Continuity: REMANENTIA, REMANENTIA-PORTAL. Supporting tools: HushLine, the first; emerging tools are not designed yet. Solid arrows are declared package dependencies. Dashed arrows are optional interfaces that are off by default: SYNAPSE-CHANNEL with REMANENTIA, and DIRECTOR-AI with REMANENTIA. Coloured areas are navigation grouping, not dependencies.</desc>
+<defs>
+<marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto-start-reverse"><path d="M0,0 L0,6 L8,3 z" fill="#3b5b7c"/></marker>
+<marker id="arrowo" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto-start-reverse"><path d="M0,0 L0,6 L8,3 z" fill="#9a6a1c"/></marker>
+</defs>
+<style>text{font-family:DejaVu Sans,Arial,sans-serif;fill:#18283b}.title{font-size:34px;font-weight:700}.sub{font-size:18px;fill:#42566e}.sub2{font-size:15px;fill:#42566e}.heading{font-size:23px;font-weight:700}.name{font-size:20px;font-weight:700}.role{font-size:15px;fill:#26384d}.status{font-size:14px;fill:#55687f}.badge{font-size:12px;font-weight:700;letter-spacing:.8px;fill:#345372}.portal{font-size:12px;font-weight:700;fill:#7a4b9a}.edge{font-size:13px;fill:#55687f}.dep{stroke:#3b5b7c;stroke-width:2;fill:none}.opt{stroke:#9a6a1c;stroke-width:2;stroke-dasharray:8 6;fill:none}</style>
+<rect width="1600" height="1455" fill="#f5f8fc"/>
+<text x="48" y="62" class="title">Agentic Coordination, Assurance and Continuity Systems</text>
+<text x="48" y="96" class="sub">Group map • ten independent repositories, each with its own versioning and release lifecycle</text>
+<rect x="48" y="338" width="484" height="429" rx="14" fill="#eaf3ff" stroke="#c3d0de" stroke-width="1.2"/>
+<text x="92" y="374" class="heading">Coordination</text>
+<text x="92" y="400" class="sub2">Operating the bus across machines and in CI.</text>
+<rect x="558" y="338" width="484" height="875" rx="14" fill="#eaf6ef" stroke="#c3d0de" stroke-width="1.2"/>
+<text x="602" y="374" class="heading">Assurance</text>
+<text x="602" y="400" class="sub2">Is it grounded, is it safe, is the evidence there?</text>
+<rect x="1068" y="338" width="484" height="490" rx="14" fill="#fdf3e3" stroke="#c3d0de" stroke-width="1.2"/>
+<text x="1112" y="374" class="heading">Continuity</text>
+<text x="1112" y="400" class="sub2">What does the work remember between sessions?</text>
+<rect x="1068" y="854" width="484" height="359" rx="14" fill="#eef0f5" stroke="#c3d0de" stroke-width="1.2"/>
+<text x="1112" y="890" class="heading">Supporting tools</text>
+<text x="1112" y="916" class="sub2">HushLine is the first; others are not designed yet.</text>
+<rect x="92" y="418" width="424" height="162" rx="10" fill="#ffffff" stroke="#9aaec4" stroke-width="1.5"/>
+<text x="108" y="444" class="badge">PRIVATE · ALPHA</text>
+<text x="500" y="444" class="portal" text-anchor="end">◆ Portal catalogue</text>
+<text x="108" y="472" class="name">SYNAPSE-CHANNEL-FLEET</text>
+<text x="108" y="496" class="role">Multi-machine operation of the bus: durable</text>
+<text x="108" y="517" class="role">follower daemon, per-peer trust and</text>
+<text x="108" y="538" class="role">configuration, claim forwarding, diagnostics.</text>
+<text x="108" y="563" class="status">Proprietary; private wheel under agreement.</text>
+<rect x="92" y="602" width="424" height="141" rx="10" fill="#ffffff" stroke="#9aaec4" stroke-width="1.5"/>
+<text x="108" y="628" class="badge">PUBLIC · NO TAGGED RELEASE</text>
+<text x="108" y="656" class="name">SYNAPSE-POLICY-CHECK-ACTION</text>
+<text x="108" y="680" class="role">GitHub Action that checks a SYNAPSE CHANNEL</text>
+<text x="108" y="701" class="role">release receipt against a policy file in CI.</text>
+<text x="108" y="726" class="status">Open source; used by commit pin.</text>
+<path class="dep" d="M92 499.0 H70 V291" marker-end="url(#arrow)"/>
+<text class="edge" transform="translate(63 489.0) rotate(-90)">exact version</text>
+<path class="dep" d="M92 672.5 H70 V291" marker-end="url(#arrow)"/>
+<text class="edge" transform="translate(63 662.5) rotate(-90)">exact, hash-pinned</text>
+<rect x="602" y="418" width="424" height="162" rx="10" fill="#ffffff" stroke="#9aaec4" stroke-width="1.5"/>
+<text x="618" y="444" class="badge">RELEASED · BETA</text>
+<text x="1010" y="444" class="portal" text-anchor="end">◆ Portal catalogue</text>
+<text x="618" y="472" class="name">DIRECTOR-AI</text>
+<text x="618" y="496" class="role">Response-level guardrail for LLM output: NLI and</text>
+<text x="618" y="517" class="role">retrieval grounding, sealed evidence packets,</text>
+<text x="618" y="538" class="role">optional streaming contradiction halt.</text>
+<text x="618" y="563" class="status">Open core; paid tiers from a private index.</text>
+<rect x="602" y="602" width="424" height="202" rx="10" fill="#ffffff" stroke="#9aaec4" stroke-width="1.5"/>
+<text x="618" y="628" class="badge">PRIVATE · ALPHA</text>
+<text x="1010" y="628" class="portal" text-anchor="end">◆ Portal catalogue</text>
+<text x="618" y="656" class="name">DIRECTOR-CLASS-AI</text>
+<text x="618" y="680" class="role">Action control between an agent and its</text>
+<text x="618" y="701" class="role">effectors: action-policy checks, human</text>
+<text x="618" y="722" class="role">approvals, gateway enforcement and tamper-</text>
+<text x="618" y="743" class="role">evident action evidence.</text>
+<text x="618" y="768" class="status">Commercial; offered by engagement, no public</text>
+<text x="618" y="787" class="status">package.</text>
+<rect x="602" y="826" width="424" height="160" rx="10" fill="#ffffff" stroke="#9aaec4" stroke-width="1.5"/>
+<text x="618" y="852" class="badge">PRIVATE · UNRELEASED</text>
+<text x="618" y="880" class="name">DIRECTOR-AI-CLOUD</text>
+<text x="618" y="904" class="role">Control plane for a hosted Director-AI API:</text>
+<text x="618" y="925" class="role">accounts, API keys, usage metering, plan quotas.</text>
+<text x="618" y="950" class="status">Commercial; no hosted service, billing or rate</text>
+<text x="618" y="969" class="status">enforcement is claimed.</text>
+<rect x="602" y="1008" width="424" height="181" rx="10" fill="#ffffff" stroke="#9aaec4" stroke-width="1.5"/>
+<text x="618" y="1034" class="badge">PUBLISHED 1.0 · RULES IN PROBATION</text>
+<text x="618" y="1062" class="name">RIGOR-FOUNDRY</text>
+<text x="618" y="1086" class="role">Evidence-bound repository auditing: reproducible</text>
+<text x="618" y="1107" class="role">audit candidates, review decisions bound to</text>
+<text x="618" y="1128" class="role">exact evidence, remediation inputs.</text>
+<text x="618" y="1153" class="status">Open source; a rule match is a review candidate,</text>
+<text x="618" y="1172" class="status">not a verdict.</text>
+<path class="dep" d="M602 703.0 H580 V546 H599" marker-end="url(#arrow)"/>
+<text class="edge" transform="translate(573 693.0) rotate(-90)">optional extra</text>
+<path class="dep" d="M602 906.0 H580 V546 H599" marker-end="url(#arrow)"/>
+<text class="edge" transform="translate(573 896.0) rotate(-90)">optional extra</text>
+<rect x="1112" y="418" width="424" height="202" rx="10" fill="#ffffff" stroke="#9aaec4" stroke-width="1.5"/>
+<text x="1128" y="444" class="badge">RELEASED · ALPHA</text>
+<text x="1520" y="444" class="portal" text-anchor="end">◆ Portal catalogue</text>
+<text x="1128" y="472" class="name">REMANENTIA</text>
+<text x="1128" y="496" class="role">Local-first, auditable memory for AI agents:</text>
+<text x="1128" y="517" class="role">indexing, hybrid retrieval, consolidation and</text>
+<text x="1128" y="538" class="role">entity graph through a CLI, MCP server and HTTP</text>
+<text x="1128" y="559" class="role">API.</text>
+<text x="1128" y="584" class="status">Open source with a commercial licence; active</text>
+<text x="1128" y="603" class="status">development.</text>
+<rect x="1112" y="642" width="424" height="162" rx="10" fill="#ffffff" stroke="#9aaec4" stroke-width="1.5"/>
+<text x="1128" y="668" class="badge">PRIVATE</text>
+<text x="1128" y="696" class="name">REMANENTIA-PORTAL</text>
+<text x="1128" y="720" class="role">Customer and commercial control plane: one</text>
+<text x="1128" y="741" class="role">customer identity, order forms and separate</text>
+<text x="1128" y="762" class="role">product entitlements. Runs no customer workload.</text>
+<text x="1128" y="787" class="status">Private repository; no release.</text>
+<rect x="1112" y="934" width="424" height="181" rx="10" fill="#ffffff" stroke="#9aaec4" stroke-width="1.5"/>
+<text x="1128" y="960" class="badge">RELEASED · TOOL</text>
+<text x="1128" y="988" class="name">HushLine</text>
+<text x="1128" y="1012" class="role">Local command-output filter: runs a command,</text>
+<text x="1128" y="1033" class="role">then limits, shapes and redacts its output. Four</text>
+<text x="1128" y="1054" class="role">independent cores: Go, Rust, Python, Node.</text>
+<text x="1128" y="1079" class="status">Open source; works on its own, no interface to the</text>
+<text x="1128" y="1098" class="status">other projects.</text>
+<rect x="48" y="128" width="1504" height="160" rx="12" fill="#dcebff" stroke="#7f9cc0" stroke-width="1.8"/>
+<text x="70" y="160" class="badge">COORDINATION LAYER · RELEASED · BETA</text>
+<text x="1530" y="160" class="portal" text-anchor="end">◆ Portal catalogue</text>
+<text x="70" y="194" class="heading">SYNAPSE-CHANNEL</text>
+<text x="70" y="224" class="role">Local-first coordination bus for AI agents: presence, file-scope work claims, messages, task status, receipts and an audit journal on one hub.</text>
+<text x="70" y="246" class="role">The bus the agents meet on. Fleet and the policy-check Action build on it; REMANENTIA connects to it through an optional interface.</text>
+<text x="70" y="272" class="status">Open source with a commercial licence; before 1.0.</text>
+<path class="opt" d="M1522 291 V415" marker-start="url(#arrowo)" marker-end="url(#arrowo)"/>
+<text x="1512" y="324" class="edge" text-anchor="end">optional: participant memory recall · recall metadata</text>
+<path class="opt" d="M1029 458 H1109" marker-start="url(#arrowo)" marker-end="url(#arrowo)"/>
+<text x="1069.0" y="449" class="edge" text-anchor="middle">optional</text>
+<text x="48" y="1257" class="heading">How to read the lines</text>
+<path class="dep" d="M48 1286 H118" marker-end="url(#arrow)"/>
+<text x="136" y="1291" class="role">Solid arrow: declared package dependency, read from the dependent project's packaging.</text>
+<path class="opt" d="M48 1316 H118" marker-end="url(#arrowo)"/>
+<text x="136" y="1321" class="role">Dashed arrow: optional documented interface, off unless an operator configures it.</text>
+<text x="48" y="1351" class="portal">◆ Portal catalogue</text>
+<text x="218" y="1351" class="role">Product listed in the Portal's entitlement catalogue: a commercial relation, not a runtime call.</text>
+<rect x="48" y="1366" width="70" height="20" rx="5" fill="#eaf6ef" stroke="#c3d0de"/>
+<text x="136" y="1381" class="role">Coloured areas group projects for navigation. They are not dependencies.</text>
+<text x="48" y="1423" class="status">A place on this map states a responsibility. It does not state that a project is complete, deployed or certified.</text>
+</svg>

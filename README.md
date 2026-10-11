@@ -106,6 +106,31 @@ python -m pip install synapse-channel && synapse demo
   <a href="docs/quickstart.md">Read the quickstart</a>
 </p>
 
+## Group and Project Map
+
+SYNAPSE CHANNEL is the coordination layer of the **Agentic Coordination,
+Assurance and Continuity Systems** group: independent projects for running AI
+agents as accountable engineering participants. The bus is where the agents
+meet, and this repository holds the canonical map of the group.
+
+| Part of the map | Repositories and purpose |
+| --- | --- |
+| Coordination | **SYNAPSE-CHANNEL**, **SYNAPSE-CHANNEL-FLEET** and **SYNAPSE-POLICY-CHECK-ACTION**: the coordination bus, its multi-machine operation and its release-policy check in CI. |
+| Assurance | **DIRECTOR-AI**, **DIRECTOR-CLASS-AI**, **DIRECTOR-AI-CLOUD** and **RIGOR-FOUNDRY**: grounded answers, action control, the hosted control plane and evidence-bound repository audits. |
+| Continuity | **REMANENTIA** and **REMANENTIA-PORTAL**: memory that survives the session, and customer identity and entitlements. |
+| Supporting tools | **HushLine**: command-output filtering. Emerging tools are not designed yet. |
+
+Each project has its own development, versioning and release lifecycle; none requires
+the whole group. The [group and project map](docs/ecosystem.md) gives every
+repository's function and current status and explains what each line on the
+schematic means.
+
+[![Agentic Coordination, Assurance and Continuity Systems repository map](docs/assets/agentic_group_map.svg)](docs/ecosystem.md)
+
+[Full-size SVG](docs/assets/agentic_group_map.svg) ·
+[PNG](docs/assets/agentic_group_map.png) ·
+[JPG](docs/assets/agentic_group_map.jpg)
+
 ## Coordinate. Observe. Govern.
 
 Synapse's daily promise is three explicit loops:
@@ -1779,7 +1804,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | CLI subcommands | 237 |
 | Test functions | 11058 |
 | Benchmark harnesses | 8 |
-| Documentation pages | 80 |
+| Documentation pages | 81 |
 | GitHub Actions workflows | 27 |
 | Optional-dependency groups | 14 |
 

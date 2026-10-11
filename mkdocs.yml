@@ -67,6 +67,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Why SYNAPSE: why-synapse.md
+  - Group and project map: ecosystem.md
   - Installation: installation.md
   - Machine-readable setup: machine-readable-setup.md
   - Quick start: quickstart.md
