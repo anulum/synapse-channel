@@ -171,6 +171,8 @@ def test_a_description_survives_the_trip_through_plain_data() -> None:
     data = json.loads(json.dumps(spec.to_json()))
 
     assert OperationSpec.from_json(data) == spec
+    # The plain data is plain before any encoding too: lists, not tuples.
+    assert spec.to_json() == data and OperationSpec.from_json(spec.to_json()) == spec
     assert data["arguments"][1] == {
         "name": "priority",
         "type": "enum",
@@ -199,3 +201,46 @@ def test_a_description_survives_the_trip_through_plain_data() -> None:
 def test_plain_data_that_is_not_a_description_is_refused(damage: Any) -> None:
     with pytest.raises(OperationSpecError):
         OperationSpec.from_json(damage(queue_message().to_json()))
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"vendor": 5}, "operation vendor is text"),
+        ({"host": None}, "operation host is text"),
+        ({"operation": ["a.b"]}, "operation operation is text"),
+        ({"qualification": None}, "operation qualification is text"),
+        ({"evidence": 12}, "operation evidence is text"),
+        ({"evidence": "e" * 501}, "operation evidence is text of at most 500"),
+        ({"side_effects": "queues a message"}, "operation side_effects is a list"),
+        ({"side_effects": ["queues"]}, "operation side_effects is a list"),
+        ({"side_effects": (3,)}, "each of operation side_effects is text"),
+        ({"side_effects": ("x",) * 65}, "operation side_effects is a list of at most 64"),
+        ({"arguments": [ArgumentSpec("thread", "uuid")]}, "operation arguments is a list"),
+        ({"arguments": ("thread",)}, "each operation argument is an argument description"),
+        ({"arguments": (ArgumentSpec("a", "string"),) * 65}, "operation arguments is a list"),
+    ],
+)
+def test_the_constructor_refuses_values_of_the_wrong_kind(
+    changes: dict[str, Any], message: str
+) -> None:
+    with pytest.raises(OperationSpecError, match=message):
+        queue_message(**changes)
+
+
+@pytest.mark.parametrize(
+    ("fields", "message"),
+    [
+        ({"name": 7, "type": "uuid"}, "an argument name is text"),
+        ({"name": "mode", "type": None}, "argument mode: type is text"),
+        ({"name": "mode", "type": "enum", "choices": (1,)}, "each of argument mode: choices"),
+        ({"name": "mode", "type": "enum", "choices": ["a"]}, "argument mode: choices is a list"),
+        ({"name": "mode", "type": "enum", "choices": "ab"}, "argument mode: choices is a list"),
+        ({"name": "mode", "type": "string", "description": 5}, "argument mode: description"),
+    ],
+)
+def test_an_argument_description_refuses_values_of_the_wrong_kind(
+    fields: dict[str, Any], message: str
+) -> None:
+    with pytest.raises(OperationSpecError, match=message):
+        ArgumentSpec(**fields)

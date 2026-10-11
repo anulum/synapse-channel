@@ -46,7 +46,10 @@ whether an operation is known well enough to be tried at all.
 | `qualification`, `evidence` | How well the operation is known, and where that is shown |
 
 A description outside these vocabularies is refused when it is built, and so
-is plain data that does not describe an operation.
+is plain data that does not describe an operation. Every field is also checked
+for its kind and size, in the description itself, so that building one in code
+and reading one from a file refuse the same things: texts are texts of bounded
+length, lists are lists of at most 64 entries, flags are true or false.
 
 ## Qualification
 
@@ -90,8 +93,10 @@ workstation codex 0.159.1 linux  session.queue_message  cli/session  run_once (m
 `describe` prints every row of the named operation in full: client, transport,
 scope, the permission needed, arguments with their types, side effects and the
 qualification with its evidence. It exits `1` when the operation is not
-listed. A file that is missing, too large, not JSON or not a catalogue exits
-`2` with the reason. The catalogue file is plain data in the form
+listed. A file that cannot be read exits `2` with one fixed sentence. A file
+that is too large, not JSON or not a catalogue exits `2` with the reason; that
+includes any value of the wrong kind inside a row, such as a number among an
+enum's choices or a text where a list belongs. The catalogue file is plain data in the form
 `{"schema": "operation-catalogue-v1", "operations": [...]}`; nothing writes it
 for you yet.
 

@@ -58,6 +58,22 @@ _NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}")
 _SECRET_REF = re.compile(r"ref:[A-Za-z0-9][A-Za-z0-9._/-]{0,199}")
 _MAX_STRING = 4096
+_MAX_TEXT = 500
+_MAX_ITEMS = 64
+
+
+def _text(value: object, what: str, *, limit: int = _MAX_TEXT) -> str:
+    """Return ``value`` when it is text of bounded length, else refuse it."""
+    if not isinstance(value, str) or len(value) > limit:
+        raise OperationSpecError(f"{what} is text of at most {limit} characters")
+    return value
+
+
+def _texts(value: object, what: str) -> tuple[str, ...]:
+    """Return ``value`` when it is a tuple of bounded texts, else refuse it."""
+    if not isinstance(value, tuple) or len(value) > _MAX_ITEMS:
+        raise OperationSpecError(f"{what} is a list of at most {_MAX_ITEMS} texts")
+    return tuple(_text(item, f"each of {what}") for item in value)
 
 
 class OperationSpecError(SynapseError, ValueError):
@@ -78,6 +94,10 @@ class ArgumentSpec:
 
     def __post_init__(self) -> None:
         """Refuse a description that could not validate a value."""
+        _text(self.name, "an argument name")
+        _text(self.type, f"argument {self.name}: type")
+        _texts(self.choices, f"argument {self.name}: choices")
+        _text(self.description, f"argument {self.name}: description")
         if _NAME.fullmatch(self.name) is None:
             raise OperationSpecError("an argument name is lower-case letters, digits, underscores")
         if self.type not in ARGUMENT_TYPES:
@@ -140,6 +160,26 @@ class OperationSpec:
 
     def __post_init__(self) -> None:
         """Refuse a description outside the vocabularies."""
+        for field in (
+            "vendor",
+            "client_version",
+            "os",
+            "host",
+            "required_authority",
+            "operation",
+            "transport",
+            "scope",
+            "interactive",
+            "idempotent",
+            "qualification",
+            "evidence",
+        ):
+            _text(getattr(self, field), f"operation {field}")
+        _texts(self.side_effects, "operation side_effects")
+        if not isinstance(self.arguments, tuple) or len(self.arguments) > _MAX_ITEMS:
+            raise OperationSpecError(f"operation arguments is a list of at most {_MAX_ITEMS}")
+        if not all(isinstance(argument, ArgumentSpec) for argument in self.arguments):
+            raise OperationSpecError("each operation argument is an argument description")
         for field in ("vendor", "client_version", "os", "host", "required_authority"):
             if _TOKEN.fullmatch(getattr(self, field)) is None:
                 raise OperationSpecError(f"operation {field} is a short token without spaces")
@@ -193,8 +233,13 @@ class OperationSpec:
         return {name: known[name].value_of(value) for name, value in raw.items()}
 
     def to_json(self) -> dict[str, Any]:
-        """Return the description as plain data."""
-        return asdict(self)
+        """Return the description as plain data: objects, lists, texts, booleans."""
+        data = asdict(self)
+        data["side_effects"] = list(self.side_effects)
+        data["arguments"] = [
+            {**asdict(argument), "choices": list(argument.choices)} for argument in self.arguments
+        ]
+        return data
 
     @classmethod
     def from_json(cls, data: object) -> OperationSpec:
@@ -209,13 +254,23 @@ class OperationSpec:
         if not isinstance(data, dict):
             raise OperationSpecError("an operation description is an object")
         fields = dict(data)
+        raw_arguments = fields.pop("arguments", [])
+        raw_effects = fields.pop("side_effects", [])
+        if not isinstance(raw_arguments, list) or not isinstance(raw_effects, list):
+            raise OperationSpecError("operation arguments and side_effects are lists")
         try:
-            raw_arguments = fields.pop("arguments", [])
-            arguments = tuple(
-                ArgumentSpec(**{**item, "choices": tuple(item.get("choices", ()))})
-                for item in raw_arguments
-            )
-            effects = tuple(fields.pop("side_effects", ()))
-            return cls(**fields, arguments=arguments, side_effects=effects)
-        except (TypeError, AttributeError) as exc:
+            arguments = tuple(_argument_from(item) for item in raw_arguments)
+            return cls(**fields, arguments=arguments, side_effects=tuple(raw_effects))
+        except TypeError as exc:
             raise OperationSpecError(f"not an operation description: {type(exc).__name__}") from exc
+
+
+def _argument_from(item: object) -> ArgumentSpec:
+    """Return the argument description held in plain data, or refuse it."""
+    if not isinstance(item, dict):
+        raise OperationSpecError("an argument description is an object")
+    fields = dict(item)
+    choices = fields.pop("choices", [])
+    if not isinstance(choices, list):
+        raise OperationSpecError("argument choices is a list")
+    return ArgumentSpec(**fields, choices=tuple(choices))

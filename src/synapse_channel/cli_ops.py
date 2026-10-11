@@ -91,11 +91,11 @@ def _cmd_ops(args: argparse.Namespace) -> int:
     path = Path(args.catalogue) if args.catalogue else default_catalogue_path()
     try:
         catalogue = load_catalogue(path)
-    except (OSError, OperationSpecError) as exc:
-        reason = exc.strerror if isinstance(exc, OSError) else str(exc)
-        print(
-            f"synapse ops: cannot use the catalogue: {terminal_text(str(reason))}", file=sys.stderr
-        )
+    except OSError:
+        print("synapse ops: cannot read the catalogue file", file=sys.stderr)
+        return 2
+    except OperationSpecError as exc:
+        print(f"synapse ops: cannot use the catalogue: {terminal_text(str(exc))}", file=sys.stderr)
         return 2
     rows = catalogue.rows(host=args.host, vendor=args.vendor)
     if args.ops_command == "describe":

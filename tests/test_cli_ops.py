@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -146,7 +147,7 @@ def test_a_file_that_is_not_a_catalogue_is_refused_with_the_reason(
         reasons.append(captured.err.strip())
 
     assert reasons == [
-        "synapse ops: cannot use the catalogue: No such file or directory",
+        "synapse ops: cannot read the catalogue file",
         "synapse ops: cannot use the catalogue: the catalogue file is not JSON",
         "synapse ops: cannot use the catalogue: the catalogue file is not JSON",
         "synapse ops: cannot use the catalogue: not an operation catalogue of this schema",
@@ -163,3 +164,52 @@ def test_a_file_that_is_not_a_catalogue_is_refused_with_the_reason(
     assert default_catalogue_path() == (
         tmp_path / "h" / ".local" / "share" / "synapse" / "operations" / "catalogue.json"
     )
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        lambda row: row["arguments"][1].__setitem__("choices", [1]),
+        lambda row: row["arguments"][1].__setitem__("choices", "normal"),
+        lambda row: row["arguments"][0].__setitem__("description", 5),
+        lambda row: row["arguments"][0].__setitem__("name", 7),
+        lambda row: row["arguments"].__setitem__(0, "thread"),
+        lambda row: row.__setitem__("arguments", {"thread": "uuid"}),
+        lambda row: row.__setitem__("side_effects", "queues a message"),
+        lambda row: row.__setitem__("side_effects", [3]),
+        lambda row: row.__setitem__("evidence", 12),
+        lambda row: row.__setitem__("vendor", ["codex"]),
+        lambda row: row.__setitem__("needs_restart", "no"),
+        lambda row: row.__setitem__("qualification", None),
+    ],
+)
+@pytest.mark.parametrize(
+    "command", [["list"], ["describe", "session.queue_message"], ["list", "--json"]]
+)
+def test_a_catalogue_with_a_value_of_the_wrong_kind_is_refused_by_every_command(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], damage: Any, command: list[str]
+) -> None:
+    data = json.loads(json.dumps(Catalogue([queue_message()]).to_json()))
+    rows = data["operations"]
+    assert isinstance(rows, list)
+    damage(rows[0])
+    path = tmp_path / "catalogue.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    code = main(["ops", *command, "--catalogue", str(path)])
+    captured = capsys.readouterr()
+
+    assert (code, captured.out) == (2, "")
+    assert captured.err.startswith("synapse ops: cannot use the catalogue: ")
+    assert "Traceback" not in captured.err and len(captured.err.splitlines()) == 1
+
+
+def test_a_file_that_cannot_be_opened_gives_one_fixed_sentence(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    directory = tmp_path / "catalogue.json"
+    directory.mkdir()
+
+    assert main(["ops", "list", "--catalogue", str(directory)]) == 2
+
+    assert capsys.readouterr().err == "synapse ops: cannot read the catalogue file\n"
