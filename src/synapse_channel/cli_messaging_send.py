@@ -54,6 +54,32 @@ def _one_shot_sender_name(name: str) -> str:
     return waiter_owner(name)
 
 
+def _unknown_write_result(agent: SynapseAgent, target: str, client_msg_id: str) -> int:
+    """Abort a stalled write and report uncertainty without replaying it.
+
+    Parameters
+    ----------
+    agent : SynapseAgent
+        Client that attempted the write; its socket may already be closed.
+    target, client_msg_id : str
+        Original recipient and message identity for journal reconciliation.
+
+    Returns
+    -------
+    int
+        Unknown-outcome exit code, including when local buffers are discarded.
+    """
+    if agent.connection is not None:
+        agent.connection.transport.abort()
+    print(
+        terminal_text(
+            f"delivery unknown: send was not confirmed for {target}; "
+            f"client_msg_id={client_msg_id}. Check the hub journal before retrying."
+        )
+    )
+    return 3
+
+
 async def _send(
     *,
     uri: str,
@@ -207,14 +233,8 @@ async def _send(
                 receipt = await _wait_for_delivery_receipt(
                     receipts, timeout=deadline - asyncio.get_running_loop().time()
                 )
-        except (TimeoutError, ConnectionClosed, OSError):
-            print(
-                terminal_text(
-                    f"delivery unknown: send was not confirmed for {target}; "
-                    f"client_msg_id={client_msg_id}. Check the hub journal before retrying."
-                )
-            )
-            return 3
+        except (asyncio.TimeoutError, ConnectionClosed, OSError):
+            return _unknown_write_result(agent, target, client_msg_id)
         if request_receipt and receipt is None:
             print(
                 terminal_text(

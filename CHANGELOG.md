@@ -103,6 +103,13 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Document the group and project map with SVG, PNG and JPG exports, separating
+  existing optional adapters from claims of joint qualification.
+
+- Send write timeouts on Python 3.10 return `delivery unknown` with exit `3`.
+  A failed write aborts the one-shot sender's socket before joining its listener,
+  keeping a peer that stops reading from blocking shutdown. No message is replayed.
+
 - Review current official client release notes and record explicit host upgrade
   and security acceptance boundaries. Reviewed notes do not admit newer hosts
   or change the installed client profiles.
