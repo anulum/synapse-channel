@@ -209,8 +209,10 @@ The discipline that makes it reliable:
   leaves the agent present but deaf. On Linux,
   `synapse arm install --identity <identity> --start` writes only the
   `synapse-arm@<identity>` systemd user unit. It enables mailbox replay and, with
-  `Restart=always`, is brought back by systemd if it ever dies — so the passive
-  receiver cannot silently lapse. Native Windows service installation is not
+  `Restart=always`, is brought back by systemd if it dies — so the passive
+  receiver cannot silently lapse. A unit that keeps failing ends in the
+  visible `failed` state after its
+  [start budget](deployment.md#start-budgets-when-a-unit-stops-trying). Native Windows service installation is not
   claimed; use WSL with systemd. Reserve the manual `--max-wakes 1` re-arm loop for
   a harness that re-invokes on each wake. The hub warns by default when a directed
   message reaches a present-but-deaf recipient; `synapse who` also marks such agents

@@ -5,6 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — systemd unit for the coordination hub
+# Owns: the hub process
 #
 # User install (recommended, local-first):
 #   mkdir -p ~/.config/systemd/user ~/synapse
@@ -23,12 +24,16 @@ Documentation=https://github.com/anulum/synapse-channel
 # No After=default.target here: WantedBy=default.target gives the target an
 # implicit After= on this unit, and that boot ordering cycle makes systemd
 # delete the presence/arm start jobs.
+StartLimitIntervalSec=600
+StartLimitBurst=10
 
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/synapse hub --port=8876 --db=%h/synapse/hub.db --relay-log=%h/synapse/feed.ndjson --relay-max-lines=20000
 Restart=always
 RestartSec=2
+RestartSteps=4
+RestartMaxDelaySec=30
 NoNewPrivileges=yes
 UMask=0077
 PrivateTmp=yes

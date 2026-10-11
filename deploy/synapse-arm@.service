@@ -5,6 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — systemd template unit for a provider-independent wake listener
+# Owns: one wake listener process for %I
 #
 # One instance per project or worker identity keeps a cheap non-LLM wake listener
 # armed. It holds a socket, prints matching messages, and restarts if it dies.
@@ -26,7 +27,8 @@
 Description=SYNAPSE CHANNEL wake listener for %I
 Documentation=https://github.com/anulum/synapse-channel
 After=synapse-hub.service
-StartLimitIntervalSec=0
+StartLimitIntervalSec=1800
+StartLimitBurst=30
 
 [Service]
 Type=simple
@@ -37,8 +39,10 @@ Environment=XDG_DATA_HOME=.
 ExecStart=%h/.local/bin/synapse arm --name=%I-rx --for=%I --directed-only --mailbox --uri=ws://localhost:8876
 SuccessExitStatus=78
 Restart=always
+RestartSec=5
+RestartSteps=5
+RestartMaxDelaySec=60
 RestartPreventExitStatus=78
-RestartSec=2
 NoNewPrivileges=yes
 UMask=0077
 PrivateTmp=yes

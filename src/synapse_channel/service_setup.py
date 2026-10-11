@@ -11,6 +11,10 @@ The package cannot assume a source checkout exists after installation, so the
 ``synapse init`` and ``doctor --fix`` flows render their systemd units from this
 module rather than copying files out of ``deploy/``. The checked-in deploy units
 remain operator-readable templates; these helpers are the installed path.
+
+Unit text is rendered by :mod:`synapse_channel.service_templates`. The renderers
+and the executable validator stay importable from this module for callers that
+install services.
 """
 
 from __future__ import annotations
@@ -21,29 +25,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from synapse_channel.service_hardening import (
-    HUB_NOFILE,
-    HUB_WRITE_PATHS,
-    LISTENER_NOFILE,
-    LISTENER_WRITE_PATHS,
-    hardening_directives,
+from synapse_channel.service_templates import render_arm_unit as render_arm_unit
+from synapse_channel.service_templates import render_hub_unit as render_hub_unit
+from synapse_channel.service_templates import render_presence_unit as render_presence_unit
+from synapse_channel.service_templates import render_waker_unit as render_waker_unit
+from synapse_channel.service_templates import (
+    validate_systemd_executable as validate_systemd_executable,
 )
 from synapse_channel.terminal_text import shell_command_arg, terminal_text
-
-_SYSTEMD_EXEC_PREFIXES = frozenset("@-:+!|")
-"""Leading ``ExecStart=`` characters that alter systemd execution semantics."""
-
-_SYSTEMD_EXEC_GLOB_CHARS = frozenset("*?[")
-"""Bytes rejected by upstream ``string_is_safe(path, 0)``."""
-
-_SYSTEMD_INVALID_SIMPLE_EXECUTABLES = frozenset({".", "..", ";"})
-"""Slash-free tokens that are invalid names or alter ``ExecStart=`` parsing."""
-
-_SYSTEMD_SIMPLE_NAME_MAX_BYTES = 255
-"""Linux ``NAME_MAX`` used by systemd's simple executable-name predicate."""
-
-_SYSTEMD_PATH_MAX_BYTES = 4096
-"""Linux ``PATH_MAX`` including the trailing NUL expected by systemd."""
 
 
 class CommandRunner(Protocol):
@@ -78,240 +67,6 @@ def user_systemd_dir(*, home: Path | None = None) -> Path:
     """Return the per-user systemd unit directory."""
     root = Path.home() if home is None else home
     return root / ".config" / "systemd" / "user"
-
-
-def render_hub_unit(*, synapse_bin: str) -> str:
-    """Render the local-first hub user service."""
-    executable = validate_systemd_executable(synapse_bin)
-    # The hub must not be ordered After=default.target: WantedBy=default.target
-    # gives the target an implicit After= on this unit, and the resulting boot
-    # ordering cycle makes systemd delete the presence/arm start jobs.
-    return (
-        "# SPDX-License-"
-        "Identifier: AGPL-3.0-or-later\n"
-        "# Commercial license available\n"
-        "# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.\n"
-        "# © Code 2020–2026 Miroslav Šotek. All rights reserved.\n"
-        "# ORCID: 0009-0009-3560-0851\n"
-        "# Contact: www.anulum.li | protoscience@anulum.li\n"
-        "# SYNAPSE CHANNEL — generated user service for the coordination hub\n\n"
-        "[Unit]\n"
-        "Description=SYNAPSE CHANNEL coordination hub (local-first, loopback)\n"
-        "Documentation=https://github.com/anulum/synapse-channel\n\n"
-        "[Service]\n"
-        "Type=simple\n"
-        f"ExecStart={executable} hub --port=8876 --db=%h/synapse/hub.db "
-        "--relay-log=%h/synapse/feed.ndjson --relay-max-lines=20000\n"
-        "Restart=always\n"
-        "RestartSec=2\n"
-        + hardening_directives(write_paths=HUB_WRITE_PATHS, nofile=HUB_NOFILE)
-        + "\n"
-        "[Install]\n"
-        "WantedBy=default.target\n"
-    )
-
-
-def render_presence_unit(*, synapse_bin: str) -> str:
-    """Render the project presence-holder template unit."""
-    executable = validate_systemd_executable(synapse_bin)
-    return (
-        "# SPDX-License-"
-        "Identifier: AGPL-3.0-or-later\n"
-        "# Commercial license available\n"
-        "# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.\n"
-        "# © Code 2020–2026 Miroslav Šotek. All rights reserved.\n"
-        "# ORCID: 0009-0009-3560-0851\n"
-        "# Contact: www.anulum.li | protoscience@anulum.li\n"
-        "# SYNAPSE CHANNEL — generated user service for provider-neutral presence\n\n"
-        "[Unit]\n"
-        "Description=SYNAPSE CHANNEL presence holder for %I\n"
-        "Documentation=https://github.com/anulum/synapse-channel\n"
-        "After=synapse-hub.service\n"
-        "Wants=synapse-hub.service\n"
-        "StartLimitIntervalSec=0\n\n"
-        "[Service]\n"
-        "Type=simple\n"
-        f"ExecStart={executable} listen --name=%I-presence --for=%I "
-        "--uri=ws://localhost:8876\n"
-        "Restart=always\n"
-        "RestartSec=3\n"
-        + hardening_directives(write_paths=LISTENER_WRITE_PATHS, nofile=LISTENER_NOFILE)
-        + "\n"
-        "[Install]\n"
-        "WantedBy=default.target\n"
-    )
-
-
-def _unit_token(value: str, *, label: str) -> str:
-    """Return a safe single-token systemd value or reject ambiguous input."""
-    if (
-        not value
-        or terminal_text(value) != value
-        or any(character.isspace() or character in {'"', "'", "\\", "$"} for character in value)
-    ):
-        raise ValueError(
-            f"{label} must be one non-empty systemd token without whitespace, controls, "
-            "quotes, backslashes, or '$' expansion"
-        )
-    return value.replace("%", "%%")
-
-
-def _systemd_executable_string_is_safe(value: str) -> bool:
-    """Return whether ``value`` matches systemd's UTF-8 and glob safety rules."""
-    for character in value:
-        codepoint = ord(character)
-        if (
-            character in _SYSTEMD_EXEC_GLOB_CHARS
-            or 0xD800 <= codepoint <= 0xDFFF
-            or 0xFDD0 <= codepoint <= 0xFDEF
-            or (codepoint & 0xFFFE) == 0xFFFE
-        ):
-            return False
-    return True
-
-
-def validate_systemd_executable(value: str) -> str:
-    """Return a literal executable token with systemd control prefixes refused.
-
-    Public service-install entrypoints call this pure validator before any
-    repository, hook, scaffold, or service-file mutation. Unit renderers call it
-    again so direct library use retains the same fail-closed boundary.
-    """
-    if not _systemd_executable_string_is_safe(value):
-        raise ValueError(
-            "synapse executable path must be systemd-safe UTF-8 without glob metacharacters (*?[)"
-        )
-    executable = _unit_token(value, label="synapse executable path")
-    if executable[0] in _SYSTEMD_EXEC_PREFIXES:
-        prefixes = "".join(sorted(_SYSTEMD_EXEC_PREFIXES))
-        raise ValueError(
-            "synapse executable path must not start with a systemd ExecStart control "
-            f"prefix ({prefixes})"
-        )
-    # systemd units always use POSIX absolute paths. On Windows,
-    # Path("/bin/synapse").is_absolute() is False, so also treat leading "/" as
-    # absolute (validators run on every OS; units only deploy on Linux).
-    is_absolute = Path(value).is_absolute() or value.startswith("/")
-    if is_absolute:
-        encoded = value.encode("utf-8")
-        components = value.replace("\\", "/").split("/")
-        oversized_component = any(
-            len(component.encode("utf-8")) > _SYSTEMD_SIMPLE_NAME_MAX_BYTES
-            for component in components
-            if component not in ("",)
-        )
-        if (
-            len(encoded) >= _SYSTEMD_PATH_MAX_BYTES
-            or oversized_component
-            or value.endswith(("/", "/.", "/..", "\\", "\\.", "\\.."))
-        ):
-            raise ValueError(
-                "synapse executable absolute path must not imply a directory, must keep "
-                "each component within 255 UTF-8 bytes, and must remain below PATH_MAX"
-            )
-    elif (
-        "/" in value
-        or "\\" in value
-        or value in _SYSTEMD_INVALID_SIMPLE_EXECUTABLES
-        or len(value.encode("utf-8")) > _SYSTEMD_SIMPLE_NAME_MAX_BYTES
-    ):
-        raise ValueError(
-            "synapse executable path must be absolute or a valid simple file name without "
-            "slashes or systemd command metatokens"
-        )
-    return executable
-
-
-def render_arm_unit(
-    *,
-    synapse_bin: str,
-    uri: str = "ws://localhost:8876",
-    token_file: str | None = None,
-) -> str:
-    """Render the persistent non-LLM wake listener template unit."""
-    executable = validate_systemd_executable(synapse_bin)
-    hub_uri = _unit_token(uri, label="hub URI")
-    extra_argument = ""
-    if token_file is not None:
-        token_path = _unit_token(token_file, label="token file path")
-        extra_argument = f" --token-file={token_path}"
-    return (
-        "# SPDX-License-"
-        "Identifier: AGPL-3.0-or-later\n"
-        "# Commercial license available\n"
-        "# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.\n"
-        "# © Code 2020–2026 Miroslav Šotek. All rights reserved.\n"
-        "# ORCID: 0009-0009-3560-0851\n"
-        "# Contact: www.anulum.li | protoscience@anulum.li\n"
-        "# SYNAPSE CHANNEL — generated user service for a provider-neutral wake listener\n\n"
-        "[Unit]\n"
-        "Description=SYNAPSE CHANNEL wake listener for %I\n"
-        "Documentation=https://github.com/anulum/synapse-channel\n"
-        "After=synapse-hub.service\n"
-        "StartLimitIntervalSec=0\n\n"
-        "[Service]\n"
-        "Type=simple\n"
-        "Environment=SYN_PROJECT=%I\n"
-        "Environment=SYN_IDENTITY=%I\n"
-        "WorkingDirectory=%h/.local/share\n"
-        "Environment=XDG_DATA_HOME=.\n"
-        f"ExecStart={executable} arm --name=%I-rx --for=%I --directed-only "
-        f"--mailbox --uri={hub_uri}{extra_argument}\n"
-        "SuccessExitStatus=78\n"
-        "Restart=always\n"
-        "RestartPreventExitStatus=78\n"
-        "RestartSec=2\n"
-        + hardening_directives(write_paths=LISTENER_WRITE_PATHS, nofile=LISTENER_NOFILE)
-        + "\n"
-        "[Install]\n"
-        "WantedBy=default.target\n"
-    )
-
-
-def render_waker_unit(*, synapse_bin: str) -> str:
-    """Render the active terminal-agent waker template unit.
-
-    Unlike passive listeners, this unit must share the host ``/tmp`` namespace
-    with the already-running tmux server. Its writable state remains confined
-    to Synapse's owner-only data directory.
-    """
-    executable = validate_systemd_executable(synapse_bin)
-    return (
-        "# SPDX-License-"
-        "Identifier: AGPL-3.0-or-later\n"
-        "# Commercial license available\n"
-        "# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.\n"
-        "# © Code 2020–2026 Miroslav Šotek. All rights reserved.\n"
-        "# ORCID: 0009-0009-3560-0851\n"
-        "# Contact: www.anulum.li | protoscience@anulum.li\n"
-        "# SYNAPSE CHANNEL — generated active terminal-agent waker service\n\n"
-        "[Unit]\n"
-        "Description=SYNAPSE CHANNEL active terminal-agent waker for %I\n"
-        "Documentation=https://github.com/anulum/synapse-channel\n"
-        "After=network-online.target synapse-hub.service\n"
-        "Wants=network-online.target\n"
-        "StartLimitIntervalSec=0\n\n"
-        "[Service]\n"
-        "Type=notify\n"
-        "NotifyAccess=main\n"
-        "Environment=XDG_DATA_HOME=%h/.local/share\n"
-        "Environment=XDG_RUNTIME_DIR=%h/.local/share/synapse/runtime\n"
-        f"ExecStart={executable} waker run --identity=%I\n"
-        "Restart=always\n"
-        "RestartPreventExitStatus=78\n"
-        "RestartSec=2\n"
-        "WatchdogSec=90\n"
-        "TimeoutStopSec=15\n"
-        "KillMode=control-group\n"
-        + hardening_directives(
-            write_paths=LISTENER_WRITE_PATHS,
-            nofile=LISTENER_NOFILE,
-            private_tmp=False,
-        )
-        + "\n"
-        "[Install]\n"
-        "WantedBy=default.target\n"
-    )
 
 
 def _ensure_writable_dirs(home: Path | None) -> tuple[Path, ...]:

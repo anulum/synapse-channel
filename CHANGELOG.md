@@ -28,6 +28,14 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Generated systemd user units have a finite start budget. A unit that keeps
+  failing waits longer before each restart and ends in the `failed` state: the
+  hub after about 3.5 minutes, presence, wake-listener and waker units after
+  about 26 minutes. They previously restarted without limit. Each unit text
+  names the processes it owns. Units already installed keep their old text
+  until they are regenerated and restarted. The growing delay needs systemd
+  254 or later; `docs/deployment.md` gives the times on older versions.
+
 - Update cockpit Node.js type declarations to 26.6.4, the GitHub App's
   hash-locked verification dependencies, and the image SBOM action to 0.24.3.
   The image scanner remains explicitly pinned to Syft 1.50.0.

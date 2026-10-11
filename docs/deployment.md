@@ -78,7 +78,8 @@ systemctl --user status "$(systemd-escape --template=synapse-arm@.service -- 'my
 ```
 
 The generated user template runs `synapse arm --mailbox`, has
-`Restart=always`, and is enabled under `default.target`. It therefore survives
+`Restart=always` within a [start budget](#start-budgets-when-a-unit-stops-trying),
+and is enabled under `default.target`. It therefore survives
 terminal closure and recovers directed messages that landed during reconnect
 gaps. Enable lingering once with `loginctl enable-linger "$USER"` if it must
 remain up after every login session closes. To remove it, disable the same
@@ -160,7 +161,8 @@ prompt or silently widens its sandbox; validate that provider profile before
 enabling unattended delivery. A modal permission request is reported as a
 blocked provider rather than approved by the waker.
 
-`synapse-waker@.service` uses `Restart=always`, `Type=notify`, and
+`synapse-waker@.service` uses `Restart=always` within a
+[start budget](#start-budgets-when-a-unit-stops-trying), `Type=notify`, and
 `WatchdogSec=90`. Heartbeats come from the advancing delivery loop, so a stuck
 loop is restarted rather than merely masked by a detached heartbeat thread.
 The bridge retries temporary hub failure with bounded jitter and retains a
@@ -217,7 +219,8 @@ An agent's wake loop (a backgrounded `synapse wait`) gives prompt wakes, but it
 dies with the agent — so when a turn-based assistant is down or its API is rate
 limited, the project drops off the roster. Decouple *reachability* from the agent
 with a presence holder: a per-project systemd template that holds the hub
-connection and is restarted by systemd if it ever dies.
+connection and is restarted by systemd if it dies, within a
+[start budget](#start-budgets-when-a-unit-stops-trying).
 
 `synapse init --start-user-services` installs this as `synapse-presence@...`.
 The checked-in `deploy/synapse-presence@.service` remains a copyable template for
@@ -681,6 +684,57 @@ its state by replaying it on start-up. Back up the hub by copying the `--db` fil
 stopped, or use `sqlite3 hub.db ".backup"` online. The `--relay-log` feed is
 derived state and bounded by `--relay-max-lines`; it is safe to truncate.
 
+## Start budgets: when a unit stops trying
+
+Every generated user unit restarts after a failure, waits longer before each
+new attempt, and stops after a fixed number of starts inside a fixed window.
+A unit that cannot start then rests in the `failed` state. It does not restart
+without end.
+
+| Unit | First delay | Longest delay | Starts allowed | Window | Failed after |
+| --- | --- | --- | --- | --- | --- |
+| `synapse-hub.service` | 2 s | 30 s | 10 | 600 s | about 3.5 minutes |
+| `synapse-presence@`, `synapse-arm@`, `synapse-waker@` | 5 s | 60 s | 30 | 1800 s | about 26 minutes |
+
+"Failed after" is the time a unit that fails at once keeps trying.
+
+- **The hub budget is short.** A hub that cannot start, for example because
+  its event store cannot be opened, is a fault to see at once.
+- **The listener budget is long.** A presence holder exits whenever the hub is
+  unreachable, so it must outlast an ordinary hub restart or upgrade. The wake
+  listener and the waker reconnect inside their process and use a start only
+  when the process itself dies.
+- **A hub outage longer than the listener budget** leaves presence holders
+  failed. After the hub is back, start them again (see below).
+
+To see what has stopped trying, and to start it again:
+
+```bash
+systemctl --user --failed 'synapse-*'
+systemctl --user reset-failed 'synapse-presence@*'
+systemctl --user start "$(systemd-escape --template=synapse-presence@.service -- 'myproject')"
+```
+
+`reset-failed` clears the used-up budget; without it systemd refuses the start
+until the window has passed.
+
+The growing delay uses `RestartSteps=` and `RestartMaxDelaySec=`, which systemd
+understands from version 254. An older systemd logs both lines as unknown and
+restarts at the first delay every time: the hub is then failed after 20
+seconds and a listener after 150 seconds of continuous failure. On such a
+host a hub upgrade that takes longer than 150 seconds leaves presence holders
+failed.
+
+Each generated unit names the processes it owns in its `# Owns:` line. Stopping
+a unit kills everything in its control group. The waker unit therefore never
+starts the tmux server: a tmux server started inside a unit dies with that
+unit, together with every session of every seat on it.
+
+Units installed by an earlier release keep their old text, which restarts
+without limit, until they are regenerated with `synapse init
+--install-user-services`, `synapse arm install` or `synapse waker install` and
+restarted. Installation does not restart running units.
+
 ## Restarting the hub safely
 
 The hub restarts cleanly because both ends are built for it. With `--db`, a restart
@@ -738,9 +792,10 @@ This is **expected transient behaviour**, not a permanent outage. Mitigations:
    drain before treating `who` failures as a broken install.
 2. **Stagger intentional restarts when you can.** Prefer upgrading one machine
    at a time; avoid bouncing the hub during a fleet-wide agent restart storm.
-3. **Systemd restart pacing.** For the user unit, a short `RestartSec=` (for
-   example `2`–`5`) reduces tight crash-loop reconnect storms; do not set it
-   so high that a genuine crash stays dark.
+3. **Systemd restart pacing.** The generated units start with a short delay
+   (2 seconds for the hub, 5 for listeners) and lengthen it on repeated
+   failure, which spreads a reconnect storm; see
+   [start budgets](#start-budgets-when-a-unit-stops-trying).
 4. **Capacity.** If the storm routinely hits `--max-clients`, raise the ceiling
    or reap stale waiters (`syn-reap`) before the bounce so fewer sockets re-arm.
 5. **Do not SIGKILL the hub while Recv-Q is still draining** unless the process

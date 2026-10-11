@@ -5,13 +5,15 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — active terminal-agent waker user service template
+# Owns: the waker process for %I and the commands it runs; never the tmux server or the provider session it wakes
 
 [Unit]
 Description=SYNAPSE CHANNEL active terminal-agent waker for %I
 Documentation=https://github.com/anulum/synapse-channel
 After=network-online.target synapse-hub.service
 Wants=network-online.target
-StartLimitIntervalSec=0
+StartLimitIntervalSec=1800
+StartLimitBurst=30
 
 [Service]
 Type=notify
@@ -20,8 +22,10 @@ Environment=XDG_DATA_HOME=%h/.local/share
 Environment=XDG_RUNTIME_DIR=%h/.local/share/synapse/runtime
 ExecStart=synapse waker run --identity=%I
 Restart=always
+RestartSec=5
+RestartSteps=5
+RestartMaxDelaySec=60
 RestartPreventExitStatus=78
-RestartSec=2
 WatchdogSec=90
 TimeoutStopSec=15
 KillMode=control-group
