@@ -88,18 +88,18 @@
 <text x="1128" y="444" class="badge">RELEASED · ALPHA</text>
 <text x="1520" y="444" class="portal" text-anchor="end">◆ Portal catalogue</text>
 <text x="1128" y="472" class="name">REMANENTIA</text>
-<text x="1128" y="496" class="role">Local-first, auditable memory for AI agents:</text>
-<text x="1128" y="517" class="role">indexing, hybrid retrieval, consolidation and</text>
-<text x="1128" y="538" class="role">entity graph through a CLI, MCP server and HTTP</text>
-<text x="1128" y="559" class="role">API.</text>
+<text x="1128" y="496" class="role">Local-first, auditable memory for AI agents and</text>
+<text x="1128" y="517" class="role">knowledge-intensive software: indexing, hybrid</text>
+<text x="1128" y="538" class="role">retrieval, consolidation and entity graph</text>
+<text x="1128" y="559" class="role">through a CLI, MCP server and HTTP API.</text>
 <text x="1128" y="584" class="status">Open source with a commercial licence; active</text>
 <text x="1128" y="603" class="status">development.</text>
 <rect x="1112" y="642" width="424" height="162" rx="10" fill="#ffffff" stroke="#9aaec4" stroke-width="1.5"/>
 <text x="1128" y="668" class="badge">PRIVATE</text>
 <text x="1128" y="696" class="name">REMANENTIA-PORTAL</text>
-<text x="1128" y="720" class="role">Customer and commercial control plane: one</text>
-<text x="1128" y="741" class="role">customer identity, order forms and separate</text>
-<text x="1128" y="762" class="role">product entitlements. Runs no customer workload.</text>
+<text x="1128" y="720" class="role">Account and billing or licence-request portal</text>
+<text x="1128" y="741" class="role">for the product family. Runs no customer</text>
+<text x="1128" y="762" class="role">workload.</text>
 <text x="1128" y="787" class="status">Private repository; no release.</text>
 <rect x="1112" y="934" width="424" height="181" rx="10" fill="#ffffff" stroke="#9aaec4" stroke-width="1.5"/>
 <text x="1128" y="960" class="badge">RELEASED · TOOL</text>
@@ -117,16 +117,16 @@
 <text x="70" y="246" class="role">The bus the agents meet on. Fleet and the policy-check Action build on it; REMANENTIA connects to it through an optional interface.</text>
 <text x="70" y="272" class="status">Open source with a commercial licence; before 1.0.</text>
 <path class="opt" d="M1522 291 V415" marker-start="url(#arrowo)" marker-end="url(#arrowo)"/>
-<text x="1512" y="324" class="edge" text-anchor="end">optional: participant memory recall · recall metadata</text>
+<text x="1512" y="324" class="edge" text-anchor="end">optional: participant memory recall · recall telemetry</text>
 <path class="opt" d="M1029 458 H1109" marker-start="url(#arrowo)" marker-end="url(#arrowo)"/>
 <text x="1069.0" y="449" class="edge" text-anchor="middle">optional</text>
 <text x="48" y="1257" class="heading">How to read the lines</text>
 <path class="dep" d="M48 1286 H118" marker-end="url(#arrow)"/>
 <text x="136" y="1291" class="role">Solid arrow: declared package dependency, read from the dependent project's packaging.</text>
 <path class="opt" d="M48 1316 H118" marker-end="url(#arrowo)"/>
-<text x="136" y="1321" class="role">Dashed arrow: optional documented interface, off unless an operator configures it.</text>
+<text x="136" y="1321" class="role">Dashed arrow: optional adapter, off unless an operator configures it; not a joint qualification.</text>
 <text x="48" y="1351" class="portal">◆ Portal catalogue</text>
-<text x="218" y="1351" class="role">Product listed in the Portal's entitlement catalogue: a commercial relation, not a runtime call.</text>
+<text x="218" y="1351" class="role">Product listed in the Portal's product catalogue: a commercial relation, not a runtime call.</text>
 <rect x="48" y="1366" width="70" height="20" rx="5" fill="#eaf6ef" stroke="#c3d0de"/>
 <text x="136" y="1381" class="role">Coloured areas group projects for navigation. They are not dependencies.</text>
 <text x="48" y="1423" class="status">A place on this map states a responsibility. It does not state that a project is complete, deployed or certified.</text>

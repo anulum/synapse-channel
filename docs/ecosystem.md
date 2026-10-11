@@ -46,7 +46,7 @@ releases and documentation are the current record.
 | Run several AI agents in one repository without overlapping edits | [SYNAPSE-CHANNEL](https://github.com/anulum/synapse-channel) |
 | Check that an LLM answer is grounded before it reaches a user | [DIRECTOR-AI](https://github.com/anulum/director-ai) |
 | Audit a repository with evidence bound to each finding | [RIGOR-FOUNDRY](https://github.com/anulum/rigor-foundry) |
-| Give agents memory that survives the session | [REMANENTIA](https://github.com/anulum/remanentia) |
+| Give agents memory that survives the session | [REMANENTIA](https://pypi.org/project/remanentia/) |
 | Keep noisy or sensitive command output away from an agent | [HushLine](https://github.com/anulum/HushLine) |
 
 ## The coordination layer
@@ -95,11 +95,11 @@ error does not stop an answer.
 
 | Repository | Function | Current status |
 | --- | --- | --- |
-| [REMANENTIA](https://github.com/anulum/remanentia) | Local-first, auditable memory for AI agents: indexing of project files, hybrid retrieval, consolidation and an entity graph, through a CLI, an MCP server and an HTTP API. | Public, AGPL-3.0-or-later with a commercial licence. Released on PyPI; alpha maturity, active development. |
-| REMANENTIA-PORTAL | Customer and commercial control plane for the product family: one customer identity, order forms and separate, auditable product entitlements. It runs no customer workload. | Private repository; no release. |
+| [REMANENTIA](https://pypi.org/project/remanentia/) | Local-first, auditable memory for AI agents and knowledge-intensive software: project-file indexing, hybrid retrieval, consolidation and an entity graph, through a CLI, an MCP server and an HTTP API. | AGPL-3.0-or-later with a commercial licence. Released on PyPI; alpha maturity and active development. |
+| REMANENTIA-PORTAL | Account and billing or licence-request portal for the product family. It runs no customer workload. | Private repository; no release. Self-service entitlement issuance, refunds and live billing are not claimed. |
 
 Remanentia owns memory, recall and consolidation. The Portal owns customer
-identity, orders and entitlements, and no product runtime logic.
+accounts and commercial requests, and no product runtime logic.
 
 ## Supporting tools
 
@@ -120,8 +120,11 @@ relation.
 | Mark | Meaning | Where |
 | --- | --- | --- |
 | Solid arrow | A package dependency declared in the dependent project's packaging. | SYNAPSE-CHANNEL-FLEET and SYNAPSE-POLICY-CHECK-ACTION depend on one exact SYNAPSE CHANNEL version. DIRECTOR-CLASS-AI and DIRECTOR-AI-CLOUD can use DIRECTOR-AI through an optional extra. |
-| Dashed arrow | An optional, documented interface that is off until an operator configures it. | SYNAPSE CHANNEL can query REMANENTIA for participant memory recall. REMANENTIA can send recall metadata to a SYNAPSE CHANNEL hub. DIRECTOR-AI can use REMANENTIA as a retrieval backend for grounding and can send it correctness feedback on recalled groundings. |
-| Portal catalogue marker | The product has an entry in the Portal's entitlement catalogue. This is a commercial relation and not a runtime call. | SYNAPSE-CHANNEL, SYNAPSE-CHANNEL-FLEET, DIRECTOR-AI, DIRECTOR-CLASS-AI and REMANENTIA. |
+| Dashed arrow | An optional, documented interface that is off until an operator configures it. | SYNAPSE CHANNEL can query REMANENTIA for participant memory recall. REMANENTIA can send recall-query and outcome telemetry, which carries the query text, to a SYNAPSE CHANNEL hub. DIRECTOR-AI can use REMANENTIA as a retrieval backend for grounding and can send it correctness feedback on recalled groundings. |
+| Portal catalogue marker | The product has an entry in the Portal's product catalogue. This is a commercial relation and not a runtime call. | SYNAPSE-CHANNEL, SYNAPSE-CHANNEL-FLEET, DIRECTOR-AI, DIRECTOR-CLASS-AI and REMANENTIA. |
+
+A dashed arrow marks an optional adapter that exists in source. It does not
+state that the two projects are jointly qualified or supported as one chain.
 
 The coloured areas group projects for navigation. They are not dependencies,
 and a project's place in an area does not make it part of another project.
