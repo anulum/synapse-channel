@@ -17,6 +17,7 @@ the command does with such a refusal still has to be shown.
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import io
 import json
 import os
@@ -146,6 +147,41 @@ def _state(tmp_path: Path) -> dict[str, int]:
 def no_token_in_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep the workstation's own hub token out of every test."""
     monkeypatch.delenv("SYNAPSE_TOKEN", raising=False)
+
+
+def test_an_unusable_spool_refuses_flush_and_does_not_fail_the_sent_hook(tmp_path: Path) -> None:
+    """Exercise native volume failure or a real filesystem obstruction through the CLI."""
+    if sys.platform == "win32":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        get_drives = kernel32.GetLogicalDrives
+        get_drives.argtypes = []
+        get_drives.restype = ctypes.c_ulong
+        drives = int(get_drives())
+        assert drives
+        letter = next(index for index in range(25, -1, -1) if not drives & (1 << index))
+        root = Path(f"{chr(ord('A') + letter)}:/")
+        assert not root.exists()
+        unavailable = root / "synapse-unavailable-volume"
+    else:
+        blocked = tmp_path / "not-a-directory"
+        blocked.write_text("occupied", encoding="utf-8")
+        unavailable = blocked / "spool"
+    options = ["--spool-dir", str(unavailable), "--register-dir", str(tmp_path / "seats")]
+    command = [sys.executable, "-B", "-m", "synapse_channel.cli", "native-hook"]
+    refused = subprocess.run(  # noqa: S603 - this interpreter and fixed CLI arguments
+        [*command, "flush", *options], capture_output=True, text=True, timeout=3, check=False
+    )
+    assert refused.returncode == 1 and refused.stdout == ""
+    assert refused.stderr == "synapse native-hook: cannot access the spool directory\n"
+    hook = subprocess.run(  # noqa: S603 - this interpreter and fixed CLI arguments
+        [*command, "claude", *options],
+        input=_hook().decode(),
+        capture_output=True,
+        text=True,
+        timeout=3,
+        check=False,
+    )
+    assert (hook.returncode, hook.stdout, hook.stderr) == (0, "", "")
 
 
 async def test_a_hook_call_becomes_one_stored_record_and_a_repeat_adds_none(

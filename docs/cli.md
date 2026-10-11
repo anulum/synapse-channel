@@ -2938,6 +2938,11 @@ Beside a running flush it prints `nothing flushed: another flush is running`
 and exits `1`. Nothing flushes on a timer: a pending entry waits for the next
 hook call or the next `flush`.
 
+The spool's filesystem must be available. If its volume is missing or its
+directory cannot be accessed, `flush` prints a fixed refusal and exits `1`.
+The post-send hook exits quietly with `0`; it cannot record that call until
+the spool is usable. A missing Windows drive is refused without waiting.
+
 The spool directories are created and checked as owner-only (modes `0700` on
 POSIX, the access list on Windows) and the files in them are created with mode
 `0600`. The spool must be on a file system with hard links. On POSIX each

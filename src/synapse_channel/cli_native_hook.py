@@ -37,6 +37,7 @@ from synapse_channel.core.native_message import (
     native_idempotency_key,
     parse_native_message_record,
 )
+from synapse_channel.core.private_dir import PrivateDirError
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.native_record_hook import completing_sender, run_hook
@@ -139,8 +140,12 @@ def _directories(args: argparse.Namespace) -> tuple[Path, Path]:
 
 def _flush_command(args: argparse.Namespace, spool: Path, send: Sender) -> int:
     """Run ``native-hook flush`` and print what it did."""
-    revived = retry_failed(spool) if args.retry_failed else 0
-    report = None if revived is None else flush(spool, send, max_attempts=args.max_attempts)
+    try:
+        revived = retry_failed(spool) if args.retry_failed else 0
+        report = None if revived is None else flush(spool, send, max_attempts=args.max_attempts)
+    except (OSError, PrivateDirError):
+        print("synapse native-hook: cannot access the spool directory", file=sys.stderr)
+        return 1
     if report is None or report.busy:
         print(f"nothing flushed: another flush is running; pending {counts(spool)['pending']}")
         return 1

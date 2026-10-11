@@ -82,7 +82,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from synapse_channel.core.private_dir import ensure_private_dir
+from synapse_channel.core.private_dir import PrivateDirError, ensure_private_dir
 
 SCHEMA = "native-spool-entry-v1"
 """Schema name written into every spool entry."""
@@ -161,6 +161,8 @@ def _private_dir(path: Path) -> None:
     missing = []
     current = path
     while not current.is_dir():
+        if current == current.parent:
+            raise PrivateDirError("native message spool: filesystem root is unavailable")
         missing.append(current)
         current = current.parent
     ensure_private_dir(path, parents=True, purpose="native message spool")

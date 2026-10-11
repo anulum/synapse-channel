@@ -171,6 +171,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- A native-message spool on an unavailable Windows volume is refused instead
+  of looping while looking for an existing parent. Manual flush reports a
+  fixed directory-access refusal; the post-send hook stays quiet and exits `0`.
+
 - Implicit identity-pin selection now checks journal paths with `stat` before
   opening SQLite. Symlink loops on Python 3.13 and directory paths get the
   controlled startup refusal instead of a traceback; only a genuinely missing
