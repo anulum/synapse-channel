@@ -20,7 +20,7 @@ whose exit the client reports. Each way is a **wake adapter**. The relay tries
 adapters in order and stops at the first one that takes the wake.
 
 !!! note "State of this part"
-    This page describes the relay's foundation and its first adapter. No
+    This page describes the relay's foundation and its first two adapters. No
     service calls the relay yet; the existing pane bridge service works as
     before.
 
@@ -93,6 +93,31 @@ marks a pending wake and delivers it later by itself. So:
 - Once the bridge was asked, the answer is `accepted` or `uncertain`, never
   `refused`: the bridge may still deliver the wake it now holds, and a second
   adapter would wake the seat twice.
+
+## The native queue adapter
+
+`native_queue` wakes a Codex session through the client's own queue: it runs
+`codex queue --thread <session> --message <fixed prompt>` from a fixed
+absolute path, with an argument vector and no shell, in a process group of
+its own that is ended when the time limit passes. The session is named by its
+identifier alone, and only when that is a UUID in canonical lower-case form;
+a session name is never passed. The session must run on this host.
+
+The command takes no key by which a repeat could be recognised, so the
+adapter is strict:
+
+| What the command did | State |
+|---|---|
+| Exit status 0 and `Queued message <id> for thread <session>` for exactly the session asked | `accepted`, proving `queued_by_native_daemon` |
+| Was not started, or a non-zero status with a configured refusal text (by default the daemon's answer for a session it does not know) | `refused` |
+| No answer within the time limit, a zero status without that line, a non-zero status with any other text | `uncertain` |
+
+`accepted` shows that the daemon queued the message. Whether the session read
+it is a separate fact that only the recipient can report.
+
+The adapter's tests start a stand-in program as a real child process; the
+vendor's client is not run by them. The command and its two observed answers
+come from a manual qualification of 2026-10-04 on one route.
 
 ## What an adapter receives
 

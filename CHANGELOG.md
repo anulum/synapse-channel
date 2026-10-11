@@ -20,8 +20,9 @@ All notable changes to this project are documented here.
   is marked on disk, after it the outcome; `accepted` or `uncertain` ends the
   work for that message, only `refused` lets the next adapter run, and an
   attempt left without an outcome by a process that died reads as uncertain.
-  Adapters receive one fixed prompt and never a message. The first adapter,
-  `pane_bridge`, wraps the existing pane bridge unchanged. No service uses
+  Adapters receive one fixed prompt and never a message. Two adapters exist:
+  `pane_bridge` wraps the existing pane bridge unchanged, and `native_queue`
+  queues the prompt through the Codex client's own daemon. No service uses
   the relay yet. See `docs/wake-relay.md`.
 
 - `synapse native-hook claude` records a message one session sends to another
