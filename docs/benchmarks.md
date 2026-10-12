@@ -17,16 +17,20 @@ evidence rather than an isolated-core claim. See the
 [CLI reference](cli.md) for flags (`--probe`, `--iterations`, `--json`,
 `--results`).
 
-## Hub construction comparison
+## Hub frame and construction comparisons
 
 The [native-message benchmark](https://github.com/anulum/synapse-channel/blob/main/benchmarks/README.md#native_message_record_benchmarkpy)
-also compares grouped-record hub construction with the external composition root,
-using 700 durable records per variant and the library's WHO, claim and durable
-claim probes at their default counts, plus 1,000 explicit factory constructions
-per variant. The committed JSON retains both results,
-source fingerprints and shared-workstation context. Mean and tail timings vary
-in different directions; these runs do not establish a production performance
-improvement or regression.
+compares the parent hub with the separated frame admission and registration
+pipeline, using 700 durable records per variant and the library's WHO, claim
+and durable claim probes at their default counts. The JSON retains source
+fingerprints, result distributions and shared-workstation context. These local
+functional runs have no discarded warm-up or isolated CI measurement and
+establish no production performance claim.
+
+The earlier grouped-record versus external composition-root comparison,
+including 1,000 factory constructions per variant, remains under
+`historical_composition_root` in the same JSON. Its timings retain their
+original source fingerprints and do not describe the current frame pipeline.
 
 ## Coordination wire baseline
 

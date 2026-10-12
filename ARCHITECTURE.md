@@ -57,7 +57,7 @@ representative modules, not every file.
 | Family | Representative modules | Responsibility |
 | --- | --- | --- |
 | Coordination state | `core/state*`, `core/scoping`, `core/lifecycle`, `core/deadlock`, `core/ledger`, `core/capability*`, `core/channels` | Transport-agnostic presence, scoped task-claim leases with epochs and checkpoints, typed task lifecycle, wait-for cycle refusal, the shared plan, capability cards, private channels. |
-| Hub composition | `core/hub`, `core/handlers/*`, `core/hub_connection`, `core/hub_ingress`, `core/hub_frame_gates`, `core/hub_exposure`, `core/hub_http`, `core/hub_identity_gate` | The routing core plus its seams: per-verb handlers, connection admission, frame gating and rate limits, the exposure guard, HTTP read surfaces, the identity gate. |
+| Hub composition | `core/hub`, `core/handlers/*`, `core/hub_connection`, `core/hub_ingress`, `core/hub_frame_pipeline`, `core/hub_frame_registration`, `core/hub_frame_gates`, `core/hub_exposure`, `core/hub_http`, `core/hub_identity_gate` | The routing facade with explicit frame admission, registration effects, ordered gates and per-verb dispatch. |
 | Client | `client/agent` with its dispatch and outbound mixins, `client/launcher`, `client/llm_worker`, `client/supervisor` | The reusable async agent and its coordination verbs, one-command startup, an on-channel LLM worker, an LLM-free watcher that re-offers stalled tasks. |
 | Identity and ownership | `core/auth`, `core/message_auth`, `core/identity_keys`, `machine_identity`, `core/identity_pins`, `core/name_ownership`, `core/acl*`, `core/policy_engine`, `core/trust_graph` | Shared-token admission, per-message Ed25519 authentication, the ownership lease, trust-on-first-use key pinning, deny-by-default ACL evaluation with opt-in enforcement, cross-agent trust edges. |
 | Durability and storage | `core/persistence`, `core/journal`, `core/idempotency`, `core/compaction`, `core/at_rest*`, `core/persistence_sqlcipher`, `core/merkle`, `core/receipts`, `core/universal_receipts` | The append-only SQLite event store (WAL), journal replay on restart, idempotent re-applied mutations, log compaction, at-rest payload encryption (file key, escrow, TPM 2.0, PKCS#11, cloud-HSM attestation), whole-database SQLCipher, Merkle audit paths, signed receipts. |
@@ -68,6 +68,30 @@ representative modules, not every file.
 | Observability and operations | `core/metrics`, `observability_textfile`, `otel_export`, `core/postmortem`, `core/dark_seat`, `core/stall`, `reap`, `update_check`, `benchmark/` | Prometheus metrics, node-exporter textfiles, OpenTelemetry export, post-mortem bundles, dark-seat alerts, stalled-task detection, committed benchmarks. |
 
 ## Coordination model
+
+### Frame admission and serving lifetime
+
+`SynapseHub.handle_message` coordinates envelope admission, connection
+registration, safe logging and the ordered gate runner. Envelope decoding
+refuses malformed JSON and non-object frames before host charging; object
+frames, including heartbeats, consume host quota before their routing fields
+are inspected. Registration verifies credentials and identity before removing
+the token, resolving name ownership and registering delivery capabilities.
+Typed callback records retain the owning hub's existing effects without giving
+the registration module a back-reference to the hub.
+
+After registration, gates run in this order: sender quota, per-message
+authentication, journal recovery, federation, local ACL, namespace ownership
+and operator-relay routing. A refusal stops the frame. An authorised
+cross-domain frame is dispatched at the federation gate and ends the pipeline
+before local gates; local frames reach duplicate-aware handler dispatch only
+after every gate permits them. Hook lookup stays deferred until each gate runs.
+
+Serving preserves separate startup checks, socket binding, readiness publication
+and background-task ownership. Every started task is retained before another
+is started. Shutdown joins those tasks before anchoring and closing the hub's
+checkpoint, then clears its bound address and readiness. The supplied journal
+and other caller-owned stores retain their existing ownership.
 
 ### Handler capabilities
 

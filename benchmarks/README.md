@@ -181,7 +181,18 @@ source revision and isolation state.
 The timed loop includes first sender registration, so changes to registration
 require rerunning this benchmark even when record parsing is unchanged.
 
-The committed composition-root comparison executes the same full workload
+The current frame-pipeline comparison executes the same full workload
+before and after frame admission and registration were separated: 20,000
+parser validations for each size and 500 short plus 200 long durable records.
+The baseline is the exact parent source. Both variants use the same runtime
+dependencies and unchanged ingress quotas. The JSON records source digests,
+the full result distributions and the library's three 100-iteration live-hub
+probes. These shared-workstation runs include registration and are functional
+regression evidence; they contain no discarded warm-up or isolated CI result
+and support no production performance claim.
+
+The earlier composition-root comparison is retained under
+`historical_composition_root`. It executes the same full workload
 against the grouped-record baseline and externally composed hub: 20,000 parser
 validations for each text size, plus 500 short and 200
 long durable records. All records are stored under the unchanged ingress quota.
@@ -200,7 +211,7 @@ The comparison also runs the library's `hub-roundtrip`,
 `claim-grant` and `durable-claim-grant` probes against both sources at their
 unchanged defaults of 100 iterations each. These exercise actual routing and
 lease operations; their measurements are retained
-under `comparison.library_probes` and the complete candidate source manifest
+under `historical_composition_root.comparison.library_probes`; the complete candidate source manifest
 digest is retained in the same result. These measurements run
 after the final owning source cohort, sequentially by variant; the workstation
 still shares CPU and storage with other work. The other standalone

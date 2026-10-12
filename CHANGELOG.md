@@ -97,6 +97,13 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Hub frame processing now separates envelope admission, connection
+  registration and an ordered gate runner. Existing authentication, identity,
+  quota, recovery, federation and local-authority checks retain their order.
+  Server startup and shutdown use explicit lifetime stages while preserving
+  background-task joining, checkpoint anchoring and caller-owned stores.
+  Wire messages, CLI options and hub constructor exports are unchanged.
+
 - Generated systemd user units have a finite start budget. A unit that keeps
   failing waits longer before each restart and ends in the `failed` state: the
   hub after about 3.5 minutes, presence, wake-listener and waker units after

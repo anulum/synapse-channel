@@ -35,7 +35,7 @@ if sys.version_info >= (3, 11):
 else:
     from typing_extensions import Unpack
 
-from websockets.asyncio.server import serve
+from websockets.asyncio.server import Server, serve
 from websockets.http11 import Request, Response
 
 from synapse_channel.core.acl import (
@@ -55,8 +55,6 @@ from synapse_channel.core.atomic_operations import (
     idempotency_conflict_response,
 )
 from synapse_channel.core.deadlock import prune_waits
-from synapse_channel.core.delivery_modes import DeliveryRefusal
-from synapse_channel.core.delivery_registration import bind_delivery_registration
 from synapse_channel.core.handlers import DISPATCH
 from synapse_channel.core.hub_component_callbacks import HubComponentCallbacks
 from synapse_channel.core.hub_components import HubComponents
@@ -91,6 +89,13 @@ from synapse_channel.core.hub_exposure import (
     is_loopback_host,
 )
 from synapse_channel.core.hub_federation_gate import FrameDisposition
+from synapse_channel.core.hub_frame_pipeline import read_frame, run_frame_gates
+from synapse_channel.core.hub_frame_registration import (
+    DeliveryRegistrationPorts,
+    SenderRegistrationPorts,
+    register_delivery_session,
+    register_sender,
+)
 from synapse_channel.core.hub_http import http_endpoint_response
 from synapse_channel.core.hub_ingress import HubIngress
 from synapse_channel.core.hub_ledger_guard import FindingQuota
@@ -118,7 +123,6 @@ from synapse_channel.core.protected_write_session_auth import (
 )
 from synapse_channel.core.protocol import (
     MessageType,
-    loads_bounded,
     read_protocol_version,
     system_message,
 )
@@ -764,20 +768,15 @@ class SynapseHub(HubConfigView):
         ----------
         authenticated:
             Server-retained ingress result, never a deserialized client object.
-        mutate:
-            Existing synchronous admission/transition mutation on private state.
-        prepare:
-            Existing durable response/event builder.
+        mutate, prepare:
+            Synchronous private-state transition and durable response/event builder.
         limits:
             Explicit enrolled wire limits.
-        current_enrollments:
-            Current protected registry, ordered with mutations by this actor.
-        current_principal:
-            Current authenticated transport principal, not a claimed sender.
-        clock:
-            Fresh trusted server clock.
-        conflict:
-            Existing protected conflict response builder.
+        current_enrollments, current_principal:
+            Read the protected registry and authenticated transport principal
+            under this actor; the principal is never a claimed sender.
+        clock, conflict:
+            Fresh trusted server clock and protected conflict response builder.
 
         Returns
         -------
@@ -786,10 +785,8 @@ class SynapseHub(HubConfigView):
 
         Notes
         -----
-        Authentication must already have consumed the wire replay nonce.
-        All current-context callbacks are synchronous, trusted and I/O-free.
-        Read-only verbs retain a separate admission path. This method does not
-        install dispatch handlers or prove OS credential/namespace isolation.
+        Authentication has consumed the replay nonce; callbacks are trusted, synchronous, I/O-free.
+        Read-only verbs use separate admission; this installs no handler or OS isolation proof.
         """
 
         def authorize() -> None:
@@ -1187,108 +1184,96 @@ class SynapseHub(HubConfigView):
         return HubIngress.remote_host(websocket)
 
     async def handle_message(self, raw_message: str | bytes, websocket: Any) -> None:
-        """Parse and route one inbound frame.
+        """Admit, register and route one inbound frame in its established order.
 
         Parameters
         ----------
         raw_message : str or bytes
-            The raw frame received from a client socket.
-        websocket : Any
-            The socket the frame arrived on.
+            Raw frame received from the client socket.
+        websocket : object
+            Original socket whose identity and quotas govern the frame.
         """
-        try:
-            data = loads_bounded(raw_message)
-        except json.JSONDecodeError:
-            await self.send_json(
-                websocket, self.system("Malformed JSON.", msg_type=MessageType.ERROR)
-            )
+        data = await read_frame(
+            raw_message,
+            websocket,
+            host_rate_limiter=self.host_rate_limiter,
+            remote_host=self._remote_host,
+            send_json=self.send_json,
+            system=self.system,
+        )
+        if data is None:
             return
-
-        # A valid-JSON frame need not be an object: ``["x"]``, ``null``, ``42`` all
-        # decode cleanly, then ``data.get("sender")`` below would raise
-        # AttributeError and — caught nowhere on the per-connection loop — drop the
-        # socket with a 1011. Reject a non-object envelope at the boundary instead.
-        if not isinstance(data, dict):
-            await self.send_json(
-                websocket,
-                self.system("Malformed frame: expected a JSON object.", msg_type=MessageType.ERROR),
-            )
-            return
-
-        # Charge every frame — heartbeats included — to its remote host before any
-        # further work, so one host cannot flood the hub regardless of agent name.
-        if self.host_rate_limiter is not None and not self.host_rate_limiter.allow(
-            self._remote_host(websocket)
-        ):
-            await self.send_json(
-                websocket, self.system("Host rate limit exceeded.", msg_type=MessageType.ERROR)
-            )
-            return
-
-        # A routing/identity field present but not a string (``sender: [..]``, ``type: true``)
-        # would otherwise be ``str()``-coerced into a plausible identity or route below. Refuse
-        # it *after* the per-host charge above — so a flood of malformed frames is still
-        # rate-limited, not merely cheaply rejected — and before coercion, so a type-confused
-        # envelope never binds a name or addresses a target it does not spell out.
-        mistyped = HubIngress.mistyped_text_field(data)
-        if mistyped is not None:
-            await self.send_json(
-                websocket,
-                self.system(
-                    f"Malformed frame: {mistyped!r} must be a string.",
-                    msg_type=MessageType.ERROR,
-                ),
-            )
-            return
-
         sender = str(data.get("sender") or "").strip() or f"anon-{id(websocket)}"
         target = str(data.get("target") or "all")
         msg_type = str(data.get("type") or MessageType.CHAT).strip().lower()
         payload = str(data.get("payload") or "")
-
-        # Hub/protocol identities are provenance markers, never agent names. Refuse
-        # them before authentication or trust-on-first-use identity verification so
-        # a signed hostile registration cannot leave a durable pin behind for a name
-        # that no client is ever allowed to own. The registry repeats the predicate
-        # at its binding boundary so direct callers cannot bypass this early guard.
-        if self.clients.is_reserved_sender(sender):
-            await self._resolve_sender(sender, websocket)
-            return
-
-        # Capture whether this socket was already bound before authorising, so a
-        # secured hub can send the withheld welcome the moment it first authenticates.
-        was_bound = self.clients.is_bound(websocket)
-        if not await self._authorise(sender, data, websocket):
-            return
-
-        # On the first (name-binding) frame, resolve the connection credential to the
-        # claimed identity before the name is trusted, so a -rx mailbox or role claim
-        # rests on a proven identity. A socket that cannot prove it is refused and closed.
-        # A peer hub proves its name with the pinned mutual-TLS certificate its serving
-        # grant is bound to, not with a registration signature.
-        if not was_bound and not self._peer_hub_identity_proven(sender, websocket):
-            if not await self._identity_gate.verify_identity(sender, data, websocket):
-                return
-            self._record_identity_proof(sender, data, websocket)
-
-        # ``token`` is a connection credential, never application data. Keep it
-        # through first-use identity verification because the registration
-        # signature covers the complete frame, then consume it before any name
-        # resolution, routing, relay, history, or journal path can observe it.
-        data.pop("token", None)
-
-        resolved = await self._resolve_sender(
-            sender,
-            websocket,
-            takeover=bool(data.get("takeover")),
-            lease_requested=bool(data.get("lease")),
-            owner_lease=str(data.get("owner_lease") or ""),
-        )
+        resolved = await self._register_frame(sender, msg_type, data, websocket)
         if resolved is None:
             return
         sender = resolved
-        if self.authenticator is not None and not was_bound:
-            await self._send_welcome(websocket)
+        self._log_frame(sender, target, msg_type, payload, data)
+        await self._gate_frame(sender, msg_type, data, websocket)
+
+    def _sender_registration_ports(self) -> SenderRegistrationPorts:
+        """Bind the existing deferred admission hooks to this frame's owner."""
+        return SenderRegistrationPorts(
+            authorise=lambda sender, data, socket: self._authorise(sender, data, socket),
+            verify_identity=lambda sender, data, socket: self._identity_gate.verify_identity(
+                sender, data, socket
+            ),
+            peer_proven=lambda sender, socket: self._peer_hub_identity_proven(sender, socket),
+            record_identity_proof=lambda sender, data, socket: self._record_identity_proof(
+                sender, data, socket
+            ),
+            resolve_sender=lambda name, socket, takeover, requested, lease: self._resolve_sender(
+                name, socket, takeover=takeover, lease_requested=requested, owner_lease=lease
+            ),
+            send_welcome=lambda socket: self._send_welcome(socket),
+        )
+
+    async def _register_frame(
+        self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
+    ) -> str | None:
+        """Complete the existing name, heartbeat and receiver registration stages."""
+        registered = await register_sender(
+            self.clients,
+            self._sender_registration_ports(),
+            sender,
+            data,
+            websocket,
+            secured=lambda: self.authenticator is not None,
+        )
+        if registered is None:
+            return None
+        sender, was_bound = registered
+
+        if not await self._heartbeat_registered_sender(sender, websocket):
+            return None
+        is_new_agent = self.clients.set_agent_socket(sender, websocket)
+        if not was_bound:
+            self.claim_holders.returned(sender)
+            self.clients.bind_protocol_version(
+                sender, websocket, read_protocol_version(data.get("protocol_version"))
+            )
+        if not await self._register_delivery_frame(sender, msg_type, data, websocket, was_bound):
+            return None
+        await self._restore_registration_notices(sender, websocket, was_bound)
+        if not was_bound or msg_type != MessageType.HEARTBEAT:
+            self.dead_letters.clear(sender)
+        if self.warn_stale_recipients and (not was_bound or msg_type != MessageType.HEARTBEAT):
+            # Seed the grace window on registration, then refresh on every genuine
+            # reaction — any non-heartbeat frame — so directed delivery can classify
+            # a recipient that is present but has gone deaf. A keepalive
+            # heartbeat is deliberately not a reaction: it proves the socket, not the
+            # agent. Only written when the warning is enabled, so the default open hub
+            # keeps no per-frame liveness state.
+            self._recipient_liveness.touch(sender, self.clock())
+        if is_new_agent:
+            await self._broadcast_presence("joined", sender)
+        return sender
+
+    async def _heartbeat_registered_sender(self, sender: str, websocket: Any) -> bool:
+        """Refresh presence under the actor only while this socket still owns the name."""
 
         def touch_state(state: Any) -> bool:
             # The resolver may have awaited while closing a previous owner. A
@@ -1323,55 +1308,45 @@ class SynapseHub(HubConfigView):
                 sender,
                 self.clients.remote_host(websocket),
             )
-            return
-        is_new_agent = self.clients.set_agent_socket(sender, websocket)
-        if not was_bound:
-            self.claim_holders.returned(sender)
-            self.clients.bind_protocol_version(
-                sender, websocket, read_protocol_version(data.get("protocol_version"))
-            )
-        try:
-            delivery_session = bind_delivery_registration(
-                self.clients,
-                sender=sender,
-                websocket=websocket,
-                data=data,
-                msg_type=msg_type,
-                was_bound=was_bound,
-                durable=self.journal is not None,
-                stable_hub_id=self.stable_delivery_hub_id,
-            )
-        except DeliveryRefusal as exc:
-            await self.send_json(
-                websocket,
-                self.system(
-                    str(exc),
-                    msg_type=MessageType.ERROR,
-                    target=sender,
-                    reason_code=exc.code,
-                ),
-            )
-            await self._close_socket(websocket, code=4020, reason="delivery registration refused")
-            return
-        if delivery_session is not None:
+            return False
+        return True
+
+    async def _register_delivery_frame(
+        self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any, was_bound: bool
+    ) -> bool:
+        """Bind a receiver session through the existing delivery-registration effects."""
+
+        async def supersede(incarnation: str) -> None:
             from synapse_channel.core.handlers.delivery_modes import (
                 supersede_old_delivery_sessions,
             )
 
-            await supersede_old_delivery_sessions(
-                self, target=sender, incarnation=delivery_session.incarnation
-            )
-            await self.send_json(
-                websocket,
-                self.system(
-                    "Delivery session registered.",
-                    msg_type=MessageType.DELIVERY_SESSION,
-                    target=sender,
-                    incarnation=delivery_session.incarnation,
-                    capabilities=delivery_session.capabilities,
-                    protocol_version=3,
-                ),
-            )
+            await supersede_old_delivery_sessions(self, target=sender, incarnation=incarnation)
+
+        ports = DeliveryRegistrationPorts(
+            send_json=lambda socket, frame: self.send_json(socket, frame),
+            system=lambda payload, **extra: self.system(payload, **extra),
+            close_socket=lambda socket, code, reason: self._close_socket(
+                socket, code=code, reason=reason
+            ),
+            supersede=supersede,
+        )
+        return await register_delivery_session(
+            self.clients,
+            ports,
+            sender=sender,
+            websocket=websocket,
+            data=data,
+            msg_type=msg_type,
+            was_bound=was_bound,
+            durable=self.journal is not None,
+            stable_hub_id=self.stable_delivery_hub_id,
+        )
+
+    async def _restore_registration_notices(
+        self, sender: str, websocket: Any, was_bound: bool
+    ) -> None:
+        """Restore the original durable notification streams before joined presence."""
         if not was_bound and self.journal is not None:
             # Receipt notifications are a durable at-least-once outbox. A sender
             # that was offline for an ACK or a prior transport failure receives
@@ -1393,18 +1368,11 @@ class SynapseHub(HubConfigView):
             )
 
             await deliver_pending_forward_receipts(self, sender=sender)
-        if not was_bound or msg_type != MessageType.HEARTBEAT:
-            self.dead_letters.clear(sender)
-        if self.warn_stale_recipients and (not was_bound or msg_type != MessageType.HEARTBEAT):
-            # Seed the grace window on registration, then refresh on every genuine
-            # reaction — any non-heartbeat frame — so directed delivery can classify
-            # a recipient that is present but has gone deaf. A keepalive
-            # heartbeat is deliberately not a reaction: it proves the socket, not the
-            # agent. Only written when the warning is enabled, so the default open hub
-            # keeps no per-frame liveness state.
-            self._recipient_liveness.touch(sender, self.clock())
-        if is_new_agent:
-            await self._broadcast_presence("joined", sender)
+
+    def _log_frame(
+        self, sender: str, target: str, msg_type: str, payload: str, data: dict[str, Any]
+    ) -> None:
+        """Render the admitted frame with the existing channel and attachment redaction."""
         # A channel-scoped frame is audience-restricted, so its body must not land
         # in the hub log either — log the channel id and length, never the content.
         channel_id = str(data.get("channel") or "").strip()
@@ -1429,6 +1397,24 @@ class SynapseHub(HubConfigView):
             logged_payload,
         )
 
+    async def _gate_frame(
+        self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
+    ) -> None:
+        """Run the ordered gates with late lookup of their existing hub hooks."""
+        gates = (
+            lambda: self._allow_frame_rate(sender, msg_type, websocket),
+            lambda: self._allow_frame_signature(sender, msg_type, data, websocket),
+            lambda: self._allow_frame_recovery(sender, msg_type, websocket),
+            lambda: self._allow_frame_federation(sender, msg_type, data, websocket),
+            lambda: self._authorise_acl(sender, msg_type, data, websocket),
+            lambda: self._authorise_claim_ownership(sender, msg_type, data, websocket),
+            lambda: self._route_operator_relay(sender, msg_type, data, websocket),
+        )
+        if await run_frame_gates(gates):
+            await self._route(sender, msg_type, data, websocket)
+
+    async def _allow_frame_rate(self, sender: str, msg_type: str, websocket: Any) -> bool:
+        """Apply the existing sender quota and its refusal counter."""
         if (
             msg_type != MessageType.HEARTBEAT
             and self.rate_limiter is not None
@@ -1439,33 +1425,37 @@ class SynapseHub(HubConfigView):
                 websocket,
                 self.system("Rate limit exceeded.", msg_type=MessageType.ERROR, target=sender),
             )
-            return
+            return False
 
+        return True
+
+    async def _allow_frame_signature(
+        self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
+    ) -> bool:
+        """Apply the existing message-authentication gate and its refusal counter."""
         if not await self._verify_per_message_auth(sender, msg_type, data, websocket):
             self.counters.auth_failures += 1
-            return
+            return False
 
-        if await self._journal_recovery_gate.refuse_mutation(sender, msg_type, websocket):
-            return
+        return True
 
+    async def _allow_frame_recovery(self, sender: str, msg_type: str, websocket: Any) -> bool:
+        """Translate the recovery guard's refusal into the pipeline's continuation predicate."""
+        return not await self._journal_recovery_gate.refuse_mutation(sender, msg_type, websocket)
+
+    async def _allow_frame_federation(
+        self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
+    ) -> bool:
+        """End denied or cross-domain-routed frames before every local serving gate."""
         disposition = await self._authorise_federation(sender, msg_type, data, websocket)
         if disposition is FrameDisposition.DENY:
             self.counters.federation_denied += 1
-            return
+            return False
         if disposition is FrameDisposition.ALLOW_CROSS_DOMAIN:
             await self._route(sender, msg_type, data, websocket)
-            return
+            return False
 
-        if not await self._authorise_acl(sender, msg_type, data, websocket):
-            return
-
-        if not await self._authorise_claim_ownership(sender, msg_type, data, websocket):
-            return
-
-        if not await self._route_operator_relay(sender, msg_type, data, websocket):
-            return
-
-        await self._route(sender, msg_type, data, websocket)
+        return True
 
     async def _authorise_federation(
         self, sender: str, msg_type: str, data: dict[str, Any], websocket: Any
@@ -1787,43 +1777,21 @@ class SynapseHub(HubConfigView):
         *,
         ssl_context: ssl.SSLContext | None = None,
     ) -> None:
-        """Run the hub's WebSocket server until cancelled.
+        """Serve until stopped, joining owned tasks before anchoring the journal.
 
-        Always installs :meth:`_process_request` so Origin/Host handshake policy
-        applies to every upgrade. With :attr:`enable_metrics` set, the same port
-        also answers HTTP ``GET /metrics`` and ``GET /health``.
+        Origin/Host policy always gates upgrades; enabled ``/metrics`` and
+        ``/health`` responses share the WebSocket listener.
 
         Parameters
         ----------
-        host : str, optional
-            Bind address. Defaults to :data:`DEFAULT_HOST`.
-        port : int, optional
-            Bind port. Defaults to :data:`DEFAULT_PORT`.
-        ssl_context : ssl.SSLContext or None, optional
-            Server-side TLS context. When supplied, the hub serves native
-            ``wss://`` instead of plain ``ws://``.
+        host, port : str, int
+            Listening address; port zero requests a kernel-assigned port.
+        ssl_context : ssl.SSLContext or None
+            Server TLS context; None serves plain WebSockets.
         """
-        self._guard_exposure(host, tls_active=ssl_context is not None)
-        self._guard_at_rest(host)
-        if self.journal is not None and self.stable_delivery_hub_id:
-            self.journal.delivery.verify_origin_hub(self.hub_id)
-        if (
-            self._checkpoint_path is not None
-            and self._live_checkpoint is None
-            and isinstance(self.journal, EventStore)
-        ):
-            # A hub served again after a clean shutdown re-verifies before serving.
-            self._open_live_checkpoint(self.journal)
-        self._bind_host = host
-        self._bind_port = int(port)
-        self._bound_address = None
-        self._serving.clear()
-        stop = asyncio.Event()
-        self._install_signal_handlers(asyncio.get_running_loop(), stop)
+        stop = self._prepare_serving(host, port, ssl_context)
         started = False
-        delivery_sweeper: asyncio.Task[None] | None = None
-        forward_retrier: asyncio.Task[None] | None = None
-        anchorer: asyncio.Task[None] | None = None
+        backgrounds: list[asyncio.Task[None]] = []
         try:
             async with (
                 self._dark_seats.running(),
@@ -1841,59 +1809,98 @@ class SynapseHub(HubConfigView):
                     logger=ws_server_logger,
                 ) as server,
             ):
-                sockets = server.sockets
-                if not sockets:
-                    raise RuntimeError("hub server bound without a listening socket")
-                socket_name = sockets[0].getsockname()
-                self._bind_port = int(socket_name[1])
-                self._bound_address = (host, self._bind_port)
+                self._record_server_address(server, host)
                 started = True
                 self._serving.set()
-                scheme = "wss" if ssl_context is not None else "ws"
-                logger.info(
-                    "Synapse Hub running on %s://%s:%d",
-                    scheme,
-                    host,
-                    self._bind_port,
-                )
-                if self.journal is not None and self.stable_delivery_hub_id:
-                    from synapse_channel.core.handlers.delivery_modes import (
-                        delivery_expiry_loop,
-                    )
-
-                    delivery_sweeper = asyncio.create_task(delivery_expiry_loop(self))
-                    delivery_sweeper.add_done_callback(lambda _task: stop.set())
-                if self.message_peers:
-                    from synapse_channel.core.message_forward_origin import (
-                        message_forward_retry_loop,
-                    )
-
-                    forward_retrier = asyncio.create_task(message_forward_retry_loop(self))
-                    forward_retrier.add_done_callback(lambda _task: stop.set())
-                if self._live_checkpoint is not None:
-                    anchorer = asyncio.create_task(
-                        self._checkpoint_anchor_loop(self._live_checkpoint)
-                    )
-                    anchorer.add_done_callback(lambda _task: stop.set())
+                self._log_server_address(host, ssl_context)
+                self._start_serving_tasks(stop, backgrounds)
                 await stop.wait()
-                for background in (delivery_sweeper, forward_retrier, anchorer):
-                    if background is not None and background.done():
+                for background in backgrounds:
+                    if background.done():
                         background.result()
         except BaseException:
             if not started:
-                # Unblock a startup waiter so it reports the failed bind
-                # immediately instead of disguising it as a readiness timeout.
+                # A startup waiter must report a failed bind instead of a readiness timeout.
                 self._serving.set()
             raise
         finally:
-            for background in (delivery_sweeper, forward_retrier, anchorer):
-                if background is not None:
-                    background.cancel()
-                    await asyncio.gather(background, return_exceptions=True)
-            if started:
-                # K4-N1: a clean stop anchors everything written, then releases
-                # the checkpoint store; only a crash leaves an unanchored window.
-                self._close_live_checkpoint()
-            self._bound_address = None
-            if started:
-                self._serving.clear()
+            await self._finish_serving(backgrounds, started)
+
+    def _prepare_serving(
+        self, host: str, port: int, ssl_context: ssl.SSLContext | None
+    ) -> asyncio.Event:
+        """Apply existing exposure and durable-origin checks before binding."""
+        self._guard_exposure(host, tls_active=ssl_context is not None)
+        self._guard_at_rest(host)
+        if self.journal is not None and self.stable_delivery_hub_id:
+            self.journal.delivery.verify_origin_hub(self.hub_id)
+        if (
+            self._checkpoint_path is not None
+            and self._live_checkpoint is None
+            and isinstance(self.journal, EventStore)
+        ):
+            # A hub served again after a clean shutdown re-verifies before serving.
+            self._open_live_checkpoint(self.journal)
+        self._bind_host = host
+        self._bind_port = int(port)
+        self._bound_address = None
+        self._serving.clear()
+        stop = asyncio.Event()
+        self._install_signal_handlers(asyncio.get_running_loop(), stop)
+        return stop
+
+    def _record_server_address(self, server: Server, host: str) -> None:
+        """Record the listening socket before publishing successful readiness."""
+        sockets = server.sockets
+        if not sockets:
+            raise RuntimeError("hub server bound without a listening socket")
+        socket_name = sockets[0].getsockname()
+        self._bind_port = int(socket_name[1])
+        self._bound_address = (host, self._bind_port)
+
+    def _log_server_address(self, host: str, ssl_context: ssl.SSLContext | None) -> None:
+        """Log the actual assigned port with its existing transport scheme."""
+        scheme = "wss" if ssl_context is not None else "ws"
+        logger.info(
+            "Synapse Hub running on %s://%s:%d",
+            scheme,
+            host,
+            self._bind_port,
+        )
+
+    def _start_serving_tasks(
+        self, stop: asyncio.Event, backgrounds: list[asyncio.Task[None]]
+    ) -> None:
+        """Retain each owned task before starting the next or registering its stop callback."""
+        if self.journal is not None and self.stable_delivery_hub_id:
+            from synapse_channel.core.handlers.delivery_modes import (
+                delivery_expiry_loop,
+            )
+
+            delivery_sweeper = asyncio.create_task(delivery_expiry_loop(self))
+            backgrounds.append(delivery_sweeper)
+            delivery_sweeper.add_done_callback(lambda _task: stop.set())
+        if self.message_peers:
+            from synapse_channel.core.message_forward_origin import (
+                message_forward_retry_loop,
+            )
+
+            forward_retrier = asyncio.create_task(message_forward_retry_loop(self))
+            backgrounds.append(forward_retrier)
+            forward_retrier.add_done_callback(lambda _task: stop.set())
+        if self._live_checkpoint is not None:
+            anchorer = asyncio.create_task(self._checkpoint_anchor_loop(self._live_checkpoint))
+            backgrounds.append(anchorer)
+            anchorer.add_done_callback(lambda _task: stop.set())
+
+    async def _finish_serving(self, backgrounds: list[asyncio.Task[None]], started: bool) -> None:
+        """Join background work before the existing final anchor and readiness reset."""
+        for background in backgrounds:
+            background.cancel()
+            await asyncio.gather(background, return_exceptions=True)
+        if started:
+            # Clean stops anchor the final writes; only crashes retain an unanchored window.
+            self._close_live_checkpoint()
+        self._bound_address = None
+        if started:
+            self._serving.clear()
