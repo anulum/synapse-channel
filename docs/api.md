@@ -207,7 +207,7 @@ The package reference below is generated from the source docstrings.
 Construct `EventStore` and call its public methods. Their complete parameter,
 return and transaction documentation is maintained with the owning table
 implementations below; the facade retains the same signatures and runtime
-docstrings. These classes organize the reference and share an existing owner
+docstrings. These classes organise the reference and share an existing owner
 connection rather than opening independent stores.
 
 ::: synapse_channel.core.persistence_events.EventWriter

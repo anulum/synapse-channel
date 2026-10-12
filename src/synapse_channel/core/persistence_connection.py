@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — append-only SQLite event store for durable hub state
-"""One owner connection, serialized lock and explicitly shared event state."""
+"""One owner connection, serialised lock and explicitly shared event state."""
 
 from __future__ import annotations
 

@@ -32,7 +32,7 @@ def encode_object(value: Mapping[str, Any]) -> str:
 def prepare_transition(
     transition: DeliveryReceiptTransition,
 ) -> tuple[str, int, str, dict[str, Any], dict[str, Any], DeliveryReceiptState]:
-    """Validate and normalize one transition before opening the transaction."""
+    """Validate and normalise one transition before opening the transaction."""
     receipt = dict(transition.payload)
     message_seq = receipt.get("message_seq")
     if isinstance(message_seq, bool) or not isinstance(message_seq, int) or message_seq < 1:
