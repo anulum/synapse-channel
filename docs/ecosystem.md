@@ -96,7 +96,7 @@ error does not stop an answer.
 | Repository | Function | Current status |
 | --- | --- | --- |
 | [REMANENTIA](https://pypi.org/project/remanentia/) | Local-first, auditable memory for AI agents and knowledge-intensive software: project-file indexing, hybrid retrieval, consolidation and an entity graph, through a CLI, an MCP server and an HTTP API. | AGPL-3.0-or-later with a commercial licence. Released on PyPI; alpha maturity and active development. |
-| REMANENTIA-PORTAL | Account and billing or licence-request portal for the product family. It runs no customer workload. | Private repository; no release. Self-service entitlement issuance, refunds and live billing are not claimed. |
+| REMANENTIA-PORTAL | Account and billing or licence-request portal for the product family. It runs no customer workload. | Private repository, AGPL-3.0-or-later; no release. Self-service entitlement issuance, refunds and live billing are not claimed. |
 
 Remanentia owns memory, recall and consolidation. The Portal owns customer
 accounts and commercial requests, and no product runtime logic.
@@ -111,6 +111,27 @@ HushLine is the group's first supporting tool. Emerging tools, and possibly
 further components, are not designed yet, and this page names none. New work
 is formed and tested in the group's internal workbench and appears here once
 it joins the group.
+
+## Connections outside the group
+
+Two projects of the group can use a package of another group, **SCPN Systems
+Integration and Control**. Both connections are optional extras declared in
+the project's own packaging; neither is installed by default, and the
+schematic below shows relations inside the group only.
+
+| Project | Uses | For | Declared as |
+| --- | --- | --- | --- |
+| DIRECTOR-AI | `scpn-studio-platform` | The adversarial strip-resistance battery of its verifiable-honesty seal. | Optional extra `honesty`, Python 3.12 or later. |
+| REMANENTIA | `scpn-studio-platform` | Signed finding envelopes. | Optional extra `seal`, Python 3.12 or later. |
+
+Recorded on 2026-10-12 from the two packaging files. A declared extra states
+that the adapter exists in the project. It does not state that the two
+projects are jointly qualified, or that every released version of the
+platform is accepted: each extra names its own version range.
+
+No packaging file of the group's repositories names a package of the quantum,
+neuromorphic or reactor groups; that search, on the same day, covered the
+Python, Rust, JavaScript and Go dependency files of every repository.
 
 ## How to read the schematic
 
