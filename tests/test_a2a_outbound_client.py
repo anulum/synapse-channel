@@ -29,7 +29,7 @@ from synapse_channel.a2a_client import (
     resolve_grpc_interface_url,
 )
 from synapse_channel.a2a_credentials import A2APlaintextBearerError
-from synapse_channel.a2a_http import build_a2a_handler
+from synapse_channel.a2a_http import make_a2a_http_server
 from synapse_channel.a2a_outbound_response import (
     A2A_MAX_RESPONSE_BYTES,
     A2AReceiptWriteError,
@@ -44,7 +44,7 @@ def _serve(bridge: A2ABridge) -> tuple[ThreadingHTTPServer, int]:
     interfaces = bridge.agent_card.get("supportedInterfaces")
     if isinstance(interfaces, list) and interfaces and isinstance(interfaces[0], dict):
         interfaces[0]["url"] = f"http://127.0.0.1:{port}"
-    server = ThreadingHTTPServer(("127.0.0.1", port), build_a2a_handler(bridge))
+    server = make_a2a_http_server(bridge=bridge, host="127.0.0.1", port=port)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, port
 

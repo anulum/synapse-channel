@@ -243,3 +243,42 @@ harnesses measure different unchanged paths.
 The decomposition changes the two original handler modules (2,262 lines)
 to five modules (2,981 lines, including native documentation and typed
 stage boundaries). Shorter procedures do not imply fewer source lines.
+
+
+## A2A edge, dashboard edge and pane wake
+
+`PYTHONPATH=src python benchmarks/external_surfaces_benchmark.py` serves the
+A2A bridge and the dashboard with the product's own servers on loopback and
+sends 200 requests of each kind, one real TCP connection per request, each
+read to its end: the agent card, an accepted message, a message refused for
+its `Host` before the body is read, the dashboard snapshot document and the
+classic page, the last two against a live hub. It then injects 5 wakes,
+each into a new owned tmux session running a harmless composer; where tmux is
+absent the result says so and no wake is measured. A request whose connection
+is reset before its answer is complete is counted, not timed.
+
+Three alternating parent/candidate pairs compare source `84a6d9f8` with the
+separated handler, page, live-stream and pane-wake owners and the orderly
+connection close. Each row is the median of the three measured per-run
+medians, in microseconds:
+
+| Operation | Parent p50 (us) | Candidate p50 (us) |
+| --- | ---: | ---: |
+| A2A agent card | 379.345 | 286.317 |
+| A2A accepted message | 1043.190 | 709.921 |
+| A2A refusal before the body | 397.556 | 261.321 |
+| Dashboard snapshot document | 30440.062 | 29991.340 |
+| Dashboard classic page | 30616.040 | 29941.900 |
+| Pane wake | 821563.961 | 826091.809 |
+
+These serial nice-19 runs share CPU and storage with other workstation
+sessions. They are functional regression evidence, without an isolated
+performance claim. The pane wake was the slower observation here; in an
+earlier set of three pairs, retained under `earlier_set`, the refusal was. No
+request of any run was reset. On Linux the parent's immediate close after a refusal
+still left the client its answer, so this workload does not show the reset
+that Windows clients met; that defect is covered by the connection tests, not
+by these numbers. Full distributions, source and harness digests, the load
+before each run and the host are retained in
+`external_surfaces_benchmark.json`; no observation was discarded. The pane
+wake time includes the fixed 0.4-second submit delay.

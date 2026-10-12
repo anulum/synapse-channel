@@ -22,7 +22,7 @@ from synapse_channel import a2a_interop_trace as interop_module
 from synapse_channel import cli
 from synapse_channel.a2a_conformance import conformance_rows
 from synapse_channel.a2a_credentials import A2APlaintextBearerError
-from synapse_channel.a2a_http import build_a2a_handler
+from synapse_channel.a2a_http import make_a2a_http_server
 from synapse_channel.a2a_interop_trace import (
     RECEIPT_SCHEMA,
     A2AInteropTraceError,
@@ -41,7 +41,7 @@ def _serve_bridge(bridge: A2ABridge) -> tuple[ThreadingHTTPServer, int, threadin
     interfaces = bridge.agent_card.get("supportedInterfaces")
     if isinstance(interfaces, list) and interfaces and isinstance(interfaces[0], dict):
         interfaces[0]["url"] = f"http://127.0.0.1:{port}"
-    server = ThreadingHTTPServer(("127.0.0.1", port), build_a2a_handler(bridge))
+    server = make_a2a_http_server(bridge=bridge, host="127.0.0.1", port=port)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, port, thread

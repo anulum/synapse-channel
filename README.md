@@ -1771,6 +1771,10 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | `relay` | Append-only NDJSON log, cursor, trimming, and command-normalisation helpers for file-based observers. |
 | `archive_report` | Static HTML archive reports for compacted event-store history and release receipt notes. |
 | `hub` | The routing core: connections, names, history, broadcast. |
+| `a2a_http_handler`, `a2a_http_routes` | Bounded HTTP admission and ordered A2A routes, bound through `a2a_http.build_a2a_handler`. |
+| `dashboard_handler_binding`, `dashboard_http_pages`, `dashboard_http_live` | Per-server readers, shells/snapshots and bounded NDJSON delivery, behind the dashboard's existing access checks. |
+| `pane_wake` | Staged wake preparation and submission through `agent_tmux.inject_wake`, with verified pane binding and retry state. |
+| `lingering_close` | Orderly end of an HTTP connection whose request was not read to its end, bounded in time, bytes and count, for both HTTP servers. |
 | `client` | The reusable async agent connection and coordination helpers. |
 | `persistence` | Append-only SQLite event store (WAL) giving the hub a crash-durable spine. |
 | `journal` | Records mutations as events and replays them to rebuild state on restart. |
@@ -1805,12 +1809,12 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.37 |
 | Public API exports | 70 |
-| Package modules | 769 |
-| Classes | 1126 |
+| Package modules | 776 |
+| Classes | 1142 |
 | Wire message types | 114 |
 | CLI subcommands | 251 |
-| Test functions | 11337 |
-| Benchmark harnesses | 10 |
+| Test functions | 11371 |
+| Benchmark harnesses | 11 |
 | Documentation pages | 84 |
 | GitHub Actions workflows | 27 |
 | Optional-dependency groups | 14 |

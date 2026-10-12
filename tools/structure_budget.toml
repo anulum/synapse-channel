@@ -38,14 +38,10 @@ names = ["argparse._SubParsersAction"]
 [ceilings.init_constructions]
 
 [ceilings.function_body_lines]
-"src/synapse_channel/a2a_http.py::build_a2a_handler" = 471
-"src/synapse_channel/a2a_http.py::build_a2a_handler.<locals>.A2ARequestHandler.do_GET" = 71
-"src/synapse_channel/a2a_http.py::build_a2a_handler.<locals>.A2ARequestHandler.do_POST" = 149
 "src/synapse_channel/a2a_interop_trace.py::run_local_interop_trace" = 159
 "src/synapse_channel/a2a_push_delivery.py::deliver_with_retries" = 72
 "src/synapse_channel/a2a_rpc.py::_dispatch_method" = 61
 "src/synapse_channel/ack.py::ack_task" = 92
-"src/synapse_channel/agent_tmux.py::inject_wake" = 154
 "src/synapse_channel/agent_tmux.py::status" = 80
 "src/synapse_channel/agent_tmux.py::wait_and_wake" = 96
 "src/synapse_channel/benchmark/drift.py::assess_drift" = 76
@@ -184,9 +180,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/core/state_transaction.py::SerializedStateMutationActor.run_atomic" = 75
 "src/synapse_channel/core/team_secure.py::apply_team_secure_hub_profile" = 64
 "src/synapse_channel/core/workflow_run.py::run_workflow" = 73
-"src/synapse_channel/dashboard.py::_DashboardHandler._do_get_routed" = 81
-"src/synapse_channel/dashboard.py::_DashboardHandler._serve_live_transport" = 92
-"src/synapse_channel/dashboard.py::_handler_class" = 111
 "src/synapse_channel/dashboard.py::start_dashboard_server" = 82
 "src/synapse_channel/dashboard_cockpit.py::render_cockpit_html" = 75
 "src/synapse_channel/dashboard_security_posture.py::build_security_posture" = 81
@@ -246,9 +239,6 @@ names = ["argparse._SubParsersAction"]
 "tools/vendor_discovery.py::reconcile" = 235
 
 [ceilings.function_branches]
-"src/synapse_channel/a2a_http.py::build_a2a_handler" = 81
-"src/synapse_channel/a2a_http.py::build_a2a_handler.<locals>.A2ARequestHandler.do_GET" = 17
-"src/synapse_channel/a2a_http.py::build_a2a_handler.<locals>.A2ARequestHandler.do_POST" = 27
 "src/synapse_channel/a2a_interop_trace.py::run_local_interop_trace" = 50
 "src/synapse_channel/a2a_rpc.py::_dispatch_method" = 21
 "src/synapse_channel/a2a_store.py::A2ATaskStore._load" = 17
@@ -439,7 +429,6 @@ names = ["argparse._SubParsersAction"]
 [ceilings.module_internal_imports]
 "src/synapse_channel/core/hub.py" = 37
 "src/synapse_channel/core/hub_config.py" = 31
-"src/synapse_channel/dashboard.py" = 29
 "src/synapse_channel/participants/__init__.py" = 45
 
 [ceilings.private_access]

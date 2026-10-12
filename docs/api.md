@@ -434,3 +434,51 @@ vocabulary, CLI flags and package exports remain unchanged.
 ::: synapse_channel.core.handlers.leasing_mutations
 
 ::: synapse_channel.core.handlers.leasing_drafts
+
+## HTTP and pane wake ownership
+
+`a2a_http.build_a2a_handler`, `dashboard.start_dashboard_server` and
+`agent_tmux.inject_wake` remain the entry points for callers. Each server binds
+its own bridge or dashboard readers; request-time snapshot collection retains
+the facade's current async collector. HTTP admission and operator permissions
+are checked before page or live-stream preparation.
+
+The A2A handler owns the existing body-size cap, read deadline, JSON decoding
+and authored error responses. Its route owner retains version negotiation and
+the discovery, task, message and push-configuration lifecycle. The dashboard
+owners prepare shells/snapshots, emit bounded NDJSON frames and bind bounded
+host coordination. Optional unavailable feeds remain explicitly absent while
+snapshot delivery continues. A live-stream client that leaves ends its stream
+quietly on every platform; Windows reports that departure as an aborted
+connection, which is now treated like a reset one.
+
+Pane wake preparation binds the exact configuration's existing probes and
+registry callbacks. A real paste failure records a pending, unstaged wake;
+successful pasting is recorded before the second safety check. An uncertain
+staged prompt is retried through submission without another paste. These
+implementation stages retain the existing response fields and CLI vocabulary.
+
+Both HTTP servers end a connection in order after its answer. A connection
+whose request was not read to its end, for example one refused before its
+body, is not closed at once: the answer's end is sent, the remaining request
+bytes are discarded, and the socket is closed when the client closes. One
+thread per server does this for all connections, so no request thread and no
+admission slot is held meanwhile. It is bounded to two seconds and two
+mebibytes per connection and to 64 connections at once; a connection over a
+bound is closed at once.
+
+::: synapse_channel.a2a_http_handler
+
+::: synapse_channel.a2a_http_routes
+
+::: synapse_channel.dashboard_handler_binding
+
+::: synapse_channel.dashboard_http_pages
+
+::: synapse_channel.dashboard_http_live
+
+::: synapse_channel.pane_wake
+
+::: synapse_channel.lingering_close
+
+::: synapse_channel.prompt_bind_http

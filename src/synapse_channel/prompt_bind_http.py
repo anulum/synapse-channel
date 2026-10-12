@@ -15,17 +15,45 @@ client's readiness deadline, which reads as a server that "listens" (the bind
 completes and any banner prints) yet never answers. ``server_name`` is
 informational: it is not used to bind the socket or serve requests, so binding
 without it starts the accept loop promptly on every platform.
+
+The same class ends each connection in order after its answer; see
+:mod:`synapse_channel.lingering_close` for why and within which bounds.
 """
 
 from __future__ import annotations
 
+import socket
 import socketserver
 from http.server import ThreadingHTTPServer
-from typing import cast
+from typing import Any, cast
+
+from synapse_channel.lingering_close import LingeringCloser
 
 
 class PromptBindThreadingHTTPServer(ThreadingHTTPServer):
-    """A ``ThreadingHTTPServer`` whose bind skips the reverse-DNS FQDN lookup."""
+    """A ``ThreadingHTTPServer`` whose bind skips the reverse-DNS FQDN lookup.
+
+    It also ends every connection in order: a connection is not closed while
+    bytes of its request are still unread, because that close would reach the
+    client as a reset and, on Windows, cost it the answer it was just sent.
+    See :mod:`synapse_channel.lingering_close`.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.lingering_closer = LingeringCloser()
+        super().__init__(*args, **kwargs)
+
+    def shutdown_request(self, request: Any) -> None:
+        """End one connection after its answer: orderly when it can be, at once otherwise."""
+        sock = request[1] if isinstance(request, tuple) else request
+        if isinstance(sock, socket.socket) and self.lingering_closer.take(sock):
+            return
+        super().shutdown_request(request)
+
+    def server_close(self) -> None:
+        """Close the listening socket and every connection still kept open."""
+        self.lingering_closer.close()
+        super().server_close()
 
     def server_bind(self) -> None:
         """Bind the socket and record the host verbatim as ``server_name``.

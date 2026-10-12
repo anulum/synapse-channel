@@ -1,0 +1,921 @@
+{
+  "after_source_files": {
+    "src/synapse_channel/a2a_http.py": "e5caa9afd74ee7911d171a42f70c95ea3e78030fc76648fe4a2846a5cde67dce",
+    "src/synapse_channel/a2a_http_handler.py": "65e039356f14c8413eb3f5f70938ebaa2dd1b1b2b65c531abf3f277cc2cc4123",
+    "src/synapse_channel/a2a_http_routes.py": "29035329dc72378ce0ac26d556178e62efdd9d68e44eaeb025fba99aad0b5ac7",
+    "src/synapse_channel/agent_tmux.py": "603d959882e11cbc03b691df3357c318bbefcc7ace7d620ee02271b7d18d677a",
+    "src/synapse_channel/dashboard.py": "035348c714a5517bae57f02e7e921efad70b40229add70caef0481c5d690fa46",
+    "src/synapse_channel/dashboard_handler_binding.py": "f9ed1a435cfd035a37b502d0848cd34eed30c2e36c15cde93762aae4f2bb0881",
+    "src/synapse_channel/dashboard_http_live.py": "b87f3f38eb388a71624dc1eba8d23c41e77cb18819ba0d5dac2003edbf331212",
+    "src/synapse_channel/dashboard_http_pages.py": "b8327788b6128d953905334a48212b12cc6c9164b0901055f783078fcabd535b",
+    "src/synapse_channel/lingering_close.py": "267eace27317cb4dc1d36d21dde1dd955c100a0602497a77193cb0d933595b4b",
+    "src/synapse_channel/pane_wake.py": "56979b1066cf29c3ab6b89f107ae8ea06fe9e71b303b20a50b8c8e24b4ded78c",
+    "src/synapse_channel/prompt_bind_http.py": "0e294c3f08ae5776ecb6cc6bfe20ec97e06860dd8c4e345647f7681a38331d08"
+  },
+  "before_commit": "84a6d9f80a5ca39f6c506b5b35b26e5224dca77e",
+  "earlier_set": {
+    "median_of_run_medians_us": {
+      "candidate": {
+        "a2a.agent_card": 333.9065006002784,
+        "a2a.host_refusal": 336.7804456502199,
+        "a2a.message_send": 761.758885346353,
+        "dashboard.classic_page": 31070.151017047465,
+        "dashboard.snapshot_json": 30734.997359104455,
+        "pane.wake": 827711.5698438138
+      },
+      "parent": {
+        "a2a.agent_card": 359.19598303735256,
+        "a2a.host_refusal": 326.1980600655079,
+        "a2a.message_send": 761.7244264110923,
+        "dashboard.classic_page": 31159.290461800992,
+        "dashboard.snapshot_json": 31091.345590539277,
+        "pane.wake": 831570.9410235286
+      }
+    },
+    "note": "Three earlier pairs of the same harness on the same day, before the live stream learned to treat an aborted connection as a departed client; that change is outside every measured path. Retained so that no observation is discarded.",
+    "pairs": [
+      {
+        "candidate": {
+          "a2a": {
+            "agent_card": {
+              "complete": 200,
+              "max_us": 6283.221999183297,
+              "min_us": 243.17996576428413,
+              "p50_us": 333.9065006002784,
+              "p95_us": 630.3649861365557,
+              "requests": 200,
+              "reset": 0
+            },
+            "host_refusal": {
+              "complete": 200,
+              "max_us": 1161.9471479207277,
+              "min_us": 313.02589923143387,
+              "p50_us": 428.6705516278744,
+              "p95_us": 730.4239552468061,
+              "requests": 200,
+              "reset": 0
+            },
+            "message_send": {
+              "complete": 200,
+              "max_us": 36304.17911335826,
+              "min_us": 579.8500496894121,
+              "p50_us": 906.5195918083191,
+              "p95_us": 1773.5620494931936,
+              "requests": 200,
+              "reset": 0
+            },
+            "messages_received": 200
+          },
+          "dashboard": {
+            "classic_page": {
+              "complete": 200,
+              "max_us": 39007.302140817046,
+              "min_us": 28471.06894478202,
+              "p50_us": 30505.54741639644,
+              "p95_us": 35556.72615766525,
+              "requests": 200,
+              "reset": 0
+            },
+            "snapshot_json": {
+              "complete": 200,
+              "max_us": 43427.420081570745,
+              "min_us": 28642.375022172928,
+              "p50_us": 30734.997359104455,
+              "p95_us": 36515.45406319201,
+              "requests": 200,
+              "reset": 0
+            }
+          },
+          "host": {
+            "cpu": "x86_64",
+            "isolation": "shared host, serial loopback",
+            "pid": 205011,
+            "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3"
+          },
+          "pane": {
+            "injected": 5,
+            "max_us": 832602.8550509363,
+            "measured": true,
+            "min_us": 821612.2640296817,
+            "p50_us": 825784.0869482607,
+            "wakes": 5
+          },
+          "requests": 200
+        },
+        "load_before": {
+          "candidate": "8.79 7.09 5.37",
+          "parent": "9.67 7.12 5.34"
+        },
+        "pair": 1,
+        "parent": {
+          "a2a": {
+            "agent_card": {
+              "complete": 200,
+              "max_us": 1724.3719194084406,
+              "min_us": 232.50817321240902,
+              "p50_us": 297.079561278224,
+              "p95_us": 381.52793422341347,
+              "requests": 200,
+              "reset": 0
+            },
+            "host_refusal": {
+              "complete": 200,
+              "max_us": 547.8160455822945,
+              "min_us": 245.90198881924152,
+              "p50_us": 331.4865753054619,
+              "p95_us": 422.7121826261282,
+              "requests": 200,
+              "reset": 0
+            },
+            "message_send": {
+              "complete": 200,
+              "max_us": 1611.5328762680292,
+              "min_us": 564.6038334816694,
+              "p50_us": 716.8444572016597,
+              "p95_us": 1084.8802048712969,
+              "requests": 200,
+              "reset": 0
+            },
+            "messages_received": 200
+          },
+          "dashboard": {
+            "classic_page": {
+              "complete": 200,
+              "max_us": 44699.705205857754,
+              "min_us": 28660.461073741317,
+              "p50_us": 30835.11593285948,
+              "p95_us": 35803.94294112921,
+              "requests": 200,
+              "reset": 0
+            },
+            "snapshot_json": {
+              "complete": 200,
+              "max_us": 43283.75798650086,
+              "min_us": 28704.711003229022,
+              "p50_us": 31064.006965607405,
+              "p95_us": 36252.571968361735,
+              "requests": 200,
+              "reset": 0
+            }
+          },
+          "host": {
+            "cpu": "x86_64",
+            "isolation": "shared host, serial loopback",
+            "pid": 202694,
+            "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3"
+          },
+          "pane": {
+            "injected": 5,
+            "max_us": 839388.9770377427,
+            "measured": true,
+            "min_us": 825931.8720083684,
+            "p50_us": 831570.9410235286,
+            "wakes": 5
+          },
+          "requests": 200
+        }
+      },
+      {
+        "candidate": {
+          "a2a": {
+            "agent_card": {
+              "complete": 200,
+              "max_us": 6446.824874728918,
+              "min_us": 247.02120572328568,
+              "p50_us": 356.08047619462013,
+              "p95_us": 632.2080735117197,
+              "requests": 200,
+              "reset": 0
+            },
+            "host_refusal": {
+              "complete": 200,
+              "max_us": 997.7309964597225,
+              "min_us": 243.61209943890572,
+              "p50_us": 328.90657894313335,
+              "p95_us": 668.5580592602491,
+              "requests": 200,
+              "reset": 0
+            },
+            "message_send": {
+              "complete": 200,
+              "max_us": 15884.683933109045,
+              "min_us": 551.8309772014618,
+              "p50_us": 709.5595356076956,
+              "p95_us": 1166.8831575661898,
+              "requests": 200,
+              "reset": 0
+            },
+            "messages_received": 200
+          },
+          "dashboard": {
+            "classic_page": {
+              "complete": 200,
+              "max_us": 48294.35399733484,
+              "min_us": 28750.941855832934,
+              "p50_us": 31070.151017047465,
+              "p95_us": 37318.84015724063,
+              "requests": 200,
+              "reset": 0
+            },
+            "snapshot_json": {
+              "complete": 200,
+              "max_us": 45881.76007382572,
+              "min_us": 28747.995849698782,
+              "p50_us": 30909.386929124594,
+              "p95_us": 35344.99206580222,
+              "requests": 200,
+              "reset": 0
+            }
+          },
+          "host": {
+            "cpu": "x86_64",
+            "isolation": "shared host, serial loopback",
+            "pid": 209643,
+            "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3"
+          },
+          "pane": {
+            "injected": 5,
+            "max_us": 856561.4682156593,
+            "measured": true,
+            "min_us": 824825.2200428396,
+            "p50_us": 835163.404000923,
+            "wakes": 5
+          },
+          "requests": 200
+        },
+        "load_before": {
+          "candidate": "8.21 7.20 5.49",
+          "parent": "8.41 7.11 5.41"
+        },
+        "pair": 2,
+        "parent": {
+          "a2a": {
+            "agent_card": {
+              "complete": 200,
+              "max_us": 4058.6781688034534,
+              "min_us": 338.8200420886278,
+              "p50_us": 574.8105468228459,
+              "p95_us": 1313.542015850544,
+              "requests": 200,
+              "reset": 0
+            },
+            "host_refusal": {
+              "complete": 200,
+              "max_us": 657.097902148962,
+              "min_us": 266.1829348653555,
+              "p50_us": 326.1980600655079,
+              "p95_us": 466.3020372390747,
+              "requests": 200,
+              "reset": 0
+            },
+            "message_send": {
+              "complete": 200,
+              "max_us": 4528.086865320802,
+              "min_us": 662.8541741520166,
+              "p50_us": 1251.3729743659496,
+              "p95_us": 2698.492957279086,
+              "requests": 200,
+              "reset": 0
+            },
+            "messages_received": 200
+          },
+          "dashboard": {
+            "classic_page": {
+              "complete": 200,
+              "max_us": 40059.89502184093,
+              "min_us": 28978.972928598523,
+              "p50_us": 31159.290461800992,
+              "p95_us": 35593.63796375692,
+              "requests": 200,
+              "reset": 0
+            },
+            "snapshot_json": {
+              "complete": 200,
+              "max_us": 49182.66390450299,
+              "min_us": 28848.581947386265,
+              "p50_us": 31756.387557834387,
+              "p95_us": 37158.47386047244,
+              "requests": 200,
+              "reset": 0
+            }
+          },
+          "host": {
+            "cpu": "x86_64",
+            "isolation": "shared host, serial loopback",
+            "pid": 207450,
+            "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3"
+          },
+          "pane": {
+            "injected": 5,
+            "max_us": 836725.153028965,
+            "measured": true,
+            "min_us": 823685.044888407,
+            "p50_us": 828814.5419210196,
+            "wakes": 5
+          },
+          "requests": 200
+        }
+      },
+      {
+        "candidate": {
+          "a2a": {
+            "agent_card": {
+              "complete": 200,
+              "max_us": 8792.261127382517,
+              "min_us": 244.01606060564518,
+              "p50_us": 295.45649886131287,
+              "p95_us": 494.32204104959965,
+              "requests": 200,
+              "reset": 0
+            },
+            "host_refusal": {
+              "complete": 200,
+              "max_us": 1455.3740620613098,
+              "min_us": 243.19393560290337,
+              "p50_us": 336.7804456502199,
+              "p95_us": 635.6090307235718,
+              "requests": 200,
+              "reset": 0
+            },
+            "message_send": {
+              "complete": 200,
+              "max_us": 16738.67995850742,
+              "min_us": 542.6870193332434,
+              "p50_us": 761.758885346353,
+              "p95_us": 1300.0410981476307,
+              "requests": 200,
+              "reset": 0
+            },
+            "messages_received": 200
+          },
+          "dashboard": {
+            "classic_page": {
+              "complete": 200,
+              "max_us": 65584.23792012036,
+              "min_us": 29189.02295641601,
+              "p50_us": 33875.372959300876,
+              "p95_us": 41932.18005821109,
+              "requests": 200,
+              "reset": 0
+            },
+            "snapshot_json": {
+              "complete": 200,
+              "max_us": 46395.74303291738,
+              "min_us": 28469.732031226158,
+              "p50_us": 30603.452469222248,
+              "p95_us": 34872.94493243098,
+              "requests": 200,
+              "reset": 0
+            }
+          },
+          "host": {
+            "cpu": "x86_64",
+            "isolation": "shared host, serial loopback",
+            "pid": 214708,
+            "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3"
+          },
+          "pane": {
+            "injected": 5,
+            "max_us": 835367.1659715474,
+            "measured": true,
+            "min_us": 820990.1838563383,
+            "p50_us": 827711.5698438138,
+            "wakes": 5
+          },
+          "requests": 200
+        },
+        "load_before": {
+          "candidate": "7.14 7.05 5.51",
+          "parent": "7.69 7.14 5.49"
+        },
+        "pair": 3,
+        "parent": {
+          "a2a": {
+            "agent_card": {
+              "complete": 200,
+              "max_us": 1963.0070310086012,
+              "min_us": 266.67886413633823,
+              "p50_us": 359.19598303735256,
+              "p95_us": 730.1841396838427,
+              "requests": 200,
+              "reset": 0
+            },
+            "host_refusal": {
+              "complete": 200,
+              "max_us": 1117.573818191886,
+              "min_us": 233.0539282411337,
+              "p50_us": 291.07986483722925,
+              "p95_us": 443.4760194271803,
+              "requests": 200,
+              "reset": 0
+            },
+            "message_send": {
+              "complete": 200,
+              "max_us": 2706.2699664384127,
+              "min_us": 556.096900254488,
+              "p50_us": 761.7244264110923,
+              "p95_us": 1330.2001170814037,
+              "requests": 200,
+              "reset": 0
+            },
+            "messages_received": 200
+          },
+          "dashboard": {
+            "classic_page": {
+              "complete": 200,
+              "max_us": 41835.10015718639,
+              "min_us": 28905.065963044763,
+              "p50_us": 32064.850558526814,
+              "p95_us": 37248.502019792795,
+              "requests": 200,
+              "reset": 0
+            },
+            "snapshot_json": {
+              "complete": 200,
+              "max_us": 50247.78004735708,
+              "min_us": 28547.530993819237,
+              "p50_us": 31091.345590539277,
+              "p95_us": 36023.22703227401,
+              "requests": 200,
+              "reset": 0
+            }
+          },
+          "host": {
+            "cpu": "x86_64",
+            "isolation": "shared host, serial loopback",
+            "pid": 212268,
+            "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3"
+          },
+          "pane": {
+            "injected": 5,
+            "max_us": 837524.5810020715,
+            "measured": true,
+            "min_us": 824439.4441135228,
+            "p50_us": 833783.6519349366,
+            "wakes": 5
+          },
+          "requests": 200
+        }
+      }
+    ]
+  },
+  "harness_sha256": "d4d06490cb2451d1aff18111a321d9e18fb01cb5b0c53456ebe85e7a159c5730",
+  "isolation": "shared workstation; serial nice19; MemoryMax1536M; no reserved CPU/storage",
+  "measurement_cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+  "median_of_run_medians_us": {
+    "candidate": {
+      "a2a.agent_card": 286.3170811906457,
+      "a2a.host_refusal": 261.3214310258627,
+      "a2a.message_send": 709.9208887666464,
+      "dashboard.classic_page": 29941.9000511989,
+      "dashboard.snapshot_json": 29991.340008564293,
+      "pane.wake": 826091.8089654297
+    },
+    "parent": {
+      "a2a.agent_card": 379.3450305238366,
+      "a2a.host_refusal": 397.55599573254585,
+      "a2a.message_send": 1043.1900154799223,
+      "dashboard.classic_page": 30616.03952664882,
+      "dashboard.snapshot_json": 30440.06193522364,
+      "pane.wake": 821563.9609843493
+    }
+  },
+  "pairs": [
+    {
+      "candidate": {
+        "a2a": {
+          "agent_card": {
+            "complete": 200,
+            "max_us": 8536.518085747957,
+            "min_us": 269.8521129786968,
+            "p50_us": 438.9550304040313,
+            "p95_us": 773.9050779491663,
+            "requests": 200,
+            "reset": 0
+          },
+          "host_refusal": {
+            "complete": 200,
+            "max_us": 486.917095258832,
+            "min_us": 233.0509014427662,
+            "p50_us": 291.6341181844473,
+            "p95_us": 411.0019654035568,
+            "requests": 200,
+            "reset": 0
+          },
+          "message_send": {
+            "complete": 200,
+            "max_us": 14100.458938628435,
+            "min_us": 579.6861369162798,
+            "p50_us": 806.5439760684967,
+            "p95_us": 1279.4339563697577,
+            "requests": 200,
+            "reset": 0
+          },
+          "messages_received": 200
+        },
+        "dashboard": {
+          "classic_page": {
+            "complete": 200,
+            "max_us": 100220.94496525824,
+            "min_us": 28499.977895990014,
+            "p50_us": 32286.579022184014,
+            "p95_us": 42177.57098376751,
+            "requests": 200,
+            "reset": 0
+          },
+          "snapshot_json": {
+            "complete": 200,
+            "max_us": 88978.6088373512,
+            "min_us": 28706.273064017296,
+            "p50_us": 33840.448944829404,
+            "p95_us": 44631.658121943474,
+            "requests": 200,
+            "reset": 0
+          }
+        },
+        "host": {
+          "cpu": "x86_64",
+          "isolation": "shared host, serial loopback",
+          "pid": 318434,
+          "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3"
+        },
+        "pane": {
+          "injected": 5,
+          "max_us": 902180.1529452205,
+          "measured": true,
+          "min_us": 840716.8651465327,
+          "p50_us": 872985.1359967142,
+          "wakes": 5
+        },
+        "requests": 200
+      },
+      "load_before": {
+        "candidate": "8.94 7.01 6.14",
+        "parent": "7.72 6.67 6.01"
+      },
+      "pair": 1,
+      "parent": {
+        "a2a": {
+          "agent_card": {
+            "complete": 200,
+            "max_us": 5697.909044101834,
+            "min_us": 296.58409766852856,
+            "p50_us": 520.749599672854,
+            "p95_us": 1890.6979821622372,
+            "requests": 200,
+            "reset": 0
+          },
+          "host_refusal": {
+            "complete": 200,
+            "max_us": 3224.6930059045553,
+            "min_us": 241.52384139597416,
+            "p50_us": 397.55599573254585,
+            "p95_us": 707.3581218719482,
+            "requests": 200,
+            "reset": 0
+          },
+          "message_send": {
+            "complete": 200,
+            "max_us": 9078.955044969916,
+            "min_us": 710.3378884494305,
+            "p50_us": 1257.8164460137486,
+            "p95_us": 4147.863946855068,
+            "requests": 200,
+            "reset": 0
+          },
+          "messages_received": 200
+        },
+        "dashboard": {
+          "classic_page": {
+            "complete": 200,
+            "max_us": 40505.66512160003,
+            "min_us": 28646.275866776705,
+            "p50_us": 31080.911634489894,
+            "p95_us": 36224.986892193556,
+            "requests": 200,
+            "reset": 0
+          },
+          "snapshot_json": {
+            "complete": 200,
+            "max_us": 46035.04785336554,
+            "min_us": 28694.164007902145,
+            "p50_us": 31493.261456489563,
+            "p95_us": 37674.73017796874,
+            "requests": 200,
+            "reset": 0
+          }
+        },
+        "host": {
+          "cpu": "x86_64",
+          "isolation": "shared host, serial loopback",
+          "pid": 315469,
+          "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3"
+        },
+        "pane": {
+          "injected": 5,
+          "max_us": 850469.958037138,
+          "measured": true,
+          "min_us": 821615.481050685,
+          "p50_us": 829996.5739715844,
+          "wakes": 5
+        },
+        "requests": 200
+      }
+    },
+    {
+      "candidate": {
+        "a2a": {
+          "agent_card": {
+            "complete": 200,
+            "max_us": 7443.356793373823,
+            "min_us": 222.804956138134,
+            "p50_us": 286.3170811906457,
+            "p95_us": 405.3320735692978,
+            "requests": 200,
+            "reset": 0
+          },
+          "host_refusal": {
+            "complete": 200,
+            "max_us": 531.5910093486309,
+            "min_us": 220.28805688023567,
+            "p50_us": 261.3214310258627,
+            "p95_us": 343.5630351305008,
+            "requests": 200,
+            "reset": 0
+          },
+          "message_send": {
+            "complete": 200,
+            "max_us": 23834.930965676904,
+            "min_us": 481.34103417396545,
+            "p50_us": 709.9208887666464,
+            "p95_us": 1184.5289263874292,
+            "requests": 200,
+            "reset": 0
+          },
+          "messages_received": 200
+        },
+        "dashboard": {
+          "classic_page": {
+            "complete": 200,
+            "max_us": 37582.16113783419,
+            "min_us": 28501.46498531103,
+            "p50_us": 29941.9000511989,
+            "p95_us": 32312.06606142223,
+            "requests": 200,
+            "reset": 0
+          },
+          "snapshot_json": {
+            "complete": 200,
+            "max_us": 40479.49891537428,
+            "min_us": 28520.177118480206,
+            "p50_us": 29991.340008564293,
+            "p95_us": 33748.85302037001,
+            "requests": 200,
+            "reset": 0
+          }
+        },
+        "host": {
+          "cpu": "x86_64",
+          "isolation": "shared host, serial loopback",
+          "pid": 326581,
+          "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3"
+        },
+        "pane": {
+          "injected": 5,
+          "max_us": 827473.9740882069,
+          "measured": true,
+          "min_us": 817687.1340256184,
+          "p50_us": 826091.8089654297,
+          "wakes": 5
+        },
+        "requests": 200
+      },
+      "load_before": {
+        "candidate": "8.90 7.27 6.26",
+        "parent": "9.22 7.21 6.22"
+      },
+      "pair": 2,
+      "parent": {
+        "a2a": {
+          "agent_card": {
+            "complete": 200,
+            "max_us": 1444.0100640058517,
+            "min_us": 223.91602396965027,
+            "p50_us": 286.81091498583555,
+            "p95_us": 428.2998852431774,
+            "requests": 200,
+            "reset": 0
+          },
+          "host_refusal": {
+            "complete": 200,
+            "max_us": 3467.0529421418905,
+            "min_us": 298.958970233798,
+            "p50_us": 402.2094653919339,
+            "p95_us": 649.8049478977919,
+            "requests": 200,
+            "reset": 0
+          },
+          "message_send": {
+            "complete": 200,
+            "max_us": 2071.6399885714054,
+            "min_us": 583.3690520375967,
+            "p50_us": 973.4383784234524,
+            "p95_us": 1554.492162540555,
+            "requests": 200,
+            "reset": 0
+          },
+          "messages_received": 200
+        },
+        "dashboard": {
+          "classic_page": {
+            "complete": 200,
+            "max_us": 37291.20106436312,
+            "min_us": 28831.108938902617,
+            "p50_us": 30616.03952664882,
+            "p95_us": 34190.11505320668,
+            "requests": 200,
+            "reset": 0
+          },
+          "snapshot_json": {
+            "complete": 200,
+            "max_us": 53605.44612631202,
+            "min_us": 28716.75416827202,
+            "p50_us": 30440.06193522364,
+            "p95_us": 33410.51493771374,
+            "requests": 200,
+            "reset": 0
+          }
+        },
+        "host": {
+          "cpu": "x86_64",
+          "isolation": "shared host, serial loopback",
+          "pid": 323113,
+          "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3"
+        },
+        "pane": {
+          "injected": 5,
+          "max_us": 824864.0359379351,
+          "measured": true,
+          "min_us": 820368.4829641134,
+          "p50_us": 820709.8911516368,
+          "wakes": 5
+        },
+        "requests": 200
+      }
+    },
+    {
+      "candidate": {
+        "a2a": {
+          "agent_card": {
+            "complete": 200,
+            "max_us": 8354.514837265015,
+            "min_us": 219.12693046033382,
+            "p50_us": 255.14198932796717,
+            "p95_us": 356.77896812558174,
+            "requests": 200,
+            "reset": 0
+          },
+          "host_refusal": {
+            "complete": 200,
+            "max_us": 394.7238437831402,
+            "min_us": 217.07103587687016,
+            "p50_us": 246.91002909094095,
+            "p95_us": 318.15399415791035,
+            "requests": 200,
+            "reset": 0
+          },
+          "message_send": {
+            "complete": 200,
+            "max_us": 10099.813807755709,
+            "min_us": 489.0770651400089,
+            "p50_us": 632.0865359157324,
+            "p95_us": 855.6779939681292,
+            "requests": 200,
+            "reset": 0
+          },
+          "messages_received": 200
+        },
+        "dashboard": {
+          "classic_page": {
+            "complete": 200,
+            "max_us": 35390.76494053006,
+            "min_us": 28422.188945114613,
+            "p50_us": 29708.691406995058,
+            "p95_us": 32655.598828569055,
+            "requests": 200,
+            "reset": 0
+          },
+          "snapshot_json": {
+            "complete": 200,
+            "max_us": 39827.427826821804,
+            "min_us": 28370.868880301714,
+            "p50_us": 29723.10653422028,
+            "p95_us": 31529.851024970412,
+            "requests": 200,
+            "reset": 0
+          }
+        },
+        "host": {
+          "cpu": "x86_64",
+          "isolation": "shared host, serial loopback",
+          "pid": 331151,
+          "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3"
+        },
+        "pane": {
+          "injected": 5,
+          "max_us": 827335.5790879577,
+          "measured": true,
+          "min_us": 818462.693830952,
+          "p50_us": 821613.2069937885,
+          "wakes": 5
+        },
+        "requests": 200
+      },
+      "load_before": {
+        "candidate": "6.47 6.83 6.16",
+        "parent": "7.26 7.00 6.19"
+      },
+      "pair": 3,
+      "parent": {
+        "a2a": {
+          "agent_card": {
+            "complete": 200,
+            "max_us": 1950.3869116306305,
+            "min_us": 265.6560391187668,
+            "p50_us": 379.3450305238366,
+            "p95_us": 615.8601026982069,
+            "requests": 200,
+            "reset": 0
+          },
+          "host_refusal": {
+            "complete": 200,
+            "max_us": 881.6500194370747,
+            "min_us": 294.64298859238625,
+            "p50_us": 356.7973617464304,
+            "p95_us": 459.0940661728382,
+            "requests": 200,
+            "reset": 0
+          },
+          "message_send": {
+            "complete": 200,
+            "max_us": 3687.4820943921804,
+            "min_us": 652.7630612254143,
+            "p50_us": 1043.1900154799223,
+            "p95_us": 2048.6328285187483,
+            "requests": 200,
+            "reset": 0
+          },
+          "messages_received": 200
+        },
+        "dashboard": {
+          "classic_page": {
+            "complete": 200,
+            "max_us": 37143.8660658896,
+            "min_us": 28398.50215241313,
+            "p50_us": 29889.769037254155,
+            "p95_us": 32477.09502466023,
+            "requests": 200,
+            "reset": 0
+          },
+          "snapshot_json": {
+            "complete": 200,
+            "max_us": 42433.20086970925,
+            "min_us": 28660.160023719072,
+            "p50_us": 30171.01949080825,
+            "p95_us": 33507.90613330901,
+            "requests": 200,
+            "reset": 0
+          }
+        },
+        "host": {
+          "cpu": "x86_64",
+          "isolation": "shared host, serial loopback",
+          "pid": 328889,
+          "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3"
+        },
+        "pane": {
+          "injected": 5,
+          "max_us": 832517.9950334132,
+          "measured": true,
+          "min_us": 818823.7180002034,
+          "p50_us": 821563.9609843493,
+          "wakes": 5
+        },
+        "requests": 200
+      }
+    }
+  ],
+  "recorded_at": "2026-10-12T19:31:12.556592+00:00"
+}

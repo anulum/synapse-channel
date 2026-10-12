@@ -14,7 +14,6 @@ import contextlib
 import json
 import threading
 import time
-import uuid
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from functools import partial
@@ -48,11 +47,6 @@ from synapse_channel.dashboard_bind import (
     _resolve_dashboard_token,
     validate_dashboard_bind,
 )
-from synapse_channel.dashboard_cockpit import (
-    COCKPIT_ASSETS,
-    load_cockpit_asset_bytes,
-)
-from synapse_channel.dashboard_feed_cache import DashboardFeedCache
 from synapse_channel.dashboard_feed_serving import (
     FeedResponse,
     serve_causality,
@@ -77,6 +71,20 @@ from synapse_channel.dashboard_fleet_mirror import (
     fleet_mirror_response,
     load_mirror_grants,
 )
+from synapse_channel.dashboard_handler_binding import (
+    DashboardFeedCache as DashboardFeedCache,
+)
+from synapse_channel.dashboard_handler_binding import (
+    DashboardSnapshotGate as DashboardSnapshotGate,
+)
+from synapse_channel.dashboard_handler_binding import (
+    DashboardSnapshotSource,
+    DashboardViewSettings,
+    bind_dashboard_readers,
+)
+from synapse_channel.dashboard_handler_binding import (
+    HostSessionMonitor as HostSessionMonitor,
+)
 from synapse_channel.dashboard_host_guard import (
     allowed_host_authorities,
     host_allowed,
@@ -87,15 +95,58 @@ from synapse_channel.dashboard_host_sessions import (
     host_session_response,
     load_host_grants,
 )
-from synapse_channel.dashboard_live_transport import (
-    LIVE_TRANSPORT_CHANNELS,
+from synapse_channel.dashboard_http_live import (
+    LIVE_TRANSPORT_CHANNELS as LIVE_TRANSPORT_CHANNELS,
+)
+from synapse_channel.dashboard_http_live import (
     LIVE_TRANSPORT_CONTENT_TYPE,
     LIVE_TRANSPORT_PATH,
-    LiveFrameSequence,
-    LiveTransportCursor,
-    decode_feed_response,
-    parse_diagnostic_cycles,
-    snapshot_fingerprint,
+    LiveStreamBindings,
+    serve_dashboard_live,
+)
+from synapse_channel.dashboard_http_live import (
+    LiveFrameSequence as LiveFrameSequence,
+)
+from synapse_channel.dashboard_http_live import (
+    LiveTransportCursor as LiveTransportCursor,
+)
+from synapse_channel.dashboard_http_live import (
+    decode_feed_response as decode_feed_response,
+)
+from synapse_channel.dashboard_http_live import (
+    parse_diagnostic_cycles as parse_diagnostic_cycles,
+)
+from synapse_channel.dashboard_http_live import (
+    snapshot_fingerprint as snapshot_fingerprint,
+)
+from synapse_channel.dashboard_http_live import (
+    uuid as uuid,
+)
+from synapse_channel.dashboard_http_pages import (
+    COCKPIT_ASSETS as COCKPIT_ASSETS,
+)
+from synapse_channel.dashboard_http_pages import (
+    STUDIO_COMMAND_PATH as STUDIO_COMMAND_PATH,
+)
+from synapse_channel.dashboard_http_pages import (
+    STUDIO_REFERENCE_PATH as STUDIO_REFERENCE_PATH,
+)
+from synapse_channel.dashboard_http_pages import (
+    SnapshotPageBindings,
+    serve_page_shell,
+    serve_snapshot_page,
+)
+from synapse_channel.dashboard_http_pages import (
+    build_studio_snapshot as build_studio_snapshot,
+)
+from synapse_channel.dashboard_http_pages import (
+    load_cockpit_asset_bytes as load_cockpit_asset_bytes,
+)
+from synapse_channel.dashboard_http_pages import (
+    render_studio_command_html as render_studio_command_html,
+)
+from synapse_channel.dashboard_http_pages import (
+    render_studio_reference_html as render_studio_reference_html,
 )
 from synapse_channel.dashboard_operator import WriteRateLimiter
 from synapse_channel.dashboard_operator_writes import (
@@ -111,17 +162,7 @@ from synapse_channel.dashboard_postmortem_feed import POSTMORTEM_PATH
 from synapse_channel.dashboard_render import render_dashboard_html
 from synapse_channel.dashboard_risk import build_risk_view
 from synapse_channel.dashboard_risk_guidance import build_risk_guidance
-from synapse_channel.dashboard_snapshot_gate import DashboardSnapshotGate
 from synapse_channel.dashboard_store_feeds import event_store_key
-from synapse_channel.dashboard_studio import (
-    STUDIO_REFERENCE_PATH,
-    render_studio_reference_html,
-)
-from synapse_channel.dashboard_studio_command import (
-    STUDIO_COMMAND_PATH,
-    render_studio_command_html,
-)
-from synapse_channel.host_sessions import HostSessionMonitor
 from synapse_channel.observed_peers import (
     ObservedPeerSnapshot,
     ObservedPeerSpec,
@@ -130,7 +171,7 @@ from synapse_channel.observed_peers import (
     observed_peers_to_dict,
 )
 from synapse_channel.prompt_bind_http import PromptBindThreadingHTTPServer
-from synapse_channel.studio_snapshot import STUDIO_SNAPSHOT_PATH, build_studio_snapshot
+from synapse_channel.studio_snapshot import STUDIO_SNAPSHOT_PATH
 
 SnapshotMapping = dict[str, Any]
 """Mutable mapping shape used for hub snapshot payloads."""
@@ -579,45 +620,23 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._do_get_routed()
 
     def _do_get_routed(self) -> None:
-        """Route a GET after auth and SQLCipher key binding."""
+        """Route an admitted GET to its shell, feed or bounded snapshot page."""
         path = urlsplit(self.path).path
         if path == LIVE_TRANSPORT_PATH:
             self._serve_live_transport(urlsplit(self.path).query)
             return
-        asset_name = path.lstrip("/")
-        if asset_name in COCKPIT_ASSETS:
-            self._write(
-                HTTPStatus.OK,
-                load_cockpit_asset_bytes(asset_name),
-                content_type=COCKPIT_ASSETS[asset_name],
-            )
-            return
-        if path == STUDIO_REFERENCE_PATH:
-            # The Studio design-system reference renders no live data, so it serves
-            # without reaching the hub — a stable visual reference even when offline.
-            self._write(
-                HTTPStatus.OK,
-                render_studio_reference_html().encode("utf-8"),
-                content_type="text/html",
-            )
-            return
-        if path in {STUDIO_COMMAND_PATH, "/"}:
-            # Studio command centre is the dashboard front door: hub-independent shell
-            # that fills in from /studio.json. Classic hub HTML remains at /classic.
-            self._write(
-                HTTPStatus.OK,
-                render_studio_command_html(
-                    poll_seconds=self.refresh_seconds,
-                    snapshot_timeout_seconds=self.ready_timeout
-                    + self.response_timeout
-                    + (self.observed_timeout if self.observed_peers else 0)
-                    + 4.0,
-                ).encode("utf-8"),
-                content_type="text/html",
-            )
+        if serve_page_shell(
+            path,
+            refresh_seconds=self.refresh_seconds,
+            snapshot_timeout_seconds=self.ready_timeout
+            + self.response_timeout
+            + (self.observed_timeout if self.observed_peers else 0)
+            + 4.0,
+            write=self._write,
+        ):
             return
         if path == "/classic":
-            # Legacy instrument HTML that fetches a live hub snapshot server-side.
+            # Legacy instrument HTML fetches a live hub snapshot server-side.
             path = "/index.html"
         feed = self._feed_response(path, urlsplit(self.path).query)
         if feed is not None:
@@ -626,41 +645,21 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if path not in {"/index.html", "/classic", "/snapshot.json", STUDIO_SNAPSHOT_PATH}:
             self._write(HTTPStatus.NOT_FOUND, b"not found\n", content_type="text/plain")
             return
-        try:
-            snapshot = self.snapshot_gate.fetch(wait_timeout=1.0)
-        except TimeoutError:
-            self._write(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                b"snapshot busy or collection deadline exceeded; retry later\n",
-                content_type="text/plain",
-            )
-            return
-        except DashboardUnavailable as exc:
-            body = f"{exc}\n".encode()
-            self._write(HTTPStatus.SERVICE_UNAVAILABLE, body, content_type="text/plain")
-            return
-        if path == "/snapshot.json":
-            self._write(
-                HTTPStatus.OK,
-                _json_bytes(snapshot, a2a_state_file=self.a2a_state_file),
-                content_type="application/json",
-            )
-            return
-        if path == STUDIO_SNAPSHOT_PATH:
-            studio = build_studio_snapshot(snapshot.to_dict(a2a_state_file=self.a2a_state_file))
-            self._write(
-                HTTPStatus.OK,
-                json.dumps(studio, ensure_ascii=False, sort_keys=True).encode("utf-8"),
-                content_type="application/json",
-            )
-            return
-        # /classic and /index.html — server-side hub snapshot HTML (pre-Studio cockpit).
-        html_body = render_dashboard_html(
-            snapshot,
-            refresh_seconds=self.refresh_seconds,
-            a2a_state_file=self.a2a_state_file,
-        ).encode("utf-8")
-        self._write(HTTPStatus.OK, html_body, content_type="text/html")
+        serve_snapshot_page(
+            path,
+            SnapshotPageBindings(
+                fetch=partial(self.snapshot_gate.fetch, wait_timeout=1.0),
+                unavailable_error=DashboardUnavailable,
+                json_bytes=partial(_json_bytes, a2a_state_file=self.a2a_state_file),
+                html=partial(
+                    render_dashboard_html,
+                    refresh_seconds=self.refresh_seconds,
+                    a2a_state_file=self.a2a_state_file,
+                ),
+                a2a_state_file=self.a2a_state_file,
+            ),
+            write=self._write,
+        )
 
     def do_POST(self) -> None:
         """Re-resolve one principal and relay only its exact route capability.
@@ -777,14 +776,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return serve_cockpit_dist(self.cockpit_dist, COCKPIT_DIST_PREFIX, path)
         return None
 
-    def _serve_live_transport(self, query: str) -> None:
-        """Serve snapshots and durable deltas over one versioned NDJSON stream."""
-        try:
-            cycle_limit = parse_diagnostic_cycles(query)
-        except ValueError as exc:
-            self._write(HTTPStatus.BAD_REQUEST, f"{exc}\n".encode(), content_type="text/plain")
-            return
-
+    def _start_live_transport(self) -> None:
+        """Write the unchanged live-stream headers before any frame."""
         self.send_response(HTTPStatus.OK.value)
         self.send_header("Content-Type", f"{LIVE_TRANSPORT_CONTENT_TYPE}; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
@@ -795,82 +788,26 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
 
-        frames = LiveFrameSequence(uuid.uuid4().hex)
-        cursors = LiveTransportCursor()
-        last_snapshot_fingerprint: str | None = None
-
-        def send(
-            kind: str,
-            *,
-            channel: str | None = None,
-            status: str | None = None,
-            data: object | None = None,
-            detail: str | None = None,
-        ) -> None:
-            self.wfile.write(
-                frames.encode(
-                    kind,
-                    sent_at=int(time.time() * 1000),
-                    channel=channel,
-                    status=status,
-                    data=data,
-                    detail=detail,
-                )
-            )
-            self.wfile.flush()
-
-        try:
-            send(
-                "hello",
-                status="live",
-                data={"channels": list(LIVE_TRANSPORT_CHANNELS), "cadence_ms": 2000},
-            )
-            cycles = 0
-            while cycle_limit is None or cycles < cycle_limit:
-                cycles += 1
-                try:
-                    snapshot = self.snapshot_gate.fetch(wait_timeout=1.0)
-                except (DashboardUnavailable, TimeoutError) as exc:
-                    send("channel", channel="snapshot", status="error", detail=str(exc))
-                else:
-                    snapshot_document = snapshot.to_dict(a2a_state_file=self.a2a_state_file)
-                    fingerprint = snapshot_fingerprint(snapshot_document)
-                    if fingerprint == last_snapshot_fingerprint:
-                        send("channel", channel="snapshot", status="unchanged")
-                    else:
-                        send(
-                            "channel",
-                            channel="snapshot",
-                            status="live",
-                            data=snapshot_document,
-                        )
-                        last_snapshot_fingerprint = fingerprint
-
-                feed_specs = (
+    def _serve_live_transport(self, query: str) -> None:
+        """Bind this admitted HTTP stream to the existing snapshot and feed owners."""
+        serve_dashboard_live(
+            query,
+            LiveStreamBindings(
+                fetch=partial(self.snapshot_gate.fetch, wait_timeout=1.0),
+                unavailable_error=DashboardUnavailable,
+                feed=self._feed_response,
+                feed_specs=lambda: (
                     ("events", EVENTS_PATH),
                     ("receipts", RECEIPTS_PATH),
                     ("operator_actions", OPERATOR_ACTIONS_PATH),
-                )
-                for channel, path in feed_specs:
-                    response = self._feed_response(path, cursors.query(channel))
-                    if response is None:
-                        send("channel", channel=channel, status="absent", detail="feed unavailable")
-                        continue
-                    status, data, detail = decode_feed_response(response)
-                    send(
-                        "channel",
-                        channel=channel,
-                        status=status,
-                        data=data,
-                        detail=detail,
-                    )
-                    if status == "live" and isinstance(data, dict):
-                        cursors.advance(channel, data)
-                if cycle_limit is None or cycles < cycle_limit:
-                    time.sleep(2.0)
-            send("close", status="complete", detail="bounded diagnostic stream complete")
-        except (BrokenPipeError, ConnectionResetError, TimeoutError):
-            return
+                ),
+                a2a_state_file=self.a2a_state_file,
+                start=self._start_live_transport,
+                write=self.wfile.write,
+                flush=self.wfile.flush,
+                refuse=self._write,
+            ),
+        )
 
     def _write_response(self, response: FeedResponse) -> None:
         """Write one computed feed/operator response through ``_write``."""
@@ -938,115 +875,63 @@ def _handler_class(
     allow_hosts: tuple[str, ...],
 ) -> type[_DashboardHandler]:
     """Create an isolated handler class for one dashboard server."""
-    bound_uri = uri
-    bound_name = name
-    bound_token = token
-    bound_ready_timeout = ready_timeout
-    bound_response_timeout = response_timeout
-    bound_refresh_seconds = refresh_seconds
-    bound_a2a_state_file = a2a_state_file
-    bound_access_policy = access_policy
-    bound_reliability_db = reliability_db
-    bound_reliability_db_key_file = reliability_db_key_file
-    bound_attention_store = attention_store
-    bound_federation_store = federation_store
-    bound_cockpit_dist = cockpit_dist
-    bound_operator_rate_limiter = operator_rate_limiter
-    bound_observed_peers = observed_peers
-    bound_observed_token = observed_token
-    bound_observed_pins = observed_pins
-    bound_observed_timeout = observed_timeout
-    bound_allow_hosts = allow_hosts
-    bound_heavy_feed_cache = DashboardFeedCache(process_isolation=bound_reliability_db is not None)
-    bound_state_feed_cache = DashboardFeedCache(
-        ttl_seconds=15.0,
-        max_entries=64,
-        process_isolation=bound_reliability_db is not None,
+    source = DashboardSnapshotSource(
+        uri=uri,
+        name=name,
+        token=token,
+        ready_timeout=ready_timeout,
+        response_timeout=response_timeout,
+        observed_peers=observed_peers,
+        observed_token=observed_token,
+        observed_timeout=observed_timeout,
+        observed_pins=observed_pins,
+    )
+    view = DashboardViewSettings(
+        refresh_seconds=refresh_seconds,
+        a2a_state_file=a2a_state_file,
+        access_policy=access_policy,
+        reliability_db=reliability_db,
+        reliability_db_key_file=reliability_db_key_file,
+        attention_store=attention_store,
+        federation_store=federation_store,
+        cockpit_dist=cockpit_dist,
+        operator_rate_limiter=operator_rate_limiter,
+        allow_hosts=allow_hosts,
+    )
+    readers = bind_dashboard_readers(
+        source,
+        view,
+        fetcher=lambda: fetch_dashboard_snapshot,
+        cache_factory=DashboardFeedCache,
+        unavailable_error=DashboardUnavailable,
     )
 
-    def _fetch_bound_snapshot() -> DashboardSnapshot:
-        return asyncio.run(
-            asyncio.wait_for(
-                fetch_dashboard_snapshot(
-                    uri=bound_uri,
-                    name=bound_name,
-                    token=bound_token,
-                    ready_timeout=bound_ready_timeout,
-                    response_timeout=bound_response_timeout,
-                    observed_peers=bound_observed_peers,
-                    observed_token=bound_observed_token,
-                    observed_timeout=bound_observed_timeout,
-                    observed_pins=bound_observed_pins,
-                ),
-                timeout=bound_ready_timeout
-                + bound_response_timeout
-                + (bound_observed_timeout if bound_observed_peers else 0)
-                + 1.0,
-            )
-        )
-
-    bound_snapshot_gate = DashboardSnapshotGate(_fetch_bound_snapshot)
-
-    def _host_coordination() -> tuple[tuple[str, ...], tuple[tuple[str, str], ...]]:
-        snapshot = bound_snapshot_gate.fetch(
-            wait_timeout=0.05,
-            fetcher=lambda: asyncio.run(
-                fetch_dashboard_snapshot(
-                    uri=bound_uri,
-                    name=bound_name,
-                    token=bound_token,
-                    ready_timeout=0.5,
-                    response_timeout=0.5,
-                )
-            ),
-        )
-        claims = snapshot.state.get("active_claims", [])
-        active: list[tuple[str, str]] = []
-        if len(snapshot.online_agents) > 1024 or (isinstance(claims, list) and len(claims) > 1024):
-            raise DashboardUnavailable("host coordination observation exceeds limit")
-        if isinstance(claims, list):
-            for claim in claims[:1024]:
-                if not isinstance(claim, dict):
-                    continue
-                owner, task = claim.get("owner"), claim.get("task_id")
-                expiry = claim.get("lease_expires_at")
-                if (
-                    isinstance(owner, str)
-                    and isinstance(task, str)
-                    and isinstance(expiry, (int, float))
-                    and expiry > time.time()
-                ):
-                    active.append((owner, task))
-        return tuple(snapshot.online_agents[:1024]), tuple(active)
-
-    bound_host_monitor = HostSessionMonitor(coordination=_host_coordination)
-
     class BoundDashboardHandler(_DashboardHandler):
-        """Dashboard handler bound to one hub URI and dashboard identity."""
+        """Dashboard handler bound independently to one hub and local read owners."""
 
-        uri = bound_uri
-        dashboard_name = bound_name
-        token = bound_token
-        ready_timeout = bound_ready_timeout
-        response_timeout = bound_response_timeout
-        refresh_seconds = bound_refresh_seconds
-        a2a_state_file = bound_a2a_state_file
-        access_policy = bound_access_policy
-        reliability_db = bound_reliability_db
-        reliability_db_key_file = bound_reliability_db_key_file
-        attention_store = bound_attention_store
-        federation_store = bound_federation_store
-        cockpit_dist = bound_cockpit_dist
-        operator_rate_limiter = bound_operator_rate_limiter
-        observed_peers = bound_observed_peers
-        observed_token = bound_observed_token
-        observed_timeout = bound_observed_timeout
-        observed_pins = bound_observed_pins
-        allowed_extra_hosts = bound_allow_hosts
-        heavy_feed_cache = bound_heavy_feed_cache
-        state_feed_cache = bound_state_feed_cache
-        snapshot_gate = bound_snapshot_gate
-        host_session_monitor = bound_host_monitor
+        uri = source.uri
+        dashboard_name = source.name
+        token = source.token
+        ready_timeout = source.ready_timeout
+        response_timeout = source.response_timeout
+        refresh_seconds = view.refresh_seconds
+        a2a_state_file = view.a2a_state_file
+        access_policy = view.access_policy
+        reliability_db = view.reliability_db
+        reliability_db_key_file = view.reliability_db_key_file
+        attention_store = view.attention_store
+        federation_store = view.federation_store
+        cockpit_dist = view.cockpit_dist
+        operator_rate_limiter = view.operator_rate_limiter
+        observed_peers = source.observed_peers
+        observed_token = source.observed_token
+        observed_timeout = source.observed_timeout
+        observed_pins = source.observed_pins
+        allowed_extra_hosts = view.allow_hosts
+        heavy_feed_cache = readers.heavy_feed_cache
+        state_feed_cache = readers.state_feed_cache
+        snapshot_gate = readers.snapshot_gate
+        host_session_monitor = readers.host_session_monitor
 
     return BoundDashboardHandler
 

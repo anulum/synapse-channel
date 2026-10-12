@@ -13,14 +13,13 @@ import argparse
 import json
 import threading
 from collections.abc import Iterator
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 
 from a2a_server_helpers import _default_bridge, _free_port
 from synapse_channel import cli, cli_a2a_interop
-from synapse_channel.a2a_http import build_a2a_handler
+from synapse_channel.a2a_http import make_a2a_http_server
 from synapse_channel.a2a_interop_trace import RECEIPT_SCHEMA
 from synapse_channel.a2a_outbound_response import A2AReceiptWriteError
 from synapse_channel.a2a_server import A2ABridge
@@ -30,7 +29,7 @@ from synapse_channel.a2a_server import A2ABridge
 def live_bridge() -> Iterator[tuple[A2ABridge, int]]:
     """Run the production A2A HTTP handler on a disposable loopback port."""
     bridge = _default_bridge()
-    server = ThreadingHTTPServer(("127.0.0.1", _free_port()), build_a2a_handler(bridge))
+    server = make_a2a_http_server(bridge=bridge, host="127.0.0.1", port=_free_port())
     bridge.allowed_authorities = (f"127.0.0.1:{server.server_port}",)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

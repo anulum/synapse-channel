@@ -38,6 +38,7 @@ import subprocess  # nosec B404
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Protocol
 
@@ -806,160 +807,25 @@ def inject_wake(
         observable consumption succeed. A queued wake returns zero with
         ``injected`` false.
     """
+    from synapse_channel.pane_wake import PaneWakeBindings, inject_pane_wake
+
     del unsafe_payload
-    binding_valid, binding_detail = _session_binding(config, runner=runner)
-    if not binding_valid:
-        _write_registry(config, pending_wake=True)
-        return AgentTmuxWakeResult(
-            injected=False,
-            started=False,
-            returncode=BINDING_REFUSAL_EXIT_CODE,
-            detail=f"refusing wake injection: {binding_detail}",
-        )
-    provider = _provider_family(config)
-    if provider is None:
-        _write_registry(config, last_inject_returncode=0, pending_wake=True)
-        return AgentTmuxWakeResult(
-            injected=False,
-            started=False,
-            returncode=0,
-            detail="wake queued: provider has no fail-closed idle profile",
-        )
-    prompt = build_wake_prompt(config.identity)
-    prompt_staged = _wake_prompt_staged(config)
-    if prompt_staged:
-        screen, capture_detail = _capture_pane(config, runner=runner)
-        if screen is None:
-            safe, safety_detail = False, capture_detail
-        elif _staged_wake_was_consumed(provider, screen, prompt):
-            _write_registry(
-                config,
-                last_inject_returncode=0,
-                pending_wake=False,
-                wake_prompt_staged=False,
-            )
-            return AgentTmuxWakeResult(
-                injected=True,
-                started=False,
-                returncode=0,
-                detail="staged wake consumption observed; not repasted",
-            )
-        else:
-            safe, safety_detail = _screen_is_safe_for_submit(
-                provider,
-                screen,
-                required_text=prompt,
-            )
-    else:
-        safe, safety_detail = _pane_is_safe_for_submit(config, runner=runner)
-    if not safe:
-        _write_registry(
-            config,
-            last_inject_returncode=0,
-            pending_wake=True,
-            wake_prompt_staged=prompt_staged,
-        )
-        return AgentTmuxWakeResult(
-            injected=False,
-            started=False,
-            returncode=0,
-            detail=f"wake queued: {safety_detail}",
-        )
-    if prompt_staged:
-        return _submit_staged_wake(
-            config,
-            provider,
-            prompt,
-            runner=runner,
-            sleeper=sleeper,
-        )
-    buffer_name = f"synapse-wake-{_safe_key(config.identity)}"
-    buffer_proc = runner(
-        [
-            config.tmux_bin,
-            "set-buffer",
-            "-b",
-            buffer_name,
-            "--",
-            prompt,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+    ports = PaneWakeBindings(
+        binding=partial(_session_binding, config, runner=runner),
+        provider=partial(_provider_family, config),
+        prompt=partial(build_wake_prompt, config.identity),
+        staged=partial(_wake_prompt_staged, config),
+        capture=partial(_capture_pane, config, runner=runner),
+        consumed=_staged_wake_was_consumed,
+        screen_safe=_screen_is_safe_for_submit,
+        pane_safe=partial(_pane_is_safe_for_submit, config, runner=runner),
+        submit=partial(_submit_staged_wake, config, runner=runner, sleeper=sleeper),
+        record=partial(_write_registry, config),
+        buffer_key=partial(_safe_key, config.identity),
+        result=AgentTmuxWakeResult,
+        binding_refusal_code=BINDING_REFUSAL_EXIT_CODE,
     )
-    if buffer_proc.returncode != 0:
-        _write_registry(
-            config,
-            last_inject_returncode=buffer_proc.returncode,
-            pending_wake=True,
-            wake_prompt_staged=False,
-        )
-        return AgentTmuxWakeResult(
-            injected=False,
-            started=False,
-            returncode=buffer_proc.returncode,
-            detail=(buffer_proc.stderr or buffer_proc.stdout).strip() or "buffer setup failed",
-        )
-    paste_proc = runner(
-        [
-            config.tmux_bin,
-            "paste-buffer",
-            "-b",
-            buffer_name,
-            "-d",
-            "-p",
-            "-t",
-            config.session,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if paste_proc.returncode != 0:
-        _write_registry(
-            config,
-            last_inject_returncode=paste_proc.returncode,
-            pending_wake=True,
-            wake_prompt_staged=False,
-        )
-        return AgentTmuxWakeResult(
-            injected=False,
-            started=False,
-            returncode=paste_proc.returncode,
-            detail=(paste_proc.stderr or paste_proc.stdout).strip() or "paste failed",
-        )
-    _write_registry(
-        config,
-        last_inject_returncode=0,
-        pending_wake=True,
-        wake_prompt_staged=True,
-    )
-    sleeper(max(config.submit_delay, 0.0))
-    safe, safety_detail = _pane_is_safe_for_submit(
-        config,
-        runner=runner,
-        required_text=prompt,
-    )
-    if not safe:
-        _write_registry(
-            config,
-            last_inject_returncode=0,
-            pending_wake=True,
-            wake_prompt_staged=True,
-        )
-        return AgentTmuxWakeResult(
-            injected=False,
-            started=False,
-            returncode=0,
-            detail=f"wake queued after paste: {safety_detail}",
-        )
-    return _submit_staged_wake(
-        config,
-        provider,
-        prompt,
-        runner=runner,
-        sleeper=sleeper,
-    )
+    return inject_pane_wake(config, ports, runner=runner, sleeper=sleeper)
 
 
 def status(

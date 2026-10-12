@@ -15,10 +15,9 @@ import socket
 import threading
 import time
 from dataclasses import dataclass
-from http.server import ThreadingHTTPServer
 from typing import Any
 
-from synapse_channel.a2a_http import build_a2a_handler
+from synapse_channel.a2a_http import make_a2a_http_server
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
 
@@ -165,7 +164,9 @@ class HandlerHarness:
             # Keep the real HTTP harness explicit and bounded in that setup too.
             self.handler.bridge.allowed_authorities = ("example.test",)
         port = _free_port()
-        server = ThreadingHTTPServer(("127.0.0.1", port), build_a2a_handler(self.handler.bridge))
+        # The product's own server class, so that a route test meets the same
+        # edge a deployment has: admission bound, read deadline and orderly close.
+        server = make_a2a_http_server(bridge=self.handler.bridge, host="127.0.0.1", port=port)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:

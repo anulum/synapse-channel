@@ -12,11 +12,14 @@ from __future__ import annotations
 
 import contextlib
 import json
+import select
 import socket
+import struct
 import threading
 import time
 from collections.abc import Callable
 from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler
 from typing import Any
 
 import pytest
@@ -283,6 +286,193 @@ def test_concurrent_capacity_refuses_with_503_and_releases() -> None:
         free_status, free_body = _await_capacity_free(port, timeout=5.0)
         assert free_status == int(HTTPStatus.OK)
         assert free_body.get("name") == "SYNAPSE CHANNEL"
+
+
+_LATE_BODY_BYTES = 4096
+
+
+def _refused_with_a_late_body(port: int, host: str) -> tuple[bytes, int]:
+    """Send a request head, read the answer to its end, then send the body.
+
+    Returns the raw answer and the error pending on the client's socket after
+    the late body went out. A server that closed while request bytes were
+    unread leaves a reset there; an orderly end leaves zero.
+    """
+    head = (
+        "POST /message:send HTTP/1.1\r\n"
+        f"Host: {host}\r\n"
+        "Content-Type: application/json\r\n"
+        f"Content-Length: {_LATE_BODY_BYTES}\r\n"
+        "\r\n"
+    ).encode("ascii")
+    sock = socket.create_connection(("127.0.0.1", port), timeout=5.0)
+    try:
+        sock.sendall(head)
+        answer = b""
+        while part := sock.recv(65536):
+            answer += part
+        sock.sendall(b" " * _LATE_BODY_BYTES)
+        time.sleep(0.3)
+        return answer, sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+    finally:
+        sock.close()
+
+
+def _framed(raw: bytes) -> tuple[int, dict[str, Any]]:
+    """Parse an answer and require that its body is as long as it declares."""
+    header, _, body = raw.partition(b"\r\n\r\n")
+    declared = [
+        int(line.split(b":", 1)[1])
+        for line in header.split(b"\r\n")[1:]
+        if line.lower().startswith(b"content-length:")
+    ]
+    assert declared == [len(body)]
+    return _parse_http_response(raw)
+
+
+def _reasons(body: dict[str, Any]) -> list[Any]:
+    details = (body.get("error") or {}).get("details") or []
+    return [item.get("reason") for item in details if isinstance(item, dict)]
+
+
+def test_a_capacity_refusal_reaches_the_client_whole_and_ends_without_a_reset() -> None:
+    """The refusal is complete and the connection ends in order, body unread."""
+    agent = _HoldOpenAgent()
+    with _running_server(
+        _bridge(agent), max_concurrent_requests=1, request_read_timeout_seconds=5.0
+    ) as (_server, port):
+        outcome: list[tuple[int, dict[str, Any]]] = []
+        holder = threading.Thread(
+            target=lambda: outcome.append(_post_message_send(port, timeout=5.0)), daemon=True
+        )
+        holder.start()
+        assert agent.entered.wait(timeout=2.0), "first request never entered the agent"
+
+        answer, pending_error = _refused_with_a_late_body(port, "example.test")
+
+        agent.release.set()
+        holder.join(timeout=5.0)
+        status, body = _framed(answer)
+        assert status == int(HTTPStatus.SERVICE_UNAVAILABLE)
+        assert "A2A_HTTP_CAPACITY_EXHAUSTED" in _reasons(body)
+        assert pending_error == 0
+        assert [item[0] for item in outcome] == [int(HTTPStatus.OK)]
+        assert len(agent.messages) == 1
+
+
+def test_a_host_refusal_reaches_the_client_whole_and_ends_without_a_reset() -> None:
+    """A request refused before its body is answered whole; the body is never dispatched."""
+    agent = RecordingAgent()
+    bridge = _bridge(agent)
+    bridge.allowed_authorities = ("example.test",)
+    with _running_server(bridge) as (_server, port):
+        answer, pending_error = _refused_with_a_late_body(port, "attacker.test")
+
+        status, body = _framed(answer)
+        assert status == int(HTTPStatus.FORBIDDEN)
+        assert "ORIGIN_OR_HOST_NOT_ALLOWED" in _reasons(body)
+        assert pending_error == 0
+        assert agent.messages == []
+        assert bridge.store.list_tasks() == []
+
+
+class _FailsOnRequest(BaseHTTPRequestHandler):
+    """Raise for ``/fail`` and answer every other path."""
+
+    def do_GET(self) -> None:
+        if self.path == "/fail":
+            raise RuntimeError("handler failed on purpose")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+    def log_message(self, _format: str, *_args: object) -> None:
+        return None
+
+
+def _plain_get(port: int, path: str) -> bytes:
+    sock = socket.create_connection(("127.0.0.1", port), timeout=5.0)
+    try:
+        sock.sendall(f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".encode("ascii"))
+        answer = b""
+        while part := sock.recv(65536):
+            answer += part
+        return answer
+    finally:
+        sock.close()
+
+
+def test_a_failing_handler_is_reported_and_gives_its_slot_back(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A handler that raises ends its connection, is reported, and frees the only slot."""
+    server = A2AHTTPServer(("127.0.0.1", 0), _FailsOnRequest, max_concurrent_requests=1)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+
+        failed = _plain_get(port, "/fail")
+        deadline = time.monotonic() + 5.0
+        served = _plain_get(port, "/served")
+        while not served.startswith(b"HTTP/1.0 200") and time.monotonic() < deadline:
+            time.sleep(0.02)
+            served = _plain_get(port, "/served")
+    finally:
+        server.shutdown()
+        thread.join(timeout=5.0)
+        server.server_close()
+
+    assert failed == b""
+    assert served.endswith(b"\r\n\r\nok")
+    assert "handler failed on purpose" in capsys.readouterr().err
+
+
+def test_a_capacity_refusal_to_a_client_that_already_reset_closes_the_connection() -> None:
+    """The refusal cannot be written; the connection is closed and nothing is kept waiting."""
+    agent = _HoldOpenAgent()
+    with _running_server(
+        _bridge(agent), max_concurrent_requests=1, request_read_timeout_seconds=5.0
+    ) as (server, port):
+        outcome: list[tuple[int, dict[str, Any]]] = []
+        holder = threading.Thread(
+            target=lambda: outcome.append(_post_message_send(port, timeout=5.0)), daemon=True
+        )
+        holder.start()
+        assert agent.entered.wait(timeout=2.0), "first request never entered the agent"
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        client = socket.create_connection(listener.getsockname(), timeout=5.0)
+        accepted, address = listener.accept()
+        listener.close()
+        # A zero linger time makes the client's close a reset, which the accepted side then holds.
+        client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        client.close()
+        # The reset makes the accepted side readable. The wait is shorter than the
+        # holder's patience.
+        select.select([accepted], [], [accepted], 2.0)
+
+        server.process_request(accepted, address)
+
+        # Where the reset already shows on shutdown the close is immediate; elsewhere the
+        # closer meets it on its next pass.
+        deadline = time.monotonic() + 3.0
+        while (
+            accepted.fileno() != -1 or server.lingering_closer.pending
+        ) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        closed = accepted.fileno() == -1
+        waiting = server.lingering_closer.pending
+        agent.release.set()
+        holder.join(timeout=5.0)
+        free_status, _ = _await_capacity_free(port, timeout=5.0)
+
+    assert closed
+    assert waiting == 0
+    assert [item[0] for item in outcome] == [int(HTTPStatus.OK)]
+    assert free_status == int(HTTPStatus.OK)
 
 
 def test_await_capacity_free_tolerates_a_lagging_slot_release() -> None:

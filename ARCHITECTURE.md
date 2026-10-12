@@ -67,6 +67,34 @@ representative modules, not every file.
 | Workers and routing | `client/chat_backends`, `client/routing`, `core/semantic_routing`, `participants/`, `core/workflow*` | Pluggable reply backends, task-class routing to tiered backends, multi-participant deliberation, declarative workflows. |
 | Observability and operations | `core/metrics`, `observability_textfile`, `otel_export`, `core/postmortem`, `core/dark_seat`, `core/stall`, `reap`, `update_check`, `benchmark/` | Prometheus metrics, node-exporter textfiles, OpenTelemetry export, post-mortem bundles, dark-seat alerts, stalled-task detection, committed benchmarks. |
 
+### HTTP and terminal boundary owners
+
+`a2a_http.build_a2a_handler` binds an independent bridge to each server.
+`a2a_http_handler` owns bounded body reads, response encoding and request
+admission; `a2a_http_routes` retains the ordered discovery, task, message and
+push-configuration routes. Capacity and accepted-socket deadlines remain with
+the HTTP server.
+
+Both HTTP servers share `prompt_bind_http`, which binds without a reverse name
+lookup and ends each connection in order. `lingering_close` keeps a connection
+whose request was not read to its end open just long enough to discard the
+rest, within fixed bounds of time, bytes and count, so that the client keeps
+the answer it was sent. One thread per server does this; no request thread and
+no admission slot is held.
+
+The dashboard handler retains host/access checks, operator writes and feed
+routing. `dashboard_http_pages` prepares shells and snapshot pages;
+`dashboard_http_live` emits bounded NDJSON frames and feed cursors;
+`dashboard_handler_binding` creates each server's snapshot gate, caches and
+host monitor. Snapshot collection remains late-bound to the facade.
+
+`agent_tmux.inject_wake` binds the exact pane probes and registry writer to
+`pane_wake`. Binding and idle checks precede mutation; a successful paste is
+recorded before the second safety probe and observed submission. A failed paste
+retains a pending, unstaged wake. An uncertain staged wake is never pasted again.
+These Python ownership boundaries retain the existing HTTP, CLI and client
+contracts; they add no vendor control commands or configuration authority.
+
 ## Coordination model
 
 ### Frame admission and serving lifetime

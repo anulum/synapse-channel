@@ -2693,6 +2693,11 @@ Operational boundaries:
   receive deterministic `408 Request Timeout` with reason `A2A_HTTP_READ_TIMEOUT`
   before JSON-RPC or message dispatch. The existing `1 MiB` body cap still
   applies first.
+- A connection answered before its request was read to the end, such as a
+  capacity or `Host` refusal, ends in order: the bridge discards the remaining
+  request bytes for at most two seconds and two mebibytes, for at most 64
+  connections at once, and closes when the client closes. This holds no
+  admission slot and has no option.
 - Caller-supplied `taskId` and `contextId` values are restricted to bridge-safe
   characters. Duplicate caller task ids are rejected.
 - Webhook URLs must be HTTP(S), include a host, omit embedded credentials, and not
