@@ -125,6 +125,15 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Both HTTP servers (the A2A bridge and the dashboard) end a connection in
+  order. A connection answered before its request was read to the end, such
+  as a capacity or `Host` refusal, is kept only to discard the remaining
+  bytes: at most two seconds and two mebibytes per connection and 64
+  connections at once, on one thread per server and outside the admission
+  bound. On Windows the immediate close reached the client as a reset and
+  cost it the answer. A dashboard live-stream client that leaves ends its
+  stream quietly on Windows as elsewhere.
+
 - Split event storage into shared-connection table families and keyed mutation
   preparation/commit steps, preserving public signatures, records, transaction
   observers and durable outcomes. Journal replay dispatches through event-family
