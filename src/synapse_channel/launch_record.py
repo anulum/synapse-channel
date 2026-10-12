@@ -143,8 +143,12 @@ def file_identity(
     shown : str or None
         The path to record; the resolved ``path`` by default.
 
-    A file that cannot be opened, is not a regular file or is larger than
-    ``limit`` is returned without a digest and with the reason.
+    Returns
+    -------
+    FileIdentity
+        The path, size and digest. A file that cannot be opened, is not a
+        regular file or is larger than ``limit`` is returned without a digest
+        and with the reason.
     """
     named = os.path.realpath(path) if shown is None else shown
     # Without O_NONBLOCK, opening a named pipe would wait for a writer.
