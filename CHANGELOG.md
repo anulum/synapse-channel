@@ -33,6 +33,15 @@ All notable changes to this project are documented here.
   never an argument value, only a reference. `synapse ops list` and
   `synapse ops describe` read a catalogue file; nothing runs an operation
   yet. See `docs/operations.md`.
+  The catalogue is now version 2 (`operation-catalogue-v2`): a name is two or
+  three registered words (`object.aspect.action`) from a tracked vocabulary,
+  a row is identified also by component, transport and variant, it states how
+  its arguments are bound to the client's own command or request, every effect
+  it has and the one permission each effect needs, what it discloses and what
+  it asks of the caller. A row is admitted only while the executable found now
+  is the one that was qualified and the row is byte-for-byte what was
+  qualified. A version 1 file is still read, as an inventory that admits
+  nothing. `synapse ops` gained `--transport`.
 
 - Foundation of the wake relay: a seat is woken for a message over the first
   adapter that takes it, at most once. Before an adapter is asked its attempt

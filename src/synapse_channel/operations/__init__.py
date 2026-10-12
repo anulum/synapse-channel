@@ -7,7 +7,11 @@
 # SYNAPSE_CHANNEL — catalogue of operations that vendor clients offer
 """Operations that a vendor's client offers on a host, and how well each is known.
 
-:mod:`~synapse_channel.operations.spec` describes one operation;
-:mod:`~synapse_channel.operations.catalogue` holds the operations of a host
-and decides which of them may run. Being listed grants no authority.
+:mod:`~synapse_channel.operations.vocabulary` says which operation names
+exist; :mod:`~synapse_channel.operations.row` describes one operation of one
+answering component with its native binding;
+:mod:`~synapse_channel.operations.catalogue` holds the rows of a host and
+decides which of them may run. :mod:`~synapse_channel.operations.spec` is the
+description of the earlier schema, still read as an inventory that admits
+nothing. Being listed grants no authority.
 """

@@ -1,0 +1,79 @@
+{
+  "schema": "operation-vocabulary-v1",
+  "revision": 1,
+  "objects": {
+    "account": "the user's account with the vendor, as the client knows it",
+    "agent_definition": "a stored definition of an agent that the client can start; not a running agent",
+    "client": "the installed client program itself: its version, files and disk use",
+    "diagnostics": "the client's own checks and usage figures",
+    "feature": "a named switchable feature of the client",
+    "host": "the machine the client runs on, outside any session",
+    "integration": "a tool server or connector configured in the client",
+    "memory": "what the client keeps across sessions on the user's behalf",
+    "message": "one item of a session's conversation",
+    "model": "a model the client can use, and where models come from",
+    "plugin": "an installable extension of the client, whatever the vendor calls it",
+    "policy": "what the client may do without asking: permissions, sandbox, approval rules",
+    "project": "a directory or repository the client knows as a unit of work",
+    "queue": "messages waiting to enter a session",
+    "remote_task": "a task that runs in the vendor's own remote service; not a local task",
+    "service": "a long-running process of the client on this host",
+    "session": "one conversation of the client, whatever the vendor calls it",
+    "setting": "a configuration value of the client",
+    "skill": "a stored instruction set that the client can load into a session",
+    "turn": "one exchange inside a session",
+    "worktree": "a working copy that the client creates and manages; not a project"
+  },
+  "aspects": {
+    "account": {
+      "limits": "the rate limits that apply to the account now",
+      "status": "whether and how the client is signed in",
+      "usage": "what the account has used"
+    },
+    "client": {
+      "disk_usage": "what the client's own files use on disk",
+      "paths": "where the client keeps its data, configuration, cache and state",
+      "store": "where the client's session store is",
+      "version": "the version the installed client reports"
+    },
+    "diagnostics": {
+      "usage": "token and cost figures the client has recorded locally"
+    },
+    "integration": {
+      "auth": "the authentication state of integrations; never the credentials"
+    },
+    "model": {
+      "catalogue": "the catalogue of providers and models that can be added",
+      "provider": "a source of models configured in the client"
+    },
+    "plugin": {
+      "marketplace": "a configured source from which plugins are installed"
+    },
+    "policy": {
+      "defaults": "the rules the client ships with",
+      "requirements": "the rules an administrator imposes on the client"
+    },
+    "service": {
+      "log": "the service's own log",
+      "status": "whether the service runs and answers",
+      "version": "the version the running service reports"
+    },
+    "session": {
+      "goal": "the stated goal of the session",
+      "loaded": "the sessions the service holds in memory now",
+      "output": "the recent terminal output of a background session",
+      "usage": "token and cost figures of the session"
+    },
+    "setting": {
+      "effective": "the configuration as resolved from every source"
+    }
+  },
+  "actions": {
+    "check": "run the client's own checks and report; changes nothing",
+    "export": "write the object out in full to the caller; changes nothing",
+    "list": "name the objects that exist; changes nothing",
+    "read": "return one object or one aspect of it; changes nothing",
+    "search": "name the objects that match a query; changes nothing",
+    "validate": "say whether a stored object is well formed; changes nothing"
+  }
+}

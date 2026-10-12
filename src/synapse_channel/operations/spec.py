@@ -5,7 +5,13 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — description of one operation of a vendor client
-"""Describe one operation of one vendor client on one host.
+"""Describe one operation of one vendor client on one host, in the earlier schema.
+
+This is the description of ``operation-catalogue-v1``. It does not say how an
+operation is invoked, so the catalogue reads such rows as an inventory and
+admits none of them; :mod:`~synapse_channel.operations.row` is the current
+description. The vocabularies, the qualification levels and the typed scalar
+arguments defined here are shared by both.
 
 An operation is something a client can be asked to do: queue a message into
 a session, read a setting, change one. Its description says what it needs,
@@ -23,8 +29,9 @@ How well an operation is known is its **qualification**, in this order:
 ``accepted``
     Accepted after the runs its acceptance asks for, with an evidence reference.
 
-Only ``run_once`` and ``accepted`` operations may run, and both need a
-reference to their evidence.
+Only ``run_once`` and ``accepted`` state that an operation was run, and both
+need a reference to their evidence. Whether a row may run is decided by the
+catalogue, never by this statement alone.
 
 Arguments are typed. A secret is never an argument value: an argument of
 type ``secret_ref`` holds a reference (``ref:<name>``) that is resolved on
@@ -209,7 +216,7 @@ class OperationSpec:
 
     @property
     def runnable(self) -> bool:
-        """Return whether the qualification allows a run at all."""
+        """Return whether the description states a run; the catalogue admits none of these."""
         return self.qualification in RUNNABLE
 
     def arguments_from(self, raw: Mapping[str, str]) -> dict[str, object]:
