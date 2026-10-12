@@ -128,6 +128,9 @@ def test_the_first_word_is_resolved_as_a_start_would_resolve_it(tmp_path: Path) 
             executable_identity(empty)
 
 
+@pytest.mark.skipif(
+    not (LINUX or WINDOWS), reason="a start identity is read on Linux and Windows only"
+)
 def test_a_running_process_has_a_start_identity_and_an_image(
     sleeper: subprocess.Popen[bytes],
 ) -> None:
