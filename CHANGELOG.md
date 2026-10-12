@@ -13,6 +13,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.99.38] - 2026-10-13
+
 ### Added
 
 - Read-only delivery receipt projection joining the aggregate to its exact
