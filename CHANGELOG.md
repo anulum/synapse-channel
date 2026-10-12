@@ -43,6 +43,15 @@ All notable changes to this project are documented here.
   qualified. A version 1 file is still read, as an inventory that admits
   nothing. `synapse ops` gained `--transport`.
 
+- Launch records: `synapse worker-session` writes, for each provider it
+  starts, a new owner-only file with the digest of the executable the command
+  named, the created process with its start identity and the image it runs;
+  in a tmux-backed session the pane's process. Only the command's name, word
+  count and digest are kept. The record is the seat's own declaration, not an
+  attestation, and says so. A record that cannot be written is reported and
+  the session starts all the same. `LaunchRecordError` has stable code
+  `launch_record`. See the API reference.
+
 - Foundation of the wake relay: a seat is woken for a message over the first
   adapter that takes it, at most once. Before an adapter is asked its attempt
   is marked on disk, after it the outcome; `accepted` or `uncertain` ends the

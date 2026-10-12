@@ -482,3 +482,25 @@ bound is closed at once.
 ::: synapse_channel.lingering_close
 
 ::: synapse_channel.prompt_bind_http
+
+## Launch records
+
+`synapse worker-session` keeps a record of each provider it starts: which
+file the command named and the digest of its bytes, which process was created
+with its start identity, and the image that process runs. In a tmux-backed
+session the process recorded is the pane's. Of the command only its name, the
+number of its words and a digest of all of them are kept, since further words
+can hold secrets.
+
+A record is a new owner-only file under `synapse/launch-records` in the state
+directory the launch environment names, or under its home directory; an
+environment that names neither keeps no record. A record that cannot be made
+or written is reported on standard error and the session starts all the same.
+Records are never replaced and nothing prunes them.
+
+A record is the seat's own declaration, written under the same account as the
+session, and its `evidence_class` says so. It is not an attestation: whoever
+controls the account can write the same file, and nothing in it shows which
+provider the process connected to.
+
+::: synapse_channel.launch_record

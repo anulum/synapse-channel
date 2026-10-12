@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -138,8 +140,9 @@ binding = record.with_name(record.name + ".binding")
 if sys.argv[1:2] == ["has-session"]:
     raise SystemExit(1)
 if sys.argv[1:2] == ["display-message"]:
-    # A tmux server answers, so starting a session creates no new server.
-    print(4242)
+    # A tmux server answers, so starting a session creates no new server. The same
+    # answer serves as the pane's process number, which a test may set.
+    print(os.environ.get("TMUX_PANE_PID", "4242"))
 if sys.argv[1:2] == ["new-session"]:
     values = []
     args = sys.argv[1:]
@@ -801,3 +804,150 @@ def test_pid_is_alive_treats_an_empty_pidfile_as_dead(tmp_path: Path) -> None:
     pidfile = tmp_path / "waker.pid"
     pidfile.write_text("", encoding="utf-8")
     assert _pid_is_alive(pidfile) is False
+
+
+def _launch_records(state: Path) -> list[dict[str, Any]]:
+    directory = state / "synapse" / "launch-records"
+    if not directory.exists():
+        return []
+    return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.iterdir())]
+
+
+def test_worker_session_records_what_it_started(tmp_path: Path) -> None:
+    """A direct launch leaves one record of the command and of the process created."""
+    seen = tmp_path / "provider-pid"
+
+    code = run_worker_session(
+        identity="repo/recorded",
+        command=[
+            sys.executable,
+            "-c",
+            f"import os, pathlib; pathlib.Path({str(seen)!r}).write_text(str(os.getpid()))",
+        ],
+        arm=False,
+        environ={"XDG_STATE_HOME": str(tmp_path / "state")},
+    )
+
+    (record,) = _launch_records(tmp_path / "state")
+    assert code == 0
+    assert record["seat"] == "repo/recorded"
+    assert record["command_words"] == 3
+    assert record["command_name"] == os.path.basename(sys.executable)
+    # What is recorded is the process the launcher created. On Windows an environment's
+    # interpreter is a small starter that runs the real one as its child, so the program
+    # sees another number there.
+    assert isinstance(record["process"]["pid"], int)
+    if sys.platform != "win32":
+        assert record["process"]["pid"] == int(seen.read_text(encoding="utf-8"))
+    assert record["launcher_pid"] == os.getpid()
+    assert len(record["executable"]["sha256"]) == 64
+
+
+def test_worker_session_without_a_state_or_home_directory_keeps_no_record(tmp_path: Path) -> None:
+    code = run_worker_session(
+        identity="repo/unrecorded",
+        command=[sys.executable, "-c", "raise SystemExit(3)"],
+        arm=False,
+        environ={"UNRELATED": str(tmp_path)},
+    )
+
+    assert code == 3
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ("identity", "reason"),
+    [
+        ("repo/blocked", "launch record not written"),
+        ("repo/con\x07trol", "the seat is 1 to"),
+    ],
+)
+def test_worker_session_says_when_its_record_cannot_be_kept_and_still_runs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], identity: str, reason: str
+) -> None:
+    """An unwritable place or a seat no record can carry costs the record, not the session."""
+    blocked = tmp_path / "a-file"
+    blocked.write_text("x", encoding="ascii")
+    state = blocked if identity == "repo/blocked" else tmp_path / "state"
+
+    code = run_worker_session(
+        identity=identity,
+        command=[sys.executable, "-c", "raise SystemExit(7)"],
+        project="repo",
+        arm=False,
+        environ={"XDG_STATE_HOME": str(state)},
+    )
+
+    assert code == 7
+    assert "synapse worker-session: launch record not written" in capsys.readouterr().err
+    assert reason in "launch record not written" or _launch_records(tmp_path / "state") == []
+
+
+@pytest.mark.parametrize("answer", ["a real process", ""])
+def test_worker_session_records_the_pane_process_when_tmux_names_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str
+) -> None:
+    """The tmux path records the pane's process; without a number it records nothing."""
+    tmux = _recording_tmux(tmp_path / "tmux")
+    synapse = _recording_synapse(tmp_path / "synapse")
+    provider = _write_script(tmp_path / "codex", "raise SystemExit(0)")
+    pane = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    environ = {
+        "TMUX_RECORD": str(tmp_path / "tmux.json"),
+        "SYNAPSE_RECORD": str(tmp_path / "synapse.json"),
+        "XDG_RUNTIME_DIR": str(tmp_path),
+        "XDG_STATE_HOME": str(tmp_path / "state"),
+        "TMUX_PANE_PID": str(pane.pid) if answer else "",
+    }
+    for name, value in environ.items():
+        monkeypatch.setenv(name, value)
+    try:
+        code = run_worker_session(
+            identity="repo/codex-main",
+            command=[str(provider)],
+            project="repo",
+            synapse_bin=str(synapse),
+            tmux_bin=str(tmux),
+            terminal_tmux="on",
+            environ=environ,
+        )
+        records = _launch_records(tmp_path / "state")
+    finally:
+        pane.kill()
+        pane.wait()
+
+    assert code == 0
+    if answer:
+        (record,) = records
+        assert record["seat"] == "repo/codex-main"
+        assert record["process"]["pid"] == pane.pid
+        assert record["command_name"] == "codex"
+    else:
+        assert records == []
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="an interrupt signal is delivered differently")
+def test_worker_session_interrupted_while_waiting_does_not_leave_the_provider(
+    tmp_path: Path,
+) -> None:
+    """An interrupt of the launcher ends the provider it started."""
+    seen = tmp_path / "provider-pid"
+    interrupt = threading.Timer(1.0, lambda: os.kill(os.getpid(), signal.SIGINT))
+    interrupt.start()
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            run_worker_session(
+                identity="repo/interrupted",
+                command=[
+                    sys.executable,
+                    "-c",
+                    "import os, pathlib, time; "
+                    f"pathlib.Path({str(seen)!r}).write_text(str(os.getpid())); time.sleep(30)",
+                ],
+                arm=False,
+                environ={"UNRELATED": "1"},
+            )
+    finally:
+        interrupt.cancel()
+
+    assert not _process_exists(int(seen.read_text(encoding="utf-8")))

@@ -49,6 +49,7 @@ _SRC = Path(__file__).resolve().parent.parent / "src" / "synapse_channel"
 # A row may be ADDED for a new error class; an existing row must never change.
 # ---------------------------------------------------------------------------
 FROZEN_ERROR_CODES: dict[str, tuple[str, str, type[BaseException]]] = {
+    "LaunchRecordError": ("synapse_channel.launch_record", "launch_record", ValueError),
     "ReceiptProjectionError": (
         "synapse_channel.core.persistence_receipt_view",
         "receipt_projection",

@@ -20,6 +20,12 @@ from pathlib import Path
 
 from synapse_channel.agent_tmux import AgentTmuxConfig, start_session
 from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.launch_record import (
+    LaunchRecordError,
+    make_record,
+    record_dir_for,
+    write_record,
+)
 
 SIDECAR_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 """Seconds to wait for a wake sidecar to exit after graceful termination."""
@@ -195,6 +201,36 @@ def _attach_tmux_session(
     ).returncode
 
 
+def _record_launch(identity: str, command: Sequence[str], pid: int, env: Mapping[str, str]) -> None:
+    """Keep the record of one launch; say so and go on when it cannot be kept.
+
+    The session matters more than its record: a record that cannot be made or
+    written is reported on standard error and the launch continues. An
+    environment that names no state or home directory has no place for
+    records, and none is written.
+    """
+    directory = record_dir_for(env)
+    if directory is None:
+        return
+    try:
+        write_record(directory, make_record(seat=identity, command=command, pid=pid, environ=env))
+    except (LaunchRecordError, OSError) as exc:
+        print(f"synapse worker-session: launch record not written: {exc}", file=sys.stderr)
+
+
+def _run_provider(command: Sequence[str], env: Mapping[str, str]) -> int:
+    """Start the provider, record the launch, and wait for it to end."""
+    with subprocess.Popen(list(command), env=dict(env)) as provider:  # nosec B603
+        _record_launch(env["SYN_IDENTITY"], command, provider.pid, env)
+        try:
+            return provider.wait()
+        except BaseException:
+            # An interrupted wait must not leave the provider behind, running or unreaped.
+            provider.kill()
+            provider.wait()
+            raise
+
+
 def _run_terminal_tmux_session(
     *,
     identity: str,
@@ -224,6 +260,15 @@ def _run_terminal_tmux_session(
     if started.returncode != 0:
         print(started.detail)
         return started.returncode
+    pane = subprocess.run(  # nosec B603
+        [tmux_bin, "display-message", "-p", "-t", resolved_session, "#{pane_pid}"],
+        env=dict(env),
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    if pane.isdigit():
+        _record_launch(identity, command, int(pane), env)
     _start_tmux_waiter(
         identity=identity,
         session=resolved_session,
@@ -306,9 +351,7 @@ def run_worker_session(
             log_handle.close()
 
     try:
-        return subprocess.run(  # nosec B603
-            list(command), env=env, check=False
-        ).returncode
+        return _run_provider(command, env)
     finally:
         if sidecar is not None and sidecar.poll() is None:
             sidecar.terminate()
