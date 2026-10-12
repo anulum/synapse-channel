@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 
-from _platform_caps import requires_proc
+from _platform_caps import requires_proc, requires_script_launch
 from synapse_channel import cli, cli_services
 from synapse_channel.worker_session import run_worker_session
 
@@ -234,6 +234,7 @@ def _read_json_when_ready(path: Path) -> Any:
     raise AssertionError(f"{path} was not written")
 
 
+@requires_script_launch
 def test_worker_session_sets_identity_and_starts_sidecar(tmp_path: Path) -> None:
     sidecar_record = tmp_path / "sidecar.json"
     provider_record = tmp_path / "provider.json"
@@ -263,6 +264,7 @@ def test_worker_session_sets_identity_and_starts_sidecar(tmp_path: Path) -> None
     assert provider_payload["identity"] == "repo/ux"
 
 
+@requires_script_launch
 def test_worker_session_passes_sidecar_auth_options(tmp_path: Path) -> None:
     sidecar_record = tmp_path / "sidecar.json"
     provider_record = tmp_path / "provider.json"
@@ -346,6 +348,7 @@ def test_worker_session_rejects_invalid_tmux_mode() -> None:
         )
 
 
+@requires_script_launch
 def test_worker_session_auto_tmux_mode_runs_directly_without_tty(tmp_path: Path) -> None:
     provider_record = tmp_path / "provider.json"
     provider = _write_script(
@@ -372,6 +375,7 @@ pathlib.Path(os.environ["PROVIDER_RECORD"]).write_text("direct", encoding="utf-8
     assert provider_record.read_text(encoding="utf-8") == "direct"
 
 
+@requires_script_launch
 def test_worker_session_autostarts_interactive_provider_in_tmux(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -439,6 +443,7 @@ pathlib.Path({str(provider_record)!r}).write_text("direct provider ran", encodin
     assert not provider_record.exists()
 
 
+@requires_script_launch
 def test_worker_session_tmux_passes_auth_and_custom_uri(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -506,6 +511,7 @@ def test_worker_session_tmux_reuses_live_waiter_pid(
     assert not synapse_record.exists()
 
 
+@requires_script_launch
 def test_worker_session_tmux_restarts_stale_waiter_pid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -542,6 +548,7 @@ def test_worker_session_tmux_restarts_stale_waiter_pid(
     ]
 
 
+@requires_script_launch
 def test_worker_session_tmux_start_failure_returns_tmux_code(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -559,6 +566,7 @@ def test_worker_session_tmux_start_failure_returns_tmux_code(
     assert "tmux new-session failed" in capsys.readouterr().out
 
 
+@requires_script_launch
 def test_worker_session_tmux_autostart_can_be_disabled_by_env(tmp_path: Path) -> None:
     provider_record = tmp_path / "provider.json"
     provider = _write_script(
@@ -593,6 +601,7 @@ pathlib.Path(os.environ["PROVIDER_RECORD"]).write_text(
     assert payload["identity"] == "repo/codex-main"
 
 
+@requires_script_launch
 def test_worker_session_sidecar_output_goes_to_runtime_log(tmp_path: Path) -> None:
     sidecar = _write_script(
         tmp_path / "syn",
@@ -883,6 +892,7 @@ def test_worker_session_says_when_its_record_cannot_be_kept_and_still_runs(
     assert reason in "launch record not written" or _launch_records(tmp_path / "state") == []
 
 
+@requires_script_launch
 @pytest.mark.parametrize("answer", ["a real process", ""])
 def test_worker_session_records_the_pane_process_when_tmux_names_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str

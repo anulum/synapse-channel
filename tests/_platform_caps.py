@@ -112,3 +112,12 @@ requires_geteuid = pytest.mark.skipif(
     reason="os.geteuid is unavailable on this platform",
 )
 """Skip marker for tests that monkeypatch or call ``os.geteuid``."""
+
+#: The test starts a script file directly, through its interpreter line.
+#: Windows does not execute such a file as a program ("not a valid Win32
+#: application"), so there the test could only fail for a reason that is not
+#: the behaviour under test.
+requires_script_launch = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="starts a script file by its interpreter line, which Windows does not execute",
+)
