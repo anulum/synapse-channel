@@ -173,6 +173,22 @@ def _known_schema(connection: Any) -> bool:
     return True
 
 
+_RECEIPT_WITH_MAC = (
+    "SELECT r.state, r.sender, r.target, r.message_id, e.seq, e.ts, e.kind, e.payload, e.mac, "
+    "EXISTS(SELECT 1 FROM events INDEXED BY event_row_mac_idx WHERE mac IS NOT NULL LIMIT 1) "
+    "FROM delivery_receipts AS r JOIN events AS e ON e.seq = r.updated_event_seq "
+    "WHERE r.message_seq = ?"
+)
+"""The receipt with its source event, for a store whose events carry a row MAC."""
+
+_RECEIPT_WITHOUT_MAC = (
+    "SELECT r.state, r.sender, r.target, r.message_id, e.seq, e.ts, e.kind, e.payload, NULL, 0 "
+    "FROM delivery_receipts AS r JOIN events AS e ON e.seq = r.updated_event_seq "
+    "WHERE r.message_seq = ?"
+)
+"""The same projection for a store written before the row MAC column existed."""
+
+
 def _project(
     connection: Any, path: Path, message_seq: int, row_mac: RowMacKey | None
 ) -> DeliveryReceiptView | None:
@@ -182,19 +198,8 @@ def _project(
     if not _known_schema(connection):
         return None
     columns = {row[1] for row in connection.execute("PRAGMA table_info(events)")}
-    mac_column = "e.mac" if "mac" in columns else "NULL"
-    mac_presence = (
-        "EXISTS(SELECT 1 FROM events INDEXED BY event_row_mac_idx WHERE mac IS NOT NULL LIMIT 1)"
-        if "mac" in columns
-        else "0"
-    )
-    row = connection.execute(
-        "SELECT r.state, r.sender, r.target, r.message_id, e.seq, e.ts, e.kind, "
-        f"e.payload, {mac_column}, {mac_presence} "
-        "FROM delivery_receipts AS r JOIN events AS e ON e.seq = r.updated_event_seq "
-        "WHERE r.message_seq = ?",
-        (message_seq,),
-    ).fetchone()
+    query = _RECEIPT_WITH_MAC if "mac" in columns else _RECEIPT_WITHOUT_MAC
+    row = connection.execute(query, (message_seq,)).fetchone()
     if row is None or (row_mac is None and row_mac_key_path(path).exists()):
         return None
     return _decode_projection(row, message_seq, row_mac)
