@@ -33,13 +33,8 @@ second writer to use the DB-API connection at the same time.
 
 from __future__ import annotations
 
-import contextlib
-import hashlib
-import json
 import logging
-import os
 import threading
-import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 from types import TracebackType
@@ -49,15 +44,34 @@ from synapse_channel.core.atomic_operations import OperationRecord
 from synapse_channel.core.delivery_persistence import DeliveryPersistence
 from synapse_channel.core.event_row_mac import RowMacKey
 from synapse_channel.core.event_row_recovery import (
-    CORRUPT_EVENT_KIND,
     CorruptEventRow,
-    decode_event_row,
-    unauthenticated_row,
 )
 from synapse_channel.core.message_forward_ledger import MessageForwardLedger
+from synapse_channel.core.persistence_api import (
+    APPEND_DOCUMENTATION,
+    READ_ALL_DOCUMENTATION,
+    inherit_documentation,
+)
+from synapse_channel.core.persistence_connection import (
+    StoreConnection,
+    create_families,
+    restrict_file,
+)
+from synapse_channel.core.persistence_event_authentication import EventAuthentication
+from synapse_channel.core.persistence_event_maintenance import EventMaintenance
+from synapse_channel.core.persistence_event_reads import EventReader
+from synapse_channel.core.persistence_events import EventWriter
+from synapse_channel.core.persistence_operations import OperationTable, decode_operation
+from synapse_channel.core.persistence_receipt_codec import encode_object, prepare_transition
+from synapse_channel.core.persistence_receipts import ReceiptTable
+from synapse_channel.core.persistence_schema import (
+    create_aef_schema,
+    create_event_schema,
+    create_operation_schema,
+    create_receipt_schema,
+)
 
 BUSY_TIMEOUT_MS = 5000
-
 logger = logging.getLogger(__name__)
 
 
@@ -180,92 +194,38 @@ class EventStore:
         self._lock = threading.RLock()
         from synapse_channel.core.persistence_sqlcipher import connect_event_store
 
-        self._conn, self._encrypted = connect_event_store(
-            self.path,
-            key=key,
-            key_file=key_file,
-            check_same_thread=False,
+        connection, self._encrypted = connect_event_store(
+            self.path, key=key, key_file=key_file, check_same_thread=False
         )
         try:
-            # The event log holds chat, findings, and recall telemetry, so restrict
-            # it to the owner (0o600) where the platform supports it — encryption
-            # does not replace permissions.
+            self.storage = StoreConnection(
+                connection,
+                self._lock,
+                lambda ts, kind, payload: self._insert_event_row(ts, kind, payload),
+                lambda row, quarantine: self._stored_event(row, apply_row_quarantine=quarantine),
+                lambda transition, stamp: self._insert_delivery_receipt_transition(
+                    transition, stamp=stamp
+                ),
+            )
+            self._families = create_families(self.storage)
             self._restrict(self.path)
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
-            self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS events ("
-                "seq INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "ts REAL NOT NULL, "
-                "kind TEXT NOT NULL, "
-                "payload TEXT NOT NULL)"
-            )
-            self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS operations ("
-                "operation_key TEXT PRIMARY KEY, "
-                "request_digest TEXT NOT NULL, "
-                "response_json TEXT NOT NULL, "
-                "response_sha256 TEXT NOT NULL, "
-                "first_event_seq INTEGER NOT NULL, "
-                "commit_seq INTEGER NOT NULL, "
-                "committed_at REAL NOT NULL)"
-            )
-            self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS operation_outbox ("
-                "operation_key TEXT PRIMARY KEY, "
-                "intent_json TEXT NOT NULL, "
-                "receipt_id TEXT, "
-                "FOREIGN KEY(operation_key) REFERENCES operations(operation_key))"
-            )
-            self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS delivery_receipts ("
-                "message_seq INTEGER PRIMARY KEY, "
-                "sender TEXT NOT NULL, "
-                "target TEXT NOT NULL, "
-                "message_id INTEGER NOT NULL, "
-                "client_msg_id TEXT NOT NULL, "
-                "state TEXT NOT NULL, "
-                "delivered INTEGER, "
-                "deferred INTEGER NOT NULL, "
-                "acked_by TEXT NOT NULL, "
-                "updated_event_seq INTEGER NOT NULL, "
-                "FOREIGN KEY(message_seq) REFERENCES events(seq), "
-                "FOREIGN KEY(updated_event_seq) REFERENCES events(seq))"
-            )
-            self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS delivery_receipt_outbox ("
-                "notification_id TEXT PRIMARY KEY, "
-                "message_seq INTEGER NOT NULL, "
-                "phase TEXT NOT NULL, "
-                "sender TEXT NOT NULL, "
-                "frame_json TEXT NOT NULL, "
-                "attempts INTEGER NOT NULL DEFAULT 0, "
-                "delivered_at REAL, "
-                "FOREIGN KEY(message_seq) REFERENCES delivery_receipts(message_seq))"
-            )
-            self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS delivery_receipt_outbox_pending_idx "
-                "ON delivery_receipt_outbox(sender, delivered_at)"
-            )
+            create_event_schema(self._conn)
+            create_operation_schema(self._conn)
+            create_receipt_schema(self._conn)
             self._backfill_delivery_receipt_aggregates()
-            self._aef_outbox_kinds = frozenset(str(kind) for kind in aef_outbox_kinds)
-            if self._aef_outbox_kinds:
-                self._conn.execute(
-                    "CREATE TABLE IF NOT EXISTS aef_outbox ("
-                    "legacy_seq INTEGER PRIMARY KEY, "
-                    "receipt_id TEXT UNIQUE, "
-                    "FOREIGN KEY(legacy_seq) REFERENCES events(seq))"
-                )
-            self._has_aef_outbox = (
+            self.storage.aef_kinds = frozenset(str(kind) for kind in aef_outbox_kinds)
+            if self.storage.aef_kinds:
+                create_aef_schema(self._conn)
+            self.storage.has_aef_outbox = (
                 self._conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'aef_outbox'"
                 ).fetchone()
                 is not None
             )
             self._ensure_mac_column()
-            self._row_mac: RowMacKey | None = None
-            self._row_quarantine: dict[int, CorruptEventRow] = {}
             self.delivery = DeliveryPersistence(
                 self._conn,
                 self._lock,
@@ -273,77 +233,39 @@ class EventStore:
                 verify_recovery_authentication=self._verify_delivery_recovery_authentication,
             )
             self.message_forward = MessageForwardLedger(self._conn, self._lock)
-            self._conn.commit()
-            # WAL mode creates ``-wal`` and ``-shm`` sidecars on the first write (the
-            # ``CREATE TABLE`` commit above). They mirror the same content as the main
-            # file but are born under the process umask, so lock them down once they exist.
-            self._restrict(f"{self.path}-wal")
+            self._conn.commit()  # Schema writes create content-bearing WAL/SHM.
+            self._restrict(f"{self.path}-wal")  # Sidecars inherit the process umask.
             self._restrict(f"{self.path}-shm")
             self.delivery.verify_replay()
         except BaseException:
-            self._conn.close()
+            connection.close()
             raise
+
+    @property
+    def _conn(self) -> Any:
+        """Expose the historical connection seam through the shared owner."""
+        return self.storage.connection
+
+    @_conn.setter
+    def _conn(self, connection: Any) -> None:
+        """Retain connection replacement semantics for existing owner extensions."""
+        self.storage.connection = connection
 
     @property
     def encrypted(self) -> bool:
         """Return whether this store opened through SQLCipher page encryption."""
         return self._encrypted
 
-    def _restrict(self, path: str) -> None:
-        """Restrict ``path`` to owner-only access (``0o600``).
+    _restrict = staticmethod(restrict_file)
 
-        Parameters
-        ----------
-        path : str
-            Filesystem path to chmod. The ``:memory:`` database has no on-disk
-            file, and a sidecar may not exist yet; both cases are skipped silently,
-            as is any platform that does not support ``chmod``.
-        """
-        if path.startswith(":memory:"):
-            return
-        with contextlib.suppress(OSError):
-            os.chmod(path, 0o600)
-
+    @inherit_documentation(APPEND_DOCUMENTATION)
     def append(
-        self,
-        kind: str,
-        payload: dict[str, Any],
-        *,
-        ts: float | None = None,
-        durable: bool = False,
+        self, kind: str, payload: dict[str, Any], *, ts: float | None = None, durable: bool = False
     ) -> int:
-        """Append one event to the log and return its assigned sequence number.
-
-        Parameters
-        ----------
-        kind : str
-            Event kind tag.
-        payload : dict[str, Any]
-            JSON-serialisable event body.
-        ts : float or None, optional
-            Event timestamp, in seconds; the system clock is used when ``None``.
-        durable : bool, optional
-            When ``True`` the commit is synced at ``synchronous=FULL`` so it
-            survives an OS crash; when ``False`` it commits at ``NORMAL`` (durable
-            only against an application crash). Defaults to ``False``.
-
-        Returns
-        -------
-        int
-            The monotonic ``seq`` the row was assigned (the autoincrement primary
-            key). It is durable and never reused across restarts — unlike the
-            in-memory per-hub ``msg_id`` — so it is the stable cursor a reconnecting
-            client resumes a directed-message backlog from.
-
-        Notes
-        -----
-        A failed database write is rolled back. Durable attempts restore the
-        connection to ``synchronous=NORMAL``. If that cleanup alone fails after
-        COMMIT, the append remains successful and the cleanup failure is logged;
-        reporting a write failure at that point would contradict durable truth.
-        """
+        """Append one event to the log and return its assigned sequence number."""
         return self.append_batch(((kind, payload),), ts=ts, durable=durable)[0]
 
+    @inherit_documentation(EventWriter.append_batch)
     def append_batch(
         self,
         events: Iterable[tuple[str, Mapping[str, Any]]],
@@ -351,159 +273,37 @@ class EventStore:
         ts: float | None = None,
         durable: bool = False,
     ) -> tuple[int, ...]:
-        """Append several events in one SQLite transaction.
+        """Append several events in one SQLite transaction."""
+        return self._families.events.append_batch(events, ts=ts, durable=durable)
 
-        The whole batch commits or rolls back as one unit. All rows share one
-        timestamp so adjacent state and provenance events describe the same
-        authoritative transition.
+    _stored_operation = staticmethod(decode_operation)
 
-        Parameters
-        ----------
-        events : iterable[tuple[str, Mapping[str, Any]]]
-            Ordered ``(kind, payload)`` pairs.
-        ts : float or None, optional
-            Shared timestamp; the system clock is used when omitted.
-        durable : bool, optional
-            Use ``synchronous=FULL`` for the batch commit.
-
-        Returns
-        -------
-        tuple[int, ...]
-            Assigned sequence numbers in input order. An empty input returns
-            an empty tuple without opening a transaction.
-        """
-        stamp = time.time() if ts is None else float(ts)
-        rows = [
-            (
-                stamp,
-                str(kind),
-                json.dumps(dict(payload), ensure_ascii=True, separators=(",", ":")),
-            )
-            for kind, payload in events
-        ]
-        if not rows:
-            return ()
-        with self._lock:
-            if durable:
-                self._conn.execute("PRAGMA synchronous=FULL")
-            try:
-                sequences = []
-                for row in rows:
-                    sequence = self._insert_event_row(*row)
-                    sequences.append(sequence)
-                    if row[1] in self._aef_outbox_kinds:
-                        self._conn.execute(
-                            "INSERT INTO aef_outbox (legacy_seq, receipt_id) VALUES (?, NULL)",
-                            (sequence,),
-                        )
-                self._conn.commit()
-            except BaseException:
-                self._conn.rollback()
-                raise
-            finally:
-                if durable:
-                    try:
-                        self._conn.execute("PRAGMA synchronous=NORMAL")
-                    except BaseException:
-                        # The transaction outcome is already final. Reporting a
-                        # post-commit cleanup error as append failure would make a
-                        # caller roll back live state while the event remains
-                        # durable. FULL is correctness-safe (only slower), so keep
-                        # the committed outcome authoritative and make cleanup
-                        # failure observable without inverting journal truth.
-                        logger.exception("Could not restore SQLite synchronous=NORMAL")
-        return tuple(sequences)
-
-    @staticmethod
-    def _stored_operation(row: tuple[object, ...]) -> StoredOperation:
-        response = json.loads(str(row[2]))
-        if not isinstance(response, dict):
-            raise ValueError("stored operation response must be a JSON object")
-        return StoredOperation(
-            operation_key=str(row[0]),
-            request_digest=str(row[1]),
-            response=response,
-            response_sha256=str(row[3]),
-            first_event_seq=int(str(row[4])),
-            commit_seq=int(str(row[5])),
-            committed_at=float(str(row[6])),
-        )
-
+    @inherit_documentation(OperationTable.get_operation)
     def get_operation(self, operation_key: str) -> StoredOperation | None:
         """Return one completed operation without exposing the key in errors."""
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT operation_key, request_digest, response_json, response_sha256, "
-                "first_event_seq, commit_seq, committed_at FROM operations "
-                "WHERE operation_key = ?",
-                (operation_key,),
-            ).fetchone()
-        return None if row is None else self._stored_operation(row)
+        return self._families.operations.get_operation(operation_key)
 
+    @inherit_documentation(OperationTable.read_operations)
     def read_operations(self) -> tuple[OperationRecord, ...]:
         """Return durable operation records in commit order for cache seeding."""
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT operation_key, request_digest, response_json, response_sha256, "
-                "first_event_seq, commit_seq, committed_at FROM operations "
-                "ORDER BY commit_seq"
-            ).fetchall()
-        return tuple(
-            OperationRecord(
-                key=stored.operation_key,
-                request_digest=stored.request_digest,
-                response=stored.response,
-            )
-            for stored in (self._stored_operation(row) for row in rows)
-        )
+        return self._families.operations.read_operations()
 
+    @inherit_documentation(OperationTable.pending_operation_outbox_count)
     def pending_operation_outbox_count(self) -> int:
         """Return the number of committed operation intents awaiting projection."""
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT COUNT(*) FROM operation_outbox WHERE receipt_id IS NULL"
-            ).fetchone()
-        return int(row[0])
+        return self._families.operations.pending_operation_outbox_count()
 
+    @inherit_documentation(OperationTable.pending_operation_intents)
     def pending_operation_intents(self, *, limit: int = 100) -> tuple[PendingOperationIntent, ...]:
         """Return committed evidence intents awaiting idempotent local projection."""
-        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > 10_000:
-            raise ValueError("operation outbox limit must be an integer from 1 through 10000")
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT operation_key, intent_json FROM operation_outbox "
-                "WHERE receipt_id IS NULL ORDER BY rowid LIMIT ?",
-                (limit,),
-            ).fetchall()
-        intents: list[PendingOperationIntent] = []
-        for key, encoded in rows:
-            intent = json.loads(str(encoded))
-            if not isinstance(intent, dict):
-                raise ValueError("stored operation intent must be a JSON object")
-            intents.append(PendingOperationIntent(str(key), intent))
-        return tuple(intents)
+        return self._families.operations.pending_operation_intents(limit=limit)
 
+    @inherit_documentation(OperationTable.mark_operation_intent_delivered)
     def mark_operation_intent_delivered(self, operation_key: str, receipt_id: str) -> None:
         """Bind one operation intent to a value-free local projection receipt."""
-        if not operation_key or not receipt_id:
-            raise ValueError("operation outbox identity and receipt must be non-empty")
-        with self._lock:
-            self._conn.execute("PRAGMA synchronous=FULL")
-            try:
-                cursor = self._conn.execute(
-                    "UPDATE operation_outbox SET receipt_id = ? "
-                    "WHERE operation_key = ? AND (receipt_id IS NULL OR receipt_id = ?)",
-                    (receipt_id, operation_key, receipt_id),
-                )
-                if cursor.rowcount != 1:
-                    raise KeyError("operation evidence intent is absent or already settled")
-                self._conn.commit()
-            except BaseException:
-                self._conn.rollback()
-                raise
-            finally:
-                self._conn.execute("PRAGMA synchronous=NORMAL")
+        return self._families.operations.mark_operation_intent_delivered(operation_key, receipt_id)
 
+    @inherit_documentation(ReceiptTable.commit_delivery_receipt_request)
     def commit_delivery_receipt_request(
         self,
         *,
@@ -511,127 +311,17 @@ class EventStore:
         requested: Mapping[str, Any],
         stage_hook: Callable[[str], None] | None = None,
     ) -> int:
-        """Atomically commit a directed chat and its requested-receipt aggregate.
+        """Atomically commit a directed chat and its requested-receipt aggregate."""
+        return self._families.receipts.commit_delivery_receipt_request(
+            chat=chat, requested=requested, stage_hook=stage_hook
+        )
 
-        The chat sequence is assigned inside the transaction and injected into
-        the requested event and aggregate. A crash therefore leaves either both
-        facts or neither; it can never retain a directed body without the fact
-        that its sender requested a receipt.
-        """
-        stamp = time.time()
-        chat_payload = dict(chat)
-        request_payload = dict(requested)
-        sender = str(request_payload.get("sender") or "")
-        target = str(request_payload.get("target") or "")
-        message_id = request_payload.get("message_id")
-        if (
-            not sender
-            or not target
-            or isinstance(message_id, bool)
-            or not isinstance(message_id, int)
-        ):
-            raise ValueError(
-                "delivery receipt request requires sender, target, and integer message id"
-            )
-        client_msg_id = str(request_payload.get("client_msg_id") or "")
-        hook = stage_hook or (lambda _stage: None)
-        with self._lock:
-            self._conn.execute("PRAGMA synchronous=FULL")
-            committed = False
-            try:
-                self._conn.execute("BEGIN IMMEDIATE")
-                message_seq = self._insert_event_row(stamp, "chat", self._json_object(chat_payload))
-                hook("after_chat_insert")
-                request_payload["message_seq"] = message_seq
-                request_seq = self._insert_event_row(
-                    stamp, "delivery_receipt_requested", self._json_object(request_payload)
-                )
-                self._conn.execute(
-                    "INSERT INTO delivery_receipts ("
-                    "message_seq, sender, target, message_id, client_msg_id, state, delivered, "
-                    "deferred, acked_by, updated_event_seq) "
-                    "VALUES (?, ?, ?, ?, ?, ?, NULL, 0, '', ?)",
-                    (
-                        message_seq,
-                        sender,
-                        target,
-                        message_id,
-                        client_msg_id,
-                        "requested",
-                        request_seq,
-                    ),
-                )
-                hook("after_aggregate_insert")
-                self._conn.commit()
-                committed = True
-                hook("after_commit")
-                return message_seq
-            except BaseException:
-                if not committed:
-                    self._conn.rollback()
-                raise
-            finally:
-                self._restore_normal_after_transaction(committed)
-
+    @inherit_documentation(ReceiptTable.backfill)
     def _backfill_delivery_receipt_aggregates(self) -> None:
         """Project legacy receipt events into the additive aggregate table once."""
-        rows = self._conn.execute(
-            "SELECT seq, kind, payload FROM events WHERE kind IN ("
-            "'delivery_receipt_requested', 'delivery_receipt_immediate', "
-            "'delivery_receipt_deferred', 'delivery_receipt_expired') ORDER BY seq"
-        ).fetchall()
-        for event_seq, kind, encoded in rows:
-            try:
-                payload = json.loads(str(encoded))
-            except (TypeError, ValueError):
-                continue
-            if not isinstance(payload, dict):
-                continue
-            message_seq = payload.get("message_seq")
-            message_id = payload.get("message_id")
-            sender = str(payload.get("sender") or "")
-            target = str(payload.get("target") or "")
-            if (
-                isinstance(message_seq, bool)
-                or not isinstance(message_seq, int)
-                or message_seq < 1
-                or isinstance(message_id, bool)
-                or not isinstance(message_id, int)
-                or not sender
-                or not target
-            ):
-                continue
-            if kind == "delivery_receipt_requested":
-                state, delivered, deferred = "requested", None, 0
-            elif kind == "delivery_receipt_immediate":
-                delivered = int(bool(payload.get("delivered")))
-                state = "immediate_delivered" if delivered else "pending"
-                deferred = 0
-            elif kind == "delivery_receipt_deferred":
-                state, delivered, deferred = "deferred", 1, 1
-            else:
-                state, delivered, deferred = "expired", 0, 1
-            self._conn.execute(
-                "INSERT INTO delivery_receipts ("
-                "message_seq, sender, target, message_id, client_msg_id, state, delivered, "
-                "deferred, acked_by, updated_event_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(message_seq) DO UPDATE SET state = excluded.state, "
-                "delivered = excluded.delivered, deferred = excluded.deferred, "
-                "acked_by = excluded.acked_by, updated_event_seq = excluded.updated_event_seq",
-                (
-                    message_seq,
-                    sender,
-                    target,
-                    message_id,
-                    str(payload.get("client_msg_id") or ""),
-                    state,
-                    delivered,
-                    deferred,
-                    str(payload.get("acked_by") or ""),
-                    int(event_seq),
-                ),
-            )
+        return self._families.receipts.backfill()
 
+    @inherit_documentation(ReceiptTable.commit_delivery_receipt_transition)
     def commit_delivery_receipt_transition(
         self,
         *,
@@ -642,71 +332,19 @@ class EventStore:
         companion: DeliveryReceiptTransition | None = None,
         stage_hook: Callable[[str], None] | None = None,
     ) -> str:
-        """Commit one receipt transition and its stable notification outbox row.
-
-        The outbox identity is deterministic for ``(message_seq, state)``. A
-        process crash after WebSocket acceptance but before acknowledgement may
-        therefore replay the same frame, and the sender can deduplicate it
-        without the hub pretending to know whether a model consumed it.
-        """
-        transitions = [DeliveryReceiptTransition(kind, payload, notification, state)]
-        if companion is not None:
-            transitions.append(companion)
-        prepared = [self._prepare_delivery_receipt_transition(item) for item in transitions]
-        notification_id = prepared[0][0]
-        hook = stage_hook or (lambda _stage: None)
-        stamp = time.time()
-        with self._lock:
-            self._conn.execute("PRAGMA synchronous=FULL")
-            committed = False
-            try:
-                self._conn.execute("BEGIN IMMEDIATE")
-                for transition in prepared:
-                    self._insert_delivery_receipt_transition(transition, stamp=stamp)
-                    hook("after_transition_insert")
-                hook("after_outbox_insert")
-                self._conn.commit()
-                committed = True
-                hook("after_commit")
-                return notification_id
-            except BaseException:
-                if not committed:
-                    self._conn.rollback()
-                raise
-            finally:
-                self._restore_normal_after_transaction(committed)
-
-    @staticmethod
-    def _prepare_delivery_receipt_transition(
-        transition: DeliveryReceiptTransition,
-    ) -> tuple[str, int, str, dict[str, Any], dict[str, Any], DeliveryReceiptState]:
-        """Validate and normalize one transition before opening the transaction."""
-        receipt = dict(transition.payload)
-        message_seq = receipt.get("message_seq")
-        if isinstance(message_seq, bool) or not isinstance(message_seq, int) or message_seq < 1:
-            raise ValueError("delivery receipt transition requires a positive message sequence")
-        if not isinstance(receipt.get("delivered"), bool):
-            raise ValueError("delivery receipt transition requires a boolean delivered verdict")
-        expected_kind = {
-            "immediate_delivered": "delivery_receipt_immediate",
-            "pending": "delivery_receipt_immediate",
-            "deferred": "delivery_receipt_deferred",
-            "expired": "delivery_receipt_expired",
-        }[transition.state]
-        if transition.kind != expected_kind:
-            raise ValueError("delivery receipt transition kind does not match its state")
-        notification_id = f"delivery-receipt:{message_seq}:{transition.state}"
-        frame = dict(transition.notification)
-        frame["receipt_notification_id"] = notification_id
-        return (
-            notification_id,
-            message_seq,
-            transition.kind,
-            receipt,
-            frame,
-            transition.state,
+        """Commit one receipt transition and its stable notification outbox row."""
+        return self._families.receipts.commit_delivery_receipt_transition(
+            kind=kind,
+            payload=payload,
+            notification=notification,
+            state=state,
+            companion=companion,
+            stage_hook=stage_hook,
         )
 
+    _prepare_delivery_receipt_transition = staticmethod(prepare_transition)
+
+    @inherit_documentation(ReceiptTable.insert_transition)
     def _insert_delivery_receipt_transition(
         self,
         transition: tuple[str, int, str, dict[str, Any], dict[str, Any], DeliveryReceiptState],
@@ -714,152 +352,34 @@ class EventStore:
         stamp: float,
     ) -> None:
         """Insert one validated aggregate/event/outbox transition in the open transaction."""
-        notification_id, message_seq, kind, receipt, frame, state = transition
-        current = self._conn.execute(
-            "SELECT sender, target, message_id, state FROM delivery_receipts WHERE message_seq = ?",
-            (message_seq,),
-        ).fetchone()
-        if current is None:
-            raise KeyError("delivery receipt aggregate is absent")
-        sender = str(current[0])
-        allowed_from = {
-            "immediate_delivered": {"requested"},
-            "pending": {"requested"},
-            "deferred": {"pending"},
-            "expired": {"pending"},
-        }[state]
-        if str(current[3]) not in allowed_from:
-            raise ValueError("delivery receipt transition is invalid from current state")
-        if (
-            str(receipt.get("sender") or "") != sender
-            or str(receipt.get("target") or "") != str(current[1])
-            or receipt.get("message_id") != int(current[2])
-            or str(frame.get("target") or "") != sender
-        ):
-            raise ValueError("delivery receipt transition does not match its aggregate")
-        event_seq = self._insert_event_row(stamp, kind, self._json_object(receipt))
-        self._conn.execute(
-            "UPDATE delivery_receipts SET state = ?, delivered = ?, deferred = ?, "
-            "acked_by = ?, updated_event_seq = ? WHERE message_seq = ?",
-            (
-                state,
-                int(receipt["delivered"]),
-                int(bool(receipt.get("deferred", False))),
-                str(receipt.get("acked_by") or ""),
-                event_seq,
-                message_seq,
-            ),
-        )
-        self._conn.execute(
-            "INSERT INTO delivery_receipt_outbox ("
-            "notification_id, message_seq, phase, sender, frame_json, attempts, delivered_at) "
-            "VALUES (?, ?, ?, ?, ?, 0, NULL)",
-            (
-                notification_id,
-                message_seq,
-                kind.removeprefix("delivery_receipt_"),
-                sender,
-                self._json_object(frame),
-            ),
-        )
+        return self._families.receipts.insert_transition(transition, stamp=stamp)
 
+    @inherit_documentation(ReceiptTable.delivery_receipt_aggregate)
     def delivery_receipt_aggregate(self, message_seq: int) -> DeliveryReceiptAggregate | None:
         """Return the current durable receipt aggregate for one chat sequence."""
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT message_seq, sender, target, message_id, client_msg_id, state, "
-                "delivered, deferred, acked_by, updated_event_seq FROM delivery_receipts "
-                "WHERE message_seq = ?",
-                (message_seq,),
-            ).fetchone()
-        if row is None:
-            return None
-        delivered = None if row[6] is None else bool(row[6])
-        return DeliveryReceiptAggregate(
-            int(row[0]),
-            str(row[1]),
-            str(row[2]),
-            int(row[3]),
-            str(row[4]),
-            str(row[5]),
-            delivered,
-            bool(row[7]),
-            str(row[8]),
-            int(row[9]),
-        )
+        return self._families.receipts.delivery_receipt_aggregate(message_seq)
 
+    @inherit_documentation(ReceiptTable.pending_delivery_notifications)
     def pending_delivery_notifications(
         self, *, sender: str | None = None, limit: int = 100
     ) -> tuple[PendingDeliveryNotification, ...]:
         """Return undelivered receipt frames in stable insertion order."""
-        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > 10_000:
-            raise ValueError("delivery notification limit must be an integer from 1 through 10000")
-        query = (
-            "SELECT notification_id, message_seq, phase, sender, frame_json, attempts "
-            "FROM delivery_receipt_outbox WHERE delivered_at IS NULL"
-        )
-        parameters: tuple[object, ...]
-        if sender is None:
-            query += " ORDER BY rowid LIMIT ?"
-            parameters = (limit,)
-        else:
-            query += " AND sender = ? ORDER BY rowid LIMIT ?"
-            parameters = (sender, limit)
-        with self._lock:
-            rows = self._conn.execute(query, parameters).fetchall()
-        result: list[PendingDeliveryNotification] = []
-        for row in rows:
-            frame = json.loads(str(row[4]))
-            if not isinstance(frame, dict):
-                raise ValueError("stored delivery notification must be a JSON object")
-            result.append(
-                PendingDeliveryNotification(
-                    str(row[0]), int(row[1]), str(row[2]), str(row[3]), frame, int(row[5])
-                )
-            )
-        return tuple(result)
+        return self._families.receipts.pending_delivery_notifications(sender=sender, limit=limit)
 
+    @inherit_documentation(ReceiptTable.mark_delivery_notification_attempt)
     def mark_delivery_notification_attempt(self, notification_id: str, *, delivered: bool) -> None:
         """Record one sender-delivery attempt and settle it only on transport success."""
-        if not notification_id:
-            raise ValueError("delivery notification identity must be non-empty")
-        with self._lock:
-            self._conn.execute("PRAGMA synchronous=FULL")
-            committed = False
-            try:
-                cursor = self._conn.execute(
-                    "UPDATE delivery_receipt_outbox SET attempts = attempts + 1, "
-                    "delivered_at = CASE WHEN ? THEN COALESCE(delivered_at, ?) "
-                    "ELSE delivered_at END "
-                    "WHERE notification_id = ? AND delivered_at IS NULL",
-                    (int(delivered), time.time(), notification_id),
-                )
-                if cursor.rowcount != 1:
-                    raise KeyError("delivery notification is absent or already settled")
-                self._conn.commit()
-                committed = True
-            except BaseException:
-                self._conn.rollback()
-                raise
-            finally:
-                self._restore_normal_after_transaction(committed)
-
-    @staticmethod
-    def _json_object(value: Mapping[str, Any]) -> str:
-        """Encode one bounded JSON object deterministically and reject non-finite data."""
-        return json.dumps(
-            dict(value), ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False
+        return self._families.receipts.mark_delivery_notification_attempt(
+            notification_id, delivered=delivered
         )
+
+    _json_object = staticmethod(encode_object)
 
     def _restore_normal_after_transaction(self, committed: bool) -> None:
         """Restore NORMAL sync without contradicting an already committed outcome."""
-        try:
-            self._conn.execute("PRAGMA synchronous=NORMAL")
-        except BaseException:
-            if not committed:
-                raise
-            logger.exception("Could not restore SQLite synchronous=NORMAL")
+        self.storage.restore_normal(committed)
 
+    @inherit_documentation(OperationTable.commit_operation)
     def commit_operation(
         self,
         *,
@@ -875,428 +395,80 @@ class EventStore:
         required_predecessor: OperationRecord | None = None,
         stage_hook: Callable[[str], None] | None = None,
     ) -> OperationCommitResult:
-        """Atomically commit a keyed mutation, exact response, and evidence intent.
-
-        Parameters
-        ----------
-        operation_key:
-            Already authenticated and namespaced idempotency key.
-        request_digest:
-            Exact semantic request SHA-256.
-        response:
-            JSON response draft, unchanged by this method.
-        events:
-            Nonempty ordered mutation events committed with the response.
-        intent:
-            Evidence-outbox payload committed in the same transaction.
-        response_event_seq_field:
-            Legacy top-level response field receiving the first event sequence.
-        finalize_response:
-            Optional trusted synchronous builder called with a private JSON copy
-            of the draft and actual mutation-event sequences. It can bind nested
-            fields and sign the final response before persistence. It must not
-            perform external I/O, re-enter this store or mutate live state.
-            Exceptions roll back all pending rows. It is never called on replay
-            or conflict and cannot accompany ``response_event_seq_field``.
-        stage_hook:
-            Optional transaction-boundary observer used by failure tests.
-        max_retained_operations:
-            Optional explicit store-wide cap checked under BEGIN IMMEDIATE before
-            inserting new history. Existing replay/conflict remains readable when
-            the cap is full; no retained operation is evicted to make room.
-        required_predecessor:
-            Optional exact completed operation required for a new insertion.
-            Key, non-legacy digest, canonical response and hash are checked in
-            the same transaction before any event insertion. Replay remains a
-            historical response, not renewed authorization under this condition.
-
-        Returns
-        -------
-        OperationCommitResult
-            Inserted, replayed or conflicting durable response and sequence IDs.
-
-        Raises
-        ------
-        ValueError
-            For invalid identities, empty events, incompatible response builders
-            or a response that is not serialisable as finite JSON.
-        """
-        if max_retained_operations is not None and (
-            type(max_retained_operations) is not int or not 0 < max_retained_operations < 2**53
-        ):
-            raise ValueError("invalid retained operation budget")
-        predecessor_response: str | None = None
-        predecessor_response_sha256: str | None = None
-        if required_predecessor is not None:
-            predecessor_digest = required_predecessor.request_digest
-            if (
-                not required_predecessor.key
-                or predecessor_digest is None
-                or len(predecessor_digest) != 64
-                or any(char not in "0123456789abcdef" for char in predecessor_digest)
-            ):
-                raise ValueError("invalid required predecessor identity")
-            predecessor_response = self._json_object(required_predecessor.response)
-            predecessor_response_sha256 = hashlib.sha256(
-                predecessor_response.encode("ascii")
-            ).hexdigest()
-        if finalize_response is not None and response_event_seq_field is not None:
-            raise ValueError("choose one atomic response sequence builder")
-        if not operation_key:
-            raise ValueError("atomic operation key must be non-empty")
-        if len(request_digest) != 64 or any(
-            character not in "0123456789abcdef" for character in request_digest
-        ):
-            raise ValueError("atomic operation request digest must be lowercase SHA-256")
-        stamp = time.time()
-        event_rows = [
-            (
-                stamp,
-                str(kind),
-                json.dumps(
-                    dict(payload),
-                    ensure_ascii=True,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    allow_nan=False,
-                ),
-            )
-            for kind, payload in events
-        ]
-        if not event_rows:
-            raise ValueError("atomic operation requires at least one mutation event")
-        response_value = dict(response)
-        response_json = json.dumps(
-            response_value,
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
+        """Atomically commit a keyed mutation, exact response, and evidence intent."""
+        return self._families.operations.commit_operation(
+            operation_key=operation_key,
+            request_digest=request_digest,
+            response=response,
+            events=events,
+            intent=intent,
+            response_event_seq_field=response_event_seq_field,
+            finalize_response=finalize_response,
+            max_retained_operations=max_retained_operations,
+            required_predecessor=required_predecessor,
+            stage_hook=stage_hook,
         )
-        intent_json = json.dumps(
-            dict(intent),
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-        hook = stage_hook or (lambda _stage: None)
 
-        with self._lock:
-            self._conn.execute("PRAGMA synchronous=FULL")
-            committed = False
-            try:
-                self._conn.execute("BEGIN IMMEDIATE")
-                existing = self._conn.execute(
-                    "SELECT operation_key, request_digest, response_json, response_sha256, "
-                    "first_event_seq, commit_seq, committed_at FROM operations "
-                    "WHERE operation_key = ?",
-                    (operation_key,),
-                ).fetchone()
-                if existing is not None:
-                    self._conn.rollback()
-                    stored = self._stored_operation(existing)
-                    outcome: Literal["replayed", "conflict"] = (
-                        "replayed" if stored.request_digest == request_digest else "conflict"
-                    )
-                    return OperationCommitResult(outcome, stored)
-
-                if required_predecessor is not None:
-                    predecessor = self._conn.execute(
-                        "SELECT request_digest, response_json, response_sha256 FROM operations "
-                        "WHERE operation_key = ?",
-                        (required_predecessor.key,),
-                    ).fetchone()
-                    if (
-                        predecessor is None
-                        or predecessor[0] != required_predecessor.request_digest
-                        or predecessor[1] != predecessor_response
-                        or predecessor[2] != predecessor_response_sha256
-                    ):
-                        raise ValueError("required predecessor operation mismatch")
-                if max_retained_operations is not None:
-                    count = self._conn.execute("SELECT COUNT(*) FROM operations").fetchone()[0]
-                    if count >= max_retained_operations:
-                        raise ValueError("retained operation budget exhausted")
-                sequences: list[int] = []
-                for row in event_rows:
-                    sequence = self._insert_event_row(*row)
-                    sequences.append(sequence)
-                    if row[1] in self._aef_outbox_kinds:
-                        self._conn.execute(
-                            "INSERT INTO aef_outbox (legacy_seq, receipt_id) VALUES (?, NULL)",
-                            (sequence,),
-                        )
-                    hook("after_legacy_event_insert")
-
-                if response_event_seq_field is not None:
-                    response_value[response_event_seq_field] = sequences[0]
-                    response_json = json.dumps(
-                        response_value,
-                        ensure_ascii=True,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                        allow_nan=False,
-                    )
-                elif finalize_response is not None:
-                    response_value = dict(
-                        finalize_response(json.loads(response_json), tuple(sequences))
-                    )
-                    response_json = json.dumps(
-                        response_value,
-                        ensure_ascii=True,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                        allow_nan=False,
-                    )
-                response_sha256 = hashlib.sha256(response_json.encode("ascii")).hexdigest()
-                first_seq = sequences[0]
-                compatibility = {
-                    "key": operation_key,
-                    "request_digest": request_digest,
-                    "response": response_value,
-                    "response_sha256": response_sha256,
-                    "first_event_seq": first_seq,
-                    "commit_seq": sequences[-1] + 1,
-                }
-                commit_seq = self._insert_event_row(
-                    stamp,
-                    "idempotency",
-                    json.dumps(
-                        compatibility,
-                        ensure_ascii=True,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                        allow_nan=False,
-                    ),
-                )
-                self._conn.execute(
-                    "INSERT INTO operations (operation_key, request_digest, response_json, "
-                    "response_sha256, first_event_seq, commit_seq, committed_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        operation_key,
-                        request_digest,
-                        response_json,
-                        response_sha256,
-                        first_seq,
-                        commit_seq,
-                        stamp,
-                    ),
-                )
-                hook("after_operation_insert")
-                self._conn.execute(
-                    "INSERT INTO operation_outbox (operation_key, intent_json, receipt_id) "
-                    "VALUES (?, ?, NULL)",
-                    (operation_key, intent_json),
-                )
-                hook("after_operation_outbox_insert")
-                hook("before_commit")
-                self._conn.commit()
-                committed = True
-                hook("after_commit")
-                return OperationCommitResult(
-                    "inserted",
-                    StoredOperation(
-                        operation_key,
-                        request_digest,
-                        response_value,
-                        response_sha256,
-                        first_seq,
-                        commit_seq,
-                        stamp,
-                    ),
-                )
-            except BaseException:
-                if not committed:
-                    self._conn.rollback()
-                raise
-            finally:
-                try:
-                    self._conn.execute("PRAGMA synchronous=NORMAL")
-                except BaseException:
-                    if not committed:
-                        raise
-                    logger.exception("Could not restore SQLite synchronous=NORMAL")
-
+    @inherit_documentation(EventWriter.pending_aef_events)
     def pending_aef_events(self, *, limit: int = 100) -> tuple[StoredEvent, ...]:
         """Return queued legacy rows awaiting native AEF reconciliation."""
-        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > 10_000:
-            raise ValueError("AEF outbox limit must be an integer from 1 through 10000")
-        if not self._has_aef_outbox:
-            return ()
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT e.seq, e.ts, e.kind, e.payload "
-                "FROM aef_outbox AS o JOIN events AS e ON e.seq = o.legacy_seq "
-                "WHERE o.receipt_id IS NULL ORDER BY e.seq LIMIT ?",
-                (limit,),
-            ).fetchall()
-        return tuple(self._stored_event(row) for row in rows)
+        return self._families.events.pending_aef_events(limit=limit)
 
+    @inherit_documentation(EventWriter.mark_aef_delivered)
     def mark_aef_delivered(self, legacy_seq: int, receipt_id: str) -> None:
         """Durably bind one queued legacy row to its emitted AEF receipt."""
-        if isinstance(legacy_seq, bool) or not isinstance(legacy_seq, int) or legacy_seq < 1:
-            raise ValueError("AEF outbox sequence must be a positive integer")
-        if not isinstance(receipt_id, str) or not receipt_id:
-            raise ValueError("AEF outbox receipt id must be non-empty text")
-        with self._lock:
-            self._conn.execute("PRAGMA synchronous=FULL")
-            try:
-                row = self._conn.execute(
-                    "SELECT receipt_id FROM aef_outbox WHERE legacy_seq = ?", (legacy_seq,)
-                ).fetchone()
-                if row is None:
-                    raise KeyError(f"legacy sequence {legacy_seq} is not queued for AEF")
-                current = row[0]
-                if current is not None and str(current) != receipt_id:
-                    raise ValueError("AEF outbox sequence is already bound to another receipt")
-                self._conn.execute(
-                    "UPDATE aef_outbox SET receipt_id = ? WHERE legacy_seq = ?",
-                    (receipt_id, legacy_seq),
-                )
-                self._conn.commit()
-            except BaseException:
-                self._conn.rollback()
-                raise
-            finally:
-                self._conn.execute("PRAGMA synchronous=NORMAL")
+        return self._families.events.mark_aef_delivered(legacy_seq, receipt_id)
 
+    @inherit_documentation(EventWriter.aef_delivery)
     def aef_delivery(self, legacy_seq: int) -> str | None:
         """Return the delivered receipt id, or ``None`` for pending/absent rows."""
-        if not self._has_aef_outbox:
-            return None
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT receipt_id FROM aef_outbox WHERE legacy_seq = ?", (legacy_seq,)
-            ).fetchone()
-        return None if row is None or row[0] is None else str(row[0])
+        return self._families.events.aef_delivery(legacy_seq)
 
+    @inherit_documentation(READ_ALL_DOCUMENTATION)
     def read_all(self) -> list[StoredEvent]:
-        """Return every event in insertion order.
-
-        Returns
-        -------
-        list[StoredEvent]
-            All persisted events, ordered by ascending sequence number.
-        """
+        """Return every event in insertion order."""
         return list(self.iter_events())
 
+    @inherit_documentation(EventAuthentication.ensure_mac_column)
     def _ensure_mac_column(self) -> None:
         """Add the row-authentication column to a log created before it existed."""
-        columns = {str(info[1]) for info in self._conn.execute("PRAGMA table_info(events)")}
-        if "mac" not in columns:
-            self._conn.execute("ALTER TABLE events ADD COLUMN mac TEXT")
+        return self._families.authentication.ensure_mac_column()
 
+    @inherit_documentation(EventAuthentication.insert_event)
     def _insert_event_row(self, ts: float, kind: str, payload: str) -> int:
-        """Insert one event row in the caller's transaction and return its sequence.
+        """Insert one event row in the caller's transaction and return its sequence."""
+        return self._families.authentication.insert_event(ts, kind, payload)
 
-        Every writer of the ``events`` table goes through here, so with a row key
-        enabled each row carries its MAC from the moment it exists (K4-REPLAY).
-        """
-        cursor = self._conn.execute(
-            "INSERT INTO events (ts, kind, payload) VALUES (?, ?, ?)", (ts, kind, payload)
-        )
-        sequence = int(cursor.lastrowid or 0)
-        if self._row_mac is not None:
-            self._conn.execute(
-                "UPDATE events SET mac = ? WHERE seq = ?",
-                (self._row_mac.mac(sequence, ts, kind, payload), sequence),
-            )
-        return sequence
-
+    @inherit_documentation(EventAuthentication.has_row_macs)
     def has_row_macs(self) -> bool:
         """Return whether any stored row carries a row MAC."""
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT 1 FROM events WHERE mac IS NOT NULL LIMIT 1"
-            ).fetchone()
-        return row is not None
+        return self._families.authentication.has_row_macs()
 
+    @inherit_documentation(EventAuthentication.verify_recovery_authentication)
     def _verify_delivery_recovery_authentication(self) -> None:
-        """Refuse recovery without the original row key or with unauthenticated rows.
+        """Refuse recovery without the original row key or with unauthenticated rows."""
+        return self._families.authentication.verify_recovery_authentication()
 
-        The delivery recovery transaction holds this store's lock and the SQLite
-        write reservation. Encryption alone does not configure the row-MAC writer.
-        Rechecking all rows here prevents an unauthenticated binding event or an
-        operator recovery over quarantined history.
-        """
-        from synapse_channel.core.delivery_modes import DeliveryRefusal
-
-        if self._row_mac is None:
-            if self.has_row_macs():
-                raise DeliveryRefusal(
-                    "row_authentication_required",
-                    "delivery recovery requires the original event-row authentication key",
-                )
-            return
-        if self.enable_row_mac(self._row_mac):
-            raise DeliveryRefusal(
-                "journal_recovery_required", "delivery recovery refuses unauthenticated event rows"
-            )
-
+    @inherit_documentation(EventAuthentication.enable_row_mac)
     def enable_row_mac(self, key: RowMacKey) -> tuple[CorruptEventRow, ...]:
-        """Authenticate rows written from now on and quarantine unauthenticated ones.
-
-        Every row after ``key.since_seq`` must carry ``key``'s MAC. A row that does
-        not is recorded as quarantined: reads return it as a ``corrupt_event``
-        marker, so replay skips it and the hub's journal-recovery gate refuses
-        mutations until an operator resolves it.
-
-        Parameters
-        ----------
-        key : RowMacKey
-            The hub's row key.
-
-        Returns
-        -------
-        tuple[CorruptEventRow, ...]
-            The quarantined rows, by sequence.
-        """
-        quarantine: dict[int, CorruptEventRow] = {}
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT seq, ts, kind, payload, mac FROM events WHERE seq > ? ORDER BY seq",
-                (key.since_seq,),
-            )
-            for seq, ts, kind, payload, mac in rows:
-                if not key.verify(int(seq), ts, kind, payload, mac):
-                    quarantine[int(seq)] = unauthenticated_row(
-                        int(seq), kind, payload, mac_present=mac is not None
-                    )
-            self._row_mac = key
-            self._row_quarantine = quarantine
-        return tuple(quarantine.values())
+        """Authenticate rows written from now on and quarantine unauthenticated ones."""
+        return self._families.authentication.enable_row_mac(key)
 
     @property
     def row_quarantine(self) -> frozenset[int]:
         """Sequences quarantined because their row MAC failed."""
-        return frozenset(self._row_quarantine)
+        return self._families.authentication.row_quarantine
 
+    @inherit_documentation(EventAuthentication.decode_event)
     def _stored_event(
         self, row: tuple[object, object, object, object], *, apply_row_quarantine: bool = True
     ) -> StoredEvent:
-        """Return one validated event or a non-secret corrupt-row marker.
-
-        A row quarantined by :meth:`enable_row_mac` is returned as its marker unless
-        ``apply_row_quarantine`` is false (the Merkle commitment folds raw rows).
-        """
-        seq = row[0]
-        marker = (
-            self._row_quarantine.get(seq) if apply_row_quarantine and isinstance(seq, int) else None
-        )
-        if marker is not None:
-            return StoredEvent(
-                seq=marker.seq, ts=0.0, kind=CORRUPT_EVENT_KIND, payload=marker.as_payload()
-            )
-        decoded = decode_event_row(row)
-        return StoredEvent(
-            seq=decoded.seq,
-            ts=decoded.ts,
-            kind=decoded.kind,
-            payload=decoded.payload,
+        """Return one validated event or a non-secret corrupt-row marker."""
+        return self._families.authentication.decode_event(
+            row, apply_row_quarantine=apply_row_quarantine
         )
 
+    @inherit_documentation(EventReader.iter_events)
     def iter_events(
         self,
         *,
@@ -1305,107 +477,22 @@ class EventStore:
         after_seq: int | None = None,
         apply_row_quarantine: bool = True,
     ) -> Iterator[StoredEvent]:
-        """Yield events in ascending sequence order without materialising the log.
+        """Yield events in ascending sequence order without materialising the log."""
+        return self._families.reads.iter_events(
+            through_seq=through_seq,
+            kinds=kinds,
+            after_seq=after_seq,
+            apply_row_quarantine=apply_row_quarantine,
+        )
 
-        This is the bounded-memory read seam for whole-log folds (the Merkle
-        commitment, causality reconstruction): rows stream off the SQLite cursor
-        one at a time, so the peak footprint is one event, not the log. A kind
-        filter is applied inside SQLite, so uninterested kinds (bulk chat on a
-        long-lived hub) never cross into Python at all.
-
-        Parameters
-        ----------
-        through_seq : int or None, optional
-            Inclusive sequence ceiling; events after it are not yielded. ``None``
-            streams the whole log.
-        kinds : Iterable[str] or None, optional
-            When given, restrict the stream to these event kinds; an empty
-            iterable yields nothing. ``None`` streams every kind.
-        after_seq : int or None, optional
-            Exclusive sequence floor; only events after it are yielded, so an
-            incremental fold reads just what it has not seen. ``None`` starts at
-            the beginning of the log.
-        apply_row_quarantine : bool, optional
-            Return rows quarantined by :meth:`enable_row_mac` as markers (the
-            default). The Merkle commitment passes ``False`` to fold the raw rows.
-
-        Yields
-        ------
-        StoredEvent
-            Each matching event at or below the ceiling, by ascending sequence.
-        """
-        sql = "SELECT seq, ts, kind, payload FROM events"
-        clauses: list[str] = []
-        params: list[Any] = []
-        if through_seq is not None:
-            clauses.append("seq <= ?")
-            params.append(int(through_seq))
-        if after_seq is not None:
-            clauses.append("seq > ?")
-            params.append(int(after_seq))
-        if kinds is not None:
-            kind_list = [str(k) for k in kinds]
-            if not kind_list:
-                return
-            clauses.append(f"kind IN ({','.join('?' for _ in kind_list)})")
-            params.extend(kind_list)
-        if clauses:
-            sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY seq"
-        with self._lock:
-            for row in self._conn.execute(sql, params):
-                yield self._stored_event(row, apply_row_quarantine=apply_row_quarantine)
-
+    @inherit_documentation(EventReader.read_since)
     def read_since(
-        self,
-        after_seq: int,
-        *,
-        kinds: Iterable[str] | None = None,
-        limit: int | None = None,
+        self, after_seq: int, *, kinds: Iterable[str] | None = None, limit: int | None = None
     ) -> list[StoredEvent]:
-        """Return events whose sequence is greater than a cursor, in order.
+        """Return events whose sequence is greater than a cursor, in order."""
+        return self._families.reads.read_since(after_seq, kinds=kinds, limit=limit)
 
-        This is the durable, presence-free ingest seam a downstream
-        persistent-memory adapter polls: it tracks the last sequence it consumed,
-        calls :meth:`read_since` with it, processes the batch, and advances —
-        resuming with no loss or duplication across hub restarts, because the
-        sequence is a monotonic primary key.
-
-        Parameters
-        ----------
-        after_seq : int
-            Exclusive lower bound; only events with ``seq > after_seq`` are
-            returned. Pass ``0`` for the whole log.
-        kinds : Iterable[str] or None, optional
-            When given, restrict the result to these event kinds (e.g.
-            :data:`~synapse_channel.core.journal.MEMORY_KINDS`); an empty iterable
-            returns nothing. ``None`` returns every kind.
-        limit : int or None, optional
-            Cap the batch size (floored at ``0``); ``None`` returns all matching
-            events. The cap applies after ordering, so repeated calls walk the log
-            forward in fixed-size batches.
-
-        Returns
-        -------
-        list[StoredEvent]
-            Matching events ordered by ascending sequence number.
-        """
-        sql = "SELECT seq, ts, kind, payload FROM events WHERE seq > ?"
-        params: list[Any] = [int(after_seq)]
-        if kinds is not None:
-            kind_list = [str(k) for k in kinds]
-            if not kind_list:
-                return []
-            sql += f" AND kind IN ({','.join('?' for _ in kind_list)})"
-            params.extend(kind_list)
-        sql += " ORDER BY seq"
-        if limit is not None:
-            sql += " LIMIT ?"
-            params.append(max(0, int(limit)))
-        with self._lock:
-            rows = self._conn.execute(sql, params).fetchall()
-        return [self._stored_event(row) for row in rows]
-
+    @inherit_documentation(EventReader.read_window)
     def read_window(
         self,
         *,
@@ -1416,188 +503,45 @@ class EventStore:
         kinds: Iterable[str] | None = None,
         limit: int | None = None,
     ) -> list[StoredEvent]:
-        """Return events inside an inclusive sequence/time window, in order.
+        """Return events inside an inclusive sequence/time window, in order."""
+        return self._families.reads.read_window(
+            min_seq=min_seq,
+            max_seq=max_seq,
+            since_ts=since_ts,
+            until_ts=until_ts,
+            kinds=kinds,
+            limit=limit,
+        )
 
-        This is the selective-read seam the event-query layer uses to avoid
-        loading an unbounded event store for every point-in-time or windowed
-        query: the bounds are pushed into SQLite so only candidate rows are
-        deserialised. Every bound is optional and inclusive; omitting all of them
-        is equivalent to :meth:`read_all`.
-
-        Parameters
-        ----------
-        min_seq, max_seq : int or None, optional
-            Inclusive lower and upper sequence bounds (``seq >= min_seq`` /
-            ``seq <= max_seq``).
-        since_ts, until_ts : float or None, optional
-            Inclusive lower and upper timestamp bounds (``ts >= since_ts`` /
-            ``ts <= until_ts``).
-        kinds : Iterable[str] or None, optional
-            Restrict to these event kinds; an empty iterable returns nothing.
-        limit : int or None, optional
-            Cap the number of rows returned after ordering (floored at ``0``).
-
-        Returns
-        -------
-        list[StoredEvent]
-            Matching events ordered by ascending sequence number.
-        """
-        sql = "SELECT seq, ts, kind, payload FROM events WHERE 1 = 1"
-        params: list[Any] = []
-        if min_seq is not None:
-            sql += " AND seq >= ?"
-            params.append(int(min_seq))
-        if max_seq is not None:
-            sql += " AND seq <= ?"
-            params.append(int(max_seq))
-        if since_ts is not None:
-            sql += " AND ts >= ?"
-            params.append(float(since_ts))
-        if until_ts is not None:
-            sql += " AND ts <= ?"
-            params.append(float(until_ts))
-        if kinds is not None:
-            kind_list = [str(k) for k in kinds]
-            if not kind_list:
-                return []
-            sql += f" AND kind IN ({','.join('?' for _ in kind_list)})"
-            params.extend(kind_list)
-        sql += " ORDER BY seq"
-        if limit is not None:
-            sql += " LIMIT ?"
-            params.append(max(0, int(limit)))
-        with self._lock:
-            rows = self._conn.execute(sql, params).fetchall()
-        return [self._stored_event(row) for row in rows]
-
+    @inherit_documentation(EventReader.corrupt_rows)
     def corrupt_rows(self, *, through_seq: int | None = None) -> tuple[CorruptEventRow, ...]:
-        """Return safe forensic markers for every malformed row in sequence order.
+        """Return safe forensic markers for every malformed row in sequence order."""
+        return self._families.reads.corrupt_rows(through_seq=through_seq)
 
-        Parameters
-        ----------
-        through_seq : int or None, optional
-            Inclusive sequence ceiling. ``None`` scans the complete event log.
-
-        Returns
-        -------
-        tuple[CorruptEventRow, ...]
-            Markers contain reasons and a raw-payload digest, never raw payload
-            bytes. This scan is the operator seam used by explicit compaction.
-        """
-        sql = "SELECT seq, ts, kind, payload FROM events"
-        params: tuple[int, ...] = ()
-        if through_seq is not None:
-            sql += " WHERE seq <= ?"
-            params = (int(through_seq),)
-        sql += " ORDER BY seq"
-        corrupt: list[CorruptEventRow] = []
-        with self._lock:
-            for row in self._conn.execute(sql, params):
-                marker = decode_event_row(row).corruption
-                if marker is not None:
-                    corrupt.append(marker)
-        return tuple(corrupt)
-
+    @inherit_documentation(EventReader.count)
     def count(self) -> int:
         """Return the number of events currently stored."""
-        with self._lock:
-            row = self._conn.execute("SELECT COUNT(*) FROM events").fetchone()
-        return int(row[0])
+        return self._families.reads.count()
 
+    @inherit_documentation(EventReader.max_seq)
     def max_seq(self) -> int:
-        """Return the highest sequence number stored, or ``0`` when the log is empty.
+        """Return the highest sequence number stored, or ``0`` when the log is empty."""
+        return self._families.reads.max_seq()
 
-        Useful as a fully-settled compaction floor: with no read-side consumer
-        lagging behind, the whole log up to the latest sequence may be compacted
-        (see :mod:`synapse_channel.core.compaction`).
-        """
-        with self._lock:
-            row = self._conn.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()
-        return int(row[0])
-
+    @inherit_documentation(EventReader.latest_at_or_before)
     def latest_at_or_before(self, through_seq: int) -> StoredEvent | None:
-        """Return the newest retained event at or below ``through_seq``.
+        """Return the newest retained event at or below ``through_seq``."""
+        return self._families.reads.latest_at_or_before(through_seq)
 
-        A direct descending primary-key lookup keeps state-at projections from
-        decoding the whole journal merely to obtain their deterministic clock.
-        Sequence gaps left by retention are handled by selecting the preceding
-        retained event; an empty prefix returns ``None``.
-        """
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT seq, ts, kind, payload FROM events "
-                "WHERE seq <= ? ORDER BY seq DESC LIMIT 1",
-                (int(through_seq),),
-            ).fetchone()
-        return None if row is None else self._stored_event(row)
-
+    @inherit_documentation(EventMaintenance.delete)
     def delete(self, seqs: Iterable[int]) -> int:
-        """Delete the events with these sequence numbers; return how many were removed.
+        """Delete the events with these sequence numbers; return how many were removed."""
+        return self._families.maintenance.delete(seqs)
 
-        A maintenance primitive for retention/compaction
-        (:mod:`synapse_channel.core.compaction`). A deleted sequence is never
-        reused — the ``AUTOINCREMENT`` primary key only ever increases — so a
-        downstream :meth:`read_since` cursor stays correct across a compaction: a
-        removed sequence simply becomes a gap the cursor walks past. The delete
-        commits at ``NORMAL`` durability; a delete lost to an OS crash is harmless
-        because re-running compaction removes the same rows again.
-
-        Parameters
-        ----------
-        seqs : Iterable[int]
-            Sequence numbers to remove; an empty iterable is a no-op.
-
-        Returns
-        -------
-        int
-            The number of rows actually deleted.
-        """
-        seq_list = [int(s) for s in seqs]
-        if not seq_list:
-            return 0
-        # Until protected custody has an explicit settled-retention contract,
-        # ordinary deletion must not erase the history that blocks unsafe replay.
-        sql = (
-            "DELETE FROM events WHERE seq = ? "
-            "AND kind <> 'protected_write' "
-            "AND substr(kind, 1, 16) <> 'protected_write_'"
-            " AND NOT (kind IN ('claim', 'task_update', 'checkpoint', 'handoff', 'release') "
-            "AND EXISTS (SELECT 1 FROM events AS protected_history "
-            "WHERE protected_history.kind = 'protected_write' "
-            "OR protected_history.kind GLOB 'protected_write_*'))"
-        )
-        if self._has_aef_outbox:
-            # The outbox is the recovery boundary between the authoritative
-            # legacy commit and its native receipt. Compaction may remove a
-            # settled legacy row, but it must never erase a still-pending source
-            # event and make the durable cursor silently disappear from the
-            # join used by pending_aef_events(). This guard is explicit rather
-            # than dependent on SQLite foreign-key enforcement, whose global
-            # activation would change historical compaction behaviour.
-            sql += (
-                " AND NOT EXISTS (SELECT 1 FROM aef_outbox "
-                "WHERE legacy_seq = events.seq AND receipt_id IS NULL)"
-            )
-        sql += (
-            " AND NOT EXISTS (SELECT 1 FROM operations "
-            "WHERE events.seq BETWEEN operations.first_event_seq AND operations.commit_seq)"
-        )
-        with self._lock:
-            cursor = self._conn.executemany(sql, ((seq,) for seq in seq_list))
-            self._conn.commit()
-        return int(cursor.rowcount)
-
+    @inherit_documentation(EventMaintenance.vacuum)
     def vacuum(self) -> None:
-        """Reclaim free pages left by deletes, shrinking the database file on disk.
-
-        A ``DELETE`` marks pages free for reuse but does not return them to the
-        filesystem, so a large retention sweep leaves the file the same size until
-        ``VACUUM`` rewrites the database to release the free pages. It rewrites the
-        whole database, so call it from a maintenance path, not the hot loop.
-        """
-        with self._lock:
-            self._conn.commit()  # VACUUM cannot run inside an open transaction
-            self._conn.execute("VACUUM")
+        """Reclaim free pages left by deletes, shrinking the database file on disk."""
+        return self._families.maintenance.vacuum()
 
     def close(self) -> None:
         """Close the underlying database connection."""

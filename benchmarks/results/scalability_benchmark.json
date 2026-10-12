@@ -2,33 +2,33 @@
   "expiry": [
     {
       "active_claims": 10,
-      "mass_expiry_microseconds": 23.55,
-      "steady_heartbeat_microseconds": 1.403
+      "mass_expiry_microseconds": 15.0,
+      "steady_heartbeat_microseconds": 0.788
     },
     {
       "active_claims": 100,
-      "mass_expiry_microseconds": 72.01,
-      "steady_heartbeat_microseconds": 0.654
+      "mass_expiry_microseconds": 82.7,
+      "steady_heartbeat_microseconds": 0.75
     },
     {
       "active_claims": 1000,
-      "mass_expiry_microseconds": 977.85,
-      "steady_heartbeat_microseconds": 0.802
+      "mass_expiry_microseconds": 1117.43,
+      "steady_heartbeat_microseconds": 0.71
     },
     {
       "active_claims": 10000,
-      "mass_expiry_microseconds": 33682.23,
-      "steady_heartbeat_microseconds": 0.923
+      "mass_expiry_microseconds": 22135.31,
+      "steady_heartbeat_microseconds": 0.956
     },
     {
       "active_claims": 100000,
-      "mass_expiry_microseconds": 264861.71,
-      "steady_heartbeat_microseconds": 0.723
+      "mass_expiry_microseconds": 138498.6,
+      "steady_heartbeat_microseconds": 0.682
     }
   ],
   "host": {
     "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
-    "platform": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
     "python": "3.12.3"
   },
   "indexing_decision": {
@@ -42,56 +42,183 @@
       "evidence_class": "loaded_workstation_functional_benchmark",
       "index_threshold_microseconds": 10000.0,
       "local_first_claim_ceiling": 100,
-      "local_first_scan_microseconds": 213.846,
+      "local_first_scan_microseconds": 352.664,
       "recommendation": "keep_linear_scan_for_local_first_envelope",
       "revisit_when_active_claims_reach": 1000,
-      "worst_profiled_scan_microseconds": 292085.834
+      "worst_profiled_scan_microseconds": 321395.649
     }
   },
   "iterations_per_count": 200,
   "replay": [
     {
       "events": 100,
-      "events_per_sec": 74350,
-      "replay_milliseconds": 1.345
+      "events_per_sec": 49320,
+      "replay_milliseconds": 2.028
     },
     {
       "events": 1000,
-      "events_per_sec": 167994,
-      "replay_milliseconds": 5.953
+      "events_per_sec": 41001,
+      "replay_milliseconds": 24.389
     },
     {
       "events": 10000,
-      "events_per_sec": 21306,
-      "replay_milliseconds": 469.33
+      "events_per_sec": 51312,
+      "replay_milliseconds": 194.883
     },
     {
       "events": 100000,
-      "events_per_sec": 35108,
-      "replay_milliseconds": 2848.315
+      "events_per_sec": 43385,
+      "replay_milliseconds": 2304.936
     }
   ],
   "scan": [
     {
       "active_claims": 10,
-      "claim_scan_microseconds": 32.426
+      "claim_scan_microseconds": 52.032
     },
     {
       "active_claims": 100,
-      "claim_scan_microseconds": 213.846
+      "claim_scan_microseconds": 352.664
     },
     {
       "active_claims": 1000,
-      "claim_scan_microseconds": 2947.048
+      "claim_scan_microseconds": 2864.72
     },
     {
       "active_claims": 10000,
-      "claim_scan_microseconds": 34752.309
+      "claim_scan_microseconds": 30417.658
     },
     {
       "active_claims": 100000,
-      "claim_scan_microseconds": 292085.834
+      "claim_scan_microseconds": 321395.649
     }
   ],
-  "scan_iterations_per_count": 25
+  "scan_iterations_per_count": 25,
+  "storage_comparison": {
+    "baseline": {
+      "expiry": [
+        {
+          "active_claims": 10,
+          "mass_expiry_microseconds": 9.66,
+          "steady_heartbeat_microseconds": 0.466
+        },
+        {
+          "active_claims": 100,
+          "mass_expiry_microseconds": 54.92,
+          "steady_heartbeat_microseconds": 0.432
+        },
+        {
+          "active_claims": 1000,
+          "mass_expiry_microseconds": 825.35,
+          "steady_heartbeat_microseconds": 0.463
+        },
+        {
+          "active_claims": 10000,
+          "mass_expiry_microseconds": 13819.78,
+          "steady_heartbeat_microseconds": 0.767
+        },
+        {
+          "active_claims": 100000,
+          "mass_expiry_microseconds": 236871.89,
+          "steady_heartbeat_microseconds": 0.753
+        }
+      ],
+      "host": {
+        "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+        "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+        "python": "3.12.3"
+      },
+      "indexing_decision": {
+        "lease_expiry": {
+          "current_index": "min_heap",
+          "evidence_class": "loaded_workstation_functional_benchmark",
+          "recommendation": "keep_heap_index"
+        },
+        "scope_conflict_scan": {
+          "current_index": "none",
+          "evidence_class": "loaded_workstation_functional_benchmark",
+          "index_threshold_microseconds": 10000.0,
+          "local_first_claim_ceiling": 100,
+          "local_first_scan_microseconds": 338.499,
+          "recommendation": "keep_linear_scan_for_local_first_envelope",
+          "revisit_when_active_claims_reach": 1000,
+          "worst_profiled_scan_microseconds": 247652.008
+        }
+      },
+      "iterations_per_count": 200,
+      "replay": [
+        {
+          "events": 100,
+          "events_per_sec": 61534,
+          "replay_milliseconds": 1.625
+        },
+        {
+          "events": 1000,
+          "events_per_sec": 38252,
+          "replay_milliseconds": 26.142
+        },
+        {
+          "events": 10000,
+          "events_per_sec": 48528,
+          "replay_milliseconds": 206.064
+        },
+        {
+          "events": 100000,
+          "events_per_sec": 56820,
+          "replay_milliseconds": 1759.928
+        }
+      ],
+      "scan": [
+        {
+          "active_claims": 10,
+          "claim_scan_microseconds": 47.946
+        },
+        {
+          "active_claims": 100,
+          "claim_scan_microseconds": 338.499
+        },
+        {
+          "active_claims": 1000,
+          "claim_scan_microseconds": 3660.583
+        },
+        {
+          "active_claims": 10000,
+          "claim_scan_microseconds": 31064.754
+        },
+        {
+          "active_claims": 100000,
+          "claim_scan_microseconds": 247652.008
+        }
+      ],
+      "scan_iterations_per_count": 25
+    },
+    "benchmark_script_sha256": "6c5072769d135b4d990e5de5fcd37b9b3291edbf145755e1a85047264c53d0bc",
+    "context": {
+      "affinity_observed_after": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "baseline_git_revision": "a1b6fe8d619ee09c4f18e8756a12db823f93aca5",
+      "candidate_python_source_manifest_sha256": "11a82a091f6be05325251b2190fb37f653f11c57783cb9456387be8728c7802b",
+      "evidence_class": "local_functional_benchmark",
+      "execution": "serial per host, nice19, MemoryMax1536M/MemorySwapMax256M",
+      "isolation": "shared workstation; no reserved cores or pinned affinity",
+      "limitations": [
+        "single paired full-default run per harness",
+        "shared-host scheduling/storage noise",
+        "no production performance claim"
+      ],
+      "observed_after_utc": "2026-10-12T05:21:07.271357+00:00"
+    }
+  }
 }

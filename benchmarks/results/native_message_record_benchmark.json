@@ -1,189 +1,5 @@
 {
-  "affinity": [
-    0,
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10,
-    11
-  ],
-  "benchmark_script_sha256": "944dd295562bf3b80339bcd9fb7c5f851bd0f8c6153a64363c5bdb8e9452b838",
-  "candidate_python_source_manifest_sha256": "9e098120eecdd92e201f639108aa449297ea1d19dcebc1e4a123e7a74cbc9bbc",
-  "comparison": {
-    "baseline": {
-      "host": {
-        "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
-        "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
-        "python": "3.12.3"
-      },
-      "ingress_quota": {
-        "bytes": 8388608,
-        "events": 600,
-        "window_seconds": 60.0
-      },
-      "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
-      "load_average_after": [
-        18.06,
-        15.83,
-        14.04
-      ],
-      "load_average_before": [
-        17.02,
-        15.54,
-        13.93
-      ],
-      "parse": [
-        {
-          "count": 20000,
-          "max_us": 28.826994821429253,
-          "mean_us": 4.05705648008734,
-          "p50_us": 3.6709243431687355,
-          "p95_us": 6.170012056827545,
-          "p99_us": 9.502982720732689,
-          "text_bytes": 256,
-          "throughput_per_second": 242067.40870614606
-        },
-        {
-          "count": 20000,
-          "max_us": 462.3749991878867,
-          "mean_us": 30.772619927302,
-          "p50_us": 30.32002132385969,
-          "p95_us": 40.37003964185715,
-          "p99_us": 52.061048336327076,
-          "text_bytes": 32768,
-          "throughput_per_second": 32328.753162121677
-        }
-      ],
-      "round_trip": [
-        {
-          "count": 500,
-          "max_us": 127284.34696327895,
-          "mean_us": 11054.66634617187,
-          "p50_us": 9108.628961257637,
-          "p95_us": 20341.300987638533,
-          "p99_us": 82197.310985066,
-          "stored_events": 500,
-          "text_bytes": 256,
-          "throughput_per_second": 90.10522575436042
-        },
-        {
-          "count": 200,
-          "max_us": 139529.46802601218,
-          "mean_us": 14264.04657016974,
-          "p50_us": 10533.167980611324,
-          "p95_us": 30805.957969278097,
-          "p99_us": 105048.24994131923,
-          "stored_events": 200,
-          "text_bytes": 32768,
-          "throughput_per_second": 69.22762367085518
-        }
-      ]
-    },
-    "baseline_hub_source_sha256": "3e25ff9d56505d78fefb7a8d0e317064aaf56e6738eaa22dbffb2a4b86e50009",
-    "baseline_scope": "Exact parent source; same API-default quotas and full benchmark workload. Shared workstation, no reserved cores.",
-    "baseline_source_commit": "337ffb9699ddcd84185a47d2066908646f7532d5",
-    "candidate_hub_source_sha256": "853f310d0a6b9258186c89c7162012ea6ba56af6f795e876f94b4f5d42df0687",
-    "candidate_python_source_manifest_sha256": "9e098120eecdd92e201f639108aa449297ea1d19dcebc1e4a123e7a74cbc9bbc",
-    "library_probes": {
-      "after": [
-        {
-          "duration_seconds": 0.03734892897773534,
-          "iterations": 100,
-          "metrics": {
-            "p50_ms": 0.34362502628937364,
-            "p95_ms": 0.4842500202357769,
-            "roundtrips_per_second": 2677.452948104953
-          },
-          "name": "hub-roundtrip",
-          "notes": [
-            "who request to who_snapshot reply over a real loopback WebSocket"
-          ]
-        },
-        {
-          "duration_seconds": 0.80030813801568,
-          "iterations": 100,
-          "metrics": {
-            "claims_per_second": 124.95187197264356,
-            "p50_ms": 7.8127189772203565,
-            "p95_ms": 12.17805896885693
-          },
-          "name": "claim-grant",
-          "notes": [
-            "claim to claim_granted round-trip plus release, fresh task per iteration"
-          ]
-        },
-        {
-          "duration_seconds": 2.2958958779927343,
-          "iterations": 100,
-          "metrics": {
-            "claims_per_second": 43.55598220221922,
-            "event_loop_lag_max_ms": 82.57481798157096,
-            "event_loop_lag_p50_ms": 0.13015202805399892,
-            "event_loop_lag_p95_ms": 4.516304983757436,
-            "p50_ms": 20.151045580860227,
-            "p95_ms": 36.89611505251378
-          },
-          "name": "durable-claim-grant",
-          "notes": [
-            "claim-to-grant plus release with a real FULL-durability SQLite journal",
-            "event-loop lag is delay beyond a concurrent 1 ms scheduler interval"
-          ]
-        }
-      ],
-      "before": [
-        {
-          "duration_seconds": 0.049059543991461396,
-          "iterations": 100,
-          "metrics": {
-            "p50_ms": 0.45090646017342806,
-            "p95_ms": 0.7014090660959482,
-            "roundtrips_per_second": 2038.3393701621967
-          },
-          "name": "hub-roundtrip",
-          "notes": [
-            "who request to who_snapshot reply over a real loopback WebSocket"
-          ]
-        },
-        {
-          "duration_seconds": 0.7668806260917336,
-          "iterations": 100,
-          "metrics": {
-            "claims_per_second": 130.39839135020486,
-            "p50_ms": 7.451876474078745,
-            "p95_ms": 12.962776003405452
-          },
-          "name": "claim-grant",
-          "notes": [
-            "claim to claim_granted round-trip plus release, fresh task per iteration"
-          ]
-        },
-        {
-          "duration_seconds": 2.2274390530074015,
-          "iterations": 100,
-          "metrics": {
-            "claims_per_second": 44.89460659540107,
-            "event_loop_lag_max_ms": 86.96656492631882,
-            "event_loop_lag_p50_ms": 0.13867700565606353,
-            "event_loop_lag_p95_ms": 4.7030030293390155,
-            "p50_ms": 19.851341552566737,
-            "p95_ms": 29.924130998551846
-          },
-          "name": "durable-claim-grant",
-          "notes": [
-            "claim-to-grant plus release with a real FULL-durability SQLite journal",
-            "event-loop lag is delay beyond a concurrent 1 ms scheduler interval"
-          ]
-        }
-      ]
-    }
-  },
-  "historical_composition_root": {
+  "historical_frame_pipeline": {
     "affinity": [
       0,
       1,
@@ -199,7 +15,7 @@
       11
     ],
     "benchmark_script_sha256": "944dd295562bf3b80339bcd9fb7c5f851bd0f8c6153a64363c5bdb8e9452b838",
-    "candidate_python_source_manifest_sha256": "decdad8288a77f00b2a1a9d339466235ad85da61d2f2ed7c741f16a9dea39b30",
+    "candidate_python_source_manifest_sha256": "9e098120eecdd92e201f639108aa449297ea1d19dcebc1e4a123e7a74cbc9bbc",
     "comparison": {
       "baseline": {
         "host": {
@@ -214,228 +30,485 @@
         },
         "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
         "load_average_after": [
-          20.94,
-          18.97,
-          25.46
+          18.06,
+          15.83,
+          14.04
         ],
         "load_average_before": [
-          21.29,
-          18.91,
-          25.54
+          17.02,
+          15.54,
+          13.93
         ],
         "parse": [
           {
             "count": 20000,
-            "max_us": 15112.266992218792,
-            "mean_us": 17.57470661541447,
-            "p50_us": 7.849070243537426,
-            "p95_us": 9.341049008071423,
-            "p99_us": 21.277926862239838,
+            "max_us": 28.826994821429253,
+            "mean_us": 4.05705648008734,
+            "p50_us": 3.6709243431687355,
+            "p95_us": 6.170012056827545,
+            "p99_us": 9.502982720732689,
             "text_bytes": 256,
-            "throughput_per_second": 53711.357873993875
+            "throughput_per_second": 242067.40870614606
           },
           {
             "count": 20000,
-            "max_us": 23102.568928152323,
-            "mean_us": 56.35902585927397,
-            "p50_us": 36.77397035062313,
-            "p95_us": 48.45205694437027,
-            "p99_us": 80.0589332357049,
+            "max_us": 462.3749991878867,
+            "mean_us": 30.772619927302,
+            "p50_us": 30.32002132385969,
+            "p95_us": 40.37003964185715,
+            "p99_us": 52.061048336327076,
             "text_bytes": 32768,
-            "throughput_per_second": 17377.35299122956
+            "throughput_per_second": 32328.753162121677
           }
         ],
         "round_trip": [
           {
             "count": 500,
-            "max_us": 99188.94502334297,
-            "mean_us": 15438.194498186931,
-            "p50_us": 10224.913945421576,
-            "p95_us": 50116.200000047684,
-            "p99_us": 88172.53191955388,
+            "max_us": 127284.34696327895,
+            "mean_us": 11054.66634617187,
+            "p50_us": 9108.628961257637,
+            "p95_us": 20341.300987638533,
+            "p99_us": 82197.310985066,
             "stored_events": 500,
             "text_bytes": 256,
-            "throughput_per_second": 64.59143053840378
+            "throughput_per_second": 90.10522575436042
           },
           {
             "count": 200,
-            "max_us": 462636.05693820864,
-            "mean_us": 25451.643090927973,
-            "p50_us": 16519.342083483934,
-            "p95_us": 59860.66302284598,
-            "p99_us": 294884.04700532556,
+            "max_us": 139529.46802601218,
+            "mean_us": 14264.04657016974,
+            "p50_us": 10533.167980611324,
+            "p95_us": 30805.957969278097,
+            "p99_us": 105048.24994131923,
             "stored_events": 200,
             "text_bytes": 32768,
-            "throughput_per_second": 38.987947422838786
+            "throughput_per_second": 69.22762367085518
           }
         ]
       },
-      "baseline_hub_source_sha256": "b5be5c734c69d7978b5af993513d9845490c882cc47d0059e583ed4eb723e68e",
-      "baseline_scope": "exact original hub module plus same current imported dependencies; no whole old checkout",
-      "baseline_source_commit": "af68ebaf57668732652149be46e37d9be1e7ebb9",
+      "baseline_hub_source_sha256": "3e25ff9d56505d78fefb7a8d0e317064aaf56e6738eaa22dbffb2a4b86e50009",
+      "baseline_scope": "Exact parent source; same API-default quotas and full benchmark workload. Shared workstation, no reserved cores.",
+      "baseline_source_commit": "337ffb9699ddcd84185a47d2066908646f7532d5",
+      "candidate_hub_source_sha256": "853f310d0a6b9258186c89c7162012ea6ba56af6f795e876f94b4f5d42df0687",
+      "candidate_python_source_manifest_sha256": "9e098120eecdd92e201f639108aa449297ea1d19dcebc1e4a123e7a74cbc9bbc",
+      "library_probes": {
+        "after": [
+          {
+            "duration_seconds": 0.03734892897773534,
+            "iterations": 100,
+            "metrics": {
+              "p50_ms": 0.34362502628937364,
+              "p95_ms": 0.4842500202357769,
+              "roundtrips_per_second": 2677.452948104953
+            },
+            "name": "hub-roundtrip",
+            "notes": [
+              "who request to who_snapshot reply over a real loopback WebSocket"
+            ]
+          },
+          {
+            "duration_seconds": 0.80030813801568,
+            "iterations": 100,
+            "metrics": {
+              "claims_per_second": 124.95187197264356,
+              "p50_ms": 7.8127189772203565,
+              "p95_ms": 12.17805896885693
+            },
+            "name": "claim-grant",
+            "notes": [
+              "claim to claim_granted round-trip plus release, fresh task per iteration"
+            ]
+          },
+          {
+            "duration_seconds": 2.2958958779927343,
+            "iterations": 100,
+            "metrics": {
+              "claims_per_second": 43.55598220221922,
+              "event_loop_lag_max_ms": 82.57481798157096,
+              "event_loop_lag_p50_ms": 0.13015202805399892,
+              "event_loop_lag_p95_ms": 4.516304983757436,
+              "p50_ms": 20.151045580860227,
+              "p95_ms": 36.89611505251378
+            },
+            "name": "durable-claim-grant",
+            "notes": [
+              "claim-to-grant plus release with a real FULL-durability SQLite journal",
+              "event-loop lag is delay beyond a concurrent 1 ms scheduler interval"
+            ]
+          }
+        ],
+        "before": [
+          {
+            "duration_seconds": 0.049059543991461396,
+            "iterations": 100,
+            "metrics": {
+              "p50_ms": 0.45090646017342806,
+              "p95_ms": 0.7014090660959482,
+              "roundtrips_per_second": 2038.3393701621967
+            },
+            "name": "hub-roundtrip",
+            "notes": [
+              "who request to who_snapshot reply over a real loopback WebSocket"
+            ]
+          },
+          {
+            "duration_seconds": 0.7668806260917336,
+            "iterations": 100,
+            "metrics": {
+              "claims_per_second": 130.39839135020486,
+              "p50_ms": 7.451876474078745,
+              "p95_ms": 12.962776003405452
+            },
+            "name": "claim-grant",
+            "notes": [
+              "claim to claim_granted round-trip plus release, fresh task per iteration"
+            ]
+          },
+          {
+            "duration_seconds": 2.2274390530074015,
+            "iterations": 100,
+            "metrics": {
+              "claims_per_second": 44.89460659540107,
+              "event_loop_lag_max_ms": 86.96656492631882,
+              "event_loop_lag_p50_ms": 0.13867700565606353,
+              "event_loop_lag_p95_ms": 4.7030030293390155,
+              "p50_ms": 19.851341552566737,
+              "p95_ms": 29.924130998551846
+            },
+            "name": "durable-claim-grant",
+            "notes": [
+              "claim-to-grant plus release with a real FULL-durability SQLite journal",
+              "event-loop lag is delay beyond a concurrent 1 ms scheduler interval"
+            ]
+          }
+        ]
+      }
+    },
+    "historical_composition_root": {
+      "affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "benchmark_script_sha256": "944dd295562bf3b80339bcd9fb7c5f851bd0f8c6153a64363c5bdb8e9452b838",
       "candidate_python_source_manifest_sha256": "decdad8288a77f00b2a1a9d339466235ad85da61d2f2ed7c741f16a9dea39b30",
-      "constructor_factory": {
+      "comparison": {
         "baseline": {
-          "count": 1000,
-          "mean_us": 2280.1260431297123,
-          "p50_us": 2181.766030844301,
-          "p95_us": 3846.590989269316,
-          "p99_us": 5916.423979215324
+          "host": {
+            "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+            "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3"
+          },
+          "ingress_quota": {
+            "bytes": 8388608,
+            "events": 600,
+            "window_seconds": 60.0
+          },
+          "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
+          "load_average_after": [
+            20.94,
+            18.97,
+            25.46
+          ],
+          "load_average_before": [
+            21.29,
+            18.91,
+            25.54
+          ],
+          "parse": [
+            {
+              "count": 20000,
+              "max_us": 15112.266992218792,
+              "mean_us": 17.57470661541447,
+              "p50_us": 7.849070243537426,
+              "p95_us": 9.341049008071423,
+              "p99_us": 21.277926862239838,
+              "text_bytes": 256,
+              "throughput_per_second": 53711.357873993875
+            },
+            {
+              "count": 20000,
+              "max_us": 23102.568928152323,
+              "mean_us": 56.35902585927397,
+              "p50_us": 36.77397035062313,
+              "p95_us": 48.45205694437027,
+              "p99_us": 80.0589332357049,
+              "text_bytes": 32768,
+              "throughput_per_second": 17377.35299122956
+            }
+          ],
+          "round_trip": [
+            {
+              "count": 500,
+              "max_us": 99188.94502334297,
+              "mean_us": 15438.194498186931,
+              "p50_us": 10224.913945421576,
+              "p95_us": 50116.200000047684,
+              "p99_us": 88172.53191955388,
+              "stored_events": 500,
+              "text_bytes": 256,
+              "throughput_per_second": 64.59143053840378
+            },
+            {
+              "count": 200,
+              "max_us": 462636.05693820864,
+              "mean_us": 25451.643090927973,
+              "p50_us": 16519.342083483934,
+              "p95_us": 59860.66302284598,
+              "p99_us": 294884.04700532556,
+              "stored_events": 200,
+              "text_bytes": 32768,
+              "throughput_per_second": 38.987947422838786
+            }
+          ]
         },
-        "candidate": {
-          "count": 1000,
-          "mean_us": 1118.5979507863522,
-          "p50_us": 971.6935455799103,
-          "p95_us": 1986.62793263793,
-          "p99_us": 4005.3370175883174
+        "baseline_hub_source_sha256": "b5be5c734c69d7978b5af993513d9845490c882cc47d0059e583ed4eb723e68e",
+        "baseline_scope": "exact original hub module plus same current imported dependencies; no whole old checkout",
+        "baseline_source_commit": "af68ebaf57668732652149be46e37d9be1e7ebb9",
+        "candidate_python_source_manifest_sha256": "decdad8288a77f00b2a1a9d339466235ad85da61d2f2ed7c741f16a9dea39b30",
+        "constructor_factory": {
+          "baseline": {
+            "count": 1000,
+            "mean_us": 2280.1260431297123,
+            "p50_us": 2181.766030844301,
+            "p95_us": 3846.590989269316,
+            "p99_us": 5916.423979215324
+          },
+          "candidate": {
+            "count": 1000,
+            "mean_us": 1118.5979507863522,
+            "p50_us": 971.6935455799103,
+            "p95_us": 1986.62793263793,
+            "p99_us": 4005.3370175883174
+          }
+        },
+        "library_probes": {
+          "baseline": {
+            "affinity": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11
+            ],
+            "isolation": "none: shared workstation, no affinity or reserved CPU; source cohort completed before measurements",
+            "load_average_after": [
+              20.9384765625,
+              18.97021484375,
+              25.46044921875
+            ],
+            "load_average_before": [
+              19.57861328125,
+              18.533203125,
+              25.4609375
+            ],
+            "probes": [
+              {
+                "duration_seconds": 0.0717868939973414,
+                "iterations": 100,
+                "metrics": {
+                  "p50_ms": 0.5379805224947631,
+                  "p95_ms": 2.040353952907026,
+                  "roundtrips_per_second": 1393.0119333997577
+                },
+                "name": "hub-roundtrip",
+                "notes": [
+                  "who request to who_snapshot reply over a real loopback WebSocket"
+                ]
+              },
+              {
+                "duration_seconds": 0.7313687650021166,
+                "iterations": 100,
+                "metrics": {
+                  "claims_per_second": 136.72992994130752,
+                  "p50_ms": 6.149028020445257,
+                  "p95_ms": 13.7585160555318
+                },
+                "name": "claim-grant",
+                "notes": [
+                  "claim to claim_granted round-trip plus release, fresh task per iteration"
+                ]
+              },
+              {
+                "duration_seconds": 2.6099473469657823,
+                "iterations": 100,
+                "metrics": {
+                  "claims_per_second": 38.31494919476283,
+                  "event_loop_lag_max_ms": 20.78753598127514,
+                  "event_loop_lag_p50_ms": 0.1559644481167197,
+                  "event_loop_lag_p95_ms": 2.545330953784287,
+                  "p50_ms": 21.9311389955692,
+                  "p95_ms": 66.56230299267918
+                },
+                "name": "durable-claim-grant",
+                "notes": [
+                  "claim-to-grant plus release with a real FULL-durability SQLite journal",
+                  "event-loop lag is delay beyond a concurrent 1 ms scheduler interval"
+                ]
+              }
+            ]
+          },
+          "candidate": {
+            "affinity": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11
+            ],
+            "isolation": "none: shared workstation, no affinity or reserved CPU; source cohort completed before measurements",
+            "load_average_after": [
+              21.89111328125,
+              19.29296875,
+              25.390625
+            ],
+            "load_average_before": [
+              20.9384765625,
+              18.97021484375,
+              25.46044921875
+            ],
+            "probes": [
+              {
+                "duration_seconds": 0.056867499952204525,
+                "iterations": 100,
+                "metrics": {
+                  "p50_ms": 0.49259804654866457,
+                  "p95_ms": 1.4199240831658244,
+                  "roundtrips_per_second": 1758.4736463541933
+                },
+                "name": "hub-roundtrip",
+                "notes": [
+                  "who request to who_snapshot reply over a real loopback WebSocket"
+                ]
+              },
+              {
+                "duration_seconds": 0.5430667049949989,
+                "iterations": 100,
+                "metrics": {
+                  "claims_per_second": 184.13944195109679,
+                  "p50_ms": 4.899187944829464,
+                  "p95_ms": 9.348909952677786
+                },
+                "name": "claim-grant",
+                "notes": [
+                  "claim to claim_granted round-trip plus release, fresh task per iteration"
+                ]
+              },
+              {
+                "duration_seconds": 2.654173835995607,
+                "iterations": 100,
+                "metrics": {
+                  "claims_per_second": 37.676507334904464,
+                  "event_loop_lag_max_ms": 8.014109964482486,
+                  "event_loop_lag_p50_ms": 0.18369096890091893,
+                  "event_loop_lag_p95_ms": 2.943365067243576,
+                  "p50_ms": 22.624825011007488,
+                  "p95_ms": 67.51401000656188
+                },
+                "name": "durable-claim-grant",
+                "notes": [
+                  "claim-to-grant plus release with a real FULL-durability SQLite journal",
+                  "event-loop lag is delay beyond a concurrent 1 ms scheduler interval"
+                ]
+              }
+            ]
+          }
         }
       },
-      "library_probes": {
-        "baseline": {
-          "affinity": [
-            0,
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10,
-            11
-          ],
-          "isolation": "none: shared workstation, no affinity or reserved CPU; source cohort completed before measurements",
-          "load_average_after": [
-            20.9384765625,
-            18.97021484375,
-            25.46044921875
-          ],
-          "load_average_before": [
-            19.57861328125,
-            18.533203125,
-            25.4609375
-          ],
-          "probes": [
-            {
-              "duration_seconds": 0.0717868939973414,
-              "iterations": 100,
-              "metrics": {
-                "p50_ms": 0.5379805224947631,
-                "p95_ms": 2.040353952907026,
-                "roundtrips_per_second": 1393.0119333997577
-              },
-              "name": "hub-roundtrip",
-              "notes": [
-                "who request to who_snapshot reply over a real loopback WebSocket"
-              ]
-            },
-            {
-              "duration_seconds": 0.7313687650021166,
-              "iterations": 100,
-              "metrics": {
-                "claims_per_second": 136.72992994130752,
-                "p50_ms": 6.149028020445257,
-                "p95_ms": 13.7585160555318
-              },
-              "name": "claim-grant",
-              "notes": [
-                "claim to claim_granted round-trip plus release, fresh task per iteration"
-              ]
-            },
-            {
-              "duration_seconds": 2.6099473469657823,
-              "iterations": 100,
-              "metrics": {
-                "claims_per_second": 38.31494919476283,
-                "event_loop_lag_max_ms": 20.78753598127514,
-                "event_loop_lag_p50_ms": 0.1559644481167197,
-                "event_loop_lag_p95_ms": 2.545330953784287,
-                "p50_ms": 21.9311389955692,
-                "p95_ms": 66.56230299267918
-              },
-              "name": "durable-claim-grant",
-              "notes": [
-                "claim-to-grant plus release with a real FULL-durability SQLite journal",
-                "event-loop lag is delay beyond a concurrent 1 ms scheduler interval"
-              ]
-            }
-          ]
+      "host": {
+        "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+        "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+        "python": "3.12.3"
+      },
+      "ingress_quota": {
+        "bytes": 8388608,
+        "events": 600,
+        "window_seconds": 60.0
+      },
+      "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
+      "load_average_after": [
+        21.89,
+        19.29,
+        25.39
+      ],
+      "load_average_before": [
+        19.98,
+        18.8,
+        25.37
+      ],
+      "parse": [
+        {
+          "count": 20000,
+          "max_us": 467.26304572075605,
+          "mean_us": 5.617251404328272,
+          "p50_us": 4.524015821516514,
+          "p95_us": 8.177012205123901,
+          "p99_us": 9.199953638017178,
+          "text_bytes": 256,
+          "throughput_per_second": 174091.61771864878
         },
-        "candidate": {
-          "affinity": [
-            0,
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10,
-            11
-          ],
-          "isolation": "none: shared workstation, no affinity or reserved CPU; source cohort completed before measurements",
-          "load_average_after": [
-            21.89111328125,
-            19.29296875,
-            25.390625
-          ],
-          "load_average_before": [
-            20.9384765625,
-            18.97021484375,
-            25.46044921875
-          ],
-          "probes": [
-            {
-              "duration_seconds": 0.056867499952204525,
-              "iterations": 100,
-              "metrics": {
-                "p50_ms": 0.49259804654866457,
-                "p95_ms": 1.4199240831658244,
-                "roundtrips_per_second": 1758.4736463541933
-              },
-              "name": "hub-roundtrip",
-              "notes": [
-                "who request to who_snapshot reply over a real loopback WebSocket"
-              ]
-            },
-            {
-              "duration_seconds": 0.5430667049949989,
-              "iterations": 100,
-              "metrics": {
-                "claims_per_second": 184.13944195109679,
-                "p50_ms": 4.899187944829464,
-                "p95_ms": 9.348909952677786
-              },
-              "name": "claim-grant",
-              "notes": [
-                "claim to claim_granted round-trip plus release, fresh task per iteration"
-              ]
-            },
-            {
-              "duration_seconds": 2.654173835995607,
-              "iterations": 100,
-              "metrics": {
-                "claims_per_second": 37.676507334904464,
-                "event_loop_lag_max_ms": 8.014109964482486,
-                "event_loop_lag_p50_ms": 0.18369096890091893,
-                "event_loop_lag_p95_ms": 2.943365067243576,
-                "p50_ms": 22.624825011007488,
-                "p95_ms": 67.51401000656188
-              },
-              "name": "durable-claim-grant",
-              "notes": [
-                "claim-to-grant plus release with a real FULL-durability SQLite journal",
-                "event-loop lag is delay beyond a concurrent 1 ms scheduler interval"
-              ]
-            }
-          ]
+        {
+          "count": 20000,
+          "max_us": 7391.574094071984,
+          "mean_us": 40.53474690881558,
+          "p50_us": 39.22800533473492,
+          "p95_us": 44.64201629161835,
+          "p99_us": 63.31305485218763,
+          "text_bytes": 32768,
+          "throughput_per_second": 24545.960813712816
         }
-      }
+      ],
+      "qualification_note": "Sequential baseline/candidate on a shared workstation, no reserved cores. Final owning cohort completed before measurements. Host load varied; all timings are local observations, no production performance claim.",
+      "recorded_at": "2026-10-08T14:39:06.928899+00:00",
+      "reproduction_command": "PYTHONPATH=src python benchmarks/native_message_record_benchmark.py; PYTHONPATH=src python -c \"from synapse_channel.benchmark.probes import run_probes; print(run_probes(['hub-roundtrip', 'claim-grant', 'durable-claim-grant']))\"",
+      "round_trip": [
+        {
+          "count": 500,
+          "max_us": 211697.43593782187,
+          "mean_us": 18835.859082406387,
+          "p50_us": 12729.304027743638,
+          "p95_us": 55218.816036358476,
+          "p99_us": 101057.73305986077,
+          "stored_events": 500,
+          "text_bytes": 256,
+          "throughput_per_second": 52.95883105334291
+        },
+        {
+          "count": 200,
+          "max_us": 120816.16499926895,
+          "mean_us": 24488.81516524125,
+          "p50_us": 15780.486050061882,
+          "p95_us": 73961.92802116275,
+          "p99_us": 118935.53601112217,
+          "stored_events": 200,
+          "text_bytes": 32768,
+          "throughput_per_second": 40.34348496397082
+        }
+      ],
+      "source_parent_commit": "af68ebaf57668732652149be46e37d9be1e7ebb9"
     },
     "host": {
       "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
@@ -449,65 +522,81 @@
     },
     "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
     "load_average_after": [
-      21.89,
-      19.29,
-      25.39
+      11.02,
+      13.62,
+      14.37
     ],
     "load_average_before": [
-      19.98,
-      18.8,
-      25.37
+      11.53,
+      13.81,
+      14.44
     ],
+    "parameters": {
+      "parse_count_per_size": 20000,
+      "repeats": 1,
+      "round_trip_runs": [
+        [
+          256,
+          500
+        ],
+        [
+          32768,
+          200
+        ]
+      ],
+      "warmup": 0
+    },
     "parse": [
       {
         "count": 20000,
-        "max_us": 467.26304572075605,
-        "mean_us": 5.617251404328272,
-        "p50_us": 4.524015821516514,
-        "p95_us": 8.177012205123901,
-        "p99_us": 9.199953638017178,
+        "max_us": 41.64793062955141,
+        "mean_us": 5.733893922297284,
+        "p50_us": 5.622045136988163,
+        "p95_us": 8.034985512495041,
+        "p99_us": 10.64501702785492,
         "text_bytes": 256,
-        "throughput_per_second": 174091.61771864878
+        "throughput_per_second": 171058.58736110321
       },
       {
         "count": 20000,
-        "max_us": 7391.574094071984,
-        "mean_us": 40.53474690881558,
-        "p50_us": 39.22800533473492,
-        "p95_us": 44.64201629161835,
-        "p99_us": 63.31305485218763,
+        "max_us": 1181.8580096587539,
+        "mean_us": 34.07437829300761,
+        "p50_us": 33.3680072799325,
+        "p95_us": 42.24793519824743,
+        "p99_us": 53.01903001964092,
         "text_bytes": 32768,
-        "throughput_per_second": 24545.960813712816
+        "throughput_per_second": 29199.136122125376
       }
     ],
-    "qualification_note": "Sequential baseline/candidate on a shared workstation, no reserved cores. Final owning cohort completed before measurements. Host load varied; all timings are local observations, no production performance claim.",
-    "recorded_at": "2026-10-08T14:39:06.928899+00:00",
-    "reproduction_command": "PYTHONPATH=src python benchmarks/native_message_record_benchmark.py; PYTHONPATH=src python -c \"from synapse_channel.benchmark.probes import run_probes; print(run_probes(['hub-roundtrip', 'claim-grant', 'durable-claim-grant']))\"",
+    "qualification_note": "Local functional comparison of actual serving/frame processing, not an isolated production performance claim. Default workload includes first registration. No warm-up or isolated CI performance result is represented; all 700 records stored under unchanged quotas.",
+    "recorded_at": "2026-10-12T02:28:04.781039+00:00",
+    "reproduction_command": "PYTHONPATH=src python benchmarks/native_message_record_benchmark.py",
     "round_trip": [
       {
         "count": 500,
-        "max_us": 211697.43593782187,
-        "mean_us": 18835.859082406387,
-        "p50_us": 12729.304027743638,
-        "p95_us": 55218.816036358476,
-        "p99_us": 101057.73305986077,
+        "max_us": 138976.23296361417,
+        "mean_us": 9884.48264519684,
+        "p50_us": 7476.276019588113,
+        "p95_us": 19714.560941793025,
+        "p99_us": 81579.13805916905,
         "stored_events": 500,
         "text_bytes": 256,
-        "throughput_per_second": 52.95883105334291
+        "throughput_per_second": 100.79167132644348
       },
       {
         "count": 200,
-        "max_us": 120816.16499926895,
-        "mean_us": 24488.81516524125,
-        "p50_us": 15780.486050061882,
-        "p95_us": 73961.92802116275,
-        "p99_us": 118935.53601112217,
+        "max_us": 75339.42104782909,
+        "mean_us": 12726.522027514875,
+        "p50_us": 10740.060009993613,
+        "p95_us": 26118.792011402547,
+        "p99_us": 66841.63003228605,
         "stored_events": 200,
         "text_bytes": 32768,
-        "throughput_per_second": 40.34348496397082
+        "throughput_per_second": 77.50364153034806
       }
     ],
-    "source_parent_commit": "af68ebaf57668732652149be46e37d9be1e7ebb9"
+    "schema": "synapse.native-message-record.local.v1",
+    "source_parent_commit": "337ffb9699ddcd84185a47d2066908646f7532d5"
   },
   "host": {
     "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
@@ -521,79 +610,158 @@
   },
   "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
   "load_average_after": [
-    11.02,
-    13.62,
-    14.37
+    10.64,
+    12.01,
+    12.7
   ],
   "load_average_before": [
-    11.53,
-    13.81,
-    14.44
+    11.13,
+    12.15,
+    12.76
   ],
-  "parameters": {
-    "parse_count_per_size": 20000,
-    "repeats": 1,
-    "round_trip_runs": [
-      [
-        256,
-        500
-      ],
-      [
-        32768,
-        200
-      ]
-    ],
-    "warmup": 0
-  },
   "parse": [
     {
       "count": 20000,
-      "max_us": 41.64793062955141,
-      "mean_us": 5.733893922297284,
-      "p50_us": 5.622045136988163,
-      "p95_us": 8.034985512495041,
-      "p99_us": 10.64501702785492,
+      "max_us": 635.540927760303,
+      "mean_us": 6.156193185597658,
+      "p50_us": 6.0050515457987785,
+      "p95_us": 8.543021976947784,
+      "p99_us": 13.282988220453262,
       "text_bytes": 256,
-      "throughput_per_second": 171058.58736110321
+      "throughput_per_second": 159545.60767764717
     },
     {
       "count": 20000,
-      "max_us": 1181.8580096587539,
-      "mean_us": 34.07437829300761,
-      "p50_us": 33.3680072799325,
-      "p95_us": 42.24793519824743,
-      "p99_us": 53.01903001964092,
+      "max_us": 3085.087053477764,
+      "mean_us": 33.122207707492635,
+      "p50_us": 32.081035897135735,
+      "p95_us": 42.12011117488146,
+      "p99_us": 54.91194315254688,
       "text_bytes": 32768,
-      "throughput_per_second": 29199.136122125376
+      "throughput_per_second": 30053.92240244166
     }
   ],
-  "qualification_note": "Local functional comparison of actual serving/frame processing, not an isolated production performance claim. Default workload includes first registration. No warm-up or isolated CI performance result is represented; all 700 records stored under unchanged quotas.",
-  "recorded_at": "2026-10-12T02:28:04.781039+00:00",
-  "reproduction_command": "PYTHONPATH=src python benchmarks/native_message_record_benchmark.py",
   "round_trip": [
     {
       "count": 500,
-      "max_us": 138976.23296361417,
-      "mean_us": 9884.48264519684,
-      "p50_us": 7476.276019588113,
-      "p95_us": 19714.560941793025,
-      "p99_us": 81579.13805916905,
+      "max_us": 126874.2160173133,
+      "mean_us": 9964.18183343485,
+      "p50_us": 8427.157998085022,
+      "p95_us": 19518.375978805125,
+      "p99_us": 45937.19111289829,
       "stored_events": 500,
       "text_bytes": 256,
-      "throughput_per_second": 100.79167132644348
+      "throughput_per_second": 99.89575693956964
     },
     {
       "count": 200,
-      "max_us": 75339.42104782909,
-      "mean_us": 12726.522027514875,
-      "p50_us": 10740.060009993613,
-      "p95_us": 26118.792011402547,
-      "p99_us": 66841.63003228605,
+      "max_us": 92498.59594274312,
+      "mean_us": 14079.328623483889,
+      "p50_us": 11014.484916813672,
+      "p95_us": 25838.910951279104,
+      "p99_us": 79892.60705653578,
       "stored_events": 200,
       "text_bytes": 32768,
-      "throughput_per_second": 77.50364153034806
+      "throughput_per_second": 69.96942680373132
     }
   ],
-  "schema": "synapse.native-message-record.local.v1",
-  "source_parent_commit": "337ffb9699ddcd84185a47d2066908646f7532d5"
+  "storage_comparison": {
+    "baseline": {
+      "host": {
+        "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+        "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+        "python": "3.12.3"
+      },
+      "ingress_quota": {
+        "bytes": 8388608,
+        "events": 600,
+        "window_seconds": 60.0
+      },
+      "isolation": "none: shared workstation, no reserved cores, no pinned affinity",
+      "load_average_after": [
+        15.61,
+        14.51,
+        13.42
+      ],
+      "load_average_before": [
+        14.8,
+        14.31,
+        13.35
+      ],
+      "parse": [
+        {
+          "count": 20000,
+          "max_us": 32.751006074249744,
+          "mean_us": 4.931844648672268,
+          "p50_us": 4.1389139369130135,
+          "p95_us": 7.344991900026798,
+          "p99_us": 9.228009730577469,
+          "text_bytes": 256,
+          "throughput_per_second": 198967.95328949214
+        },
+        {
+          "count": 20000,
+          "max_us": 102.59007103741169,
+          "mean_us": 27.6549301459454,
+          "p50_us": 26.51603426784277,
+          "p95_us": 35.56697629392147,
+          "p99_us": 41.1119544878602,
+          "text_bytes": 32768,
+          "throughput_per_second": 35999.2000330124
+        }
+      ],
+      "round_trip": [
+        {
+          "count": 500,
+          "max_us": 125065.8460194245,
+          "mean_us": 9948.779885889962,
+          "p50_us": 8276.161970570683,
+          "p95_us": 19733.89892373234,
+          "p99_us": 43843.74397341162,
+          "stored_events": 500,
+          "text_bytes": 256,
+          "throughput_per_second": 100.09748638346016
+        },
+        {
+          "count": 200,
+          "max_us": 94409.5819722861,
+          "mean_us": 12886.73423754517,
+          "p50_us": 10807.46203660965,
+          "p95_us": 21799.620939418674,
+          "p99_us": 87190.89208170772,
+          "stored_events": 200,
+          "text_bytes": 32768,
+          "throughput_per_second": 76.55511579011286
+        }
+      ]
+    },
+    "benchmark_script_sha256": "944dd295562bf3b80339bcd9fb7c5f851bd0f8c6153a64363c5bdb8e9452b838",
+    "context": {
+      "affinity_observed_after": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "baseline_git_revision": "a1b6fe8d619ee09c4f18e8756a12db823f93aca5",
+      "candidate_python_source_manifest_sha256": "11a82a091f6be05325251b2190fb37f653f11c57783cb9456387be8728c7802b",
+      "evidence_class": "local_functional_benchmark",
+      "execution": "serial per host, nice19, MemoryMax1536M/MemorySwapMax256M",
+      "isolation": "shared workstation; no reserved cores or pinned affinity",
+      "limitations": [
+        "single paired full-default run per harness",
+        "shared-host scheduling/storage noise",
+        "no production performance claim"
+      ],
+      "observed_after_utc": "2026-10-12T05:21:07.271357+00:00"
+    }
+  }
 }

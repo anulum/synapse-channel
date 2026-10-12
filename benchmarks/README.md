@@ -181,41 +181,20 @@ source revision and isolation state.
 The timed loop includes first sender registration, so changes to registration
 require rerunning this benchmark even when record parsing is unchanged.
 
-The current frame-pipeline comparison executes the same full workload
-before and after frame admission and registration were separated: 20,000
-parser validations for each size and 500 short plus 200 long durable records.
-The baseline is the exact parent source. Both variants use the same runtime
-dependencies and unchanged ingress quotas. The JSON records source digests,
-the full result distributions and the library's three 100-iteration live-hub
-probes. These shared-workstation runs include registration and are functional
-regression evidence; they contain no discarded warm-up or isolated CI result
-and support no production performance claim.
+The current storage comparison executes the full default native workload
+against `a1b6fe8d` and a frozen table-family candidate, using identical runtime
+dependencies and quotas. The baseline and source-manifest/harness digests are
+under `storage_comparison`. The sustained-write, scalability and coding-fleet
+results were refreshed against the same variants. Runs are serial on shared
+workstation CPU/storage, with no reserved cores or discarded warm-up. The
+reported large-read/replay costs include additional ownership/dispatch
+boundaries and the new partial MAC index; no performance improvement or
+production claim is inferred from a single pair.
 
-The earlier composition-root comparison is retained under
-`historical_composition_root`. It executes the same full workload
-against the grouped-record baseline and externally composed hub: 20,000 parser
-validations for each text size, plus 500 short and 200
-long durable records. All records are stored under the unchanged ingress quota.
-Both runs share the workstation without reserved cores. Their recorded timings
-are local regression observations and do not establish a production throughput,
-latency improvement or regression. The JSON retains the baseline Git revision,
-candidate Python source-manifest digest and results; a content digest identifies
-the measured candidate without a self-referential commit hash. The baseline
-loads the exact original hub module; both variants use the same unchanged
-runtime dependencies. A separate 1,000-construction measurement compares
-baseline `from_config` with `build_hub`, including configuration fingerprinting
-and graph installation. CLI argument processing is not timed. Rerun on an
-isolated runner for performance claims.
-
-The comparison also runs the library's `hub-roundtrip`,
-`claim-grant` and `durable-claim-grant` probes against both sources at their
-unchanged defaults of 100 iterations each. These exercise actual routing and
-lease operations; their measurements are retained
-under `historical_composition_root.comparison.library_probes`; the complete candidate source manifest
-digest is retained in the same result. These measurements run
-after the final owning source cohort, sequentially by variant; the workstation
-still shares CPU and storage with other work. The other standalone
-harnesses time unchanged state, store, codec, bridge or routing-library paths.
+Previous frame-pipeline measurements remain under `historical_frame_pipeline`.
+Its composition-root and library-probe measurements remain nested under
+`historical_frame_pipeline.historical_composition_root`, with their original
+source fingerprints. See [the comparison table](../docs/benchmarks.md#storage-transaction-and-replay-comparison).
 
 ## `sustained_write_benchmark.py`
 
@@ -238,3 +217,14 @@ python benchmarks/sustained_write_benchmark.py
 ```
 
 Output is written to `results/sustained_write_benchmark.json` with a one-line summary.
+
+## `authenticated_write_benchmark.py`
+
+Measures NORMAL and FULL appends on a fresh row-MAC-enabled WAL store with a
+public fixed fixture key, then authenticates every row. Run
+`PYTHONPATH=src python benchmarks/authenticated_write_benchmark.py`; use
+`--normal-count` and `--durable-count` for smaller workloads. The three-pair
+before/after record is under
+`results/sustained_write_benchmark.json` →
+`storage_comparison.authenticated_write_probe`. It measures partial MAC-index
+maintenance on shared CPU/storage, without reading any enrolled operator key.

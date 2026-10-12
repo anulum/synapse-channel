@@ -28,7 +28,7 @@ import json
 import math
 import time
 from collections import OrderedDict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -43,6 +43,12 @@ from synapse_channel.core.delivery_persistence import (
 )
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.event_row_recovery import CORRUPT_EVENT_KIND, CorruptEventRow
+from synapse_channel.core.journal_appliers import (
+    ReplayContext,
+    ReplayPorts,
+    apply_event,
+    event_appliers,
+)
 from synapse_channel.core.ledger import (
     DEFAULT_MAX_PROGRESS,
     DEFAULT_MAX_PROGRESS_PER_AUTHOR,
@@ -54,7 +60,7 @@ from synapse_channel.core.ledger import (
 from synapse_channel.core.multihub_equivocation import FederationQuarantine, valid_fingerprint
 from synapse_channel.core.operator_relay_approval import RelayApprovalLedger
 from synapse_channel.core.path_identity import parse_optional_claim_scope_identity
-from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.persistence import EventStore, StoredEvent
 from synapse_channel.core.protected_write_admission_journal import (
     ADMISSION_EVENT_KIND,
     ProtectedAdmissionReplayPolicy,
@@ -832,6 +838,29 @@ def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
     )
 
 
+def _protected_replay_callbacks(
+    store: EventStore,
+    state: SynapseState,
+    policies: Mapping[str, ProtectedAdmissionReplayPolicy] | None,
+    through_seq: int | None,
+) -> dict[str, Callable[[StoredEvent], None]]:
+    """Retain only explicitly supported restorers and defer their existing hooks."""
+    if policies is None:
+        return {}
+    enrolled = policies
+    return {
+        RECOVERY_EVENT_KIND: lambda event: restore_protected_recovery(
+            event, store=store, state=state, policies=enrolled, through_seq=through_seq
+        ),
+        TRANSITION_EVENT_KIND: lambda event: restore_protected_transition(
+            event, store=store, state=state, policies=enrolled, through_seq=through_seq
+        ),
+        ADMISSION_EVENT_KIND: lambda event: restore_protected_admission(
+            event, store=store, state=state, policies=enrolled, through_seq=through_seq
+        ),
+    }
+
+
 def replay(
     store: EventStore,
     *,
@@ -904,122 +933,39 @@ def replay(
         max_offers_per_agent=max_offers_per_agent,
         max_paths_per_claim=max_paths_per_claim,
     )
-    chat_history: list[dict[str, Any]] = []
     blackboard = Blackboard(
         max_progress=max_progress,
         max_progress_per_author=max_progress_per_author,
         max_progress_per_task=max_progress_per_task,
     )
-    idempotency: OrderedDict[str, dict[str, Any]] = OrderedDict()
-    finding_counts_by_actor: dict[str, int] = {}
-    relay_approvals = RelayApprovalLedger()
-    corrupt_rows: list[CorruptEventRow] = []
-    message_seq = 0
-    epoch_seq = 0
-
+    context = ReplayContext(
+        state=state,
+        blackboard=blackboard,
+        chat_history=[],
+        idempotency=OrderedDict(),
+        finding_counts_by_actor={},
+        relay_approvals=RelayApprovalLedger(),
+        corrupt_rows=[],
+    )
+    ports = ReplayPorts(
+        claim=lambda payload: _claim_from_payload(payload),
+        ledger_task=lambda payload: _ledger_task_from_payload(payload),
+        progress=lambda payload: _progress_from_payload(payload),
+        protected_task_held=lambda task: state._protected_task_held(task),
+        protected_scope_held=lambda claim: state._protected_scope_held(
+            claim.task_id, claim.worktree, claim.paths, claim.path_identity
+        ),
+        scope_checked_kinds=frozenset({EventKind.CLAIM, EventKind.HANDOFF}),
+        protected_restorers=_protected_replay_callbacks(
+            store, state, protected_write_policies, up_to_seq
+        ),
+        unsupported=lambda detail: UnsupportedProtectedWriteHistoryError(detail),
+    )
+    appliers = event_appliers(EventKind)
     for event in store.iter_events(through_seq=up_to_seq, kinds=event_kinds):
-        payload = event.payload
-        if event.kind == RECOVERY_EVENT_KIND and protected_write_policies is not None:
-            restore_protected_recovery(
-                event,
-                store=store,
-                state=state,
-                policies=protected_write_policies,
-                through_seq=up_to_seq,
-            )
-            continue
-        if event.kind == TRANSITION_EVENT_KIND and protected_write_policies is not None:
-            restore_protected_transition(
-                event,
-                store=store,
-                state=state,
-                policies=protected_write_policies,
-                through_seq=up_to_seq,
-            )
-            continue
-        if event.kind == ADMISSION_EVENT_KIND and protected_write_policies is not None:
-            restore_protected_admission(
-                event,
-                store=store,
-                state=state,
-                policies=protected_write_policies,
-                through_seq=up_to_seq,
-            )
-            continue
-        if event.kind == "protected_write" or event.kind.startswith("protected_write_"):
-            raise UnsupportedProtectedWriteHistoryError(
-                f"unsupported protected-write history at sequence {event.seq}; "
-                "custody reconciliation is required before authority can resume"
-            )
-        if event.kind == EventKind.CORRUPT:
-            corrupt_rows.append(CorruptEventRow.from_payload(event.seq, payload))
-            continue
-        # CHECKPOINT and HANDOFF carry the full claim snapshot, distinct only so
-        # the memory read-side can pick them out — coordination replay reconstructs
-        # the claim from them exactly as it does a CLAIM/TASK_UPDATE (and a legacy
-        # log that journalled them as CLAIM still replays through this same branch).
-        if event.kind in (
-            EventKind.CLAIM,
-            EventKind.TASK_UPDATE,
-            EventKind.CHECKPOINT,
-            EventKind.HANDOFF,
-        ):
-            claim = _claim_from_payload(payload)
-            if state._protected_task_held(claim.task_id) or (
-                event.kind in (EventKind.CLAIM, EventKind.HANDOFF)
-                and state._protected_scope_held(
-                    claim.task_id, claim.worktree, claim.paths, claim.path_identity
-                )
-            ):
-                raise UnsupportedProtectedWriteHistoryError(
-                    "legacy claim mutation conflicts with protected custody "
-                    f"at sequence {event.seq}"
-                )
-            state.claims[claim.task_id] = claim
-            state.last_seen[claim.owner] = claim.claimed_at
-            epoch_seq = max(epoch_seq, claim.epoch)
-        elif event.kind == EventKind.LEDGER_TASK:
-            task = _ledger_task_from_payload(payload)
-            blackboard.tasks[task.task_id] = task
-        elif event.kind == EventKind.LEDGER_PROGRESS:
-            blackboard.restore_progress(_progress_from_payload(payload))
-        elif event.kind == EventKind.RELEASE:
-            if state._protected_task_held(str(payload["task_id"])):
-                raise UnsupportedProtectedWriteHistoryError(
-                    f"legacy release conflicts with protected custody at sequence {event.seq}"
-                )
-            state.claims.pop(str(payload["task_id"]), None)
-        elif event.kind == EventKind.RESOURCE:
-            offer = ResourceOffer(
-                agent=str(payload["agent"]),
-                kind=str(payload["kind"]),
-                name=str(payload["name"]),
-                capacity=int(payload.get("capacity", 1)),
-                meta=dict(payload.get("meta", {})),
-                offered_at=float(payload["offered_at"]),
-            )
-            state.resources[f"{offer.agent}:{offer.kind}:{offer.name}"] = offer
-        elif event.kind == EventKind.CHAT:
-            chat_history.append(payload)
-            message_seq = max(message_seq, int(payload.get("msg_id", 0)))
-        elif event.kind == EventKind.IDEMPOTENCY:
-            key = str(payload.get("key", ""))
-            if key:
-                idempotency[key] = dict(payload.get("response", {}))
-                idempotency.move_to_end(key)  # latest response, most-recently-used
-        elif event.kind == EventKind.FINDING:
-            provenance = payload.get("provenance")
-            if isinstance(provenance, dict):
-                actor = str(provenance.get("actor") or "").strip()
-                if actor:
-                    finding_counts_by_actor[actor] = finding_counts_by_actor.get(actor, 0) + 1
-        elif event.kind == EventKind.OPERATOR_RELAY:
-            relay_approvals.restore_audit(payload)
-        # RECALL is telemetry and FINDING is the durable memory spine. Neither is
-        # coordination state, so replay never inserts them into the registry; findings
-        # only seed live quota counters for the same actor after a restart.
+        apply_event(context, ports, appliers, event)
 
-    state._epoch_seq = epoch_seq
+    state._epoch_seq = context.epoch_seq
     # Replay assigns claims straight into the registry, so build the lease-expiry
     # heap from the reconstructed claims before any expiry pass runs against it.
     state.reindex_leases()
@@ -1028,11 +974,11 @@ def replay(
     state._expire_resources(ts)
     return ReplayResult(
         state=state,
-        chat_history=chat_history,
-        message_seq=message_seq,
+        chat_history=context.chat_history,
+        message_seq=context.message_seq,
         blackboard=blackboard,
-        idempotency=list(idempotency.items()),
-        finding_counts_by_actor=dict(finding_counts_by_actor),
-        relay_approvals=relay_approvals,
-        corrupt_rows=tuple(corrupt_rows),
+        idempotency=list(context.idempotency.items()),
+        finding_counts_by_actor=dict(context.finding_counts_by_actor),
+        relay_approvals=context.relay_approvals,
+        corrupt_rows=tuple(context.corrupt_rows),
     )

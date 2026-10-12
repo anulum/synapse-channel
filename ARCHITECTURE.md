@@ -169,6 +169,44 @@ chat and progress path commits at `synchronous=NORMAL` (durable across an
 application crash). At-rest payload encryption and whole-database SQLCipher are
 optional layers on the same store.
 
+`EventStore` retains its public signatures and record types while table families
+share one connection, lock and transaction owner:
+
+| Responsibility | Owning modules |
+| --- | --- |
+| Connection custody and shared event state | `core/persistence_connection` |
+| Append and AEF outbox | `core/persistence_events` |
+| Bounded reads and forensic scans | `core/persistence_event_reads` |
+| Row MACs and quarantine | `core/persistence_event_authentication` |
+| Retention and vacuum | `core/persistence_event_maintenance` |
+| Receipt aggregates and notification outbox | `core/persistence_receipts`, `core/persistence_receipt_codec` |
+| Keyed operations and evidence outbox | `core/persistence_operations`, `core/persistence_operation_commit` |
+
+Keyed mutation preparation happens before the writer lock. Replay and conflict
+lookup precedes renewed predecessor and capacity checks. Mutation events, exact
+response, compatibility replay and evidence intent share one `BEGIN IMMEDIATE`
+boundary. Post-commit observers cannot roll back a durable result. Receipt chat,
+request and notification transactions retain the same ownership boundary.
+Public event and operation records remain defined in `core/persistence`.
+
+Journal replay uses `core/journal_appliers`: protected custody restorers run
+first, unsupported protected history is refused, and ordinary event families
+update their existing projections. Expiry and reindexing remain at the replay
+composition boundary.
+
+`core/persistence_receipt_view` reads a receipt aggregate and its exact source
+event through a read-only connection. It verifies message/state binding and
+optional row authentication, uses live WAL snapshots and returns unavailable
+for unknown or unverified facts. It never constructs a writable store or
+migrates a schema. MAC enrollment probes require the writer's additive partial
+index, rather than scanning history at each poll.
+The next writable open of every existing store builds that index, and later
+authenticated writes maintain it. Older versions ignore the additive index.
+SQLite may create WAL/SHM
+coordination sidecars beside an existing WAL database in a writable directory;
+the database content and file mode remain unchanged. See
+[`docs/api.md`](docs/api.md#read-only-delivery-receipts).
+
 ## Federation and multi-hub
 
 Most coordination state merges cleanly across hubs; authority does not — and

@@ -1,51 +1,259 @@
 {
   "compaction_read_impact": [
     {
-      "after_seconds": 0.2935851869988255,
-      "before_seconds": 0.39171894994797185,
+      "after_seconds": 0.20721921406220645,
+      "before_seconds": 0.3191305340733379,
       "count": 50000,
       "removed": 25000
     }
   ],
   "host": {
     "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
-    "platform": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
     "python": "3.12.3"
   },
   "read_since": [
     {
       "count": 1000,
-      "seconds": 0.006867029995191842
+      "seconds": 0.0071763270534574986
     },
     {
       "count": 10000,
-      "seconds": 0.05892396502895281
+      "seconds": 0.10934495704714209
     },
     {
       "count": 50000,
-      "seconds": 0.39025232603307813
+      "seconds": 0.3887282240903005
     }
   ],
+  "storage_comparison": {
+    "authenticated_write_probe": {
+      "harness": "benchmarks/authenticated_write_benchmark.py",
+      "harness_sha256": "097da3172a1e53b080bc66dcd319ec82525e6b2dfe6bab07b238f3a937ba82e6",
+      "isolation": "shared host;3alternatingpairs;fixturekeyonly;eachrowauthenticated",
+      "runs": [
+        {
+          "measurements": [
+            {
+              "authenticated_rows_verified": 500,
+              "count": 500,
+              "durable": false,
+              "mean_us": 91.91956953145564,
+              "p50_us": 56.671560741961
+            },
+            {
+              "authenticated_rows_verified": 100,
+              "count": 100,
+              "durable": true,
+              "mean_us": 2475.694300374016,
+              "p50_us": 2209.045516792685
+            }
+          ],
+          "pair": 0,
+          "variant": "baseline"
+        },
+        {
+          "measurements": [
+            {
+              "authenticated_rows_verified": 500,
+              "count": 500,
+              "durable": false,
+              "mean_us": 70.91348594985902,
+              "p50_us": 34.73804099485278
+            },
+            {
+              "authenticated_rows_verified": 100,
+              "count": 100,
+              "durable": true,
+              "mean_us": 4521.02858456783,
+              "p50_us": 3883.358498569578
+            }
+          ],
+          "pair": 0,
+          "variant": "candidate"
+        },
+        {
+          "measurements": [
+            {
+              "authenticated_rows_verified": 500,
+              "count": 500,
+              "durable": false,
+              "mean_us": 130.16567891463637,
+              "p50_us": 58.47943248227239
+            },
+            {
+              "authenticated_rows_verified": 100,
+              "count": 100,
+              "durable": true,
+              "mean_us": 6274.524332256988,
+              "p50_us": 6052.060518413782
+            }
+          ],
+          "pair": 1,
+          "variant": "candidate"
+        },
+        {
+          "measurements": [
+            {
+              "authenticated_rows_verified": 500,
+              "count": 500,
+              "durable": false,
+              "mean_us": 117.36100516282022,
+              "p50_us": 35.422504879534245
+            },
+            {
+              "authenticated_rows_verified": 100,
+              "count": 100,
+              "durable": true,
+              "mean_us": 5878.055127104744,
+              "p50_us": 5730.845441576093
+            }
+          ],
+          "pair": 1,
+          "variant": "baseline"
+        },
+        {
+          "measurements": [
+            {
+              "authenticated_rows_verified": 500,
+              "count": 500,
+              "durable": false,
+              "mean_us": 188.77858272753656,
+              "p50_us": 29.336486477404833
+            },
+            {
+              "authenticated_rows_verified": 100,
+              "count": 100,
+              "durable": true,
+              "mean_us": 5992.310506990179,
+              "p50_us": 5267.9365035146475
+            }
+          ],
+          "pair": 2,
+          "variant": "baseline"
+        },
+        {
+          "measurements": [
+            {
+              "authenticated_rows_verified": 500,
+              "count": 500,
+              "durable": false,
+              "mean_us": 182.81676527112722,
+              "p50_us": 34.953991416841745
+            },
+            {
+              "authenticated_rows_verified": 100,
+              "count": 100,
+              "durable": true,
+              "mean_us": 7846.887895138934,
+              "p50_us": 5767.60497642681
+            }
+          ],
+          "pair": 2,
+          "variant": "candidate"
+        }
+      ]
+    },
+    "baseline": {
+      "compaction_read_impact": [
+        {
+          "after_seconds": 0.3101214339258149,
+          "before_seconds": 0.38539504702202976,
+          "count": 50000,
+          "removed": 25000
+        }
+      ],
+      "host": {
+        "cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+        "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+        "python": "3.12.3"
+      },
+      "read_since": [
+        {
+          "count": 1000,
+          "seconds": 0.005681089940480888
+        },
+        {
+          "count": 10000,
+          "seconds": 0.06338458694517612
+        },
+        {
+          "count": 50000,
+          "seconds": 0.3527560719521716
+        }
+      ],
+      "write_latency": [
+        {
+          "count": 50000,
+          "durable": false,
+          "max_us": 76499.84501767904,
+          "mean_us": 127.15909410268068,
+          "p50_us": 26.77994780242443,
+          "p95_us": 44.64900121092796,
+          "p99_us": 117.96189937740564,
+          "throughput_eps": 7850.227707380738
+        },
+        {
+          "count": 2000,
+          "durable": true,
+          "max_us": 80811.23605370522,
+          "mean_us": 3755.866507650353,
+          "p50_us": 2933.8320018723607,
+          "p95_us": 7854.607072658837,
+          "p99_us": 16828.252002596855,
+          "throughput_eps": 266.18803375008014
+        }
+      ]
+    },
+    "benchmark_script_sha256": "adcf5296f774be0a955786e1265d6d7e3ddec4237c248ec000c59d680236a9e3",
+    "context": {
+      "affinity_observed_after": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "baseline_git_revision": "a1b6fe8d619ee09c4f18e8756a12db823f93aca5",
+      "candidate_python_source_manifest_sha256": "11a82a091f6be05325251b2190fb37f653f11c57783cb9456387be8728c7802b",
+      "evidence_class": "local_functional_benchmark",
+      "execution": "serial per host, nice19, MemoryMax1536M/MemorySwapMax256M",
+      "isolation": "shared workstation; no reserved cores or pinned affinity",
+      "limitations": [
+        "single paired full-default run per harness",
+        "shared-host scheduling/storage noise",
+        "no production performance claim"
+      ],
+      "observed_after_utc": "2026-10-12T05:21:07.271357+00:00"
+    }
+  },
   "write_latency": [
     {
       "count": 50000,
       "durable": false,
-      "max_us": 125389.59295488894,
-      "mean_us": 111.69271511607803,
-      "p50_us": 30.9899915009737,
-      "p95_us": 74.0140094421804,
-      "p99_us": 528.6289961077273,
-      "throughput_eps": 8910.510935105784
+      "max_us": 94926.4660011977,
+      "mean_us": 125.21639422513543,
+      "p50_us": 23.364904336631298,
+      "p95_us": 43.640960939228535,
+      "p99_us": 103.7640031427145,
+      "throughput_eps": 7973.694683048336
     },
     {
       "count": 2000,
       "durable": true,
-      "max_us": 73649.19799147174,
-      "mean_us": 2600.598892488051,
-      "p50_us": 1471.1779658682644,
-      "p95_us": 7693.696999922395,
-      "p99_us": 13882.127008400857,
-      "throughput_eps": 384.2068376125699
+      "max_us": 76735.56392546743,
+      "mean_us": 3861.9925376260653,
+      "p50_us": 2932.999050244689,
+      "p95_us": 7694.839034229517,
+      "p99_us": 36680.71492575109,
+      "throughput_eps": 258.8776247942906
     }
   ]
 }

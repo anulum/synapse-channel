@@ -39,6 +39,7 @@ from synapse_channel.core.persistence_sqlcipher import (
     migrate_plaintext_to_sqlcipher,
     sqlcipher_available,
 )
+from synapse_channel.core.secure_path import assert_owner_only_file_path
 from synapse_channel.core.state import TaskClaim
 
 _FORGED = (
@@ -108,7 +109,9 @@ def test_the_key_file_is_created_once_owner_only_and_reloaded(tmp_path: Path) ->
     path = tmp_path / "hub.db.rowmac.key"
     created = load_or_create_row_mac_key(path, current_max_seq=7, log_has_macs=False)
     assert created.since_seq == 7
-    assert os.stat(path).st_mode & 0o777 == 0o600
+    assert_owner_only_file_path(path, purpose="row authentication key")
+    if os.name == "posix":
+        assert os.stat(path).st_mode & 0o777 == 0o600
     again = load_or_create_row_mac_key(path, current_max_seq=50, log_has_macs=True)
     assert again == created
 

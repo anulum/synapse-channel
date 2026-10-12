@@ -15,6 +15,16 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Read-only delivery receipt projection joining the aggregate to its exact
+  source event in one snapshot, with message/state binding, optional row MAC
+  verification and SQLCipher key support. Missing, busy, damaged or unverified
+  sources remain unavailable. The writer installs a partial MAC index so
+  polling does not scan history; readers never bootstrap or migrate a store.
+  `ReceiptProjectionError` has stable code `receipt_projection`.
+  Every existing store receives `event_row_mac_idx` at its next writable open:
+  the first open builds the index and authenticated writes maintain it thereafter.
+  Older writers ignore the additive index; a read-only projection never installs it.
+
 - Foundation of the operations catalogue: a description of one operation of
   one vendor client on one host (vocabularies, typed arguments, a
   qualification level with its evidence) and a catalogue that lists them and
@@ -96,6 +106,11 @@ All notable changes to this project are documented here.
   connection, and accepts a record only from the seat on its own side.
 
 ### Changed
+
+- Split event storage into shared-connection table families and keyed mutation
+  preparation/commit steps, preserving public signatures, records, transaction
+  observers and durable outcomes. Journal replay dispatches through event-family
+  appliers while preserving protected-custody refusal and projection ordering.
 
 - Hub frame processing now separates envelope admission, connection
   registration and an ordered gate runner. Existing authentication, identity,

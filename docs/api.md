@@ -202,6 +202,86 @@ The package reference below is generated from the source docstrings.
       show_source: false
       members_order: source
 
+## Durable storage method details
+
+Construct `EventStore` and call its public methods. Their complete parameter,
+return and transaction documentation is maintained with the owning table
+implementations below; the facade retains the same signatures and runtime
+docstrings. These classes organize the reference and share an existing owner
+connection rather than opening independent stores.
+
+::: synapse_channel.core.persistence_events.EventWriter
+    options:
+      members: [append_batch, pending_aef_events, mark_aef_delivered, aef_delivery]
+      show_source: false
+
+::: synapse_channel.core.persistence_event_reads.EventReader
+    options:
+      members: [iter_events, read_since, read_window, corrupt_rows, count, max_seq, latest_at_or_before]
+      show_source: false
+
+::: synapse_channel.core.persistence_event_authentication.EventAuthentication
+    options:
+      members: [has_row_macs, enable_row_mac, row_quarantine]
+      show_source: false
+
+::: synapse_channel.core.persistence_event_maintenance.EventMaintenance
+    options:
+      members: [delete, vacuum]
+      show_source: false
+
+::: synapse_channel.core.persistence_operations.OperationTable
+    options:
+      members: [get_operation, read_operations, pending_operation_outbox_count, pending_operation_intents, mark_operation_intent_delivered, commit_operation]
+      show_source: false
+
+::: synapse_channel.core.persistence_receipts.ReceiptTable
+    options:
+      members: [commit_delivery_receipt_request, commit_delivery_receipt_transition, delivery_receipt_aggregate, pending_delivery_notifications, mark_delivery_notification_attempt]
+      show_source: false
+
+## Read-only delivery receipts
+
+Use the explicit storage module for one directed chat's durable receipt:
+
+```python
+from synapse_channel.core.persistence_receipt_view import read_delivery_receipt
+
+view = read_delivery_receipt("hub.db", message_seq=42)
+if view is not None:
+    print(view.state, view.receipt)
+```
+
+The sequence is the durable chat cursor, rather than the hub's in-memory
+message id. The reader joins the aggregate to exactly its referenced event in
+one consistent read transaction and verifies their message and state binding.
+Each call sees live WAL commits. It opens with `mode=ro`, never instantiates
+`EventStore`, and performs no bootstrap, migration, backfill or chmod. A missing
+database and its parent remain absent.
+For an existing WAL database in a writable directory, SQLite may create or
+reuse its WAL/SHM coordination sidecars during a read. The database's contents
+and file mode remain unchanged.
+
+`None` means unavailable: absent, busy, unknown schema, damaged or unverified.
+Consumers must treat it as uncertain, never accepted or refused. MAC-column
+stores need the additive `event_row_mac_idx` installed by the owning writer;
+the reader does not install it or scan an old journal to guess enrollment.
+For an authenticated source, supply its trusted `row_mac=RowMacKey(...)`;
+the exact event must authenticate, including events predating enrollment.
+The reader does not create or automatically load row keys.
+
+For SQLCipher, supply `key_file=` or raw `key=`; raw key takes precedence.
+`ReceiptProjectionError` reports unavailable optional encryption or rejected
+key setup. Its stable code is `receipt_projection`. Catch that named error
+when rendering an uncertain outcome. The reader authenticates the selected
+event, rather than auditing all history. Transport delivery never establishes
+that a model read or acted on the message.
+
+::: synapse_channel.core.persistence_receipt_view
+    options:
+      show_root_heading: true
+      show_source: false
+
 ## Read-only host observations
 
 Host monitoring uses explicit module imports; it does not add process-control

@@ -17,20 +17,58 @@ evidence rather than an isolated-core claim. See the
 [CLI reference](cli.md) for flags (`--probe`, `--iterations`, `--json`,
 `--results`).
 
-## Hub frame and construction comparisons
+## Storage transaction and replay comparison
 
-The [native-message benchmark](https://github.com/anulum/synapse-channel/blob/main/benchmarks/README.md#native_message_record_benchmarkpy)
-compares the parent hub with the separated frame admission and registration
-pipeline, using 700 durable records per variant and the library's WHO, claim
-and durable claim probes at their default counts. The JSON retains source
-fingerprints, result distributions and shared-workstation context. These local
-functional runs have no discarded warm-up or isolated CI measurement and
-establish no production performance claim.
+The four storage-dependent committed harnesses were rerun at their full default
+counts against parent `a1b6fe8d` and the separated table-family/replay code, with
+identical runtime dependencies. Results retain the full baseline under
+`storage_comparison.baseline`, the candidate source-manifest digest and the
+harness digest. Candidate measurements use a frozen parent tree with only the
+storage changes, excluding concurrent uncommitted wake-adapter work.
 
-The earlier grouped-record versus external composition-root comparison,
-including 1,000 factory constructions per variant, remains under
-`historical_composition_root` in the same JSON. Its timings retain their
-original source fingerprints and do not describe the current frame pipeline.
+| Measurement | Parent | Table families |
+| --- | ---: | ---: |
+| NORMAL append p50 (us) | 26.780 | 23.365 |
+| FULL append p50 (us) | 2,933.832 | 2,932.999 |
+| Short durable record p50 (us) | 8,276.162 | 8,427.158 |
+| Long durable record p50 (us) | 10,807.462 | 11,014.485 |
+| Read 50,000 rows (ms) | 352.756 | 388.728 |
+| Replay 100,000 events (ms) | 1,759.928 | 2,304.936 |
+
+These serial nice-19 runs share the workstation and its storage; they have no
+reserved cores or discarded warm-up samples. The slower large read/replay
+observations are retained, rather than described as an improvement. A single
+paired run is functional regression evidence, not an isolated performance
+verdict or a production throughput claim. The partial MAC index and additional
+ownership/dispatch boundaries are included in the measured code.
+
+Every existing store builds `event_row_mac_idx` at its next writable open.
+That first-open build has a one-time cost; subsequent authenticated inserts
+maintain the index. Older versions ignore the additive index. The read-only
+projection never installs it.
+
+`authenticated_write_benchmark.py` measures fresh MAC-enabled stores using a
+fixed public fixture key and verifies every measured row. Three alternating
+parent/candidate pairs (500 NORMAL and 100 FULL events each) gave these medians
+of the per-run median latency, on the same shared host:
+
+| Authenticated append | Parent p50 (us) | Table families p50 (us) |
+| --- | ---: | ---: |
+| NORMAL | 35.423 | 34.954 |
+| FULL | 5267.937 | 5767.605 |
+
+All raw pairs and the harness digest are retained in
+`sustained_write_benchmark.json` under
+`storage_comparison.authenticated_write_probe`. These observations include
+index maintenance and filesystem noise and establish no isolated throughput
+claim. Reproduce with `PYTHONPATH=src python benchmarks/authenticated_write_benchmark.py`.
+
+The earlier frame-pipeline comparison is retained under
+`historical_frame_pipeline` in the native-message JSON; its earlier
+composition-root comparison is nested under
+`historical_frame_pipeline.historical_composition_root`. Their old source
+fingerprints remain attached to those measurements, not the current storage
+results.
 
 ## Coordination wire baseline
 
@@ -91,22 +129,22 @@ work it holds:
 On the committed reference host (Intel i5-11600K, Python 3.12), the current
 results are:
 
-| Active claims | Steady heartbeat expiry (µs) | Mass expiry (µs) | Non-overlap claim scan (µs) |
-|---:|---:|---:|---:|
-| 10 | 1.403 | 23.55 | 32.426 |
-| 100 | 0.654 | 72.01 | 213.846 |
-| 1,000 | 0.802 | 977.85 | 2,947.048 |
-| 10,000 | 0.923 | 33,682.23 | 34,752.309 |
-| 100,000 | 0.723 | 264,861.71 | 292,085.834 |
+| Active claims | Steady heartbeat expiry (us) | Mass expiry (us) | Non-overlap claim scan (us) |
+| ---: | ---: | ---: | ---: |
+| 10 | 0.788 | 15.000 | 52.032 |
+| 100 | 0.750 | 82.700 | 352.664 |
+| 1,000 | 0.710 | 1,117.430 | 2,864.720 |
+| 10,000 | 0.956 | 22,135.310 | 30,417.658 |
+| 100,000 | 0.682 | 138,498.600 | 321,395.649 |
 
 Replay also scales with event count on the same reference run:
 
 | Events | Replay time (ms) | Events/s |
-|---:|---:|---:|
-| 100 | 1.345 | 74,350 |
-| 1,000 | 5.953 | 167,994 |
-| 10,000 | 469.33 | 21,306 |
-| 100,000 | 2,848.315 | 35,108 |
+| ---: | ---: | ---: |
+| 100 | 2.028 | 49,320 |
+| 1,000 | 24.389 | 41,001 |
+| 10,000 | 194.883 | 51,312 |
+| 100,000 | 2,304.936 | 43,385 |
 
 **Reading it honestly.** At the local-first design scale — a handful to a few
 dozen agents holding tens to low-hundreds of claims — steady lease expiry is
