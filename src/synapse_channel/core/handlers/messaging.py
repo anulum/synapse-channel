@@ -22,6 +22,7 @@ import logging
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.acl import (
@@ -30,10 +31,9 @@ from synapse_channel.core.acl import (
     Target,
     evaluate_access,
 )
-from synapse_channel.core.agent_liveness import waiter_owner, waiter_sidecar_names
+from synapse_channel.core.agent_liveness import waiter_sidecar_names
 from synapse_channel.core.chat_dedupe import chat_digest
 from synapse_channel.core.dead_letter_escalation import (
-    crosses_escalation_threshold,
     escalation_notice,
 )
 from synapse_channel.core.dead_letter_forwarding import DeadLetterForwardError, forwarding_notice
@@ -43,13 +43,17 @@ from synapse_channel.core.directed_delivery_liveness import (
     classify_completed_delivery,
     classify_delivery_liveness,
 )
+from synapse_channel.core.handlers.chat_delivery import (
+    ChatDeliveryRequest,
+    deliver_local_chat,
+)
+from synapse_channel.core.handlers.chat_delivery import _directed_audience as _directed_audience
+from synapse_channel.core.handlers.chat_delivery import (
+    _matching_online_recipients as _matching_online_recipients,
+)
 from synapse_channel.core.handlers.delivery_feedback import (
-    commit_delivery_receipt_request,
-    commit_delivery_receipt_verdict,
-    send_and_track_delivery_receipt,
     send_delivery_receipt,
     settle_delivery_receipt,
-    warn_stale_recipients,
 )
 from synapse_channel.core.hub_address import HUB_ADDRESS_SEPARATOR
 from synapse_channel.core.identity_namespace import project_of
@@ -360,6 +364,77 @@ async def _refuse_chat(
     return ChatRouting(refusal=refusal)
 
 
+async def _retry_chat(
+    hub: MessagingContext,
+    sender: str,
+    websocket: Any,
+    *,
+    client_msg_id: str,
+    digest: str,
+    accepted_at: float,
+    report_refusal: bool,
+) -> ChatRouting | None:
+    """Answer a conflicting or already delivered retry before charging ingress."""
+    retry = hub.chat_dedupe.check(sender, client_msg_id, digest, now=accepted_at)
+    if retry.outcome == "conflict":
+        hub.counters.chat_client_id_conflicts += 1
+        return await _refuse_chat(
+            hub,
+            sender,
+            websocket,
+            f"client_msg_id {client_msg_id!r} was already used for a different message.",
+            report=report_refusal,
+        )
+    if retry.original is not None:
+        # K4-WF8: the first copy was accepted; tell the sender instead of routing it
+        # again. A system notice, since clients drop chat frames bearing their name.
+        hub.counters.chat_duplicates_suppressed += 1
+        await hub.send_json(
+            websocket,
+            hub.system(
+                f"Chat {client_msg_id!r} was already accepted as message "
+                f"{retry.original.get('msg_id')}; it was not routed again.",
+                target=sender,
+                duplicate=True,
+                client_msg_id=client_msg_id,
+                **retry.original,
+            ),
+        )
+        return ChatRouting()
+
+    return None
+
+
+async def _charge_chat(
+    hub: MessagingContext,
+    sender: str,
+    data: dict[str, Any],
+    websocket: Any,
+    *,
+    report_refusal: bool,
+) -> ChatRouting | None:
+    """Charge the server-derived durable principal before retaining or forwarding."""
+    from synapse_channel.core.durable_ingress import chat_frame_bytes
+
+    if hub.durable_ingress_quota is not None:
+        principal = hub.clients.quota_principal(websocket, fallback_agent=sender)
+        reason = hub.durable_ingress_quota.allow(
+            principal,
+            nbytes=chat_frame_bytes(data),
+        )
+        if reason:
+            hub.counters.durable_ingress_refused += 1
+            return await _refuse_chat(
+                hub,
+                sender,
+                websocket,
+                f"Durable ingress quota exceeded ({reason}).",
+                report=report_refusal,
+            )
+
+    return None
+
+
 async def route_chat(
     hub: MessagingContext,
     sender: str,
@@ -413,8 +488,6 @@ async def route_chat(
     ChatRouting
         The refusal, or the delivery verdict of the accepted chat.
     """
-    from synapse_channel.core.durable_ingress import chat_frame_bytes
-
     response_error = validate_semantic_response(
         hub.journal,
         data,
@@ -430,47 +503,20 @@ async def route_chat(
     remember = bool(client_msg_id) and dedupe_retries
     digest = chat_digest(data) if remember else ""
     if remember:
-        retry = hub.chat_dedupe.check(sender, client_msg_id, digest, now=accepted_at)
-        if retry.outcome == "conflict":
-            hub.counters.chat_client_id_conflicts += 1
-            return await _refuse_chat(
-                hub,
-                sender,
-                websocket,
-                f"client_msg_id {client_msg_id!r} was already used for a different message.",
-                report=report_refusal,
-            )
-        if retry.original is not None:
-            # K4-WF8: the first copy was accepted; tell the sender instead of routing it
-            # again. A system notice, since clients drop chat frames bearing their name.
-            hub.counters.chat_duplicates_suppressed += 1
-            await hub.send_json(
-                websocket,
-                hub.system(
-                    f"Chat {client_msg_id!r} was already accepted as message "
-                    f"{retry.original.get('msg_id')}; it was not routed again.",
-                    target=sender,
-                    duplicate=True,
-                    client_msg_id=client_msg_id,
-                    **retry.original,
-                ),
-            )
-            return ChatRouting()
-    if hub.durable_ingress_quota is not None:
-        principal = hub.clients.quota_principal(websocket, fallback_agent=sender)
-        reason = hub.durable_ingress_quota.allow(
-            principal,
-            nbytes=chat_frame_bytes(data),
+        retry = await _retry_chat(
+            hub,
+            sender,
+            websocket,
+            client_msg_id=client_msg_id,
+            digest=digest,
+            accepted_at=accepted_at,
+            report_refusal=report_refusal,
         )
-        if reason:
-            hub.counters.durable_ingress_refused += 1
-            return await _refuse_chat(
-                hub,
-                sender,
-                websocket,
-                f"Durable ingress quota exceeded ({reason}).",
-                report=report_refusal,
-            )
+        if retry is not None:
+            return retry
+    refusal = await _charge_chat(hub, sender, data, websocket, report_refusal=report_refusal)
+    if refusal is not None:
+        return refusal
     data["type"] = MessageType.CHAT
     data["hub_id"] = hub.hub_id
     data["msg_id"] = hub.next_msg_id()
@@ -485,136 +531,19 @@ async def route_chat(
         if accepted and remember:
             hub.chat_dedupe.remember(sender, client_msg_id, digest, data, accepted_at=accepted_at)
         return ChatRouting()
-    target = str(data.get("target") or "all")
-    logical_target = waiter_owner(target)
-    if logical_target != target:
-        # ``-rx`` and ``-pane-rx`` are transport sockets, not addressable agents.
-        # Accepting those familiar names as aliases for their owner prevents a
-        # live receiver from being classified as ``agent-rx-rx`` (and therefore
-        # dead-lettered), while also storing an offline message under the owner
-        # identity that the receiver will drain when it reconnects.
-        target = logical_target
-        data["target"] = target
-    recipients = _matching_online_recipients(target, sender, hub.online_agents(), hub.roles_of)
-    directed = is_directed_target(target)
-    stale_recipients = hub.recipients_without_live_waiter(recipients) if directed else ()
-    delivery = classify_delivery_liveness(recipients, stale_recipients)
-    if directed:
-        hub.counters.chat_directed += 1
-    else:
-        hub.counters.chat_broadcast += 1
-    escalation: tuple[str, int, str] | None = None
-    if not delivery.delivered and directed:
-        # Durable but reaching nobody proven consume-live: remember the blackhole
-        # even when a stale socket stayed open, so transport presence cannot hide it.
-        count = hub.dead_letters.record(target, sender=sender, ts=float(data["timestamp"]))
-        if crosses_escalation_threshold(count, hub.dead_letter_escalation_threshold):
-            escalation = (target, count, sender)
-    hub.chat_history.append(data.copy())
-    if len(hub.chat_history) > hub.max_history:
-        del hub.chat_history[0]
-    receipt_requested = bool(data.get("receipt_requested"))
-    if hub.journal is not None and receipt_requested and directed:
-        data["seq"] = commit_delivery_receipt_request(
-            hub,
-            chat=data,
+    delivery, directed = await deliver_local_chat(
+        ChatDeliveryRequest(
+            hub=hub,
             sender=sender,
-            target=target,
-            msg_id=int(data["msg_id"]),
+            data=data,
+            websocket=websocket,
             client_msg_id=client_msg_id,
+            digest=digest,
+            remember=remember,
+            accepted_at=accepted_at,
+            escalate=partial(_escalate_dead_letter, hub),
         )
-        hub.mailbox_pending.observe_chat(int(data["seq"]), data)
-    elif hub.journal is not None:
-        # Stamp the durable journal seq on the outgoing frame so a client can track
-        # it as the cursor it resumes a missed directed backlog from on reconnect.
-        data["seq"] = record_chat(hub.journal, data)
-        hub.mailbox_pending.observe_chat(int(data["seq"]), data)
-    message_seq = int(data["seq"]) if "seq" in data else None
-    receipt_before_fanout = (
-        receipt_requested and directed and not delivery.delivered and bool(recipients)
     )
-    if receipt_before_fanout:
-        if hub.journal is not None and message_seq is not None:
-            await commit_delivery_receipt_verdict(
-                hub,
-                websocket,
-                sender=sender,
-                target=target,
-                msg_id=int(data["msg_id"]),
-                message_seq=message_seq,
-                decision=delivery,
-                directed=directed,
-                client_msg_id=client_msg_id,
-            )
-        else:
-            await send_and_track_delivery_receipt(
-                hub,
-                websocket,
-                sender=sender,
-                target=target,
-                msg_id=int(data["msg_id"]),
-                message_seq=message_seq,
-                decision=delivery,
-                directed=directed,
-                client_msg_id=client_msg_id,
-            )
-    if hub.private_directed_messages and directed:
-        # Recipient routing: a directed message reaches only its recipients (and their
-        # -rx waiter sidecars) plus any granted observers — never every socket. It is
-        # still mirrored to the relay and journalled above, so the durable feed keeps
-        # full visibility for dashboards and the federation follower.
-        audience = _directed_audience(recipients, hub.observing_identities(target))
-        successful = await hub.broadcast_directed(data, names=audience, sender_socket=websocket)
-    else:
-        successful = await hub.broadcast(data)
-    previous_delivery = delivery.delivered
-    delivery = classify_completed_delivery(delivery, successful)
-    if directed and previous_delivery and not delivery.delivered:
-        count = hub.dead_letters.record(target, sender=sender, ts=float(data["timestamp"]))
-        if crosses_escalation_threshold(count, hub.dead_letter_escalation_threshold):
-            escalation = (target, count, sender)
-    if remember and delivery.delivered:
-        # Failed writes remain retryable; sender/observer echoes do not prove delivery.
-        hub.chat_dedupe.remember(sender, client_msg_id, digest, data, accepted_at=accepted_at)
-    if escalation is not None:
-        # After the chat is delivered: escalate the blackhole it added to, as a follow-up signal.
-        await _escalate_dead_letter(
-            hub, target=escalation[0], count=escalation[1], sender=escalation[2]
-        )
-    if hub.warn_stale_recipients and directed and recipients:
-        await warn_stale_recipients(
-            hub,
-            websocket,
-            sender=sender,
-            target=target,
-            msg_id=int(data["msg_id"]),
-            decision=delivery,
-        )
-    if receipt_requested and not receipt_before_fanout:
-        if hub.journal is not None and directed and message_seq is not None:
-            await commit_delivery_receipt_verdict(
-                hub,
-                websocket,
-                sender=sender,
-                target=target,
-                msg_id=int(data["msg_id"]),
-                message_seq=message_seq,
-                decision=delivery,
-                directed=directed,
-                client_msg_id=client_msg_id,
-            )
-        else:
-            await send_and_track_delivery_receipt(
-                hub,
-                websocket,
-                sender=sender,
-                target=target,
-                msg_id=int(data["msg_id"]),
-                message_seq=message_seq,
-                decision=delivery,
-                directed=directed,
-                client_msg_id=client_msg_id,
-            )
     return ChatRouting(delivery=delivery, directed=directed)
 
 
@@ -751,53 +680,6 @@ async def _route_channel_chat(
             client_msg_id=str(data.get("client_msg_id") or ""),
         )
     return delivery.delivered
-
-
-def _directed_audience(recipients: list[str], observers: Iterable[str]) -> list[str]:
-    """Return the live delivery names for a directed message under recipient routing.
-
-    Each recipient is reached on its own socket, durable mailbox sidecar, and distinct
-    pane bridge, and any granted observers are appended. The broadcaster deduplicates
-    by socket, so an observer that is also a recipient, or a recipient with no live
-    sidecar, is handled without special-casing here.
-    """
-    names: list[str] = []
-    for name in recipients:
-        names.append(name)
-        names.extend(waiter_sidecar_names(name))
-    names.extend(observers)
-    return names
-
-
-def _matching_online_recipients(
-    target: str,
-    sender: str,
-    online_agents: list[str],
-    roles_of: Callable[[str], tuple[str, ...]],
-) -> list[str]:
-    """Return online recipients reached by ``target``, excluding the sender socket.
-
-    A recipient is reached when ``target`` addresses its name, its bare project, or
-    one of the roles it holds (looked up through ``roles_of``) — so a directed message
-    to a ``<project>/<role>`` resolves to whichever agents currently answer to it.
-    A receive-only waiter socket (``<identity>-rx``) also proves the logical
-    ``<identity>`` is reachable for wake delivery. The logical name is what senders
-    address and what waiters filter on; the socket name is only transport plumbing.
-    """
-    recipients: set[str] = set()
-    for name in online_agents:
-        if name == sender:
-            continue
-        roles = roles_of(name)
-        logical = waiter_owner(name)
-        if logical != name:
-            logical_roles = tuple(dict.fromkeys((*roles, *roles_of(logical))))
-            if logical != sender and is_recipient(target, logical, roles=logical_roles):
-                recipients.add(logical)
-                continue
-        if is_recipient(target, name, roles=roles):
-            recipients.add(name)
-    return sorted(recipients)
 
 
 async def handle_ack(

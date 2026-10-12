@@ -254,3 +254,20 @@ and `mcp.hub_inbox` reuses the bridge connection. The local feed remains
 the default. Replies expose source, availability and remaining pages to
 control interfaces; the current dashboard does not configure per-client
 inbox sources.
+
+
+### Chat and lease handler stages
+
+Chat admission keeps semantic validation, hub timestamps, retry handling and
+durable quota in order before choosing channel, peer or local routing. Local
+delivery is a separate component: it retains history before adding the durable
+sequence, commits receipt-request state before fanout, classifies actual writes
+and emits ordered feedback. Stale delivery receipts remain before an uncertain
+fanout, and failed writes remain retryable.
+
+Lease handlers separate candidate-state mutations from operation-draft
+preparation. Their orchestration owns fencing, legacy journal recording,
+publication and notification order. State and progress become visible only
+after their authoritative append or operation commit succeeds. Journal recorder
+lookup stays in the owning facade, preserving embedding overrides and fault
+controls. A replay/conflict response never publishes a second mutation.

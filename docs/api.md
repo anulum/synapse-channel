@@ -405,3 +405,32 @@ Git claim outcome handling uses `reply_timeout` and `confirm_only` on the native
 runner and MCP bridge/tool. Unknown CLI outcomes exit `3`; confirmation persists
 only the fence of an exact live lease and never replays the mutation.
 See [claim outcomes and recovery](git-claims.md#claim-outcomes-and-recovery).
+
+
+## Coordination handler stages
+
+`core.handlers.messaging.route_chat` retains its existing signature and result
+record. Semantic-response validation precedes hub stamping; retry suppression
+precedes durable ingress charging. Channel and peer forwarding keep their own
+branches. `core.handlers.chat_delivery` owns local recipient resolution, history,
+durable receipt requests, fanout and final feedback. The early negative receipt
+for stale recipients remains before fanout; only completed recipient writes
+permit retry suppression. Observer or sender echoes do not prove delivery.
+
+Lease entry points remain in `core.handlers.leasing`.
+`core.handlers.leasing_mutations` applies the already parsed owner fields to the
+candidate state; `core.handlers.leasing_drafts` prepares exact response/event
+bundles without publishing them. The facade retains late-bound journal recorder
+seams, epoch guards, wait publication and transport ordering. Handoff progress
+precedes its grant; release grants precede assessment progress; checkpoints
+reply privately. Replay/conflict responses return without another mutation,
+and an inserted operation settles its outbox after the original notifications.
+
+These are internal implementation stages; public handler signatures, wire
+vocabulary, CLI flags and package exports remain unchanged.
+
+::: synapse_channel.core.handlers.chat_delivery
+
+::: synapse_channel.core.handlers.leasing_mutations
+
+::: synapse_channel.core.handlers.leasing_drafts

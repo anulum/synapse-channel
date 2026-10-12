@@ -209,3 +209,37 @@ On the committed reference run:
 coordination evidence: conflict rate, claim latency, release cleanup, and replay
 recovery. It does not measure model latency, editor integration latency, remote
 coding-agent services, GitHub PR throughput, or external A2A/MCP conformance.
+
+
+## Socket chat and keyed lease handlers
+
+`PYTHONPATH=src python benchmarks/coordination_handlers_benchmark.py` runs
+100 receipt-requested directed chats and 20 complete keyed lease cycles through
+two actual clients and an isolated durable loopback hub. Every cycle claims,
+updates, checkpoints, hands off and releases; the harness verifies stored chat
+and claim counts, an empty final claim set and zero pending operation outbox.
+
+Three alternating parent/candidate pairs compare source `0184a1d8` with the
+local delivery and lease-stage decomposition. Each row is the median of the
+three measured per-run medians, in microseconds:
+
+| Operation | Parent p50 (us) | Handler stages p50 (us) |
+| --- | ---: | ---: |
+| Directed chat receipt | 16363.081 | 19226.958 |
+| checkpoint | 7635.498 | 7347.682 |
+| claim | 8687.961 | 8212.138 |
+| handoff | 11616.502 | 10480.377 |
+| release | 7575.021 | 7834.439 |
+| task_update | 8490.360 | 7558.549 |
+
+These serial nice-19 runs share CPU and storage with other workstation sessions.
+They establish functional regression evidence, without an isolated performance
+claim. The slower directed-chat and release observations remain visible. Full distributions, source and harness digests, observed CPU and load
+context are retained in `coordination_handlers_benchmark.json`. The earlier stage
+comparison is also retained under `initial_stage_comparison`;
+no observation was discarded. Existing record, store, wire and state-only
+harnesses measure different unchanged paths.
+
+The decomposition changes the two original handler modules (2,262 lines)
+to five modules (2,981 lines, including native documentation and typed
+stage boundaries). Shorter procedures do not imply fewer source lines.
