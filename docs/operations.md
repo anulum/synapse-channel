@@ -188,6 +188,9 @@ synapse ops describe session.list --host workstation
 Both commands read a catalogue file on this host, by default
 `$XDG_DATA_HOME/synapse/operations/catalogue.json` (`--catalogue` names
 another), and print what it holds. Nothing is run and nothing is sent.
+Files are limited to four mebibytes and 64 levels of JSON nesting. Excessive
+nesting is refused before decoding, through the same normal error path as
+invalid JSON.
 
 ```text
 1 operation(s)

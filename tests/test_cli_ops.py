@@ -270,6 +270,27 @@ def test_text_from_the_file_cannot_move_the_cursor(
     assert captured.out.count("side effect: clears ") == 2
 
 
+@pytest.mark.parametrize("arguments", [["list"], ["describe", "session.list"]])
+def test_deeply_nested_catalogue_json_is_refused_without_a_decoder_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], arguments: list[str]
+) -> None:
+    """An excessive JSON depth is a normal catalogue refusal in both commands."""
+    path = tmp_path / "deep.json"
+    path.write_text(
+        '{"schema":"operation-catalogue-v2","vocabulary_revision":1,"operations":'
+        + "[" * 10_000
+        + "]" * 10_000
+        + "}",
+        encoding="utf-8",
+    )
+
+    assert main(["ops", *arguments, "--catalogue", str(path)]) == 2
+
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == "synapse ops: cannot use the catalogue: the catalogue file is not JSON\n"
+
+
 def test_a_file_that_is_not_a_catalogue_is_refused_with_the_reason(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

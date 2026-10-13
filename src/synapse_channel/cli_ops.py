@@ -24,6 +24,7 @@ import os
 import sys
 from pathlib import Path
 
+from synapse_channel.core.protocol import loads_bounded
 from synapse_channel.core.terminal_text import terminal_text
 from synapse_channel.operations.catalogue import (
     Catalogue,
@@ -50,7 +51,8 @@ def load_catalogue(path: Path) -> Catalogue | LegacyInventory:
     Raises
     ------
     OperationSpecError
-        The file is too large, is not JSON, or is not a catalogue.
+        The file is too large, is not JSON within the nesting bound, or is
+        not a catalogue.
     OSError
         The file cannot be read.
     """
@@ -59,7 +61,7 @@ def load_catalogue(path: Path) -> Catalogue | LegacyInventory:
     if len(raw) > MAX_CATALOGUE_BYTES:
         raise OperationSpecError("the catalogue file is larger than the limit")
     try:
-        data = json.loads(raw.decode("utf-8"))
+        data = loads_bounded(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as exc:
         raise OperationSpecError("the catalogue file is not JSON") from exc
     return read_catalogue(data)
