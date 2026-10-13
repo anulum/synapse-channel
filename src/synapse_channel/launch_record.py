@@ -82,7 +82,7 @@ class FileIdentity:
     """A file as found: its resolved path, its size and the digest of its bytes.
 
     ``sha256`` is empty when the file could not be hashed; ``unavailable``
-    then says why.
+    then says why. ``size`` is -1 when the total size could not be established.
     """
 
     path: str
@@ -148,7 +148,8 @@ def file_identity(
     FileIdentity
         The path, size and digest. A file that cannot be opened, is not a
         regular file or is larger than ``limit`` is returned without a digest
-        and with the reason.
+        and with the reason. Reads use at most the remaining allowance plus one
+        byte to detect overflow; an unread total size is recorded as -1.
     """
     named = os.path.realpath(path) if shown is None else shown
     # Without O_NONBLOCK, opening a named pipe would wait for a writer.
@@ -166,9 +167,11 @@ def file_identity(
     digest = hashlib.sha256()
     size = 0
     with os.fdopen(descriptor, "rb") as handle:
-        while chunk := handle.read(_CHUNK):
-            digest.update(chunk)
+        while chunk := handle.read(min(_CHUNK, limit - size + 1)):
             size += len(chunk)
+            if size > limit:
+                return FileIdentity(named, unavailable="larger than the limit")
+            digest.update(chunk)
     return FileIdentity(named, size, digest.hexdigest())
 
 

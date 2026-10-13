@@ -504,6 +504,10 @@ session the process recorded is the pane's. Of the command only its name, the
 number of its words and a digest of all of them are kept, since further words
 can hold secrets.
 
+File hashing limits reads to the allowance plus one byte for detecting
+overflow. Content that exceeds the bound has no digest; its size is -1 when
+the total cannot be established from that bounded read.
+
 A record is a new owner-only file under `synapse/launch-records` in the state
 directory the launch environment names, or under its home directory; an
 environment that names neither keeps no record. A record that cannot be made

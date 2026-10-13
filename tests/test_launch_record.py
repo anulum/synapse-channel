@@ -77,6 +77,14 @@ def test_a_file_is_identified_by_the_bytes_read_from_one_open_file(tmp_path: Pat
         "larger than the limit",
     )
     assert file_identity(target, limit=3_000_004).sha256 == found.sha256
+    if LINUX:
+        # procfs reports zero size for regular files whose logical content is nonempty.
+        virtual = file_identity("/proc/self/status", limit=64)
+        assert (virtual.size, virtual.sha256, virtual.unavailable) == (
+            -1,
+            "",
+            "larger than the limit",
+        )
 
 
 @pytest.mark.skipif(WINDOWS, reason="a directory cannot be opened for reading on Windows")

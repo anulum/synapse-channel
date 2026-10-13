@@ -15,6 +15,9 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Launch-record hashing bounds actual reads, refusing a digest when content
+  exceeds the limit despite a smaller reported size.
+
 - Operation catalogue readers bound JSON nesting before decoding, returning
   the normal input-refusal status instead of a decoder recursion traceback.
 
