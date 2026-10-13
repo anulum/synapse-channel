@@ -502,9 +502,17 @@ file the command named and the digest of its bytes, which process was created
 with its start identity, and the image that process runs. On POSIX, a launch
 environment without `PATH` resolves the command using the default executable
 search path, matching a direct process start; it does
-not inherit the launcher's `PATH` for the record. In a tmux-backed
-session the process recorded is the pane's. Of the command only its name, the
-number of its words and a digest of all of them are kept, since further words
+not inherit the launcher's `PATH` for the record. `run_worker_session(cwd=...)`
+sets the provider working directory in both direct and tmux modes. The new
+optional keyword-only `cwd` on `executable_identity` and `make_record` resolves
+POSIX relative command paths and search-path entries against that directory;
+an empty `PATH` entry also searches there. Existing calls default to the
+launcher's directory. On Windows, the child directory changes while executable
+lookup continues to use the launcher's directory, following
+[`Popen` semantics](https://docs.python.org/3.12/library/subprocess.html#subprocess.Popen).
+In a tmux-backed session the process recorded is the pane's. Of the command
+only its name, the number of its words and a digest of all of them are kept,
+since further words
 can hold secrets.
 
 File hashing limits reads to the allowance plus one byte for detecting

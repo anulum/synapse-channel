@@ -887,6 +887,55 @@ def test_worker_session_records_what_it_started(
         assert record["executable"]["path"] == str(tool.resolve())
 
 
+def test_worker_session_uses_the_requested_directory_for_launch_and_record(tmp_path: Path) -> None:
+    """The provider runs in its requested directory and its record names the same file."""
+    target = tmp_path / "target"
+    target.mkdir()
+    seen = tmp_path / "provider-cwd"
+    code = run_worker_session(
+        identity="repo/cwd",
+        command=[
+            sys.executable,
+            "-c",
+            f"import os,pathlib; pathlib.Path({str(seen)!r}).write_text(os.getcwd())",
+        ],
+        cwd=target,
+        arm=False,
+        terminal_tmux="off",
+        environ={"XDG_STATE_HOME": str(tmp_path / "state")},
+    )
+    assert code == 0
+    assert Path(seen.read_text(encoding="utf-8")) == target.resolve()
+    (record,) = _launch_records(tmp_path / "state")
+    assert record["executable"]["path"] == str(Path(sys.executable).resolve())
+
+    if os.name == "posix":
+        script = target / "bin" / "provider"
+        script.parent.mkdir()
+        script.write_text("#!/bin/sh\nexit 7\n", encoding="ascii")
+        script.chmod(0o700)
+        for index, (command, path, directory) in enumerate(
+            [
+                (["./bin/provider"], os.defpath, target),
+                (["provider"], "bin", target),
+                (["provider"], "", script.parent),
+            ]
+        ):
+            state = tmp_path / f"state-{index}"
+            code = run_worker_session(
+                identity="repo/cwd",
+                command=command,
+                cwd=directory,
+                arm=False,
+                terminal_tmux="off",
+                environ={"PATH": path, "XDG_STATE_HOME": str(state)},
+            )
+            (record,) = _launch_records(state)
+            assert code == 7
+            assert record["executable"]["path"] == str(script.resolve())
+            assert record["executable"]["sha256"] == hashlib.sha256(script.read_bytes()).hexdigest()
+
+
 def test_worker_session_without_a_state_or_home_directory_keeps_no_record(tmp_path: Path) -> None:
     code = run_worker_session(
         identity="repo/unrecorded",

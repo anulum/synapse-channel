@@ -201,7 +201,9 @@ def _attach_tmux_session(
     ).returncode
 
 
-def _record_launch(identity: str, command: Sequence[str], pid: int, env: Mapping[str, str]) -> None:
+def _record_launch(
+    identity: str, command: Sequence[str], pid: int, env: Mapping[str, str], *, cwd: Path
+) -> None:
     """Keep the record of one launch; say so and go on when it cannot be kept.
 
     The session matters more than its record: a record that cannot be made or
@@ -213,15 +215,17 @@ def _record_launch(identity: str, command: Sequence[str], pid: int, env: Mapping
     if directory is None:
         return
     try:
-        write_record(directory, make_record(seat=identity, command=command, pid=pid, environ=env))
+        write_record(
+            directory, make_record(seat=identity, command=command, pid=pid, environ=env, cwd=cwd)
+        )
     except (SynapseError, OSError) as exc:
         print(f"synapse worker-session: launch record not written: {exc}", file=sys.stderr)
 
 
-def _run_provider(command: Sequence[str], env: Mapping[str, str]) -> int:
+def _run_provider(command: Sequence[str], env: Mapping[str, str], *, cwd: Path) -> int:
     """Start the provider, record the launch, and wait for it to end."""
-    with subprocess.Popen(list(command), env=dict(env)) as provider:  # nosec B603
-        _record_launch(env["SYN_IDENTITY"], command, provider.pid, env)
+    with subprocess.Popen(list(command), env=dict(env), cwd=cwd) as provider:  # nosec B603
+        _record_launch(env["SYN_IDENTITY"], command, provider.pid, env, cwd=cwd)
         try:
             return provider.wait()
         except BaseException:
@@ -268,7 +272,7 @@ def _run_terminal_tmux_session(
         check=False,
     ).stdout.strip()
     if pane.isdigit():
-        _record_launch(identity, command, int(pane), env)
+        _record_launch(identity, command, int(pane), env, cwd=cwd)
     _start_tmux_waiter(
         identity=identity,
         session=resolved_session,
@@ -305,10 +309,13 @@ def run_worker_session(
 
     The sidecar is a local ``syn arm`` process. It holds a socket and prints wake
     messages, but it does not call a model provider and therefore does not spend
-    tokens while waiting.
+    tokens while waiting. ``cwd`` sets the provider working directory in both
+    direct and tmux modes; it defaults to the directory at the time of this call.
+    That same directory resolves POSIX executable paths in the launch record.
     """
     if not command:
         raise ValueError("worker-session requires a provider command")
+    resolved_cwd = Path.cwd() if cwd is None else cwd.absolute()
     env = dict(os.environ if environ is None else environ)
     resolved_project = (project or _project_from_identity(identity)).strip()
     env["SYN_PROJECT"] = resolved_project
@@ -326,7 +333,7 @@ def run_worker_session(
             tmux_bin=tmux_bin,
             synapse_bin=synapse_bin,
             session=tmux_session,
-            cwd=Path.cwd() if cwd is None else cwd,
+            cwd=resolved_cwd,
         )
 
     sidecar: subprocess.Popen[bytes] | None = None
@@ -351,7 +358,7 @@ def run_worker_session(
             log_handle.close()
 
     try:
-        return _run_provider(command, env)
+        return _run_provider(command, env, cwd=resolved_cwd)
     finally:
         if sidecar is not None and sidecar.poll() is None:
             sidecar.terminate()

@@ -177,13 +177,33 @@ def file_identity(
 
 
 def executable_identity(
-    command: Sequence[str], environ: Mapping[str, str] | None = None
+    command: Sequence[str],
+    environ: Mapping[str, str] | None = None,
+    *,
+    cwd: Path | None = None,
 ) -> FileIdentity:
     """Return the identity of the file the command's first word names.
 
     The word is resolved through the search path of ``environ`` (the process
     environment by default). On POSIX, an environment without ``PATH`` uses
-    the default executable search path, as a direct process start does.
+    the default executable search path, as a direct process start does. Empty
+    and relative path entries refer to ``cwd`` (the current directory by
+    default), as do relative command paths. On Windows, ``cwd`` does not alter
+    executable lookup.
+
+    Parameters
+    ----------
+    command : sequence of str
+        The command to identify; only the first word is used.
+    environ : mapping or None
+        The launch environment; the process environment by default.
+    cwd : Path or None
+        The child working directory for POSIX executable lookup.
+
+    Returns
+    -------
+    FileIdentity
+        The file identity, or an unavailable result when no executable is found.
 
     Raises
     ------
@@ -194,9 +214,16 @@ def executable_identity(
         raise LaunchRecordError("a launch record needs a command")
     env = os.environ if environ is None else environ
     path = env.get("PATH")
-    if path is None and os.name == "posix":
-        path = os.defpath
-    found = shutil.which(command[0], path=path)
+    program = command[0]
+    if os.name == "posix":
+        directory = os.fspath(Path.cwd() if cwd is None else cwd.absolute())
+        path = os.pathsep.join(
+            os.path.join(directory, entry)
+            for entry in (os.defpath if path is None else path).split(os.pathsep)
+        )
+        if os.path.dirname(program):
+            program = os.path.join(directory, program)
+    found = shutil.which(program, path=path)
     if found is None:
         return FileIdentity(command[0], unavailable="not found on the search path")
     return file_identity(found)
@@ -308,6 +335,7 @@ def make_record(
     command: Sequence[str],
     pid: int,
     environ: Mapping[str, str] | None = None,
+    cwd: Path | None = None,
     now: datetime | None = None,
     declared_vendor: str = "",
     seat_public_key: str = "",
@@ -326,6 +354,9 @@ def make_record(
     environ : mapping or None
         The environment the command was started with; its search path
         resolves the first word.
+    cwd : Path or None
+        Child working directory, used to resolve POSIX relative command paths
+        and search-path entries; the current directory by default.
     now : datetime or None
         The moment recorded; the present by default.
     declared_vendor : str
@@ -341,7 +372,7 @@ def make_record(
         The seat or the command is empty or malformed, or ``pid`` is not a
         positive whole number.
     """
-    executable = executable_identity(command, environ)
+    executable = executable_identity(command, environ, cwd=cwd)
     if not all(isinstance(word, str) for word in command):
         raise LaunchRecordError("a command is a list of texts")
     whole = json.dumps(list(command), ensure_ascii=True, separators=(",", ":"))

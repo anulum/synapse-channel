@@ -15,6 +15,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Worker sessions honour `cwd` for direct providers as well as tmux providers.
+  Launch records resolve POSIX relative command paths and relative or empty
+  `PATH` entries in that provider directory. `executable_identity` and
+  `make_record` accept an optional keyword-only `cwd`; existing calls retain
+  their default directory. Windows executable lookup is unchanged.
+
 - Launch records on POSIX use the default executable search path when the
   child environment omits `PATH`, matching the program actually started
   instead of hashing a different program from the launcher's search path.

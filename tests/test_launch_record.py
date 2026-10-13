@@ -136,6 +136,10 @@ def test_the_first_word_is_resolved_as_a_start_would_resolve_it(tmp_path: Path) 
         == FileIdentity(str(script.resolve()), script.stat().st_size, _sha256(script), "")
     )
     assert missing == FileIdentity("launch-probe", -1, "", "not found on the search path")
+    if os.name == "posix":
+        assert executable_identity(["./bin/launch-probe"], cwd=tmp_path) == by_path
+        assert executable_identity(["launch-probe"], {"PATH": "bin"}, cwd=tmp_path) == by_path
+        assert executable_identity(["launch-probe"], {"PATH": ""}, cwd=script.parent) == by_path
     assert executable_identity([sys.executable]).sha256 == _sha256(os.path.realpath(sys.executable))
     for empty in ([], [""]):
         with pytest.raises(LaunchRecordError, match="a launch record needs a command"):
