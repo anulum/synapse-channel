@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Operation inventory displays apply the same admission checks as the
+  catalogue, so qualified rows with forbidden effects or missing output
+  projections remain marked as not runnable.
+
 - Operation vocabulary names with an empty object, aspect or action are
   refused instead of accepting an empty aspect as a two-part name.
 

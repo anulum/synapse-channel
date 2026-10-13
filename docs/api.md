@@ -483,6 +483,18 @@ bound is closed at once.
 
 ::: synapse_channel.prompt_bind_http
 
+## Operation catalogue admission
+
+`admission_refusal` applies the same declared-row checks used by
+`Catalogue.admit` and the operation inventory display. Passing these checks
+grants no caller permission or consent. An executor must supply the current
+executable fingerprint; inventory display uses the declared fingerprint.
+
+::: synapse_channel.operations.catalogue
+    options:
+      members: [Catalogue, LegacyInventory, read_catalogue, admission_refusal]
+      show_source: false
+
 ## Launch records
 
 `synapse worker-session` keeps a record of each provider it starts: which

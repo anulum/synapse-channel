@@ -197,6 +197,10 @@ workstation kimi cli 2.1.1 linux  session.list  cli/user  read  run_once (may ru
 A line names the component, the operation (with `#variant` when it is not the
 default), transport and scope, the effect it is shown under, and the
 qualification. A stale row reads `binding changed since, not run`.
+Rows with a forbidden effect or credential-bearing output without a projection
+read `not run` even when they were qualified. `may run` means only that the
+declared row passes the catalogue's data checks: execution must still check
+the current executable, every caller permission and any required consent.
 
 `describe` prints every row of the named operation in full: component, the
 version it reports, the native name, how it is invoked, every effect with

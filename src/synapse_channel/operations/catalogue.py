@@ -155,7 +155,7 @@ class Catalogue:
                 f"{operation} is not listed for {vendor} {component} {component_version} "
                 f"on {os} at {host} over {transport}"
             )
-        reason = _not_admitted(row, fingerprint)
+        reason = admission_refusal(row, fingerprint)
         if reason:
             raise OperationRefusedError(f"{operation} {reason}")
         return row
@@ -282,8 +282,24 @@ def read_catalogue(data: object) -> Catalogue | LegacyInventory:
     raise OperationSpecError("not an operation catalogue of a known schema")
 
 
-def _not_admitted(row: OperationRow, fingerprint: str) -> str:
-    """Return why ``row`` may not run for an executable of ``fingerprint``, or an empty text."""
+def admission_refusal(row: OperationRow, fingerprint: str) -> str:
+    """Return the row's admission refusal, or an empty text when its checks pass.
+
+    Parameters
+    ----------
+    row
+        The operation's declared binding, effects and qualification.
+    fingerprint
+        Fingerprint of the executable to check. Read-only inventory displays
+        use the row's declared fingerprint; execution must supply the one
+        found on the host now.
+
+    Returns
+    -------
+    str
+        Refusal reason, or an empty text. Passing these data checks grants no
+        caller permission or consent and runs no operation.
+    """
     denied = sorted(NEVER_ADMITTED.intersection(row.effects))
     if denied:
         return f"has the effect {denied[0]}: listed, and never admitted"

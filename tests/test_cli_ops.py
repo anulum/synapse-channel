@@ -107,6 +107,39 @@ def test_list_prints_one_line_per_operation_and_filters(
     assert none == "0 operation(s)\n"
 
 
+@pytest.mark.parametrize(
+    ("effects", "disclosures", "projection", "may_run"),
+    [
+        (("read", "host"), (), "", False),
+        (("access",), (), "", False),
+        (("read",), ("credential_bearing",), "", False),
+        (("read",), ("credential_bearing",), "names-only-v1", True),
+    ],
+)
+def test_qualified_rows_display_the_catalogue_admission_constraints(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    effects: tuple[str, ...],
+    disclosures: tuple[str, ...],
+    projection: str,
+    may_run: bool,
+) -> None:
+    """List and describe keep a qualified but refused row marked as not run."""
+    row = qualified(
+        list_sessions(effects=effects, disclosures=disclosures, output_projection=projection)
+    )
+    path = tmp_path / "qualified.json"
+    path.write_text(json.dumps(Catalogue([row]).to_json()), encoding="utf-8")
+
+    for arguments in (["list"], ["describe", "session.list"]):
+        assert main(["ops", *arguments, "--catalogue", str(path)]) == 0
+        output = capsys.readouterr()
+        assert output.err == ""
+        assert "run_once" in output.out
+        assert ("may run" in output.out) is may_run
+        assert ("not run" in output.out) is not may_run
+
+
 def test_describe_prints_every_row_of_an_operation_in_full(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

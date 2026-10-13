@@ -25,7 +25,12 @@ import sys
 from pathlib import Path
 
 from synapse_channel.core.terminal_text import terminal_text
-from synapse_channel.operations.catalogue import Catalogue, LegacyInventory, read_catalogue
+from synapse_channel.operations.catalogue import (
+    Catalogue,
+    LegacyInventory,
+    admission_refusal,
+    read_catalogue,
+)
 from synapse_channel.operations.row import ArgumentBinding, OperationRow
 from synapse_channel.operations.spec import OperationSpec, OperationSpecError
 
@@ -63,7 +68,7 @@ def load_catalogue(path: Path) -> Catalogue | LegacyInventory:
 def _state(row: OperationRow) -> str:
     if row.stale:
         return "binding changed since, not run"
-    return "may run" if row.runnable else "not run"
+    return "not run" if admission_refusal(row, row.fingerprint) else "may run"
 
 
 def _line(row: OperationRow | OperationSpec) -> str:
