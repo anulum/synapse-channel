@@ -1178,9 +1178,9 @@ stevedore==5.9.1 ; python_full_version >= '3.11' \
     --hash=sha256:5c8ff3a9f336cc1a06ac0f597bc79d11a2f950bfd32e290ca56b5a301fafafbf \
     --hash=sha256:e97a2667923efda926e8713fde6a73616df68210a3cbc6f02b48967b676fd8bf
     # via bandit
-synapse-channel==0.99.37 \
-    --hash=sha256:33ea2da42367af314198e6dac6949a6df747a75b1d44581261a9743dab7529a1 \
-    --hash=sha256:6f0d99a6d2148097a358774e5913f789dcc896eaecd785876528842578b590cb
+synapse-channel==0.99.38 \
+    --hash=sha256:7bb3062cd20edf9569eb52bd15ab60ba2ce03b6813e7fa5647c65fc119775c08 \
+    --hash=sha256:ae0bace02674dad99d21087ed0801fe4290580b0eeccac33367e6f242c429cee
     # via synapse-github-app (integrations/github-app/pyproject.toml)
 tomli==2.4.1 \
     --hash=sha256:01f520d4f53ef97964a240a035ec2a869fe1a37dde002b57ebc4417a27ccd853 \
