@@ -73,7 +73,7 @@ class Vocabulary:
             registered; an aspect counts only for the object it is registered for.
         """
         words = name.split(".") if isinstance(name, str) else []
-        if len(words) not in (2, 3):
+        if len(words) not in (2, 3) or not all(words):
             raise OperationSpecError("an operation is named object.action or object.aspect.action")
         thing, action = words[0], words[-1]
         aspect = words[1] if len(words) == 3 else ""

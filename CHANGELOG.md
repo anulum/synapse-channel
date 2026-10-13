@@ -13,6 +13,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Operation vocabulary names with an empty object, aspect or action are
+  refused instead of accepting an empty aspect as a two-part name.
+
 ## [0.99.38] - 2026-10-13
 
 ### Added
