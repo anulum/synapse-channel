@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Launch records on POSIX use the default executable search path when the
+  child environment omits `PATH`, matching the program actually started
+  instead of hashing a different program from the launcher's search path.
+
 - Launch records are owner-only on Windows as well: the record directory gets
   an access list naming the one account before anything is written, and each
   new file inherits it, where both previously kept the access inherited from

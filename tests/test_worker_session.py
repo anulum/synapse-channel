@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import signal
@@ -822,7 +823,9 @@ def _launch_records(state: Path) -> list[dict[str, Any]]:
     return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.iterdir())]
 
 
-def test_worker_session_records_what_it_started(tmp_path: Path) -> None:
+def test_worker_session_records_what_it_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A direct launch leaves one record of the command and of the process created."""
     seen = tmp_path / "provider-pid"
 
@@ -850,6 +853,38 @@ def test_worker_session_records_what_it_started(tmp_path: Path) -> None:
         assert record["process"]["pid"] == int(seen.read_text(encoding="utf-8"))
     assert record["launcher_pid"] == os.getpid()
     assert len(record["executable"]["sha256"]) == 64
+
+    if os.name == "posix":
+        shadow = tmp_path / "shadow"
+        shadow.mkdir()
+        tool = shadow / "sh"
+        tool.write_text("#!/bin/sh\nexit 42\n", encoding="ascii")
+        tool.chmod(0o700)
+        monkeypatch.setenv("PATH", str(shadow))
+        code = run_worker_session(
+            identity="repo/default-path",
+            command=["sh", "-c", "exit 0"],
+            arm=False,
+            terminal_tmux="off",
+            environ={"XDG_STATE_HOME": str(tmp_path / "default-state")},
+        )
+        (record,) = _launch_records(tmp_path / "default-state")
+        assert code == 0
+        assert record["executable"]["path"] == str(Path("/bin/sh").resolve())
+        assert (
+            record["executable"]["sha256"]
+            == hashlib.sha256(Path("/bin/sh").read_bytes()).hexdigest()
+        )
+        code = run_worker_session(
+            identity="repo/explicit-path",
+            command=["sh", "-c", "exit 0"],
+            arm=False,
+            terminal_tmux="off",
+            environ={"PATH": str(shadow), "XDG_STATE_HOME": str(tmp_path / "explicit-state")},
+        )
+        (record,) = _launch_records(tmp_path / "explicit-state")
+        assert code == 42
+        assert record["executable"]["path"] == str(tool.resolve())
 
 
 def test_worker_session_without_a_state_or_home_directory_keeps_no_record(tmp_path: Path) -> None:

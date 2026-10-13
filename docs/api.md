@@ -499,7 +499,10 @@ executable fingerprint; inventory display uses the declared fingerprint.
 
 `synapse worker-session` keeps a record of each provider it starts: which
 file the command named and the digest of its bytes, which process was created
-with its start identity, and the image that process runs. In a tmux-backed
+with its start identity, and the image that process runs. On POSIX, a launch
+environment without `PATH` resolves the command using the default executable
+search path, matching a direct process start; it does
+not inherit the launcher's `PATH` for the record. In a tmux-backed
 session the process recorded is the pane's. Of the command only its name, the
 number of its words and a digest of all of them are kept, since further words
 can hold secrets.

@@ -182,7 +182,8 @@ def executable_identity(
     """Return the identity of the file the command's first word names.
 
     The word is resolved through the search path of ``environ`` (the process
-    environment by default) as the system would resolve it for a start.
+    environment by default). On POSIX, an environment without ``PATH`` uses
+    the default executable search path, as a direct process start does.
 
     Raises
     ------
@@ -192,7 +193,10 @@ def executable_identity(
     if not command or not command[0]:
         raise LaunchRecordError("a launch record needs a command")
     env = os.environ if environ is None else environ
-    found = shutil.which(command[0], path=env.get("PATH"))
+    path = env.get("PATH")
+    if path is None and os.name == "posix":
+        path = os.defpath
+    found = shutil.which(command[0], path=path)
     if found is None:
         return FileIdentity(command[0], unavailable="not found on the search path")
     return file_identity(found)
