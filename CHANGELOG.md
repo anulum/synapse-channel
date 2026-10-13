@@ -15,6 +15,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Launch records are owner-only on Windows as well: the record directory gets
+  an access list naming the one account before anything is written, and each
+  new file inherits it, where both previously kept the access inherited from
+  the parent.
+  A record directory that is a link or belongs to another account is refused.
+
 - Launch-record hashing bounds actual reads, refusing a digest when content
   exceeds the limit despite a smaller reported size.
 

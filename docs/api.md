@@ -510,7 +510,12 @@ the total cannot be established from that bounded read.
 
 A record is a new owner-only file under `synapse/launch-records` in the state
 directory the launch environment names, or under its home directory; an
-environment that names neither keeps no record. A record that cannot be made
+environment that names neither keeps no record. The directory is made, or
+proven, accessible to its owner alone before a record is put in it. The file
+is owner-only from its creation: by permission bits on POSIX, and on Windows
+by the access list it inherits from that directory, which names the one
+account. A directory that is a link, or that belongs to another account, is
+refused. A record that cannot be made
 or written is reported on standard error and the session starts all the same.
 Records are never replaced and nothing prunes them.
 

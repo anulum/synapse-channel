@@ -22,6 +22,12 @@ from typing import Any
 
 import pytest
 
+from synapse_channel.core.private_dir import PrivateDirError
+from synapse_channel.core.secure_path import (
+    SecurePathError,
+    assert_owner_only_dir_path,
+    assert_owner_only_file_path,
+)
 from synapse_channel.launch_record import (
     EVIDENCE_CLASS,
     SCHEMA,
@@ -269,6 +275,20 @@ def test_each_record_is_a_new_owner_only_file_that_is_never_replaced(
     moment = datetime(2026, 10, 12, 12, 0, 0, tzinfo=timezone.utc)
     record = make_record(seat="GROUP/seat 1", command=[sys.executable], pid=sleeper.pid, now=moment)
     directory = tmp_path / "state" / "launch-records"
+    # The directory is there already and open to others, as a directory made
+    # without care is: by its mode where modes rule, and on Windows by what it
+    # inherits from a parent the local users group may read.
+    directory.parent.mkdir()
+    if WINDOWS:
+        subprocess.run(
+            ["icacls", str(directory.parent), "/grant", "*S-1-5-32-545:(OI)(CI)(RX)"],
+            check=True,
+            capture_output=True,
+        )
+    directory.mkdir()
+    directory.chmod(0o755)
+    with pytest.raises(SecurePathError, match="accessible by other"):
+        assert_owner_only_dir_path(directory, purpose="launch record directory")
 
     first = write_record(directory, record)
     second = write_record(directory, record)
@@ -276,13 +296,16 @@ def test_each_record_is_a_new_owner_only_file_that_is_never_replaced(
     assert first != second and sorted(directory.iterdir()) == sorted([first, second])
     assert first.name.startswith(f"GROUP_seat_1__20261012T120000000000Z__{sleeper.pid}__")
     assert json.loads(first.read_text(encoding="utf-8")) == json.loads(json.dumps(record.to_json()))
-    if not WINDOWS:
-        assert stat.S_IMODE(first.stat().st_mode) == 0o600
-        assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+    assert_owner_only_dir_path(directory, purpose="launch record directory")
+    for written in (first, second):
+        assert_owner_only_file_path(written, purpose="launch record", require_single_link=True)
     blocked = tmp_path / "file"
     blocked.write_text("x", encoding="ascii")
-    with pytest.raises(OSError):
+    with pytest.raises(PrivateDirError, match="launch record directory"):
         write_record(blocked, record)
+    with pytest.raises(PrivateDirError, match="launch record directory"):
+        write_record(blocked / "below" / "launch-records", record)
+    assert blocked.read_text(encoding="ascii") == "x"
 
 
 def test_records_are_kept_where_the_environment_says_or_nowhere(tmp_path: Path) -> None:

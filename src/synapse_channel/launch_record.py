@@ -56,6 +56,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.core.private_dir import ensure_private_dir
 
 SCHEMA = "session-launch-record-v1"
 """Schema name of a launch record as plain data."""
@@ -377,14 +378,21 @@ def write_record(directory: Path, record: LaunchRecord) -> Path:
     """Write one record as a new owner-only file and return its path.
 
     The file is created and never replaced: two launches at the same moment
-    write two files.
+    write two files. The directory is made, or proven, accessible to its owner
+    alone before anything is put in it. The file is owner-only from its
+    creation: by its permission bits where those are the floor, and on Windows
+    by the access list it inherits from that directory, which names the one
+    account.
 
     Raises
     ------
+    PrivateDirError
+        The directory cannot be created or cannot be proven owner-only: it is
+        a link, not a directory, or belongs to another account.
     OSError
-        The directory or the file cannot be created.
+        The file cannot be created or written.
     """
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    ensure_private_dir(directory, parents=True, purpose="launch record directory")
     seat = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in record.seat)[:80]
     stamp = record.recorded_at.replace("-", "").replace(":", "").replace(".", "")
     path = directory / f"{seat}__{stamp}__{record.process.pid}__{secrets.token_hex(4)}.json"

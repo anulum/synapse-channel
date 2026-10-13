@@ -20,8 +20,8 @@ from pathlib import Path
 
 from synapse_channel.agent_tmux import AgentTmuxConfig, start_session
 from synapse_channel.client.agent import DEFAULT_HUB_URI
+from synapse_channel.core.errors import SynapseError
 from synapse_channel.launch_record import (
-    LaunchRecordError,
     make_record,
     record_dir_for,
     write_record,
@@ -214,7 +214,7 @@ def _record_launch(identity: str, command: Sequence[str], pid: int, env: Mapping
         return
     try:
         write_record(directory, make_record(seat=identity, command=command, pid=pid, environ=env))
-    except (LaunchRecordError, OSError) as exc:
+    except (SynapseError, OSError) as exc:
         print(f"synapse worker-session: launch record not written: {exc}", file=sys.stderr)
 
 
