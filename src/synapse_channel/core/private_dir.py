@@ -21,7 +21,8 @@ leaf explicitly and validates the *same descriptor* it opened (``O_NOFOLLOW |
 O_DIRECTORY``) as a real directory owned by the effective user with no group or
 other bits — never a symlink, never foreign-owned. A loose-but-owned directory
 is re-tightened in place through that descriptor (``fchmod``). On Windows it
-creates the leaf, applies an owner-only DACL, and proves the same intent via
+creates the leaf, refuses a link or a non-directory before touching it, applies
+an owner-only DACL, and proves the same intent via
 :mod:`~synapse_channel.core.secure_path`. Anything else fails closed. Platforms
 that cannot prove these invariants raise rather than pretend.
 
@@ -169,6 +170,19 @@ def ensure_private_dir(
     return _validate_private_dir(target, purpose=purpose)
 
 
+def _refuse_wrong_kind(target: Path, *, purpose: str) -> None:
+    """Refuse a link or a non-directory before any access list is written.
+
+    The ownership and access-list tools act on whatever the path names, and for
+    a link that is its target; a refusal that came after them would leave the
+    refused path changed.
+    """
+    if target.is_symlink():
+        raise PrivateDirError(f"{purpose}: cannot securely open {target}: symlink refused")
+    if not target.is_dir():
+        raise PrivateDirError(f"{purpose}: {target} is not a directory")
+
+
 def _ensure_private_dir_windows(
     target: Path,
     *,
@@ -191,6 +205,7 @@ def _ensure_private_dir_windows(
         pass
     except OSError as exc:
         raise PrivateDirError(f"{purpose}: cannot create {target}: {exc.strerror or exc}") from exc
+    _refuse_wrong_kind(target, purpose=purpose)
     try:
         apply_owner_only_dir(target)
         assert_owner_only_dir_path(target, purpose=purpose)

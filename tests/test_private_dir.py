@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import stat
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,38 @@ _POSIX_ONLY = pytest.mark.skipif(os.name != "posix", reason="owner-only floor is
 
 def _mode(path: Path) -> int:
     return stat.S_IMODE(path.stat().st_mode)
+
+
+def _access(path: Path) -> str:
+    """What decides who may open ``path`` on this platform, as text."""
+    if os.name == "nt":
+        listed = subprocess.run(["icacls", str(path)], check=True, capture_output=True, text=True)
+        return listed.stdout
+    return oct(_mode(path))
+
+
+def test_a_refused_regular_file_keeps_its_content_and_its_access(tmp_path: Path) -> None:
+    """A path that is refused for not being a directory is left exactly as it was."""
+    parent = tmp_path / "open"
+    parent.mkdir()
+    if os.name == "nt":
+        # Readable by the local users group through inheritance, so that an
+        # owner-only access list written onto the file would show.
+        subprocess.run(
+            ["icacls", str(parent), "/grant", "*S-1-5-32-545:(OI)(CI)(RX)"],
+            check=True,
+            capture_output=True,
+        )
+    target = parent / "afile"
+    target.write_text("not a dir", encoding="utf-8")
+    target.chmod(0o644)
+    before = _access(target)
+
+    with pytest.raises(PrivateDirError, match="file clobber"):
+        ensure_private_dir(target, purpose="file clobber")
+
+    assert _access(target) == before
+    assert target.read_text(encoding="utf-8") == "not a dir"
 
 
 @_POSIX_ONLY

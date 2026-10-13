@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- A private directory path that is refused on Windows for being a regular
+  file or a link is now refused before its access list is touched; for a
+  regular file the refusal previously came after the list had been rewritten.
+
 - Worker sessions honour `cwd` for direct providers as well as tmux providers.
   Launch records resolve POSIX relative command paths and relative or empty
   `PATH` entries in that provider directory. `executable_identity` and
