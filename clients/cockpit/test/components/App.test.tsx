@@ -256,7 +256,7 @@ describe("App", () => {
     );
     render(<App />);
     await waitFor(() => expect(screen.getByText("operator · operator")).toBeTruthy());
-    const trigger = screen.getByRole("button", { name: "Open command palette" });
+    const trigger = screen.getByRole("button", { name: "commands Ctrl K: Open command palette" });
     await userEvent.click(trigger);
     expect(screen.getAllByText(/^operator:/u)).toHaveLength(3);
 

@@ -93,7 +93,7 @@ describe("Hud", () => {
     );
     await userEvent.click(screen.getByLabelText("Switch to light theme"));
     expect(onToggleTheme).toHaveBeenCalled();
-    const density = screen.getByLabelText("Toggle display density");
+    const density = screen.getByLabelText("compact: Toggle display density");
     expect(density.textContent).toBe("compact");
     await userEvent.click(density);
     expect(onToggleDensity).toHaveBeenCalled();
@@ -102,7 +102,7 @@ describe("Hud", () => {
       <Hud kpis={[]} live stamp="—" theme="light" onToggleTheme={() => {}} density="compact" onToggleDensity={() => {}} />,
     );
     expect(screen.getByLabelText("Switch to dark theme").textContent).toBe("dark");
-    expect(screen.getByLabelText("Toggle display density").textContent).toBe("cozy");
+    expect(screen.getByLabelText("cozy: Toggle display density").textContent).toBe("cozy");
   });
 
   it("hosts the role control and exposes a focusable command trigger", async () => {
@@ -119,7 +119,7 @@ describe("Hud", () => {
       />,
     );
     expect(screen.getByText("viewer · review")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "Open command palette" }));
+    await userEvent.click(screen.getByRole("button", { name: "commands Ctrl K: Open command palette" }));
     expect(onOpen).toHaveBeenCalledOnce();
     expect(trigger.current).toBeInstanceOf(HTMLButtonElement);
   });

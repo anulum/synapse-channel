@@ -116,7 +116,7 @@ describe("IncidentWorkspace", () => {
     first.unmount();
 
     render(<Harness selection={null} />);
-    await userEvent.click(screen.getByRole("button", { name: "scope" }));
+    await userEvent.click(screen.getByRole("button", { name: /^1 scope /u }));
     expect((screen.getByLabelText("Incident title") as HTMLInputElement).value).toBe(
       "Persisted local draft",
     );
@@ -153,13 +153,13 @@ describe("IncidentWorkspace", () => {
 
   it("shows a live replay context and keeps export gated without scope or evidence", async () => {
     render(<Harness replay={{ mode: "live" }} />);
-    await userEvent.click(screen.getByRole("button", { name: "evidence" }));
+    await userEvent.click(screen.getByRole("button", { name: /^2 evidence /u }));
     expect(screen.getByText("live view")).toBeTruthy();
     expect(
       (screen.getByRole("button", { name: /continue to notes and export/u }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
-    await userEvent.click(screen.getByRole("button", { name: "notes" }));
+    await userEvent.click(screen.getByRole("button", { name: /^3 notes /u }));
     expect(screen.getByText("missing title")).toBeTruthy();
     expect(
       (screen.getByRole("button", { name: "export incident JSON" }) as HTMLButtonElement).disabled,

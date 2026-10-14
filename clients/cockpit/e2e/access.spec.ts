@@ -39,14 +39,14 @@ async function changeAccess(page: Page, role: DashboardRole): Promise<void> {
 async function expectRoleAtWidth(page: Page, role: DashboardRole, width: number): Promise<void> {
   await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
   await expect(page.getByText(`${role} · ${role}`, { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open command palette" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "commands Ctrl K: Open command palette" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }
 
 test("viewer tampering cannot reach writes; operator/admin expose exactly shipped controls", async ({ page }) => {
   await unlock(page, "viewer");
   for (const width of [1440, 390]) await expectRoleAtWidth(page, "viewer", width);
-  await page.getByRole("button", { name: "Open command palette" }).click();
+  await page.getByRole("button", { name: "commands Ctrl K: Open command palette" }).click();
   await expect(page.locator(".palette__item--write")).toHaveCount(0);
   await page.getByLabel("Search commands").fill("operator");
   await expect(page.getByText("no command matches")).toBeVisible();
@@ -70,7 +70,7 @@ test("viewer tampering cannot reach writes; operator/admin expose exactly shippe
   for (const role of ["operator", "admin"] as const) {
     await changeAccess(page, role);
     for (const width of [1440, 390]) await expectRoleAtWidth(page, role, width);
-    await page.getByRole("button", { name: "Open command palette" }).click();
+    await page.getByRole("button", { name: "commands Ctrl K: Open command palette" }).click();
     await expect(page.locator(".palette__item--write")).toHaveCount(3);
     await expect(page.getByRole("option", { name: "operator: send a message…" })).toBeVisible();
     await expect(page.getByRole("option", { name: "operator: declare a task…" })).toBeVisible();
@@ -99,7 +99,7 @@ test("viewer tampering cannot reach writes; operator/admin expose exactly shippe
 
 test("a live capability downgrade closes writes, restores focus, and announces", async ({ page }) => {
   await unlock(page, "operator");
-  const trigger = page.getByRole("button", { name: "Open command palette" });
+  const trigger = page.getByRole("button", { name: "commands Ctrl K: Open command palette" });
   await trigger.click();
   await expect(page.locator(".palette__item--write")).toHaveCount(3);
   await page.route("**/dashboard-access.json", async (route) => {

@@ -159,12 +159,11 @@ export function IncidentWorkspace({
               key={candidate}
               type="button"
               className={`incident-step${candidate === step ? " incident-step--active" : ""}`}
-              aria-label={candidate}
               aria-current={candidate === step ? "step" : undefined}
               onClick={() => onStepChange(candidate)}
             >
-              <span>{index + 1}</span>
-              <strong>{candidate}</strong>
+              <span>{index + 1}</span>{" "}
+              <strong>{candidate}</strong>{" "}
               <i>{ready ? "ready" : candidate === "notes" ? "optional" : "needed"}</i>
             </button>
           );

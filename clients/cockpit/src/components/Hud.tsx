@@ -129,7 +129,7 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
           ref={commandTriggerRef}
           type="button"
           className="hud__commands"
-          aria-label={t("hud.openCommands")}
+          aria-label={`${t("hud.commands")} Ctrl K: ${t("hud.openCommands")}`}
           onClick={onOpenPalette}
         >
           {t("hud.commands")} <kbd>Ctrl K</kbd>
@@ -205,7 +205,7 @@ export function Hud({ kpis, live, stamp, transport = "connecting", onSelect, the
           className="hud__theme"
           onClick={onToggleDensity}
           title={density === "cozy" ? t("hud.densityCompactTitle") : t("hud.densityCozyTitle")}
-          aria-label={t("hud.toggleDensity")}
+          aria-label={`${density === "cozy" ? t("hud.compact") : t("hud.cozy")}: ${t("hud.toggleDensity")}`}
         >
           {density === "cozy" ? t("hud.compact") : t("hud.cozy")}
         </button>
