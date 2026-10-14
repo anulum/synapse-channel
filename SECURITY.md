@@ -690,3 +690,12 @@ identifiers and actual receipts to resolve ambiguous outcomes.
 
 SYNAPSE CHANNEL is AGPL-3.0-or-later with a commercial licence available; see
 [`NOTICE.md`](NOTICE.md).
+
+## Advisory ranking boundary
+
+The explicit [agent ranking](docs/reputation.md) reads complete validated local
+journal snapshots and requires existing trusted keys for authenticated journals.
+It grants no execution authority and makes no claim that recorded authorship or
+work was independently verified. Legacy evidence remains unverified; tampered
+rows and exhausted budgets refuse the complete result. Default trust graph,
+routing and permission enforcement are unchanged.

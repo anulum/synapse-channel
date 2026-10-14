@@ -56,6 +56,7 @@ TIER_SUMMARIES = {
 
 CLI_TAXONOMY: dict[str, str] = {
     "compliance": GOVERNANCE,
+    "reputation": ANALYSIS,
     # stable coordination core
     "hub": STABLE,
     "send": STABLE,

@@ -117,3 +117,12 @@ and ACL, does not sandbox agents, and does not certify external providers.
 The local-first tradeoff is interpretability over automation. Evidence should be
 useful for routing review and policy input because it remains traceable to local
 events, not because it hides judgement inside an opaque model.
+
+## Explicit advisory ranking
+
+The separate opt-in `synapse reputation` command ranks recorded evidence for
+human triage and lists source sequences. The default evidence graph remains
+unranked. The projection does not authorise execution or change routing;
+self-attested evidence and row authentication do not independently verify work.
+See [advisory agent ranking](reputation.md) for counts, read-only snapshots,
+existing key requirements, complete-read budgets and filters.

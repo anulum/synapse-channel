@@ -88,7 +88,7 @@ doctor can repair service setup, and dashboard controls can submit operator
 actions. A tier label is not a read-only or permission guarantee. Plain
 `synapse commands` discovery itself reads the static taxonomy without a hub.
 
-`accounting`  `approvals`  `causality`  `conflicts`  `cross-repo`  `dashboard`  `dead-letters`  `debug`  `directory`  `doctor`  `event-query`  `fleet-scorecard`  `health`  `identity`  `manifest`  `multihub`  `pid-monitor`  `relay`  `reliability`  `setup`  `state`  `trust-graph`
+`accounting`  `approvals`  `causality`  `conflicts`  `cross-repo`  `dashboard`  `dead-letters`  `debug`  `directory`  `doctor`  `event-query`  `fleet-scorecard`  `health`  `identity`  `manifest`  `multihub`  `pid-monitor`  `relay`  `reliability`  `setup`  `state`  `trust-graph`  `reputation`
 
 ### Advisory governance — `governance`
 

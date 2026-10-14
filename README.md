@@ -1829,13 +1829,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.38 |
 | Public API exports | 70 |
-| Package modules | 789 |
-| Classes | 1164 |
+| Package modules | 791 |
+| Classes | 1166 |
 | Wire message types | 114 |
-| CLI subcommands | 256 |
-| Test functions | 11491 |
+| CLI subcommands | 257 |
+| Test functions | 11501 |
 | Benchmark harnesses | 11 |
-| Documentation pages | 85 |
+| Documentation pages | 86 |
 | GitHub Actions workflows | 27 |
 | Optional-dependency groups | 14 |
 
@@ -2115,6 +2115,13 @@ If you use SYNAPSE CHANNEL in your work, please cite it. Metadata is in
   year     = {2026}
 }
 ```
+
+
+### Explicit advisory agent ranking
+
+`synapse reputation ./hub.db --json` provides an opt-in human triage order
+from retained evidence and source event sequences. Default trust-graph and
+execution guards are unchanged. See [advisory agent ranking](docs/reputation.md).
 
 ## Licence
 

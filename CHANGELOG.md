@@ -19,6 +19,11 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Explicit `reputation` CLI and Python API rank recorded evidence for human
+  triage, with per-agent counts and source sequences. The complete read-only
+  snapshot requires existing enrolled row keys and refuses invalid data or
+  exhausted budgets. Default trust graph, routing and execution guards are unchanged.
+
 - `compliance export`, `retention` and `report` read existing journals through
   one read-only snapshot. Bundles commit selected full events while exporting
   payload-free metadata and explicit row authentication provenance. Budgets

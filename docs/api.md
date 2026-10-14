@@ -614,3 +614,10 @@ controls the account can write the same file, and nothing in it shows which
 provider the process connected to.
 
 ::: synapse_channel.launch_record
+
+## Advisory agent ranking
+
+The explicit local projection retains source event sequences and grants no
+execution authority. See [its journal and filtering contract](reputation.md).
+
+::: synapse_channel.core.reputation

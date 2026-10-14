@@ -3627,3 +3627,12 @@ must be admitted by the hub. Project-wide reads require the feed source.
 Channel-tagged chat is excluded and uses channel history. A read records
 reader consumption, not model processing. Failed cursor writes may cause
 messages to repeat.
+
+## Explicit advisory ranking
+
+The separate opt-in `synapse reputation` command ranks recorded evidence for
+human triage and lists source sequences. The default evidence graph remains
+unranked. The projection does not authorise execution or change routing;
+self-attested evidence and row authentication do not independently verify work.
+See [advisory agent ranking](reputation.md) for counts, read-only snapshots,
+existing key requirements, complete-read budgets and filters.

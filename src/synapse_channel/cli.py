@@ -212,6 +212,7 @@ _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("synapse_channel.cli_aef:add_parsers", ("aef",)),
     ("synapse_channel.cli_reliability:add_parsers", ("reliability",)),
     ("synapse_channel.cli_trust_graph:add_parsers", ("trust-graph",)),
+    ("synapse_channel.cli_reputation:add_parsers", ("reputation",)),
     ("synapse_channel.cli_cross_repo:add_parsers", ("cross-repo",)),
     ("synapse_channel.cli_benchmark:add_parsers", ("benchmark",)),
     ("synapse_channel.cli_accounting:add_parsers", ("accounting",)),
