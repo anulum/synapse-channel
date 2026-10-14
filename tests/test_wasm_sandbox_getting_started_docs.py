@@ -42,7 +42,10 @@ def test_guide_walks_the_full_operator_workflow() -> None:
         assert verb in text
     assert "--approve" in text
     assert "run receipt" in text
-    assert "no ambient authority" in text
+    assert "manifest-controlled filesystem preopens and guest resource limits" in text
+    assert "no outbound socket-opening import or network descriptor" in text
+    assert "standard wasi clocks remain available without a manifest grant" in text
+    assert "does not verify signed cards or caller identity" in text
 
 
 def test_guide_documents_the_test_exit_code_contract() -> None:

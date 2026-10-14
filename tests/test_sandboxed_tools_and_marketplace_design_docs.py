@@ -36,32 +36,39 @@ def test_sandboxed_tools_is_publicly_discoverable() -> None:
     assert "docs/sandboxed-tools-and-marketplace.md" in _read(ROOT / "README.md")
 
 
-def test_sandbox_is_capability_limited_and_deny_by_default() -> None:
-    """The sandbox must remove ambient authority and gate every capability."""
+def test_sandbox_documents_granted_limits_and_ambient_exceptions() -> None:
+    """The sandbox must expose its actual grant and containment boundaries."""
     text = _collapsed(DOC)
     assert "webassembly" in text
-    assert "no ambient authority" in text
-    assert "deny-by-default" in text
+    assert "only manifest-selected preopens" in text
+    assert "network grants are recorded as policy but do not enable networking" in text
+    assert "standard wasi clock imports remain available without a manifest grant" in text
+    assert "does not authenticate an operator" in text
+    assert "direct callers of `run_sandboxed` supply their own digest and approval checks" in text
     for capability in ("filesystem", "network", "resources"):
         assert capability in text
 
 
-def test_marketplace_requires_the_preconditions_first() -> None:
-    """A marketplace is gated behind sandbox, signing, permissions, and receipts."""
+def test_marketplace_admission_is_proposed_separately_from_runtime_facilities() -> None:
+    """Separate existing facilities must not be claimed as composed admission."""
     text = _collapsed(DOC)
-    assert "no marketplace before the preconditions" in text
-    assert "signed capability card" in text
-    assert "permission manifest" in text
-    assert "run receipt" in text
-    assert "all four runtime preconditions now exist" in text
-    assert "distribution layer remains unbuilt" in text
+    assert "marketplace distribution layer is not implemented" in text
+    assert "not yet composed into a marketplace install or execution admission path" in text
+    assert "accepted signed card binding declared capabilities and module content" in text
+    assert "expiry and revocation enforced at admission" in text
+    assert "authenticated caller permissions" in text
+    assert "module digest checks, runtime limits and authenticated run evidence" in text
+    assert "these checks are separate today" in text
 
 
-def test_sandboxed_tools_keeps_one_authorization_path_and_local_first() -> None:
-    """The boundaries must reuse the ACL model and preserve local-first."""
+def test_sandboxed_tools_preserves_separate_authority_and_local_first_boundaries() -> None:
+    """Sandbox confirmation and coordination ACLs have separate contracts."""
     text = _collapsed(DOC)
     assert "not implemented" in text
-    assert "no parallel authorisation path" in text or "one deny-by-default model" in text
+    assert "sandbox cli does not run enrolled-agent acl checks" in text
+    assert "requires `--approve` as local caller confirmation" in text
+    assert "valid card signature" in text
+    assert "does not prove module behaviour or grant execution authority" in text
     assert "local-first" in text
     for sibling in ("signed-capability-cards.md", "identity-and-acl.md"):
         assert sibling in _read(DOC)

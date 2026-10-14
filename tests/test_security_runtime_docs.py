@@ -167,7 +167,10 @@ def test_wire_version_docs_match_negotiate_down_runtime() -> None:
     protocol_doc = _collapsed("docs/protocol.md")
     protocol_source = _collapsed("src/synapse_channel/core/protocol.py")
     assert "current wire is version `7`" in protocol_doc
-    assert "lowest common wire version" in protocol_doc
+    assert "shared negotiation helper chooses the lower version" in protocol_doc
+    assert "python agent instead records the advertised hub version" in protocol_doc
+    assert "gates individual apis by their feature floors" in protocol_doc
+    assert "absent advertisement does not admit its delivery api" in protocol_doc
     assert "advertise-only for now" not in protocol_source
     assert "multi-hub network fetcher records that decision" in protocol_source
 

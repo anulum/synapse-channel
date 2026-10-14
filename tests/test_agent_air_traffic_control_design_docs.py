@@ -63,7 +63,9 @@ def test_agent_atc_keeps_it_a_coordination_layer_not_a_scheduler() -> None:
     """The boundaries must refuse the orchestrator framing."""
     text = _collapsed(DOC)
     assert "not a scheduler or orchestrator" in text
-    assert "only claims gate a mutation" in text or "only a claim gates a mutation" in text
+    assert "claims admit declared scopes" in text
+    assert "covered hooks and git checks can separately refuse covered mutations" in text
+    assert "including identity/acl and explicitly enabled policy gates" in text
     assert "advisory" in text
     assert "local-first default" in text
     assert "introduces no new trust root" in text

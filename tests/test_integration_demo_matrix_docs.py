@@ -1,3 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — public documentation contract regressions
 """Regression coverage for the public integration demo matrix."""
 
 from __future__ import annotations
@@ -54,9 +61,9 @@ def test_integration_demo_matrix_documents_the_golden_path_and_three_adapters() 
         "| CLI coding sessions | Supported | File-scope claims, claims release, "
         "board/status checks, direct messages. | Does not start or control the "
         "coding agent runtime. |",
-        "| MCP host adapter | Supported adapter surface | MCP tools/resources expose "
-        "Synapse coordination through stdio. | Does not certify every MCP host, "
-        "streaming, tool chaining, or resource templates. |",
+        "| MCP host adapter | Supported adapter surface | MCP tools, fixed resources "
+        "and task/agent/resource-kind templates expose coordination through stdio. "
+        "| Does not certify every host's discovery, tool orchestration or streaming lifecycle. |",
         "| Local A2A bridge | Local bridge surface | Agent Card projection plus "
         "local HTTP+JSON task/message routes. | Does not claim independent A2A "
         "conformance, remote TLS deployment, or real webhook receiver "

@@ -36,9 +36,9 @@ def test_workflows_doc_documents_the_cli_and_format() -> None:
 
 def test_workflows_doc_keeps_the_blackboard_boundary() -> None:
     text = _collapsed()
-    assert "the blackboard is the executor" in text
-    assert "no scheduler" in text
-    assert "single-dependency" in text
+    assert "the blackboard tracks declared work" in text
+    assert "work execution belongs to separately configured workers or operators" in text
+    assert "every dependency reaches a terminal status" in text
     # strict validation (cycle rejection) is documented
     assert "cycle" in text
 

@@ -301,5 +301,7 @@ def test_redeploy_checklist_is_documented() -> None:
     assert "does not restart services by itself" in docs
     assert "restart commands are withheld by default" in docs
     assert "--redeploy-authorize-restart-pid" in docs
-    assert "Every new release tag" in docs
-    assert "unrelated running application" in docs
+    assert "When the operator chooses to adopt a release" in docs
+    assert "Install the exact tagged public artifact and verify its version and digest" in docs
+    assert "fresh owner authority for that exact running hub" in docs
+    assert "rechecks that PID" in docs

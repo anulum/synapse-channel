@@ -44,15 +44,13 @@ def test_commercial_claim_hygiene_passes_current_repository() -> None:
 
 def test_commercial_claim_hygiene_detects_missing_boundary_text(tmp_path: Path) -> None:
     drifted = tmp_path / "commercial.md"
-    drifted.write_text(
-        COMMERCIAL_DOC.read_text(encoding="utf-8").replace(
-            "There is **no feature difference between the\n"
-            "open-source and the commercial build** — the package on PyPI is the full product; a\n"
-            "commercial licence changes the terms, not the code.\n",
-            "",
-        ),
-        encoding="utf-8",
+    text = COMMERCIAL_DOC.read_text(encoding="utf-8")
+    boundary = (
+        "There is **no feature difference between the\n"
+        "open-source and the commercial build**: both use the public Core codebase."
     )
+    assert text.count(boundary) == 1, "the negative probe must remove a real boundary"
+    drifted.write_text(text.replace(boundary, ""), encoding="utf-8")
 
     result = _run_checker("--check", "--path", str(drifted))
 

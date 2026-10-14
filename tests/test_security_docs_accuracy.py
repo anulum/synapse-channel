@@ -92,13 +92,13 @@ def test_secure_mode_docs_pin_same_descriptor_secret_file_boundary() -> None:
 
 
 def test_file_scope_docs_describe_literal_prefix_overlap_not_glob() -> None:
-    # `core/scoping.py` states wildcard-glob algebra is intentionally out of scope and
-    # declared paths are literal files or directory prefixes; SECURITY.md must match the
-    # code and never regress to the stale "glob overlap" wording.
+    # Legacy file/directory-prefix scopes do not expand wildcards. Keep that
+    # boundary separate from the canonical path-identity profile and never
+    # regress to the stale "glob overlap" wording.
     prose = _single_spaced(_read_repo_text("SECURITY.md"))
 
-    assert "literal path or directory-prefix overlap" in prose
-    assert "wildcard-glob algebra is intentionally out of scope" in prose
+    assert "Legacy paths use literal file/directory-prefix overlap" in prose
+    assert "without wildcard expansion" in prose
     assert "glob overlap" not in prose
 
 
@@ -217,7 +217,8 @@ def test_update_check_docs_keep_network_access_opt_in() -> None:
 
     assert "`synapse --version` is network-silent by default" in combined
     assert "SYNAPSE_UPDATE_CHECK=1" in combined
-    assert "disabled unless `SYNAPSE_UPDATE_CHECK=1` is present" in combined
+    assert "disabled unless `SYNAPSE_UPDATE_CHECK` is nonempty" in combined
+    assert "a nonempty `SYNAPSE_NO_UPDATE_CHECK` suppresses it" in combined
 
 
 def test_takeover_docs_describe_payload_free_audit_logs() -> None:

@@ -84,7 +84,8 @@ machine. Model workers reply on-channel through any OpenAI-compatible endpoint,
 including a local Ollama server, with a deterministic rule-based fallback for
 offline use.
 
-The bundled `synapse mcp` server exposes send, durable inbox, status, claim, release,
+The bundled `synapse mcp` server uses the Model Context Protocol (MCP) to expose
+send, durable inbox, status, claim, release,
 handoff, and task verbs as MCP tools plus the board, agents, and resources as
 read-only MCP resources. Host interoperability depends on the installed host
 version, transport and configuration; see the exact support boundaries in the

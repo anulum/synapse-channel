@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — managed GitHub App design documentation tests
-"""Guard the managed GitHub App skeleton and undeployed-host boundary."""
+"""Guard the shipped package's independent registration and hosting boundary."""
 
 from __future__ import annotations
 
@@ -31,24 +31,23 @@ def test_design_is_in_the_nav() -> None:
     )
 
 
-def test_design_states_skeleton_is_built_but_app_is_undeployed() -> None:
+def test_package_status_separates_registration_and_deployment() -> None:
     text = _collapsed()
     assert "app manifest and checks api skeleton — shipped" in text
-    assert "the skeleton is implemented; the app is not registered or deployed" in text
-    assert "no public installation" in text
-    assert "hosted endpoint" in text
+    assert "the package does not register or deploy an app" in text
+    assert "hosting and registration remain separate operator decisions" in text
+    assert "it has no hosted state" in text
 
 
-def test_design_records_the_badge_first_build_order() -> None:
+def test_badge_is_shipped_self_declaration_with_a_verification_path() -> None:
     text = _collapsed()
     raw = DOC.read_text(encoding="utf-8")
 
-    assert "the adoption-signal gate is lifted" in text
     assert "badge on the existing action — shipped" in text
     # the shipped half links to the badge's eligibility and verification rules
     assert "policy-engine.md#the-synapse-protected-badge" in raw
     # and stays honest about what it is until the App exists
-    assert "self-declaration, not an attestation" in text
+    assert "honest self-declaration with a documented verification path" in text
 
 
 def test_design_links_the_concrete_architecture_and_package() -> None:
