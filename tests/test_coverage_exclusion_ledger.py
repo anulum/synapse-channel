@@ -135,7 +135,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_at_rest_pkcs11.py": (1, "optional-dep-guard"),
     "tests/test_at_rest_tpm2.py": (1, "optional-dep-guard"),
     "tests/test_benchmark.py": (1, "optional-dep-guard"),
-    "tests/test_cli_e2e_agent_tmux.py": (2, "optional-dep-guard + operator-smoke"),
+    # tmux availability plus separate opt-in OpenCode and Codex composer smokes.
+    "tests/test_cli_e2e_agent_tmux.py": (3, "optional-dep-guard + operator-smoke"),
     "tests/test_cli_e2e_opencode_editors.py": (1, "operator-smoke"),
     "tests/test_cli_e2e_mutation_status.py": (1, "platform-guard"),
     "tests/test_cli_sqlcipher.py": (2, "optional-dep-guard"),
