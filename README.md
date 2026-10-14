@@ -1514,6 +1514,13 @@ silence), declared dependencies that never completed, and unreleased claims
 silent past a threshold — ages measured against the log's own final
 timestamp, deterministic and replayable; exit `1` signals an anomaly.
 
+Use `synapse compliance export ./synapse.db --json` for a read-only snapshot
+bundle with a Merkle commitment, payload-free metadata and explicit row MAC
+provenance. `compliance retention` observes a six-calendar-month anniversary;
+`compliance report` combines both under the `eu-ai-act` label. These observations
+make no compliance verdict. See [record observations](docs/compliance.md) for
+existing-key requirements, complete-export budgets and clock limitations.
+
 Use `synapse merkle root ./synapse.db` to commit the durable log to a single
 Merkle root — a 32-byte fingerprint of every event, so two operators or two
 federated hubs holding the same log derive the same root and a mismatch proves
@@ -1822,13 +1829,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.38 |
 | Public API exports | 70 |
-| Package modules | 784 |
-| Classes | 1156 |
+| Package modules | 789 |
+| Classes | 1164 |
 | Wire message types | 114 |
-| CLI subcommands | 252 |
-| Test functions | 11470 |
+| CLI subcommands | 256 |
+| Test functions | 11490 |
 | Benchmark harnesses | 11 |
-| Documentation pages | 84 |
+| Documentation pages | 85 |
 | GitHub Actions workflows | 27 |
 | Optional-dependency groups | 14 |
 

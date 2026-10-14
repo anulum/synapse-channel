@@ -6,6 +6,24 @@ below. This page starts with the main entry points, then renders their source
 docstrings. See [API and wire stability](api-stability.md) for the compatibility
 policy.
 
+## Retained-log observation readers
+
+Local retained-log readers are documented in [record observations](compliance.md).
+They use explicit imports and contact no hub:
+`core.record_keeping.build_export`, `core.record_keeping_source.iter_record_source`,
+`core.record_retention.assess_retention` and `core.compliance.build_report`.
+Bundle and retention functions are also re-exported by `core.compliance`.
+Existing keys, inclusive sequence ceilings and explicit complete-export budgets
+apply to both the CLI and these Python APIs.
+
+::: synapse_channel.core.record_keeping
+
+::: synapse_channel.core.record_keeping_source
+
+::: synapse_channel.core.record_retention
+
+::: synapse_channel.core.compliance
+
 ## Two entry points
 
 Almost every integration uses one of two classes:

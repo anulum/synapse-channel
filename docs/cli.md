@@ -17,6 +17,7 @@ everything, since they need the whole command table.
 
 | Command | What it does |
 | --- | --- |
+| `synapse compliance export\|retention\|report DB` | Read one existing snapshot, commit payload-free metadata and observe calendar retention; see [record observations](compliance.md). |
 | `synapse hub` | Run the coordination hub. |
 | `synapse commands` | List every subcommand by stability tier, or inspect a measured profile with `--profile first-use|core|adapters|governance|labs|all` and optional `--json`. |
 | `synapse setup` | Emit the `local-single-user` setup specification; inspect, plan, authorize, and apply allow-listed Linux/systemd-user effects; then authorize and prove directed waiter consumption plus durable hub restart replay. |

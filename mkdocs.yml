@@ -134,6 +134,7 @@ nav:
   - Examples: examples.md
   - Deployment: deployment.md
   - Observability: observability.md
+  - Retained-log observations: compliance.md
   - A2A validation receipts: a2a-validation-receipts.md
   - A2A deployment threat model: a2a-deployment-threat-model.md
   - A2A conformance matrix: a2a-conformance.md

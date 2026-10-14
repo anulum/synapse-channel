@@ -567,7 +567,7 @@ The roster's separately granted **Host sessions** view is Linux metadata
 observation through `/host-sessions.json`. It is distinct from the
 cost/turn/token feed `/sessions.json`. An operator/admin role alone does not
 grant disclosure; configure the owner-only host-observation policy described in
-[the client guide](../clients/cockpit/README.md#local-host-session-observation).
+[the client guide](https://github.com/anulum/synapse-channel/blob/main/clients/cockpit/README.md#local-host-session-observation).
 PID/start-time and tmux assertions do not prove provider responsiveness or
 authorise a process action. This view does not report per-process CPU, RAM,
 swap or GPU usage, and adds no stop, restart or remote-compute control.

@@ -6,6 +6,12 @@ hand. Run them with `make bench`.
 
 ## Installed-version scorecard: `synapse benchmark`
 
+The [retained-log observation](compliance.md) commands have no committed
+throughput benchmark or cross-language implementation. Existing write/replay
+numbers below do not measure export speed or establish its memory ceiling.
+Export limits count selected events and encoded payload bytes; collected
+metadata and JSON output still require linear memory.
+
 The committed harnesses below measure this repository; `synapse benchmark`
 (shipped in the package) measures *your* machine and *your* installed
 version. Its probes run the same production code paths — durable event-store
@@ -172,7 +178,7 @@ throughput claim.
 network server: task creation, SYNAPSE reply correlation, task listing, push
 delivery callback dispatch, and bounded subscriber fanout.
 
-The [recorded reference artifact](../benchmarks/results/a2a_bridge_benchmark.json)
+The [recorded reference artifact](https://github.com/anulum/synapse-channel/blob/main/benchmarks/results/a2a_bridge_benchmark.json)
 contains 250 tasks and 32 subscribers, with host metadata declaring Python
 3.12.13 on Linux. Its SHA-256 is
 `1f4cb9315a7d7be7740e23fd2249939b32cfd6ec0be2e279304442f0eddcf8bf`.

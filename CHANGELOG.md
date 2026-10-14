@@ -17,7 +17,21 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+### Added
+
+- `compliance export`, `retention` and `report` read existing journals through
+  one read-only snapshot. Bundles commit selected full events while exporting
+  payload-free metadata and explicit row authentication provenance. Budgets
+  refuse complete exports on exhaustion; no database or key is provisioned.
+  Retention uses chronological extrema and a UTC six-calendar-month anniversary,
+  with explicit empty and future-clock observations. Reports support the
+  `eu-ai-act` evidence label and make no compliance verdict or deletion decision.
+
 ### Fixed
+
+- Non-ASCII persisted row MACs now fail verification and enter the existing
+  replay quarantine path, instead of raising from the constant-time comparison.
+  The same refusal protects retained-log exports without duplicating validation.
 
 - Clarify historical Participant Fabric guarantees: vendor planning/sandbox
   flags are requests whose effective permissions require qualification for

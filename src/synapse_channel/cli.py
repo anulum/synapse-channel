@@ -30,6 +30,7 @@ The ``synapse`` command exposes these subcommands:
 * ``reproduce`` — fingerprint a task's authoritative history into a deterministic digest;
 * ``causality`` — trace coordination causes, effects, or counterfactuals over the event log;
 * ``merkle`` — commit the event log to a Merkle root and prove event inclusion;
+* ``compliance`` — export retained-log evidence and observe calendar retention;
 * ``reliability`` — build evidence-only reliability memory from the event log;
 * ``accounting`` — record and report opt-in model cost/token usage from the event log;
 * ``entitlements`` — inspect and correct the owner-local account and quota ledger;
@@ -142,6 +143,7 @@ _Registrar = Callable[["argparse._SubParsersAction[argparse.ArgumentParser]"], o
 #: equivalence are all pinned by contract tests, so a unit that drifts from
 #: its declaration cannot ship.
 _REGISTRATION_UNITS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("synapse_channel.cli_compliance:add_parsers", ("compliance",)),
     ("synapse_channel.cli_processes:add_parsers", ("hub", "worker", "team", "supervisor")),
     ("synapse_channel.cli_demo:add_parsers", ("demo",)),
     ("synapse_channel.cli_commands_overview:add_parsers", ("commands",)),

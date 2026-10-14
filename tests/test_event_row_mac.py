@@ -101,6 +101,7 @@ def test_the_mac_binds_every_stored_field() -> None:
         (1.5, None, "{}", base),
         (1.5, "claim", b"{}", base),
         (1.5, "claim", "{}", None),
+        (1.5, "claim", "{}", "😃"),
     ):
         assert not key.verify(5, ts, kind, payload, mac)
 
@@ -148,7 +149,11 @@ def test_a_readable_by_others_or_lost_or_uncreatable_key_is_refused(tmp_path: Pa
         )
 
 
-def test_a_forged_or_edited_row_is_quarantined_and_legacy_rows_are_not(tmp_path: Path) -> None:
+@pytest.mark.parametrize("tampered_mac", [False, True])
+def test_a_forged_or_edited_row_is_quarantined_and_legacy_rows_are_not(
+    tmp_path: Path,
+    tampered_mac: bool,
+) -> None:
     db = tmp_path / "hub.db"
     legacy = EventStore(db)
     record_claim(legacy, _claim("LEGACY"))
@@ -161,7 +166,10 @@ def test_a_forged_or_edited_row_is_quarantined_and_legacy_rows_are_not(tmp_path:
     store.close()
     forged = _append_raw(db, EventKind.CLAIM, _FORGED)
     conn = sqlite3.connect(str(db))
-    conn.execute("UPDATE events SET payload = ? WHERE seq = ?", (_FORGED, authentic))
+    if tampered_mac:
+        conn.execute("UPDATE events SET mac = ? WHERE seq = ?", ("😃", authentic))
+    else:
+        conn.execute("UPDATE events SET payload = ? WHERE seq = ?", (_FORGED, authentic))
     conn.commit()
     conn.close()
 

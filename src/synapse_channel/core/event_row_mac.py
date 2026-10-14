@@ -94,9 +94,24 @@ class RowMacKey:
         return hmac.new(self.key, material, hashlib.sha256).hexdigest()
 
     def verify(self, seq: int, ts: object, kind: object, payload: object, mac: object) -> bool:
-        """Return whether a stored row carries this key's MAC."""
+        """Return whether stored fields carry this key's ASCII MAC.
+
+        Parameters
+        ----------
+        seq : int
+            Stored signed 64-bit sequence.
+        ts, kind, payload, mac : object
+            Untrusted stored timestamp, kind, encoded payload and MAC.
+
+        Returns
+        -------
+        bool
+            False for malformed stored fields, including non-ASCII MAC text;
+            otherwise compare the stored MAC with this key's recomputation.
+        """
         if (
             not isinstance(mac, str)
+            or not mac.isascii()
             or isinstance(ts, bool)
             or not isinstance(ts, int | float)
             or not isinstance(kind, str)

@@ -55,6 +55,7 @@ TIER_SUMMARIES = {
 """One-line description of each tier, used by the docs renderer and the report."""
 
 CLI_TAXONOMY: dict[str, str] = {
+    "compliance": GOVERNANCE,
     # stable coordination core
     "hub": STABLE,
     "send": STABLE,
