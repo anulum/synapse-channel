@@ -37,8 +37,8 @@ def idle_pane(root: Path) -> Iterator[AgentTmuxConfig]:
     )
     provider.chmod(0o700)
     config = AgentTmuxConfig(
-        identity="R8/paste-failure",
-        session="synapse-r8-" + uuid.uuid4().hex[:12],
+        identity="pane-wake/paste-failure",
+        session="synapse-pane-wake-" + uuid.uuid4().hex[:12],
         cwd=root,
         agent_command=(str(provider),),
         tmux_bin=tmux,

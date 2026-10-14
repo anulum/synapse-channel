@@ -56,7 +56,7 @@ _DETAILS = TerminalDetails(
     group=_GROUP,
     abbreviation="ACAACS",
     project="SYNAPSE-CHANNEL",
-    focus="EXT-08",
+    focus="terminal labels",
     vendor="claude",
     model="claude-opus-5-5",
     seat="SYNAPSE-CHANNEL/claude-f636",
@@ -82,7 +82,9 @@ class Server:
         self.clients: list[tuple[subprocess.Popen[bytes], int]] = []
 
     def tmux(self, *args: str) -> str:
-        done = subprocess.run([self.tmux_bin, *args], capture_output=True, text=True, check=False)
+        done = subprocess.run(
+            [self.tmux_bin, *args], cwd=self.workdir, capture_output=True, text=True, check=False
+        )
         assert done.returncode == 0, (args, done.stderr)
         return done.stdout
 
@@ -215,9 +217,9 @@ def test_a_name_that_is_only_a_prefix_of_a_session_reaches_no_session(server: Se
     assert not restore(server.tmux_bin, "work", runner=subprocess.run).applied
 
 
-def test_hostile_text_is_displayed_and_never_run(server: Server, tmp_path: Path) -> None:
-    marker = tmp_path / "ran"
-    hostile = f"#(touch {marker}) #[fg=red]red \x1b]0;evil\x07 #{{session_name}}"
+def test_hostile_text_is_displayed_and_never_run(server: Server) -> None:
+    marker = server.workdir / "ran"
+    hostile = "#(touch ran) #[fg=red]red \x1b]0;evil\x07 #{session_name}"
     name = server.session("work", 200)
     details = replace(_DETAILS, focus=hostile, seat=hostile, vendor=hostile)
 
@@ -227,7 +229,7 @@ def test_hostile_text_is_displayed_and_never_run(server: Server, tmp_path: Path)
 
     assert result.applied and not marker.exists()
     stored = server.option(name, "status-format[0]") + server.option(name, "status-format[1]")
-    assert f"##(touch {marker})" in stored and "##[fg=red]red" in stored
+    assert "##(touch ran)" in stored and "##[fg=red]red" in stored
     assert "\x1b" not in stored and "\x07" not in stored
     assert "##{session_name}" in stored
     assert server.option(name, "set-titles-string").startswith(
@@ -238,7 +240,7 @@ def test_hostile_text_is_displayed_and_never_run(server: Server, tmp_path: Path)
         server.tmux("display-message", "-p", "-t", f"={name}:", f"#{{E:status-format[{index}]}}")
         for index in range(len(result.lines))
     )
-    assert f"#(touch {marker})" in drawn and "#{session_name}" in drawn
+    assert "#(touch ran)" in drawn and "#{session_name}" in drawn
     assert not marker.exists()
 
 
@@ -395,7 +397,10 @@ def test_the_command_labels_shows_adds_details_and_restores(
     )
     base = ["label", f"--session={name}", f"--tmux-bin={server.tmux_bin}", f"--profile={profile}"]
 
-    assert cli_main([*base, "--identity=SYNAPSE-CHANNEL/claude-f636-rx", "--focus=EXT-08"]) == 0
+    assert (
+        cli_main([*base, "--identity=SYNAPSE-CHANNEL/claude-f636-rx", "--focus=terminal labels"])
+        == 0
+    )
     assert capsys.readouterr().out == "label and 3 status line(s) set\n"
     assert server.option(name, "set-titles-string") == "ACAACS · SYNAPSE-CHANNEL"
 
@@ -405,7 +410,7 @@ def test_the_command_labels_shows_adds_details_and_restores(
     assert cli_main([*base, "--vendor=claude", "--model= claude-opus-5-5 "]) == 0
     capsys.readouterr()
     kept = stored_details(server.tmux_bin, name, runner=subprocess.run)
-    assert (kept.focus, kept.vendor, kept.model) == ("EXT-08", "claude", "claude-opus-5-5")
+    assert (kept.focus, kept.vendor, kept.model) == ("terminal labels", "claude", "claude-opus-5-5")
     assert kept.seat == "SYNAPSE-CHANNEL/claude-f636" and kept.session_name == NOT_DECLARED
     assert server.option(name, "set-titles-string") == "ACAACS · SYNAPSE-CHANNEL · claude"
 

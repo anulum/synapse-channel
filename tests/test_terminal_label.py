@@ -38,7 +38,7 @@ _FULL = TerminalDetails(
     group=_GROUP,
     abbreviation="ACAACS",
     project="SYNAPSE-CHANNEL",
-    focus="EXT-08",
+    focus="terminal labels",
     vendor="claude",
     model="claude-opus-5-5",
     seat="SYNAPSE-CHANNEL/claude-f636",
@@ -127,7 +127,7 @@ def test_a_long_tab_label_is_cut_before_it_is_made_inert() -> None:
 def test_every_detail_is_listed_complete_and_in_order() -> None:
     assert detail_fields(_FULL) == [
         f"group: {_GROUP} (ACAACS)",
-        "project: SYNAPSE-CHANNEL · focus: EXT-08",
+        "project: SYNAPSE-CHANNEL · focus: terminal labels",
         "vendor: claude · model: claude-opus-5-5",
         "seat: SYNAPSE-CHANNEL/claude-f636",
         "session: anulum-ff",
@@ -147,7 +147,7 @@ def test_widths_60_125_and_240_give_different_line_counts() -> None:
     assert all(len(line) <= 60 for line in narrow)
     assert all(len(line) <= 125 for line in medium)
     assert wide == [
-        f"group: {_GROUP} (ACAACS)  |  project: SYNAPSE-CHANNEL · focus: EXT-08  |  "
+        f"group: {_GROUP} (ACAACS)  |  project: SYNAPSE-CHANNEL · focus: terminal labels  |  "
         "vendor: claude · model: claude-opus-5-5  |  seat: SYNAPSE-CHANNEL/claude-f636  |  "
         "session: anulum-ff",
         "native session: d2b65cca-a4a8-481d-b1bb-9e1348d67e0e  |  terminal: user/terminal-1485372",
@@ -179,7 +179,7 @@ def test_details_survive_json_and_malformed_json_gives_defaults() -> None:
     derived = replace(_FULL, abbreviation_derived=True)
 
     assert TerminalDetails.from_json(derived.to_json()) == derived
-    assert json.loads(_FULL.to_json())["focus"] == "EXT-08"
+    assert json.loads(_FULL.to_json())["focus"] == "terminal labels"
     for text in ("", "{", "[]", "null", '"x"'):
         assert TerminalDetails.from_json(text) == TerminalDetails()
     partial = TerminalDetails.from_json(
