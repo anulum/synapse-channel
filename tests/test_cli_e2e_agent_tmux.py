@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -36,6 +37,7 @@ from synapse_channel.agent_tmux import AgentTmuxConfig, build_wake_prompt, regis
 
 _TMUX = shutil.which("tmux")
 _CODEX = shutil.which("codex")
+_OPENCODE = shutil.which("opencode")
 pytestmark = pytest.mark.skipif(_TMUX is None, reason="tmux is not installed")
 
 _IDENTITY = "E2EAGENT"
@@ -469,6 +471,83 @@ def test_agent_tmux_wait_submits_a_persisted_staged_prompt_without_repasting(
         payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
         assert payload["pending_wake"] is False
         assert payload["wake_prompt_staged"] is False
+
+
+@pytest.mark.skipif(
+    os.environ.get("SYNAPSE_REAL_OPENCODE_TMUX_SMOKE") != "1" or _OPENCODE is None,
+    reason="set SYNAPSE_REAL_OPENCODE_TMUX_SMOKE=1 with OpenCode and a real model configured",
+)
+def test_agent_tmux_submits_the_wake_in_a_real_opencode_mini_composer(tmp_path: Path) -> None:
+    """A real mini TUI consumes the paste after hiding its empty placeholder."""
+    assert _OPENCODE is not None
+    identity = "E2E/opencode-mini"
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+    cli_env = {"XDG_RUNTIME_DIR": str(runtime)}
+    for variable, directory in (
+        ("XDG_DATA_HOME", "data"),
+        ("XDG_STATE_HOME", "state"),
+        ("XDG_CACHE_HOME", "cache"),
+        ("TMPDIR", "tmp"),
+        ("SYN_HOME", "synapse"),
+    ):
+        path = tmp_path / directory
+        path.mkdir(mode=0o700)
+        cli_env[variable] = str(path)
+    cli_env.update(
+        OPENCODE_DISABLE_EXTERNAL_SKILLS="1",
+        OPENCODE_DISABLE_CLAUDE_CODE_SKILLS="1",
+        OPENCODE_DISABLE_CLAUDE_CODE_PROMPT="1",
+    )
+    if "OPENCODE_CONFIG" in os.environ:
+        cli_env["OPENCODE_CONFIG"] = os.environ["OPENCODE_CONFIG"]
+    # Existing tmux servers retain their startup environment. Set this profile
+    # in the actual vendor launcher rather than relying on the CLI parent's env.
+    launcher = tmp_path / "opencode-live"
+    launcher.write_text(
+        "#!/bin/sh\n"
+        + "".join(f"export {key}={shlex.quote(value)}\n" for key, value in cli_env.items())
+        + f"exec {shlex.quote(_OPENCODE)} {shlex.quote(str(tmp_path))} --mini --auto\n",
+        encoding="utf-8",
+    )
+    launcher.chmod(0o700)
+    (tmp_path / "AGENTS.md").write_text(
+        "Transport test: no task is assigned. Read no files or inboxes. "
+        "Answer a routing hint with READY, without tools.\n",
+        encoding="utf-8",
+    )
+    with _throwaway_session() as session:
+        common = [
+            "--identity",
+            identity,
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            str(launcher),
+        ]
+        started = run_cli("agent-tmux", "start", *common, env=cli_env)
+        assert started.ok(), started.output
+        deadline = time.monotonic() + 30
+        while "Ask anything..." not in _capture_pane(session):
+            assert time.monotonic() < deadline, "real OpenCode composer did not become idle"
+            time.sleep(0.1)
+        prompt = _normalise(build_wake_prompt(identity))
+        deadline = time.monotonic() + 180
+        while True:
+            result = run_cli("agent-tmux", "wake", *common, "--submit-delay", "0.4", env=cli_env)
+            assert result.ok(), result.output
+            if "consumption observed" in result.stdout:
+                break
+            (tmp_path / "last-pane.txt").write_text(_capture_pane(session), encoding="utf-8")
+            assert time.monotonic() < deadline, result.output + _capture_pane(session)
+            time.sleep(0.1)
+        pane = _normalise(_capture_pane(session))
+        assert prompt in pane and pane.count(prompt) == 1
+        record = json.loads((runtime / "synapse-agent-tmux/E2E_opencode-mini.json").read_text())
+        assert record["pending_wake"] is False
+        assert record["wake_prompt_staged"] is False
 
 
 @pytest.mark.skipif(

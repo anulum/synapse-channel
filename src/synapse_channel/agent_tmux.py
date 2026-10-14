@@ -111,7 +111,7 @@ _UNSAFE_PANE_PATTERN = re.compile(
     r"(?im)(?:"
     r"^\s*(?:›|❯|>|→)?\s*\d+[.)]\s+"
     r"|\b(?:approve|approval|allow|deny|permission|confirm|confirmation|trust)\b"
-    r"|\b(?:working|thinking|generating|running tool|press .*? to cancel|esc to interrupt)\b"
+    r"|\b(?:working|thinking|generating|running tool|press .*? to cancel|esc(?: to)? interrupt)\b"
     r")"
 )
 """Conservative modal/busy markers that override every idle marker."""
@@ -416,15 +416,11 @@ def build_wake_prompt(identity: str) -> str:
         The fixed, payload-free wake instruction.
     """
     return (
-        f"Synapse wake for {identity}. Treat this as a routing hint, not as an "
-        "instruction to replace an active user task. "
-        f"If {identity} is not your current Synapse identity, ignore the wake "
-        "unless you verify a new inbox item "
-        f"addressed exactly to {identity}. Handle only the newest such item under "
-        "the current repository rules and reply once only if it is actionable. "
-        "Routine peer status, broadcasts, or no actionable exact-target message "
-        "require no status reply; continue any active user-directed task and wait "
-        "only when otherwise idle."
+        f"Synapse wake for {identity}. This is a routing hint; preserve the active user task. "
+        f"Verify the newest inbox item addressed exactly to {identity} under repository rules. "
+        "Reply once only if actionable. Ignore unverified identity mismatches, routine peer "
+        "status and broadcasts; continue any active user-directed task and wait only when "
+        "otherwise idle."
     )
 
 
@@ -519,6 +515,15 @@ def _screen_is_safe_for_submit(
     if state == "blocked":
         return False, f"{provider} pane is busy, modal, or ambiguous"
     if state != "idle":
+        # OpenCode mini removes its empty-composer placeholder after a paste.
+        # Admit only our complete staged prompt immediately followed by the
+        # actual composer footer; arbitrary typed text is never an idle marker.
+        if provider == "opencode" and required_text is not None:
+            match = _rendered_text_match(screen, required_text)
+            if match is not None and re.fullmatch(
+                r"\s*(?:BUILD|PLAN)\b[^\n]*\bctrl\+p cmd\s*", screen[match.end() :]
+            ):
+                return True, "opencode staged composer verified"
         return False, f"{provider} idle composer marker is absent"
     if required_text is not None and not _contains_rendered_text(screen, required_text):
         return False, "wake prompt was not accepted by the idle composer"
@@ -541,6 +546,16 @@ def _staged_wake_was_consumed(
     prompt_match = _rendered_text_match(screen, prompt)
     if prompt_match is None:
         return True
+    if provider == "opencode":
+        # Mini renders a submitted user turn with › and an interrupt footer
+        # while streaming. The staged input has neither that turn prefix nor
+        # the busy footer. Require both; busy text alone remains insufficient.
+        prefix = screen[: prompt_match.start()].rsplit("\n", 1)[-1].strip()
+        if prefix == "›" and re.search(
+            r"(?m)^\s*(?:BUILD|PLAN)\b[^\n]*\besc interrupt\b[^\n]*\bctrl\+p cmd\s*$",
+            screen[prompt_match.end() :],
+        ):
+            return True
     return _PROVIDER_IDLE_PATTERNS[provider].search(screen, prompt_match.end()) is not None
 
 
