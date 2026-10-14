@@ -8,14 +8,14 @@
 """Say which native messages have a record on both sides, and which do not.
 
 A message that travelled over a vendor's own channel is recorded by the seat
-on each side. The sender's record alone says that the channel accepted the
-message; only the receiver's record says that it arrived. This module reads
+on each side. These are caller declarations: even a pair does not independently
+prove channel acceptance, arrival or provider processing. This module reads
 stored records and sorts them into:
 
 * **paired**: a sender's outcome record and a receiver's record of the same
   message;
-* **sender only**: sent, with no receiver's record;
-* **receiver only**: received, with no sender's record;
+* **sender only**: declared sent, with no receiver's record;
+* **receiver only**: declared received, with no sender's record;
 * **attempts without outcome**: a send that was announced and never reported.
 
 The record schema gives a receiver no phase of its own: its record is valid

@@ -12,9 +12,11 @@ optional advisory metadata on `client_timestamp`; non-finite or malformed client
 values are discarded. A Byzantine future or backdated client stamp therefore
 cannot poison history or dead-letter ordering.
 
-A state-mutating message may carry an `idem_key` so a retry after a reconnect is
-applied once. On a secured hub, the first message of a connection must carry a
-`token`.
+Covered coordination mutations may carry an `idem_key` for canonical retry
+suppression. A journal-backed hub retains their atomic operation result across
+restart; without a journal the suppression is process-local. Chat has its
+separate retry identity below. On a secured hub, the first message of a
+connection must carry a `token`.
 
 The hub advertises its wire-protocol version in the `welcome` handshake as
 `protocol_version` (an integer; the current wire is version `7`), and it is also
@@ -27,16 +29,18 @@ read on connect rather than a release counter. Version `2` added the client → 
 emits an `ack` only when the peer advertises version `2` or newer, and a hub that
 predates the verb is never sent it, which is what keeps the addition
 backward-compatible. A client that predates the field, or a hub that does, reads it
-as absent. Version-skewed peers are accepted rather than rejected: consumers
-negotiate to the lowest common wire version, warn the operator when the peer is
-older, newer, or did not advertise a usable version, and gate optional features
-against that effective version.
+as absent. Version skew alone does not reject the connection. The shared
+negotiation helper chooses the lower version and reports a warning; the Python
+agent instead records the advertised hub version and gates individual APIs by
+their feature floors. An absent advertisement does not admit its delivery API.
+Check the exact client profile rather than assume every implementation has the
+same warning and negotiation behavior.
 
 Version `3` adds session-bound delivery requests, explicit recipient stages,
 cancellation and durable outcome evidence. The version `2` `ack` remains a
 transport-only mailbox receipt. The
-[delivery compatibility decision](protocol-compatibility-plan.md) records the
-reviewed migration and mixed-version boundaries.
+[wire and delivery compatibility guide](protocol-compatibility-plan.md) records
+feature floors and mixed-version boundaries.
 
 Version `4` adds the signed, scoped local attachment verbs. A client sends
 these only after the hub advertises version `4`; version-three delivery
@@ -133,7 +137,7 @@ does not add agent grades to protocol envelopes.
 - **Fleet planning input:** `entitlement_advert` records one owner's redacted
   pool advertisement as an audit-only journal row after the proven-sender,
   `entitlement-advertise` ACL and durable-journal gates. It is never broadcast.
-- **Shared-pool reservations (F02):** `spend_request` is a peer hub's request to
+- **Shared-pool reservations:** `spend_request` is a peer hub's request to
   a pool owner hub. It carries `spend_action` (`reserve`, `settle` or `query`)
   and a `spend` document.
   - The owner answers only a peer its multi-hub serving policy authorises, and
@@ -284,7 +288,9 @@ An `advertise` message may also carry the additive `persist`, `dispatchable`,
 and `agent` fields. With `persist: true` the card becomes a persistent dispatch
 registration: it survives the sender's disconnect and expires only when not
 refreshed within 24 hours, so automated dispatch can discover a project seat
-across reconnects. `dispatchable` (boolean, default `true`) opts the
+across reconnects. This registration is retained in the hub process, not
+journalled across hub restart; it must be advertised again after restart.
+`dispatchable` (boolean, default `true`) opts the
 registration in or out of automated dispatch. `agent` names the identity the
 card belongs to; the hub honours it only when it equals the connection name or
 the connection is that identity's `-rx` sidecar (a wake listener registering
@@ -449,8 +455,9 @@ the message for audit and replay.
 **Immediate receipts.** A `chat` sent with `receipt_requested: true` gets a private
 `delivery_receipt` back: `delivered: true` with `recipients` when a consume-live
 recipient or its waiter completed a write, or `delivered: false` when none did. A directed
-message that matched no live connection is a *dead letter* — durable in the journal
-and feed, but woken by nobody at send time. Journal-backed hubs also include a
+message that matched no live connection is a *dead letter*. A configured journal
+retains its chat event; the dead-letter target count itself is bounded process
+state. A feed mirror depends on its separate configuration. Journal-backed hubs also include a
 stable `receipt_notification_id`. A transport retry may repeat the same id; senders
 deduplicate on it rather than interpreting duplicate frames as new outcomes.
 
@@ -468,7 +475,9 @@ offline can ask for them on reconnect. On its *registration* heartbeat it sets:
 
 The hub re-sends each missed directed message as an ordinary `chat` frame marked
 `replayed: true` and stamped with its durable `seq`. A client dedups on `seq`, not
-`msg_id` — the per-hub `msg_id` counter resets on restart while `seq` never repeats.
+`msg_id` — the per-hub `msg_id` counter resets on restart while `seq` is monotonic
+within the preserved journal. Replacing the database is not continuity of that
+journal generation; retention still bounds replay.
 Broadcasts are never replayed, and a hub with no durable journal replays nothing.
 
 **Receiver watermark and pending count.** A mailbox client sends `ack` for every
@@ -537,7 +546,7 @@ but every recipient is stale, the immediate receipt instead carries
 `delivered: false`, `reason: "no_live_recipient"`, the complete
 `matched_recipients` and `stale_recipients`, and `dead_lettered: true`; no socket
 match uses `reason: "no_online_recipient"`. These fields are additive and do not
-change the wire version. The chat stays durable and may still be queued to a stale
+change the wire version. On a journal-backed hub the chat stays retained and may still be queued to a stale
 socket as a best effort, but transport presence is never promoted to a positive
 delivery verdict. This is reachability/acceptance evidence, not proof that a model
 understood or acted on the body. A hub with stale-recipient tracking explicitly
@@ -587,7 +596,7 @@ For directed chat, `delivered: true` requires a completed write to a consume-liv
 recipient or its waiter. Sender and observer echoes do not count as recipients.
 When no such write completes, `reason: "recipient_transport_unavailable"` accompanies
 a negative receipt; `matched_recipients` and `stale_recipients` retain the original
-routing evidence. The chat remains durable and retryable with the same `client_msg_id`.
+routing evidence. On a journal-backed hub the chat remains retained and retryable with the same `client_msg_id`.
 A completed transport write proves neither application processing nor task execution.
 Clients must retain retry deduplication because bytes may arrive before a drain times out.
 
@@ -598,9 +607,10 @@ and a retry with the same client message ID remains eligible.
 
 ## Session-bound delivery (wire version 3)
 
-As of 2026-09-23, this section describes the 0.99.27 source candidate. The
-published 0.99.26 package still speaks wire version 2; do not downgrade a hub
-with unresolved v3 work without the rollback procedure below.
+This is the version-three delivery profile retained by newer wire versions.
+Package versions and wire versions are distinct; check the actual handshake,
+client API and storage profile. Do not downgrade unresolved work without the
+[compatibility and rollback procedure](protocol-compatibility-plan.md#upgrade-and-rollback).
 
 A durable hub with an explicit stable `hub_id` admits version-three delivery.
 Registering a delivery-capable recipient on a non-durable hub closes that whole
@@ -674,7 +684,9 @@ keeps a local duplicate ledger; it does not advertise interrupt or steer.
 If a terminal hub status races a stage report, the bridge stops that queued
 turn before invoking the provider rather than retrying the old stage forever.
 
-Version 0.99.27 has no delivery-journal compaction. Terminal delivery rows,
+The current memory-log `compact` policy trims selected checkpoints, findings
+and explicitly archived corrupt rows; it does not compact delivery requests or
+their audit-notification lifecycle. Terminal delivery rows,
 event history and audit notifications accumulate with use, so durable storage
 and restart replay work grow with retained history. Monitor the journal and
 plan capacity for that growth; deleting rows by hand would break replay and
@@ -711,15 +723,20 @@ local seat can never pose as a forwarded sender.
 `--message-peer-token`/`--message-peer-token-file`, a `--message-peer-pin` per
 `wss://` peer, and the multi-hub client certificate for mutual TLS. The
 receiving hub accepts a forward only from a peer that holds a grant in its
-[multi-hub serving policy](multi-hub-sync.md#boundaries) and presents its pinned
-client certificate on the live connection. The federation peering lists the
+[multi-hub serving policy](multi-hub-sync.md#boundaries) and presents its configured
+live certificate or explicitly enrolled registration-identity proof.
+`--peer-identity-key` and `--peer-identity-key-id` configure the latter sender
+profile; the receiver must grant that exact identity key. Registration proof
+does not establish a signature on every forwarded journal event. The federation peering lists the
 local project namespaces that peer may address; the target seat's namespace must
 be one of them. A hub without a serving policy accepts no forward.
 
 **Chat.** A cross-hub chat names exactly one seat: a comma list, an audience or
 a glob (`*`, `?`, `[`) is refused locally, as is a hub that is not a configured peer. A chat
-sent to a `channel` follows the channel rules and is never forwarded. The origin hub keeps and journals the chat like a local one, writes it to
-a durable outbox, and attempts the forward immediately. An unanswered forward
+sent to a `channel` follows the channel rules and is never forwarded. The origin
+hub retains the chat like a local one, journals it when configured, and attempts
+the forward immediately. With a journal its outbox is durable; without one the
+forward ledger is memory-only and cannot survive a hub restart. An unanswered forward
 is retried after 1, 2, 4 … seconds (at most 300) until the peer answers or the
 forward expires after `--message-forward-ttl` seconds (default 86400).
 Delivery is at least once: a retry carries the same `forward_id`, and the peer
@@ -916,6 +933,12 @@ received it writes a record with `native_message_record`; a client sends the
 verb only to a hub that advertises wire version `7` or newer
 (`MIN_NATIVE_MESSAGE_RECORD_PROTOCOL_VERSION`).
 
+The recorder supplies native addressing, call result and outcome metadata.
+Admission validates the record shape and supplied text/hash agreement; it does
+not independently observe a vendor send, daemon queue or recipient action. A
+recorder can declare an outcome without providing independent vendor evidence.
+The hub records the declaration and its admitted recorder binding.
+
 The record is stored as one durable `native_message` event. It enters no
 mailbox, produces no delivery receipt, wakes nobody and is not replayed to a
 reconnecting waiter. The verb requires a journal-backed hub. Like every
@@ -944,8 +967,9 @@ open hub: the socket holds the name and nothing proves more).
 
 A record is accepted only from the seat on its own side: `recorder` must equal
 `sender_seat` of a `sent` record and `recipient_seat` of a `received` one. A
-channel whose send takes no caller idempotency key writes an `attempt` before the
-native send and an `outcome` after it; an attempt without an outcome marks a
+sender workflow whose native send takes no caller idempotency key must write an
+`attempt` before that send and an `outcome` after it; this verb does not install
+that workflow into every vendor client. An attempt without an outcome marks a
 delivery whose result is unknown, and such a send must not be repeated or
 replaced by another route automatically.
 

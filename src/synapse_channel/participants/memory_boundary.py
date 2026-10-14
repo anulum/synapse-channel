@@ -5,7 +5,10 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — prompt-injection boundary for recalled memory data
-"""Render recalled memory as bounded data that can never become instructions."""
+"""Render recalled memory with bounded framing and explicit data instructions.
+
+Text framing does not independently enforce a provider's or model's behavior.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +26,7 @@ _TRUNCATED = "\n… memory context truncated …"
 
 
 def _neutralise(text: str) -> str:
-    """Normalise controls and disarm strings that could close or open a fence."""
+    """Normalise controls and replace the renderer's explicit fence markers."""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = "".join(
         character if character in "\n\t" or ord(character) >= 32 else "�" for character in text

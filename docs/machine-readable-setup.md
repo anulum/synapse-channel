@@ -244,7 +244,13 @@ authorization before its first write. It then:
 - requires a different live `MainPID`, a hub history snapshot containing the
   exact canary, and unchanged durable event digests;
 - freshly re-inspects the target and bound executable generation;
-- proves every protected PID remained alive.
+- checks each protected PID for liveness before and at the documented probe
+  checkpoints, including after verification.
+
+These are sampled PID checks, not continuous process monitoring or a bound
+process-start identity. They cannot prove uninterrupted lifetime or exclude
+PID reuse between checks. The mailbox watermark proves client acceptance,
+not that a model read or acted on the canary.
 
 The owner-only verification ledger stores a domain-separated nonce digest,
 never the nonce, and rejects replay across processes. A successful receipt has

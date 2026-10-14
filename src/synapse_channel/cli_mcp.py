@@ -8,7 +8,7 @@
 """The Model-Context-Protocol bridge ``synapse`` subcommand.
 
 ``mcp`` defaults to stdio and exposes the hub's coordination verbs
-to any MCP client, bridging a stdio transport to a live hub. It depends on the
+to configured compatible MCP clients, bridging stdio to a live hub. It depends on the
 optional ``mcp`` extra and on the stdio bridge in :mod:`synapse_channel.mcp`, so
 it is kept apart from the in-process hub-client command flows;
 :func:`add_parsers` registers its subparser on the top-level CLI.
@@ -36,7 +36,8 @@ CliDispatcher = Callable[[list[str] | None], int]
 def _cmd_mcp(args: argparse.Namespace) -> int:
     """Run the Model Context Protocol server over stdio, bridged to the hub.
 
-    Exposes the hub's coordination verbs to any MCP client. Requires the optional
+    Exposes the hub's coordination verbs to a configured compatible MCP client.
+    Requires the optional
     ``mcp`` extra; a missing extra is reported with the install hint and exit ``1``.
     """
     if getattr(args, "transport", "stdio") == "streamable-http":

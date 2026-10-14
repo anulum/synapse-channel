@@ -56,13 +56,13 @@ so a frame any layer rejects is rejected. It owns no crypto and adds no trust ro
 wall-clock epoch seconds. Lifecycle and serving decisions compare them with
 `time.time()`-equivalent values, never with process-relative monotonic time.
 
-That policy is now **composed into the live runtime**, on both surfaces, deny-closed and
-opt-in:
+That policy has two independently configured runtime paths:
 
 - **Hub-to-hub** — the multi-hub event-log pull and cross-hub claim forwarding gate one
-  hub serving or forwarding to another against the peering and the live certificate pin
+  hub serving or forwarding to another against the peering and live certificate
+  or explicitly enrolled registration-key proof
   (`MultiHubServingPolicy`, `authorise_multihub_pull`).
-- **Agent frames** — a hub started with `synapse hub --federation-store FILE` composes the
+- **Agent frames (library profile)** — a configured `SynapseHub` composes the
   imported peerings into its per-frame authorisation: a frame whose verified Ed25519
   signing key and live certificate pin resolve to one peered domain (`resolve_domain`) is
   authorised against that peering's bounded scope (`scope_authorises`), composed with
@@ -80,6 +80,14 @@ opt-in:
   the peerings for diagnostics and deny-closed refusal only. Declaring
   `--federation-observe-only` alongside `--require-message-auth` is a contradiction and is
   likewise refused. With no store the live path is unchanged.
+
+The positive Ed25519 agent-frame path also requires
+`signed_event_trust_bundle`. The packaged hub CLI does not load that bundle;
+`--federation-store` plus `--require-message-auth` alone is not a complete
+Ed25519 cross-domain profile. HMAC frame authentication, registration identity,
+event signatures and serving-policy credentials are distinct controls.
+Observe-only CLI diagnostics and configured hub-to-hub serving remain their
+separate documented paths.
 
 A frame that carries a signing key over a pinned connection yet resolves to no peering is
 disposed of by whether the *key* is peered. A key no peering enrols is an ordinary local
@@ -131,12 +139,14 @@ A federation bundle records, per remote domain:
   meaningful, bounded permissions;
 - expiry and revocation state for the whole peering.
 
-Verification composes the primitives that already exist: a cross-domain frame
-must satisfy mutual TLS peer verification (pin + peer scope) **and** event
-signature verification (key id + sender + project + replay + expiry +
-revocation) **and** the local ACL for the mapped scope. Federation never
-weakens any single check; it only refuses to widen one. A frame that any layer
-rejects is rejected.
+The implemented embedded agent-frame profile composes verified peer certificate
+and signing-key evidence with the peering's expiry, revocation and mapped
+bounded scope. That grant is checked against the shared handler access vocabulary.
+An admitted cross-domain frame is routed without a local ACL identity: a remote
+subject is authorised by the federation grant, while `AclPolicy` governs local
+seats separately. Operators must review the granted remote scope; configuring
+a local ACL does not add that policy to this cross-domain route. Any configured
+federation layer's refusal stops the frame.
 
 ## Trust-bundle exchange and provenance
 
@@ -155,6 +165,10 @@ expired, and `--max-age` flags active peerings whose ceremony has gone stale,
 exiting `1` for scheduled checks. `synapse federation revoke` retires one while
 keeping its audit record. There is no automatic trust-on-first-use and no
 network-driven trust root.
+
+`--confirmed-by` records the caller's declaration. It does not independently
+authenticate a human approval or prove that the out-of-band comparison occurred;
+the operator must perform and retain that evidence separately.
 
 `synapse federation rotate` refreshes an operator-authored offer bundle with a
 new wall-clock expiry and add-new-before-retire signing keys or certificate pins;
@@ -175,7 +189,9 @@ read to each other.
 
 ### The ceremony, end to end
 
-Two operators, two domains. The `atelier.example` operator validates their own
+Two operators, two domains. This is a historical command transcript, whose
+sample expiry has passed; create current bundle material rather than reusing
+its values as a live peering. The `atelier.example` operator validates their own
 bundle material and starts serving it; every output below is captured from a real
 run of the shipped commands.
 
@@ -261,8 +277,9 @@ A remote domain's agents never inherit local permissions. The federation bundle
 maps a remote subject to a **bounded local scope**: specific verbs (for example,
 read board, post chat to a shared channel, submit a receipt) over specific
 project namespaces, deny-by-default. Cross-domain authorisation reuses the local
-ACL engine — the mapped scope is evaluated exactly like a local subject's — so
-there is one authorisation path, not a parallel federated one. Private-channel
+handler access vocabulary. The library federation gate checks those required
+accesses against the peering's mapped scope; it does not evaluate the remote
+subject as a local ACL identity. Private-channel
 membership and at-rest/payload encryption boundaries are unchanged: a remote
 subject is a member of nothing until a local membership grant says so.
 

@@ -25,8 +25,7 @@ SYNAPSE CHANNEL — aperçu du dépôt (traduction française ; l'original angla
 </p>
 
 <p align="center">
-  <strong>Empêchez les agents de codage IA parallèles d'écraser mutuellement leurs fichiers.</strong><br>
-  Bus de coordination local-first — file-scope claims, un plan partagé et des leases durables — pour un dépôt ou tout un écosystème de dépôts.
+  <em>Coordonnez les agents IA parallèles par des périmètres de fichiers déclarés ; les hooks et le contrôle Git couvrent uniquement leurs mutations documentées.</em>
 </p>
 
 <p align="center">
@@ -48,30 +47,28 @@ SYNAPSE CHANNEL — aperçu du dépôt (traduction française ; l'original angla
   <a href="https://doi.org/10.5281/zenodo.20801559"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.20801559.svg" alt="DOI"></a>
 </p>
 
-Un bus de coordination local-first pour une flotte d'agents IA travaillant en
-parallèle — au sein d'un même dépôt ou répartis sur tout un écosystème de
-dépôts. Un hub WebSocket est la source de vérité partagée pour la **presence**,
-les **work claims**, le **chat**, l'**état des tâches** et les **resource
-offers** : les agents s'adressent les uns aux autres à travers les projets et
-partagent un même plan, tandis que les file-scope claims tiennent les agents
-d'un dépôt à l'écart des fichiers des autres.
+Un bus de coordination local-first pour des agents IA travaillant en parallèle
+dans un dépôt ou un écosystème de dépôts. Un hub WebSocket partage la **presence**,
+les **work claims**, le **chat**, l'**état des tâches** et les **resource offers**.
+Les agents communiquent entre projets et partagent un plan. Le hub refuse les
+périmètres déclarés en conflit détenus par un autre propriétaire. Les hooks de
+fournisseur et le contrôle Git ne couvrent que leurs mutations documentées.
 
-Le bus est léger côté transport (une seule dépendance, `websockets`), centré
-sur le hub par conception (un seul endroit possède la presence, les leases et
-l'historique) et s'exécute entièrement sur la machine locale. Les workers de
-modèles répondent sur le canal via n'importe quel endpoint compatible OpenAI,
-y compris un serveur Ollama local, avec un fallback déterministe à base de
-règles pour l'usage hors ligne.
+Les dépendances de base sont `websockets` et, sous Python 3.10,
+`typing-extensions`. Le hub gère presence, leases et historique ; le bus peut
+fonctionner entièrement en local. Les workers de modèles optionnels utilisent des
+endpoints compatibles OpenAI configurés, dont Ollama local, avec un repli
+déterministe fondé sur des règles pour l'utilisation hors ligne.
 
-**Vos agents existants se branchent sans nouveau code.** Tout hôte Model
-Context Protocol — Claude Code, Claude Desktop, Cursor — atteint le bus via le
-serveur `synapse mcp` fourni, qui expose les verbes send, durable inbox,
-status, claim, release, handoff et task comme outils MCP, plus le board, les
-agents et les resources comme MCP resources en lecture seule. Les agents
-parlant A2A se connectent quant à eux via la façade Agent Card. Le hub lui-même
-reste agnostique au protocole et l'installation de base garde son unique
-dépendance — les adaptateurs MCP et A2A sont des extras optionnels
-(`pip install 'synapse-channel[mcp]'`). Voir le [guide MCP](../mcp.md).
+Le serveur `synapse mcp` fourni expose send, durable inbox, status, claim, release,
+handoff et task comme outils MCP, et board, agents et resources comme ressources
+MCP en lecture seule. L'interopérabilité dépend de la version de l'hôte, du
+transport et de la configuration ; consultez les limites exactes du
+[catalogue d'intégrations](../integration-catalog.md). La surface HTTP A2A a une
+qualification partielle documentée séparément. Les adaptateurs utilisent leurs
+extras optionnels déclarés (`pip install 'synapse-channel[mcp]'`). Voir le
+[guide MCP](../mcp.md) et le [profil HTTP authentifié](../mcp-http.md),
+qualifié séparément.
 
 ```bash
 python -m pip install synapse-channel && synapse demo
@@ -145,11 +142,15 @@ graph LR
     H --> LOG["Event log (SQLite WAL)<br/>durable · optional SQLCipher at rest"]
 ```
 
-Un claim loue (lease) une unité de travail avec un file scope, de sorte que
-deux agents n'éditent jamais les mêmes fichiers ; le plan, les handoffs, les
-checkpoints et un superviseur de blocage maintiennent le travail en mouvement ;
-et le journal d'événements durable signifie qu'un redémarrage du hub reprend
-les leases vivants au lieu de les perdre.
+Un claim loue une unité de travail déclarée avec un file scope. Le hub refuse
+un périmètre déclaré en conflit avec celui détenu par un autre propriétaire.
+Les hooks des fournisseurs et le contrôle des changements Git indexés imposent
+cette autorité seulement sur leurs surfaces documentées ; ils n'isolent pas
+toutes les écritures de fichiers ni les effets externes. Plan, handoffs,
+checkpoints et superviseur aident à coordonner le travail. Avec un journal
+configuré, le redémarrage restaure les leases non expirés à partir des
+enregistrements validés et conservés ; expiration, rétention et quarantaine
+d'intégrité limitent cette restauration.
 
 ## Cœur et couches optionnelles
 
@@ -160,7 +161,7 @@ publique est étagée pour que le bus épuré reste lisible :
 |---|---|---|
 | Cœur de coordination local | `stable` | Le hub, send/wait/listen/arm, claims, tasks, locks, status, board, init et les commandes de bootstrap de flotte utilisées pour la coordination quotidienne. |
 | Adaptateurs de bordure | `adapter` | MCP, A2A, hooks git, ponts tmux/provider, hooks shell, ingestion et worker seats qui relient les outils existants au bus. |
-| Analyse opérateur | `analysis` | Doctor, state, dashboard, causality, multihub, reliability, trust graph, directory, accounting, export de scorecard de flotte, manifestes et requêtes d'événements. Ils ne modifient pas l'état de coordination ; des modes d'export explicites peuvent écrire vers une destination choisie par l'opérateur. |
+| Analyse opérateur | `analysis` | Groupes de diagnostic, vues et rapports. Les modes de contrôle explicites peuvent modifier l'état ou la configuration, enregistrer ou exporter des données. Consultez les effets et permissions de chaque commande ; le tier ne garantit pas la lecture seule. |
 | Gouvernance et intégrité | `governance` | Contrôles de policy, approbations, surfaces ACL/rôles, fédération, Merkle roots, release receipts, reproduction, compaction, opérations de clés encrypt-key / SQLCipher. |
 | Surfaces de laboratoire | `experimental` | Benchmarking, participant fabric, route-task, sandbox, workflow, TTL advice, memory recall, auto-action et resource bidding. |
 
@@ -237,8 +238,9 @@ d'un service Windows natif n'est pas revendiquée ; utilisez WSL avec systemd
 comme documenté dans le guide de déploiement.
 
 Deux commodités shell optionnelles accompagnent le CLI : `synapse completions
-bash|zsh|fish` imprime la complétion tabulaire pour chaque sous-commande
-(générée depuis le parseur vivant, elle ne dérive donc jamais), et
+bash|zsh|fish` imprime une complétion statique pour les commandes principales, un niveau de sous-commandes et leurs options longues
+(générée depuis le parseur de la version installée ; à régénérer après une mise
+à jour), et
 `synapse install-shell-hook` ajoute le bloc gardé qui arme automatiquement un
 wake listener dans chaque nouveau terminal :
 

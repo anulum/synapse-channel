@@ -6,8 +6,9 @@ boundary than file permissions alone.
 
 The default product remains local-first and low-dependency. Encryption is an
 opt-in profile that protects data when files are copied, backed up, or read
-offline. It does not protect data while the hub is running, does not replace
-filesystem permissions, and does not solve multi-tenant isolation.
+offline. It does not protect decrypted process memory, replace filesystem
+permissions, or solve multi-tenant isolation. The separate SQLCipher profile
+also protects persisted database pages while the hub is running.
 
 ## Implemented runtime profile
 
@@ -115,7 +116,8 @@ Doctor can verify the key opens the store:
 synapse doctor --db-path ~/synapse/hub.db --db-key-file ~/synapse/hub.key
 ```
 
-Without `[sqlcipher]` the stock install stays dependency-free and `--db-key-file`
+Without `[sqlcipher]` the base install keeps its WebSocket transport dependency
+(plus the Python 3.10 typing backport), and `--db-key-file`
 fails closed with an install hint. Whole-file AES-GCM envelopes still apply to
 relay logs, A2A state, cursors, and archives — they are complementary, not a
 substitute for page encryption of a live open database. SQLCipher protects
@@ -143,7 +145,7 @@ of scope unless they embed private event-log material.
 
 ## Key model
 
-The design should support three operator profiles:
+Key profiles have separate activation and qualification boundaries:
 
 - **Passphrase**: a human-supplied passphrase unlocks the local store. Key
   derivation must use a memory-hard KDF when a dependency is available, with
@@ -162,8 +164,14 @@ The design should support three operator profiles:
   - `synapse encrypt-key generate-wrapped` derives the KEK from a passphrase in
     software; `synapse encrypt-key rewrap` rotates that passphrase.
   - `synapse encrypt-key generate-wrapped-pkcs11` holds the KEK on a **PKCS#11 token**
-    (YubiKey PIV, cloud/network HSM, or SoftHSM), wrapping and unwrapping on the device
-    so the key never leaves it — the optional `python-pkcs11` dependency
+    with AES secret-key objects and `CKM_AES_KEY_WRAP` support. The backend requests
+    sensitive, non-extractable AES-256 KEKs when generating them; existing KEK
+    attributes remain the operator's provisioning responsibility. SoftHSM exercises
+    a software interface and does not prove hardware custody. YubiKey PIV's
+    [YKCS11 interface](https://developers.yubico.com/yubico-piv-tool/YKCS11/Functions_and_values.html)
+    does not provide these operations and is not supported by this backend.
+    Exact token, firmware and module qualification is separate. Requires the
+    optional `python-pkcs11` dependency
     (`synapse-channel[pkcs11]`) and a module path via `--pkcs11-module` / `PKCS11_MODULE`.
   - `synapse encrypt-key generate-wrapped-tpm2` roots the KEK in a **TPM 2.0** device: a
     decrypt-only RSA-2048 key is derived from the TPM storage seed and wraps the data key
@@ -200,11 +208,14 @@ Any `k` distinct shares reconstruct the key; fewer than `k` reveal nothing. Reco
 writes a **new** raw key file — it never bypasses encryption. The live hub never reads
 share files automatically.
 
-### Hardware attestation
+<a id="hardware-attestation"></a>
 
-Operators can require a fresh attestation of platform PCR digests before trusting a
-host to unwrap keys. The attestation gate is fail-closed and orthogonal to the KEK
-backend:
+### Software statement verification
+
+The `attest-*` commands verify an operator HMAC statement containing a nonce
+and declared PCR values. They collect no platform measurements and verify no
+hardware TPM quote, AK signature, EK trust chain or measured boot state. The
+software statement is separate from whichever KEK backend an operator selects:
 
 ```bash
 synapse encrypt-key attest-policy-create \
@@ -219,11 +230,20 @@ synapse encrypt-key attest-verify \
   --evidence ~/.config/synapse/attest-evidence.json
 ```
 
-The software path uses HMAC-SHA256 with a 32-byte policy key (no extra dependency).
-The `tpm2-quote` algorithm tag supports a software-assisted trust key for CI and the
-same statement format for future AK public-area verification. Combine with the TPM2
-KEK backend when the long-term secret must stay inside the chip **and** the host must
-prove measured boot state.
+The implemented path uses HMAC-SHA256 with a 32-byte operator policy key.
+Without `attest-create --pcr`, the statement copies the policy's expected
+values; it is a self-check, not evidence that the host measured those values.
+The historical `tpm2-quote` tag also uses HMAC with a 32-byte key. Other
+trust-anchor forms are refused; installing TPM libraries does not enable a
+quote verifier in this gate.
+
+A nonce is included in the signed statement, but verification does not match
+a verifier-issued challenge, consume it, or check evidence age. The same
+statement can verify repeatedly. Success therefore establishes the operator
+HMAC and policy-value match only. The CLI reports this software boundary.
+Genuine hardware quote verification and verifier-owned freshness/replay
+custody remain unimplemented and must not be inferred from the algorithm tag
+or from using a TPM KEK backend.
 
 Key storage must be explicit. Synapse should never silently write an encryption
 key next to the encrypted database with broad permissions. A doctor check should

@@ -1,10 +1,11 @@
 # Secure mode
 
-`synapse hub --secure` is the strict multi-seat production umbrella. It composes
+`synapse hub --secure` is a strict multi-seat runtime preset. It composes
 the [`--team-secure`](team-secure.md) trust profile and the
 [`--paranoid`](paranoid-mode.md) exposed-hub profile, then adds bounded per-agent,
-per-host, and per-host-connection flood limits. One flag turns on the strongest
-shipped hub posture and prints one consolidated report.
+per-host, per-host-connection and durable-ingress limits. One flag selects these
+named controls and prints their consolidated report. The preset is not a
+certificate of deployment safety or measured capacity.
 
 `--secure` generates no credentials, reuses no secret for a second purpose, and
 enables no metrics surface. When required operator material is missing it fails
@@ -53,14 +54,18 @@ default so the token bucket is never unbounded or absent.
 | Per-agent burst | 20 | 20 | disabled → default; ≤20 kept; >20 refused |
 | Per-host frame rate | 500/s | 500/s | disabled → default; ≤500 kept; >500 refused |
 | Per-host burst | 100 | 100 | disabled → default; ≤100 kept; >100 refused |
-| Connections per host | 10 | 10 | disabled → default; 1–10 kept; >10 refused |
+| Connections per host | 10 | 10 | disabled or open default 32 → 10; 1–10 kept; other values >10 refused |
+| Durable chat events per principal/window | 100 | 100 | disabled → default; 1–100 kept; >100 refused |
+| Durable chat bytes per principal/window | 1,048,576 | 1,048,576 | disabled → default; stricter positive values kept; larger values refused |
+| Durable ingress window | 60 s | minimum 60 s | disabled → default; longer windows kept; shorter windows refused |
 
 A disabled value and an explicit `--rate 0` are indistinguishable and both mean
-"disabled"; under `--secure` that is replaced by the named ceiling. Non-finite
-values (`nan`, `inf`) are rejected for every rate and burst — at the argument
-parser for every hub run, and again by the preset for programmatic callers —
-because `nan` compares false against every ceiling and would otherwise disable
-the limiter while appearing configured. These numbers follow the external
+"disabled"; under `--secure` that is replaced by the named ceiling. The same
+parsed connection count as the open default (32) is clamped even if supplied
+explicitly. Durable-ingress quotas cannot be disabled under this preset.
+The CLI parser rejects non-finite rates and bursts. Programmatic preset calls
+validate rate values and retained positive-rate burst overrides; a disabled
+rate replaces its burst with the finite preset default. These numbers follow the external
 audit's recommendations and let a small fleet share one loopback or NAT host
 while bounding aggregate traffic; they are an approval point, not an empirical
 throughput claim.

@@ -12,8 +12,9 @@ Three tables share the event store's SQLite connection and lock (as
 keeps them across restarts and an in-memory hub uses a private in-memory database:
 
 * ``message_forward_outbox`` — origin side. A forwarded chat is written here before its first
-  attempt and retried until the peer answers or it expires, so a peer outage never loses a
-  message silently. Rows settle as ``accepted``, ``duplicate``, ``refused`` or ``expired``.
+  attempt and retried until the peer answers or it expires. Persistence requires the
+  durable connection; expiry and storage loss remain recovery boundaries. Rows settle
+  as ``accepted``, ``duplicate``, ``refused`` or ``expired``.
 * ``message_forward_inbound`` — receiving side. ``(origin_hub, forward_id)`` maps to the request
   digest and the answer given, so a retried forward gets the same answer instead of a second
   copy, and a reused id with different content is refused.

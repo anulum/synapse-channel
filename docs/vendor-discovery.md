@@ -68,10 +68,10 @@ URLs are fetched for candidate inspection; no candidate website is fetched.
 The weekly `.github/workflows/vendor-discovery.yml` workflow publishes the
 report and proposed baseline as seven-day artifacts. The Core maintenance
 seat reviews them weekly and before adding a new integration. To promote a
-candidate, create an owned C15 host-package or C07 provider task. Review its
+candidate, assign a host-package or provider integration review. Review its
 official documentation, publisher control, licence, security, protocol and
 version pin, privacy/data locality, authentication, entitlement and costs.
-Then run a real isolated host or API journey. Fleet F09 can consume the
+Then run a real isolated host or API journey. A Fleet compatibility profile can consume the
 accepted compatibility contract only after Core has verified it. Discovery
 does not send outreach, spend API credit, publish support claims or deploy.
 

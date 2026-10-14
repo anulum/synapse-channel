@@ -29,9 +29,10 @@ agree on who is doing what.
 
 It is deliberately **local-first and transport-light**: the core install has a
 WebSocket transport dependency (`websockets`) and a typing backport on Python
-3.10 (`typing-extensions`). Everything else is the Python standard library, and
-the hub runs entirely on one machine. The MCP and A2A adapters are
-optional extras — your existing agents plug in without new code.
+3.10 (`typing-extensions`). This describes the base coordinator; optional
+adapters, crypto, SQLCipher and WASM have their own declared dependencies.
+The hub runs on one machine, and optional client adapters connect existing
+agents within their documented host/version boundaries.
 
 ## The problem it removes
 
@@ -52,8 +53,11 @@ hooks and the staged Git gate separately enforce only their documented mutation
 boundaries, while isolated worktrees remain the physical boundary for direct
 working-tree edits. A **shared blackboard** of declared tasks with dependencies
 means an agent can see what is taken and what its work unblocks. **Atomic
-handoff** and a **durable per-agent inbox** mean a finished unit of work reaches
-the next agent even if it was offline when the message was sent.
+handoff** transfers a held task to an online recipient; a **durable per-agent
+inbox** lets an authorised reader recover retained messages after reconnecting.
+Neither transport delivery nor a stored row proves that the recipient model
+processed the work. See [inbox recovery](cli.md)
+and the [deployment boundaries](deployment.md).
 
 ## What you build on it
 
@@ -70,9 +74,10 @@ one agent that must not step on the others." In practice teams reach for it when
 - **Humans and agents share a board** — an operator declares tasks and
   dependencies, agents claim and complete them, and the dependent work unblocks
   automatically; the human stays in the loop through the same bus.
-- **Long-running automation must survive restarts** — the append-only SQLite WAL
-  event log replays on restart, so live leases and task state resume instead of
-  being lost.
+- **Long-running automation needs retained coordination state** — a configured
+  healthy journal replays accepted events on restart, subject to retention,
+  integrity/key configuration and lease expiry. Agent processes and external
+  effects require their own recovery.
 - **Work is routed across tiered model backends** — task-class routing sends the
   right task to the right backend, with a deterministic rule-based fallback for
   offline use.

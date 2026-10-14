@@ -14,10 +14,12 @@ connect to it. Optional per-project presence, passive waiter, and exact-seat
 active-waker user services keep local reachability and delivery alive. Run one
 hub per coordinating group.
 
-## Local, always-on (systemd user service)
+## Local automatic startup (systemd user service)
 
-The local-first default: a per-user service so the hub is always up and restarts
-on login, with no root.
+The local-first default is a per-user service that starts the hub on login and
+requests automatic restart, without root. Availability still depends on the
+user service manager, session or linger configuration, resources and successful
+hub startup; a restart policy does not guarantee uninterrupted communication.
 
 ```bash
 pipx install synapse-channel
@@ -226,16 +228,17 @@ connection and is restarted by systemd if it dies, within a
 The checked-in `deploy/synapse-presence@.service` remains a copyable template for
 operators who manage units by hand.
 
-It registers as `myproject-presence`, costs nothing (it holds a socket — no model),
-and keeps the project visible in `synapse who` and addressable even while the agent
-is offline. No message is lost meanwhile — the hub records them durably — so the
-returning agent catches up with `synapse relay --project myproject`. The two
-layers are complementary: the presence holder is project-level visibility; the
+It registers as `myproject-presence` and holds a process and socket without a model
+turn. It keeps the project visible in `synapse who` while the agent is offline.
+Recovery depends on admitted records in a configured durable journal/feed and
+its retention; presence alone does not preserve or deliver messages. A returning
+operator can inspect retained project records with `synapse relay --project myproject`.
+These layers are complementary: the presence holder is project-level visibility; the
 exact-identity `synapse arm install` service is a durable passive receiver; and
 the tmux bridge supplies active terminal promptness when a provider is running.
 
 > **Presence is not a wake.** The presence holder keeps the project in the roster and
-> the feed durable, but it does **not** wake the agent. Use the mailbox-enabled
+> project address visible, but it does **not** make a feed durable or wake the agent. Use the mailbox-enabled
 > `synapse arm` `<identity>-rx` listener for durable gap recovery and
 > `synapse codex-tmux`'s distinct `<identity>-pane-rx` bridge when an existing
 > Codex terminal must receive a fixed wake prompt. The presence daemon is a
@@ -376,11 +379,11 @@ That lock remains held while the hub itself is unavailable. Doctor only prints
 the command. Use `--db-path` if your hub service stores the event log somewhere
 other than `~/synapse/hub.db`.
 
-### Mandatory post-tag local dogfooding
+### Verifying a local upgrade
 
-Every new release tag must be adopted by the local hub immediately after the
-exact public artifact is available. Release closeout is incomplete until the
-following bounded sequence is recorded:
+When the operator chooses to adopt a release, retain the exact public artifact
+and record the following bounded verification sequence under the approved
+maintenance procedure:
 
 1. Install the exact tagged public artifact and verify its version and digest.
 2. Inspect the current hub PID and live claims/waiters.
@@ -389,9 +392,9 @@ following bounded sequence is recorded:
 4. Verify the installed version, active service, fresh PID, zero unexpected
    restart loop, roster/waiter reconnect, durable replay, and hook wiring.
 
-This standing dogfooding requirement authorises the release-specific local hub
-adoption after a new tag. It does not authorise closing ONLYOFFICE or any other
-unrelated running application, and it is not a reason to restart between tags.
+These steps describe verification of an operator-selected local upgrade.
+They do not grant authority to restart services or interrupt active applications;
+use the deployment operator's approved maintenance procedure.
 
 For multi-seat fleets on one machine, start the hub with
 [`--team-secure`](team-secure.md) (token + identity trust + role grants + private
@@ -408,9 +411,10 @@ profile flags, and **`--bridge-exposed`** when `synapse a2a-serve` or
 `synapse mcp` runs against the hub (default off; not auto-detected). Use the
 [A2A deployment threat model](a2a-deployment-threat-model.md) for exposed
 `synapse a2a-serve` deployments.
-The planned [at-rest encryption profile](at-rest-encryption.md) is the storage
-hook behind that checklist; it defines key storage, rotation, backup recovery,
-and local-first tradeoffs before any encrypted store migration ships.
+The [at-rest encryption profile](at-rest-encryption.md) describes shipped
+SQLCipher and envelope options, key custody, rotation and backup recovery.
+Their use requires explicit operator configuration and platform qualification;
+none is enabled merely by the shell hook or the network profile flags.
 
 The hook does not infer the project from the current git checkout by default.
 Unassigned terminals join `SYNAPSE_DEFAULT_PROJECT`, or the neutral `user` lane
@@ -677,12 +681,32 @@ What a signature carries through the proxy:
 
 ## Persistence and backups
 
-With `--db`, every authoritative mutation (claims, releases, task updates, chat)
-is written to an append-only SQLite event log in WAL mode, and the hub rebuilds
-its state by replaying it on start-up. Back up the hub by copying the `--db` file
-(and its `-wal`/`-shm` siblings) or the whole data directory while the hub is
-stopped, or use `sqlite3 hub.db ".backup"` online. The `--relay-log` feed is
-derived state and bounded by `--relay-max-lines`; it is safe to truncate.
+With `--db`, the hub uses a SQLite event log in WAL mode and rebuilds state from
+admitted replay records on start-up. Retention, expiry, integrity validation and
+quarantine determine which records remain available; persistence does not
+promise that every chat body survives indefinitely.
+
+For an offline backup, stop the hub and every other writer, then copy the database
+with its `-wal`/`-shm` siblings or the whole data directory. For an online backup
+of an ordinary unencrypted SQLite store, use SQLite's backup API or its CLI with
+an explicit destination, for example `sqlite3 hub.db ".backup /private/backup/hub.db"`.
+An encrypted store requires a SQLCipher-compatible backup procedure and the
+original key configuration; the ordinary SQLite CLI is not a substitute.
+
+Keep the original row-authentication key (by default `<db>.rowmac.key`) and any
+configured encryption keys with the backup under owner-only permissions. A
+fresh replacement row key cannot authenticate existing journal rows. Restore
+also needs the configured external anti-rollback checkpoint store (by default
+`<db>.checkpoint.db`) and any separately configured trust or identity material.
+Capture these companions consistently with the database: copying its rows alone
+does not preserve the recovery trust boundary. Restore to an isolated copy with
+the matching keys, checkpoint and runtime configuration, verify integrity and
+replay, and retain the backup before adopting it. The
+[delivery recovery guide](delivery-journal-recovery.md) describes additional
+receiving-hub ownership and rollback requirements.
+
+The `--relay-log` feed is derived state and bounded by `--relay-max-lines`; it is
+not a replacement for the journal and its keys.
 
 ## Start budgets: when a unit stops trying
 

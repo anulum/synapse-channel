@@ -44,7 +44,10 @@ On Python 3.10, [`typing_extensions`](https://pypi.org/project/typing-extensions
 (PSF-2.0) supplies `Unpack` for the typed legacy hub keyword interface;
 Python 3.11 and newer use the standard-library implementation. The
 benchmark extra additionally uses [`tiktoken`](https://pypi.org/project/tiktoken/)
-(MIT). All other functionality is built on the Python standard library. Each
+(MIT). Optional adapters, cryptography, SQLCipher and WASM use their declared
+extras; the standard-library statement applies to the base implementation
+apart from its listed dependencies. See `pyproject.toml` for the exact dependency
+groups of this source revision. Each
 dependency remains under its own licence.
 
 The CI-only `integrations/claude-code` test package installs the exact

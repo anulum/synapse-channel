@@ -14,9 +14,10 @@ offers**, so agents spread over many projects can see conflicting or duplicate
 declared work before acting.
 
 The bus is transport-light (`websockets`, plus a typing backport on Python 3.10),
-hub-centric by design, and runs entirely on the local machine. Model workers reply on-channel
-through any OpenAI-compatible endpoint, including a local Ollama server, with a
-deterministic rule-based fallback for offline use.
+hub-centric by design, and its base coordination runs locally. Optional model
+workers use the [documented provider profiles](provider_matrix.md), local Ollama
+or a deterministic rule backend. External services have separate account,
+network and cost requirements.
 
 > **New here?** Read [**Why SYNAPSE CHANNEL**](why-synapse.md) — a five-minute
 > read on what it is, what you build on it, how it differs from the tools next to
@@ -46,8 +47,9 @@ state, and every agent connects to it.
 ## What it gives you
 
 - **Work claims** with file-scope overlap detection, expiring leases, and epochs.
-- **Crash-durable persistence** (append-only SQLite WAL with replay) and
-  **reconnect-safe** idempotency.
+- **Journal-backed recovery** within retained, admitted SQLite-WAL history,
+  integrity/key configuration and lease expiry. Keyed operations have their
+  documented replay/retention boundaries; neither guarantees external effects.
 - A **typed task lifecycle**, **deadlock detection**, and a **shared blackboard**
   of declared tasks with dependencies and an append-only progress stream.
 - **Atomic handoff**, an **LLM-free stall supervisor**, and **resumable
@@ -65,12 +67,14 @@ The hub speaks one wire protocol, but not every client surface carries the same
 support weight. Choose in this order:
 
 - **Supported core** — the paths fleets should build on today: the hub itself
-  and the **`syn-*` / `synapse` CLI** (the complete flow above), release-gated
-  and covered by the [API and wire stability](api-stability.md) contract.
+  and its coordination CLI commands. The full CLI spans several
+  [surface classifications](public-surface.md); only the named boundaries are
+  covered by the [API and wire stability](api-stability.md) contract.
 - **Shipped adapter** — the **[MCP server face](mcp.md)** for MCP hosts such
-  as Claude Code, Codex, Cursor, and Claude Desktop: release-gated and fully
-  tested; classified as an adapter, so the stability contract freezes its
-  named boundaries rather than the whole surface.
+  as Claude Code, Codex, Cursor, and Claude Desktop: registered tools/resources
+  and host-specific profiles are listed in the guide. Qualification applies to
+  the exact host, version, artifact and executed profile; the stability contract
+  freezes named adapter boundaries rather than every host's behavior.
 - **Validated, partial interop** — the **[A2A bridge](a2a-conformance.md)**:
   the official SDK completes discovery and the send/get/list/cancel lifecycle
   against it, and the official TCK HTTP+JSON MUST run records 55 passed with

@@ -11,16 +11,18 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 This page pins down what a managed GitHub App for cross-PR file-scope conflict
 prediction does and — more importantly — where the line falls between the
-local-first core and the managed layer. The adoption gate is lifted and stage 2
-has an owner-approved, hosting-neutral build contract. Its detailed component,
+local-first core and the managed layer. The separate package has a
+hosting-neutral source contract. Its detailed component,
 data-flow, dependency, security, and verification design lives in
 [`integrations/github-app/ARCHITECTURE.md`](https://github.com/anulum/synapse-channel/blob/main/integrations/github-app/ARCHITECTURE.md).
-No App is registered or deployed, and the hosting decision remains owner-gated.
+The package does not register or deploy an App; hosting and registration remain
+separate operator decisions.
 
 ## The idea
 
-When several open pull requests touch overlapping files, they are on a collision
-course that neither author can see until the merge conflict lands. The hub
+When several open pull requests touch overlapping files, their authors may need
+to coordinate. Path-set overlap is a candidate signal, not proof of a
+content-level Git merge conflict. The hub
 already answers this question for live agents: an active claim names the files an
 agent is working on, and the dashboard surfaces advisory branch-conflict
 candidates from overlapping claims. A GitHub App would answer the same question
@@ -42,13 +44,14 @@ Everything that makes it *managed* stays out of the local core package:
 | --- | --- |
 | Path-set overlap and conflict candidate derivation | GitHub webhook intake and event verification |
 | Claim and lease model | GitHub App identity, installation tokens, auth |
-| Deterministic, offline, single-dependency | Checks API calls and rate-limit handling |
+| Deterministic local path comparison; base dependencies unchanged | Checks API calls and rate-limit handling |
 | Runs on the developer's machine | Hosting, tenancy, persistence, billing, ops |
 
 This split is the point: the value (predicting the collision) is computed by code
-that runs anywhere, and the hosted app is a thin adapter that maps PR file sets
-onto that function and renders the result as a GitHub check. The local core never
-gains GitHub-specific dependencies, webhooks, or hosted state.
+within its qualified Python/runtime profile, and the App skeleton maps PR file sets
+onto that function and renders the result as a GitHub check. Base hub operation
+requires no hosted callback or App dependency. The optional local review-feedback
+workflow uses the separate package's decoder without deploying a callback.
 
 ## Sketch of operation
 
@@ -60,12 +63,13 @@ gains GitHub-specific dependencies, webhooks, or hosted state.
 4. It posts a neutral check — advisory, never blocking — naming the other PR and
    the overlapping paths, so authors can coordinate before merging.
 
-The check is **advisory**: like the rest of Synapse's governance surface, it
-informs and records rather than enforcing at the merge gate.
+The App check is **advisory**. It informs and records rather than enforcing a
+merge gate; separately configured Git claim gates and `policy-check --enforce`
+have their own refusal contracts.
 
 ## Build order
 
-The adoption-signal gate is lifted; the build proceeds smallest-hosting-first:
+The implemented package and remaining deployment boundary are:
 
 1. **Badge on the existing action — shipped.** The
    [SYNAPSE-protected badge](policy-engine.md#the-synapse-protected-badge)
@@ -110,7 +114,7 @@ author seat. It does not turn the skeleton into a hosted callback.
 
 ## Boundaries
 
-- **The skeleton is implemented; the App is not registered or deployed.** No
+- **The skeleton is implemented; it supplies no registered or deployed service.** No
   public installation, manifest-code conversion, hosted endpoint, tenant state,
   secret store, retry queue, billing, or operator service exists. The badge
   remains a self-declaration, not an attestation; only a deployed App observing

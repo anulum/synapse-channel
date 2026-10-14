@@ -15,9 +15,9 @@ clear. The figures below are reproducible from the repository.
 
 ## Test suite
 
-- A test suite across the `tests/` tree exercises every package module. The
-  current test-function, module, and surface counts are in the README's capability
-  inventory, which CI keeps in sync with the source tree.
+- The `tests/` tree contains unit and real runtime profiles. Test-function,
+  module and surface counts in the README inventory describe the source tree;
+  they do not prove that every module, platform or deployment was exercised.
 - CI enforces an aggregate line-and-branch coverage floor of **98%**. The
   Codecov report for `main` measured **98.85%** on 2026-07-18; its badge rounds
   that value to 99%, so the badge is not evidence that coverage exceeds 99%.
@@ -40,22 +40,25 @@ Every change must clear these gates (run locally with `make preflight`):
 | --- | --- | --- |
 | Lint | `ruff check` (E, F, I, B, UP, D) | no warnings |
 | Formatting | `ruff format --check` | no diff |
-| MCP surface audit | `tools/audit_mcp_surface.py --check` | documented tools/resources and adapter boundaries match registration |
-| Release claim hygiene | `tools/check_release_claim_hygiene.py --check` | changelog/release prose has no agent-authorship, quality-label, or conformance overclaims |
-| Commercial claim hygiene | `tools/check_commercial_claim_hygiene.py --check` | commercial docs preserve the AGPL/commercial boundary and no feature-split claims |
+| MCP surface audit | `tools/audit_mcp_surface.py --check` | registered tools/resources and required documentation text match; host interoperability is separate |
+| Release claim hygiene | `tools/check_release_claim_hygiene.py --check` | configured prohibited prose patterns are absent; runtime claim qualification remains separate |
+| Commercial claim hygiene | `tools/check_commercial_claim_hygiene.py --check` | required licence-boundary and prohibited feature-split phrases are checked; this is not legal validation |
 | Types | `mypy` (strict) | no errors |
 | Tests + coverage | `pytest --cov` | pass, ≥ 98% |
 | Licensing | `reuse lint` | REUSE 3.x compliant |
 | Spelling | `typos` | clean |
 | Security lint | `bandit` | clean |
-| Code scanning | CodeQL (CI) | no new alerts |
+| Code scanning | CodeQL (eligible GitHub runs) | analysis and finding upload; actual alert disposition is checked separately |
 
 ## Coverage policy
 
 The coverage gate is configured in `pyproject.toml` (`[tool.coverage]`,
-`fail_under = 98`). Branch coverage is on. The only excluded lines are the
-standard non-executable guards (`if __name__ == "__main__":`, `if TYPE_CHECKING:`,
-`pragma: no cover`); no functional code is excluded.
+`fail_under = 98`). Branch coverage is on. Its configured exclusion patterns
+cover `pragma: no cover`, the `__main__` guard, `TYPE_CHECKING`,
+`raise NotImplementedError` and `@overload`/`@typing.overload`. A pragma or
+matching pattern does not prove that code is non-executable. The coverage
+exclusion ledger and its checks account for these exclusions separately;
+aggregate coverage does not qualify unexecuted hardware, host or vendor paths.
 
 A2A bridge modules also have a focused module-specific ratchet for the local
 hardening lane. After running the focused A2A tests under coverage, generate a
@@ -111,13 +114,18 @@ estimated by hand.
 
 | Benchmark | What it measures | Result on the committed fixture |
 | --- | --- | --- |
-| `relay_token_benchmark` | Byte/token cost of the lite relay encoding vs the raw wire form | Lite is 1662 of 2826 bytes (59%) and 568 of 919 tokens (62%) over a 12-message trace |
+| `relay_token_benchmark` | Byte/token cost of the full-field lite relay encoding vs the raw wire form | Lite is 2498 of 2826 bytes (88%) and 807 of 919 `cl100k_base` tokens (88%) over `benchmarks/traces/sample_session.json`, a 12-message trace |
 | `routing_benchmark` | Task-class distribution and tiered-dispatch verification | 15 prompts → 4 rule / 4 slm / 7 heavy; dispatch verified |
 
 Byte counts and routing decisions are exact and reproducible. Token counts use a
 real tokeniser (`tiktoken`) when installed, with a labelled fallback. Per-tier
 model latency is out of the offline scope — it needs a live model server — and is
 documented as such rather than fabricated.
+
+The relay result is bound to `benchmarks/results/relay_token_benchmark.json`.
+Full-envelope fidelity is checked at millisecond timestamp precision. The older
+59% byte/62% token figures discarded auxiliary fields and are superseded; these
+fixture numbers are not provider-context savings or a terminal-capacity test.
 
 Run them with:
 

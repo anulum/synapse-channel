@@ -6,9 +6,9 @@ operator's declared rules?
 
 It is advisory by default. It reports pass, warn, or fail decisions with exact
 evidence references, but it does not merge code, does not replace code review,
-and does not call external policy services. A future enforcement mode can wire
-the same decisions into git hooks or CI after operators have reviewed the rule
-set on their own repositories.
+and does not call external policy services. Explicit `--enforce` can gate a CLI
+run with an enforcement-mode policy. Wiring that command into repository hooks
+or CI is a separate operator configuration.
 
 ## Implemented (first tranche)
 
@@ -23,8 +23,14 @@ The advisory decision layer is implemented in
 - The rule families evaluated from receipt evidence are required tests, strict
   type checking, owner approval, evidence freshness, no-merge-without-receipt,
   known-failure acknowledgement, and generated artifact parity.
-- It is advisory by default and exits `0`; `--enforce` exits non-zero only when
-  an enforcement-mode policy has a failing rule.
+- A valid advisory evaluation exits `0`; with `--enforce`, a failing rule in an
+  enforcement-mode policy exits `1`. Invalid or unavailable inputs and failed
+  commitment/signature processing errors can exit `2` regardless of advisory mode.
+
+These rules inspect the supplied receipt's declarations; they do not rerun its
+test/typecheck commands or independently authenticate an owner-approval string.
+Optional Merkle/signature checks have their own trust and commitment scope;
+they do not certify that the chosen tests or evidence were sufficient.
 
 CODEOWNERS-sourced approval mapping, event-store-backed claim coverage, and git-
 hook enforcement remain design targets described below.
@@ -57,7 +63,10 @@ without writing the install-and-invoke boilerplate:
 
 - **Pinned checker.** The Action installs one exact `synapse-channel` release,
   hash-verified against its lock file, into an isolated environment. The Action's
-  own version decides which release.
+  own version decides which release. The source snapshot reviewed for this guide,
+  `dccd67c1e45dc3a328b3700df7d1acfd117792af`, locks Core `0.99.35`;
+  review the lock at the exact Action commit you select. This is source inspection,
+  not a fresh hosted-run or current remote-branch qualification.
 - **Attestation.** With `verify-attestation: "true"` it also verifies the wheel's
   GitHub build attestation against this repository's release workflow, tag and
   commit.
@@ -68,11 +77,14 @@ without writing the install-and-invoke boilerplate:
 
 The Action runs
 `synapse policy-check --json --enforce` with the given inputs, prints the
-decision report, exposes it as the `report` step output, and fails the job
-exactly when the CLI exits non-zero. Set `enforce: "false"` for an advisory,
-report-only run that never fails the job. Inputs reach the shell through
-environment variables — never interpolated into the script — so untrusted
-values cannot inject commands; paths with spaces survive intact.
+decision report and exposes it as the `report` step output. The checker step
+propagates the CLI exit status; download, installation and attestation can fail
+separately. `enforce: "false"` makes valid policy-rule evaluation advisory;
+input/verification errors can still fail the job. Inputs reach the shell through
+environment variables and quoted argv, preserving paths with spaces. This
+prevents shell-syntax injection, not every CLI-option interpretation: keep
+`task` a reviewed non-option label, not untrusted PR text. The reviewed wrapper
+does not put an end-of-options marker before that positional value.
 Create or download the receipt before this step; checkout supplies the committed
 policy file, not a release receipt.
 
@@ -220,7 +232,9 @@ Statuses:
 
 ## Configuration shape
 
-The first configuration file can be static YAML or TOML and should remain small:
+The following YAML is a **design sketch**, not a file accepted by the shipped
+parser. The current CLI accepts JSON, or TOML with the interpreter/extra described
+above. Convert a reviewed policy to one of those supported formats before use:
 
 ```yaml
 version: 1
@@ -242,9 +256,9 @@ rules:
     map: "tools/generated_dependency_claims.py --json"
 ```
 
-The command should validate configuration before use and print a stable JSON
-decision report. Invalid policy should fail closed for enforcement mode and fail
-open with warnings for advisory mode.
+The current command validates inputs before evaluation. An invalid policy or
+receipt exits `2` in both modes; it does not become a successful advisory report.
+The broader rule/configuration shape above remains a design target.
 
 ## Rollout path
 

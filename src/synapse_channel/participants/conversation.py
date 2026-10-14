@@ -16,11 +16,11 @@ remembered through its provider session (wrap it in a
 result is a real multi-party deliberation with memory: A answers, B reacts to A, A resumes
 and reacts to B, and so on.
 
-Every paid turn is bounded twice over: a hard ``rounds`` cap, and an optional cumulative
-``budget_usd`` ceiling that stops the conversation early. When the budget halts it, the
-transcript says so explicitly (``stopped == "budget"``) — a bounded run never reads as a
-completed one. This is the seed of the Phase 3 cost/loop guards; the full fan-out and
-moderated synthesis layer builds on it.
+The ``rounds`` cap bounds turn count. Optional ``budget_usd`` compares the sum of
+reported costs after each completed turn and may prevent later turns. The turn
+that reaches the threshold can overshoot it, and unreported costs remain zero
+in this envelope; this is not a billing cap or an in-flight cancellation guard.
+When that check stops the run, ``stopped == "budget"`` records it explicitly.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ STOPPED_COMPLETED = "completed"
 """All requested rounds ran."""
 
 STOPPED_BUDGET = "budget"
-"""The cumulative cost reached ``budget_usd`` and the conversation halted early."""
+"""The reported cumulative cost reached the threshold and prevented later turns."""
 
 STOPPED_EMPTY = "empty"
 """Nothing ran — no participants, or a non-positive round count."""
@@ -59,7 +59,7 @@ class ConversationTranscript:
     turns : tuple[TurnResult, ...]
         The results in round order.
     total_cost_usd : float
-        Sum of the metered cost of every turn that ran.
+        Sum of reported monetary costs of turns that ran; unreported costs use zero.
     stopped : str
         Why the conversation ended: :data:`STOPPED_COMPLETED`, :data:`STOPPED_BUDGET`,
         or :data:`STOPPED_EMPTY`.
@@ -102,9 +102,9 @@ async def conduct_conversation(
     shared_context : str, optional
         Common framing prepended to every turn's context.
     budget_usd : float or None, optional
-        Cumulative cost ceiling. When the running total reaches it after a turn, the
-        conversation stops and the transcript records :data:`STOPPED_BUDGET`. ``None`` applies
-        no budget (only the ``rounds`` cap bounds the run).
+        Reported-cost stop threshold, checked after a completed turn. The final
+        turn can overshoot it; zero or negative thresholds still allow the first
+        turn. Unreported charges are not covered. ``None`` disables this check.
 
     Returns
     -------

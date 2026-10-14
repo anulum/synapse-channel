@@ -12,8 +12,10 @@ Contact: www.anulum.li | protoscience@anulum.li
 The official TypeScript/JavaScript client lives in `clients/js`. Unlike the
 read-only [Go client](go-client.md), it speaks the WebSocket mutation protocol:
 chat, claims, releases, board reads, presence, and receipts. It runs unchanged in
-the browser and in Node 20+ (both expose a global `WebSocket`) and has no runtime
-dependencies.
+environments that expose a compatible global `WebSocket`, or with an explicit
+`webSocketFactory`. The package declares Node 20+ as its engine floor; that
+floor alone does not establish global-WebSocket availability. Host/runtime
+interop needs its own qualification. The package has no runtime dependencies.
 
 ## Install
 
@@ -21,26 +23,49 @@ dependencies.
 npm install @anulum/synapse-channel
 ```
 
-## Connect and coordinate
+## Connect and coordinate in Node
 
 ```ts
 import { SynapseClient, MessageType } from "@anulum/synapse-channel";
 
+const name = "SYNAPSE-CHANNEL/web-agent";
+const task = "synapse-channel:web";
+const token = process.env.SYNAPSE_TOKEN;
 const client = new SynapseClient({
   uri: "ws://127.0.0.1:8876",
-  name: "SYNAPSE-CHANNEL/web-agent",
-  token: process.env.SYNAPSE_TOKEN,
+  name,
+  ...(token ? { token } : {}),
 });
 
 client.on(MessageType.Chat, (m) => console.log(`${m.sender}: ${m.payload}`));
+client.on(MessageType.ClaimGranted, (m) => {
+  if (m.task_id === task && m.owner === name && typeof m.epoch === "number") {
+    client.requestBoard();
+    client.release(task, m.epoch);
+  }
+});
+client.on(MessageType.ReleaseGranted, (m) => {
+  if (m.task_id === task) client.close();
+});
 await client.connect();
 
 client.chat("hello", { target: "all" });
-client.claim("synapse-channel:web", ["src/web/**"]);
-client.requestBoard();
-client.release("synapse-channel:web");
-client.close();
+client.claim(task, ["src/web/client.ts"]);
 ```
+
+This example uses Node's environment API. Browser applications supply their own
+configuration; `process.env` is not a browser API. Claim paths above are literal
+files, not glob patterns.
+Release waits for this client's matching grant and epoch. The caller still
+needs explicit handling for denial, disconnect and missing replies.
+
+## Stream metadata
+
+`send(..., { extra })` and inbound callbacks preserve additional stream fields.
+`stream_seq` orders frames within a stream; `seq` on a journal-backed hub is
+the durable row cursor. Keep both meanings separate when reading live messages
+or a paged durable inbox. The SDK forwards these fields but supplies no stream
+reassembly, deadline or upstream cancellation engine. See [streaming](streaming.md).
 
 `claim(taskId, paths, pathIdentity?)` also accepts the version-1
 `ClaimScopeIdentity` exported by the package. This is an additive transport

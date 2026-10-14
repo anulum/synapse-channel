@@ -15,8 +15,9 @@ With several agent terminals open, a tab that says `tmux` tells you nothing.
 
 - the **tab label** is short: the group's abbreviation, the project when a
   specific focus is assigned to the seat, and the vendor;
-- the **status lines** at the bottom of the terminal carry every detail,
-  wrapped to as many lines as the terminal's width needs.
+- the **status lines** at the bottom of the terminal wrap the declared details
+  within tmux's five-line limit. Overflow is truncated; `--show` prints every
+  detail in full.
 
 ```text
 tab:     ACME-PT · billing-api · vendor-x

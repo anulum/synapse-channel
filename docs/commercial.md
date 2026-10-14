@@ -1,21 +1,25 @@
 # Commercial use
 
 SYNAPSE CHANNEL is **dual-licensed**. There is **no feature difference between the
-open-source and the commercial build** — the package on PyPI is the full product; a
-commercial licence changes the terms, not the code.
+open-source and the commercial build**: both use the public Core codebase. A
+commercial licence changes the terms, not the code. Optional dependencies,
+platform support and documented runtime limits still apply.
 
 ## Which licence do I need?
 
-- **The free AGPL-3.0** covers open-source, research, internal, and personal work —
-  including use inside a company — as long as you do not expose a **closed-source** or
-  **hosted** derivative over a network to third parties.
-- **A commercial licence** is for shipping a **closed-source** product or a **SaaS**
-  without the AGPL's network-copyleft obligation; it removes AGPL sections 13 and 5(d)
-  (network-use source disclosure) within the scope of the purchased tier.
+- **The free AGPL-3.0** permits commercial, research, internal and personal use
+  subject to its applicable conditions. Section 13 requires a corresponding-source
+  offer for remote users of a modified version; sections 5 and 6 govern conveying
+  covered works. Internal use is not an automatic waiver of these conditions.
+- **A commercial licence** provides separately agreed permission when your
+  intended deployment cannot satisfy applicable AGPL conditions. The commercial
+  grant identifies sections 13 and 5(d), which concern network-source offers and
+  interactive-interface notices respectively, within the purchased tier's scope.
 
-Rule of thumb: if anyone outside your organisation can interact with a modified version
-over a network and you do not publish the corresponding source, you need a commercial
-licence.
+Hosted use alone does not require a commercial licence or publication of an
+entire software stack. Review the actual covered or combined work, corresponding
+source and distribution/network interaction against the licence; separate
+independent components in an aggregate have a distinct boundary.
 
 ## Plans
 
@@ -24,11 +28,11 @@ core — nothing is ever moved behind a paywall.
 
 | Plan | For | What it adds |
 | --- | --- | --- |
-| **Community** — free (AGPL-3.0) | open source, research, personal, internal | the whole product, unlimited; copyleft applies |
+| **Community** — free (AGPL-3.0) | open source, research, personal, internal | public Core feature set; copyleft and documented runtime limits apply |
 | **Organisation Licence — USD 490/yr** | one legal entity that only needs commercial permission | the copyleft exemption on its own; no hosted service, dashboard, SLA, support, or Fleet entitlement |
 | **Pro — USD 19/mo or 190/yr** | one developer shipping closed-source products or private hosted services | commercial permission for one developer, the mobile app with push *(planned)*, and email support |
 | **Team — USD 39/user/mo or 390/user/yr** | a company owning shared coordination workflows; minimum 3 seats | unlimited projects in one legal entity, hosted dashboard *(planned)* while operational data stays local, security-patch SLA, and onboarding |
-| **FLEET Enterprise — quote** | regulated, multi-hub, or multi-organisation deployments | separately entitled private software with managed federation, SSO, audit exports, compliance support, and a deployment-specific SLA |
+| **FLEET Enterprise — quote** | regulated, multi-hub, or multi-organisation deployments | separately entitled private software; federation, SSO, audit exports, managed services, compliance support and SLA scope require deployment-specific agreement and qualification |
 
 Items marked *(planned)* are not available yet; they are not part of what a plan delivers today.
 
@@ -53,12 +57,11 @@ the open-source licence is
 
 Use this path before buying or requesting custom terms:
 
-1. Decide whether AGPL-3.0 already covers your use. If your product or service is
-   open source under compatible terms, or your use stays private/internal, the
-   Community path is normally the right fit.
-2. If you will distribute a closed-source product or operate a hosted service
-   without publishing corresponding source, choose the published Pro or Team
-   plan unless your case needs custom terms.
+1. Check the actual work, distribution, network interaction and source
+   availability against the AGPL conditions; a private/internal label alone
+   does not establish an exemption.
+2. If your deployment cannot satisfy those conditions, evaluate a commercial
+   plan whose permission scope covers it, or request custom terms.
 3. For enterprise, OEM, academic, non-profit, managed-hosting, procurement, or
    co-ownership discussions, email
    [protoscience@anulum.li](mailto:protoscience@anulum.li).

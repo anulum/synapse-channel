@@ -527,11 +527,12 @@ def next_message_auth_sequence(previous: int, *, now_ns: int | None = None) -> i
     """Return the next per-message-auth sequence for one client.
 
     The sequence is time-derived: the wall clock in microseconds, or one more
-    than the previous value when the clock has not advanced. A restarted client
-    process therefore continues above everything it signed before, so a hub
-    with a ``strict`` durable sequence floor admits it without any client-side
-    state (CLIENT-SEQUENCE-PERSIST). Hub names are exclusive per live socket, so
-    one sender has one live process. Values stay below 2**53 and remain exact
+    than the previous value when the clock has not advanced. This is monotonic
+    within one client state. A restart that resets ``previous`` to zero is
+    admitted by a strict durable floor only when the clock-derived value is
+    above that retained floor. Clock rollback or a restart in the same
+    microsecond can therefore produce ``sequence_mismatch``; no client floor
+    is persisted here. Values stay below 2**53 and remain exact
     in JSON clients until the year 2255.
 
     Parameters

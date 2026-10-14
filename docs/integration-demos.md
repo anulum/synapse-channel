@@ -23,7 +23,7 @@ reverse proxy, TLS stack, or webhook receiver.
 | --- | --- | --- | --- |
 | Installed golden path | Supported, real local boundaries | Scripted in-process `SynapseAgent` identities labelled `CLAUDE`/`CODEX`, separate Git claims, deliberate conflict refusal, fail-closed mutation guard, atomic handoff, observed verification, receipt-backed release, static dashboard. | Uses a disposable local Git repository; it does not launch provider CLIs or model turns, and does not certify external client versions. |
 | CLI coding sessions | Supported | File-scope claims, claims release, board/status checks, direct messages. | Does not start or control the coding agent runtime. |
-| MCP host adapter | Supported adapter surface | MCP tools/resources expose Synapse coordination through stdio. | Does not certify every MCP host, streaming, tool chaining, or resource templates. |
+| MCP host adapter | Supported adapter surface | MCP tools, fixed resources and task/agent/resource-kind templates expose coordination through stdio. | Does not certify every host's discovery, tool orchestration or streaming lifecycle. |
 | Local A2A bridge | Local bridge surface | Agent Card projection plus local HTTP+JSON task/message routes. | Does not claim independent A2A conformance, remote TLS deployment, or real webhook receiver validation. |
 
 ## Demo 0: Installed five-minute golden path
@@ -112,7 +112,10 @@ What this proves:
 
 What it does not prove:
 
-- Streaming, tool chaining, and resource templates remain future MCP v2 work.
+- Task, agent and resource-kind templates are registered on the current stdio
+  surface; the host must discover and invoke them. This demo does not qualify
+  every host's tool chaining, subscription or streaming lifecycle. The HTTPS
+  transport has a separate [qualification profile](mcp-http.md).
 - External MCP host conformance is not certified by this local adapter demo.
 - The host still decides when to call tools and how to interpret results.
 

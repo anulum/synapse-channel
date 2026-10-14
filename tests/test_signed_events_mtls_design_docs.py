@@ -92,7 +92,9 @@ def test_signed_events_mtls_runtime_keeps_boundaries_clear() -> None:
     required_boundaries = (
         "operator-managed",
         "packaged `hub` cli has no option that loads an `eventsignaturetrustbundle`",
-        "no client-ca option",
+        "--multihub-serving-policy",
+        "requests optional client certificates",
+        "does not enable ed25519 event verification",
         "operator-confirmed domain bundles",
         "does not encrypt payloads",
         "does not replace per-agent identity",

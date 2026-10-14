@@ -11,8 +11,10 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 Official typed WebSocket client for the coordination hub. Unlike the read-only Go
 client, this client speaks the WebSocket mutation protocol: chat, claims,
-releases, board reads, presence, and receipts. It runs unchanged in the browser
-and in Node 20+ (both expose a global `WebSocket`), with no runtime dependencies.
+releases, board reads, presence, and receipts. It needs a compatible global
+`WebSocket` or an explicit `webSocketFactory`. The declared Node 20+ engine
+floor does not itself establish global-WebSocket availability. The package
+has no runtime dependencies; interoperability is qualified per runtime.
 
 ## Install
 
@@ -20,15 +22,18 @@ and in Node 20+ (both expose a global `WebSocket`), with no runtime dependencies
 npm install @anulum/synapse-channel
 ```
 
-## Use
+## Use in Node with a compatible WebSocket
 
 ```ts
 import { SynapseClient, MessageType } from "@anulum/synapse-channel";
 
+const name = "SYNAPSE-CHANNEL/web-agent";
+const task = "synapse-channel:web";
+const token = process.env.SYNAPSE_TOKEN;
 const client = new SynapseClient({
   uri: "ws://127.0.0.1:8876",
-  name: "SYNAPSE-CHANNEL/web-agent",
-  token: process.env.SYNAPSE_TOKEN, // omit for an open loopback hub
+  name,
+  ...(token ? { token } : {}), // omit for an open loopback hub
 });
 
 client.on(MessageType.Chat, (message) => {
@@ -37,16 +42,33 @@ client.on(MessageType.Chat, (message) => {
 client.on(MessageType.ClaimDenied, (message) => {
   console.warn("claim denied:", message.payload);
 });
+client.on(MessageType.ClaimGranted, (message) => {
+  if (message.task_id === task && message.owner === name && typeof message.epoch === "number") {
+    client.requestBoard();
+    client.release(task, message.epoch);
+  }
+});
+client.on(MessageType.ReleaseGranted, (message) => {
+  if (message.task_id === task) client.close();
+});
 
 await client.connect(); // resolves when the hub welcomes the registration
 
-client.chat("hello from the browser", { target: "all" });
-client.claim("synapse-channel:web", ["src/web/**"]);
-client.requestBoard();
-// ...later
-client.release("synapse-channel:web");
-client.close();
+client.chat("hello from Node", { target: "all" });
+client.claim(task, ["src/web/client.ts"]); // literal file, not a glob pattern
 ```
+
+Browser applications supply their own configuration; `process.env` is a Node
+API. Release waits for this client's matching grant and its epoch. The caller
+must handle denial, disconnect and missing replies as separate outcomes.
+
+## Stream metadata
+
+`send(..., { extra })` and incoming callbacks preserve additional fields.
+For streams, `stream_seq` is the frame counter; journal-backed `seq` is the
+durable row cursor. Do not use that cursor to infer a missing stream counter.
+The SDK forwards metadata but has no stream reassembly, deadline or upstream
+cancellation engine. See [streaming](../../docs/streaming.md).
 
 ## API
 
@@ -110,6 +132,8 @@ The fixture uses checkout source, a temporary SQLite journal, and no running
 Synapse service or user data. It also exercises exact durable release proof,
 foreign-owner and changed-digest refusals. Its child process and temporary
 journal are removed after the test.
+The journal-backed stream journey also checks independent frame/row counters
+on live delivery and durable inbox replay after a mid-stream cursor.
 
 The `clients-js` CI workflow runs this check with Node 22 and Python 3.12,
 alongside type checking and unit tests. Changes to the Python source, package

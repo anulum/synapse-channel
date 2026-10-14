@@ -1,7 +1,7 @@
 # Troubleshooting
 
-Symptom → cause → fix for the problems you are most likely to hit. Every message
-quoted below is one the tools actually print, so you can match on it directly.
+Symptoms, diagnostics and recovery steps for common problems. Match the exact
+client, configured profile and reported close code before choosing a remedy.
 
 ## `[NAME] Could not reach hub at ws://…`
 
@@ -27,8 +27,11 @@ presence daemons add more, so a large fleet can reach the ceiling.
   identity's own waiter sidecar) and stop terminals that have exited but left
   daemons behind.
 - **Raise the ceiling.** Restart the hub with a higher budget —
-  `synapse hub --max-clients 512` (the default is 256). Restarting drops every
-  socket momentarily; live agents reconnect on their own.
+  `synapse hub --max-clients 512` (the default is 256). Also size the independent
+  `--max-connections-per-host` budget; increasing only the global cap can still
+  leave one workstation refused with code `4015`. Restarting disconnects clients.
+  An unbounded waiter or supervised receiver retries; ordinary one-attempt
+  clients need their caller to reconnect. Check readiness and pending messages.
 - **Retry.** The cap is transient under churn; a moment later a slot usually frees.
 
 ## A WebSocket handshake fails through an SSH tunnel
@@ -313,8 +316,9 @@ pass `--insecure-off-loopback` to downgrade the refusal to a warning.
 Binding off loopback *with* `--token` but without native TLS is also **refused**:
 the shared token and every coordination frame would travel plaintext `ws://` and
 be readable on the network path. Add native TLS (`--tls-certfile` and
-`--tls-keyfile`) or front the hub with a `wss://`-terminating reverse proxy on a
-private interface. To bind token-over-plaintext anyway on a trusted private
+`--tls-keyfile`), or keep the hub bound to loopback behind a
+`wss://`-terminating reverse proxy. Merely adding a proxy does not make an
+off-loopback plaintext bind pass the CLI guard. To bind token-over-plaintext on a trusted private
 network, pass `--insecure-off-loopback` to downgrade the refusal to a warning;
 `--paranoid` makes native WSS mandatory with no override.
 

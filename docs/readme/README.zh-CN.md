@@ -25,8 +25,7 @@ SYNAPSE CHANNEL — 仓库概览（简体中文翻译；英文原文为准）
 </p>
 
 <p align="center">
-  <strong>阻止并行的 AI 编码智能体互相覆盖彼此的文件。</strong><br>
-  本地优先的协调总线 — file-scope claims、共享计划和持久的 leases — 适用于单个仓库，也适用于整个仓库生态。
+  <em>通过声明的文件范围协调并行 AI 智能体；hook 和 Git 检查仅覆盖各自文档规定的修改边界。</em>
 </p>
 
 <p align="center">
@@ -48,24 +47,22 @@ SYNAPSE CHANNEL — 仓库概览（简体中文翻译；英文原文为准）
   <a href="https://doi.org/10.5281/zenodo.20801559"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.20801559.svg" alt="DOI"></a>
 </p>
 
-一条本地优先的协调总线，服务于并行工作的 AI 智能体舰队 — 无论是在单个仓库
-之内，还是分布在整个仓库生态之中。一个 WebSocket 中枢（hub）是
-**presence**、**work claims**、**聊天**、**任务状态**和 **resource offers**
-的共享唯一事实来源：智能体跨项目相互寻址并共享同一份计划，而 file-scope
-claims 让任一仓库内的智能体互不触碰对方的文件。
+一条本地优先的协调总线，服务于在单个仓库或仓库生态中并行工作的 AI 智能体。
+WebSocket 中枢共享 **presence**、**work claims**、**聊天**、**任务状态**和
+**resource offers**。智能体跨项目通信并共享计划。中枢拒绝与其他所有者持有的
+已声明范围冲突的 claim。provider hook 和 Git 检查仅覆盖各自文档规定的修改边界。
 
-这条总线在传输层非常轻量（只有一个依赖，`websockets`），在设计上以 hub 为
-中心（由一处统一拥有 presence、leases 和历史记录），并且完全运行在本地
-机器上。模型 worker 通过任何兼容 OpenAI 的端点在信道上应答，包括本地的
-Ollama 服务器，并为离线使用提供确定性的规则回退。
+基础依赖为 `websockets`，在 Python 3.10 上还包括 `typing-extensions`。
+中枢管理 presence、leases 和历史记录；总线可以完全在本地运行。
+可选的模型 worker 使用已配置的 OpenAI 兼容端点，包括本地 Ollama；
+离线使用可选择确定性的规则回退。
 
-**你现有的智能体无需新代码即可接入。** 任何 Model Context Protocol 宿主 —
-Claude Code、Claude Desktop、Cursor — 都能通过随附的 `synapse mcp` 服务器
-到达总线，它把 send、durable inbox、status、claim、release、handoff、task
-这些动词暴露为 MCP 工具，并把 board、agents、resources 暴露为只读 MCP
-resources。会说 A2A 的智能体则通过 Agent Card 界面接入。hub 本身保持协议
-无关，核心安装保持单一依赖 — MCP 和 A2A 适配器是可选的 extras
-（`pip install 'synapse-channel[mcp]'`）。参见 [MCP 指南](../mcp.md)。
+随附的 `synapse mcp` 服务器将 send、durable inbox、status、claim、release、
+handoff、task 暴露为 MCP 工具，将 board、agents、resources 暴露为只读 MCP
+resources。互操作性取决于宿主版本、传输方式和配置；具体支持边界见
+[集成目录](../integration-catalog.md)。A2A HTTP 接口的部分验证范围单独说明。
+适配器使用声明的可选 extras（`pip install 'synapse-channel[mcp]'`）。参见
+[MCP 指南](../mcp.md)和单独验证的[认证 HTTP 配置](../mcp-http.md)。
 
 ```bash
 python -m pip install synapse-channel && synapse demo
@@ -130,9 +127,11 @@ graph LR
     H --> LOG["Event log (SQLite WAL)<br/>durable · optional SQLCipher at rest"]
 ```
 
-一个 claim 以 file scope 租用（lease）一个工作单元，因此两个智能体绝不会
-编辑相同的文件；计划、handoff、检查点和停滞监督者让工作持续推进；持久的
-事件日志意味着 hub 重启会恢复存活的 leases，而不是丢失它们。
+claim 以 file scope 租用已声明的工作单元。hub 会拒绝与另一所有者持有的
+范围冲突的已声明范围。提供商 hooks 和 staged Git 检查只在文档列出的操作
+范围内执行权限检查，并不隔离所有文件写入或外部效果。计划、handoff、
+检查点和停滞监督者帮助协调工作。配置 journal 后，重启会从经过验证且仍然
+保留的记录中恢复未过期的 leases；过期、保留策略和完整性隔离会限制可恢复的范围。
 
 ## 核心与可选层
 
@@ -143,7 +142,7 @@ SYNAPSE CHANNEL 以单个可安装的包交付，但公开表面是分层的，�
 |---|---|---|
 | 本地协调核心 | `stable` | hub、send/wait/listen/arm、claims、tasks、locks、status、board、init，以及日常协调使用的舰队引导命令。 |
 | 边缘适配器 | `adapter` | MCP、A2A、git 钩子、tmux/提供商桥、shell 钩子、摄取，以及把既有工具接到总线上的 worker seats。 |
-| 操作员分析 | `analysis` | Doctor、state、dashboard、causality、multihub、reliability、trust graph、directory、accounting、舰队记分卡导出、清单和事件查询。它们不改变协调状态；显式导出模式可以写入操作员选定的目标。 |
+| 操作员分析 | `analysis` | 以诊断、视图和报告为主的命令组。显式控制模式可以修改状态或配置、保存记录或导出数据。请核对每个命令的效果与权限；tier 不保证只读。 |
 | 治理与完整性 | `governance` | policy 检查、审批、ACL/角色表面、联邦、Merkle roots、release receipts、复现、压实，以及 encrypt-key / SQLCipher 密钥操作。 |
 | 实验表面 | `experimental` | 基准测试、participant fabric、route-task、sandbox、workflow、TTL advice、memory recall、auto-action 和 resource bidding。 |
 
@@ -206,8 +205,8 @@ Actions 已固定到完整的提交 SHA、Dependabot 覆盖 actions/Python/Docke
 精确身份 waiter；它使用 mailbox replay 和 `Restart=always`，不安装 hub。
 不主张原生的 Windows 服务安装；请按部署指南所述使用带 systemd 的 WSL。
 
-CLI 附带两个可选的 shell 便利：`synapse completions bash|zsh|fish` 为每个
-子命令输出 Tab 补全（从实时解析器生成，因此永不漂移），而
+CLI 附带两个可选的 shell 便利：`synapse completions bash|zsh|fish` 为顶层命令、一层子命令及其长选项
+输出静态补全（从已安装版本的解析器生成；升级后须重新生成），而
 `synapse install-shell-hook` 添加受保护的代码块，在每个新终端中自动武装
 一个 wake 监听器：
 

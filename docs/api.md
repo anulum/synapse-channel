@@ -23,40 +23,80 @@ from synapse_channel import SynapseAgent, SynapseHub, HubConfig
 
 ## The client in one flow
 
-A minimal `SynapseAgent` session — connect, wait for the hub's welcome, claim a
-file scope, update the task, and release — is the whole daily loop in code:
+This loop connects, waits for a matched claim grant, records a checkpoint,
+updates the task and confirms release. Each operation has a bounded wait:
 
 ```python
+"""Confirm a claim, checkpoint, status update and release on a local hub."""
+
 import asyncio
+from typing import Any
+from uuid import uuid4
 
-from synapse_channel import SynapseAgent
-
-
-async def main() -> None:
-    agent = SynapseAgent("ALPHA", uri="ws://localhost:8876")
-    session = asyncio.create_task(agent.connect())  # one long-lived session
-
-    # Wait for the hub's welcome before issuing verbs; fail loudly if it is down.
-    if not await agent.wait_until_ready():
-        raise RuntimeError("could not reach the hub — is `synapse hub` running?")
-
-    # The hub refuses a request that overlaps another live file-scope claim.
-    await agent.claim("refactor-parser", note="splitting the tokenizer", paths=["src/parser"])
-    await agent.save_checkpoint("refactor-parser", "step=2")
-    await agent.update_task("refactor-parser", status="working")
-    await agent.release("refactor-parser")
-
-    agent.running = False
-    session.cancel()
+from synapse_channel import MessageType, SynapseAgent
 
 
-asyncio.run(main())
+async def main(*, uri: str = "ws://localhost:8876") -> None:
+    """Run each task operation only after the preceding acknowledgement."""
+    task_id = "refactor-parser-" + uuid4().hex
+    replies: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=8)
+    accepted = (
+        MessageType.CLAIM_GRANTED,
+        MessageType.CLAIM_DENIED,
+        MessageType.CHECKPOINT_SAVED,
+        MessageType.CHECKPOINT_DENIED,
+        MessageType.TASK_UPDATED,
+        MessageType.RELEASE_GRANTED,
+        MessageType.RELEASE_DENIED,
+        MessageType.ERROR,
+    )
+
+    async def receive(frame: dict[str, Any]) -> None:
+        """Queue only operation replies for this fresh task."""
+        if frame.get("task_id") == task_id and frame.get("type") in accepted:
+            replies.put_nowait(frame)
+
+    async def confirmed(expected: str) -> dict[str, Any]:
+        """Require the next matched reply to acknowledge the requested verb."""
+        frame = await asyncio.wait_for(replies.get(), 5.0)
+        if frame.get("type") != expected:
+            raise RuntimeError("task operation refused or unexpected reply")
+        return frame
+
+    agent = SynapseAgent("ALPHA", receive, uri=uri)
+    connection = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(5.0):
+            raise TimeoutError("hub registration unconfirmed")
+        await agent.claim(task_id, paths=["src/parser"], ttl_seconds=60.0)
+        grant = await confirmed(MessageType.CLAIM_GRANTED)
+        epoch = grant.get("epoch")
+        if grant.get("owner") != agent.name or type(epoch) is not int or epoch <= 0:
+            raise RuntimeError("invalid claim grant")
+        await agent.save_checkpoint(task_id, "step=2", epoch=epoch)
+        saved = await confirmed(MessageType.CHECKPOINT_SAVED)
+        version = saved.get("version")
+        if type(version) is not int or version <= 0:
+            raise RuntimeError("invalid checkpoint acknowledgement")
+        await agent.update_task(task_id, status="working", epoch=epoch, expected_version=version)
+        await confirmed(MessageType.TASK_UPDATED)
+        await agent.release(task_id, epoch=epoch)
+        await confirmed(MessageType.RELEASE_GRANTED)
+    finally:
+        connection.cancel()
+        await asyncio.gather(connection, return_exceptions=True)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-Pass `on_message_callback=` to `SynapseAgent(...)` to react to inbound frames
-(chat, task events, release grants). The full worked example — with an event
-callback that waits on checkpoint and release confirmations — is in the
-[quick start](quickstart.md).
+The callback matches this fresh task's replies. A refusal, disconnect or timeout
+aborts the sequence; reconcile uncertain outcomes before retrying. The example
+uses an open loopback hub and literal scope comparison. Configure token/signing
+for a protected hub and use Git-aware claims for canonical repository paths.
+It edits no file and supplies no verification receipt. The
+[quick start](quickstart.md#coordinate-from-code) runs the same confirmed loop.
 
 Each `connect()` call is one connection attempt that owns its state. When the
 attempt ends — the hub closed the socket, the network dropped, or the callback
@@ -81,13 +121,17 @@ own diagnostic. Readiness is cleared when either connection attempt ends.
 Grouped by what they coordinate (all are `async` methods on `SynapseAgent`):
 
 - **Work claims** — `claim(task_id, paths=..., note=...)` and `release(task_id)`:
-  file-scope mutual exclusion, the one thing that gates a mutation.
+  requests for file-scope ownership and release. Await matched grants before
+  relying on ownership; these send helpers do not gate external file edits.
 - **Task lifecycle** — `update_task(task_id, status=...)` drives the typed task
   state on the shared blackboard.
 - **Checkpoints** — `save_checkpoint(task_id, data)` records resumable progress
-  that survives a restart.
+  that can be replayed after restart when retained in the configured durable
+  journal. The send helper alone does not confirm persistence.
 - **Messaging** — send to everyone, a named group (`A,B`), or one agent; an idle
-  agent catches up from its durable inbox on reconnect.
+  receiver configured for mailbox recovery can request retained pending messages
+  on reconnect. Ordinary `SynapseAgent` construction defaults to `mailbox=False`;
+  retention and quotas still bound recovery.
 
 For the exact signatures of every method, read the generated reference below.
 
@@ -171,6 +215,7 @@ async def start_embedded_hub() -> None:
     finally:
         server.cancel()
         await asyncio.gather(server, return_exceptions=True)
+        hub.close()
 ```
 
 `bound_address` is `None` before the bind and after shutdown. A failed bind
@@ -180,9 +225,10 @@ unblocks the readiness waiter without publishing a false address.
 
 The remaining exports fall into a few families you reach for as needed:
 
-- **Model workers** — `SynapseLLMWorker`, `OpenAIChatClient`, `TieredChatClient`,
-  and the offline `RuleBasedClient` let agents reply on-channel through any
-  OpenAI-compatible endpoint with a deterministic fallback.
+- **Model workers** — `SynapseLLMWorker`, `OpenAIChatClient` and `TieredChatClient`
+  let configured workers reply on-channel through a compatible endpoint.
+  `RuleBasedClient` is a separately selected deterministic offline backend,
+  not an automatic fallback for every provider failure.
 - **Team helpers** — `plan_team(...)` / `run_team(...)` script a small fleet.
 - **Coordination primitives** — `Blackboard`, `EventStore`, `TaskClaim`,
   `TaskStatus`, `MessageType`, and the `*Config` types.
@@ -210,6 +256,12 @@ implementations below; the facade retains the same signatures and runtime
 docstrings. These classes organise the reference and share an existing owner
 connection rather than opening independent stores.
 
+`EventStore.event_metrics(window_seconds)` aggregates retained counts and time
+bounds through that store's selected plaintext or SQLCipher connection without
+decoding event bodies. Named windows are measured from the log's final timestamp.
+The result describes stored metadata; it does not authenticate payloads or prove
+that a vendor processed them.
+
 ::: synapse_channel.core.persistence_events.EventWriter
     options:
       members: [append_batch, pending_aef_events, mark_aef_delivered, aef_delivery]
@@ -217,7 +269,7 @@ connection rather than opening independent stores.
 
 ::: synapse_channel.core.persistence_event_reads.EventReader
     options:
-      members: [iter_events, read_since, read_window, corrupt_rows, count, max_seq, latest_at_or_before]
+      members: [iter_events, read_since, read_window, corrupt_rows, count, event_metrics, max_seq, latest_at_or_before]
       show_source: false
 
 ::: synapse_channel.core.persistence_event_authentication.EventAuthentication
@@ -440,8 +492,10 @@ vocabulary, CLI flags and package exports remain unchanged.
 `a2a_http.build_a2a_handler`, `dashboard.start_dashboard_server` and
 `agent_tmux.inject_wake` remain the entry points for callers. Each server binds
 its own bridge or dashboard readers; request-time snapshot collection retains
-the facade's current async collector. HTTP admission and operator permissions
-are checked before page or live-stream preparation.
+the facade's current async collector. HTTP capacity admission precedes request
+work. Protected dashboard pages and feeds check the configured principal grants;
+the built React cockpit's static bootstrap shell and assets have their separate
+public route. Loading that shell grants no access to protected live data.
 
 The A2A handler owns the existing body-size cap, read deadline, JSON decoding
 and authored error responses. Its route owner retains version negotiation and
@@ -497,11 +551,17 @@ executable fingerprint; inventory display uses the declared fingerprint.
 
 ## Launch records
 
-`synapse worker-session` keeps a record of each provider it starts: which
-file the command named and the digest of its bytes, which process was created
-with its start identity, and the image that process runs. On POSIX, a launch
+`synapse worker-session` keeps a record for each provider command it starts:
+the first executable candidate found by `shutil.which` and the digest of its
+bytes, the created process with its start identity, and its observed image.
+The `executable` field is a lookup candidate, not proof of the file accepted
+by the system. A direct POSIX launch can reject an executable-bit file with
+an invalid format and start a later PATH candidate. Lookup and hashing happen
+after launch and do not prevent replacement. For a script, the process image
+may identify its interpreter without identifying the script that it read.
+On POSIX, a launch
 environment without `PATH` resolves the command using the default executable
-search path, matching a direct process start; it does
+search path used for a direct process start; it does
 not inherit the launcher's `PATH` for the record. `run_worker_session(cwd=...)`
 sets the provider working directory in both direct and tmux modes. The new
 optional keyword-only `cwd` on `executable_identity` and `make_record` resolves

@@ -32,6 +32,10 @@ source.
 `python tools/invariant_conformance.py --check` validates the schema, exact six-row
 set, cited invariant identifiers, public evidence paths, and generated output.
 This freshness check runs before commit and in reserved release preflight.
+It does not execute the cited tests or qualify a new source or package artifact.
+The row statuses describe the registry's named guarantees and limitations;
+qualification of a build also needs its exact source/package identity and
+recorded results for the applicable evidence profiles.
 `--enforce` is intentionally red until every row is truthfully conformant; it
 prints every incomplete boundary and exits non-zero.
 

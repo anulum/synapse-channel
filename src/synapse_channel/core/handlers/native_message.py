@@ -5,13 +5,15 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — durable record-only ingestion of native vendor messages
-"""Journal the record of a message that travelled over a vendor's own channel.
+"""Journal admitted recorder declarations about native vendor messages.
 
 The handler stores one ``native_message`` event and answers the recorder. It
 delivers nothing: no mailbox entry, no delivery receipt, no wake. The hub
 stamps who recorded it, when, and how that name was bound to the connection,
 so a reader can weigh a record from an open loopback hub differently from one
-written under a credential.
+written under a credential. The metadata and reported outcome remain supplied
+by the recorder; admission does not independently witness a vendor send or
+recipient processing.
 """
 
 from __future__ import annotations

@@ -29,13 +29,15 @@ This installs the `synapse` console command and the `synapse_channel` package.
 
 ## Published-wheel integrity
 
-The release workflow installs the exact built wheel in a clean environment
+The release workflow defines a gate that installs the exact built wheel in a clean environment
 before publication. It compares the installed console-script metadata with
 `pyproject.toml`, requires every generated wrapper, loads every declared
 callable, and refuses any `synapse_channel` module that resolves outside the
 clean environment's site-packages tree. This covers all 13 commands, including
 the short `syn`, `syn-*`, `synapse`, and `synapse-channel` entry points; checking
-only `synapse --help` would not detect an omitted alias module.
+only `synapse --help` would not detect an omitted alias module. The workflow
+definition alone is not an executed qualification: retain the exact wheel
+digest and successful matching run before claiming that artifact passed.
 
 ## Optional extras
 
@@ -75,7 +77,7 @@ parser at runtime.
 ## Usage profiles and activation
 
 The base package is the default. Profiles are measurable discovery and
-installation envelopes, not global switches: every command remains available,
+installation envelopes, not global switches: commands remain discoverable,
 and no optional process or trust boundary activates merely because its
 dependency is installed.
 
@@ -156,8 +158,9 @@ for newer releases, opt in explicitly:
 SYNAPSE_UPDATE_CHECK=1 synapse --version
 ```
 
-The opt-in check queries PyPI at most once a day and appends a one-line notice
-when a newer release is available:
+The opt-in check reuses a successful cached result for 24 hours and appends a
+one-line notice when its known version is newer. An absent or stale cache can
+cause a fetch on each invocation:
 
 ```text
 synapse-channel 0.31.0
@@ -165,8 +168,11 @@ synapse-channel 0.31.0
     (unset SYNAPSE_UPDATE_CHECK or set SYNAPSE_NO_UPDATE_CHECK=1 to silence)
 ```
 
-The check is best-effort: it never blocks the command, is silent when offline, and
-is disabled unless `SYNAPSE_UPDATE_CHECK=1` is present. Each release is also
+The opt-in check runs synchronously and can delay `--version`; its HTTP socket
+timeout is two seconds, not a hard bound on DNS or the whole command. A failed
+fetch may use a stale cached version, so it need not be silent while offline.
+The check is disabled unless `SYNAPSE_UPDATE_CHECK` is nonempty; a nonempty
+`SYNAPSE_NO_UPDATE_CHECK` suppresses it. Releases are
 published on the [GitHub releases](https://github.com/anulum/synapse-channel/releases)
 page with notes from the changelog — watch the repository (**Watch → Custom →
 Releases**) to be notified of every update.

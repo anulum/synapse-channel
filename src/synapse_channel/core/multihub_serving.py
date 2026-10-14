@@ -104,6 +104,7 @@ class MultiHubServingGrant:
         The peer's trust-domain id, looked up in both the federation and mutual-TLS bundles.
     namespace : str
         The local namespace whose log the peer may pull; the peering must grant it.
+        This authorises entry to the retained log export, not per-event filtering.
     signing_key_id : str
         The peer's event-signing key id, which both bundles must accept.
     identity_key_id : str or None
@@ -145,7 +146,7 @@ class MultiHubServingPolicy:
         a hub never treats a connection as identity-proven.
     signature_ok : bool
         Forwarded to :func:`authorise_multihub_peer`. Defaults to ``True``; the
-        connection-establishment gate does not require per-event signing.
+        connection-establishment gate does not independently verify event signatures.
     acl_ok : bool
         Forwarded to :func:`authorise_multihub_peer`. Defaults to ``True``.
     """

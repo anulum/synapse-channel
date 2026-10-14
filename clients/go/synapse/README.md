@@ -24,12 +24,16 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	synapse "github.com/anulum/synapse-channel/clients/go/synapse"
 )
 
 func main() {
-	client, err := synapse.NewClient("http://127.0.0.1:8765")
+	client, err := synapse.NewClient(
+		"http://127.0.0.1:8765",
+		synapse.WithBearerToken(os.Getenv("DASHBOARD_TOKEN")),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -43,12 +47,14 @@ func main() {
 }
 ```
 
-Use `WithBearerToken` when the HTTP surface requires a bearer token:
+The dashboard requires its bearer on loopback too. Set `DASHBOARD_TOKEN` from
+the operator-managed token or the dashboard's generated startup token. For
+other HTTP surfaces, use `WithBearerToken` when their contract requires it:
 
 ```go
 client, err := synapse.NewClient(
 	"http://127.0.0.1:8765",
-	synapse.WithBearerToken("secret"),
+	synapse.WithBearerToken(os.Getenv("DASHBOARD_TOKEN")),
 )
 ```
 

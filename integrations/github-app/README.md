@@ -22,8 +22,8 @@ register, host, deploy, or persist an App. It also decodes signed review and
 inline-comment webhooks for the [owner-local review feedback workflow](../../docs/review-feedback.md).
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) before integrating it. The document is
-the contract: GitHub concerns stay here, the local core stays single-dependency,
-and every result remains advisory.
+the contract: GitHub concerns stay in this separately installed integration,
+the core's base dependency set is unchanged, and every result remains advisory.
 
 ## Render the least-privilege manifest
 

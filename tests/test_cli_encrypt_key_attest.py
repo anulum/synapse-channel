@@ -77,6 +77,38 @@ def test_public_attest_cli_refuses_bad_policy_and_existing_destination(
     assert "refusing to overwrite" in capsys.readouterr().out
 
 
+def test_public_attest_cli_reports_software_scope_on_repeated_verification(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A policy-copied statement verifies repeatedly without claiming hardware or freshness."""
+    policy = tmp_path / "policy.json"
+    evidence = tmp_path / "evidence.json"
+    digest = hashlib.sha256(b"operator-declared-value").hexdigest()
+    assert (
+        cli.main(
+            [
+                "encrypt-key",
+                "attest-policy-create",
+                "--policy-id",
+                "operator-statement",
+                "--pcr",
+                f"0={digest}",
+                str(policy),
+            ]
+        )
+        == 0
+    )
+    assert cli.main(["encrypt-key", "attest-create", "--policy", str(policy), str(evidence)]) == 0
+    capsys.readouterr()
+    verify = ["encrypt-key", "attest-verify", "--policy", str(policy), "--evidence", str(evidence)]
+    for _ in range(2):
+        assert cli.main(verify) == 0
+        output = capsys.readouterr().out
+        assert "software attestation ok: policy=operator-statement" in output
+        assert "verified operator HMAC statement only" in output
+        assert "hardware quote and freshness not verified" in output
+
+
 def test_public_attest_cli_rejects_wrong_measurement_and_missing_custody(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -25,7 +25,7 @@ coordination layer rather than a scheduler that owns the agents.
 Air traffic control here means five repeating steps, each backed by a shipped or
 designed Synapse surface:
 
-1. **Separation** — refuse overlapping live work authority. File-scope claims and
+1. **Separation** — refuse conflicting declared work scopes held by another owner. File-scope claims and
    semantic claims lease a unit of work (paths, symbols, APIs, tests, generated
    artefacts) with an epoch and a checkpoint, so a second conflicting claim is
    refused. Supported provider hooks can separately deny covered edits before
@@ -37,7 +37,7 @@ designed Synapse surface:
    they land. Cross-branch claim overlap and historical path conflicts are
    computed read-only. *(Shipped: `synapse conflicts`, `synapse event-query
    "conflicts at seq|time"`.)*
-3. **Evidence-gated completion** — let work close only against declared evidence.
+3. **Evidence-gated completion** — record declared evidence alongside closeout.
    Release receipts carry bounded evidence, artefacts, known failures, and an
    epistemic status; an advisory policy check evaluates them. The multi-seat
    **default closeout story** is `synapse verify-release` → receipt JSON →
@@ -49,39 +49,45 @@ designed Synapse surface:
    Replayable postmortems and evidence-only reliability memory turn the event
    store into an audit trail. *(Shipped: `synapse postmortem`, `synapse
    reliability`, `synapse event-query`, `synapse accounting`.)*
-5. **Memory** — feed the durable record to a persistent-memory layer so the
-   fleet learns across sessions. *(Shipped seam: `synapse ingest` feeds the
-   [REMANENTIA](https://github.com/anulum/synapse-channel) read-side via
-   `MEMORY_KINDS` and a persisted cursor; compaction never prunes past an
-   unconsumed cursor.)*
+5. **Memory** — export retained durable records for a persistent-memory consumer.
+   *(Shipped seam: `synapse ingest --memory` prints `MEMORY_KINDS` records and
+   can persist the last printed cursor. It does not acknowledge downstream
+   ingestion or make a memory service learn. Compaction honours a caller-supplied
+   floor; the operator must keep it at or below every consumer's durably ingested
+   cursor. Neither command discovers consumers or verifies that progress.)*
 
-Each step is read-only or advisory except separation: only claims actually gate a
-mutation. Everything else informs a human or a policy layer; nothing in ATC
-seizes control of an agent.
+Claims admit declared scopes; covered hooks and Git checks can separately refuse
+covered mutations. Other verbs have their own effects and admission controls,
+including identity/ACL and explicitly enabled policy gates. This architecture
+adds no separate process that takes control of an agent.
 
 ## Controller surfaces
 
 The "controller" is distributed across surfaces that already exist:
 
 - **The hub** is the single source of truth for presence, claims, the plan,
-  chat, capabilities, and the durable event log.
-- **Claims and leases** provide separation with scope, epoch, and checkpoint.
+  chat, capabilities and, when configured, the admitted durable journal.
+- **Claims and leases** separate conflicting declared authority through scope,
+  epoch and checkpoint; covered mutation hooks have their own boundaries.
 - **The blackboard** holds the shared plan, progress, and handoffs.
 - **Capability cards and routing** recommend which agent should take a task.
-- **The read-side reports** (`conflicts`, `event-query`, `postmortem`,
+- **The operator reports and controls** (`conflicts`, `event-query`, `postmortem`,
   `reliability`, `accounting`, `dashboard`) are the radar and the flight
   recorder.
-- **Receipts, policy-check, and approval** are the evidence gate.
-- **The ingest seam** exports the record to persistent memory.
+- **Receipts, policy-check, and approval** record and evaluate declared evidence;
+  explicit policy and admission settings determine which checks gate an action.
+- **The ingest seam** prints retained events for a consumer. Import into persistent
+  memory and acknowledgement of that import remain the consumer's responsibility.
 
-A live, read-only [fleet cockpit dashboard](cli.md) renders the current picture —
-who is online, what is claimed, what conflicts, what is progressing — without
-mutating anything.
+A live [dashboard](cockpit.md) renders who is online, what is claimed, what
+conflicts and what is progressing. Inspection and enabled operator controls are
+distinct: consult each control's effects and permissions before invoking it.
 
 ## Evidence-gated completion
 
-ATC's completion rule is deliberately advisory, not enforced: a task closes when
-its owner releases it with a receipt, and a policy check reports whether the
+The recommended closeout attaches a receipt to the owner's release. Receipts
+are optional unless the operator enables a policy that requires them. A policy
+check reports whether the
 declared evidence satisfies a policy — required tests, strict typing, owner
 approval, evidence freshness, claim coverage, generated-artefact parity, and
 known-failure acknowledgement. The gate documents and surfaces; it does not
@@ -105,16 +111,16 @@ Agent Air Traffic Control is an **architecture and a naming**, not a new runtime
 component, and it makes no control claim beyond what its parts already enforce.
 
 - It is **not a scheduler or orchestrator**: it does not assign, start, stop, or
-  preempt agents. Agents coordinate voluntarily through the hub; only a claim
-  gates a mutation, and only by refusing an overlapping claim.
+  preempt agents. Claims coordinate declared scopes; host edits and external
+  effects require the corresponding covered hooks and explicit execution controls.
 - It does **not** add a new monolithic controller. The control loop is the
   existing distributed surfaces; there is no single process that owns the fleet.
 - Its completion gate is **advisory**: receipts and policy-check document and
   surface evidence; they do not certify sufficiency, block merges, or replace
   code review.
-- It does **not** weaken the local-first default: every ATC surface is read-only
-  or advisory except claims, and the whole loop runs on one local machine with no
-  required cloud service.
+- It does **not** weaken the local-first default: the loop can run on one local
+  machine without a required cloud service. Local verbs still have their own
+  mutation, persistence and permission boundaries.
 - "Radar" and "flight recorder" are **audit signals**, not predictions of intent
   or proof that a merge is safe.
 

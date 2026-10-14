@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — opt-in ready-task dispatcher client
-"""Opt-in dispatcher: nudge project seats about ready board tasks, exactly once.
+"""Opt-in dispatcher: nudge ready board tasks with recorded, bounded retries.
 
 The worker polls the hub's board/state/manifest/who snapshots, computes a
 deterministic plan with :mod:`synapse_channel.core.ready_dispatch`, and for
@@ -23,12 +23,14 @@ id (the multi-dispatcher guard). It never claims real tasks, releases,
 hands off, locks, approves, or broadcasts. The woken agent claims the task
 and updates its status itself.
 
-Exactly-once across crashes: an append-only outbox (JSONL) records every
-assignment intent before the first send. On startup the worker reconciles
-pending intents against live board state — claimed tasks are marked
-delivered, vanished/re-owned tasks conflicted, and unanswered ones retried
-with the SAME idempotency key (hub-side dedupe replays rather than
-duplicates), bounded by ``max_attempts``.
+An append-only outbox (JSONL) records assignment intents before sending. On
+startup the worker reconciles retained intents against live board state:
+claimed tasks are labelled delivered, vanished/re-owned tasks conflicted,
+and unanswered ones retried with the same diagnostic ``idem_key``, bounded
+by ``max_attempts``. That field does not activate chat retry deduplication,
+which uses ``client_msg_id``. Outbox writes are not explicitly fsynced;
+storage loss, uncertain sends and repeated wakes remain possible. Neither
+an outbox state nor a socket send proves provider processing.
 """
 
 from __future__ import annotations
@@ -92,11 +94,11 @@ class OutboxIntent:
 
 
 class DispatchOutbox:
-    """Append-only JSONL record of dispatch intents (crash-safe exactly-once).
+    """Append-only JSONL record of dispatch intents and attempted sends.
 
-    State transitions are appended as events; the current state of an intent
-    is the replay of its event log, so a crash mid-send never loses which
-    idempotency keys were already used.
+    Retained events reconstruct intent state after a worker restart. Writes
+    are closed without an explicit fsync, and a send can precede its attempt
+    update; this is neither a durable delivery receipt nor exactly-once work.
     """
 
     def __init__(self, path: Path) -> None:
@@ -204,7 +206,7 @@ class DispatchOutbox:
 
 
 class DispatcherWorker:
-    """Poll snapshots and dispatch ready tasks for one project, exactly once.
+    """Poll snapshots and dispatch ready tasks for one project with bounded retries.
 
     Parameters
     ----------
@@ -483,7 +485,7 @@ class DispatcherWorker:
     async def _reconcile(
         self, agent: SynapseAgent, tasks: list[Any], claims: list[Mapping[str, Any]], now: float
     ) -> None:
-        """Resolve pending intents against live board state (exactly-once)."""
+        """Reconcile retained intents with board claims and bounded wake retries."""
         claimed = {claim["task_id"] for claim in claims}
         board_state = {
             str(task.get("task_id")): task

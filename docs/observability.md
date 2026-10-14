@@ -13,7 +13,9 @@ Two planes, deliberately separate:
   connection gauges and monotonic decision counters (claims granted and
   denied, releases, directed and broadcast chat, auth failures, rate-limit
   rejections, federation denials, waiter takeovers and quarantines, the
-  dead-letter ledger). Scrape-safe: reading it does no I/O. Counters reset
+  dead-letter ledger). A scrape reads in-memory state and queries aggregate
+  counts in the durable cross-hub forward outbox; it is not an I/O-free snapshot
+  or a guarantee of bounded query latency. Counters reset
   with the process — Prometheus `rate()`/`increase()` expect exactly that.
   The `synapse_journal_corrupt_rows` gauge is the exception that describes
   startup recovery state: non-zero makes `/health` report `degraded` and the hub
@@ -27,13 +29,11 @@ Two planes, deliberately separate:
 
 ## Five minutes to a working dashboard
 
-1. **Expose the metrics.** Start the hub with `--metrics` (and, off
-   loopback, `--metrics-token`):
+1. **Expose the metrics.** Start the hub with `--metrics` and an owner-only
+   metrics-token file (also required off loopback):
 
    ```bash
-   synapse hub --metrics --metrics-token "$(cat ~/.synapse-metrics-token)"
-   curl -H "Authorization: Bearer $(cat ~/.synapse-metrics-token)" \
-     http://localhost:8876/metrics | head
+   synapse hub --metrics --metrics-token-file ~/.synapse-metrics-token
    ```
 
 2. **Scrape.** Merge
@@ -164,8 +164,10 @@ Coordination causality exports to OpenTelemetry independently of this
 page: `synapse causality otel --out spans.json` writes span records with
 deterministic ids, `--endpoint` pushes OTLP/HTTP to a collector, and
 `--watch` keeps the projection live. See the CLI reference — that surface
-reads the durable log, so it belongs to the analytics plane and works
-with the hub down.
+reads the retained durable log, so it belongs to the analytics plane and works
+with the hub down. Stable trace/span ids support correlation; they do not enforce
+collector deduplication, eventual storage or provider processing. Backend retention
+and duplicate handling must be qualified for the selected observability system.
 
 ## One fleet scorecard
 

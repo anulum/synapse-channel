@@ -16,9 +16,9 @@ hub is the authoritative source of truth for presence, work claims, chat, task
 status, the shared plan, agent capabilities, and resource offers, so concurrent
 workers can see conflicting or duplicate declared work. Around that core the package has
 grown deliberate layers — durable messaging, identity and ownership, federation
-between hubs, interop bridges, and operator surfaces — each opt-in where it can
-be, and each degrading with a stated warning when its optional dependency is
-absent.
+between hubs, interop bridges, and operator surfaces. Optional features have
+their own dependency and configuration requirements; an unavailable dependency
+can refuse that feature without qualifying an unrelated path.
 
 ## Design principles
 
@@ -27,11 +27,11 @@ absent.
   instance, which keeps the routing logic deterministic and unit-testable.
   Multi-hub federation observes and merges append-only logs; it never
   arbitrates authority (see "Federation and multi-hub").
-- **Core transport-light; extras arm features.** The core runtime dependency is
-  `websockets`; everything else on the core paths is the standard library.
+- **Core transport-light; extras arm features.** Base runtime dependencies are
+  `websockets` and, on Python 3.10, `typing-extensions`.
   Heavier features are gated behind optional extras (`encryption`, `sqlcipher`,
-  `mcp`, `otel`, `wasm`, `tpm2`), and a missing extra degrades that feature
-  with a stated warning instead of crashing an unrelated path.
+  `mcp`, `otel`, `wasm`, `tpm2`); each entry point documents its missing-extra
+  diagnostic or refusal.
 - **Local-first, proportionate security.** The default posture is one operator
   on loopback. A bind off loopback without a connect token refuses to start
   (`guard_exposure` raises `InsecureBindError`); accepting that risk is an
@@ -41,10 +41,12 @@ absent.
   environment variable is never a silent identity source, a hub-side ownership
   lease survives reconnects, and installations with the `encryption` extra pin
   a zero-config machine key on first use (see "Identity and ownership").
-- **Correctness before features.** Two layers are non-negotiable: durability (a
-  hub restart must not wipe live leases) and reconnect-safety (a reconnected
-  agent must not double-apply a claim, and a directed message is not consumed
-  by a receiver that will never surface it).
+- **Correctness before features.** A configured, healthy journal replays retained
+  supported events with the matching integrity and encryption material; leases
+  can expire during downtime. Without a journal, a new hub starts empty.
+  Reconnect safety depends on the operation's retry protocol and an authorised
+  mailbox reader retaining its cursor. A transport acknowledgement does not
+  prove that an agent model processed a message or completed an external effect.
 - **Single responsibility per module.** The package is composed of a few
   hundred small modules, each owning one concern and carrying its own test
   surface.
@@ -60,7 +62,7 @@ representative modules, not every file.
 | Hub composition | `core/hub`, `core/handlers/*`, `core/hub_connection`, `core/hub_ingress`, `core/hub_frame_pipeline`, `core/hub_frame_registration`, `core/hub_frame_gates`, `core/hub_exposure`, `core/hub_http`, `core/hub_identity_gate` | The routing facade with explicit frame admission, registration effects, ordered gates and per-verb dispatch. |
 | Client | `client/agent` with its dispatch and outbound mixins, `client/launcher`, `client/llm_worker`, `client/supervisor` | The reusable async agent and its coordination verbs, one-command startup, an on-channel LLM worker, an LLM-free watcher that re-offers stalled tasks. |
 | Identity and ownership | `core/auth`, `core/message_auth`, `core/identity_keys`, `machine_identity`, `core/identity_pins`, `core/name_ownership`, `core/acl*`, `core/policy_engine`, `core/trust_graph` | Shared-token admission, per-message Ed25519 authentication, the ownership lease, trust-on-first-use key pinning, deny-by-default ACL evaluation with opt-in enforcement, cross-agent trust edges. |
-| Durability and storage | `core/persistence`, `core/journal`, `core/idempotency`, `core/compaction`, `core/at_rest*`, `core/persistence_sqlcipher`, `core/merkle`, `core/receipts`, `core/universal_receipts` | The append-only SQLite event store (WAL), journal replay on restart, idempotent re-applied mutations, log compaction, at-rest payload encryption (file key, escrow, TPM 2.0, PKCS#11, cloud-HSM attestation), whole-database SQLCipher, Merkle audit paths, signed receipts. |
+| Durability and storage | `core/persistence`, `core/journal`, `core/idempotency`, `core/compaction`, `core/at_rest*`, `core/persistence_sqlcipher`, `core/merkle`, `core/receipts`, `core/universal_receipts` | The append-only SQLite event store (WAL), journal replay on restart, idempotent re-applied mutations, log compaction, at-rest payload encryption (file key, escrow and separately qualified TPM 2.0 / AES-key-wrap PKCS#11 / cloud-provider interfaces), operator HMAC statement verification without hardware-quote or freshness assurance, whole-database SQLCipher, Merkle audit paths, signed receipts. |
 | Messaging reliability | `ack`, `mailbox_cursor`, `core/delivery_receipts`, `core/pending_receipts`, `core/dead_letters`, `core/dead_letter_*` | Directed-message acknowledgement, durable mailbox replay across reconnects, delivery receipts, dead-letter capture with escalation and forwarding. |
 | Federation and multi-hub | `core/multihub_merge`, `core/multihub_fold`, `core/multihub_follower`, `core/multihub_watch`, `core/federation*`, `core/causality*` | Read-only followers over the event-store seam, a conflict-free grow-only union of several hubs' logs, deny-by-default federation policy composed with mTLS, causality queries over the merged order. |
 | Interop and surfaces | `cli_*` (the `synapse` command), `a2a_*`, `mcp/`, `dashboard_*`, `agent_tmux`, `codex_tmux`, `git/`, `cli_arm*` | Some ninety CLI verb modules, the Agent-to-Agent HTTP bridge, the MCP server, the operator dashboard and cockpit, tmux drivers for terminal fleets, git claim helpers, the permanent systemd waiter. |
@@ -191,11 +193,13 @@ and deny-by-default ACL enforcement (`--require-acl`). See
 With `--db`, the hub is backed by an append-only SQLite event log in WAL mode.
 Every claim, release, task update, handoff, checkpoint, resource offer, ledger
 change, and chat message is recorded, and the hub rebuilds its state by replaying
-the log on start-up. The guarantee is split honestly by workload: the lease/claim
-path commits at `synchronous=FULL` (durable across an OS crash); the high-volume
-chat and progress path commits at `synchronous=NORMAL` (durable across an
-application crash). At-rest payload encryption and whole-database SQLCipher are
-optional layers on the same store.
+retained supported events on start-up. The lease/claim path commits at
+`synchronous=FULL`; its power-failure durability relies on the host filesystem
+and storage honouring SQLite's synchronization requests. High-volume chat and
+progress use `synchronous=NORMAL`: an application crash retains committed rows,
+but an OS crash or power failure may lose recent commits. Replay also depends on
+retention, valid integrity/key material and lease expiry. At-rest payload
+encryption and whole-database SQLCipher are optional layers on the same store.
 
 `EventStore` retains its public signatures and record types while table families
 share one connection, lock and transaction owner:

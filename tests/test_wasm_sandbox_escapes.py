@@ -105,6 +105,29 @@ def test_a_wall_clock_runaway_is_interrupted() -> None:
 
 # -- host syscalls --------------------------------------------------------------
 
+
+def test_wasi_clock_is_available_without_a_manifest_clock_grant() -> None:
+    """Standard WASI imports expose clocks despite empty filesystem grants."""
+    module = wasmtime.wat2wasm(
+        '(module (import "wasi_snapshot_preview1" "clock_time_get" '
+        "(func $clock (param i32 i64 i32) (result i32))) "
+        '(memory (export "memory") 1) '
+        '(func (export "run") (result i32) '
+        "(i32.and (i32.eqz (call $clock (i32.const 0) (i64.const 0) (i32.const 0))) "
+        "(i64.gt_u (i64.load (i32.const 0)) (i64.const 0)))))"
+    )
+    manifest = CapabilityManifest(
+        tool_id="clock-scope",
+        content_digest=digest_bytes(module),
+        resources=ResourceGrant(memory_bytes=1 << 16, fuel=10_000, wall_clock_ms=2_000),
+    )
+    receipt = run_sandboxed(manifest, module, b"")
+
+    assert receipt["exit"] == EXIT_OK
+    assert receipt["output_digest"] == digest_bytes(b"1")
+    assert receipt["preopened_paths"] == []
+
+
 _HOST_SYSCALL = wasmtime.wat2wasm(
     '(module (import "env" "system" (func (param i32) (result i32)))'
     ' (func (export "run") (result i32) i32.const 0))'

@@ -87,5 +87,5 @@ account setup are separate decisions.
 
 The existing MCP Registry workflow and GitHub Action remain separate release
 checklist items. Their hosted publication, listing visibility and exact release
-artifact must be verified under C24/C25 after an authorised push; this local
-catalog does not establish those results.
+artifact must be checked against the corresponding published registry and Action
+records. This local catalog does not establish hosted publication or execution.

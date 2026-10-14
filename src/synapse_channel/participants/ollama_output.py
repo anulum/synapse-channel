@@ -15,8 +15,9 @@ exit code of zero means success, and a non-zero exit with empty stdout means the
 not be run.
 
 A local Ollama turn carries no provider session token (the ``run`` CLI is stateless between
-invocations), no disclosed rationale, and no monetary cost (the model runs locally), so those
-fields are empty or zero. Continuity for an Ollama participant therefore comes from the
+invocations), no disclosed rationale, and no monetary accounting in its plain-text
+reply, so those fields are empty or zero. Zero cost here is not proof of free
+resources or billing. Continuity for an Ollama participant therefore comes from the
 conversation's fenced context, not from provider-side memory. The result is normalised into
 the same :class:`~synapse_channel.participants.stream_json.StreamOutcome` the other parsers
 produce, so every provider feeds one envelope builder.
@@ -39,7 +40,7 @@ def parse_ollama_output(text: str) -> StreamOutcome:
     -------
     StreamOutcome
         ``answer`` is the stripped reply; ``rationale``, ``session_id`` and ``stop_reason``
-        are empty and ``cost_usd`` is ``0.0`` (a local turn has none of these). Empty output
+        are empty and ``cost_usd`` is ``0.0`` because this format reports none of them. Empty output
         is an error carrying :data:`~synapse_channel.participants.stream_json.NO_RESULT_SUBTYPE`,
         so a silent failure never reads as a blank answer.
     """

@@ -4,9 +4,11 @@ The vocabulary SYNAPSE uses, in one place. Terms cross-reference each other in *
 
 ### Hub
 
-The single `SynapseHub` process. It owns all shared state — the roster, **claim**s, the
-**blackboard**, **capability** cards, chat, and the **event log** — and relays every message to
-every connected client. It is the authoritative source of truth; there is one per channel.
+A `SynapseHub` process owns its roster, **claim**s, **blackboard**, **capability**
+cards, chat and configured **event log**. Delivery depends on message type,
+target, channel membership and the configured private-directed profile.
+Federated peers have their own state and explicit synchronization boundaries;
+one hub is authoritative for its own admitted operations.
 
 ### Agent
 
@@ -29,7 +31,7 @@ so work does not stick on an idle claim.
 
 A lease an **agent** takes on a unit of work before doing it, carrying a **scope**, a
 **status**, an **epoch**, and an optional **checkpoint**. The **hub** refuses a claim whose
-**scope** overlaps a live one. Provider hooks and the staged Git check separately
+**scope** conflicts with a live scope held by another owner. Provider hooks and the staged Git check separately
 enforce that authority on their documented mutation surfaces.
 
 ### Lease
@@ -40,15 +42,21 @@ the work for another agent.
 
 ### Scope
 
-The set of path globs a **claim** covers. Scopes are opaque strings the hub compares only for
-glob **overlap** — the hub never reads a filesystem, so a scope coordinates intent, not disk
+The declared literal file paths or directory prefixes a **claim** covers.
+Legacy requests use literal
+path comparison; Git-aware clients resolve local repository/path identities and
+send versioned canonical identity data for the hub to validate. The hub does
+not read the client's filesystem. Scope admission and configured mutation
+guards coordinate declared authority; a claim does not isolate arbitrary disk
 access.
 
 ### Epoch
 
-A monotonically increasing number on a **claim** that makes reconnect-safe idempotency
-possible: a stale, replayed operation carrying an old epoch is ignored, so a redelivered claim
-or release does not double-apply.
+A hub-issued, increasing lease generation. A mutation naming a stale epoch is
+refused; the strict fencing profile also refuses missing epochs. Epoch checks
+are separate from idempotency: supported operations with a retained idempotency
+key can replay their exact committed response, while conflicting reuse is
+refused. Neither mechanism fences an arbitrary external process or file write.
 
 ### Checkpoint
 
@@ -87,13 +95,15 @@ itself is between turns. Printed by `synapse who`.
 
 ### Wake / waiter
 
-A **waiter** is a one-shot `synapse wait` an **agent** arms in the background; it blocks until a
-message that should **wake** it arrives, then exits and re-invokes the agent. This is the
-event-driven alternative to polling.
+A **waiter** is a one-shot `synapse wait` an **agent** arms in the background.
+It waits for a qualifying message and exits. A separately configured harness
+must observe that exit and invoke the provider; waiting alone does not start
+a model turn. The process and connection still consume resources.
 
 An **active waker** is the supervised `agent-tmux` bridge installed by `synapse waker install`.
 It converts an exact directed wake into a fixed routing prompt in an already bound provider
-tmux pane. Its systemd service automatically recreates the bridge after exit or failure, while
+tmux pane. Its systemd service can recreate the bridge after exit or failure, subject
+to its configured start budget and host health, while
 the durable `inhibited` state lets the owning agent stop that exact bridge without stopping or
 restarting the provider terminal.
 
@@ -130,9 +140,12 @@ Streaming durable events from the **hub**'s **event log** since a sequence curso
 
 ### Event log
 
-The durable, append-only SQLite-WAL record of everything authoritative (claims, releases, plan
-writes, findings), enabled with `synapse hub --db …`. It is replayed on restart to resume state,
-applies the same blackboard retention and finding-quota counters, and is the spine for
+The configured SQLite-WAL journal of admitted durable operations (including
+claims, releases, plan writes and findings), enabled with `synapse hub --db …`.
+Retained, valid records are replayed on restart under the configured integrity,
+retention and lease rules. Compaction can remove eligible records; replay is
+not a promise that every chat or external effect survives every failure. It
+applies the blackboard retention and finding-quota counters and is the spine for
 **ingest**. Accepted recall and finding writes carrying a caller-retained idempotency key commit
 their event and exact response together; a failed finding append does not consume live quota.
 
@@ -154,10 +167,11 @@ candidate unanswered messages that mention the task id.
 
 Advisory local-first decision layer exposed by `synapse policy-check`. It
 evaluates release receipts and event-log evidence against configured rules such
-as required tests, strict type checking, owner approval, evidence freshness,
+as declared tests, strict type checking, owner approval, evidence freshness,
 generated-artifact parity, and no-merge-without-receipt. It reports a decision;
 it does not merge code or become a blocking gate unless an operator wires it
-into a hook or CI.
+into a hook or CI. Receipt rules inspect the supplied declarations; they do not
+rerun the checks or independently authenticate an approval.
 
 ### Identity and ACL
 
@@ -174,8 +188,9 @@ not replace per-message authentication or signed events.
 Shipped advisory runtime for tamper-evident capability advertisements. A signed
 capability card binds canonical card JSON, an Ed25519 card signature, key id, agent
 and project scope, manifest digest, sequence, validity window, expiry, and an
-explicit verification result. A separate trust bundle supplies rotation and
-revocation; bounded in-memory history reports replay and capability downgrade.
+explicit verification result. A separate loaded trust bundle supplies rotation and
+revocation state; changing its file does not hot-reload a running CLI hub.
+Bounded in-memory history reports replay and capability downgrade.
 Unsigned cards remain advisory discovery, and a valid result grants no authority.
 
 ### Paranoid mode
@@ -190,8 +205,10 @@ deployment evidence.
 ### At-rest encryption
 
 Shipped opt-in protection for local storage. `--db-key-file` enables SQLCipher
-page encryption for the live event store; AES-256-GCM whole-file envelopes cover
-relay logs, A2A state, cursors, archives, temporary files, and backups. Key
+page encryption for the live event store. Separate AES-256-GCM whole-file tools
+can envelope operator-selected files such as relay logs, A2A state, cursors,
+archives and backups; selecting a live DB key does not automatically encrypt
+all these surfaces or every temporary file. Key
 wrapping, rotation, backup recovery, escrow, and attestation tools are separate
 operator workflows. At-rest encryption does not protect hub RAM or create
 multi-tenant isolation.
@@ -226,9 +243,11 @@ Library/runtime primitives for authenticating selected coordination events and
 trusted multi-host peers. Signed events use Ed25519 over a canonical payload,
 key id, signed sequence metadata, timestamp window, replay protection, and an
 explicit verification result. Mutual-TLS contexts and operator-managed
-certificate-pin bundles protect configured peer paths. The packaged hub CLI does
-not yet load a signed-event trust bundle or client CA, so the complete operator
-profile remains staged.
+certificate-pin bundles protect configured peer paths. The packaged hub CLI
+loads a client CA through `--multihub-serving-policy` and requests optional
+client certificates; its serving policy checks the configured peer proof.
+It does not load an Ed25519 signed-event trust bundle, so the combined managed
+operator profile remains staged.
 
 ### Per-message authentication
 

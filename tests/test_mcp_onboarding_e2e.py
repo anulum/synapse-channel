@@ -5,13 +5,14 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — real stdio MCP onboarding journey
-"""Exercise F8 inbox/status discovery through the packaged stdio process."""
+"""Exercise inbox/status discovery and connection loss through the stdio process."""
 
 from __future__ import annotations
 
 import json
 import os
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
@@ -86,3 +87,40 @@ async def test_stdio_host_discovers_and_calls_inbox_and_status(tmp_path: Path) -
     assert status["mailbox_pending_available"] is True
     assert empty["messages"] == []
     assert cursor.stat().st_size > 0
+
+
+async def test_stdio_send_reports_connection_loss_as_an_error(tmp_path: Path) -> None:
+    """An actual stdio host cannot report a send after its hub has terminated."""
+    with ExitStack() as fixtures:
+        hub = fixtures.enter_context(isolated_hub(tmp_path))
+        params = mcp.StdioServerParameters(
+            command=sys.executable,
+            args=[
+                "-m",
+                "synapse_channel.cli",
+                "mcp",
+                "--uri",
+                hub.uri,
+                "--name",
+                IDENTITY,
+                "--request-timeout",
+                "0.25",
+            ],
+            env=dict(os.environ),
+        )
+        async with mcp_stdio.stdio_client(params) as (read, write):
+            async with mcp.ClientSession(read, write) as session:
+                await session.initialize()
+                sent = await session.call_tool(
+                    "synapse_send", {"target": "all", "message": "connected fixture"}
+                )
+                assert sent.isError is False
+                assert _text_payload(sent) == "sent to all"
+                fixtures.close()
+                unavailable = await session.call_tool("synapse_board", {})
+                assert _text_payload(unavailable) == "the hub did not return the board"
+                refused = await session.call_tool(
+                    "synapse_send", {"target": "all", "message": "disconnected fixture"}
+                )
+                assert refused.isError is True
+                assert "hub connection unavailable" in _text_payload(refused)

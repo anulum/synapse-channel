@@ -196,8 +196,10 @@ causality are separate feature chunks requested only when their tab becomes
 active. A localised live status occupies the existing tabpanel while a deferred
 chunk loads; the surrounding panel error boundary remains responsible for a
 failed import. This is behavioural code splitting, not a warning override: the
-production entry is 468.48 kB minified / 137.26 kB gzip, down from 530.11 kB /
-151.60 kB gzip, and no configured chunk-size threshold was raised.
+recorded comparison measured an entry of 468.48 kB minified / 137.26 kB gzip
+against 530.11 kB / 151.60 kB gzip before that change, without raising the
+configured chunk-size threshold. These are historical build measurements;
+measure the exact production artifact before claiming its current size.
 
 Tab focus and panel data routing are separate contracts. Arrow keys, Home, and
 End update the controlled tab and move focus without importing panel code;
@@ -207,9 +209,10 @@ lazy production chunks.
 
 ## Unlock a protected dashboard
 
-A loopback read-only dashboard can run without a browser bearer. A supplied
-`--dashboard-token`, a browser-principal policy, or a non-loopback bind protects
-the feeds. The cockpit shell then opens an unlock screen.
+Every dashboard live/page read requires a bearer, including read-only loopback
+operation. The CLI generates and prints one when no token or principal policy
+is supplied. The validated React shell is the static exception: it loads before
+authentication and displays an unlock screen; its feeds remain protected.
 
 Paste the bearer into that screen. The cockpit keeps it in the current tab's
 session storage. It does not put the bearer in the URL, local storage, logs,
@@ -292,7 +295,7 @@ hub.
 
 ## Prepare a local setup without browser-side mutation
 
-Choose **setup** in the HUD, or open it from the in-product guide. The first F8
+Choose **setup** in the HUD, or open it from the in-product guide. The current
 assistant is deliberately read-only. It does not execute a shell, start or
 change a service, create a token, inspect the host filesystem, or enable a
 network bind.
@@ -560,6 +563,15 @@ local draft.
 
 ## Read metrics, audit, and causality
 
+The roster's separately granted **Host sessions** view is Linux metadata
+observation through `/host-sessions.json`. It is distinct from the
+cost/turn/token feed `/sessions.json`. An operator/admin role alone does not
+grant disclosure; configure the owner-only host-observation policy described in
+[the client guide](../clients/cockpit/README.md#local-host-session-observation).
+PID/start-time and tmux assertions do not prove provider responsiveness or
+authorise a process action. This view does not report per-process CPU, RAM,
+swap or GPU usage, and adds no stop, restart or remote-compute control.
+
 - **metrics** reports event-log counts and bounded trailing windows. It is not
   the hub process-metrics endpoint.
 - **audit** keeps universal receipts and operator actions as separate feeds so
@@ -607,6 +619,13 @@ delivery.
 Under 640 pixels the deck becomes a segmented view: signals, claims, board,
 roster, and reliability. The activity spine stays visible. The built cockpit
 also ships an installable PWA shell.
+
+Service workers require a
+[secure browser context](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerContainer/register).
+Use trusted HTTPS for a phone reaching the tailnet endpoint, through an
+operator-configured gateway and admitted dashboard host. Plain HTTP on a remote
+Tailscale IP does not supply this browser requirement. The HTTP loopback
+exception applies to a browser on that same host.
 
 The service worker caches only token-free application assets. Authorised
 requests and JSON feeds bypass the cache, so an offline phone shows stale or

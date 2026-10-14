@@ -24,9 +24,10 @@ one hub's authority and a federation of observing hubs. It deliberately does not
 restate the identity, ACL, encryption, or interop layers, which have their own
 documents.
 
-The [delivery compatibility decision](protocol-compatibility-plan.md) is a
-reviewed prospective delta for later implementation. It does not add a current
-invariant or change the version-2 delivery guarantees below.
+The [wire and delivery compatibility guide](protocol-compatibility-plan.md)
+describes current feature floors and upgrade boundaries. Version-three delivery
+is an additional session-bound profile; it does not turn the version-two mailbox
+ACK guarantees below into task-outcome evidence.
 
 ## Conventions
 
@@ -48,9 +49,10 @@ a Hypothesis `RuleBasedStateMachine` that drives the real `SynapseState` through
 random claim/renew/release/handoff/update/checkpoint/expiry sequences and asserts
 the tagged invariants after **every** step. The drift guard
 `tests/test_coordination_spec.py`
-binds this document to the code: it fails if a normative constant here disagrees
-with the implementation, if a `Pinned by` test file is missing, or if a model
-invariant is undocumented.
+checks constants, cited test paths and model invariant identifiers: it fails
+if a normative constant here disagrees with the implementation, if a `Pinned by`
+test file is missing, or if a model invariant is undocumented. Those checks do
+not prove that every prose assertion or runtime boundary is exercised.
 
 All times are wall-clock seconds. "Live" means a claim whose
 `lease_expires_at` is strictly greater than the current time; a claim at or past
@@ -232,9 +234,11 @@ MUST fall back to the default rather than fail open into an unbounded lease.
 ### INV-LL-4 — same-owner renewal is free
 
 **Normative.** An owner renewing its own live claim (a same-owner, same-principal
-`claim`) MUST be admitted without a quota charge, even at the live-claim cap, and
-MUST extend the lease and stamp a fresh epoch. Renewal MUST NOT create a second
-hold on the task.
+`claim`) MUST be admitted without a quota charge, even at the live-claim cap,
+subject to the normal scope-conflict checks. It MUST set expiry to the current
+hub time plus the newly clamped TTL and stamp a fresh epoch. Requesting a shorter
+TTL can shorten the previous expiry; renewal does not promise a non-decreasing
+deadline. Renewal MUST NOT create a second hold on the task.
 
 **Implementation.** `core/state.py:SynapseState.claim` (`same_principal` bypasses
 the quota gate; the task's single entry is replaced in place).
@@ -425,8 +429,8 @@ cleared on `release`).
 
 ### INV-CR-4 — a contested namespace fails closed
 
-**Normative.** When two hubs both assert ownership of a namespace (a partition),
-the ownership resolver MUST contest and refuse every grant rather than allow a
+**Normative.** When the configured assertion feed reports two hubs owning a
+namespace (a known partition), the ownership resolver MUST contest and refuse every grant rather than allow a
 conflicting one. An ungoverned namespace (no assigned owner) MUST also grant
 nothing. (Cross-host safety is stated fully in §9.)
 
@@ -499,12 +503,17 @@ handlers, and `core/persistence.py:EventStore.commit_operation`.
 
 ### INV-DG-3 — a directed message dead-letters rather than vanishing
 
-**Normative.** A directed message that matches no live recipient MUST be recorded
-as a durable dead letter rather than silently dropped. A reconnecting recipient
-MUST be able to replay the directed backlog it missed, bounded by a monotonic
+**Normative.** A directed message that matches no consume-live recipient MUST
+be recorded in the bounded dead-letter diagnostic ledger. With a durable journal,
+its chat event MUST remain available for replay while retained. A reconnecting
+mailbox receiver MUST be able to request the retained directed backlog it missed,
+bounded by a monotonic
 receiver watermark it advances by acknowledging (`ack`) or by a registration
 `since_seq`. Presence MUST NOT be promoted to a positive delivery verdict, and
 the pending count is a transport fact, not proof a model read the message.
+Without a journal, restart persistence and durable mailbox watermarks are absent.
+Compaction and configured history/identity bounds still limit recovery; the
+diagnostic target count itself is process-local and bounded, not a durable queue.
 
 **Implementation.** `core/handlers/messaging.py` (dead-letter record),
 `core/mailbox_pending.py:MailboxPendingTracker` (monotonic watermark, replay,
@@ -556,7 +565,7 @@ poison ordering.
 
 ### INV-CK-2 — the signed-frame skew budget
 
-**Normative.** A signed (per-message-authenticated) frame carries a timestamp
+**Normative.** Under the default frame-authentication profile, a signed frame carries a timestamp
 that MUST fall inside the skew budget: no older than
 `DEFAULT_MESSAGE_AUTH_WINDOW_SECONDS` in the past and no more than
 `DEFAULT_MESSAGE_AUTH_FUTURE_SKEW_SECONDS` in the future, relative to the
@@ -570,7 +579,9 @@ monitor a clock-synchronization service (for example chrony,
 `systemd-timesyncd`, or another NTP implementation). The operational target MUST
 be tighter than the asymmetric `-10 s / +1 s` acceptance window, especially the
 one-second future allowance; the protocol budget is a rejection boundary, not a
-substitute for synchronized clocks. An operator that cannot prove a host's
+substitute for synchronized clocks. An embedded replay cache can set a different
+past/future window; an Ed25519 trust bundle uses its supplied cache. Record those
+effective values rather than infer them from the defaults. An operator that cannot prove a host's
 clock is synchronized SHOULD stop signed traffic from that host until the
 offset is corrected. Apply the same discipline to every hub in a multi-host or
 federated deployment because verification is relative to the receiving hub's
@@ -633,7 +644,9 @@ ownership map and no `--multihub-watch` peer — provide **no** cross-host mutua
 exclusion. Each such hub enforces only its own in-memory lease table; the same
 `task_id` and file scope MAY be claimed independently on each. Cross-host claim
 safety is present **only** when the operator has configured namespace ownership
-(and, for observation, watch peers). A deployment that needs cross-host mutual
+(and, for observation, watch peers). Ownership maps must agree between hubs;
+the watch feed cannot detect a conflicting peer that has never been observed.
+A deployment that needs cross-host mutual
 exclusion MUST configure ownership; it MUST NOT assume the single-hub invariants
 of §1 span an unconfigured federation.
 
@@ -761,4 +774,5 @@ defines a Hypothesis `RuleBasedStateMachine` that:
 Hypothesis searches for a sequence that breaks an invariant and shrinks any
 counterexample to a minimal reproducer. Each `@invariant` names the `INV-*`
 identifier it enforces, and the drift guard asserts every enforced identifier is
-documented here — so the model and this specification cannot drift apart.
+documented here. That guard checks identifier coverage and constants, not the
+semantic meaning of every sentence or every production boundary.

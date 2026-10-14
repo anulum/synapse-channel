@@ -37,10 +37,10 @@ continuous evidence loop:
 ```mermaid
 flowchart LR
     O["Human owner<br/>intent, policy, and release authority"]
-    D["DIRECTOR-AI<br/>decomposition and routing"]
-    C["DIRECTOR-CLASS-AI<br/>capability classification"]
+    D["DIRECTOR-AI<br/>response grounding"]
+    C["DIRECTOR-CLASS-AI<br/>action policy"]
     S["SYNAPSE CHANNEL<br/>claims, mailbox, plan, and receipts"]
-    F["SYNAPSE CHANNEL FLEET<br/>multi-seat and multi-host execution"]
+    F["SYNAPSE CHANNEL FLEET<br/>multi-host coordination operation"]
     W["Candidate change<br/>tests and evidence"]
     R["RIGOR-FOUNDRY<br/>verification and admission"]
     L["Accepted change<br/>with provenance"]
@@ -62,14 +62,16 @@ flowchart LR
 
 The intended responsibilities are deliberately separate:
 
-- **DIRECTOR-AI** turns owner intent into bounded work and routes it;
-  **DIRECTOR-CLASS-AI** supplies capability and role classification.
+- Configured owner/agent orchestration supplies work decomposition and routing.
+  **DIRECTOR-AI** checks response grounding;
+  **DIRECTOR-CLASS-AI** supplies action-policy control.
 - **SYNAPSE CHANNEL** coordinates identities, claims, tasks, handoffs, and
   receipts; **SYNAPSE CHANNEL FLEET** extends that coordination across seats,
   hosts, and model providers.
 - **RIGOR-FOUNDRY** admits or rejects candidate changes against explicit,
   reproducible gates. A model's confidence is not admission evidence.
-- **REMANENTIA** preserves bounded, attributable, verified context so later
+- **REMANENTIA** preserves bounded, attributable context with separate verification
+  requirements so later
   cycles can learn without treating every generated output as truth.
 - The **human owner** retains policy, release, and irreversible authority.
 
@@ -95,7 +97,7 @@ interfaces, maturity, and release commitments.
 - A typed task lifecycle and dependency-aware blackboard, append-only progress,
   atomic handoff, stalled-task supervision, resumable checkpoints, deadlock
   detection, and release receipts.
-- An append-only SQLite WAL event log with restart replay, idempotency keys,
+- A SQLite WAL event journal with admitted retained replay, supported idempotency keys,
   reconnect cursors, bounded histories and buffers, archive/compaction tools,
   and optional SQLCipher protection for the live store. See
   [at-rest encryption](docs/at-rest-encryption.md).
@@ -113,8 +115,9 @@ interfaces, maturity, and release commitments.
   matrix and reproducible validation receipts. This is partial validation, not
   external A2A certification. See
   [A2A conformance](docs/a2a-conformance.md).
-- Provider adapters and claim guards for Claude Code, Codex, Gemini CLI, Grok,
-  Kimi Code, and OpenCode.
+- Provider-specific adapters and guarded mutation paths. The covered hook
+  surfaces are Claude Code, Codex, Gemini CLI, Kimi Code and OpenCode;
+  configuration adapters are not universal write interception.
 - A pinned **OpenCode** integration plus ACP-driven real-client paths for Zed,
   JetBrains, Neovim, and Emacs. See the
   [OpenCode integration guide](docs/opencode.md).
@@ -213,8 +216,9 @@ dependencies, real boundary tests, and a reversible adoption path:
   credentials.
 - Managed workload identity such as OIDC or SPIFFE after demonstrated
   deployment demand.
-- End-to-end encrypted channels only after identity, key lifecycle, recovery,
-  and metadata-leakage contracts are independently validated.
+- Broader managed end-to-end encrypted-channel profiles after identity, key
+  lifecycle, recovery and metadata-leakage qualification. The existing opt-in
+  chat-payload encryption remains its narrower shipped surface.
 
 ## Explicit limits and non-goals
 

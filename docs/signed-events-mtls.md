@@ -17,9 +17,10 @@ tokens, file permissions, and operator trust remain the default posture, while
 embedded hubs can opt into Ed25519 event signatures and mTLS peer trust bundles
 for stricter deployments.
 
-The goal is narrow: make selected durable events tamper-evident and let
-operator-managed peers authenticate each other when a deployment intentionally
-spans more than one host. This design does not encrypt payloads, does not
+The runtime verifies signed frames at admission and lets operator-managed peers
+authenticate each other in the configured transport profile. Verification after
+storage requires retaining the complete signed frame; ordinary hub claim
+snapshots do not retain its signature. This design does not encrypt payloads, does not
 replace per-agent identity, and does not certify federation for untrusted
 organisations.
 
@@ -46,12 +47,34 @@ The implemented runtime covers these enforceable primitives:
   signing key scope, and peer revocation.
 
 The packaged `hub` CLI has no option that loads an
-`EventSignatureTrustBundle`, and it exposes server WSS but no client-CA option.
-Operators embedding the hub can enforce both primitives today. The separate
+`EventSignatureTrustBundle`. Its `--multihub-serving-policy` profile loads a
+client CA into native WSS and requests optional client certificates; the
+serving policy independently checks the configured peer identity proof.
+Ordinary clients may connect without a certificate. This is distinct from the
+library's `CERT_REQUIRED` mutual-TLS context and does not enable Ed25519 event
+verification. Operators embedding the hub can configure both primitives. The separate
 `synapse federation` commands manage operator-confirmed domain bundles and
 certificate pins; they do not silently install a signed-event trust bundle into
 the hub. Packaged loading, managed signing-key lifecycle, and incident-response
 workflow for this profile remain future work.
+
+### Stored and relayed records
+
+The embedded hub gate verifies selected incoming frames against its trust
+bundle. It does not turn every resulting journal row into that signed frame.
+For example, a granted claim is stored as a `TaskClaim` snapshot containing
+owner, scope, lease and version fields, without the incoming `signature`
+envelope. `verify_event_signature` cannot authenticate that snapshot as the
+original sender-signed frame; it reports `missing_signature`.
+
+An application that preserves the complete original signed frame can call the
+library verifier with explicit trust, time and replay context. Admission-window
+verification is not a general historical authenticity check: an expired frame
+is not `valid` under the current-time admission policy. A log export or relay
+does not restore fields already omitted from a snapshot. Row MACs, Merkle
+commitments and [native AEF receipts](aef-verification.md) are separate evidence
+mechanisms with their own keys and verification contracts. They do not recreate
+the omitted sender signature or prove that every decision was recorded.
 
 ## Event signature profile
 
@@ -158,9 +181,10 @@ bridges, or future relays. It should be opt-in and explicit:
 - Multi-host routing should refuse unknown peers by default and log the
   verification result for every accepted connection.
 
-mTLS authenticates the transport peer. Event signatures authenticate selected
-events across storage, relay logs, postmortems, and policy checks. They are
-related, but neither replaces the other.
+mTLS authenticates the configured transport peer. Event signatures verify a
+preserved signed frame under the supplied trust and replay context; they do not
+automatically authenticate projected journal rows, relay logs or postmortems.
+Neither mechanism replaces the other.
 
 Reverse proxies change this profile unless they preserve the TLS socket. Direct
 native WSS/mTLS and TCP/TLS passthrough keep the hub certificate as the pinned
@@ -201,23 +225,24 @@ Signed events and mTLS sit beside the other security designs:
 
 - [Paranoid mode](paranoid-mode.md) can report missing signature, trust bundle,
   and mTLS hooks before exposing a service.
-- [At-rest encryption](at-rest-encryption.md) protects local files; signed
-  events make selected records tamper-evident.
+- [At-rest encryption](at-rest-encryption.md) protects the documented persisted
+  bytes; event signatures detect changes to a preserved signed frame.
 - [End-to-end encrypted channels](end-to-end-encrypted-channels.md) hide
   selected payload bodies; signed events can authenticate their visible
   envelopes without decrypting them.
 - [Private channels](private-channels.md) scope the intended audience; signed
   events can bind channel ids and membership changes into the event signature.
-- [Per-message authentication](per-message-authentication.md) can reject bad
-  frames before hub admission; signed events verify selected records after
-  admission, storage, relay export, and postmortem reconstruction.
+- [Per-message authentication](per-message-authentication.md) and the embedded
+  signed-frame gate reject invalid protected frames before mutation. Later
+  verification requires the original signed envelope, which ordinary claim
+  snapshots omit.
 - [Per-agent identity and ACLs](identity-and-acl.md) are a separate runtime
   profile. A signature proves possession of an accepted event key; identity
   binding and policy still decide which named actor may perform each action.
 - [Signed capability cards](signed-capability-cards.md) remain a separate
   profile for discovery advertisements, manifest digests, expiry, and capability
-  downgrade diagnostics. Signed events verify durable records around those
-  advertisements after admission.
+  downgrade diagnostics. A card's signature follows that separate contract;
+  it does not authenticate every surrounding durable journal record.
 
 ## Boundaries
 

@@ -25,8 +25,7 @@ SYNAPSE CHANNEL — リポジトリ概要（日本語訳。英語原文が正本
 </p>
 
 <p align="center">
-  <strong>並列で動く AI コーディングエージェント同士がファイルを潰し合うのを止める。</strong><br>
-  ローカルファーストの調整バス — file-scope claims、共有プラン、永続的な leases — を、単一リポジトリにも、リポジトリのエコシステム全体にも。
+  <em>宣言したファイル範囲で並列 AI エージェントを調整します。フックと Git ゲートは文書化された変更範囲だけを対象にします。</em>
 </p>
 
 <p align="center">
@@ -48,28 +47,27 @@ SYNAPSE CHANNEL — リポジトリ概要（日本語訳。英語原文が正本
   <a href="https://doi.org/10.5281/zenodo.20801559"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.20801559.svg" alt="DOI"></a>
 </p>
 
-並列に働く AI エージェントのフリートのための、ローカルファーストな調整バス —
-単一リポジトリの中でも、リポジトリのエコシステム全体に広がっていても使えます。
-1 つの WebSocket ハブが **presence**、**work claims**、**チャット**、
-**タスク状態**、**resource offers** の共有された唯一の真実の源になります。
-エージェントはプロジェクトを越えて互いに呼びかけ、1 つのプランを共有し、
-file-scope claims が各リポジトリ内のエージェントを互いのファイルから遠ざけます。
+単一リポジトリやリポジトリのエコシステムで並列に働く AI エージェントのための、
+ローカルファーストな調整バスです。WebSocket ハブが **presence**、**work claims**、
+**チャット**、**タスク状態**、**resource offers** を共有します。エージェントは
+プロジェクトを越えて通信し、プランを共有します。ハブは、別の所有者が保持する
+宣言済み範囲と競合する claim を拒否します。プロバイダーフックと Git ゲートは、
+それぞれ文書化された変更範囲だけを対象にします。
 
-このバスはトランスポートが軽く（依存関係はただ 1 つ、`websockets`）、設計上
-ハブ中心（presence、leases、履歴を 1 か所が所有）で、すべてローカルマシン上で
-動きます。モデルワーカーは、ローカルの Ollama サーバーを含む任意の OpenAI
-互換エンドポイント経由でチャネル上に応答し、オフライン利用のための決定論的な
-ルールベースのフォールバックも備えています。
+基本依存関係は `websockets` と、Python 3.10 では `typing-extensions` です。
+ハブが presence、leases、履歴を管理し、バスはすべてローカルで実行できます。
+任意で使用するモデルワーカーは、ローカル Ollama を含む設定済みの OpenAI 互換
+エンドポイントを使用します。オフライン用の決定論的なルールベースの
+フォールバックもあります。
 
-**既存のエージェントは新しいコードなしで接続できます。** あらゆる Model
-Context Protocol ホスト — Claude Code、Claude Desktop、Cursor — は、同梱の
-`synapse mcp` サーバーを通じてバスに到達します。このサーバーは send、durable
-inbox、status、claim、release、handoff、task の各動詞を MCP ツールとして、
-さらに board、agents、resources を読み取り専用の MCP resources として公開
-します。A2A を話すエージェントは代わりに Agent Card フェイスから接続します。
-ハブ自体はプロトコルに依存せず、コアのインストールは単一依存のまま — MCP と
-A2A のアダプターはオプションのエクストラです（`pip install
-'synapse-channel[mcp]'`）。[MCP ガイド](../mcp.md)を参照してください。
+同梱の `synapse mcp` サーバーは send、durable inbox、status、claim、release、
+handoff、task を MCP ツールとして、board、agents、resources を読み取り専用
+MCP リソースとして公開します。相互運用性はホストのバージョン、トランスポート、
+設定に依存します。正確な対応範囲は[統合カタログ](../integration-catalog.md)を
+参照してください。A2A HTTP インターフェースの部分的な検証範囲は別途記載されています。
+アダプターは宣言済みの任意 extras（`pip install 'synapse-channel[mcp]'`）を
+使用します。[MCP ガイド](../mcp.md)と、別途検証された
+[認証付き HTTP プロファイル](../mcp-http.md)を参照してください。
 
 ```bash
 python -m pip install synapse-channel && synapse demo
@@ -141,10 +139,14 @@ graph LR
     H --> LOG["Event log (SQLite WAL)<br/>durable · optional SQLCipher at rest"]
 ```
 
-claim は file scope 付きで作業単位をリース（lease）するため、2 つの
-エージェントが同じファイルを編集することは決してありません。プラン、
-handoff、チェックポイント、ストール監視が作業を動かし続け、永続イベント
-ログのおかげで、ハブの再起動はライブな leases を失うのではなく再開します。
+claim は宣言された作業単位を file scope 付きでリースします。ハブは、
+別の所有者が保持する範囲と競合する宣言済みの範囲を拒否します。
+プロバイダーのフックとステージ済み Git 変更の検査が権限を強制するのは、
+文書化された対象操作だけです。すべてのファイル書き込みや外部への作用を
+隔離するものではありません。プラン、handoff、チェックポイント、
+ストール監視が調整を支援します。journal を設定した場合、再起動は検証済みの
+保持された記録から未失効の leases を復元します。失効、保持期間、
+整合性の問題による隔離は、復元できる範囲を制限します。
 
 ## コアとオプションのレイヤー
 
@@ -155,7 +157,7 @@ SYNAPSE CHANNEL は 1 つのインストール可能なパッケージとして�
 |---|---|---|
 | ローカル調整コア | `stable` | ハブ、send/wait/listen/arm、claims、tasks、locks、status、board、init、そして日常の調整に使うフリートのブートストラップコマンド。 |
 | エッジアダプター | `adapter` | MCP、A2A、git フック、tmux/プロバイダーのブリッジ、シェルフック、インジェスト、既存ツールをバスに接続する worker seats。 |
-| オペレーター分析 | `analysis` | Doctor、state、dashboard、causality、multihub、reliability、trust graph、directory、accounting、フリートスコアカードのエクスポート、マニフェスト、イベントクエリ。これらは調整状態を変更しません。明示的なエクスポートモードはオペレーターの選んだ出力先へ書き込めます。 |
+| オペレーター分析 | `analysis` | 診断、表示、レポートを中心とするコマンド群。明示的な操作モードは状態や設定を変更し、記録を保存またはエクスポートできます。各コマンドの作用と権限を確認してください。tier は読み取り専用を保証しません。 |
 | ガバナンスと完全性 | `governance` | policy チェック、承認、ACL/ロールのサーフェス、フェデレーション、Merkle roots、release receipts、再現、コンパクション、encrypt-key / SQLCipher の鍵操作。 |
 | ラボサーフェス | `experimental` | ベンチマーキング、participant fabric、route-task、sandbox、workflow、TTL advice、memory recall、auto-action、resource bidding。 |
 
@@ -231,8 +233,8 @@ exact-identity waiter だけをインストールできます。これは mailbo
 とおり、systemd 付きの WSL を使ってください。
 
 CLI には 2 つのオプションのシェル便利機能が付属します。`synapse completions
-bash|zsh|fish` はすべてのサブコマンドのタブ補完を出力し（ライブなパーサー
-から生成されるため決してドリフトしません）、`synapse install-shell-hook` は
+bash|zsh|fish` はトップレベルのコマンド、1 階層のサブコマンドとその長いオプションの静的補完を出力し（ライブなパーサー
+からインストール済みバージョンに合わせて生成され、更新後は再生成が必要です）、`synapse install-shell-hook` は
 新しいターミナルごとに wake リスナーを自動アームするガード付きブロックを
 追加します。
 

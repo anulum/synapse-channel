@@ -12,8 +12,9 @@ and the reference for the ``HEADLESS`` channel: the bus owns the invocation, spa
 ``claude -p … --output-format stream-json --verbose`` in non-interactive mode and reading
 its structured event stream rather than scraping a terminal. The turn's question is the
 provider's user prompt; the shared bus context — role, ground rules, and any fenced peer
-contributions — is injected through ``--append-system-prompt`` so peer-supplied text can
-never arrive as the operator's ask.
+contributions — is passed through ``--append-system-prompt`` rather than the
+operator's prompt argument. Fencing labels that text as untrusted data; its
+placement does not prove model resistance to prompt injection.
 
 The heavy logic lives in a synchronous, dependency-injected
 :meth:`HeadlessClaudeParticipant.run_turn` so it is hermetically testable with a fake

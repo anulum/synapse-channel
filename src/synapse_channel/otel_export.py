@@ -20,7 +20,9 @@ install raises a clear hint, the same pattern as the ``wasm`` extra.
 The push is fail-visible: the exporter's verdict is checked and a failed export
 raises instead of pretending success, and the exporter is always shut down. The
 endpoint is used verbatim — an OTLP/HTTP collector expects the full traces URL,
-typically ``http://host:4318/v1/traces``.
+typically ``http://host:4318/v1/traces``. Stable ids support correlation, but the
+exporter does not enforce collector deduplication or verify eventual storage.
+Repeated exports and uncertain responses can produce duplicate backend records.
 """
 
 from __future__ import annotations

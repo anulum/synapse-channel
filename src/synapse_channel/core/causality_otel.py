@@ -18,9 +18,12 @@ span in the other task's trace. "This claim proceeded because that release freed
 its paths" becomes a first-class link any trace viewer renders.
 
 The projection is **pure and deterministic**: ids are SHA-256 derivations of the
-task id and event sequence, so re-exporting the same log yields byte-identical
-records and cross-task links always resolve. This module imports nothing from
-OpenTelemetry — it emits plain span *records* (frozen dataclasses / JSON), which
+task id and event sequence, so re-exporting the same retained log with the same
+options yields matching records. Links identify other projected events; viewer
+resolution requires their export and retention in the backend. Ids do not include
+a hub identity, so separate journals need separate observability context. This
+module imports nothing from OpenTelemetry — it emits plain span *records*
+(frozen dataclasses / JSON), which
 :mod:`synapse_channel.otel_export` converts to SDK spans for a real OTLP push
 behind the optional ``[otel]`` extra. Same honest scope as the causality module:
 spans and links reflect *recorded* coordination events and relations, timestamps

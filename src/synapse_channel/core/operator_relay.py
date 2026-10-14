@@ -20,7 +20,8 @@ Two deny-by-default rules define what a relay permits:
   action not in it is refused, so a new relayable capability is a deliberate registry entry,
   never an accident of the wire format.
 * **an authorised relay is one every layer permits.** :func:`authorise_relay` allows a relay
-  only when the peer is a verified federated hub (mutual TLS + federation, checked by
+  only when the peer is a verified federated hub (live certificate or explicitly
+  enrolled registration identity, composed with federation and checked by
   :class:`~synapse_channel.core.multihub_serving.MultiHubServingPolicy`), the peering's bounded
   scope grants the action's verb in the target namespace, and — for a state-mutating action —
   this hub authoritatively owns that namespace. Any layer refusing refuses the relay.

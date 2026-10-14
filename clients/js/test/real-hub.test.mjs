@@ -114,6 +114,36 @@ test("SDK interoperates with an authenticated Python hub", { timeout: 25000 }, a
   ));
   assert.equal(nextInbox.inbox_page.available, true);
   assert.deepEqual(nextInbox.inbox_page.messages, []);
+  const streamId = "js-journal-stream";
+  const streamFrames = [
+    { frame_type: "open", text: "" },
+    { frame_type: "chunk", text: "first " },
+    { frame_type: "chunk", text: "second" },
+    { frame_type: "done", text: "" },
+  ];
+  const liveStream = [];
+  for (const [streamSeq, frame] of streamFrames.entries()) {
+    const received = await exchange(bob, MessageType.Chat, () => alice.send(
+      MessageType.Chat, { target: "js-bob", payload: frame.text, extra: {
+        kind: "stream", stream_id: streamId, stream_seq: streamSeq, seq: streamSeq, ...frame,
+      } },
+    ));
+    assert.equal(received.stream_seq, streamSeq);
+    assert.ok(Number.isInteger(received.seq) && received.seq > streamSeq);
+    assert.equal(received.stream_id, streamId);
+    liveStream.push(received);
+  }
+  const replayedStream = await exchange(bob, "history_snapshot", () => bob.send(
+    "history_request", { target: "System", extra: {
+      request_id: "js-stream-replay",
+      inbox_query: { version: 1, identity: "js-bob", hub_id: inbox.inbox_page.hub_id,
+        since_seq: liveStream[1].seq, limit: 2 },
+    } },
+  ));
+  assert.equal(replayedStream.inbox_page.available, true);
+  assert.deepEqual(replayedStream.inbox_page.messages.map((frame) => frame.stream_seq), [2, 3]);
+  assert.deepEqual(replayedStream.inbox_page.messages.map((frame) => frame.text), ["second", ""]);
+  assert.ok(replayedStream.inbox_page.messages.every((frame) => frame.seq > liveStream[1].seq));
   await exchange(alice, MessageType.ClaimGranted, () => alice.claim("alice-task", ["shared.py"]));
   await exchange(bob, MessageType.ClaimDenied, () => bob.claim("bob-task", ["shared.py"]));
   const releaseKey = "js-release-unique-operation";

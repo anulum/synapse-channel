@@ -12,7 +12,7 @@ The ``synapse`` command exposes these subcommands:
 * ``hub`` — run the coordination hub;
 * ``demo`` — run a self-contained first-run coordination demo;
 * ``quickstart-coding`` — create and run the coding-fleet first-run demo;
-* ``fleet-init`` — empty machine to working fleet in one command;
+* ``fleet-init`` — run local onboarding checks, scaffold, probes and a demo;
 * ``new`` — create runnable demo workspaces;
 * ``worker`` — run a model worker that answers on the channel;
 * ``team`` — launch a hub plus one or two local workers in one shot;

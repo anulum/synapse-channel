@@ -35,10 +35,10 @@ Along the way you will see lines like these (abridged):
 Those three lines are the whole product in miniature:
 
 1. **A claim gates the mutation.** When an agent tried to change `src/shared.py`
-   without holding a claim on it, the configured provider hook refused the
-   mutation *before* the edit landed. A file-scope claim records authority; the
-   hook enforces it for that documented tool path and the staged Git gate checks
-   the resulting index independently. Neither is a general filesystem sandbox.
+   without holding a claim on it, the demo's provider-neutral mutation guard
+   refused the edit. The demo uses scripted agents, not native provider CLIs or
+   hooks. Supported provider hooks and the staged Git gate have separate
+   documented qualifications; none is a general filesystem sandbox.
 2. **Handoff moves authority atomically.** Instead of "release the file, hope
    nobody grabs it, reclaim it," Claude handed the held scope, status, and
    checkpoint to Codex in one step — no window where the file is unowned and up

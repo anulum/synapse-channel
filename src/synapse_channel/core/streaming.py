@@ -14,16 +14,18 @@ WebSocket message path — an ``open`` frame, ordered ``chunk`` frames, and a
 terminal ``done`` or ``abort`` frame, all tagged with one stream id.
 
 The bounds are the point. A stream declares a :class:`StreamBounds` ceiling
-(chunk count, per-chunk bytes, total bytes, and a time-to-live), and the producer
-refuses to exceed it rather than letting a runaway generation flood the bus. The
-consumer enforces the same ceiling and ordered delivery on the receiving side, so
-a malformed or oversized stream is rejected, not reassembled.
+(chunk count, per-chunk bytes and total bytes). The producer refuses frames
+that exceed those limits. The consumer checks parsed frames against its own
+configured limits and sequence. Bounds are not transmitted or negotiated.
+``ttl_seconds`` is a declaration only: neither class measures elapsed time or
+enforces a deadline. Frame refusal does not cancel an upstream model or iterator.
 
 Retention is deliberately shallow: a stream is *transient* coordination, not
 durable task state. The frames ride the chat path and are subject to the same
-relay mirroring as chat, but they are bounded by the producer and are not replay
-state — the durable record of what a task produced is its release receipt and
-final reply, not the intermediate chunks. A future tranche may add a
+relay and journal retention as chat, so intermediate chunks can persist as chat
+records. They are not automatically reassembled into replayed task state.
+The caller separately records a final result and release receipt; streaming
+does not create either. A future tranche may add a
 non-journalled stream message type for fully ephemeral delivery.
 """
 
@@ -61,7 +63,7 @@ class StreamError(SynapseError, ValueError):
 
 @dataclass(frozen=True)
 class StreamBounds:
-    """Explicit ceiling a stream may not exceed.
+    """Count and byte ceilings, with a declared but unenforced lifetime.
 
     Parameters
     ----------
@@ -72,7 +74,8 @@ class StreamBounds:
     max_total_bytes : int
         Maximum cumulative UTF-8 byte length across all chunk bodies.
     ttl_seconds : float
-        Wall-clock budget for the whole stream, from open to terminal frame.
+        Declared lifetime only; the producer and consumer do not enforce it.
+        Applications must supply their own deadline handling.
     """
 
     max_chunks: int = 256
@@ -123,11 +126,15 @@ def encode_stream_frame(frame: StreamFrame) -> dict[str, Any]:
     Returns
     -------
     dict[str, Any]
-        Payload carrying the stream marker and frame fields.
+        Payload carrying the stream marker and frame fields. ``stream_seq``
+        preserves frame order when a journal hub replaces ``seq`` with its
+        durable row cursor; the legacy ``seq`` is also emitted for old readers
+        on journal-less paths.
     """
     return {
         "kind": STREAM_FRAME_KIND,
         "stream_id": frame.stream_id,
+        "stream_seq": frame.seq,
         "seq": frame.seq,
         "frame_type": frame.frame_type,
         "text": frame.text,
@@ -146,7 +153,11 @@ def parse_stream_frame(payload: dict[str, Any]) -> StreamFrame | None:
     -------
     StreamFrame or None
         The parsed frame, or ``None`` when the payload is not a well-formed stream
-        frame (wrong marker, unknown type, missing id, or non-integer sequence).
+        frame (wrong marker, unknown type, missing id, failed sequence conversion
+        or negative sequence). ``stream_seq`` takes precedence and must be a
+        non-boolean integer. Its absence uses legacy ``seq`` conversion without
+        guessing a journal offset. If a journal hub replaced a legacy frame's
+        counter, ordered reassembly refuses it rather than inferring lost order.
     """
     if str(payload.get("kind", "")) != STREAM_FRAME_KIND:
         return None
@@ -154,10 +165,19 @@ def parse_stream_frame(payload: dict[str, Any]) -> StreamFrame | None:
     frame_type = str(payload.get("frame_type", ""))
     if not stream_id or frame_type not in _FRAME_TYPES:
         return None
-    try:
-        seq = int(payload.get("seq"))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
+    if "stream_seq" in payload:
+        value = payload["stream_seq"]
+        if isinstance(value, bool) or not isinstance(value, int):
+            return None
+        seq = value
+    else:
+        legacy = payload.get("seq")
+        if legacy is None:
+            return None
+        try:
+            seq = int(legacy)
+        except (TypeError, ValueError, OverflowError):
+            return None
     if seq < 0:
         return None
     return StreamFrame(
@@ -173,8 +193,8 @@ class StreamProducer:
 
     The producer enforces :class:`StreamBounds` as frames are requested: a chunk
     past the count ceiling, an oversized chunk, or a cumulative overflow raises
-    :class:`StreamError` instead of emitting, so a runaway generation is stopped
-    at the source rather than on the bus.
+    :class:`StreamError` instead of emitting. This does not enforce the declared
+    TTL or cancel an upstream producer, iterator or model call.
     """
 
     def __init__(self, stream_id: str, *, bounds: StreamBounds | None = None) -> None:
@@ -252,9 +272,9 @@ class StreamConsumer:
     """Reassemble a bounded, ordered stream on the receiving side.
 
     The consumer validates the matching stream id, strict in-order sequence, the
-    open-before-chunk discipline, and the same :class:`StreamBounds` ceiling. A
-    frame that breaks any of these is rejected with :class:`StreamError`, so a
-    consumer never reassembles a malformed or oversized stream.
+    open-before-chunk discipline, and its own configured count/byte ceilings.
+    Pass well-formed frames from :func:`parse_stream_frame`; bounds are not
+    negotiated with the sender. No deadline or transport delivery is enforced.
     """
 
     def __init__(self, stream_id: str, *, bounds: StreamBounds | None = None) -> None:

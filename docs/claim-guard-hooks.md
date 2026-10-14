@@ -42,10 +42,15 @@ which symbol the resulting change actually touched.
 Git-aware claims and mutation targets are compared through the same canonical
 identity: Git-index spelling, strictly resolved worktree-relative filesystem
 path, Unicode NFC, actual filesystem case policy, and an existing object's local
-device/object key. A provider cannot evade a claim through a symlink, hard link,
-junction, case alias, or Windows short name. Resolution outside the worktree or
+device/object key. The resolver checks symlink, hard-link, junction, case and
+Windows-short-name aliases at query time; it does not pin the namespace through
+the later provider mutation. Resolution outside the worktree or
 an unreadable, ambiguous, or display-misaligned identity is denied before the
 provider mutates a file.
+
+The matrix describes the named source recipes and recorded host contracts.
+An installed version label alone does not qualify a new executable or prove
+that its host loaded the hook; retain exact artifacts and real mutation results.
 
 ## Getting started
 

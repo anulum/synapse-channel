@@ -36,7 +36,8 @@ Shape and hover text preserve the distinction without relying on colour alone.
 ![A real VS Code Extension Development Host showing line and overview-ruler claim markers](media/marketplace-claims.png)
 
 Both images come from VS Code 1.128 connected to a disposable token-gated
-SYNAPSE hub. They show the shipped extension rather than a mock-up.
+SYNAPSE hub. They record that preview profile rather than a mock-up; they do
+not qualify the current source or an independently downloaded VSIX.
 
 ## What it does
 
@@ -136,7 +137,8 @@ not include analytics, crash reporting, advertising, or a third-party telemetry
 SDK. VS Code, Cursor, VSCodium, a registry, and a separately operated hub can
 have their own logging or data policies.
 
-SecretStorage protects the hub token at rest through the editor host. The token
+The extension delegates persistent token storage to the editor's SecretStorage;
+it does not independently encrypt or attest that credential service. The token
 authenticates the connection; it does not add identity signatures, per-message
 authentication, certificate pinning, or end-to-end encryption. Mutations remain
 disabled until protocol negotiation is live and compatible. Stale last-good
@@ -157,9 +159,9 @@ Read the extension [privacy notice](PRIVACY.md), [support policy](SUPPORT.md),
 
 | Surface | Supported path |
 |---|---|
-| VS Code 1.90+ | Local VSIX; VS Code Marketplace when listed there |
-| Cursor | Local VSIX; its configured registry when listed there |
-| VSCodium / Open VSX clients | Local VSIX; Open VSX when listed there |
+| VS Code 1.101+ | Local VSIX; VS Code Marketplace when listed there |
+| Cursor | Local VSIX on a compatible Node 22 extension host; its configured registry when listed there |
+| VSCodium / Open VSX clients | Local VSIX on a compatible Node 22 extension host; Open VSX when listed there |
 | Virtual workspaces | Not supported; canonical filesystem worktrees are required |
 | Untrusted workspaces | Not supported; trust is required before hub connection |
 

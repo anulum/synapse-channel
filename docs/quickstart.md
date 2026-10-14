@@ -192,7 +192,8 @@ is live, what is claimed, and what is at risk.
 python -m pip install 'synapse-channel>=0.99.3'
 synapse doctor
 
-# 2. Durable hub (open loopback; add --team-secure when you have trust + role files)
+# 2. Durable token-authenticated loopback hub
+#    Add --team-secure only after configuring identity trust, roles and client signing.
 mkdir -p ~/synapse
 echo "dev-token-$(openssl rand -hex 8)" > ~/synapse/token
 chmod 600 ~/synapse/token
@@ -215,7 +216,9 @@ synapse waker install --identity myproj/alice --session myproj-alice \
 
 # 4. Claim work so the hub refuses overlapping live authority
 synapse git-init --name myproj/alice
-# …or synapse claim / lock for file scope in your workflow
+synapse git-claim BUILD --name myproj/alice --auto-release-on manual \
+  --paths src/parser.py
+# Continue only after the claim command confirms a grant.
 
 # 5. Open Studio (front door is the command centre)
 synapse dashboard --port 8765 --feeds-db ~/synapse/hub.db
@@ -227,14 +230,20 @@ synapse dashboard --port 8765 --feeds-db ~/synapse/hub.db
 # 6. Close out work with evidence-gated release (default story — not a bare release)
 #    Observe checks, write a receipt, then drop the claim you own:
 synapse verify-release BUILD --name myproj/alice \
-  --run ".venv/bin/python -m pytest tests/ -q" \
+  --run ".venv/bin/python -m pytest tests/test_parser.py -q" \
   --output ~/synapse/receipt-BUILD.json
 synapse release BUILD --name myproj/alice \
   --receipt ~/synapse/receipt-BUILD.json --receipt-json
 ```
 
+Dashboard pages and feeds require a bearer even on loopback. The command prints
+the generated bearer when no token or principal policy is supplied. Packaged
+Studio pages need an Authorization header; for an ordinary browser unlock form,
+follow [the built React cockpit setup](cockpit.md#start-the-cockpit-from-a-source-checkout)
+and open `/cockpit/`. Keep the bearer out of URLs.
+
 Success looks like: `synapse who` shows agents and waiters; Studio shows a live
-verdict and claim segments; a second agent cannot claim the same file scope; a
+projection and claim segments; a second owner cannot claim overlapping declared scope; a
 finished claim leaves a receipt-backed release on the hub (not an evidence-free
 drop).
 
@@ -255,8 +264,9 @@ Prefer **observed** evidence over hand-typed notes when you drop a claim:
 
 1. `synapse verify-release TASK --name YOU --run "…" --output receipt.json` runs
    the declared commands, records exit codes and digests, and writes receipt JSON.
-2. `synapse release TASK --name YOU --receipt receipt.json` drops **your** claim
-   only when you still own it, attaching that receipt on the hub.
+2. `synapse release TASK --name YOU --receipt receipt.json --receipt-json` drops
+   **your** claim only when you still own it, attaching the parsed JSON receipt
+   on the hub.
 3. Optional: `synapse policy-check TASK --policy policy.toml --receipt-json receipt.json`
    for advisory policy evaluation before or after release.
 
@@ -265,13 +275,19 @@ the multi-seat default story is verify → receipt → release. Details:
 [CLI release / verify-release](cli.md) and the
 [parallel-agents recipe](recipes.md#evidence-gated-release-default-closeout).
 
+Receipt evidence is optional unless the configured policy requires it.
+`supported` describes the receipt's advisory evidence quality; it does not
+establish that the selected checks were sufficient or independently verify an
+approval. Resolve an unconfirmed release from its retained operation identity
+before retrying.
+
 See [team-secure mode](team-secure.md) and [Studio](studio.md).
 
 ## Or run the pieces individually
 
 ```bash
 synapse hub --port 8876                       # the coordination hub
-synapse hub --port 8876 --db ./synapse.db     # crash-safe: resumes on restart
+synapse hub --port 8876 --db ./synapse.db     # replays admitted retained journal state
 synapse worker --name FAST --provider ollama --model gemma3:4b
 synapse worker --name OFFLINE --provider rule # no network, canned replies
 ```
@@ -293,18 +309,21 @@ synapse manifest                              # advertised agent capabilities
 
 ## Point the CLI at another hub
 
-Every command talks to `ws://localhost:8876` by default. To target a different
+Online CLI commands use `ws://localhost:8876` by default. To target a different
 hub — a remote coordinator, or a second local hub on another port — set
 `SYNAPSE_URI` once instead of repeating `--uri` on each command:
 
 ```bash
 export SYNAPSE_URI=ws://coordinator.internal:8876
 synapse who                                   # now queries the remote hub
-synapse send --target FAST "ping"             # so does every other command
+synapse send --target FAST "ping"             # another online CLI command
 ```
 
 An explicit `--uri` on a single command still overrides the environment for that
 one call, and unsetting `SYNAPSE_URI` returns to the loopback default.
+Offline tools do not contact a hub. The Python client below receives its URI
+explicitly; setting the CLI environment variable does not change its
+constructor default.
 
 ## Coordinate from code
 
@@ -313,46 +332,78 @@ to it from your code. Connecting to an already-running hub keeps the example fre
 of the in-process startup race between binding the server and dialling it:
 
 ```python
+"""Confirm a claim, checkpoint, status update and release on a local hub."""
+
 import asyncio
-import contextlib
+from typing import Any
+from uuid import uuid4
 
-from synapse_channel import SynapseAgent
-
-
-async def main() -> None:
-    checkpoint_saved = asyncio.Event()
-    released = asyncio.Event()
-
-    async def on_message(message: dict[str, object]) -> None:
-        if message.get("task_id") != "refactor-parser":
-            return
-        if message.get("type") == "checkpoint_saved":
-            checkpoint_saved.set()
-        if message.get("type") == "release_granted":
-            released.set()
-
-    agent = SynapseAgent("ALPHA", on_message_callback=on_message, uri="ws://localhost:8876")
-    agent_task = asyncio.create_task(agent.connect())
-    # connect() is a single long-lived session; wait for the hub's welcome before
-    # issuing verbs, and fail loudly if the hub is not up rather than acting on a
-    # closed connection.
-    if not await agent.wait_until_ready():
-        raise RuntimeError("could not reach the hub — is `synapse hub` running?")
-
-    await agent.claim("refactor-parser", note="splitting the tokenizer", paths=["src/parser"])
-    await agent.save_checkpoint("refactor-parser", "step=2")
-    await asyncio.wait_for(checkpoint_saved.wait(), timeout=5.0)
-    await agent.update_task("refactor-parser", status="working")
-    await agent.release("refactor-parser")
-    await asyncio.wait_for(released.wait(), timeout=5.0)
-
-    agent.running = False
-    agent_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await agent_task
+from synapse_channel import MessageType, SynapseAgent
 
 
-asyncio.run(main())
+async def main(*, uri: str = "ws://localhost:8876") -> None:
+    """Run each task operation only after the preceding acknowledgement."""
+    task_id = "refactor-parser-" + uuid4().hex
+    replies: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=8)
+    accepted = (
+        MessageType.CLAIM_GRANTED,
+        MessageType.CLAIM_DENIED,
+        MessageType.CHECKPOINT_SAVED,
+        MessageType.CHECKPOINT_DENIED,
+        MessageType.TASK_UPDATED,
+        MessageType.RELEASE_GRANTED,
+        MessageType.RELEASE_DENIED,
+        MessageType.ERROR,
+    )
+
+    async def receive(frame: dict[str, Any]) -> None:
+        """Queue only operation replies for this fresh task."""
+        if frame.get("task_id") == task_id and frame.get("type") in accepted:
+            replies.put_nowait(frame)
+
+    async def confirmed(expected: str) -> dict[str, Any]:
+        """Require the next matched reply to acknowledge the requested verb."""
+        frame = await asyncio.wait_for(replies.get(), 5.0)
+        if frame.get("type") != expected:
+            raise RuntimeError("task operation refused or unexpected reply")
+        return frame
+
+    agent = SynapseAgent("ALPHA", receive, uri=uri)
+    connection = asyncio.create_task(agent.connect())
+    try:
+        if not await agent.wait_until_ready(5.0):
+            raise TimeoutError("hub registration unconfirmed")
+        await agent.claim(task_id, paths=["src/parser"], ttl_seconds=60.0)
+        grant = await confirmed(MessageType.CLAIM_GRANTED)
+        epoch = grant.get("epoch")
+        if grant.get("owner") != agent.name or type(epoch) is not int or epoch <= 0:
+            raise RuntimeError("invalid claim grant")
+        await agent.save_checkpoint(task_id, "step=2", epoch=epoch)
+        saved = await confirmed(MessageType.CHECKPOINT_SAVED)
+        version = saved.get("version")
+        if type(version) is not int or version <= 0:
+            raise RuntimeError("invalid checkpoint acknowledgement")
+        await agent.update_task(task_id, status="working", epoch=epoch, expected_version=version)
+        await confirmed(MessageType.TASK_UPDATED)
+        await agent.release(task_id, epoch=epoch)
+        await confirmed(MessageType.RELEASE_GRANTED)
+    finally:
+        connection.cancel()
+        await asyncio.gather(connection, return_exceptions=True)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
+
+The example uses an open loopback hub and legacy literal scope comparison.
+Configure token and signing arguments for a protected hub; use the Git-aware
+flow above for canonical repository/path identities. Sending a request is not
+confirmation: a refusal, disconnect or timeout aborts this sequence, and any
+uncertain operation needs read-only reconciliation before retry. A checkpoint
+records declared resume state, not a backup of file edits. This example performs
+no file edit and attaches no verification evidence; use the
+[confirmed edit recipe](recipes.md#the-loop-each-agent-runs) for bounded work
+under a granted lease and the observed closeout flow above for receipts.
 
 See the [coordination model](coordination-model.md) for what each verb guarantees.

@@ -200,10 +200,10 @@ def test_unmodelled_constraint_returns_none() -> None:
 
 
 class TestUrlPinDivergence:
-    def test_same_base_different_hex_revisions_conflict(self) -> None:
+    def test_same_base_different_hex_revisions_need_resolution(self) -> None:
         left = "@ git+https://github.com/org/pkg@0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b"
         right = "@ git+https://github.com/org/pkg@f9e8d7c6b5a4938271605f4e3d2c1b0a99887766"
-        assert compare_constraints(left, right, "python") == CONFLICT
+        assert compare_constraints(left, right, "python") == NOT_COMPARABLE
 
     def test_same_base_identical_revision_overlaps(self) -> None:
         pin = "@ git+https://github.com/org/pkg@0a1b2c3"
@@ -228,12 +228,12 @@ class TestUrlPinDivergence:
     def test_userinfo_at_sign_stays_in_the_base(self) -> None:
         left = "@ git+ssh://git@github.com/org/pkg@0a1b2c3"
         right = "@ git+ssh://git@github.com/org/pkg@f9e8d7c"
-        assert compare_constraints(left, right, "python") == CONFLICT
+        assert compare_constraints(left, right, "python") == NOT_COMPARABLE
 
-    def test_fragment_is_stripped_before_the_revision_split(self) -> None:
+    def test_different_fragments_need_artifact_resolution(self) -> None:
         left = "@ git+https://github.com/org/pkg@0a1b2c3#egg=pkg"
         right = "@ git+https://github.com/org/pkg@0a1b2c3#subdirectory=sub"
-        assert compare_constraints(left, right, "python") == NO_CONFLICT
+        assert compare_constraints(left, right, "python") == NOT_COMPARABLE
 
     def test_url_without_a_revision_is_not_comparable(self) -> None:
         left = "@ https://files.example/pkg-1.0.tar.gz"

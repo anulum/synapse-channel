@@ -259,7 +259,11 @@ def _cmd_run(
     runner: Runner = run_sandboxed,
     attestor: Attestor = _attest_run,
 ) -> int:
-    """Run a sandboxed tool under its manifest, gated by the module digest and operator approval."""
+    """Run a tool after matching its manifest digest and requiring ``--approve``.
+
+    The flag is local caller confirmation, not authenticated approval evidence.
+    This path does not verify signed cards, caller identity or revocation.
+    """
     try:
         manifest = _load_manifest(args.manifest)
     except SandboxManifestError as exc:
@@ -372,7 +376,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     runner = group.add_parser("run", help="Run a .wasm tool under a capability manifest.")
     runner.add_argument("tool", help="Path to the tool's .wasm module.")
     runner.add_argument("--manifest", required=True, help="Path to the manifest JSON file.")
-    runner.add_argument("--input", default=None, help="Path to an input file passed to the tool.")
+    runner.add_argument("--input", default=None, help="Hash input for receipt; not sent to guest.")
     runner.add_argument(
         "--entrypoint", default=DEFAULT_ENTRYPOINT, help="Exported function to call."
     )

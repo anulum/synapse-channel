@@ -40,11 +40,11 @@ Out of scope:
 | Asset | Why it matters | Required handling |
 | --- | --- | --- |
 | A2A bearer token | Protects task, RPC, extended-card, and push-config routes. | Put it in an owner-only file and enable `--bearer-auth --a2a-token-file PATH` with native HTTPS (`--tls-certfile` / `--tls-keyfile`) or a loopback bind behind a TLS-terminating proxy. Explicit `--a2a-token` wins but is process-visible. Use `--insecure-off-loopback` only when accepting cleartext serving traffic. |
-| Hub token | Lets the bridge connect to a secured Synapse hub. | Pass with `--token`; do not expose it through proxy logs or shell history. |
+| Hub token | Lets the bridge connect to a secured Synapse hub. | Prefer an owner-only global `--token-file` or the existing `SYNAPSE_TOKEN` environment input. The `--token` compatibility form exposes the value in process arguments. |
 | Task payloads and artifacts | May carry operator or agent data. | Keep bridge state local, bounded, and owner-readable only. |
 | A2A state file | Persists task, push-config, and credential-free push-attempt state across restart. | Store it on a local trusted filesystem; rely on owner-only temp/state writes. |
 | Webhook URLs and headers | Control bridge egress to external receivers. | Treat them as egress policy inputs; keep SSRF checks enabled. |
-| Access logs and validation receipts | Prove deployment behavior but can reveal metadata. | Record route, status, timing, and decision; avoid payload and token logging. |
+| Access logs and validation receipts | Record deployment observations and can reveal metadata; provenance and scope require separate validation. | Record route, status, timing, and decision; avoid payload and token logging. |
 
 ## Trust Boundaries
 
@@ -107,9 +107,8 @@ Add `--grpc-port` only when the proxy is also configured for gRPC and forwards
 the bearer metadata, or use native TLS/mTLS for both listeners:
 
 ```bash
-synapse a2a-serve \
+synapse --token-file /run/secrets/synapse-hub-token a2a-serve \
   --uri ws://127.0.0.1:8876 \
-  --token "$SYNAPSE_TOKEN" \
   --host 127.0.0.1 \
   --port 8877 \
   --endpoint-url https://agent.example.com/a2a/v1 \
@@ -216,7 +215,7 @@ or exactly-once guarantee.
 | Client sends an over-large JSON body. | Bridge returns `413 Request body too large` before dispatch. |
 | Client sends deeply nested JSON. | Bridge rejects the body through bounded JSON parsing before dispatch. |
 | Client opens more concurrent HTTP requests than the configured ceiling. | Bridge admits at most `--max-concurrent-requests` in-flight handlers and answers extras with deterministic `503` (`A2A_HTTP_CAPACITY_EXHAUSTED`) without starting additional worker threads. Capacity is released on normal completion, parse error, timeout, disconnect, and handler exception. |
-| Client is answered before its request was read to the end (a refusal before the body, a capacity refusal) and keeps sending or never closes. | The bridge sends the end of the answer and keeps the socket only to discard the remaining bytes, on one thread per server and outside the admission bound: at most two seconds and two mebibytes per connection and 64 such connections at once. A connection over a bound, and every one beyond the 64, is closed at once. The client keeps the answer; on Windows an immediate close would have cost it the answer. |
+| Client is answered before its request was read to the end (a refusal before the body, a capacity refusal) and keeps sending or never closes. | The bridge sends the end of the answer and keeps the socket only to discard the remaining bytes, on one thread per server and outside the admission bound: at most two seconds and two mebibytes per connection and 64 such connections at once. A connection over a bound, and every one beyond the 64, is closed at once. The bounded drain gives the client an opportunity to read the response; it does not guarantee delivery. The recorded Windows refusal profile motivated this handling. |
 | Client stalls or incompletely delivers a declared request body. | Bridge applies `--request-read-timeout` as a wall-clock body-read deadline and returns deterministic `408` (`A2A_HTTP_READ_TIMEOUT`) before dispatch. |
 | Client configures `localhost`, loopback, private, link-local, CGNAT, or other non-routable webhook URLs, or a name that rebinds to one after validation. | Delivery pins the once-resolved address and rejects any non-globally-routable target before the socket is opened. |
 | Client configures a public-looking host that resolves to a local address. | Delivery rejects the target before sending. |

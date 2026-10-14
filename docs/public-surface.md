@@ -10,7 +10,7 @@ Contact: www.anulum.li | protoscience@anulum.li
 # Public surface and stability
 
 The CLI has dozens of subcommands, and they do not all carry the same weight.
-This page classifies the whole surface into stability tiers so the daily-safe
+This page classifies the whole surface into stability tiers so the coordination
 core is obvious and an experimental verb is never mistaken for a load-bearing
 one. The authoritative map lives in `synapse_channel/surface_taxonomy.py`, and a
 regression test asserts it and the live parser agree — a new subcommand cannot
@@ -32,7 +32,7 @@ as layered:
 |---|---|---|
 | Local coordination core | `stable` | Hub, presence, directed messaging, claims, leases, task state, locks, board, status, and bootstrap commands. |
 | Edge adapters | `adapter` | Optional tool bridges for MCP, A2A, git, tmux/provider seats, shell hooks, ingestion, and workers. |
-| Operator analysis | `analysis` | Diagnostics, dashboards, event queries, causality, multihub views, reliability, accounting, fleet scorecard export, manifests, and trust graph reporting. These commands do not mutate coordination state; explicitly selected export modes may write a file or contact an operator-owned collector. |
+| Operator analysis | `analysis` | Inspection-focused groups for diagnostics, dashboards, queries, accounting and reporting. Explicit controls may change state or configuration, persist records, or export. Consult each verb's effects and permissions. |
 | Governance and integrity | `governance` | Policy, approvals, ACL/role commands, federation, Merkle roots, release evidence, reproduction, compaction, and key operations. |
 | Lab surfaces | `experimental` | Benchmarking, participant fabric, owner-local app tasks and attention, route-task, sandbox, workflow, TTL advice, memory recall, auto-action, and resource bidding. |
 
@@ -60,12 +60,14 @@ The `first-use` JSON is the acceptance surface for the smaller golden path:
 concept count, shell-command count, exact journey, extras, and implicit service
 count are regression-bound to the real CLI. The profiles are additive discovery
 and installation envelopes, not authorization or secure-deployment claims.
+Names of dependency extras are not hardware qualification; installing `tpm2`
+does not turn the current software HMAC statement gate into a TPM quote verifier.
 
 ## Tiers
 
 ### Stable core — `stable`
 
-Daily-safe coordination core with a stable wire and CLI surface.
+Core coordination commands under the versioned API and wire compatibility contract.
 
 `arm`  `board`  `channel`  `commands`  `completions`  `demo`  `fleet-init`  `hub`  `init`  `listen`  `lock`  `new`  `quickstart-coding`  `send`  `status`  `task`  `team`  `wait`  `who`
 
@@ -73,15 +75,18 @@ Daily-safe coordination core with a stable wire and CLI surface.
 
 Bridges to other ecosystems and tools; optional extras, not core. These integrate
 Synapse with A2A, MCP, git, tmux-driven agents, and model workers; some require
-optional extras and none belongs to the single-dependency local core.
+optional extras. The base runtime uses `websockets` and, on Python 3.10,
+`typing-extensions`.
 
 `a2a-card`  `a2a-client`  `a2a-conformance`  `a2a-interop-trace`  `a2a-serve`  `adapters`  `agent-tmux`  `codex-tmux`  `git-claim`  `git-claim-check`  `git-hook`  `git-init`  `git-release`  `ingest`  `install-shell-hook`  `integrations`  `mcp`  `mcp-call`  `mcp-tools`  `shell-hook`  `waker`  `worker`  `worker-session`
 
 ### Operator analysis — `analysis`
 
-Inspection and reporting that never mutates the coordination plan or leases.
-Explicit export modes can write an operator-selected file or collector endpoint;
-they never silently enable telemetry or change hub authority.
+Inspection-focused groups, with effects determined by each subcommand and mode.
+For example, accounting can record data, identity can enrol or revoke keys,
+doctor can repair service setup, and dashboard controls can submit operator
+actions. A tier label is not a read-only or permission guarantee. Plain
+`synapse commands` discovery itself reads the static taxonomy without a hub.
 
 `accounting`  `approvals`  `causality`  `conflicts`  `cross-repo`  `dashboard`  `dead-letters`  `debug`  `directory`  `doctor`  `event-query`  `fleet-scorecard`  `health`  `identity`  `manifest`  `multihub`  `pid-monitor`  `relay`  `reliability`  `setup`  `state`  `trust-graph`
 

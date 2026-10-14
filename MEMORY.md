@@ -12,12 +12,14 @@ SYNAPSE CHANNEL — persistent-memory write-side architecture
 
 Synapse Channel is a coordination bus first. On top of that it ships the **write-side of an
 optional persistent-memory layer**: the part that lets a fleet of agents *record what they
-learn* — facts, lessons, decisions, dead-ends, outcomes — as durable, honesty-checked atoms,
+learn* — facts, lessons, decisions, dead-ends, outcomes — as durable records with
+declared evidence metadata and structural admission checks,
 and exposes them on a cursored seam a downstream memory adapter reads.
 
-The hub stays **memory-agnostic**: it carries every memory record opaquely, never indexes or
-interprets it, and runs unchanged with the memory layer switched off. The layer is an optional
-edge adapter, not a hub dependency.
+The hub stays independent of external memory indexing and retrieval. Its write
+handlers parse record metadata, enforce declaration floors and quotas, and
+stamp the admitted origin. They do not independently verify a statement or
+fetch its evidence. External memory adapters are optional.
 
 ```
  write-side (this repo)                          read-side (a separate adapter)
@@ -31,8 +33,10 @@ edge adapter, not a hub dependency.
 The reframing the design rests on: useful agent memory is **not** "100% total recall" — it is
 *calibrated, query-weighted recall with honest abstention*. A memory that confidently returns a
 stale or unsupported "fact" is worse than one that says "I don't know." So the write side's one
-job is to guarantee that **every atom entering the durable log is a truthful input** — a claim
-no stronger than its evidence — so the read side can reason over honest material.
+job is to enforce consistency between **declared** evidence and claim metadata.
+It cannot guarantee factual truth, evidence authenticity or that a producer
+actually rechecked a source. A syntactically consistent false statement can
+pass; downstream verification and human review keep their separate duties.
 
 ## The `finding` record — three independent honesty axes
 
@@ -55,20 +59,21 @@ Each finding also carries `subkind` (codebase-fact · lesson · decision · dead
 
 ## The emit gate — `admit(finding) → accept | floor | reject`
 
-A pure function at the hub edge decides each atom's fate before it is journalled:
+A pure function at the hub edge checks the parsed declarations before a finding
+is journalled:
 
 - **reject** — structurally dishonest or contradictory: missing provenance / validity / a
   required claim status or evidence basis, **or** falsified evidence claiming
   reference-validated (a direct contradiction, **LOCK-4**).
-- **floor** — claimed stronger than the evidence supports; the claim status (or freshness) is
+- **floor** — claimed stronger than the declared evidence category permits; the claim status (or freshness) is
   lowered and the reasons recorded, so the producer learns what was downgraded.
-- **accept** — the claims its evidence already supports.
+- **accept** — the record satisfies the structural and declaration rules.
 
 The floors are the write-side invariants:
 
 - **INV-1** — a `reference-validated` claim needs **both** an `evidence_ref` **and**
-  `freshness == verified-at-source`; a reference that exists but was never re-checked this
-  session is floored to bounded support (closing the "a ref exists, so it must be true" trap).
+  `freshness == verified-at-source`. Missing declarations are floored to bounded
+  support; the gate does not observe or authenticate the source recheck itself.
 - **INV-2** — falsified evidence renders a claim **refuted**.
 - **INV-3** — an unknown enum member is carried **opaque** and degraded read-side, never up;
   a malformed record is a structural reject. (Forward-tolerance for free.)
@@ -78,12 +83,15 @@ The floors are the write-side invariants:
 **INV-4 (honesty propagation across a synthesised recall) is read-side** — see the contract
 below.
 
-## Hub-attested provenance — non-forgeable origin
+## Hub-stamped provenance — connection origin
 
 The producing identity (`by`) and the receive-time (`at`) on every finding and recall are
 stamped by the **hub** (from the connection and the clock), not taken from the message, so an
-agent cannot back-date or misattribute its own record. This is the fleet's
-[Verified-At-Source](docs/) discipline applied at memory-emit time. On cross-agent recall a
+producer cannot replace these stamped fields in an admitted record. This binds
+the event to the hub's resolved connection identity and clock; its strength
+depends on the configured token, identity and authentication profile and the
+hub's integrity. It does not validate the body, producer provenance fields or
+external evidence. On cross-agent recall a
 `checked_this_session == false` surfaces loudly as *"inherited testimony — confirm
 independently"*.
 
@@ -97,8 +105,10 @@ The read side ingests a subset of the durable event log, named by `MEMORY_KINDS`
 - **`checkpoint`** / **`handoff`** — the highest-signal episodic memory (resume summaries and
   ownership transfers), journalled under their own kinds.
 
-The seam is **sequence-cursored** over the hub's durable store, so an adapter resumes with no
-loss or duplication across hub restarts:
+The seam is **sequence-cursored** over admitted retained journal records.
+Downstream durable processing and cursor commits must be coordinated before
+advancing; retention, quarantine and storage failures remain boundaries.
+The CLI output/cursor is not a downstream ingestion acknowledgement:
 
 ```python
 from synapse_channel import EventStore, MEMORY_KINDS
@@ -116,7 +126,8 @@ synapse ingest ~/synapse/hub.db --memory --cursor ~/synapse/mem.cursor   # NDJSO
 
 ## The write-side ↔ read-side honesty contract
 
-The write side guarantees each *atom* is honest. A conforming read side must keep it that way:
+The write side enforces declared metadata floors. A conforming read side must
+preserve them and separately verify source and content:
 
 1. It **must not promote** a floored finding — a `traceable-unchecked` or `bounded-support`
    atom must not be surfaced as `reference-validated`.
@@ -127,17 +138,15 @@ The write side guarantees each *atom* is honest. A conforming read side must kee
 
 The write side cannot enforce these — they are properties of *synthesis*, which happens read-side
 — so they are a **contract**, not a gate. (The
-[SCPN-STUDIO federation gate](https://github.com/anulum) re-applies the producer-side invariants
-on untrusted input as a reference enforcer of exactly this contract.)
+producer-side invariants can be reapplied to untrusted input without certifying
+that a separate synthesis implementation satisfies the complete contract.)
 
 ## Ecosystem
 
-This repository is the open **write-side**. The reference **read-side** adapter — the index,
-the calibrated retrieval, the verification, and the honest abstention — is
-[**Remanentia**](https://remanentia.com): *"Evidence memory for local AI systems … Retrieve
-first. Verify next. Answer last."* Remanentia's verification step uses
-**Director-Class-AI** (and the open
-[**Director-AI**](https://github.com/anulum/director-ai) grounding base) to verify answers
-against retrieved evidence and block unsupported outputs — the read-side enforcement of the
-honesty contract above. Synapse Channel runs perfectly well without any of them; they are the
-optional layer that turns honesty-checked atoms into calibrated, verified recall.
+SYNAPSE supplies this write-side and optional participant-memory recall.
+[Remanentia](https://remanentia.com) supplies independently versioned memory,
+indexing and retrieval surfaces. [Director-AI](https://github.com/anulum/director-ai)
+supplies response grounding; Director-Class-AI concerns action control.
+The [ecosystem map](docs/ecosystem.md) distinguishes actual optional interfaces
+from intended relations. Those projects are not required by the Core package,
+and this page does not establish a jointly qualified verification chain.

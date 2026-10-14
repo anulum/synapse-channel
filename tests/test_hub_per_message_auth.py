@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -19,14 +20,18 @@ from websockets.asyncio.connection import Connection
 
 from hub_e2e_helpers import read_json, read_until_type, running_hub, send_json
 from synapse_channel.core.hub import SynapseHub
+from synapse_channel.core.journal import EventKind
 from synapse_channel.core.message_auth import (
     EventSignatureKey,
     EventSignatureTrustBundle,
     MessageAuthKey,
     MessageReplayCache,
+    SignedEventVerificationResult,
     sign_event_frame,
     sign_frame,
+    verify_event_signature,
 )
+from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import build_envelope
 from synapse_channel.core.ratelimit import RateLimiter
 from synapse_channel.core.secure import (
@@ -325,6 +330,73 @@ async def test_hub_accepts_signed_event_mutation_and_reports_failures() -> None:
     assert granted["task_id"] == "T1"
     assert bad["verification_result"] == "bad_signature"
     assert replayed["verification_result"] == "replayed"
+
+
+async def test_signed_claim_admission_does_not_preserve_the_frame_in_its_snapshot(
+    tmp_path: Path,
+) -> None:
+    """A valid sender frame admits a claim; its journal snapshot is not that signed frame."""
+    private_key = Ed25519PrivateKey.generate()
+    key = EventSignatureKey.from_private_key(
+        key_id="fixture:main",
+        private_key=private_key,
+        senders=frozenset({"ALPHA"}),
+        projects=frozenset({"fixture"}),
+    )
+
+    def trust() -> EventSignatureTrustBundle:
+        """Return a fresh replay context for each separate verification purpose."""
+        return EventSignatureTrustBundle(
+            keys={key.key_id: key},
+            replay_cache=MessageReplayCache(window_seconds=30.0, max_entries=16),
+        )
+
+    timestamp = time.time()
+    frame = sign_event_frame(
+        build_envelope(
+            "ALPHA", "claim", target="System", task_id="T1", project="fixture", now=timestamp
+        ),
+        key_id=key.key_id,
+        private_key=private_key,
+        nonce="fixture-claim",
+        sequence=1,
+        signed_at=timestamp,
+    )
+    store = EventStore(tmp_path / "events.db")
+    try:
+        hub = SynapseHub(
+            hub_id="fixture-hub",
+            journal=store,
+            require_per_message_auth=True,
+            signed_event_trust_bundle=trust(),
+            anti_rollback_checkpoint=False,
+        )
+        async with running_hub(hub) as (_, uri):
+            async with connect(uri) as websocket:
+                await read_until_type(websocket, "welcome")
+                await websocket.send(json.dumps(frame))
+                granted = await read_until_type(websocket, "claim_granted")
+        rows = list(store.iter_events(kinds=[EventKind.CLAIM]))
+        assert granted["task_id"] == "T1" and len(rows) == 1
+        snapshot = rows[0].payload
+        assert snapshot["owner"] == "ALPHA" and snapshot["task_id"] == "T1"
+        assert "signature" not in snapshot
+        for payload, expected in (
+            (frame, SignedEventVerificationResult.VALID),
+            (snapshot, SignedEventVerificationResult.MISSING_SIGNATURE),
+        ):
+            assert (
+                verify_event_signature(
+                    payload,
+                    trust_bundle=trust(),
+                    now=timestamp,
+                    required_sender="ALPHA",
+                    required_project="fixture",
+                )
+                == expected
+            )
+    finally:
+        store.close()
 
 
 def test_hub_accepts_auth_keys_as_a_prebuilt_mapping() -> None:

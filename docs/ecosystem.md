@@ -124,10 +124,11 @@ schematic below shows relations inside the group only.
 | DIRECTOR-AI | `scpn-studio-platform` | The adversarial strip-resistance battery of its verifiable-honesty seal. | Optional extra `honesty`, Python 3.12 or later. |
 | REMANENTIA | `scpn-studio-platform` | Signed finding envelopes. | Optional extra `seal`, Python 3.12 or later. |
 
-Recorded on 2026-10-12 from the two packaging files. A declared extra states
-that the adapter exists in the project. It does not state that the two
-projects are jointly qualified, or that every released version of the
-platform is accepted: each extra names its own version range.
+Recorded on 2026-10-12 from the two packaging files. A declared extra records
+an optional package dependency. Adapter implementation, runtime reachability
+and compatibility require their own source and execution evidence. The
+declaration does not qualify the two projects together or accept every released
+platform version: each extra names its own version range.
 
 No packaging file of the group's repositories names a package of the quantum,
 neuromorphic or reactor groups; that search, on the same day, covered the

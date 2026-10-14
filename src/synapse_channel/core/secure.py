@@ -5,9 +5,9 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — secure umbrella hub profile
-"""Secure-mode umbrella profile for multi-seat production hubs.
+"""Secure-mode umbrella runtime profile for multi-seat hubs.
 
-``synapse hub --secure`` is the strict multi-seat production preset. It composes
+``synapse hub --secure`` selects a strict multi-seat runtime preset. It composes
 the existing :func:`~synapse_channel.core.team_secure.apply_team_secure_hub_profile`
 trust profile and :func:`~synapse_channel.core.paranoid.apply_paranoid_hub_profile`
 exposed-hub profile, then adds bounded per-agent, per-host, and per-host-connection
@@ -17,7 +17,8 @@ is opened, and an explicitly stricter limit is always preserved.
 
 The two subordinate profiles remain the single authority for their own checks; this
 module only turns both on, aggregates their missing material into one error, applies
-the flood ceilings, and emits one consolidated report instead of two.
+the flood ceilings, and emits one consolidated report instead of two. It does
+not certify deployment safety or measured capacity.
 """
 
 from __future__ import annotations
@@ -128,11 +129,12 @@ def _apply_rate_ceiling(
     A disabled value (``0``) receives the named preset default and burst; a positive
     value at or below the ceiling is preserved as stricter; a positive value above
     the ceiling fails closed rather than silently weakening the named posture. The
-    burst is held to the same discipline: a non-finite rate or burst fails closed
+    burst is held to the same discipline: a non-finite rate or retained burst fails closed
     (``nan`` compares false against every ceiling and would then construct no
     limiter at all downstream), a burst above its ceiling fails closed, and a
     disabled burst beside a stricter rate receives the preset default so the token
-    bucket is never unbounded or absent.
+    bucket is never unbounded or absent. A disabled rate replaces its burst with
+    the preset default before inspecting a programmatic burst override.
     """
     current = float(getattr(args, value_attr, 0.0) or 0.0)
     if not math.isfinite(current):

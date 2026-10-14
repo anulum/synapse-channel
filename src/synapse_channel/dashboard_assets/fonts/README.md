@@ -9,10 +9,10 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # Studio font asset provenance
 
-These six files are unmodified variable WOFF2 subsets served by the official
-Google Fonts CSS2 distribution. They were retrieved on 2026-07-12 with the
-weight range 400–700 and a current Chromium user agent. The pinned distribution
-revisions are Inter v20, JetBrains Mono v24, and Space Grotesk v22.
+These six WOFF2 subsets are pinned by the Google Fonts distribution URLs and
+SHA-256 values below. The local bytes match those source files. Their URL paths
+identify Inter v20, JetBrains Mono v24, and Space Grotesk v22; these pins do not
+claim that the upstream families' latest distributions have the same revisions.
 
 Only Latin and Latin Extended are vendored. That covers the product copy and
 Central-European names while keeping the complete font payload at 217,608 bytes.

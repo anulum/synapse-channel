@@ -9,12 +9,15 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # pi participant and claim guard
 
-The optional pi participant runs the exact verified
+The optional pi participant targets the pinned
 `@earendil-works/pi-coding-agent` **0.87.1** RPC host as a child process. Node.js
 22.19 or later is required. Install the separately packaged extension from the
 source checkout using the installation commands below. Use its
 `node_modules/.bin/pi` executable or another exact 0.87.1 binary. The Python
-participant refuses a different version.
+participant refuses a different reported version. That check compares version
+text; it does not attest arbitrary binary bytes or the subsequently launched
+process image. Qualification also needs the actual host/package artifact and
+recorded runtime profile.
 
 For the repository's Pi host, install dependencies and verify the installed
 security pin before launching it:

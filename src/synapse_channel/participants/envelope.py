@@ -87,7 +87,9 @@ class TurnResult(TypedDict):
     ``rationale`` is its disclosed reasoning when the provider streams it; ``abstained``
     and ``is_error`` separate "declined / produced nothing" from "the turn failed", each
     explained by ``reason``. ``session`` is the provider resume token for continuity and
-    ``cost_usd`` the metered spend, which the conversation layer sums against a budget.
+    ``cost_usd`` the reported monetary cost, which the conversation layer sums
+    against a stop threshold. Drivers without monetary reporting use zero; that
+    value does not prove a free turn or bound the provider's actual bill.
     ``model`` is the model the turn was attributed to and ``input_tokens`` / ``output_tokens``
     the provider-reported token split — carried so the Fabric can feed the opt-in usage
     accounting rather than discard the counts. ``rate_limit_utilisation`` is the provider's last

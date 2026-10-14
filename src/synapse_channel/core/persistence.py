@@ -523,6 +523,11 @@ class EventStore:
         """Return the number of events currently stored."""
         return self._families.reads.count()
 
+    @inherit_documentation(EventReader.event_metrics)
+    def event_metrics(self, window_seconds: Mapping[str, float]) -> dict[str, object]:
+        """Return retained metadata aggregates through the store's keyed reader."""
+        return self._families.reads.event_metrics(window_seconds)
+
     @inherit_documentation(EventReader.max_seq)
     def max_seq(self) -> int:
         """Return the highest sequence number stored, or ``0`` when the log is empty."""

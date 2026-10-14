@@ -92,11 +92,13 @@ The first design should support both broad and narrow collaboration scopes:
 - **Recipient set keys** for direct messages or handoffs where only named
   identities should decrypt the body.
 
-Key discovery should be explicit. Capability cards or a future identity layer
-can advertise public encryption keys, but the hub must treat those keys as data
-until [signed capability cards](signed-capability-cards.md) or per-agent
-identity exist. Operators need a manual trust-on-first-use path and a way to pin
-expected key fingerprints.
+Key discovery requires an explicit contract. A proposed advertisement of a public
+encryption key is data until the recipient validates its provenance and the
+operator's trust policy. [Signed capability cards](signed-capability-cards.md)
+and per-agent identity are existing opt-in profiles; enabling them does not
+automatically authenticate an arbitrary advertised encryption key or distribute
+it to recipients. Operators still need an explicit enrollment procedure and
+expected key fingerprints for the selected encryption-key lifecycle.
 
 ## Membership operations
 
@@ -144,11 +146,13 @@ decrypts content.
 
 The local-first tradeoff is operational complexity: key discovery, key
 rotation, member removal, device loss, and recovery phrase handling must be
-implemented before encrypted channels become a default coordination path. Until
-signed events, per-agent identity, and ACLs exist, encrypted channels remain
-opt-in and explicit. The
-[signed events and mTLS design](signed-events-mtls.md) can authenticate visible
-envelopes and trusted peers later, but it does not encrypt payloads. For
+qualified before encrypted channels become a default coordination path.
+Encrypted channels remain opt-in and explicit. Signed-event, per-agent identity
+and ACL controls already exist as separately configured profiles; their
+presence does not establish endpoint isolation, tenant separation or key
+lifecycle management. The [signed-event/mTLS profile](signed-events-mtls.md)
+authenticates its supported envelopes and peer connections within its stated
+scope; it does not itself encrypt chat bodies. For
 advertisement tamper evidence, see the
 [signed capability cards runtime](signed-capability-cards.md). For audience
 scoping without body encryption, see the [private channels design](private-channels.md).

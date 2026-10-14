@@ -9,13 +9,12 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # Declarative workflows
 
-Synapse is an orchestration layer *of sorts* — not a workflow engine, but a way
-to declare a multi-step plan and let the existing blackboard run it. The
-blackboard already executes a task graph: a task with unmet `depends_on` edges is
+Synapse workflows declare a multi-step plan as blackboard tasks. The
+blackboard derives readiness from the task graph: a task with unmet `depends_on` edges is
 blocked, and it becomes ready when every dependency reaches a terminal status. A
 **workflow** is the authoring layer on top: a plain JSON artifact that compiles to
-those blackboard tasks. There is no new runtime and no new dependency — the
-board's own ready/blocked derivation is the executor.
+those blackboard tasks. Workers must separately execute the work and report its
+outcome; the board's ready/blocked derivation does not run a build, test or deploy.
 
 ## The artifact
 
@@ -43,7 +42,7 @@ synapse workflow compile release.json --json   # task declarations as JSON
 ```
 
 `validate` parses and checks the artifact. `compile` turns it into the blackboard
-task declarations the board would execute:
+task declarations the board would store:
 
 ```text
 3 blackboard tasks:
@@ -84,7 +83,7 @@ whose keys are predicates and whose values are the required observed states:
 
 The supported predicates are `claim`, `receipt`, `tests`, `policy`, `approval`,
 `sandbox_run`, `mailbox`, and `dead_letters`. A task with `requires` is not ready
-until all dependency edges are satisfied and the evidence snapshot proves every
+until all dependency edges are satisfied and the evidence snapshot matches every
 predicate for that compiled task id:
 
 ```json
@@ -108,6 +107,13 @@ synapse workflow run release.json --agents agents.json --evidence evidence.json
 operator approval process, policy check, sandbox run, or receipt verifier update
 the snapshot while the driver waits. The board still receives ordinary tasks; the
 driver holds proof-carrying steps before assignment.
+
+The snapshot contains operator-supplied strings keyed by task and predicate.
+Matching `receipt: verified` or `approval: owner` does not independently verify a
+receipt, test run, signer or owner approval. The operator must populate these
+values through the appropriate verification and approval workflow. These
+requirements govern this driver's recommendations; they do not prevent another
+client from acting outside the driver.
 
 ## Validation is strict
 
@@ -195,9 +201,11 @@ tasks are done, in flight, ready, blocked, or skipped (a branch not taken), and
 which ready tasks to hand to which agents.
 
 ```bash
+# status.json: {"release/build": "done"}
+# agents.json: {"alice": ["ci"], "bob": []}
 synapse workflow plan release.json \
-  --status status.json \    # {"release/build": "done"} — board task statuses
-  --agents agents.json \    # {"alice": ["ci"], "bob": []} — agents and the classes they handle
+  --status status.json \
+  --agents agents.json \
   --max-in-flight 4
 ```
 
@@ -223,11 +231,12 @@ state and routes the ready steps by writing each task's `suggested_owner` — an
 once the deadline passes.
 
 ```bash
+# agents.json: {"alice": ["ci"], "bob": []}
 synapse workflow run release.json \
-  --agents agents.json \      # {"alice": ["ci"], "bob": []} — the candidate worker pool
+  --agents agents.json \
   --max-in-flight 4 \
-  --poll-interval 1.0 \       # seconds between board readings
-  --deadline 120              # seconds to keep driving before giving up
+  --poll-interval 1.0 \
+  --deadline 120
 ```
 
 ```text
@@ -264,10 +273,10 @@ invalid.
 
 ## Boundaries
 
-- **The blackboard is the executor.** A workflow compiles to ordinary tasks with
-  `depends_on` edges; the planner only decides assignments. It adds no scheduler
-  and no new transport.
-- **Single-dependency, local-first.** The artifact is plain JSON parsed with the
-  standard library; nothing new is pulled into the core.
+- **The blackboard tracks declared work.** A workflow compiles to ordinary tasks
+  with `depends_on` edges; the planner recommends owners. Work execution belongs
+  to separately configured workers or operators.
+- **Base dependencies unchanged, local-first.** The artifact is plain JSON parsed
+  with the standard library; the workflow adds no runtime package dependency.
 - **Bounded routing.** The planner hands out at most `--max-in-flight` tasks and
   one task per agent per round — work-handing, never a flood.

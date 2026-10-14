@@ -8,8 +8,10 @@
 """Track directed chats the hub delivered to no consume-live recipient.
 
 A message addressed to a name with no socket, or only sockets lacking a recent
-reaction and a live waiter, is still durable — the journal and relay mirror keep
-it — but it has no consume-live recipient. If nobody drains that name's inbox,
+reaction and a live waiter, has no consume-live recipient. A configured durable
+journal retains its chat event while storage retention allows; this diagnostic
+ledger itself is bounded process-local state, not a durable message queue.
+Without a journal, it provides no restart recovery. If nobody drains that name's inbox,
 the human ends up relaying it by hand: the exact failure the bus exists to
 remove. The hub is the one component that *sees* this happen at send time, so it
 keeps a small, bounded ledger of those targets and serves it in the state

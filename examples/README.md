@@ -69,15 +69,17 @@ and the task is handed off — all against a live hub. Expected output:
 
 Ask an on-channel model worker a question and print its reply. It uses a local
 Ollama model when one is reachable (a real answer) and falls back to the
-deterministic offline backend otherwise, so the demo runs anywhere.
+deterministic offline backend otherwise. The selected host still needs the
+documented dependencies and local socket/runtime support.
 
 ## `coding_agents_demo.py`
 
 Two agents edit one repository in parallel: one leases the API source, the other
 the tests; the hub refuses the overlapping live claim, the configured mutation
-guard denies an unclaimed covered edit, and the first messages the second
+guard's provider-neutral check refuses an unclaimed covered mutation, and the first messages the second
 directly when the API is ready. This is the worked version of the
 [parallel coding agents recipe](../docs/recipes.md).
 
 Each demo exposes a `run_demo(port, ...)` coroutine that the test-suite drives, so
-the examples stay correct as the library evolves.
+maintained tests can qualify their exact source/runtime profiles; they do not
+qualify every future version or native provider host.

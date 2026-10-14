@@ -5,14 +5,16 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — bounded wire schema for records of native vendor messages
-"""Validate the record of a message that travelled over a vendor's own channel.
+"""Validate caller-reported metadata about a native vendor message.
 
 Some agent clients can reach another session without the hub: a Claude Code
 session messages another Claude Code session, a Codex client queues a message
-into a running thread. The hub does not carry such a message, so it cannot
-store it. A ``native_message_record`` frame lets the side that sent or received
-it leave a durable record. The record enters no mailbox, produces no delivery
-receipt and wakes nobody.
+into a running thread. The hub does not carry or independently observe that
+send. A ``native_message_record`` frame lets a recorder leave declared metadata
+and optional inline text in a durable journal. The parser checks field shapes,
+bounds and supplied text/hash agreement; it does not verify the vendor action
+or outcome. The record enters no mailbox, produces no delivery receipt and
+wakes nobody.
 
 This module holds the closed vocabularies, the field bounds, the parser and the
 two pure rules a handler applies: which seat a record must be written by, and

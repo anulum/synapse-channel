@@ -151,8 +151,10 @@ compromised member from copying plaintext.
 The trusted local hub remains the coordination authority. It can still see
 channel ids, sender names, recipient names, task ids, timestamps, delivery
 metadata, and retention metadata. Treat private channels as audience-scoping
-inside trusted local coordination until per-agent identity, ACL enforcement, and
-the [signed events and mTLS design](signed-events-mtls.md) exist. The
-[identity and ACL design](identity-and-acl.md) is the future layer for join,
-leave, publish, and history-read authorization. Signed events can later bind
-channel ids and membership changes, but they do not encrypt payloads.
+inside trusted local coordination. Per-agent identity, ACLs and
+[signed-event/mTLS controls](signed-events-mtls.md) are shipped opt-ins with
+their own activation and qualification boundaries; they do not automatically
+make channel membership durable, authenticate every stored projection or
+protect direct raw-store reads. See [identity and ACL](identity-and-acl.md) for
+the actual admission controls. Any future signed membership/history contract
+requires its own evidence; signatures do not encrypt payloads.

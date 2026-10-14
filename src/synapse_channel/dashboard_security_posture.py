@@ -17,12 +17,12 @@ read. This module folds the dashboard payload into five posture rows:
 - signed federation / peer observation,
 - receipt evidence.
 
-Rows distinguish shipped capability from live deployment evidence. A missing
-role binding, peer, or receipt is reported as ``amber`` rather than invented as
-configured; a missing config fingerprint is also ``amber`` because old hubs or
-custom wrappers may not expose the bind/posture evidence the panel needs. The
-result is a read-only projection only: it never authorises an action and never
-changes hub policy.
+Row states and details distinguish capability availability from reported
+evidence. Missing role metadata, receipt rows or a configuration fingerprint are
+amber. Sandbox availability and local-only federation can be green without a
+verified deployment. Role metadata, a fingerprint, peer reachability and receipt
+declarations do not independently prove their associated enforcement controls.
+This read-only projection never authorises an action or changes hub policy.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Any
 
 GREEN = "green"
-"""Posture level for a surface with current evidence or a shipped always-on guard."""
+"""Posture level used for reported evidence or shipped capability availability."""
 
 AMBER = "amber"
 """Posture level for a surface that is available but lacks current deployment evidence."""
@@ -59,7 +59,7 @@ class SecurityPostureRow:
     state : str
         Machine-stable state summary.
     detail : str
-        Operator-facing explanation of what the current snapshot proves.
+        Operator-facing explanation of reported evidence or capability availability.
     evidence : str
         Concrete source the row was derived from.
     """

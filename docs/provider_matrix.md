@@ -1,8 +1,10 @@
 # Model provider matrix
 
-The C07 real local Ollama probe on 2026-09-19 UTC listed eight models and
-returned `OK.` from `gemma3:4b-ctx32k` through the new HTTP client, including
-input and output token usage. No paid provider endpoint was contacted.
+The historical local Ollama probe reported on 2026-09-19 UTC listed eight models
+and returned `OK.` from `gemma3:4b-ctx32k` through the HTTP client, including
+input and output token usage. No paid provider endpoint was reported contacted.
+Keep this dated observation separate from qualification of a current source,
+provider or model artifact.
 
 Core maintainers review official API and price changes at least weekly with
 the vendor-discovery intake. A newly observed version or provider remains
@@ -12,7 +14,7 @@ Observed 2026-09-19 UTC. This matrix describes the `synapse worker` HTTP path. `
 
 | Provider | Wire family | Auth | Model list | Stream parse | Tool calls | Usage | HTTP errors and rate headers | Cancellation | Live API |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Ollama | OpenAI-compatible local | Local | Local | Local | Local parse; execution unsupported | Local | Local | Local request abort; server stop unverified | Local model path verified in C03 |
+| Ollama | OpenAI-compatible local | Local | Local | Local | Local parse; execution unsupported | Local | Local | Local request abort; server stop unverified | Historical local model profile above |
 | OpenAI | Chat Completions | Local | Local | Local | Local parse; execution unsupported | Local | Local | Local request abort; server stop unverified | Unverified |
 | DeepSeek | Chat Completions | Local | Unverified | Local family parser | Local family parser; execution unsupported | Local family parser | Local | Local request abort; server stop unverified | Unverified |
 | OpenRouter | Chat Completions gateway | Local | Unverified | Local family parser | Local family parser; execution unsupported | Local family parser | Local | Local request abort; server stop unverified | Unverified |

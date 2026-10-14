@@ -7,13 +7,13 @@
 # SYNAPSE_CHANNEL — deny-by-default capability manifest for sandboxed tools
 """The permission half of the sandbox — a deny-by-default capability manifest.
 
-A sandboxed tool gets no ambient authority: it sees no filesystem, no network, and no
-resources beyond what a :class:`CapabilityManifest` explicitly grants. This module is the
-*policy* half — pure, I/O-free, no runtime of its own. It decides what a tool's grants
-permit (:func:`authorise`) and expresses those grants as ACL rules (:func:`to_acl_rules`)
-so a tool's capabilities flow through the same deny-by-default evaluator as every other
-access in :mod:`synapse_channel.core.acl` — one authorisation model, not a parallel one.
-It composes with, and never widens, that model.
+This module compares requested filesystem, network and resource capabilities with a
+:class:`CapabilityManifest`. It is pure and I/O-free, with no runtime or caller identity.
+:func:`authorise` checks the request against the supplied manifest; :func:`to_acl_rules`
+can express grants for a caller's use with :mod:`synapse_channel.core.acl`. The CLI uses
+the direct manifest check; it does not automatically evaluate enrolled-agent ACLs,
+card signatures or revocation. Standard runtime WASI clock access is not represented
+by these grants. The operator must trust and approve the manifest itself.
 
 The WebAssembly runtime that *enforces* a granted manifest lives behind the optional
 ``[wasm]`` extra in :mod:`synapse_channel.core.wasm_sandbox`; this module names no runtime

@@ -42,14 +42,17 @@ and the task is handed off.
 
 Ask an on-channel model worker a question and print its reply. It uses a local
 Ollama model when one is reachable (a real answer) and the deterministic offline
-backend otherwise, so it runs anywhere.
+backend otherwise. It still needs the documented Python/package dependencies,
+local sockets and any selected Ollama runtime/model; this is not an all-host
+qualification.
 
 ## `coding_agents_demo.py`
 
 The [parallel coding agents recipe](recipes.md) in code: two agents lease disjoint
 file scopes, the hub refuses the overlapping claim, and the configured mutation
-guard denies an unclaimed edit before the first messages the second directly
+guard's provider-neutral check refuses an unclaimed mutation before the first messages the second directly
 when the API is ready.
 
 Each demo exposes a `run_demo(port, ...)` coroutine that the test-suite drives, so
-the examples stay correct as the library evolves.
+the maintained tests can qualify their exact source/runtime profiles. Their
+existence does not guarantee arbitrary future versions or native vendor hosts.

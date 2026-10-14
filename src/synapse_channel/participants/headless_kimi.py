@@ -17,10 +17,11 @@ Three contract differences from the Claude driver, all handled here and worth st
 - **No system-prompt channel.** Kimi has no ``--append-system-prompt`` equivalent, so the
   shared bus context (role, ground rules, and any fenced peer contribution) is prepended to
   the turn's prompt under a clear separator, as the Codex driver does. The peer-injection
-  fence still labels peer text as data, so this does not weaken the boundary.
-- **Read-only by default.** Kimi's print mode auto-approves tool calls, so a reasoning
-  participant runs in **plan mode** (``--plan``) by default: the turn can reason and reply but
-  cannot modify the workspace, analogous to the Codex ``read-only`` sandbox.
+  fence labels peer text as data; it does not prove model resistance to prompt injection.
+- **Planning requested by default.** The driver passes ``--plan`` unless configured
+  otherwise. This is a vendor-mode request, not a SYNAPSE filesystem sandbox.
+  Effective tool permissions and external effects need qualification against the
+  installed CLI, configuration and session.
 - **No reported cost.** Kimi emits no monetary cost, so every Kimi
   :class:`~synapse_channel.participants.envelope.TurnResult` carries ``cost_usd == 0.0`` and a
   conversation's cost budget cannot bound a Kimi turn — only the round cap can.
@@ -100,8 +101,8 @@ def build_kimi_argv(
         Session id to resume via ``-r <id>``; omitted when empty to start fresh. Kimi
         persists sessions by default, so no extra flag is needed to make a turn resumable.
     plan_mode : bool, optional
-        Run in plan mode (``--plan``) so the turn is read-only — the default for a reasoning
-        participant. Set false only when the participant is meant to act on the workspace.
+        Request plan mode (``--plan``), enabled by default. Disabling it omits the
+        flag; neither setting independently verifies the provider's effective permissions.
 
     Returns
     -------
@@ -136,8 +137,7 @@ class KimiParticipant:
     timeout : float, optional
         Per-turn wall-clock ceiling, in seconds.
     plan_mode : bool, optional
-        Whether turns run in read-only plan mode (see :func:`build_kimi_argv`); true by
-        default for a reasoning participant.
+        Whether turns request plan mode (see :func:`build_kimi_argv`); true by default.
     """
 
     def __init__(

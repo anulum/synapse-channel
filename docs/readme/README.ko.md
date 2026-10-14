@@ -25,8 +25,7 @@ SYNAPSE CHANNEL — 저장소 개요 (한국어 번역본이며, 영어 원문�
 </p>
 
 <p align="center">
-  <strong>병렬로 도는 AI 코딩 에이전트들이 서로의 파일을 덮어쓰지 못하게 하세요.</strong><br>
-  로컬 우선 코디네이션 버스 — file-scope claims, 공유 플랜, 지속적인 leases — 하나의 저장소든 저장소 생태계 전체든.
+  <em>선언한 파일 범위로 병렬 AI 에이전트를 조율하세요. 훅과 Git 게이트는 문서에 명시된 변경 범위만 다룹니다.</em>
 </p>
 
 <p align="center">
@@ -48,27 +47,25 @@ SYNAPSE CHANNEL — 저장소 개요 (한국어 번역본이며, 영어 원문�
   <a href="https://doi.org/10.5281/zenodo.20801559"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.20801559.svg" alt="DOI"></a>
 </p>
 
-병렬로 일하는 AI 에이전트 플릿을 위한 로컬 우선 코디네이션 버스 — 하나의
-저장소 안에서도, 저장소 생태계 전체에 걸쳐서도 동작합니다. 하나의 WebSocket
-허브가 **presence**, **work claims**, **채팅**, **작업 상태**, **resource
-offers**의 공유된 단일 진실 원천이 됩니다. 에이전트들은 프로젝트를 넘나들며
-서로를 호출하고 하나의 플랜을 공유하며, file-scope claims는 각 저장소의
-에이전트들이 서로의 파일을 건드리지 못하게 지켜 줍니다.
+한 저장소 또는 저장소 생태계에서 병렬로 일하는 AI 에이전트를 위한 로컬 우선
+코디네이션 버스입니다. WebSocket 허브가 **presence**, **work claims**, **채팅**,
+**작업 상태**, **resource offers**를 공유합니다. 에이전트는 프로젝트를 넘나들며
+통신하고 플랜을 공유합니다. 허브는 다른 소유자가 보유한 선언된 범위와 충돌하는
+claim을 거부합니다. 프로바이더 훅과 Git 게이트는 각각 문서에 명시된 변경만 다룹니다.
 
-이 버스는 전송 계층이 가볍고(단 하나의 의존성, `websockets`), 설계상 허브
-중심이며(presence, leases, 히스토리를 한곳이 소유), 전부 로컬 머신에서
-돌아갑니다. 모델 워커는 로컬 Ollama 서버를 포함한 어떤 OpenAI 호환
-엔드포인트로도 채널 위에서 응답하며, 오프라인 사용을 위한 결정론적 규칙 기반
-폴백도 갖추고 있습니다.
+기본 의존성은 `websockets`와 Python 3.10에서 필요한 `typing-extensions`입니다.
+허브가 presence, leases, 기록을 관리하며 버스는 전부 로컬에서 실행할 수 있습니다.
+선택적 모델 워커는 로컬 Ollama를 포함한 설정된 OpenAI 호환 엔드포인트를 사용하며,
+오프라인용 결정론적 규칙 기반 폴백도 제공합니다.
 
-**기존 에이전트는 새 코드 없이 연결됩니다.** 어떤 Model Context Protocol
-호스트든 — Claude Code, Claude Desktop, Cursor — 번들된 `synapse mcp` 서버를
-통해 버스에 도달합니다. 이 서버는 send, durable inbox, status, claim,
-release, handoff, task 동사를 MCP 도구로, 그리고 board, agents, resources를
-읽기 전용 MCP resources로 노출합니다. A2A를 말하는 에이전트는 대신 Agent
-Card 인터페이스로 연결합니다. 허브 자체는 프로토콜에 중립적이고 코어 설치는
-단일 의존성을 유지합니다 — MCP와 A2A 어댑터는 선택적 extras입니다
-(`pip install 'synapse-channel[mcp]'`). [MCP 가이드](../mcp.md)를 참고하세요.
+번들된 `synapse mcp` 서버는 send, durable inbox, status, claim, release,
+handoff, task를 MCP 도구로 제공하고 board, agents, resources를 읽기 전용 MCP
+리소스로 제공합니다. 상호 운용성은 호스트 버전, 전송 방식, 설정에 따라 달라집니다.
+정확한 지원 범위는 [통합 목록](../integration-catalog.md)을 참조하세요.
+A2A HTTP 인터페이스의 부분 검증 범위는 별도로 문서화되어 있습니다.
+어댑터는 선언된 선택적 extras(`pip install 'synapse-channel[mcp]'`)를 사용합니다.
+[MCP 가이드](../mcp.md)와 별도로 검증된
+[인증 HTTP 프로필](../mcp-http.md)을 참조하세요.
 
 ```bash
 python -m pip install synapse-channel && synapse demo
@@ -138,10 +135,13 @@ graph LR
     H --> LOG["Event log (SQLite WAL)<br/>durable · optional SQLCipher at rest"]
 ```
 
-claim은 file scope와 함께 작업 단위를 리스(lease)하므로 두 에이전트가 같은
-파일을 편집하는 일은 결코 없습니다. 플랜, handoff, 체크포인트, 정체 감독자가
-작업을 계속 움직이게 하고, 지속 이벤트 로그 덕분에 허브 재시작은 라이브
-leases를 잃는 대신 재개합니다.
+claim은 선언된 작업 단위를 file scope와 함께 리스합니다. 허브는 다른
+소유자가 보유한 범위와 충돌하는 선언된 범위를 거부합니다. 공급자 훅과
+스테이징된 Git 변경 검사는 문서화된 작업에만 권한을 적용하며, 모든 파일
+쓰기나 외부 효과를 격리하지는 않습니다. 플랜, handoff, 체크포인트와 정체
+감독자는 작업 조정을 돕습니다. journal이 설정된 경우 재시작은 검증되고
+보존된 기록에서 만료되지 않은 leases를 복원합니다. 만료, 보존 기간 및
+무결성 격리는 복원 가능한 범위를 제한합니다.
 
 ## 코어와 선택적 레이어
 
@@ -152,7 +152,7 @@ SYNAPSE CHANNEL은 설치 가능한 하나의 패키지로 출하되지만, 날�
 |---|---|---|
 | 로컬 코디네이션 코어 | `stable` | 허브, send/wait/listen/arm, claims, tasks, locks, status, board, init, 그리고 일상적 코디네이션에 쓰이는 플릿 부트스트랩 명령들. |
 | 엣지 어댑터 | `adapter` | MCP, A2A, git 훅, tmux/프로바이더 브리지, 셸 훅, 인제스천, 기존 도구를 버스에 연결하는 worker seats. |
-| 운영자 분석 | `analysis` | Doctor, state, dashboard, causality, multihub, reliability, trust graph, directory, accounting, 플릿 스코어카드 내보내기, 매니페스트, 이벤트 쿼리. 이들은 코디네이션 상태를 변경하지 않으며, 명시적 내보내기 모드는 운영자가 선택한 대상에 쓸 수 있습니다. |
+| 운영자 분석 | `analysis` | 진단, 조회와 보고 중심의 명령 그룹입니다. 명시적 제어 모드는 상태나 설정을 변경하고 기록을 저장하거나 데이터를 내보낼 수 있습니다. 각 명령의 효과와 권한을 확인하세요. tier는 읽기 전용을 보장하지 않습니다. |
 | 거버넌스와 무결성 | `governance` | policy 검사, 승인, ACL/역할 표면, 페더레이션, Merkle roots, release receipts, 재현, 컴팩션, encrypt-key / SQLCipher 키 작업. |
 | 랩 표면 | `experimental` | 벤치마킹, participant fabric, route-task, sandbox, workflow, TTL advice, memory recall, auto-action, resource bidding. |
 
@@ -224,8 +224,8 @@ exact-identity waiter만 설치할 수 있습니다. 이는 mailbox replay와
 WSL을 사용하세요.
 
 CLI에는 두 가지 선택적 셸 편의 기능이 딸려 있습니다. `synapse completions
-bash|zsh|fish`는 모든 하위 명령의 탭 완성을 출력하고(라이브 파서에서
-생성되므로 결코 드리프트하지 않습니다), `synapse install-shell-hook`은 새
+bash|zsh|fish`는 최상위 명령, 한 단계의 하위 명령과 긴 옵션의 정적 완성을 출력하고(라이브 파서에서
+설치된 버전에 맞춰 생성하며 업데이트 후에는 다시 생성해야 합니다), `synapse install-shell-hook`은 새
 터미널마다 wake 리스너를 자동 무장하는 보호된 블록을 추가합니다.
 
 ```bash

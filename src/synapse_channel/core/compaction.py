@@ -23,11 +23,11 @@ readers of the log at once:
   replay entirely, so removing them never touches coordination state.
 * **The persistent-memory read-side** polls
   :meth:`~synapse_channel.core.persistence.EventStore.read_since` with a sequence
-  cursor and is promised loss-free, incremental delivery. Compaction therefore
-  never deletes an event above a caller-supplied ``floor_seq``: the floor is the
-  lowest sequence every consumer has already ingested, so nothing unconsumed is
-  removed. Deleting a row never recycles its sequence (the primary key only ever
-  increases), so a cursor simply skips the gap.
+  cursor. Compaction never deletes an event above a caller-supplied ``floor_seq``.
+  The caller must choose a floor no higher than every consumer's durably ingested
+  cursor; this function does not discover consumers or verify their ingestion.
+  Deleting a row never recycles its sequence (the primary key only ever increases),
+  so a cursor skips the gap; an incorrectly advanced floor can lose unread data.
 
 The policy is declarative (:class:`RetentionPolicy`) and the sweep
 (:func:`compact`) reports exactly what it removed (:class:`CompactionResult`).
@@ -184,10 +184,10 @@ def compact(
         Which retention knobs to apply; a no-op policy deletes nothing.
     floor_seq : int
         Compaction only considers events with ``seq <= floor_seq``; nothing above
-        it is touched, so a downstream ingest cursor at or below the floor never
-        loses an unconsumed event. Pass the lowest sequence every memory consumer
-        has ingested (e.g. via :meth:`~synapse_channel.core.persistence.EventStore.max_seq`
-        for a fully settled log).
+        it is touched. To preserve unread events, choose a floor at or below every
+        consumer's durably ingested cursor. The function does not verify consumer
+        progress. Use :meth:`~synapse_channel.core.persistence.EventStore.max_seq`
+        only when every consumer has durably ingested the whole log.
     now : float or None, optional
         Wall-clock time used to age out findings; the system clock is used when
         ``None``.

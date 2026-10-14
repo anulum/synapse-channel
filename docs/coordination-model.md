@@ -44,10 +44,12 @@ policy to a legacy display, while two legacy peers keep literal comparison.
 
 Every lease:
 
-- **expires**, so a crashed agent never holds a claim forever;
-- carries an **epoch**, so a paused or superseded agent cannot act on a dead
-  claim;
-- carries a **version** for optimistic concurrency, so a stale update is refused.
+- **expires** when hub operations evaluate the lease deadline;
+- carries an **epoch** for supported fencing checks. The hub's
+  `require_fencing_epoch` setting requires that generation on covered mutations;
+  epoch metadata alone does not stop an external process from acting;
+- carries a **version** for supported conditional updates. Callers must provide
+  the expected version to obtain that comparison-and-swap check.
 
 ## 3. Work
 

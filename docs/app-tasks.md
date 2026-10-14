@@ -35,9 +35,12 @@ Create an owner-only JSON file such as `offer.json`:
 ```
 
 `expires_at` must be a future UTC-offset timestamp. The verifier is fixed at
-offer time and checks one field of the returned `payload`. Choose a predicate
-that actually proves the result required for this task. A generated prompt or
-an attached result alone never completes it.
+offer time and compares one returned `payload` field's type and value. The
+`verified` state means that this fixed comparison passed; it does not independently
+verify answer truth, provenance or that a person used an app. Perform any
+required content or source verification separately. Replace the example's
+dated `expires_at` with a future time inside your current window. A generated
+prompt or an attached result alone never completes it.
 
 ```bash
 chmod 600 offer.json

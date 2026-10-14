@@ -7,8 +7,10 @@
 # SYNAPSE_CHANNEL — lease-serialising CLI commands (lock, release)
 """The lease-oriented ``synapse`` subcommands.
 
-``lock`` holds a hub lease while running a wrapped command so several agents on
-one repo take turns instead of clobbering each other, and ``release`` manually
+``lock`` acquires a finite hub lease before running a wrapped command and attempts
+a bounded release afterwards. It neither renews nor monitors the lease during
+the child; a command can outlive that lease and overlap a new owner's command.
+``release`` manually
 drops a claim the caller owns (the escape hatch for an ``--auto-release-on
 manual`` claim). Both open their own short-lived client and watch for the hub's
 grant/deny verdict rather than sharing the read-side query plumbing, so they live
@@ -75,11 +77,14 @@ async def _lock(
     poll_interval: float = 0.05,
     release_timeout: float | None = None,
 ) -> int:
-    """Hold a lease on ``task_id`` while running ``command``, serialising it across agents.
+    """Acquire a finite lease, run ``command``, then attempt a bounded release.
 
     The hub grants only one live lease per task id, so wrapping a commit in
-    ``synapse lock <project>:git -- git push`` lets several agents on one repo take
-    turns instead of clobbering each other. A lock with no explicit ``paths`` is a
+    ``synapse lock <project>:git -- git push`` defers participating contenders
+    while that lease remains live. The acquisition client disconnects before the
+    child starts. No renewal or ownership monitor runs during the child, so it
+    can outlive the lease and overlap another owner's command. This is not an
+    indefinite external-effect mutex. A lock with no explicit ``paths`` is a
     pure named mutex: its claim is namespaced to its own task id, so two different
     locks never contend (one repo's ``:git`` push-lock cannot block another repo's
     lock). Passing ``paths`` opts into shared file-scope overlap instead.
@@ -91,7 +96,7 @@ async def _lock(
     task_id : str
         The lease key, e.g. ``"quantum:git"``.
     command : list[str]
-        The command to run while the lease is held.
+        The command to start after acquisition; its runtime is not bounded by the lease.
     paths : list[str]
         Optional file-scope paths to lock alongside the id.
     wait_timeout : float
@@ -334,11 +339,11 @@ def _cmd_release(args: argparse.Namespace) -> int:
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``lock`` and ``release`` subparsers on the top-level CLI."""
     lock = subparsers.add_parser(
-        "lock", help="Hold a lease while running a command (serialise e.g. commits)."
+        "lock", help="Acquire a finite lease before a command; no renewal during the child."
     )
     lock.add_argument("task_id")
     lock.add_argument(
-        "command", nargs="+", help="The command to run while holding the lease (after --)."
+        "command", nargs="+", help="The command to start after lease acquisition (after --)."
     )
     lock.add_argument("--name", default="USER")
     lock.add_argument(

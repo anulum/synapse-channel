@@ -8,10 +8,11 @@
 """Surface an opt-in upgrade notice when a newer release is on PyPI.
 
 The check is deliberately unobtrusive and private by default. ``synapse --version``
-prints only the installed version unless :data:`ENABLE_ENV` is set. When enabled,
-a daily on-disk cache means PyPI is queried at most once per
-:data:`CACHE_TTL_SECONDS`, every failure path (no network, a slow endpoint,
-malformed JSON, an unwritable cache) yields *no notice* rather than an error, and
+prints only the installed version unless :data:`ENABLE_ENV` is nonempty. When enabled,
+a fresh successful cache entry is reused for :data:`CACHE_TTL_SECONDS`.
+Without one, calls can retry; failures can retain a stale cached notice and
+concurrent calls are not globally serialized. The opt-in fetch is synchronous
+with a two-second socket timeout, not a hard DNS or whole-command deadline, and
 the whole thing is silenced by the legacy :data:`SUPPRESS_ENV` environment
 variable. The public entry point, :func:`update_notice`, takes injectable
 ``env``/``now``/``cache_path``/``fetch`` parameters so the behaviour is fully
@@ -31,7 +32,7 @@ from . import __version__
 
 #: PyPI JSON endpoint that reports the latest released version.
 PYPI_URL = "https://pypi.org/pypi/synapse-channel/json"
-#: Query PyPI at most once per this many seconds; serve the cache in between.
+#: Reuse a successful cached result for this many seconds before refreshing.
 CACHE_TTL_SECONDS = 86_400.0
 #: Setting this environment variable to any non-empty value enables the check.
 ENABLE_ENV = "SYNAPSE_UPDATE_CHECK"

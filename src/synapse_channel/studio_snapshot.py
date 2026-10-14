@@ -14,11 +14,11 @@ module is the projection that produces it — a pure dict-to-dict reshape of the
 call and no new state, only a curated view of what the dashboard already exposes.
 
 The projection foregrounds the risk **verdict** (the reserved red/amber/green signal),
-derives every headline count from the same lists the panels render, and adds a
-security-posture section from the same source payload. It is robust to a partial payload:
-a missing section projects to its empty default rather than raising, so a degraded hub
-still yields a renderable snapshot. :func:`frozen_studio_snapshot` returns a deterministic
-sample for offline rendering and tests.
+derives agent, task, conflict and risk counts from the projected lists, carries the
+fleet model's reported claim totals, and adds security posture from that source.
+Missing sections receive renderable defaults; these do not establish complete or
+current evidence. :func:`frozen_studio_snapshot` returns a deterministic sample for
+offline rendering and tests.
 """
 
 from __future__ import annotations
@@ -67,7 +67,8 @@ def build_studio_snapshot(dashboard: Mapping[str, Any]) -> dict[str, Any]:
         ``verdict``, ``generated_at``, a ``headline`` counter row, and the ``agents``,
         ``hub``, ``claims``, ``tasks``, ``conflicts``, ``security_posture``,
         ``observed_fleet``, and ``risk`` sections behind it. Counts are derived from the
-        same lists the sections carry, so they cannot drift apart.
+        projected lists except claim totals, which come from the fleet model.
+        Defaults do not establish completeness of a partial source payload.
     """
     fleet = _mapping(dashboard.get("fleet"))
     risk = _mapping(dashboard.get("risk"))

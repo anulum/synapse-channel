@@ -56,7 +56,7 @@ The `Makefile` wraps the common tasks (`make help` lists them):
 | `make test` | the test suite with the coverage gate |
 | `make cov` | tests with a per-line missing-coverage report |
 | `make reuse` | SPDX/REUSE licensing compliance |
-| `make preflight` | the full local gate before a commit |
+| `make preflight` | exhaustive opt-in local gate when resources are explicitly reserved |
 
 ## Standards a change must meet
 
@@ -158,7 +158,9 @@ otherwise unmeasured source growth could bypass the guard. Both `--check` and
 
 1. Branch from `main`.
 2. Make the change with tests and docs in the same commit sequence.
-3. Run `make preflight` until it is green.
+3. Run the scoped lint, type and behavioral checks for the change and require
+   the applicable hosted CI gates. Reserve an exhaustive local preflight only
+   when the task explicitly has resources for it.
 4. Open a pull request describing the change, the rationale, and how it was
    verified. Link any related issue.
 

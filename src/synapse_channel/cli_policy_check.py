@@ -9,9 +9,10 @@
 
 The command reads a release-receipt JSON (the evidence ``synapse release
 --receipt-json`` produces) and a policy file, then prints a deterministic
-decision report. It is advisory by default: it always exits ``0`` so it can run
-as evidence-producing tooling. Only an enforcement-mode policy with a ``fail``
-decision exits non-zero, and only when ``--enforce`` opts into that gate.
+decision report. A valid advisory evaluation exits ``0``. An enforcement-mode
+policy with a ``fail`` decision exits ``1`` when ``--enforce`` opts into that gate.
+Invalid or unavailable inputs and commitment/signature processing errors may exit ``2``
+in either mode; those failures are not successful advisory reports.
 """
 
 from __future__ import annotations

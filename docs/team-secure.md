@@ -76,9 +76,11 @@ synapse hub --db ~/synapse/hub.db --token-file ~/synapse/token \
 ```
 
 Agents that connect must use the shared token **and** sign registration under a
-key enrolled in the trust bundle. Every client already signs with this machine's
-auto-provisioned key, so the shortest path for a seat is to enrol that key for
-all the names it uses, in one call per machine:
+key enrolled in the trust bundle. The Python agent can provision and use its
+machine key when the required cryptography dependency and identity setup are
+available. Other clients need their documented signer configuration; for
+example, the JavaScript SDK requires a signing callback. Enrol the exact key
+and every sender name the selected client actually uses:
 
 ```bash
 synapse identity machine-key --sender proj/claude --sender proj/claude-rx --trust trust.json

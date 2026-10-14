@@ -15,9 +15,12 @@ pre-flighted the tool without running it, and run it under the manifest with an 
 receipt — the full operator path the [sandboxed tools design](sandboxed-tools-and-marketplace.md)
 describes.
 
-The sandbox is the only place untrusted tool code runs in Synapse: a tool gets **no ambient
-authority** — no filesystem, no network, no clock — beyond what its manifest grants, and the
-manifest is bound to one exact module by content digest.
+The sandbox applies to modules launched through `synapse sandbox`, with
+manifest-controlled filesystem preopens and guest resource limits. It supplies no
+outbound socket-opening import or network descriptor. Standard WASI clocks remain
+available without a manifest grant. Provider CLI processes and remote MCP tools
+are outside this sandbox. The CLI matches the module's digest and requires local
+caller confirmation with `--approve`; it does not verify signed cards or caller identity.
 
 ## Prerequisites
 
@@ -113,8 +116,10 @@ preflight for 'greet': ready to run
   exported functions: run
 ```
 
-Because the pre-flight never executes the tool, even a tool whose entrypoint loops forever
-pre-flights instantly. Ask for an entrypoint the module does not export and the pre-flight
+Preflight does not execute the entrypoint, so an infinite loop there does not run
+during this check. Compilation still consumes host resources without a deadline;
+the check does not validate the full entrypoint calling convention or promise a
+successful run. Ask for an entrypoint the module does not export and preflight
 tells you so — and exits non-zero:
 
 ```console
@@ -157,6 +162,14 @@ receipt** — the tool id, how it exited, the fuel it burned, the digest of its 
 capabilities it was granted — the same kind of audit evidence a release receipt carries. Add
 `--json` for the full receipt.
 
+The receipt is the local runner's declaration, not independent execution proof or
+authenticated approval. `--input FILE` records a digest of that file; the current
+runtime does not pass those bytes to the guest. Store fuel and memory limits
+apply during guest initialization, but the execution timer starts only after
+instantiation; it does not bound compilation or instantiation time. CLI success
+means that a receipt was emitted: inspect its `exit` field to distinguish normal
+completion, a fuel trap and a memory/instantiation refusal.
+
 ## Granting access
 
 The tool above needed nothing from the host. To let a tool read or write a directory, add a
@@ -174,10 +187,15 @@ filesystem grant — the tool sees only the virtual `guest_path`, never the host
 }
 ```
 
-Network is denied by construction — WASI preview1 exposes no sockets — so a `network` grant is
-recorded as policy but a tool reaches the network only through a host import that is never
-linked. Each grant is evaluated by the same deny-by-default ACL model as every other access in
-Synapse, never a parallel one.
+Network grants are recorded as policy but do not enable outbound networking in
+this runtime: no socket-opening import or network descriptor is supplied. The CLI
+checks the request against the supplied manifest; conversion of grants to ACL
+rules is a separate library utility, not an enrolled-agent admission check.
+
+Host paths are checked for symlinks, existence and optional `--workspace-root`
+containment before the runtime preopens them by name. Keep those path components
+stable and operator-controlled until preopening completes; validation does not
+pin directory descriptors against a concurrent rename or symlink replacement.
 
 ## Where to go next
 

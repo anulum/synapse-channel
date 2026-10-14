@@ -84,13 +84,14 @@ machine. Model workers reply on-channel through any OpenAI-compatible endpoint,
 including a local Ollama server, with a deterministic rule-based fallback for
 offline use.
 
-**Your existing agents plug in without new code.** Any Model Context Protocol
-host — Claude Code, Claude Desktop, Cursor — reaches the bus through the bundled
-`synapse mcp` server, which exposes send, durable inbox, status, claim, release,
+The bundled `synapse mcp` server exposes send, durable inbox, status, claim, release,
 handoff, and task verbs as MCP tools plus the board, agents, and resources as
-read-only MCP resources. Agents that speak A2A connect through the Agent Card face instead.
-The hub itself stays protocol-agnostic and the core install keeps its single
-dependency — the MCP and A2A adapters are optional extras (`pip install
+read-only MCP resources. Host interoperability depends on the installed host
+version, transport and configuration; see the exact support boundaries in the
+[integration catalogue](docs/integration-catalog.md). The A2A HTTP surface has
+its separately stated partial qualification. The base runtime uses `websockets`
+and, on Python 3.10, `typing-extensions`; adapters use their declared optional
+extras (`pip install
 'synapse-channel[mcp]'`). See the [MCP guide](docs/mcp.md) and the separately
 qualified [authenticated HTTP profile](docs/mcp-http.md).
 
@@ -217,11 +218,12 @@ graph LR
 ```
 
 A claim leases a declared unit of work with a file scope, so the hub refuses
-overlapping live claims. Provider hooks and the staged Git gate enforce that
+conflicting declared scopes held by another owner. Provider hooks and the staged Git gate enforce that
 authority on their documented surfaces; they do not sandbox every filesystem or
 external side effect. Plans, handoffs, checkpoints, and a stall supervisor keep
-the work moving, and the durable event log means a hub restart resumes live
-leases rather than losing them.
+the work moving. With a configured journal, restart restores unexpired leases
+from validated retained records; expiry, retention and integrity quarantine
+limit what can be restored.
 
 ## Core and Optional Layers
 
@@ -232,14 +234,15 @@ tiered so the lean bus stays clear:
 |---|---|---|
 | Local coordination core | `stable` | The hub, send/wait/listen/arm, claims, tasks, locks, status, board, init, and fleet bootstrap commands used for daily coordination. |
 | Edge adapters | `adapter` | MCP, A2A, git hooks, tmux/provider bridges, shell hooks, ingestion, and worker seats that connect existing tools to the bus. |
-| Operator analysis | `analysis` | Doctor, state, dashboard, causality, multihub, reliability, trust graph, directory, accounting, fleet scorecard export, manifests, and event queries. These do not mutate coordination state; explicit export modes can write to an operator-selected sink. |
+| Operator analysis | `analysis` | Doctor, state, dashboard, causality, multihub, reliability, trust graph, directory, accounting, fleet scorecard export, manifests, and event queries. These are inspection-focused groups; explicit controls may change state or configuration, persist records, or export. Consult each verb's effects and permissions. |
 | Governance and integrity | `governance` | Policy checks, approvals, ACL/role surfaces, federation, Merkle roots, release receipts, reproduction, compaction, encrypt-key / SQLCipher key operations. |
 | Lab surfaces | `experimental` | Benchmarking, participant fabric, route-task, sandbox, workflow, TTL advice, memory recall, auto-action, and resource bidding. |
 
 The authoritative map is [`synapse_channel.surface_taxonomy`](src/synapse_channel/surface_taxonomy.py)
 and the generated operator view is [Public surface and stability](docs/public-surface.md).
 Adapters and lab surfaces can be installed and used from the same package, but
-they do not change the single-dependency local core.
+the base dependency floor remains `websockets` plus `typing-extensions` on Python
+3.10. A tier or profile label grants no authority and does not promise read-only behaviour.
 
 Six measurable discovery profiles keep those layers explicit without hiding or
 removing commands: `first-use`, `core`, `adapters`, `governance`, `labs`, and
@@ -371,8 +374,9 @@ remote, macOS, native Windows, and container changes remain blocked. See
 expiry, nonce-consumption, and exact-PID authority rules.
 
 Two optional shell conveniences ship with the CLI: `synapse completions
-bash|zsh|fish` prints tab completion for every subcommand (generated from the
-live parser, so it never drifts), and `synapse install-shell-hook` adds the
+bash|zsh|fish` prints static completion for top-level commands, one nested level
+and their long options (generated from the installed version's parser;
+regenerate after upgrading), and `synapse install-shell-hook` adds the
 guarded block that auto-arms a wake listener in each new terminal:
 
 ```bash
@@ -649,7 +653,7 @@ repeatable paths and the unsupported behavior that remains outside each demo.
   versions and provides one inspect/install/diagnose/uninstall entry point for
   the host packages whose lifecycle has been verified.
 
-  The optional [pi participant](docs/pi.md) uses pinned pi 0.86.0 RPC. Its
+  The optional [pi participant](docs/pi.md) uses pinned pi 0.87.1 RPC. Its
   separate extension checks live claims before supported file writes; the
   default participant runs without tools.
 
@@ -1009,8 +1013,9 @@ does not certify that release evidence is sufficient.
 
 ### SQLCipher live event store (at rest)
 
-**SQLCipher completes the at-rest encryption story for the live hub.** The
-default install stays dependency-free and uses ordinary SQLite. When you need
+**SQLCipher provides an optional encrypted live event-store backend.** The
+default SQLite backend adds no encryption dependency beyond the base runtime.
+When you need
 page-level confidentiality for the durable coordination log while the hub holds
 it open, install the optional extra and pass an owner-only key file:
 
@@ -1109,9 +1114,9 @@ readable on the wire), so add native TLS or a `wss://` proxy — or pass
 
 ### MCP server face
 
-Any MCP-compatible agent — Claude Desktop, Claude Code, an editor assistant —
-coordinates through Synapse with no Synapse-specific code. Install the optional
-extra and register the host in one command:
+The packaged MCP adapter exposes coordination tools to hosts within the
+documented version, transport and configuration profiles. Install the optional
+extra and register it with a supported host:
 
 ```bash
 python -m pip install 'synapse-channel[mcp]'
@@ -1181,8 +1186,10 @@ writes, release receipts, or presence. See the [Go client guide](docs/go-client.
 
 `clients/js` provides the official typed WebSocket client, published to npm as
 `@anulum/synapse-channel`. Unlike the read-only Go client it speaks the mutation
-protocol — chat, claims, releases, board reads, presence, and receipts — and runs
-unchanged in the browser and in Node 20+ with no runtime dependencies. See the
+protocol — chat, claims, releases, board reads, presence, and receipts. It declares
+no runtime package dependencies and requires a compatible global `WebSocket` or
+an explicitly supplied WebSocket factory. Its Node 20+ engine declaration alone
+does not establish availability of that global. See the
 [TypeScript/JavaScript client guide](docs/js-client.md).
 
 The opt-in [scoped attachment API](docs/attachments.md) transfers small
@@ -1258,13 +1265,13 @@ explicitly does *not* claim:
 | [`hub --paranoid`](docs/paranoid-mode.md) | Shipped | Strict production profile with an explicit missing-hook checklist: token-required access, durable event logs, per-message auth on selected frames, ACL + native WSS, metrics bearer auth. Composes with `--team-secure`. | — |
 | [`hub --secure`](docs/secure-mode.md) | Shipped | Strict multi-seat production umbrella: composes `--team-secure` and `--paranoid`, then bounds per-agent (100/s), per-host (500/s), and per-host-connection (10) flood limits. Fails closed listing all missing material at once; a stricter operator limit is kept; one consolidated report. | — |
 | Flood auto-enable (`--bridge-exposed`, `--expect-multi-seat`) | Shipped | Without `--secure`, fills disabled flood limits when the hub starts exposed (off-loopback bind, connect token, multi-seat intent, or bridge). Both flags default off; multi-seat is also inferred from trust-profile material. Operators running A2A/MCP against the hub should pass `--bridge-exposed`. | Runtime seat count and bridge process discovery are not automatic. |
-| [At-rest encryption](docs/at-rest-encryption.md) | Shipped (opt-in extras) | SQLCipher page encryption for the live event store, plus whole-file AES-256-GCM envelopes for relay logs, A2A state, cursors, and archives; passphrase / PKCS#11 / TPM2 / cloud-HSM key wrapping, threshold escrow, attestation gates. | RAM protection; multi-tenant isolation. |
+| [At-rest encryption](docs/at-rest-encryption.md) | Shipped (opt-in extras) | SQLCipher page encryption for the live event store, plus whole-file AES-256-GCM envelopes for relay logs, A2A state, cursors, and archives; passphrase and explicitly selected PKCS#11 / TPM2 / cloud-provider key-wrap interfaces, threshold escrow, operator HMAC statement checks. | RAM protection; multi-tenant isolation; hardware quote or freshness verification. PKCS#11 requires AES secret-key/key-wrap support and excludes YubiKey PIV; physical hardware qualification is separate. |
 | [End-to-end encrypted channels](docs/end-to-end-encrypted-channels.md) | Shipped (runtime) | Selected chat payloads encrypted with `send --encrypt-key-file`, decrypted locally with `listen --decrypt-key-file`. | Key discovery and rotation; private notes/checkpoints/artifacts are follow-on work. |
 | [Private channels](docs/private-channels.md) | Shipped (runtime) | Member-scoped chat delivery, bounded member-only history, channel-tagged relay export, metadata-only event-query filters. | Payload encryption; cryptographic identity. |
 | [Per-message authentication](docs/per-message-authentication.md) | Shipped (opt-in) | HMAC-SHA256 on selected mutating frames after connect auth: canonical frames, key ids, sender-bound CLI keys, nonces, timestamp windows, bounded replay cache, rotation and revocation. | Payload encryption; public-key signatures; identity enforcement. |
 | [Identity and ACL](docs/identity-and-acl.md) | Implemented (TOFU + opt-in operator enforcement) | Machine-key trust-on-first-use pins when `cryptography` is installed; operator identity bundles; project namespaces; deny-by-default verb/target ACLs including `mailbox` and `role-claim`. | Automated credential lifecycle, read-surface ACLs, owner recovery, and full multi-tenant IAM. |
 | [Policy engine](docs/policy-engine.md) | First tranche implemented (advisory) | Required tests, strict typing, owner approval, evidence freshness, artifact parity, and no-merge-without-receipt rules evaluated over git-native claims, receipts, and event-log evidence. | Blocking anything by itself — operators decide what becomes a hook or CI gate. |
-| [Signed events and mTLS](docs/signed-events-mtls.md) | Library/runtime primitives shipped; packaged profile staged | Ed25519 event verification, replay/scope checks, mutual-TLS server contexts, and certificate-pin trust bundles for guarded multi-host paths. | Hub CLI loading of signed-event trust and client CAs; managed key lifecycle; payload encryption; external federation certification. |
+| [Signed events and mTLS](docs/signed-events-mtls.md) | Library/runtime primitives shipped; packaged profile staged | Ed25519 frame verification, replay/scope checks, mutual-TLS server contexts, and certificate-pin trust bundles for guarded multi-host paths. | Automatic retention of sender signatures in projected journal rows; hub CLI loading of signed-event trust and client CAs; managed key lifecycle; payload encryption; external federation certification. |
 | [Differential-privacy blackboard](docs/differential-privacy-blackboard.md) | Design target | Redacted and noisy board projections for multi-organisation views; raw local board data stays exact for the operator. | Payload encryption; replacing private or E2E channels; anonymising raw logs. |
 | [Signed capability cards](docs/signed-capability-cards.md) | Shipped (advisory) | Separate Ed25519 card keys and scoped trust bundles; strict canonical signing; expiry, revocation, binding, digest, and replay/downgrade diagnostics; optional owner-only SQLite history across hub restarts; projection through manifests, directories, dashboards, MCP resources, and Agent Cards. | Authorising tools; replacing per-message auth or signed events; sandboxing agents; managed key distribution; enforced admission. |
 
@@ -1537,9 +1544,10 @@ tracks stale claims, declared failed-check evidence, broken handoff candidates,
 and merge-conflict frequency as audit signals, not scores. It does not rank
 agents, assign trust grades, or replace review of the underlying event rows.
 
-Use `synapse accounting` for opt-in model cost/token usage. Synapse never calls a
-model provider and collects no telemetry, so usage exists only when you record
-it: `synapse accounting record` posts a `usage`-kind progress note, and `synapse
+Use `synapse accounting` for opt-in model cost/token usage. This accounting
+projection makes no model-provider request; separately configured workers and
+participants can invoke their backends. Usage totals come from recorded notes:
+`synapse accounting record` posts a `usage`-kind progress note, and `synapse
 accounting report ./synapse.db` aggregates those notes into per-agent and
 per-model totals, with optional `--pricing` for cost estimates and `--budget` for
 budget evidence. Budgets are evidence, not an enforcement gate.
@@ -1631,10 +1639,13 @@ The [sandboxed tools and marketplace research](docs/sandboxed-tools-and-marketpl
 asks what it would take to run untrusted tool code safely — a capability-limited
 WebAssembly sandbox (deny-by-default filesystem, network, and resources) — and
 only then a marketplace built on signed capability cards, an explicit permission
-manifest, and run receipts. No untrusted code runs without the sandbox, and no
-executable marketplace ships before all the preconditions exist. The sandbox ships
-behind the optional `[wasm]` extra, while signed capability cards, the permission
-model, and bounded run receipts supply the other runtime prerequisites; the
+manifest, and run receipts. The sandbox applies to modules launched through
+`synapse sandbox`; ordinary provider processes and remote MCP tools are outside
+it. It ships behind the optional `[wasm]` extra. Signed capability cards and ACL
+utilities are separate facilities, not a composed marketplace admission path;
+the CLI checks the supplied manifest's digest and requires `--approve`, without
+verifying card signatures or caller identity. WASI clocks remain available;
+guest resource limits do not bound compilation or instantiation. The
 [WASM sandbox getting-started guide](docs/wasm-sandbox-getting-started.md) walks an
 operator from a tool's source through `validate`, `test`, and `run`. The marketplace
 distribution layer remains a boundary specification — local-first and deny-by-default
@@ -1664,11 +1675,13 @@ changes the hub default and explicit manual TTL values still win.
    mutual exclusion, while documented provider hooks and the staged Git gate
    enforce supported mutation paths. Different worktree labels do not contend
    at the hub, so use actual isolated Git worktrees for concurrent edits.
-3. Leases auto-expire, so a crashed agent never holds a claim forever, and each
-   lease carries an epoch so a superseded agent cannot act on a dead claim. An
-   owner can save a durable checkpoint on the task; if its lease lapses, the next
-   agent to claim the task inherits that checkpoint and resumes rather than
-   restarting.
+3. Lease expiry is evaluated by hub operations such as heartbeat and snapshot
+   queries. Documented mutations check ownership and, when supplied, the lease
+   epoch. `--require-fencing-epoch` refuses supported lease mutations that omit
+   the epoch; these checks do not stop an external process from writing files. An
+   owner can save a durable checkpoint string; after expiry a new claimant can
+   inherit it as a resume hint. The hub does not itself restart the agent,
+   restore process state or verify the checkpoint's contents.
 4. Release on completion; status and an optional artefact reference can be
    attached while the task is in progress. A held task can also be handed off
    atomically to another online agent — keeping its scope, status, and context,
@@ -1776,9 +1789,9 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | `pane_wake` | Staged wake preparation and submission through `agent_tmux.inject_wake`, with verified pane binding and retry state. |
 | `lingering_close` | Orderly end of an HTTP connection whose request was not read to its end, bounded in time, bytes and count, for both HTTP servers. |
 | `client` | The reusable async agent connection and coordination helpers. |
-| `persistence` | Append-only SQLite event store (WAL) giving the hub a crash-durable spine. |
+| `persistence` | WAL-backed event store with documented durability classes and recovery of retained supported events. |
 | `journal` | Records mutations as events and replays them to rebuild state on restart. |
-| `ratelimit` | Per-agent and per-host token-bucket limiters, plus per-host connection caps, so one runaway source cannot swamp the hub. |
+| `ratelimit` | Configured per-agent/per-host token buckets and per-host connection caps bound their admission surfaces; they are not resource-exhaustion immunity. |
 | `auth` | Optional shared-secret connect token (proportionate, not a cryptographic identity). |
 | `chat_backends` | Pluggable reply backends (OpenAI-compatible HTTP, rule-based). |
 | `routing` | Classify a request into a task class and route it to a tiered backend. |
@@ -1813,7 +1826,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | Classes | 1152 |
 | Wire message types | 114 |
 | CLI subcommands | 251 |
-| Test functions | 11417 |
+| Test functions | 11435 |
 | Benchmark harnesses | 11 |
 | Documentation pages | 84 |
 | GitHub Actions workflows | 27 |
@@ -1859,15 +1872,19 @@ opt-in and deny-by-default:
 - **Signed events and trusted peers** — embedded hubs can accept Ed25519 event
   signatures as the per-message alternative, and guarded multi-hub/federation
   paths compose live certificate pins with operator-confirmed peer policy. The
-  packaged hub CLI does not load an Ed25519 event-trust bundle or client CA, so
-  `--tls-certfile --tls-keyfile` alone is server TLS, not mTLS.
+  packaged hub CLI does not load an Ed25519 event-trust bundle. Its
+  `--multihub-serving-policy` profile loads a client CA and requests optional
+  client certificates; policy separately verifies the peer identity. Ordinary
+  clients may connect without a certificate. `--tls-certfile --tls-keyfile`
+  alone is server TLS, not required-client-certificate mTLS.
 - **Deny-by-default ACL** — `--acl-policy` with `--require-acl` rejects mutating frames
   from identities the policy does not grant.
 - **Authenticated guard evidence** — native file-claim hook denials can be
   journalled through a separately token-authenticated, digest-only
   `guard_denial` frame; open or journal-free hubs refuse the evidence path.
 - **Bounded resources** — connection, frame-size, JSON-depth, rate, and history caps
-  keep one runaway agent from exhausting the hub.
+  bound their configured admission, retention and parsing surfaces; they do not
+  guarantee immunity to resource exhaustion.
 - **One-flag strict mode** — [`synapse hub --paranoid`](https://anulum.github.io/synapse-channel/paranoid-mode/)
   turns the strict set on together.
 
@@ -1953,8 +1970,10 @@ The threat model and how to report a vulnerability are in
 - **Task-class routing is heuristic.** The classifier sorts a request by length
   and a keyword set; tune the thresholds for your workload. Per-tier model
   latency is not benchmarked offline (it needs a live model server).
-- **File-scope claims are advisory, not filesystem access.** The hub never reads
-  a filesystem; a claim's `paths` are opaque strings compared only for overlap.
+- **File-scope claims are advisory, not filesystem access.** Claims carry
+  declared scope metadata; they do not grant access to the named files.
+  Legacy paths use literal file/directory overlap, while configured canonical
+  and semantic scopes carry their own identity and comparison boundaries.
   Normal relative paths stay narrow, while absolute or traversal-like declarations
   such as `../../etc/passwd` widen to the whole worktree so they cannot
   underclaim and miss a conflict. They do not grant filesystem access. See
@@ -1971,7 +1990,8 @@ The threat model and how to report a vulnerability are in
   also remain available over the CLI and the MCP resources.
 - **`synapse --version` is network-silent by default.** Set
   `SYNAPSE_UPDATE_CHECK=1` to opt in to a best-effort PyPI newer-release check
-  (once a day, cached, no payload beyond the request itself). Set
+  (fresh successful cache reused for 24 hours; failed/stale checks may retry).
+  The opt-in fetch is synchronous and may use a stale cached notice. Set
   `SYNAPSE_NO_UPDATE_CHECK=1` to suppress the check even when opt-in is present.
 
 ## Beyond one machine: SYNAPSE CHANNEL Fleet
@@ -2007,7 +2027,7 @@ graph LR
 | --- | --- |
 | `sync` daemon | The follower loop as a durable service: a persisted per-peer mirror that survives restarts, page/new-event/time budgets that make large backlogs resumable partial successes, exponential backoff isolation so one slow peer cannot serially block healthy ones, and fail-closed cursors — a failed poll never advances the mirror. |
 | Live trust reload | A versioned operator trust schema assembled into immutable trust generations; authorisation and pinned TLS are rebuilt *before* a changed generation can open a socket, and an invalid live update denies that poll rather than falling back to a cached allow. |
-| `synapse-fleet` CLI | A separate binary (the `synapse` surface is untouched): `sync status` with per-peer clock skew, a read-only federation `doctor` (reachability, RTT, cursor lag, mirror integrity, certificate expiry, revocations), `observed` — peers' coordination state rendered offline from the mirror with every claim tagged `observed@<hub>` (advisory, never local authority), `federation` key/certificate lifecycle with zero-downtime add-new-then-revoke-old rotation, and strict `journal verify`/`repair-cursor`. |
+| `synapse-fleet` CLI | A separate binary: `sync status` with per-peer clock skew, a read-only federation `doctor` (reachability, RTT, cursor lag, mirror integrity, certificate expiry, revocations), `observed` — peers' coordination state rendered offline from the mirror with every claim tagged `observed@<hub>` (advisory, never local authority), `federation` key/certificate lifecycle with an operator-ordered add-new-then-revoke-old sequence, and strict `journal verify`/`repair-cursor`. A rotation sequence alone does not guarantee uninterrupted service. |
 | `ResilientClaimForwarder` | A library layer adding retry, idempotency, and metrics around the core claim-forward seam for cross-hub claim routing. |
 
 Fleet changes none of this package's features and removes nothing from it; it
@@ -2018,19 +2038,23 @@ adds the multi-machine operations layer on top. For licensing, see
 ## Commercial use
 
 SYNAPSE CHANNEL is **dual-licensed**, and there is **no feature difference between the
-open-source and the commercial build** — the package on PyPI *is* the full product. A
-commercial licence changes the **terms, not the code**. The separately licensed
+open-source and the commercial build**: both use the public Core codebase. A
+commercial licence changes the **terms, not the code**. Optional dependencies,
+platform support and documented runtime limits still apply. The separately licensed
 [Fleet package](#beyond-one-machine-synapse-channel-fleet) is an *addition* for
 multi-machine operations, built on this core's public federation primitives —
-nothing here is held back to make room for it. You can run the whole platform
-yourself, forever, at no cost; the paid layers **add** permission, hosting, support, and
-convenience on top of the free core, and nothing is ever moved behind a paywall.
+nothing here is held back to make room for it. The Core licence has no per-seat
+fee under the AGPL; infrastructure and external provider costs are separate.
+Paid layers **add** agreed permission, hosting, support and convenience.
 
-- **Use it free under the AGPL-3.0** for open-source, research, internal, or personal
-  work — including inside a company — as long as you do not expose a closed-source or
-  hosted derivative over a network to third parties.
-- **Buy a commercial licence** to ship a **closed-source** product or a **SaaS** without
-  the AGPL's network-copyleft obligation — the same code, under your own terms.
+- **Use it under the AGPL-3.0** subject to its applicable conditions, including
+  corresponding-source offers for remote users of modified versions and source
+  requirements when conveying covered works. Commercial, research or internal
+  labels do not by themselves determine which conditions apply.
+- **Request commercial terms** when your deployment cannot satisfy those
+  conditions. Hosted use alone does not require opening an entire software
+  stack; review the covered work and permission scope in
+  [`LICENSE`](LICENSE) and [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md).
 - **Running it free and it helps you?** Development is independent and
   self-funded — you can buy us a coffee:
   ☕ [Buy Me a Coffee](https://buymeacoffee.com/anulum) ·
@@ -2052,11 +2076,11 @@ convenience on top of the free core, and nothing is ever moved behind a paywall.
 
 | Layer | For | What you add |
 | --- | --- | --- |
-| **Community** — free (AGPL-3.0) | self-hosting, research, personal, internal | the whole platform, unlimited; copyleft applies |
+| **Community** — free (AGPL-3.0) | self-hosting, research, personal, internal | public Core feature set; copyleft and documented runtime limits apply |
 | **Organisation Licence — USD 490/yr** | one legal entity that only needs commercial permission | the right to use and embed it **without** the AGPL copyleft; no hosted service, dashboard, SLA, support, or Fleet entitlement |
 | **Pro — USD 19/mo or 190/yr** | one developer shipping closed-source products or private hosted services | commercial permission for one developer, mobile app with push *(planned)*, and email support |
 | **Team — USD 39/user/mo or 390/user/yr** | a team owning shared coordination workflows; minimum 3 seats | unlimited projects in one legal entity, hosted dashboard *(planned)* while operational data stays local, security-patch SLA, and onboarding |
-| **FLEET Enterprise — quote** | regulated, multi-hub, or multi-organisation deployments | separately entitled private software with managed federation, SSO, audit exports, compliance support, and a deployment-specific SLA |
+| **FLEET Enterprise — quote** | regulated, multi-hub, or multi-organisation deployments | separately entitled private software; federation, SSO, audit exports, managed services, compliance support and SLA scope require deployment-specific agreement and qualification |
 
 Items marked *(planned)* are not available yet; they are not part of what a plan delivers today.
 

@@ -32,10 +32,10 @@ the cross-hub provenance — the verified peer, the asserted operator and origin
 previous holder — that a plain release never carries. The hub's own agents are then told the
 lease was revoked, so a former holder does not keep acting on a dropped lease.
 
-A single-person or quorum-completing two-person relay carrying ``idem_key`` uses the canonical
-keyed transaction: release, relay provenance, exact result, and evidence intent commit together.
+A keyed relay uses the canonical transaction for its pending, release or no-op result:
+the applicable state transition, relay provenance, exact result and evidence intent commit together.
 The operation identity includes the live verified federation principal. An identical retry is
-reauthorised against the current peer certificate, scope, and namespace ownership before the
+reauthorised against the current serving identity, scope, and namespace ownership before the
 stored result is replayed; a different principal or changed content cannot reuse it.
 
 A hub configured for two-person approval adds one more gate *after* the authorisation gate: an

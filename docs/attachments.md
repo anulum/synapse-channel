@@ -26,6 +26,11 @@ mode `0700`. Back up the ledger and object directory together. The bytes are
 not encrypted by the attachment store; use owner-controlled encrypted storage
 when disk confidentiality is required.
 
+The current directory checks use POSIX ownership (`os.getuid`) and mode bits.
+Those checks do not establish a native Windows ACL profile. Supply an
+owner-controlled parent and storage namespace; leaf permission checks are not
+a filesystem sandbox or a guarantee against concurrent host path replacement.
+
 For identity `proj/alice`, the requested `scope` must be exactly `proj`. The
 owner grants both a role address (`proj/attachment-read`,
 `proj/attachment-write`, or `proj/attachment-admin`) and an ACL rule with the
@@ -35,7 +40,9 @@ The Hub checks the signed, bound sender and both grants before touching a
 digest, upload ID, or object. Local requests remain project-bound; cross-hub reads
 use the separate source-owned permissions below.
 
-The wire version is `4`. Every request has the normal envelope plus `scope`;
+Local attachment requests were introduced in wire version `4`; that is their
+minimum version, not the current hub protocol integer. Every request has the
+normal envelope plus `scope`;
 every request is signed with per-message authentication. Admitted requests
 receive a private `attachment_result` with `operation`, `ok`, and either result
 fields or `error`; the Hub's earlier signature and ACL gates return their

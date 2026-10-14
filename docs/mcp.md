@@ -11,9 +11,10 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 The Model Context Protocol (MCP) is the emerging standard that lets an agent host
 — Claude Desktop, Claude Code, an editor assistant — discover and call external
-tools. The `synapse mcp` command exposes the hub through it, so **any
-MCP-compatible agent coordinates through Synapse with no Synapse-specific code**:
-it adds one server entry and gains tools to claim work, send messages, hand off
+tools. The `synapse mcp` command exposes coordination through a configured,
+compatible host. Protocol compatibility alone does not qualify every vendor,
+version, transport or runtime; use the client paths and evidence below.
+A host adds one server entry and gains tools to claim work, send messages, hand off
 and declare tasks, and resources that read the shared board, state, and manifest
 as live context.
 
@@ -36,8 +37,9 @@ hosts such as Claude Code, Claude Desktop, Cursor, or other editor assistants
 still own their prompt/runtime/editor behavior; SYNAPSE only supplies shared
 coordination state through MCP tools and resources.
 
-The MCP SDK is an **optional extra** — the core install keeps its single
-`websockets` dependency:
+The MCP SDK is an **optional extra** — the core install keeps its transport
+dependency `websockets`, plus the `typing-extensions` compatibility dependency
+on Python 3.10:
 
 ```bash
 pip install 'synapse-channel[mcp]'
@@ -104,6 +106,12 @@ The manual local stdio path was exercised with Codex CLI 0.156.0 on Linux.
 For a token-gated hub, add `--token-file /path/to/owner-only-token` to the
 `synapse mcp` command; Synapse reads that file before starting the stdio
 server. Use one active bridge process per identity.
+
+Connect-token authentication does not configure per-message HMAC signing.
+The stdio CLI has no HMAC-key flags; a hub requiring that optional profile
+refuses its unsigned mutations. Default machine registration signing, when
+available, is a separate control. Registration or tool discovery does not
+establish permission to invoke every mutation.
 
 The same local stdio server exposes the [human app task queue](app-tasks.md)
 with redacted task replies. Its private prompt and returned content remain in
@@ -184,15 +192,20 @@ opened; their TLS certificate and bearer grant authenticate them.
 
 ## Tools
 
-Each tool maps to one coordination verb and returns a short text result. Action
-tools wait for the hub's grant or denial; query tools return JSON.
+Each tool maps to a coordination verb or local adapter surface. Lease and plan
+actions await their correlated hub reply; query tools return JSON.
+The stdio `synapse_send` path submits on its live socket and returns local
+submission text without awaiting a hub or recipient receipt. An unavailable
+connection produces an MCP error. Even `sent to TARGET` does not establish
+admission, recipient acknowledgement or model processing. The separately
+provisioned HTTP profile has its own retained-operation confirmation contract.
 
 | Tool | Effect |
 |---|---|
 | `synapse_claim(task_id, paths?, task_only?)` | Take a work lease. Inside Git, an explicit file scope carries the same canonical worktree/path identity as `synapse_git_claim`, and a claim without paths covers the MCP process's whole worktree (the reply names it). Outside Git a claim with paths keeps the legacy shared namespace, and a claim without paths is refused. `task_only=true` locks the task id alone with no file scope, like `synapse lock`; it contends only with the same task and cannot be combined with `paths`. |
 | `synapse_git_claim(task_id, paths?, base?, auto_release_on?, whole_worktree?)` | Resolve the MCP process's real Git worktree, branch, Git-index spelling, filesystem aliases, case policy, and existing object identities, then take a mutation-compatible canonical claim. Bounded paths are mandatory unless `whole_worktree=true` is explicit. |
 | `synapse_release(task_id, evidence?, changed_files?, confidence?)` | Release a lease you hold and validate the hub-attested receipt; supplied evidence is persisted as an assessment note. |
-| `synapse_send(target, message)` | Send a chat to an agent, a group glob, or `all`. |
+| `synapse_send(target, message)` | Submit chat to an agent, a group glob, or `all` on the stdio bridge's socket; no delivery receipt is awaited. |
 | `synapse_inbox(limit?)` | Consume up to 1–100 messages for this identity as JSON, from the selected local feed or connected hub journal. |
 | `synapse_handoff(task_id, to_agent)` | Hand a held task to another online agent. |
 | `synapse_task_declare(task_id, title, depends_on?)` | Declare or refine a task on the plan. |
@@ -213,8 +226,10 @@ tools wait for the hub's grant or denial; query tools return JSON.
 Accept, start, decline, cancel, verify and usage correction are owner-local
 `synapse app-task` CLI operations. The MCP process cannot mark a task verified.
 
-When the hub does not answer within the request window the tool returns a clear
-"no response from the hub" line rather than hanging.
+When a correlated reply is missing, the tool returns its bounded unavailable,
+refusal or unknown result. A timeout does not establish that a mutation failed
+to commit; reconcile its retained identity before retrying. Stdio send follows
+the submission boundary above.
 
 `synapse_entitlements` reads the owner-local [account and quota
 ledger](entitlements.md) independently of the hub. An MCP client identity does
@@ -276,20 +291,33 @@ Use the same honest loop in every host:
 
 1. At session/turn start, call `synapse_status`, then `synapse_inbox` until
    `has_more` is false.
-2. Keep a permanent receiver active for prompt delivery:
+2. Keep a permanent passive receiver for retained mailbox recovery:
 
    ```bash
    synapse arm install --identity my-repo/codex --start
    ```
 
-   Use the exact identity for that provider seat. On systems without Linux
-   systemd, use the documented WSL or terminal wake bridge instead.
+   Use the exact identity for that provider seat. The arm does not start a model
+   turn. For unattended delivery on Linux or WSL with systemd, separately
+   configure the active bridge:
+
+   ```bash
+   synapse waker install --identity my-repo/codex --session my-repo-codex \
+     --cwd "$PWD" --agent-command codex --start
+   ```
+
+   Use the intended existing provider pane and required token-file profile.
+   Supervision remains subject to its start budget, inhibition and host health.
+   A manual one-shot waiter needs a harness that invokes and rearms it.
 3. Treat the MCP server connection as tool availability, not as a waiter.
    `synapse_status` reports whether `<identity>-rx` is online and whether the
    durable hub has pending mailbox messages.
 
-This split prevents a tool process from silently acknowledging provider work it
-never surfaced.
+This split keeps tool availability, retained inbox retrieval and active waking
+separate. The bridge's client can transport-acknowledge a chat before the host
+calls `synapse_inbox`. Its retained inbox cursor is a separate boundary;
+mailbox-pending counts and transport receipts do not establish provider reading
+or action.
 
 ## Resources
 
@@ -334,7 +362,7 @@ hits with source sequence, event kind, source field, task id, actor, evidence
 reference, and matched tokens. It does not create external embeddings, call an
 outside service, certify truth, or mutate hub state.
 
-The dynamic resource templates are MCP v2-style read-only views over the same
+The dynamic resource templates are MCP read-only views over the same
 hub snapshots used by `synapse_board`, `synapse_manifest`, and `synapse_state`.
 They provide narrower context retrieval for hosts that support resource
 templates. They do not stream updates, chain tools, reserve resources, assign
@@ -349,10 +377,12 @@ mcp==1.30.0` runtime hint. The exact pin matches the package extra and prevents
 an unreviewed MCP-major upgrade. The `synapse-channel` console entry starts this
 MCP face directly for package launchers; humans can keep using `synapse mcp`.
 
-The official MCP Registry is still a preview and its published versions are
-immutable. SYNAPSE CHANNEL is active there: version `0.99.23` was the latest
-public record when last re-verified; `0.99.24` is the in-tree preparation tip
-until the attested tag and registry query both return that exact version.
+The official MCP Registry's published versions are immutable. On 2026-10-13,
+an exact-name registry query reported `0.99.38` as active and latest, with its
+PyPI package version also `0.99.38`. PyPI reported that version's wheel and
+source archive. This is a dated publication snapshot, not qualification of
+later local commits that keep the same package version. In-tree metadata also
+names `0.99.38`; validate the exact cut and artifact separately.
 Registry metadata does not automatically follow PyPI or this repository, so
 every release remains incomplete until the registry query returns the cut
 version. Check live publication rather than inferring it from local metadata.
@@ -365,13 +395,14 @@ published version immutable.
 Release operators use the following fail-closed order. Publishing is an owner
 action: preparation and validation do not authorise it.
 
-1. Release `synapse-channel==0.99.24` to PyPI through the normal attested tag
+1. Set `RELEASE_VERSION` to the intended immutable cut, then release
+   `synapse-channel==$RELEASE_VERSION` to PyPI through the normal attested tag
    workflow. Wait until both the wheel and source archive are publicly visible,
    then verify the package and ownership marker:
 
    ```bash
    PYTHONPATH=. .venv/bin/python tools/verify_mcp_registry_release.py \
-     --phase package --expect-version 0.99.24 --json
+     --phase package --expect-version "$RELEASE_VERSION" --json
    ```
 
 2. Download the audited official Linux publisher release and verify it before
@@ -395,7 +426,7 @@ action: preparation and validation do not authorise it.
 
    ```bash
    gh workflow run mcp-registry.yml --ref main \
-     --field release_tag=v0.99.24
+     --field release_tag="v$RELEASE_VERSION"
    ```
 
    Future successful release workflows dispatch this publication automatically.
@@ -406,7 +437,7 @@ action: preparation and validation do not authorise it.
 
    ```bash
    PYTHONPATH=. .venv/bin/python tools/verify_mcp_registry_release.py \
-     --phase registry --expect-version 0.99.24 --json
+     --phase registry --expect-version "$RELEASE_VERSION" --json
    ```
 
 The verifier exits `0` only when the requested boundary matches, `1` for public
@@ -439,7 +470,7 @@ client conformance.
 The adapter holds all MCP knowledge; the hub holds none. The MCP SDK is never a
 core dependency, the hub protocol is unchanged, and the bridge translates each
 MCP call into an ordinary hub message and correlates the reply. That keeps the
-single-transport-dependency guarantee — and the local-first model — intact.
+transport-light dependency boundary — and the local-first model — intact.
 
 ## Outbound: calling external MCP tools
 

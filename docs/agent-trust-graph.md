@@ -22,6 +22,11 @@ per-owner counts, and `synapse route-task` returns advisory routing hints with
 explainable reasons. The routing integration and the owner-annotation workflow
 described below are not implemented yet and remain design targets.
 
+The projection reports retained declarations and outcomes, including
+self-attested receipt/check fields. Event-log provenance identifies the source
+record; it does not independently establish that the work, checks or external
+effects actually occurred.
+
 The goal is a local evidence graph over existing event-log records: release
 receipts, capability observations, claim outcomes, handoff outcomes, conflict
 history, stale claims, and owner review notes. The graph should help operators
@@ -41,8 +46,9 @@ single reputation number:
   file scope, resource offer, receipt, or policy decision.
 - **Provenance reference:** every node and edge must cite an event sequence,
   event kind, task id, author, timestamp, and source field when available.
-- **Capability observation:** positive release-receipt evidence that a named
-  agent completed work matching a capability card or route-task signal.
+- **Capability observation:** a positive release-receipt declaration that a named
+  agent reports completing work matching a capability card or route-task signal.
+  The graph does not independently verify that completion.
 - **Negative evidence:** declared failed checks, stale claims, broken handoff
   candidates, unresolved owner review notes, or repeated conflict history.
 

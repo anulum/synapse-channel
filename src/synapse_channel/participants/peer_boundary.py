@@ -14,11 +14,14 @@ carries the payload and the wake carries only a fixed prompt — generalises her
 contribution is delivered as clearly-fenced **data**, wrapped in an explicit instruction
 that it must never be obeyed as a command. This module owns that single framing
 responsibility; the conversation layer composes the framed block into the next turn's
-context, never into its user prompt.
+context. Some provider drivers prepend that context to their user prompt because
+they have no separate system-prompt channel.
 
 The framing is defensive text, not a sandbox: it cannot stop a model from being fooled,
-but it removes the ambiguity an injection relies on by labelling the source, stating the
-rule, and fencing the untrusted span so instructions inside it are unmistakably *quoted*.
+but it labels the source and states the intended data-only treatment. Markers
+and metadata are not an escaped structural format; a peer can repeat a marker
+or place instructions in identity or reason text. None of this text grants
+authority or establishes resistance to prompt injection.
 """
 
 from __future__ import annotations
@@ -49,8 +52,9 @@ def frame_peer_contribution(result: TurnResult) -> str:
     str
         A block that names the source, states that its content is data and must not be
         executed as instructions, and fences the peer's answer (or a note that the peer
-        erred or abstained). The fenced span is the only place untrusted text appears, so
-        any instruction inside it is presented as quoted material, not as the turn's ask.
+        erred or abstained). Peer-supplied metadata also appears in the header.
+        These textual markers express intended framing, not validated or escaped
+        authority boundaries.
     """
     header = (
         f"The following is the contribution of another participant "

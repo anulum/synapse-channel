@@ -9,8 +9,10 @@
 
 The dashboard's live snapshot rides the hub connection; these feeds ride the
 **durable stores** instead — the hub event log and the operator's federation
-store — so they answer with real sequences and timestamps, stay available when
-the hub is down, and never invent state the disk cannot prove. Three feeds:
+store — so they project retained sequences and timestamps and can remain
+available with the hub down when their stores and keys are accessible. Stored
+metadata does not independently prove vendor processing or external effects.
+Three feeds:
 
 - **events tail** — the raw event log past a cursor, in the exact
   ``multihub_wire`` snapshot shape (one wire encoding for stored events,
@@ -29,7 +31,8 @@ deterministic and available with the hub down: **metrics** (event counts by
 kind over trailing windows), **state-at** (coordination state reconstructed by
 bounded replay to a sequence — whole-fleet time-travel), **merkle proof** (an
 inclusion proof for one event so a cockpit row can be verified against the
-attested tree root), **health anomalies** (orphaned, dangling, and stale
+computed tree root; authenticating that root needs a separately trusted
+commitment), **health anomalies** (orphaned, dangling, and stale
 coordination signals the causality graph makes visible — the honest hub-side
 alert surface), **sessions** (the opt-in ``session_metric`` telemetry the fleet
 left in the log, each record indexed by ``seq`` for a cost-to-causality join),
@@ -41,7 +44,6 @@ review).
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -482,7 +484,7 @@ def _text(payload: dict[str, object], key: str) -> str:
 def build_metrics_feed(db_path: str | Path) -> dict[str, object]:
     """Aggregate the event store into operational metrics for the cockpit.
 
-    Store-attested log metrics — total and per-kind event counts, plus the
+    Store-derived log metrics — total and per-kind event counts, plus the
     same split over trailing windows — measured against the log's own final
     timestamp, never the wall clock, so the document is deterministic over a
     given log and replayable byte-for-byte (the causality-health doctrine).
@@ -500,39 +502,14 @@ def build_metrics_feed(db_path: str | Path) -> dict[str, object]:
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    connection = sqlite3.connect(path)
+    store = _open_event_store(path)
     try:
-        total, first_ts, last_ts, max_seq = connection.execute(
-            "SELECT COUNT(*), MIN(ts), MAX(ts), MAX(seq) FROM events"
-        ).fetchone()
-        by_kind = dict(
-            connection.execute("SELECT kind, COUNT(*) FROM events GROUP BY kind ORDER BY kind")
-        )
-        windows: dict[str, object] = {}
-        for name, span in METRIC_WINDOWS_SECONDS.items():
-            cutoff = float(last_ts) - span if last_ts is not None else 0.0
-            window_kinds = dict(
-                connection.execute(
-                    "SELECT kind, COUNT(*) FROM events WHERE ts >= ? GROUP BY kind ORDER BY kind",
-                    (cutoff,),
-                )
-            )
-            windows[name] = {
-                "events": sum(window_kinds.values()),
-                "by_kind": window_kinds,
-            }
+        metrics = store.event_metrics(METRIC_WINDOWS_SECONDS)
     finally:
-        connection.close()
+        store.close()
     return {
         "source": "event-store",
-        "log": {
-            "total_events": int(total),
-            "max_seq": int(max_seq) if max_seq is not None else 0,
-            "first_ts": float(first_ts) if first_ts is not None else None,
-            "last_ts": float(last_ts) if last_ts is not None else None,
-        },
-        "events_by_kind": by_kind,
-        "windows": windows,
+        **metrics,
         "note": (
             "log metrics measured against the log's final timestamp; the live "
             "process registry is the hub's own /metrics endpoint"
@@ -541,14 +518,16 @@ def build_metrics_feed(db_path: str | Path) -> dict[str, object]:
 
 
 def build_merkle_proof_feed(db_path: str | Path, *, seq: int) -> dict[str, object]:
-    """Prove a single event's inclusion in the attested log by its sequence.
+    """Build one event's inclusion proof against the current stored log root.
 
     Builds an RFC 6962 Merkle inclusion proof for event ``seq`` against the
     durable log and returns it in the same JSON shape ``synapse debug merkle``
     emits, so a cockpit's per-row *verify* button can hand the proof straight to
     the client-side :func:`~synapse_channel.core.merkle.verify_inclusion` (via
     ``proof_from_json``) and confirm the row is committed to the tree root —
-    tamper-evidence the operator can check without trusting the dashboard.
+    consistency against that supplied root. Authenticating the root requires
+    a separately trusted commitment or signed tree head; a proof supplied by
+    the same dashboard is not independent provenance.
 
     Store-derived and deterministic: the same log and ``seq`` always yield the
     same proof (the tree is built over the committed leaves, not the wall
@@ -566,7 +545,7 @@ def build_merkle_proof_feed(db_path: str | Path, *, seq: int) -> dict[str, objec
     if not path.exists():
         msg = f"missing event store: {path}"
         raise ValueError(msg)
-    proof = run_proof(path, seq)
+    proof = run_proof(path, seq, key_file=_event_store_key_file.get())
     if proof is None:
         return {
             "present": False,

@@ -11,8 +11,8 @@
 current surface size. This command instead prints the same subcommands grouped by
 the stability tier each is already assigned in
 :mod:`synapse_channel.surface_taxonomy`, with the one-line summary of each tier, so
-a reader can find the daily-safe core, the adapters, the read-only analysis
-surface, the advisory governance surface, and the settling experimental surface at
+a reader can find the coordination core, the adapters, inspection-focused
+groups, the advisory governance surface, and the settling experimental surface at
 a glance. ``--profile`` selects a measured first-use or package boundary, and
 ``--json`` exposes the same contract to automation. Every view reads only the
 static taxonomy — no hub, no network, no side effects.

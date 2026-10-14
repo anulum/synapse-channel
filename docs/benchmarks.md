@@ -82,7 +82,8 @@ unchanged six-frame baseline and 1,498 bytes for the three new delivery frames
 (request 441, offer 546, status 511). The nine frames total 2,666 bytes with
 default spacing and 2,485 bytes minified. These small control
 frames do not establish network throughput or justify a new wire encoding;
-the [compatibility decision](protocol-compatibility-plan.md) keeps JSON.
+the [compatibility guide](protocol-compatibility-plan.md) describes the JSON wire.
+This dated fixture sample does not cover all current version-seven frames.
 
 ## Relay token benchmark
 
@@ -171,12 +172,16 @@ throughput claim.
 network server: task creation, SYNAPSE reply correlation, task listing, push
 delivery callback dispatch, and bounded subscriber fanout.
 
-On the committed reference run (250 tasks, 32 subscribers, Python 3.12):
+The [recorded reference artifact](../benchmarks/results/a2a_bridge_benchmark.json)
+contains 250 tasks and 32 subscribers, with host metadata declaring Python
+3.12.13 on Linux. Its SHA-256 is
+`1f4cb9315a7d7be7740e23fd2249939b32cfd6ec0be2e279304442f0eddcf8bf`.
+These are that retained artifact's figures, not a fresh current-build result:
 
 | Operation | Result |
 | --- | ---: |
-| Task creation | 5,383 tasks/s |
-| Reply correlation | 12,166 tasks/s |
+| Task creation | 4,187 tasks/s |
+| Reply correlation and evidence | 3,158 tasks/s |
 | Task listing | 250 tasks listed |
 | Push delivery callbacks | 250 delivered |
 | Subscriber fanout | 32 terminal events delivered |

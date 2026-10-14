@@ -9,9 +9,10 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # Benchmarks
 
-Runnable, committed measurements for SYNAPSE CHANNEL. Every number quoted in the
-docs comes from a script here run against a committed fixture, with the JSON
-output checked in under `results/` — nothing is estimated by hand.
+Runnable workloads and retained result artifacts for SYNAPSE CHANNEL. The
+JSON files under `results/` record their named fixtures and available host/source
+metadata. A result's figures qualify that recorded profile; the presence of a
+script or JSON file does not establish a fresh run of a current build.
 
 ## `coordination_wire_benchmark.py`
 
@@ -204,10 +205,11 @@ for the default `synchronous=NORMAL` commit and the `durable=True` `synchronous=
 fsync path; the `read_since(0)` replay cost as the retained log grows (an `O(events)`
 scan); and how deleting the oldest half of the log (compaction) lowers read cost.
 
-The reproducible finding is the *shape* — a stable per-event write latency, a much
+The recorded workload illustrates a *shape* — stable per-event write latency, a much
 higher fsync-bound durable latency, a linear read scan, and a read cost that falls with
 compaction — not the host-specific absolute times, which are recorded with the host CPU
-and Python version.
+and Python version. Other storage, load and count profiles require their own
+measurements before relying on that shape.
 
 ### Run
 

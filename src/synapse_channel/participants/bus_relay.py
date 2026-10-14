@@ -334,7 +334,8 @@ class BusConversation:
         shared_context : str, optional
             Common framing prepended to every turn's context.
         budget_usd : float or None, optional
-            Cumulative cost ceiling that stops the conversation early.
+            Reported-cost stop threshold, checked after completed turns. It can
+            overshoot and does not cover unreported charges; see ``conduct_conversation``.
 
         Returns
         -------
@@ -428,7 +429,8 @@ class BusConvocation:
         shared_context : str, optional
             Common framing prepended to every turn's context.
         budget_usd : float or None, optional
-            Cumulative cost ceiling that halts the convocation early.
+            Reported-cost stop threshold between completed rounds and before
+            synthesis; it does not reserve or cap billing. See ``convene``.
 
         Returns
         -------

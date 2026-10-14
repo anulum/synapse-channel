@@ -9,11 +9,89 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # Changelog
 
-All notable changes to this project are documented here.
+Dated release notes and current corrections are recorded here. Historical
+entries retain their original reports; they do not qualify current source,
+rebuilt artifacts or every host platform. The corrections below narrow earlier
+guarantee wording. Use the named runtime profile and its exact artifact and
+execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
 ### Fixed
+
+- Clarify historical Participant Fabric guarantees: vendor planning/sandbox
+  flags are requests whose effective permissions require qualification for
+  the installed version and session. Fresh Codex turns request a sandbox;
+  resume does not reapply that flag. Peer fences label untrusted data without
+  proving model resistance to prompt injection. Reported-cost thresholds run
+  after turns or fan-outs, permit overshoot and exclude unreported charges;
+  moderator cost is added without a further stop check. Ollama offline use
+  requires local provisioning, and zero reported cost proves neither free
+  resources nor licence or account eligibility.
+
+- Clarify historical memory and ingest guarantees: finding honesty axes are
+  supplied metadata, not independent verification of an assertion or reference.
+  An emitted ingest cursor is not downstream processing acknowledgement; a
+  retention floor must not exceed any required consumer's confirmed processed
+  sequence, and recovery remains limited to retained storage.
+
+- Clarify historical streaming and adapter limits: `ttl_seconds` is declared
+  but unenforced by the current stream producer and consumer. Generic dedicated
+  adapter files are replaced on install and removed on marked-file uninstall;
+  those operations do not restore prior contents or prove native host enforcement.
+
+- Cargo and npm partial comparator ranges now expand omitted components for
+  `=`, `<=` and `>`, avoiding false conflicts and missed conflicts for values
+  such as `=1.2`, `<=1.2` and `>1.2`. Python range interpretation is unchanged.
+
+- Cross-repository comparison no longer treats different hexadecimal Git refs
+  as proof of distinct commits or different URL fragments as proof of overlap.
+  Unresolved references stay `not_comparable`; identical parsed declarations
+  match as text, while numeric range conflicts keep their existing behavior.
+
+- Clarify the historical hardware-attestation label: the `attest-*` path checks
+  HMAC software statements and caller-declared PCR values. It does not collect
+  hardware measurements, verify TPM quotes or enforce verifier-issued nonce
+  freshness. Hardware key wrapping is a separate backend boundary.
+  The PKCS#11 wrapper requires AES secret-key objects and `CKM_AES_KEY_WRAP`;
+  YubiKey PIV's YKCS11 interface is unsupported here. SoftHSM validation proves
+  a software interface, and KEK custody depends on the provisioned token attributes.
+
+- Correct the historical dispatch claim of exactly-once wakes across crashes.
+  The outbox records bounded retry intents; its `idem_key` does not activate
+  chat deduplication, and a recorded send does not prove provider processing.
+  The CLI and dispatcher descriptions now state that limitation explicitly.
+
+- Clarify historical non-loopback migration advice: a token-authenticated hub
+  bind off loopback requires native TLS. A TLS reverse proxy keeps its plaintext
+  backend on loopback; the proxy does not exempt a non-loopback backend bind.
+  Keyed pending operator-relay verdicts can replay after restart once current
+  authorization gates pass; replaying that response is not a fresh state query.
+
+- CLI and source descriptions clarify bounded dispatch retries, caller-declared
+  native-message pairs and workflow readiness, restored pending relay audits,
+  and collector-dependent OTLP retention and duplicate handling. Terminal setup
+  commands are separated from explanatory prose in the Bash examples.
+
+- Dashboard metrics and Merkle-proof feeds honour the configured SQLCipher
+  key file, preserving authenticated projections for encrypted event stores.
+  Metrics are derived from retained storage. Inclusion verifies consistency
+  with the computed root; independent provenance requires a separately trusted
+  root or signed tree head, rather than the same dashboard's root alone.
+
+- The stdio MCP bridge refuses chat submission after its hub connection has
+  ended instead of returning a false local `sent` result. Connected stdio send
+  remains socket submission without a delivery receipt; the HTTP profile keeps
+  its separate confirmation contract.
+
+- Streaming frames retain a dedicated `stream_seq` while the hub assigns its
+  durable journal `seq`, so replay and cross-client reassembly do not confuse
+  the two sequence domains.
+
+- Public examples and source descriptions distinguish confirmed lease
+  operations, transport acknowledgements, declared evidence and actual
+  verification. Dashboard access, peer observation, software quote attestation
+  and memory-admission boundaries are documented with their qualified scope.
 
 - A private directory path that is refused on Windows for being a regular
   file or a link is now refused before its access list is touched; for a

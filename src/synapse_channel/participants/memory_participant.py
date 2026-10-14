@@ -58,7 +58,11 @@ class MemoryAugmentedParticipant:
         return self.participant.health()
 
     async def take_turn(self, request: TurnRequest) -> TurnResult:
-        """Recall under a hard timeout, fence the result, and delegate the turn."""
+        """Await recall with a configured async timeout, then delegate fenced context.
+
+        Cancellation requires cooperation from the recall coroutine; it does not
+        forcibly terminate underlying worker threads or enforce model behavior.
+        """
         try:
             result = await asyncio.wait_for(
                 self.recall.recall(request.prompt, top_k=self.policy.top_k),

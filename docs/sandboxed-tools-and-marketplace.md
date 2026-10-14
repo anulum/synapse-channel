@@ -9,126 +9,99 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # Sandboxed tools and marketplace
 
-Synapse coordinates agents, and now also runs untrusted tool code safely: a tool or
-plugin executes under a capability-limited sandbox with no authority beyond what an
-operator grants. Distributing such tools through a marketplace is the gated next step.
-The two are one design with one rule: **no executable marketplace before the sandbox,
-the permissions, the signing, and the evidence all exist.** Those four runtime
-preconditions now ship and compose; the distribution layer remains unbuilt.
+Synapse runs operator-approved WebAssembly modules with resource limits and
+filesystem preopens. A marketplace for distributing modules is planned. Signed
+capability cards, ACL utilities and run records exist as separate facilities;
+they are not yet composed into a marketplace install or execution admission path.
 
 ## Runtime status
 
-Synapse ships a capability-limited **WebAssembly** sandbox behind the optional `[wasm]`
-extra (`synapse sandbox`). A tool runs only inside it, under a permission manifest an
-operator approves. The surrounding trust and discovery scaffolding it builds on:
+The optional `[wasm]` extra supplies `synapse sandbox`. The CLI matches a
+module's content digest against a supplied manifest and requires `--approve`
+as local caller confirmation. It does not authenticate an operator, verify a
+signed card or check revocation. Direct callers of `run_sandboxed` supply their
+own digest and approval checks.
 
-- **Capability cards and routing** advertise what an agent can do and recommend who
-  should take a task — discovery without execution.
-- **The permission manifest and policy core** (`core/sandbox_policy.py`) model a tool's
-  filesystem, network, and resource grants deny-by-default and compile them to ACL
-  scopes, so a tool's capabilities are evaluated the same way as any other access.
-- **The WASM runtime** (`core/wasm_sandbox.py`) enforces a granted manifest: memory and
-  fuel caps, a wall-clock backstop, WASI preopened paths, and no sockets. Each run emits
-  a bounded run receipt.
-- **Signed capability cards** (see [signed capability cards](signed-capability-cards.md))
-  now give advertisements advisory Ed25519 provenance, explicit key and scope
-  binding, expiry, revocation, replay/downgrade diagnostics, and projection results.
-- **Identity and ACLs** (see [identity and ACL](identity-and-acl.md)) provide
-  deny-by-default, scoped permissions; the sandbox reuses them.
-- The **outbound MCP client** calls external MCP tools behind a deny-by-default
-  allowlist, but it trusts the remote server rather than sandboxing it.
+Related facilities have separate contracts:
 
-The marketplace that would distribute sandboxed tools is not yet built; the rest of this
-document is its boundary specification.
+- Capability cards and routing advertise declared abilities and recommend
+  participants; discovery does not grant execution authority.
+- `core/sandbox_policy.py` checks requested filesystem, network and resource
+  capabilities against a supplied manifest. Its `to_acl_rules` conversion
+  utility is separate from the CLI's direct manifest check.
+- `core/wasm_sandbox.py` configures guest memory, fuel, an execution timer,
+  filesystem preopens and standard WASI imports, and returns a run record.
+- [Signed capability cards](signed-capability-cards.md) provide advisory
+  Ed25519 provenance, scoped key trust, expiry and revocation diagnostics.
+  They are not enforced admission for sandbox runs.
+- [Identity and ACL](identity-and-acl.md) provide scoped permissions on their
+  documented coordination surfaces. The sandbox CLI does not run enrolled-agent
+  ACL checks.
+- The outbound MCP client uses an allowlist and trusts the remote server. It
+  does not sandbox that server.
 
-### Operator verbs
+The marketplace distribution layer is not implemented.
 
-The `synapse sandbox` CLI exposes three verbs, ordered as an operator works up to a run:
+## Operator verbs
 
-- **`validate <manifest>`** — load a capability manifest and report the normalised,
-  deny-by-default grants it declares. A check of the policy, before any tool is involved.
-- **`test <tool.wasm> --manifest <manifest>`** — pre-flight the tool *without running it*:
-  compile the module, confirm the `--entrypoint` (default `run`) is an exported function,
-  and confirm the module matches its manifest digest. No fuel is spent and none of the
-  tool's behaviour happens — a runaway tool still pre-flights instantly. It exits `0` when
-  the tool is ready, `1` when the pre-flight ran but the tool is not ready (invalid module,
-  missing entrypoint, or digest mismatch), and `2` when it could not pre-flight at all, so
-  `sandbox test … && sandbox run … --approve` is a safe gate.
-- **`run <tool.wasm> --manifest <manifest> --approve`** — execute the tool under its
-  manifest, bound to the exact module by content digest, and print the bounded run receipt.
-  The explicit `--approve` keeps a capability-bearing run an operator decision.
+- **`validate <manifest>`** loads the manifest and reports its grants.
+  `--check-paths` checks current filesystem paths;
+  `--workspace-root DIR` also checks containment under approved roots.
+- **`test <tool.wasm> --manifest <manifest>`** compiles without instantiating
+  the module or running its entrypoint. It checks exported function names and
+  digest equality. It does not check the full calling convention or promise a
+  successful run. Compilation consumes host resources without a deadline.
+  Exit `0` means these checks passed, `1` means they completed with a
+  non-ready result, and `2` means the check could not proceed.
+- **`run <tool.wasm> --manifest <manifest> --approve`** matches the digest,
+  requires local caller confirmation, executes under the configured limits
+  and prints a bounded run record. Inspect that record's `exit` value:
+  command completion alone does not mean the guest returned successfully.
 
-`test` and `run` need the optional `[wasm]` extra (`pip install 'synapse-channel[wasm]'`)
-and report that hint when it is absent rather than failing obscurely.
+`test` and `run` need `pip install 'synapse-channel[wasm]'`. See the
+[getting-started guide](wasm-sandbox-getting-started.md) for a complete example.
 
-## The sandbox: capability-limited execution
+## Runtime limits
 
-The isolation primitive is a WebAssembly runtime where an untrusted tool gets
-**no ambient authority**: no filesystem, no network, no environment, no clock
-beyond what is explicitly granted. Capabilities are passed in deny-by-default,
-each scoped and revocable:
+- **Filesystem:** only manifest-selected preopens, under guest names, with
+  configured read or write permissions. The operator chooses their breadth
+  and should avoid granting the host root.
+- **Network:** no outbound socket-opening import or network descriptor is
+  supplied. Network grants are recorded as policy but do not enable networking.
+- **Clocks:** standard WASI clock imports remain available without a manifest
+  grant. This runtime does not provide clock isolation.
+- **Resources:** guest memory, fuel and an execution timer are configured.
+  Store memory and fuel limits apply during guest initialization. The execution
+  timer starts after instantiation and does not bound compilation or
+  instantiation time; guest limits are not budgets for all host orchestration.
+- **Host paths:** paths are checked before preopening by name. Validation
+  does not pin directory descriptors against concurrent replacement. Keep
+  path components stable and operator-controlled through that open.
+- **Input/output:** the current interface hashes `inputs` for the receipt
+  but does not deliver those bytes through a guest input ABI. Output records
+  the exported function's return value as a digest.
 
-- **Filesystem** — only specific preopened paths, read or write, never the host
-  root; a tool sees a virtual root, not the machine.
-- **Network** — denied by default, and denied by construction: WASI preview1 exposes no
-  sockets, so a tool reaches the network only through a host import that is never linked.
-- **Resources** — bounded memory, a fuel/instruction budget, and a wall-clock backstop,
-  so a tool cannot hang or exhaust the host; a fuel bomb or a runaway loop is trapped.
-- **Interface** — the tool speaks a narrow, typed host interface (WASI-style
-  preopens plus a minimal Synapse capability ABI), not arbitrary syscalls.
+A receipt records the local runner's declaration of module, grants, digests and
+exit. `--attest DB` appends it to an event store; it is not independent execution
+proof or authenticated operator approval. See the
+[threat model](sandbox-threat-model.md) for containment mechanisms and limits.
+Provider CLI processes and remote MCP tools are outside this sandbox.
 
-The sandbox composes with the existing authorisation path: a tool's grants are an
-ACL scope, evaluated the same way as any other permission, so there is one
-deny-by-default authorisation model, not a parallel one.
+## Proposed marketplace contract
 
-## The marketplace: distribution on top of the sandbox
+A distribution layer would need to compose, before a module is admitted:
 
-A marketplace is only safe once the sandbox exists, because distribution widens
-who supplies the code. Each listed tool would carry, and a host would verify
-before running:
+- an accepted signed card binding declared capabilities and module content to
+  a trusted key, with expiry and revocation enforced at admission;
+- authenticated caller permissions and an explicit decision on the requested
+  filesystem and resource grants;
+- module digest checks, runtime limits and authenticated run evidence;
+- discovery metadata and, for cross-domain use, explicit
+  [federated trust inputs](federated-trust-model.md).
 
-- a **signed capability card** binding the tool's identity, declared capabilities,
-  and a content digest to a key id (provenance);
-- a **declared permission manifest** — the exact filesystem/network/resource
-  grants it requests, shown to the operator for an explicit, deny-by-default
-  decision;
-- **discovery metadata** reusing the existing capability directory, so finding a
-  tool reuses routing rather than a new index;
-- **run receipts** — every sandboxed run produces a bounded receipt (inputs digest,
-  granted capabilities, exit, output digest) as audit evidence, exactly like a
-  release receipt.
+A valid card signature binds declared content to an accepted key; it does not
+prove module behaviour or grant execution authority. These checks are separate
+today. A run's writes in a granted directory are not automatically reversible.
 
-Install and run are operator-confirmed and reversible: a tool runs only with the
-capabilities the operator approved, the approval is recorded, and revoking a key
-or a grant stops future runs.
-
-## Trust chain
-
-The trust chain is end to end and reuses the shipped trust set: a [signed capability
-card](signed-capability-cards.md) proves *what* a tool is and *who* signed it;
-[identity and ACL](identity-and-acl.md) decides *whether* it may run and with
-*which* grants; the WASM sandbox enforces those grants at runtime; and a receipt
-records *what it did*. The [federated trust model](federated-trust-model.md)
-extends the same chain across domains for a cross-organisation marketplace. No new
-trust root is introduced.
-
-## Boundaries
-
-The **marketplace** is **not implemented**. Its runtime trust preconditions now ship;
-the marketplace remains a boundary specification, deliberately gated.
-
-- **Untrusted code runs only inside the sandbox.** A tool executes only through
-  `synapse sandbox run`, under an operator-approved manifest, bound to one module by
-  content digest; the outbound MCP client trusts a remote server and is not a sandbox.
-- **No marketplace before the preconditions.** No executable marketplace ships
-  before signed cards, the permission model, the sandbox, and run receipts all
-  exist and compose. All four runtime preconditions now exist; the distribution
-  layer remains unbuilt.
-- **Deny-by-default, always.** A sandboxed tool has no ambient authority; every
-  filesystem, network, and resource grant is explicit, operator-approved,
-  recorded, and revocable.
-- It **adds no parallel authorisation path** — tool grants are ACL scopes; there
-  is one deny-by-default model.
-- It does **not** change the local-first default: the sandbox and any marketplace
-  client run locally, add no required cloud service, and a host that installs no
-  third-party tool behaves exactly as today.
+The proposed marketplace retains the local-first model. No distribution service
+is required for current coordination or sandbox commands.

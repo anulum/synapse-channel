@@ -24,7 +24,7 @@ from synapse_channel.observed_peers import (
 
 
 def _cmd_dashboard(args: argparse.Namespace) -> int:
-    """Run the read-only local dashboard until interrupted."""
+    """Serve the local dashboard with optional explicitly armed operator relays."""
     try:
         server = start_dashboard_server(
             host=args.host,
@@ -102,7 +102,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     """Register the ``dashboard`` subcommand."""
     dashboard = subparsers.add_parser(
         "dashboard",
-        help="Serve a loopback-only read-only web dashboard for hub state.",
+        help="Serve a local dashboard, read-only by default with opt-in operator relays.",
     )
     dashboard.add_argument("--uri", default=default_hub_uri())
     dashboard.add_argument("--name", default="DASHBOARD")

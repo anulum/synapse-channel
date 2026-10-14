@@ -87,9 +87,11 @@ off loopback, or that declares a multi-seat profile on loopback
 `--require-role-claim`, `--role-grants` or `--identity-trust`), refuses to start
 unless registrations are bound to enrolled keys: `--identity-trust FILE` with
 `--require-identity-binding` (`--team-secure` and `--secure` turn both on). Enrol
-each seat with `synapse identity machine-key --sender NAME --trust FILE` (the key
-every client on that machine already signs with) or `synapse identity keygen
---trust FILE`. `--insecure-unbound-identity` downgrades the refusal to a warning;
+each seat with `synapse identity machine-key --sender NAME --trust FILE` or
+`synapse identity keygen --trust FILE`, using the exact key and sender names its
+client uses. The Python client's identity setup can use the machine key when
+its cryptography dependency is present; other clients require their documented
+signer configuration. `--insecure-unbound-identity` downgrades the refusal to a warning;
 `--paranoid` and `--secure` refuse that flag. The refusal happens before any
 durable store is opened. A peer hub granted by `--multihub-serving-policy` proves
 its own id with the pinned mutual-TLS client certificate that grant is bound to,
@@ -154,8 +156,8 @@ single switch (token, durable log, per-message auth, ACL, native WSS; query
 tokens and the off-loopback override disabled) and fails closed when any of them
 is absent. Combine both when a multi-seat hub is also network-exposed.
 
-The runtime floor is a single dependency (`websockets`); several
-security-relevant features need an optional extra installed:
+The base runtime requires `websockets`, plus `typing-extensions` on Python 3.10.
+Several security-relevant features need an optional extra installed:
 
 | Capability | Extra |
 |---|---|
@@ -199,19 +201,22 @@ When that boundary is crossed, the proportionate controls are:
   real path rather than a symlinked ancestor directory.
 - **Bounded resources.** A `--max-clients` connection cap, a `--max-msg-kb` frame
   size cap, per-agent rate limiting, bounded chat history, a bounded progress
-  ledger, a bounded relay log, and bounded JSON decode depth keep one runaway
-  agent or a flood from exhausting the single hub.
-- **Lease and epoch guards.** Claims expire; each lease carries an epoch so a
-  superseded agent cannot act on a dead claim; mutations support idempotency keys
-  so a reconnect retry is applied once while the hub retains its idempotency
-  cache. The idempotency cache is not a durable identity or replay-protection
-  system across arbitrary hub restarts.
-- **Advisory file scopes.** A claim's `paths` are opaque strings the hub compares
-  only for literal path or directory-prefix overlap — wildcard-glob algebra is
-  intentionally out of scope, so a path is treated as a literal file or directory
-  prefix and never expanded. The hub never reads, opens, or resolves the strings
-  on the filesystem. A claim on `../../etc/passwd` coordinates nothing and touches
-  nothing on disk, so scope strings are not a path-traversal surface.
+  ledger, a bounded relay log, and bounded JSON decode depth limit their named
+  admission, history and parsing surfaces when configured. They do not guarantee
+  immunity to resource exhaustion.
+- **Lease and epoch guards.** Claims expire. Hub-mediated lease mutations check
+  a supplied epoch; `--require-fencing-epoch` also refuses a missing one. These
+  checks do not fence direct external process effects. Selected journal-backed
+  operation families retain keyed outcomes for unchanged retries; other paths
+  use a finite in-memory idempotency cache. Neither is a universal identity or
+  replay-protection system. See the exact [coordination contract](docs/coordination-spec.md).
+- **Advisory file scopes.** Claims carry declared scope metadata and do not
+  grant filesystem access. Legacy paths use literal file/directory-prefix
+  overlap, without wildcard expansion. Absolute or traversal-like declarations
+  are conservatively widened to the worktree scope for conflict checks;
+  a claim on `../../etc/passwd` does not open that file. Canonical and semantic
+  scopes have separate identity/comparison contracts; their client-side path
+  resolution is distinct from hub admission. See [Git claims](docs/git-claims.md).
 - **Metrics endpoint.** The optional `synapse hub --metrics` endpoint is off by
   default. Without `--metrics-token`, enabled metrics and health probes carry
   operational metadata unauthenticated, so keep them on a loopback bind. When
@@ -337,7 +342,8 @@ worth stating plainly:
   or Linux environments without `/proc/self/fd`; no weaker pathname fallback is
   used.
 - **Update check.** `synapse --version` is network-silent by default. Set
-  `SYNAPSE_UPDATE_CHECK=1` to opt in to a best-effort daily PyPI version check;
+  `SYNAPSE_UPDATE_CHECK=1` to opt in to a synchronous PyPI version check with
+  a 24-hour successful cache, possible stale-cache fallback and retry on failure;
   `SYNAPSE_NO_UPDATE_CHECK=1` suppresses it even when the opt-in is present.
 - **Verified release receipts.** `synapse verify-release` executes commands
   supplied by the local caller and records digest-only stdout/stderr evidence,
@@ -442,6 +448,15 @@ opened with `synapse hub --db`, page-level SQLCipher encryption is available via
 disk for offline confidentiality; neither profile protects a running hub's RAM
 or replaces host filesystem permissions.
 
+Hardware backend names identify an interface, not a qualified physical device.
+The PKCS#11 backend requires AES secret-key objects and AES key-wrap operations;
+YubiKey PIV is not supported by that interface. SoftHSM results demonstrate
+software behavior only. Hardware custody requires evidence for the selected
+token, firmware, module and key attributes. The separate `attest-*` gate verifies
+operator HMAC statements over declared values; its historical `tpm2-quote` label
+does not verify a TPM quote, measured boot or challenge freshness. See the
+[software statement boundary](docs/at-rest-encryption.md#software-statement-verification).
+
 The [end-to-end encrypted channels](docs/end-to-end-encrypted-channels.md)
 runtime encrypts selected chat payloads on the sending endpoint and decrypts
 them on the listening endpoint with a local key file. The hub still sees routing
@@ -479,10 +494,18 @@ authorisation for untrusted organisations, or external federation certification.
 The [signed events and mTLS](docs/signed-events-mtls.md) runtime primitives are
 implemented for embedded hubs and guarded multi-hub paths: Ed25519 event
 verification, replay and scope checks, mutual-TLS server contexts, and peer
-certificate pins. The packaged `hub` CLI still has no signed-event trust-bundle
-loader or client-CA option, so native WSS is not automatically mTLS. These
-controls do not encrypt payloads, replace per-agent identity, or certify external
-federation.
+certificate pins. The packaged `hub` CLI has no signed-event trust-bundle loader.
+Its `--multihub-serving-policy` loads a client CA and requests optional client
+certificates; the peer policy separately authorises the declared identity.
+Ordinary clients can connect without a certificate, so native WSS is not
+required-client-certificate mTLS. These controls do not encrypt payloads,
+replace per-agent identity, or certify external federation.
+
+Signed-frame admission does not automatically preserve a sender signature in
+the resulting journal projection. Ordinary claim snapshots omit the original
+signed envelope. Later verification needs that complete frame and explicit
+trust, time and replay context; row MACs and native AEF receipts have separate
+verification contracts. See [stored and relayed records](docs/signed-events-mtls.md#stored-and-relayed-records).
 
 The [per-message authentication](docs/per-message-authentication.md) runtime
 enforces opt-in HMAC-SHA256 authentication for selected mutating WebSocket
@@ -609,13 +632,12 @@ identifiers and actual receipts to resolve ambiguous outcomes.
   encryption for the live store and AES-256-GCM whole-file envelopes are shipped
   opt-ins; they require explicit key management and do not protect a running
   hub's RAM or create multi-tenant isolation.
-- **Windows CI proof surface.** The advisory `cross-os` Windows job runs a
-  focused NT security-floor pack (secure path, secret files, at-rest/payload
-  keys, claim coverage) rather than the full alphabetical pytest suite. The
-  full Windows suite has historically hung mid-run with KeyboardInterrupt and
-  zero failures (runner/asyncio class). Required coverage remains the Linux
-  `ci` matrix; the floor pack is the intentional Windows security-floor proof.
-  Do not weaken floor asserts to chase a full-suite green on Windows.
+- **Windows CI profile.** The advisory `cross-os` workflow defines a focused NT
+  security-floor pack (secure path, secret files, at-rest/payload keys, claim
+  coverage). Its definition is not a successful run or full Windows qualification:
+  cite the exact head, runner and retained result when relying on that profile.
+  Required coverage remains the Linux `ci` matrix. Keep the floor assertions;
+  an interrupted full-suite run is not Windows acceptance evidence.
 - The A2A bridge is a local HTTP+JSON bridge over SYNAPSE capabilities, not
   externally validated for full A2A conformance. Remote conformance, real webhook
   receiver behavior, and operator-visible production deployment receipts remain

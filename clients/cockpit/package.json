@@ -1,7 +1,7 @@
 {
   "name": "@anulum/synapse-cockpit",
   "version": "0.1.0",
-  "description": "Read-only real-time operator cockpit for the SYNAPSE CHANNEL coordination hub: fleet presence, claims and leases, task lifecycle, causality, and a live event spine.",
+  "description": "Read-mostly operator cockpit for the SYNAPSE CHANNEL coordination hub: presence, claims, tasks, causality and observed events, with explicitly armed and capability-gated actions.",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "private": true,

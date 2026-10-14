@@ -24,8 +24,10 @@ A fifth concrete :class:`~synapse_channel.participants.participant.Participant`,
 event stream via :func:`~synapse_channel.participants.grok_stream.parse_grok_stream`. Unlike
 Codex/Kimi/Ollama, Grok exposes a system-prompt append (``--rules``), which carries the shared
 bus context — role, ground rules, and any fenced peer contribution — without folding it into
-the user prompt, and it runs in read-only plan mode (``--permission-mode plan``) so a reasoning
-turn cannot modify the workspace.
+the user prompt. Turns request the configured permission mode, defaulting to
+``plan``; the caller may override it. Effective permissions and external effects
+depend on the installed CLI, configuration and session and need separate
+qualification. A system-prompt append is not proof of model injection resistance.
 
 As with the other headless drivers, the heavy logic is a synchronous, dependency-injected
 :meth:`GrokParticipant.run_turn` (hermetically testable with a fake runner) and the async
@@ -54,7 +56,7 @@ DEFAULT_TIMEOUT = 600.0
 """Default wall-clock ceiling, in seconds, for one headless turn."""
 
 DEFAULT_PERMISSION_MODE = "plan"
-"""Default Grok permission mode; a reasoning participant never needs to write the workspace."""
+"""Default permission-mode request; not an independent filesystem sandbox."""
 
 
 def build_grok_argv(
@@ -88,12 +90,12 @@ def build_grok_argv(
     resume_session : str, optional
         Session id to resume via ``--resume <id>``; omitted when empty to start fresh.
     permission_mode : str, optional
-        Grok permission mode; defaults to ``plan`` (read-only).
+        Requested Grok permission mode; defaults to ``plan``. Enforcement is vendor-owned.
 
     Returns
     -------
     list[str]
-        The argv, always requesting ``streaming-json`` output and a read-only permission mode.
+        The argv, requesting ``streaming-json`` output and the supplied permission mode.
     """
     argv = [
         binary,

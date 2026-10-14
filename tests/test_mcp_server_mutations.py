@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
 from mcp_server_helpers import seed_claim, start_bridge
 from synapse_channel.core.protocol import MessageType
@@ -123,6 +125,15 @@ async def test_send_dispatches_chat() -> None:
             await close_agents(alpha)
     assert out == "sent to ALPHA"
     assert chat["sender"] == "me"
+
+
+async def test_send_refuses_after_actual_connection_cleanup() -> None:
+    """A closed real bridge refuses submission instead of returning a sent result."""
+    async with running_hub() as (_, uri):
+        handle = await start_bridge(uri)
+        await handle.close()
+        with pytest.raises(ValueError, match="^hub connection unavailable$"):
+            await handle.bridge.send("ALPHA", "must not be submitted")
 
 
 async def test_handoff_granted() -> None:

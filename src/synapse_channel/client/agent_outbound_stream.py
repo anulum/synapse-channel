@@ -11,8 +11,11 @@ A worker or long-running task sends an incremental reply as a bounded stream:
 one ``open`` frame, ordered ``chunk`` frames, and a terminal ``done`` (or
 ``abort``) frame, each carried as a chat envelope tagged with the stream id. The
 producer enforces the :class:`~synapse_channel.core.streaming.StreamBounds`
-ceiling, so a runaway generation is refused at the source. A receiver reassembles
-the frames with :class:`~synapse_channel.core.streaming.StreamConsumer`.
+count and byte ceilings. It does not enforce ``ttl_seconds``, cancel upstream
+work, or emit a terminal abort on failure. A receiver reassembles parsed frames
+with :class:`~synapse_channel.core.streaming.StreamConsumer` and its own limits.
+These chat frames can be journalled; no final result or release receipt is
+automatically created by this helper.
 """
 
 from __future__ import annotations
@@ -55,8 +58,8 @@ class AgentStreamMixin:
         stream_id : str, optional
             Stream id to use; a random url-safe id is generated when empty.
         bounds : StreamBounds or None, optional
-            Ceiling enforced as frames are produced; the library default applies
-            when omitted.
+            Count and byte ceilings enforced as frames are produced; defaults
+            apply when omitted. The declared lifetime is not enforced.
         channel : str, optional
             Private channel to scope the stream to its members.
 
@@ -69,7 +72,8 @@ class AgentStreamMixin:
         ------
         synapse_channel.core.streaming.StreamError
             If a chunk would exceed the declared bounds; frames emitted before the
-            overflow have already been sent.
+            overflow have already been sent. No abort frame, cancellation of
+            upstream work, final reply or release receipt is automatic.
         """
         sid = stream_id.strip() or secrets.token_urlsafe(12)
         producer = StreamProducer(sid, bounds=bounds)

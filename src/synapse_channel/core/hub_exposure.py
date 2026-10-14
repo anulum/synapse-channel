@@ -39,8 +39,10 @@ class InsecureBindError(SynapseError, RuntimeError):
     so a coordination bus is never accidentally exposed unauthenticated to the
     network. From the 1.0 posture the refusal also covers a shared token presented
     over plaintext ``ws://`` off loopback: the token and every coordination frame
-    would be readable on the network path, so the bind requires native TLS (or a
-    ``wss://`` proxy front). An operator who accepts either risk passes
+    would be readable on the network path, so an off-loopback bind requires
+    native TLS. A proxy deployment keeps the hub on loopback; a proxy alone
+    does not satisfy this guard for an off-loopback plaintext bind. An operator
+    who accepts either risk passes
     ``insecure_off_loopback`` (CLI: ``--insecure-off-loopback``) to downgrade the
     refusal to a warning.
     """
@@ -58,9 +60,11 @@ def plaintext_token_problems(
 
     A shared token presented over plaintext ``ws://`` off loopback puts the token
     and every coordination frame on the wire in the clear. From the 1.0 posture
-    this is a refusal, not a mere advisory: the bind must terminate TLS natively
-    (``--tls-certfile``/``--tls-keyfile``) or sit behind a ``wss://`` proxy, or the
-    operator must accept the risk explicitly with ``--insecure-off-loopback``.
+    this is a refusal, not a mere advisory: an off-loopback bind must terminate
+    TLS natively (``--tls-certfile``/``--tls-keyfile``), or the operator must
+    accept the risk explicitly with ``--insecure-off-loopback``. A ``wss://``
+    proxy deployment can instead keep the hub bound to loopback; this guard
+    does not detect or exempt a proxy in front of a non-loopback bind.
     Loopback binds, TLS-terminated binds, and token-less binds are handled
     elsewhere (the token-less case is the separate no-token refusal), so this
     check fires only for authenticator + off-loopback + no TLS.
@@ -71,7 +75,7 @@ def plaintext_token_problems(
         f"authenticates with a shared token on non-loopback host {host!r} over "
         "plaintext ws://; the token and all coordination traffic are readable "
         "on the network path — terminate TLS natively (--tls-certfile and "
-        "--tls-keyfile) or front the hub with a wss:// proxy; --paranoid makes "
+        "--tls-keyfile) or front a loopback hub with a wss:// proxy; --paranoid makes "
         "native WSS mandatory"
     ]
 

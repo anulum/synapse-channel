@@ -314,6 +314,13 @@ not a substitute for the native claim plugin; keep both enabled.
 
 The canonical compatibility source is
 `integrations/opencode/compatibility.json`.
+
+The workflows below define qualification profiles for the exact binary, client
+and runner pins in that manifest. A successful run qualifies the artifacts and
+isolated deterministic-provider workload recorded by that run; workflow source
+or a shared version label alone does not prove execution at a newer source
+revision. Requalify changed package or connector bytes with their matching
+profile before carrying forward an acceptance result.
 It binds the official repository, release tag and Git commit, all twelve
 published CLI archive digests, the five executable runner lanes, and every
 editor/runtime pin used by the real-client workflow. The strict verifier refuses
@@ -494,7 +501,7 @@ A failed Zed or JetBrains real-client turn therefore fails the matrix and the
 workflow rather than being hidden by `continue-on-error`.
 
 The real-process suite uses isolated home/config/data/state/cache roots and a
-local scripted provider. It proves:
+local scripted provider. Successful runs of the named profiles exercise:
 
 - local JSONL turns and an ACP initialize handshake;
 - real CodeCompanion.nvim, Agent Shell, Zed, and JetBrains AI Assistant ACP

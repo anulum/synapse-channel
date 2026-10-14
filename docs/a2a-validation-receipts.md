@@ -101,6 +101,19 @@ client-certificate identity, public-network validation, or certification.
 
 ## Official SDK and TCK receipt (2026-07-10)
 
+The following is a historical reported profile. This public record names SDK,
+TCK and specification versions but does not identify the original bridge
+package digest and complete machine-readable run artifact. Keep its counts
+attached to that dated report; they do not qualify the current source or a
+newly built wheel. A fresh result needs the exact server/client artifacts and
+retained run receipt.
+
+The historical source change is
+[`bed560b4d446a802e129677080faba9da27814cb`](https://github.com/anulum/synapse-channel/commit/bed560b4d446a802e129677080faba9da27814cb);
+[`33f51823a152d1cda28b3ee848f9b0e45f7a1dfb`](https://github.com/anulum/synapse-channel/commit/33f51823a152d1cda28b3ee848f9b0e45f7a1dfb)
+narrows a test lookup. These source identities do not substitute for the
+missing package/run identities.
+
 The official Python SDK `a2a-sdk==1.1.0` discovered the live Agent Card,
 selected `RestTransport`, and completed send, get, list, and cancel. The
 official A2A TCK at commit `5996b79`, pinned to specification commit
@@ -139,8 +152,8 @@ and `synapse_channel.a2a_client.A2AOutboundClient` against a second peer.
 Production public-webhook operator sign-off and full external TCK certification
 remain open.
 
-This upgrades the matrix with real official-SDK and official-TCK evidence plus
-in-repo residual scenario handlers, but it is still **partial validation, not A2A certification or full conformance**.
+The matrix separates the historical SDK/TCK report from maintained in-repo
+residual scenario handlers. It is still **partial validation, not A2A certification or full conformance**.
 
 ## How to contribute one
 

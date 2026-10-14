@@ -19,7 +19,7 @@ as ``claude codex ollama:gemma3:1b`` costs one command line.
 Both commands print each turn as it is produced (the injected result sink is the
 CLI's stdout), or the full typed transcript with ``--json``. Exit codes follow
 ``ask``: ``0`` when every turn answered and the run completed, ``1`` when a provider
-was unavailable, any turn errored or abstained, or a ``--budget-usd`` ceiling halted
+was unavailable, any turn errored or abstained, or a ``--budget-usd`` threshold halted
 the convocation, ``2`` for a refused configuration.
 """
 
@@ -545,7 +545,7 @@ def add_parsers(group: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         "--budget-usd",
         type=float,
         default=None,
-        help="Cumulative cost ceiling checked between rounds and before synthesis.",
+        help="Reported-cost stop threshold between completed rounds; not a billing cap.",
     )
     convener.add_argument(
         "--dry-run",

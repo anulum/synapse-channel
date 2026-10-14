@@ -4,8 +4,8 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — `synapse fleet-init`: empty machine to working fleet in one command
-"""``synapse fleet-init`` — empty machine to working fleet in one command.
+# SYNAPSE_CHANNEL — local fleet onboarding checks and workspace preparation
+"""Run local fleet onboarding checks, scaffold, provider probes and a demo.
 
 The pieces of a first fleet already exist as separate verbs: ``doctor`` (``--fix``
 repairs the default local hub and waiter), ``new coding-fleet`` (the workspace
@@ -14,6 +14,11 @@ packaged no-collision demo. A newcomer had to discover that sequence; this comma
 *is* the sequence. It runs the health check, scaffolds a persistent workspace,
 probes the model seats, runs the demo smoke, and prints the concrete next-steps
 plan with the workspace's own project name filled in.
+
+Successful exit describes those stages, not a configured provider fleet: doctor
+findings and unavailable declared seats remain advisory, and provider sessions
+are listed as next steps rather than started by this command. ``--fix`` may
+activate the existing doctor-managed services.
 
 It deliberately adds no machinery: no new dependency, no new daemon — everything it
 starts is exactly what the bundled commands start, and every stage's outcome is

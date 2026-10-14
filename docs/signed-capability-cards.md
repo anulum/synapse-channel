@@ -226,8 +226,11 @@ distributed database, or managed key-delivery system.
   floors across hub restarts; it does not persist live capability cards themselves.
 - A worker sequence is in-process. Operators that publish offline cards must
   persist and increase their own sequence.
-- Credential rotation uses a new key id. Revocation blocks new verification
-  immediately while old projected evidence retains its recorded result.
+- Credential rotation uses a new key id. Verification refuses a key marked
+  revoked in the loaded trust bundle; old projections retain their recorded
+  result. The CLI hub loads the trust file at startup, so changing that file
+  requires restarting the hub with the updated bundle. It is not a per-request
+  file reload. Preserve the configured durable history during that restart.
 - Capability cards themselves remain ephemeral and are forgotten when their
   live agent disconnects or their ordinary card TTL expires.
 - No enforcement flag exists yet. Durable history and recovery instructions now
@@ -240,11 +243,14 @@ distributed database, or managed key-delivery system.
   card signing only authenticates the advertisement.
 - [Per-message authentication](per-message-authentication.md) authenticates
   selected frames and has its own key/profile/replay state.
-- [Signed events and mTLS](signed-events-mtls.md) protect durable events and
-  configured peers; their signatures cannot substitute for card signatures.
-- [Sandboxed tools and marketplace](sandboxed-tools-and-marketplace.md) uses a
-  signed card as provenance, a permission manifest as requested authority, the
-  WASM runtime as enforcement, and a run receipt as evidence.
+- [Signed events and mTLS](signed-events-mtls.md) describes frame admission,
+  verification of retained original envelopes and separate journal/commitment
+  trust profiles. A stored projection is not automatically an original signed
+  envelope; these signatures cannot substitute for card signatures.
+- [Sandboxed tools and marketplace](sandboxed-tools-and-marketplace.md) describes
+  these separate building blocks and a future admission composition. The shipped
+  sandbox command does not join a signed card, connection identity/ACL,
+  revocation policy and permission manifest into executable admission.
 
 ## Boundaries
 

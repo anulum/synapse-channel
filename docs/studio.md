@@ -12,11 +12,12 @@ Contact: www.anulum.li | protoscience@anulum.li
 The Synapse dashboard is growing from a read-only cockpit into an operator **Studio**:
 a control plane that answers, in one glance, *what is happening, what is at risk, what
 is safe to do next, and who should do it.* It is built the way the rest of Synapse is —
-local-first, dependency-light, offline-safe — and rides on the read model the dashboard
+local-first and dependency-light — and rides on the read model the dashboard
 already serves.
 
 This page tracks what has shipped. The full direction lives in the internal design
-plan; what is public here is real and running.
+plan. The surfaces below distinguish shipped observation and governed actions
+from future configuration and orchestration.
 
 Durable event-store feeds and the federation-store feed report storage or
 encoding failures with HTTP 503 and
@@ -62,6 +63,15 @@ synapse dashboard --port 8765
 # classic hub HTML:           http://127.0.0.1:8765/classic
 ```
 
+Dashboard page and feed reads require a bearer, including on loopback.
+The CLI prints a generated bearer when no token or principal policy is supplied.
+Packaged Studio pages require an explicit Authorization header and have no
+interactive unlock form. For ordinary browser use, serve the built React
+cockpit at `/cockpit/` and use its unlock screen; see
+[cockpit setup](cockpit.md#start-the-cockpit-from-a-source-checkout).
+The static design reference needs no hub data, but its page still requires
+dashboard authentication.
+
 ## The Studio snapshot — `/studio.json`
 
 The command centre reads one JSON contract, served live at `/studio.json`: a single risk
@@ -69,9 +79,11 @@ The command centre reads one JSON contract, served live at `/studio.json`: a sin
 agents, claims, task columns, conflicts, risk behind them, and a compact security-posture
 section. It is a pure projection of the same read model the dashboard already exposes —
 `studio_snapshot.py` reshaping `/snapshot.json` — so Studio adds no new hub call, only a
-curated command-centre view. Every headline count is derived from the list it summarises,
-so the instrument and the rows beneath it can never disagree. A partial payload from a
-degraded hub still projects to a renderable snapshot rather than failing.
+curated command-centre view. Agent, task, conflict and risk counters come from
+their projected lists; claim counters use the fleet model's reported totals.
+The projection gives missing fields renderable defaults. Those defaults do not
+prove that a degraded or partial source contains no agents, claims or risk;
+check the snapshot's freshness and source evidence.
 
 The observed-peer panel uses the dashboard's direct `--observed-peer` fetches,
 not Fleet's offline mirror JSON. Reachability confirms a fetch, not completeness:
@@ -81,7 +93,7 @@ unreachable peers. Green requires known zero lag; red fetch failures retain
 priority when mixed with unknown-lag peers. These observations remain advisory.
 
 ```bash
-synapse dashboard --uri ws://127.0.0.1:8765
+synapse dashboard --uri ws://127.0.0.1:8876 --port 8765
 # then GET http://127.0.0.1:8765/studio.json
 ```
 
@@ -212,19 +224,24 @@ JSON/media/size/rate gates, principal-specific relay identity, and the existing
 hub ACL and durable audit. See [Dashboard browser principals](cli.md#dashboard-browser-principals)
 for the private token-file policy and status-code contract.
 
-The security-posture panel sits beside the Coordination Clock and summarises five shipped
-safety surfaces: sandbox grants, ACL/role visibility, the dashboard exposure guard,
-signed federation / peer observation, and receipt evidence. Rows are evidence-bound:
-missing role bindings, peers, or receipts are shown as amber "not currently evidenced"
-instead of being treated as configured. The panel is read-only; server-side ACL,
-dashboard bind, federation, and sandbox enforcement remain in their existing modules.
+The security-posture panel sits beside the Coordination Clock and summarises
+five surface hints: sandbox capability, role metadata, a reported configuration
+fingerprint, peer observation and visible receipt rows. Read each row's state
+and detail: green can mean shipped capability, including an available sandbox
+or local-only federation, rather than verified deployment. Missing role
+metadata or receipt rows are amber. A capability advertisement does not prove
+active sandbox grants; role metadata does not prove ACL enforcement; a config
+fingerprint does not independently attest a safe bind; peer reachability does
+not prove signature verification; visible receipts remain declared evidence.
+The panel is read-only and grants no authority. The corresponding server-side
+controls keep their separate configuration and verification requirements.
 
-The **observed peers (advisory)** panel projects dashboard `--observed-peer` rows (and
-any FLEET-style advisory mirrors folded into the same snapshot field) into
+The **observed peers (advisory)** panel projects dashboard `--observed-peer` rows into
 `/studio.json` under `observed_fleet`: per-peer reachability, lag, clock skew, and
 observed claim-owner counts. Unreachable peers are red; lagging peers amber; no
 configured peers is an honest amber "not configured" state. Peer data never grants
-local claim authority.
+local claim authority. The separately granted Fleet export panel uses its own
+endpoint and never enters these direct-peer counts or the local verdict.
 
 The LiveFeed panel tails `/events.json?since=SEQ&limit=N`, the durable event-store feed
 served when the dashboard starts with `--feeds-db`. It starts at `since=latest`, then
@@ -246,3 +263,9 @@ Beyond the command centre come the workflow, trace, policy, routing, and channel
 each reading the same kind of projection. The core read-only Studio stays free; an
 organisation-level workbench (saved views, exports, multi-project, managed) is planned as a
 separate layer.
+
+Full hub/Fleet configuration, on-demand remote compute, vendor-client control
+sequences and process lifecycle management require further qualified interfaces.
+The current local setup assistant previews commands without applying them.
+The separately granted host-session view observes Linux process metadata;
+it does not control processes or qualify Windows/Linux fleet resource management.

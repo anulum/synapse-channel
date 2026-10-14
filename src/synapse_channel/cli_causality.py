@@ -214,8 +214,8 @@ def _cmd_otel(args: argparse.Namespace) -> int:
     overrides the ``service.name`` resource; ``--filter TASK_ID`` (repeatable)
     projects only the named tasks and refuses a task the log does not record.
     ``--watch`` re-projects and re-exports every ``--interval`` seconds —
-    live coordination observability; the deterministic ids make each
-    re-export idempotent on the collector side.
+    stable ids support correlation. Collector deduplication and eventual
+    backend storage are not enforced or independently verified here.
     """
     if (args.out is None) == (args.endpoint is None):
         print(

@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from typing import TYPE_CHECKING, Any
 
 from synapse_channel.core.event_row_recovery import (
@@ -235,6 +235,51 @@ class EventReader:
         with self.storage.lock:
             row = self.storage.connection.execute("SELECT COUNT(*) FROM events").fetchone()
         return int(row[0])
+
+    def event_metrics(self, window_seconds: Mapping[str, float]) -> dict[str, object]:
+        """Aggregate retained event counts without decoding event payloads.
+
+        Parameters
+        ----------
+        window_seconds : Mapping[str, float]
+            Named trailing spans in seconds, measured from the log's final timestamp.
+
+        Returns
+        -------
+        dict[str, object]
+            Log bounds, counts by kind and named trailing-window counts. Empty
+            stores have zero counts and null timestamp bounds. These metadata
+            aggregates do not authenticate payloads or prove external effects.
+        """
+        with self.storage.lock:
+            connection = self.storage.connection
+            total, first_ts, last_ts, max_seq = connection.execute(
+                "SELECT COUNT(*), MIN(ts), MAX(ts), MAX(seq) FROM events"
+            ).fetchone()
+            by_kind = dict(
+                connection.execute("SELECT kind, COUNT(*) FROM events GROUP BY kind ORDER BY kind")
+            )
+            windows: dict[str, object] = {}
+            for name, span in window_seconds.items():
+                cutoff = float(last_ts) - span if last_ts is not None else 0.0
+                window_kinds = dict(
+                    connection.execute(
+                        "SELECT kind, COUNT(*) FROM events WHERE ts >= ? "
+                        "GROUP BY kind ORDER BY kind",
+                        (cutoff,),
+                    )
+                )
+                windows[name] = {"events": sum(window_kinds.values()), "by_kind": window_kinds}
+        return {
+            "log": {
+                "total_events": int(total),
+                "max_seq": int(max_seq) if max_seq is not None else 0,
+                "first_ts": float(first_ts) if first_ts is not None else None,
+                "last_ts": float(last_ts) if last_ts is not None else None,
+            },
+            "events_by_kind": by_kind,
+            "windows": windows,
+        }
 
     def max_seq(self) -> int:
         """Return the highest sequence number stored, or ``0`` when the log is empty.

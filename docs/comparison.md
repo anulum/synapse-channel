@@ -14,8 +14,9 @@ flow.
 ## Two different layers
 
 - **Orchestration frameworks** (CrewAI, LangGraph, AutoGen, and similar) define and drive an
-  agent's **control flow** — the graph of steps, tool calls, and hand-offs **inside one
-  program**. They are where you *build* an agent or a crew.
+  agent's **control flow** — a framework-managed graph of steps, tool calls and
+  hand-offs. Its process and deployment topology depends on the framework and
+  application. They are where you *build* an agent or a crew.
 - **SYNAPSE** is a **coordination substrate** **between** independently running agents and
   humans, **across processes and repositories**. It does not define an agent's reasoning; it
   gives separate agents one place to claim work, share presence and a plan, address each other,
@@ -33,16 +34,16 @@ agent, SYNAPSE keeps a fleet of them off each other's work.
 | | Orchestration frameworks | SYNAPSE CHANNEL |
 | --- | --- | --- |
 | Primary job | define & run one agent / crew's control flow | coordinate many independent agents (and humans) |
-| Boundary | within one process | across processes, terminals, and repositories |
-| Owns agent reasoning / prompts | yes | no — it carries no model logic of its own |
+| Boundary | framework-managed graph/workers; deployment varies | across independently managed processes, terminals and repositories |
+| Owns agent reasoning / prompts | yes | the base hub coordinates; opt-in workers/participants frame and invoke provider turns |
 | File-scope work claims (live overlap refusal) | not the focus | core — overlapping live claims are refused; edit enforcement is separate |
 | Cross-process presence & directory | not the focus | core (`who`, group globs, project identities) |
 | Shared task plan with dependencies | varies | core (the blackboard; done unblocks dependents) |
-| Event-driven wakeups (no polling) | varies | core (`wait`, the directed-only waiter) |
-| Durable, replay-on-restart coordination | varies | core (SQLite-WAL event log) |
+| Event-driven wakeups | varies | core (`wait`); heartbeats and reconnect handling are separate |
+| Durable, replay-on-restart coordination | varies | configured healthy SQLite-WAL journal, within retention/key/lease boundaries |
 | Humans on the same channel | varies | core (the `syn` commands) |
-| Runtime dependencies | many | one (`websockets`); the rest is the standard library |
-| Runs fully local, no cloud account | varies | yes, by design |
+| Runtime dependencies | varies by framework | base `websockets`, plus `typing-extensions` on Python 3.10; optional surfaces have declared extras |
+| Runs fully local, no cloud account | varies | base coordination can; provider workers and external services have separate requirements |
 
 ## Concrete differences you can verify
 

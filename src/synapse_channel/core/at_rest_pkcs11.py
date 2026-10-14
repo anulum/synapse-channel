@@ -7,10 +7,14 @@
 # SYNAPSE_CHANNEL — optional PKCS#11 key-encryption-key backend for at-rest wrapped keys
 """Wrap the at-rest data key with a key-encryption key held on a PKCS#11 token.
 
-A hardware token — a YubiKey PIV, a cloud or network HSM, or SoftHSM for tests — holds an AES
-key-encryption key that never leaves the device (it can be sensitive and non-extractable). It wraps
-and unwraps the random data key that :class:`~synapse_channel.core.at_rest.AtRestCipher` uses for
-bulk AES-GCM, via RFC 3394 AES key wrap (``CKM_AES_KEY_WRAP`` / ``C_WrapKey`` / ``C_UnwrapKey``).
+A compatible PKCS#11 module must support AES secret-key objects and RFC 3394
+``CKM_AES_KEY_WRAP`` through ``C_WrapKey`` / ``C_UnwrapKey``. New AES-256
+key-encryption keys are requested as sensitive and non-extractable. For an
+existing key, custody depends on its provisioned attributes and the selected
+module; this interface alone does not establish physical hardware protection.
+SoftHSM can exercise the software interface. YubiKey PIV's YKCS11 interface
+does not provide these AES secret-key operations and is not supported here.
+Exact hardware token, firmware and module qualification remains separate.
 
 This is the hardware counterpart to the software passphrase backend, sharing the same wrapped-key
 file format (recorded with ``backend`` = :data:`PKCS11_BACKEND`) and the same
@@ -18,9 +22,10 @@ file format (recorded with ``backend`` = :data:`PKCS11_BACKEND`) and the same
 dependency and a PKCS#11 module path are needed; importing this module never requires them —
 :func:`require_pkcs11` raises a clear error only when a token operation is actually attempted.
 
-The unwrapped data key is returned to the process because ``AtRestCipher`` runs AES-GCM in software;
-the key-encryption key stays on the token. That is standard envelope encryption: the long-term
-secret is hardware-protected, while the ephemeral data key lives in process memory during use.
+The unwrapped data key is returned to the process because ``AtRestCipher`` runs
+AES-GCM in software. A suitably provisioned hardware token may keep its KEK
+non-extractable; the data key remains in process memory during use. Software
+tokens and operator-selected modules do not imply that hardware boundary.
 """
 
 from __future__ import annotations

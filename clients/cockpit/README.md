@@ -12,14 +12,16 @@ Contact: www.anulum.li | protoscience@anulum.li
 A read-mostly, real-time operator cockpit with four opt-in governed write routes for
 the coordination hub, built as a static React + TypeScript SPA (Vite). It is a
 *client* — like `clients/go`,
-`clients/js`, and `clients/vscode` — so the Python core stays an untouched,
-no-telemetry neutral substrate. The cockpit renders what the hub recorded — it
-never invents, smooths, or extrapolates state, and an empty surface is shown
-as empty.
+`clients/js`, and `clients/vscode`. The Python core owns the hub and
+authenticated dashboard routes independently of this client. The cockpit
+distinguishes recorded hub events, observed snapshot transitions, labelled
+local heuristics and unavailable data; an empty retained window is not proof
+that nothing happened elsewhere.
 
 The design is a control-room instrument, not a SaaS analytics page: a lifted
 graphite palette, Space Grotesk + JetBrains Mono (self-hosted woff2 — the
-cockpit contacts no external origin and renders identically offline), a small
+cockpit loads no external font origin; its cached shell can load offline while
+live evidence remains stale or unavailable), a small
 semantic signal set redundantly encoded (colour + glyph + position, never
 colour alone), and one dominant live instrument — the **activity spine**, a
 discrete event-driven oscilloscope of observed coordination transitions.
@@ -60,7 +62,7 @@ across all five interface languages and both display densities.
   amber → red, a task newly done. Computed from live facts only; the first
   poll emits nothing; click or eight seconds dismisses.
 - **Detail drawers** — click a roster row or a board card: everything the
-  fleet knows about that name (claims with paths, the identity's unread
+  retained window currently reports about that name (claims with paths, the identity's
   dead-letter mailbox, dependency verdicts, history in the window), with
   actions that only steer other panels — filter the log, trace causality.
   Roster inspection is also a native button: Tab to the identity and activate
@@ -75,7 +77,7 @@ across all five interface languages and both display densities.
   dependents they unblocked, a text + bucket-chip query with honest
   shown-of-total counts, and a Markdown **report** export that states its
   scope in the header); the risk rail — the hub's signals, then the
-  hub-recorded **dead letters** (targets whose messages nobody reads), then
+  hub-recorded **dead letters** (retained delivery/consume-liveness evidence), then
   client-side **repetition heuristics** (claim churn, repeating lease expiry)
   in their own clearly-labelled section — over the findings stream.
 
@@ -121,7 +123,7 @@ first), with the spine kept at every width.
 | `/snapshot.json` | 2 s poll | fleet, claims, task graph, risk, board — the primary feed |
 | `/reliability.json` | 15 s poll | the `synapse reliability --json` report (optional) |
 | `/causality.json?seq=N\|task=ID&direction=causes\|effects` | on demand | a `synapse causality --json` trace (optional) |
-| `/federation.json` | 20 s poll | federation posture (proposed contract; optional) |
+| `/federation.json` | 20 s poll | configured federation-store posture (optional) |
 | `/events.json?since=SEQ\|latest&limit=N` | 2 s incremental | the hub-attested event log (optional; also drives history mode) |
 | `/metrics.json` | 30 s poll | store-attested log metrics: totals, per-kind, trailing windows (optional) |
 | `/state-at.json?seq=N` | on scrub | claims + board reconstructed as of seq N by bounded replay (optional) |
@@ -205,7 +207,7 @@ attached every panel waits honestly and the spine baseline stays flat.
 
 Use Node 22.22.2 or newer on the Node 22 line, Node 24.15 or newer on the
 Node 24 line, or Node 26 or newer. The jsdom 30 test environment sets this
-floor; the dedicated CI workflow uses Node 22.23.2.
+floor; the dedicated CI workflow uses Node 22.23.3.
 
 ```bash
 npm run build      # strict typecheck (app + node configs), then vite build -> dist/
@@ -240,10 +242,14 @@ verifies npm v3 package/lock alignment plus registry integrity metadata.
 
 ## Installing on a phone (PWA)
 
-The built cockpit is an installable PWA. A phone on the tailnet opens
-`http://<hub-tailnet-ip>:<dashboard-port>/cockpit/`; the token-free shell opens
-first and asks for the bearer in its unlock
-veil. Then install it:
+The built cockpit has a PWA shell. A phone uses a trusted HTTPS endpoint such
+as `https://<dashboard-tailnet-name>/cockpit/` through an operator-configured
+gateway and admitted dashboard host. The token-free shell opens first and
+asks for the bearer in its unlock veil. Service-worker registration requires
+a [secure context](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerContainer/register);
+plain HTTP on a remote Tailscale IP does not meet that requirement. The HTTP
+loopback exception applies to a browser on the same host. With the deployment
+and browser requirements met, install it:
 
 - **Android / Chromium**: the cockpit shows an "add to home screen" chip
   when the browser fires its install prompt; one tap hands over to the

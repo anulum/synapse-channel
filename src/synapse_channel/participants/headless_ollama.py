@@ -10,8 +10,10 @@
 A fourth concrete :class:`~synapse_channel.participants.participant.Participant`, alongside the
 Claude, Codex, and Kimi drivers, on the ``HEADLESS`` channel: the bus owns the invocation,
 spawning ``ollama run <model> <prompt>`` and reading the model's plain-text reply. It is the
-one provider that runs **entirely locally** — free, offline, and with no terms-of-service or
-account gate — which makes it a dependable participant for tests and offline fan-out.
+local inference option when its daemon and model are provisioned locally. This
+driver does not enforce an offline daemon or model selection: downloads, remote
+configuration and cloud-backed models may need network access or accounts.
+Model licences and compute costs remain the operator's responsibility.
 
 Three contract differences from the Claude driver, all handled here and worth stating:
 
@@ -24,8 +26,9 @@ Three contract differences from the Claude driver, all handled here and worth st
   on the request is accepted and ignored, so the participant still composes with a
   :class:`~synapse_channel.participants.continuity.ContinuitySeat` (which simply has nothing to
   thread).
-- **No reported cost.** A local turn has no monetary cost, so every Ollama
-  :class:`~synapse_channel.participants.envelope.TurnResult` carries ``cost_usd == 0.0``.
+- **No reported cost.** The plain-text reply carries no monetary accounting, so
+  every Ollama :class:`~synapse_channel.participants.envelope.TurnResult` carries
+  ``cost_usd == 0.0``. This does not establish zero billing or resource cost.
 
 As with the other headless drivers, the heavy logic is a synchronous, dependency-injected
 :meth:`OllamaParticipant.run_turn` (hermetically testable with a fake runner) and the async

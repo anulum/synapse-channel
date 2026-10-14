@@ -118,7 +118,7 @@ def test_a_process_of_another_account_keeps_its_start_identity_without_an_image(
     assert first.image == FileIdentity("", -1, "", "cannot be named: PermissionError")
 
 
-def test_the_first_word_is_resolved_as_a_start_would_resolve_it(tmp_path: Path) -> None:
+def test_the_first_word_candidate_uses_the_launch_search_path(tmp_path: Path) -> None:
     name = "launch-probe.cmd" if WINDOWS else "launch-probe"
     script = tmp_path / "bin" / name
     script.parent.mkdir()
@@ -144,6 +144,41 @@ def test_the_first_word_is_resolved_as_a_start_would_resolve_it(tmp_path: Path) 
     for empty in ([], [""]):
         with pytest.raises(LaunchRecordError, match="a launch record needs a command"):
             executable_identity(empty)
+
+
+@pytest.mark.skipif(not LINUX, reason="checks real Linux exec fallback and process image")
+def test_a_launch_record_candidate_can_differ_from_the_file_that_started(tmp_path: Path) -> None:
+    """An invalid first PATH candidate is recorded while a later script actually runs."""
+    first = tmp_path / "a" / "probe"
+    later = tmp_path / "b" / "probe"
+    first.parent.mkdir()
+    later.parent.mkdir()
+    first.write_text("not an executable format\n", encoding="ascii")
+    later.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "print('later candidate running', flush=True)\n"
+        "sys.stdin.read()\n"
+        "sys.exit(23)\n",
+        encoding="utf-8",
+    )
+    first.chmod(0o700)
+    later.chmod(0o700)
+    env = {"PATH": os.pathsep.join([str(first.parent), str(later.parent)])}
+    process = subprocess.Popen(["probe"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    try:
+        record = make_record(
+            seat="candidate-probe", command=["probe"], pid=process.pid, environ=env
+        )
+        assert record.executable.path == str(first.resolve())
+        assert record.executable.sha256 == _sha256(first)
+        assert record.process.image is not None
+        assert record.process.image.sha256 == _sha256(os.path.realpath(sys.executable))
+        assert record.process.image.path != record.executable.path
+    finally:
+        output, _ = process.communicate(timeout=30)
+    assert output == b"later candidate running\n"
+    assert process.returncode == 23
 
 
 @pytest.mark.skipif(

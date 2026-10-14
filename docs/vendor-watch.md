@@ -73,7 +73,7 @@ local scripted provider, authenticated server and live hub claim guard journeys
 passed. The matrix records
 the new tested versions and retains the previous 2.1.273 and 1.17.20 versions
 as rollback references. The workstation's installed hosts were not upgraded.
-The same-day C03 acceptance also verified Pi 0.85.1 with a local model,
+The same-day host review also reported Pi 0.85.1 with a local model,
 native extension and real hub claim checks; its optional coding mode remains
 subject to the documented cooperative hook boundary.
 The OpenCode macOS, Windows and Linux arm64 release assets have official
@@ -116,4 +116,7 @@ the Codex host tool API, not model-directed tool selection. Post-thread
 `mcpServerStatus/list` returned a handshake error while direct tool calls
 worked; pre-thread inventory listed the enabled tools. Gemini CLI has no
 accepted packaged extension; its 0.60.0 release does not change that
-classification. Remote MCP admission remains with C09.
+classification. Remote MCP admission remains a separate exact-artifact/runtime
+profile. These dated review descriptions require their original binary and run
+artifacts for qualification; they do not transfer acceptance to current bytes
+merely sharing a version label.

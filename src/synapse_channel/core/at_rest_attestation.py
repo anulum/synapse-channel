@@ -4,23 +4,23 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — hardware attestation gate for at-rest key unwrap
-"""Bind at-rest key unwrap to measured platform state (hardware attestation).
+# SYNAPSE_CHANNEL — operator HMAC statement gate for at-rest workflows
+"""Verify operator-signed statements about declared platform measurements.
 
-An operator can require that a host presents a fresh attestation of PCR digests
-(or a software stand-in signed with an operator policy key) before a TPM-wrapped
-or policy-gated key is unwrapped. This does not replace the KEK backend — it is
-an additional fail-closed gate:
+This module checks HMAC-SHA256 under a 32-byte operator policy key and compares
+the statement's PCR values with that policy. It collects no measurements and
+verifies no TPM quote, AK signature, EK trust chain or measured boot state.
+Omitting measurements when creating evidence copies the policy's expected
+values; that is an operator self-check, not an observation of the host.
 
-1. Load a policy of expected PCR digests (or an empty policy for signature-only).
-2. Collect evidence: a signed statement over ``nonce || canonical PCR map``.
-3. Verify the signature against the policy verification key and match digests.
-4. Only then unwrap the data key.
+The statement binds its supplied nonce, but this verifier neither issues nor
+consumes challenges, checks an expected nonce, nor rejects old evidence by time.
+Repeated verification of the same statement is allowed. A caller needing
+freshness must supply independent challenge custody outside this boundary.
 
-Software path (always available, no extra deps): HMAC-SHA256 with a 32-byte
-policy key. Hardware path (optional): TPM 2.0 quote verification via
-``tpm2-pytss`` when the operator supplies a quote document produced by the TPM
-stack. Importing this module never requires TPM libraries.
+The historical ``tpm2-quote`` label also uses the software HMAC path with a
+32-byte key. The label provides no hardware assurance; other trust-anchor forms
+are refused. This compatibility path requires no TPM library or hardware.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ ALGORITHM_HMAC_SHA256 = "hmac-sha256"
 """Software attestation algorithm: HMAC-SHA256 over the canonical statement."""
 
 ALGORITHM_TPM2_QUOTE = "tpm2-quote"
-"""Hardware attestation algorithm tag for a TPM 2.0 quote document."""
+"""Historical software-HMAC compatibility label; no TPM quote is verified."""
 
 _SUPPORTED_ALGORITHMS = frozenset({ALGORITHM_HMAC_SHA256, ALGORITHM_TPM2_QUOTE})
 
@@ -72,7 +72,7 @@ def _statement_bytes(*, nonce: bytes, pcr_digests: Mapping[int, bytes]) -> bytes
 
 @dataclass(frozen=True)
 class AttestationPolicy:
-    """Expected platform measurements and verification material.
+    """Expected declared measurement values and operator verification material.
 
     Attributes
     ----------
@@ -84,8 +84,8 @@ class AttestationPolicy:
     algorithm : str
         :data:`ALGORITHM_HMAC_SHA256` or :data:`ALGORITHM_TPM2_QUOTE`.
     verification_key : bytes
-        HMAC key (32 bytes) for the software path, or an opaque TPM trust anchor
-        handle reference for the hardware path (implementation-defined).
+        Operator HMAC key (32 bytes) for both accepted algorithm labels.
+        Hardware AK trust anchors are not supported by this verifier.
     """
 
     policy_id: str
@@ -106,18 +106,19 @@ class AttestationPolicy:
 
 @dataclass(frozen=True)
 class AttestationEvidence:
-    """Signed statement that a platform measured the given PCR digests.
+    """Operator-signed statement containing declared PCR digests.
 
     Attributes
     ----------
     nonce : bytes
-        Challenge bound into the signature (fresh per unwrap attempt).
+        Nonce bound into the signature. Issuance, expected-challenge matching
+        and single-use custody are outside this verifier.
     pcr_digests : dict[int, bytes]
-        Measured digests claimed by the attestor.
+        Digests supplied by the caller, not measurements collected here.
     algorithm : str
         Signing algorithm tag.
     signature : bytes
-        HMAC or TPM quote signature bytes.
+        HMAC signature bytes, including for the historical TPM label.
     policy_id : str
         Policy this evidence claims to satisfy.
     """
@@ -198,7 +199,10 @@ def create_hmac_evidence(
 
 
 def verify_attestation(policy: AttestationPolicy, evidence: AttestationEvidence) -> None:
-    """Fail-closed verification of attestation evidence against a policy.
+    """Verify the operator HMAC and declared PCR values against a policy.
+
+    Success verifies this software statement only. It does not establish
+    hardware measurement, quote authenticity or challenge freshness.
 
     Raises
     ------
@@ -233,20 +237,13 @@ def _verify_hmac(policy: AttestationPolicy, evidence: AttestationEvidence) -> No
 
 
 def _verify_tpm2_quote(policy: AttestationPolicy, evidence: AttestationEvidence) -> None:
-    """Verify a TPM 2.0 quote evidence document.
+    """Verify software HMAC evidence carrying the historical TPM label.
 
-    The quote blob is treated as opaque signed material: when ``tpm2-pytss`` is
-    available and the verification key holds a PEM/DER public area, a real quote
-    check runs. Otherwise the hardware path requires an injected verifier via the
-    policy verification key equalling the precomputed HMAC of the statement under
-    a dedicated length-32 trust key — the same constant-time compare as the
-    software path — so CI can exercise the algorithm tag without a live TPM.
-    Operators with real TPMs should prefer :mod:`synapse_channel.core.at_rest_tpm2`
-    for KEK ops and supply HMAC or external quote tooling for the gate until a
-    full EK/AK trust chain is configured.
+    Only the 32-byte operator-key compatibility form is implemented. No quote
+    parser or AK verifier is called, even when TPM libraries are installed.
+    Other trust-anchor forms are refused instead of being treated as verified.
     """
-    # Prefer a real TSS verify when the operator supplies a non-32-byte trust anchor
-    # (placeholder for future AK public area). For the 32-byte trust key case, reuse HMAC.
+    # Preserve the historical software form without implying hardware evidence.
     if len(policy.verification_key) == KEY_BYTES:
         _verify_hmac(
             AttestationPolicy(
@@ -280,7 +277,7 @@ def _match_pcr_policy(expected: Mapping[int, bytes], measured: Mapping[int, byte
 
 
 def enforce_attestation_gate(policy: AttestationPolicy, evidence: AttestationEvidence) -> None:
-    """Public fail-closed gate used before unwrapping a policy-bound key."""
+    """Verify an operator statement without granting hardware or freshness assurance."""
     verify_attestation(policy, evidence)
 
 

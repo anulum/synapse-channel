@@ -98,7 +98,7 @@ export function hubTokenKey(value: string): string {
   return `${TOKEN_KEY_PREFIX}${parsed.uri}`;
 }
 
-/** Store one independent encrypted token per canonical hub URI. */
+/** Delegate one token per canonical hub URI to the supplied SecretStorage adapter. */
 export class HubCredentialStore {
   constructor(private readonly secrets: SecretStorageLike) {}
 

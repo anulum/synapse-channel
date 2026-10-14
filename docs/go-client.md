@@ -46,14 +46,16 @@ authentication:
 ```bash
 synapse dashboard \
   --host 0.0.0.0 \
-  --allow-non-loopback \
-  --dashboard-token "$DASHBOARD_TOKEN"
+  --allow-non-loopback
 ```
 
 Then read `/snapshot.json`:
 
 ```go
-client, err := synapse.NewClient("http://127.0.0.1:8765")
+client, err := synapse.NewClient(
+	"http://127.0.0.1:8765",
+	synapse.WithBearerToken(os.Getenv("DASHBOARD_TOKEN")),
+)
 if err != nil {
 	return err
 }
@@ -94,8 +96,10 @@ client, err := synapse.NewClient(
 )
 ```
 
-The dashboard requires this header when started with `--dashboard-token` or when
-Synapse generates a startup token for a non-loopback bind. The client sends
+The dashboard requires this header on loopback as well as exposed binds. Set
+`DASHBOARD_TOKEN` from its generated startup token using your owner-managed
+secret input. An explicitly configured `--dashboard-token` replaces that token
+but is visible in process arguments. The client sends
 `Authorization: Bearer <token>` and returns a `StatusError` when the endpoint
 rejects the request.
 

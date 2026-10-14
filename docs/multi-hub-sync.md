@@ -34,7 +34,7 @@ What exists is single-hub plus operator-managed peering, not state sync:
 - The **relay log** and **`synapse ingest`** export the event stream read-side,
   which is the seam a downstream consumer (or a peer) could replay.
 
-The full multi-host sync now routes a real claim to its owning hub and detects an ownership
+The opt-in multi-hub primitives route a claim to its owning hub and detect a known ownership
 partition at runtime from the peers observed asserting a namespace. The hub populates that
 feed itself: `synapse hub --multihub-watch PEER=URI` (repeatable, requiring
 `--namespace-owner`) runs a standing follower (`core/multihub_watch.py`) that polls each
@@ -98,14 +98,18 @@ contested namespace, have shipped:
   the cross-host pull: a request/snapshot message pair on the hub server lets a peer ask for
   the events past a cursor, and `network_fetcher` drops a network reader into the same
   follower in place of `store_fetcher`. `core/multihub_federation.py` gates the pull
-  deny-by-default (federation policy composed with mTLS peer verification), so a follower only
-  pulls from a granted, cert-pinned peer. Exposed as `synapse multihub follow`.
+  through the optional library authoriser (federation policy composed with peer
+  verification). `network_fetcher` defaults to no pull-side authoriser; the CLI
+  `synapse multihub follow` selects an endpoint and optional token/server pin,
+  rather than installing that library policy automatically.
 - `core/multihub_serving.py` — the serving-side mirror of that gate. A hub configured with a
   `MultiHubServingPolicy` reads the certificate the peer presents on the **live** mutual-TLS
-  connection and runs the same `authorise_multihub_peer` composition the following side
-  enforces; a peer with no operator grant, no client certificate, or an untrusted pin is
-  answered with an empty snapshot — the same shape as "no new events", so the refusal leaks
-  nothing. A hub with no policy refuses every peer — the gate is fail-closed by
+  connection, or accepts the explicitly configured registration-identity alternative,
+  and runs `authorise_multihub_peer`. The optional library pull-side policy uses
+  the same composition. A peer without its configured grant or valid identity proof is
+  answered with an empty snapshot — the same shape as "no new events", without
+  disclosing log contents. Connection/handshake metadata remains a separate
+  surface. A hub with no policy refuses every peer — the gate is fail-closed by
   default.
 
 The production CLI loads that policy through `--multihub-serving-policy FILE`.
@@ -125,8 +129,9 @@ without a client certificate:
   --peer-identity-key`, or a Fleet follower's `identity` key.
 - The hub records the key a registration was verified under against the bundle,
   never a trust-on-first-use key. The identity key then stands in for the
-  certificate. The federation checks (peering active, namespace, signing key),
-  the event-signature check and the ACL still apply.
+  certificate. The serving policy still evaluates the configured peering,
+  namespace and credential grants. This registration proof does not establish
+  an Ed25519 signature on every request or returned journal event.
 - A signature survives a TLS-terminating proxy, where a client certificate does
   not. The grant proves the peer for log pulls and for forwarded claims,
   messages, operator relays and dead-letter forwards alike.
@@ -136,6 +141,12 @@ The policy, federation store, and client-CA file must each be owned by the
 effective hub service user and use mode `0400` or `0600`. Core captures all
 three through full-component no-follow descriptor reads; OpenSSL receives the
 captured CA bytes and never reopens the configured path.
+
+An admitted log pull reads the selected hub's complete retained journal window,
+not a per-project projection. The grant's namespace is an admission check,
+not an event filter. Share a journal only with a peer entitled to that data;
+private-channel membership does not turn this export into tenant isolation.
+Attachment bytes have their separate recipient grant below.
 
 ### Content identity, quarantine, and recovery
 
@@ -315,9 +326,12 @@ board (verified causal heads; display LWW among unresolved heads — non-authori
 `follow` is the network counterpart of `observe`: it drops a network fetcher into the same
 follower, so it grants nothing either and a peer's claim stays advisory. Pass `--token` for
 a secured peer hub, `--limit` to bound the batch, and `--json` for the machine-readable
-`ObservedState`. Whether a follower may pull from a peer at all is gated deny-by-default by
-the federation/mTLS policy (see [Boundaries](#boundaries)); the library API
-`peer_authoriser` composes it and the fetcher fails closed for an ungranted peer.
+`ObservedState`. The peer's serving policy independently admits the requesting
+connection or returns an empty refused view. A token or server pin alone does
+not satisfy a configured client-certificate/registration grant. The bare CLI
+does not provision those credentials or install the library pull-side
+`peer_authoriser`; configure a compatible Core/Fleet or library peer profile.
+When a library authoriser is supplied, its denial stops the fetch before connecting.
 
 For a `wss://` peer whose certificate is self-signed or private-CA, pass
 `--pin sha256:<hex>` to trust the peer by its live certificate pin instead of a
@@ -397,8 +411,8 @@ clock-agreement bound.
 ### Where this stops
 
 The cross-host event-log pull above now ships, so a hub can *observe* another over a real
-connection, and the federation/mTLS gate is now enforced on **both** sides — the following
-side before it pulls, and the serving side before it serves (`MultiHubServingPolicy`, see
+connection. Serving admission is enforced independently; a configured library
+pull-side authoriser adds its own pre-connect check (`MultiHubServingPolicy`, see
 [Boundaries](#boundaries)). Opt-in claim forwarding also ships: a hub configured with
 `--namespace-owner` and `--claim-peer HUB_ID=URI` routes a remote-owned claim to that
 namespace's owning hub and relays the owner's verdict. Cross-hub messaging ships as well:
@@ -437,21 +451,22 @@ Coordination state is not one thing; each kind has a different merge story.
 Because claims are mutual exclusion, the design routes them by **namespace
 ownership**, reusing the domain model the federated trust model already defines:
 
-- Each project namespace has exactly **one authoritative hub** at a time. Claims
-  within a namespace are granted only by its owning hub, so there is never a
-  conflicting grant to merge.
+- Operators configure exactly **one authoritative hub** per project namespace
+  in a consistent ownership map. Within that profile, claims are granted only
+  by the configured owner; observed peer claims cannot become a local grant.
 - A peer hub does not grant claims for a namespace it does not own; it can read the
   owning hub's claim state (advisory, eventually consistent) but routes a real
   claim request to the owner.
 - Cross-namespace work that needs scopes from two owners is a coordinated, explicit
   hand-off between owners, not a silent merge.
-- If two hubs ever both believe they own a namespace (a partition), the safe
-  default is **refuse to grant** until ownership is re-established — claim safety
-  fails closed, never open.
+- When the assertion feed detects two hubs claiming a namespace, the configured
+  ownership gate **refuses new grants** until the conflict is resolved. It cannot
+  detect a misconfigured peer that has never been observed.
 
-This keeps the strong invariant local: each hub grants claims authoritatively for
-its own namespaces with no network round-trip, and only the *observed* view of
-other namespaces is eventually consistent.
+The configured owner grants within its uncontested namespaces without a network
+round-trip. A persisted contested namespace remains refused through an outage.
+The *observed* view of other namespaces is eventually consistent; there is no
+global consensus or fencing of independent external processes.
 
 The resolution behind this rule ships in `core/namespace_ownership.py`: a
 `NamespaceOwnership` map records the single owning hub per namespace and resolves a
@@ -481,15 +496,18 @@ per-forward connection (`core/message_forward_transport.py`) to the peer named b
 `synapse hub --message-peer HUB_ID=URI`. The receiving hub
 (`core/handlers/message_forward.py`) serves it under the same `MultiHubServingPolicy`
 that gates claim forwarding and event-log serving. The peer must hold a grant and present
-its pinned client certificate, and the target's project namespace must be listed in the
+its configured certificate or registration-identity proof, and the target's project namespace must be listed in the
 peer's federation peering.
 
-- **Nothing is lost to an outage.** A chat is written to a durable outbox
+- **Bounded outage recovery.** On a journal-backed hub, chat is written to a persistent outbox
   (`core/message_forward_ledger.py`) before its first attempt and retried with backoff
   until the peer answers or the forward expires (`--message-forward-ttl`, default 24 hours).
-- **Nothing is delivered twice.** A retry carries the same `forward_id`, and the receiving
-  hub answers a repeat from its own record of `(origin_hub, forward_id)`.
-- **Nothing is forged.** A forwarded sender appears as `seat@ORIGIN_HUB`, with the origin
+  A hub without a journal uses an in-memory ledger. Expiry, storage failure and
+  loss of the selected store remain boundaries; this is not unlimited delivery.
+- **Retained-answer deduplication.** A retry carries the same `forward_id`, and the receiving
+  hub replays its retained record of `(origin_hub, forward_id)`. This does not
+  establish exactly-once external effects across every crash or store loss.
+- **Bound origin attribution.** A forwarded sender appears as `seat@ORIGIN_HUB`, with the origin
   taken from the authenticated connection. Local seats may not use `@` names. A forwarded
   requester never gains active task control (`interrupt` or `steer`).
 - **The sender learns what happened.** A requested receipt reports `pending`,
@@ -528,17 +546,20 @@ changes need an explicit, operator-confirmed step.
 
 ## Local-first guarantee
 
-Every hub stays fully usable for the namespaces it owns with no peer reachable:
-claims, presence, board, and log all work offline. Sync adds an *observed* view of
+An uncontested namespace assigned to the local hub can operate without a peer
+round-trip. A persisted contested namespace keeps refusing new grants during
+an outage until the required healing evidence arrives; offline operation does
+not bypass that safeguard. Sync adds an *observed* view of
 peer namespaces and a merged history; it never makes a hub depend on a peer to do
-its own work, and it never lets a peer grant a claim inside a namespace it does not
-own.
+its own work within that configured authority. Static ownership maps and
+observed assertions are not global consensus, and cannot detect a peer never
+successfully observed. Claims do not fence arbitrary external writes.
 
 ## Boundaries
 
 The read-side (merge, fold, follower), the cross-host event-log pull (`observe` and
-`follow`), the deny-by-default federation/mTLS gate on **both** the following and the
-serving side (`MultiHubServingPolicy` reads the peer's live certificate), the
+`follow`), the optional library pull authoriser and independent serving gate
+(`MultiHubServingPolicy` validates its configured connection proof), the
 namespace-ownership resolution with its local grant-path enforcement
 (`NamespaceOwnership`), the cross-hub claim forwarding that routes a remote-owned claim to its
 owning hub and relays the verdict (`claim_peers` + `forward_claim` +
@@ -570,8 +591,8 @@ deliberately conservative.
 - It does **not** add a new always-on wire surface casually — the pull is a request/snapshot
   message pair on the existing hub server, reusing the event log, `read_since` seam, and
   mTLS peer bundles; it adds no always-on cross-hub service to the local core.
-- It does **not** weaken local-first: a hub never depends on a peer to grant its
-  own claims or run its own work.
+- Local operation remains conditional on uncontested configured authority;
+  known partitions deliberately prevent new grants until qualified recovery.
 - It does **not** introduce a global consensus cluster. There is no single global
   leader; authority is partitioned by namespace, each hub local-authoritative for
   its own.

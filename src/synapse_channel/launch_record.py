@@ -4,12 +4,12 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — record of what a launcher started: executable digest and process identity
-"""Record what was started when a session was launched.
+# SYNAPSE_CHANNEL — declared command candidate and observed process identity
+"""Record a command candidate and the process observed at session launch.
 
 A record says three things a later reader cannot learn from the session
-itself: which file the command named and what its bytes were, which process
-was created, and what image that process was running. It is written once, as
+itself: which executable candidate was found and what its bytes were, which
+process was created, and what image that process was running. It is written once, as
 a new owner-only file, at the moment of the launch.
 
 **What a record is worth.** It is written by a launcher that runs under the
@@ -19,10 +19,14 @@ time, and it says so in its ``evidence_class``. It is not an attestation: it
 does not show which provider the process connected to, and a reader that
 needs an authority outside the account needs an observer outside it.
 
-**What is hashed.** The file named by the command's first word, resolved
-through the search path and through links, hashed from one open descriptor.
-When that file is a script, the bytes hashed are the script's; the interpreter
-is then visible as the image of the process. On Linux the image is read
+**What is hashed.** The first file candidate found for the command's first
+word by ``shutil.which``, resolved through links and hashed from one open
+descriptor. This does not establish which candidate the system accepted:
+a direct POSIX launch can reject an executable-bit file with an invalid format
+and start a later search-path candidate. Lookup and hashing also happen after
+the start and do not prevent file replacement. When the candidate is a script,
+the bytes hashed are that candidate's; the observed process image may be an
+interpreter and does not identify the script it read. On Linux the image is read
 through the kernel's own link to the running program, so a file replaced after
 the start does not change what is recorded for the process. On Windows the
 image is read by the path the system reports for the process.
@@ -109,7 +113,13 @@ class ProcessIdentity:
 
 @dataclass(frozen=True, slots=True)
 class LaunchRecord:
-    """One launch: who asked, what was named, what was started."""
+    """One launch: a declared command candidate and a separately observed process.
+
+    ``executable`` is the first file candidate returned by lookup, not proof
+    that the system ran it. ``process.image`` identifies the observed image;
+    for scripts it may identify only the interpreter. Neither establishes
+    provider identity or the complete execution chain.
+    """
 
     seat: str
     recorded_at: str
@@ -182,14 +192,16 @@ def executable_identity(
     *,
     cwd: Path | None = None,
 ) -> FileIdentity:
-    """Return the identity of the file the command's first word names.
+    """Return the first file candidate found for the command's first word.
 
     The word is resolved through the search path of ``environ`` (the process
     environment by default). On POSIX, an environment without ``PATH`` uses
     the default executable search path, as a direct process start does. Empty
     and relative path entries refer to ``cwd`` (the current directory by
     default), as do relative command paths. On Windows, ``cwd`` does not alter
-    executable lookup.
+    executable lookup. The lookup checks accessibility, not executable format:
+    a direct launch may reject this candidate and accept a later one. This
+    result is not an observation of the file that actually ran.
 
     Parameters
     ----------
@@ -203,7 +215,7 @@ def executable_identity(
     Returns
     -------
     FileIdentity
-        The file identity, or an unavailable result when no executable is found.
+        The candidate identity, or an unavailable result when lookup finds none.
 
     Raises
     ------
@@ -340,7 +352,10 @@ def make_record(
     declared_vendor: str = "",
     seat_public_key: str = "",
 ) -> LaunchRecord:
-    """Return the record of one launch: the command as named and the process as started.
+    """Return a command candidate and a separately observed process for one launch.
+
+    The candidate is looked up after launch; its bytes need not be those the
+    system accepted or read. The observed image may be a script interpreter.
 
     Parameters
     ----------

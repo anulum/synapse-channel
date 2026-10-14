@@ -98,10 +98,12 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
     (``--db``, e.g. ``~/synapse/hub.db``), reads every event whose sequence is
     above the cursor, and prints one JSON object per line (``seq``/``ts``/``kind``/
     ``payload``). With ``--cursor`` the last sequence is persisted between runs so
-    repeated calls walk the log forward with no loss or duplication; ``--memory``
+    successful calls resume after the last printed event; ``--memory``
     (or explicit ``--kind``) restricts the stream to the memory kinds a
-    persistent-memory adapter ingests. The store is opened read-only-by-use — the
-    live hub keeps writing through its own connection (SQLite WAL allows it).
+    persistent-memory adapter ingests. Printing is not downstream acknowledgement:
+    the consumer must durably accept events before advancing its own cursor and
+    handle replay. Opening the normal EventStore connection initializes its schema;
+    SQLite WAL permits a separate live hub connection.
     """
     start = load_offset(args.cursor) if args.cursor else max(int(args.since), 0)
     if args.memory:
@@ -142,9 +144,9 @@ def _cmd_compact(args: argparse.Namespace) -> int:
     without bound. It keeps the latest ``--max-checkpoints-per-task`` checkpoints
     per task and ages out findings whose validity window closed more than
     ``--finding-grace-seconds`` ago, deleting only events at or below a floor
-    sequence so a downstream ingest cursor never loses an unconsumed event. The
-    floor is the lowest sequence every memory consumer has already ingested: pass
-    it with ``--floor-seq`` (e.g. the cursor REMANENTIA persists), or ``--all`` to
+    sequence. The caller must establish that every consumer has durably ingested
+    at least that floor; the command does not verify consumer progress. Pass it
+    with ``--floor-seq`` (e.g. the cursor REMANENTIA persists), or ``--all`` to
     treat the whole log as settled when no read-side consumer lags. ``--vacuum``
     reclaims the freed disk pages afterwards. Quarantined rows are removed only
     with ``--drop-corrupt`` and a mandatory ``--archive-report``.
@@ -312,7 +314,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     ingest.add_argument(
         "--cursor",
         default=None,
-        help="Persist the last sequence to this file for incremental, loss-free resume.",
+        help="Save the last printed sequence; downstream ingestion needs separate confirmation.",
     )
     ingest.add_argument(
         "--kind",

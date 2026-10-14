@@ -14,11 +14,13 @@ directory it names on disk is resolved at *run* time — so between the manifest
 and the tool running, a component of the path could become a symlink that redirects the preopen
 to a directory the operator never granted (a symlink swap).
 
-This module closes that gap, deny-by-default and I/O-only-at-the-boundary: it resolves each host
+This module checks the path before preopening: it resolves each host
 path to its canonical real directory and refuses the grant fail-closed when the real path differs
 from the lexical one — a symlink redirected it — or when it is not an existing directory. The
-resolved path is what the caller preopens and records in the run receipt, so the sandbox reaches
-exactly the directory the operator can see it reached, never a link's moving target.
+resolved path is what the caller subsequently preopens by name and records in the receipt.
+No directory descriptor is pinned here. These checks do not prevent a concurrent rename
+or symlink replacement between validation and the runtime's open. Host path components
+must remain stable and under the operator's control through preopening.
 
 An operator can narrow the reachable surface further with a set of *approved workspace roots*: when
 one or more roots are supplied, a resolved host path is refused unless it lies at or below one of
@@ -71,9 +73,9 @@ def resolve_preopen_host(host_path: str, *, approved_roots: Sequence[str] = ()) 
 
     The host path must name an existing directory whose real path equals its lexical absolute
     path: if resolving symlinks changes the path, a component is a link that redirects the grant
-    elsewhere, and the grant is refused. Preopening the returned real path (rather than the
-    operator's literal string) means a symlink swapped in after the manifest was authored cannot
-    silently point the sandbox at an ungranted directory.
+    elsewhere, and the grant is refused. The returned string describes the directory at
+    check time, not a pinned descriptor. A later concurrent path replacement is outside
+    this check's guarantee; keep host path components stable through preopening.
 
     When ``approved_roots`` is non-empty the resolved path must also lie at or below one of the
     roots, so a manifest cannot preopen a directory outside the operator's declared workspace;

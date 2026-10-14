@@ -15,9 +15,10 @@
    API client); see :mod:`~synapse_channel.participants.gemini_stream` and
    :data:`~synapse_channel.participants.gemini_stream.GEMINI_SCHEMA_VERIFIED`. Turns
    are enabled while that flag is true. Note the account-side constraint: the CLI's
-   OAuth-personal tier fails setup with ``IneligibleTierError`` (individuals were
-   moved to Antigravity), so live model turns need an API-key or eligible account —
-   the driver reports that failure as an ordinary error result.
+   an earlier personal-account setup returned ``IneligibleTierError``. That
+   observation does not establish current eligibility for all personal accounts;
+   qualify the actual account and installed CLI. The driver reports a setup
+   failure as an ordinary error result.
 
 A sixth concrete :class:`~synapse_channel.participants.participant.Participant`, on the
 ``HEADLESS`` channel: the bus owns the invocation, spawning ``gemini -p <prompt>
@@ -26,8 +27,10 @@ and reading its event stream via
 :func:`~synapse_channel.participants.gemini_stream.parse_gemini_stream`. Gemini exposes no
 system-prompt append flag, so like Codex/Kimi/Ollama the shared bus context — role, ground
 rules, and any fenced peer contribution — is prepended to the user prompt under an explicit
-separator, and each turn runs in the read-only ``plan`` approval mode so a reasoning turn
-cannot modify the workspace.
+separator. Turns request the configured approval mode, defaulting to ``plan``;
+the caller may override it. Effective tool permissions and external effects
+depend on the installed CLI, configuration and session and need separate
+qualification. Prompt framing is not proof of resistance to prompt injection.
 
 As with the other headless drivers, the heavy logic is a synchronous, dependency-injected
 :meth:`GeminiParticipant.run_turn` (hermetically testable with a fake runner) and the async
@@ -57,7 +60,7 @@ DEFAULT_TIMEOUT = 600.0
 """Default wall-clock ceiling, in seconds, for one headless turn."""
 
 DEFAULT_APPROVAL_MODE = "plan"
-"""Default Gemini approval mode; a reasoning participant never needs to write the workspace."""
+"""Default approval-mode request; not an independent filesystem sandbox."""
 
 
 def compose_gemini_prompt(context: str, prompt: str) -> str:
@@ -96,7 +99,7 @@ def build_gemini_argv(
 
     Every flag is verified against ``gemini --help`` (Gemini CLI 0.47.0): ``-p/--prompt``
     is documented as "Run in non-interactive (headless) mode with the given prompt",
-    ``--output-format`` offers ``stream-json``, ``--approval-mode`` offers the read-only
+    ``--output-format`` offers ``stream-json``, ``--approval-mode`` offers
     ``plan``, ``-m/--model`` selects the model, and ``-r/--resume`` is documented as
     "Resume a previous session. Use 'latest' for most recent or index number".
 
@@ -113,12 +116,12 @@ def build_gemini_argv(
         documents ``latest`` and index values; whether a session UUID resolves too is
         unverified until a live capture exists.
     approval_mode : str, optional
-        Gemini approval mode; defaults to ``plan`` (read-only).
+        Requested Gemini approval mode; defaults to ``plan``. Enforcement is vendor-owned.
 
     Returns
     -------
     list[str]
-        The argv, always requesting ``stream-json`` output and a read-only approval mode.
+        The argv, requesting ``stream-json`` output and the supplied approval mode.
     """
     argv = [
         binary,
@@ -158,7 +161,7 @@ class GeminiParticipant:
     timeout : float, optional
         Per-turn wall-clock ceiling, in seconds.
     approval_mode : str, optional
-        Gemini approval mode for each turn; defaults to read-only ``plan``.
+        Requested Gemini approval mode for each turn; defaults to ``plan``.
     """
 
     def __init__(
@@ -201,8 +204,7 @@ class GeminiParticipant:
             ``available`` is true when the configured binary is found. Turn enablement
             is separate: ``synapse ask --provider gemini`` is gated on
             :data:`~synapse_channel.participants.gemini_stream.GEMINI_SCHEMA_VERIFIED`,
-            and OAuth-personal accounts additionally fail CLI setup with
-            ``IneligibleTierError`` regardless of this probe.
+            and account eligibility/setup can fail independently of this probe.
         """
         return self._kernel.health()
 

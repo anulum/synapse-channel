@@ -192,7 +192,7 @@ class SynapseHubBridge(_McpInboxQueries):
         )
 
     async def send(self, target: str, message: str) -> str:
-        """Send one chat message to an agent or the room (fire-and-forget).
+        """Submit one chat on a connected socket without awaiting a receipt.
 
         Parameters
         ----------
@@ -204,8 +204,15 @@ class SynapseHubBridge(_McpInboxQueries):
         Returns
         -------
         str
-            Confirmation that the message was sent.
+            Local socket-submission text, not admission or delivery confirmation.
+
+        Raises
+        ------
+        ValueError
+            When no hub connection remains; transport failures also propagate.
         """
+        if self.agent.connection is None:
+            raise ValueError("hub connection unavailable")
         await self.agent.chat(message, target=target)
         return f"sent to {target}"
 

@@ -13,24 +13,24 @@ SYNAPSE CHANNEL is **dual-licensed**. You may use it under either:
 2. a **commercial licence** purchased from ANULUM Institute (this document),
    which removes the AGPL's network-copyleft obligation.
 
-You do **not** need a commercial licence if your own software is also released
-under the AGPL-3.0 (or a compatible open-source licence). The commercial licence
-exists only for **closed-source and SaaS** use, where the AGPL would otherwise
-require you to publish your entire stack.
+Commercial use is permitted under the AGPL when its applicable conditions are
+met. A commercial licence provides separately agreed permission for a deployment
+that cannot meet those conditions; hosted use alone does not automatically
+require a commercial licence or disclosure of an entire software stack.
 
 ## When you need a commercial licence
 
-The AGPL-3.0 requires that anyone who can interact with a modified version of the
-software over a network be offered its complete corresponding source. In practice
-you need a commercial licence if **either** of these is true:
+Review the actual work and deployment against [`LICENSE`](LICENSE): section 13
+requires a corresponding-source offer to users interacting remotely with a
+modified version; sections 5 and 6 govern conveying covered works. Section 1
+defines corresponding source, and section 5 distinguishes a combined work from
+an aggregate of separate independent works. An internal or research label does
+not by itself waive these conditions, and network use does not by itself make
+every independent component part of the covered work.
 
-- you embed SYNAPSE CHANNEL (the hub, client, or any part of the `synapse_channel`
-  package) in a **closed-source** product you distribute, or
-- you run it as part of a **hosted / SaaS** service whose source you do not publish.
-
-If both are false — internal use that you never expose over a network to third
-parties, research, personal projects, or genuinely open-source software — the free
-AGPL-3.0 licence already covers you.
+If your intended distribution or network service cannot satisfy the applicable
+AGPL conditions, request commercial terms for that deployment. The purchased
+tier and any signed agreement determine the permission granted.
 
 ## Tiers
 
@@ -39,16 +39,17 @@ The current tiers, prices (USD), and what each grants are published at
 
 | Tier | Who it is for | Grant |
 | --- | --- | --- |
-| **Community** (free, AGPL-3.0) | OSS, research, personal | full feature set, copyleft applies |
+| **Community** (free, AGPL-3.0) | OSS, research, personal | public Core feature set; copyleft and documented runtime limits apply |
 | **Organisation Licence — USD 490/yr** | one legal entity that only needs commercial permission | AGPL-copyleft exemption only; no hosted service, dashboard, SLA, support, or Fleet entitlement |
 | **Pro — USD 19/mo or 190/yr** | one developer shipping closed-source products or private hosted services | copyleft exemption for **one** developer, mobile app with push *(planned)*, email support |
 | **Team — USD 39/user/mo or 390/user/yr** | a company shipping closed-source or SaaS; minimum 3 seats | exemption for unlimited projects within one legal entity, hosted dashboard *(planned)* while operational data stays local, security-patch SLA, onboarding |
-| **FLEET Enterprise — quote** | regulated, multi-hub, or multi-organisation deployments | separately entitled private software with managed federation, SSO, audit exports, compliance support, and a deployment-specific SLA |
+| **FLEET Enterprise — quote** | regulated, multi-hub, or multi-organisation deployments | separately entitled private software; federation, SSO, audit exports, managed services, compliance support and SLA scope require deployment-specific agreement and qualification |
 
 Items marked *(planned)* are not available yet; they are not part of what a plan delivers today.
 
 There is **no feature difference** between the open-source and commercial builds.
-The package on PyPI *is* the full product; a commercial licence changes only the
+Both use the same public Core codebase; optional dependencies, platform support
+and documented runtime limits still apply. A commercial licence changes only the
 **licence terms**, not the code.
 SYNAPSE CHANNEL FLEET is a separately entitled private product, not a hidden
 commercial build of this repository.
@@ -60,7 +61,7 @@ grants the purchasing individual or legal entity (the "Licensee") a
 non-exclusive, non-transferable, worldwide license to use, integrate, and
 distribute SYNAPSE CHANNEL **in object or source form as part of the Licensee's
 own products and services, without the obligations of AGPL-3.0 sections 13 and
-5(d)** (network-use source disclosure), within the scope of the purchased tier.
+5(d)** (network-source offers and interactive-interface notices), within the scope of the purchased tier.
 
 The Licensee may modify SYNAPSE CHANNEL for its own use; modifications remain the
 Licensee's, and no obligation to publish them arises under this commercial licence.

@@ -50,7 +50,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     """Register the ``dispatch`` subcommand."""
     dispatch = subparsers.add_parser(
         "dispatch",
-        help="Nudge project seats about ready board tasks, exactly once (opt-in).",
+        help="Nudge project seats about ready board tasks with bounded retries (opt-in).",
     )
     dispatch.add_argument(
         "--project",

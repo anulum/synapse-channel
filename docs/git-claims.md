@@ -10,11 +10,11 @@ Contact: www.anulum.li | protoscience@anulum.li
 # Git-native claims
 
 A work claim can be scoped to the git branch the work happens on. The hub stays
-**git-agnostic** — it never runs git and never reads a filesystem — so all git
+**git-agnostic** — it does not run Git or inspect clients' worktrees — so all git
 resolution happens client-side and the branch travels as **opaque metadata** on
 an ordinary claim. The hub stores it, replays it from the durable log on restart,
 and shows it in the state view, but it never acts on it. That keeps the
-local-first, single-dependency guarantee intact while making claims branch-aware.
+local-first runtime and its base dependency set unchanged while making claims branch-aware.
 
 ## Claim outcomes and recovery
 
@@ -493,7 +493,7 @@ the release receipt.
 
 A git-scoped claim is an ordinary claim with opaque `git` metadata plus an
 optional additive `path_identity`. The hub validates, persists, replays, and
-compares that identity but runs no git and reads no filesystem. Even symbol
+compares that identity but runs no Git and does not inspect clients' worktrees. Even symbol
 claims are ordinary canonical paths interpreted by the existing ancestry
 algebra; parsing, diff resolution, and filesystem identity derivation stay
 entirely client-side. Resist any temptation to move git execution into the hub:

@@ -10,17 +10,18 @@
 The second concrete :class:`~synapse_channel.participants.participant.Participant`, alongside
 the Claude driver, on the ``HEADLESS`` channel: the bus owns the invocation, spawning
 ``codex exec --json`` (or ``codex exec resume <id>`` to continue a session) and reading its
-JSONL event stream. Codex runs model-generated shell commands inside a sandbox; for a
-reasoning participant the default policy is ``read-only`` so a turn cannot modify the
-workspace.
+JSONL event stream. Fresh turns request ``--sandbox read-only`` by default. Resume
+argv does not reapply that flag; effective permissions depend on the installed
+CLI, configuration, session and available tools and need separate qualification.
+Argv construction is not proof that every provider effect is non-mutating.
 
 Two contract differences from the Claude driver, both handled here and worth stating:
 
 - **No system-prompt channel.** Codex has no ``--append-system-prompt`` equivalent, so the
   shared bus context (role, ground rules, and any fenced peer contribution) is prepended to
   the turn's prompt under a clear separator. The peer-injection fence still labels peer text
-  as data, so this does not weaken the boundary, but the context travels in the prompt rather
-  than a separate system channel.
+  as data, but this textual framing does not prove model resistance to prompt injection;
+  the context travels in the prompt rather than a separate system channel.
 - **No reported cost.** Codex emits token usage but not a monetary cost, so every Codex
   :class:`~synapse_channel.participants.envelope.TurnResult` carries ``cost_usd == 0.0`` and a
   conversation's cost budget cannot bound a Codex turn — only the round cap can.
@@ -52,7 +53,7 @@ DEFAULT_TIMEOUT = 600.0
 """Default wall-clock ceiling, in seconds, for one headless turn."""
 
 DEFAULT_SANDBOX = "read-only"
-"""Default Codex sandbox policy; a reasoning participant never needs to write the workspace."""
+"""Default sandbox requested for fresh turns; resume does not reapply this flag."""
 
 
 def compose_codex_prompt(context: str, prompt: str) -> str:
@@ -99,7 +100,8 @@ def build_codex_argv(
         Model id for ``--model``; omitted when empty so the provider default applies.
     resume_session : str, optional
         Session id to resume via ``codex exec resume <id>``. When set, the resumed session
-        keeps its original sandbox policy (resume takes no ``--sandbox``).
+        receives no ``--sandbox`` flag from this builder. This does not establish
+        the resumed session's effective permissions.
     sandbox : str, optional
         Sandbox policy for a fresh turn (``read-only`` / ``workspace-write`` /
         ``danger-full-access``). Ignored when resuming.

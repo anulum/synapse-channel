@@ -24,7 +24,8 @@ limit. A malformed or contradictory inbound audit clears pending state instead o
 retaining a quorum.
 
 Distinctness is evaluated with the opaque principal derived from the peer's federation trust domain
-after live mutual-TLS authentication. The asserted ``operator`` string remains human-readable audit
+after the serving policy verifies its live certificate or enrolled registration identity.
+The asserted ``operator`` string remains human-readable audit
 metadata only: aliases and key or certificate rotations within one domain cannot self-approve.
 """
 

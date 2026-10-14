@@ -16,11 +16,11 @@ of through a human relay.
 ## The shape
 
 Run one hub for the repo (see the [deployment guide](deployment.md)). Each worker
-is a process that holds a connection while it works — that is what lets it hold a
-file-scope lease. A turn-based assistant that cannot hold a socket between turns
-uses the persistent blackboard for advisory intent instead (declare what you are
-about to touch, check the board before you start), and a small connector process
-can hold a strict lease on its behalf.
+can keep a connection for live messages. A lease is governed by its expiry,
+offline policy, owner and hub persistence; it is not a physical file lock and
+does not require a continuously connected model process. Turn-based assistants
+can use the CLI or MCP claim flow with persistent mailbox/wake processes for
+communication between turns. Advisory board intent alone is not a granted lease.
 
 ## The loop each agent runs
 
@@ -32,23 +32,85 @@ can hold a strict lease on its behalf.
     ```
 
 2. **Claim your scope before you edit.** A claim leases a unit of work with a
-   file scope; the hub refuses any claim whose paths overlap a live one. This is
+   file scope; the hub refuses conflicts with live scopes held by another owner. This is
    grant-time coordination, not a filesystem sandbox
    (`examples/coding_agents_demo.py` shows the supported path):
 
     ```python
+    """Example of confirmed lease admission and release through the Python client."""
+
     import asyncio
-    from synapse_channel import SynapseAgent
+    from collections.abc import Awaitable, Callable
+    from typing import Any
+    from uuid import uuid4
+
+    from synapse_channel import MessageType, SynapseAgent
 
 
-    async def work() -> None:
-        agent = SynapseAgent("api-dev", uri="ws://localhost:8876")
+    async def work(edit: Callable[[], Awaitable[None]], *, uri: str = "ws://localhost:8876") -> None:
+        """Run an edit only after a matched grant; require a matched release."""
+        messages: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=8)
+        task_id = f"edit-api-{uuid4().hex}"
+
+        async def receive(frame: dict[str, Any]) -> None:
+            """Retain only replies for this fresh task."""
+            if frame.get("task_id") == task_id and frame.get("type") in (
+                MessageType.CLAIM_GRANTED,
+                MessageType.CLAIM_DENIED,
+                MessageType.RELEASE_GRANTED,
+                MessageType.ERROR,
+            ):
+                messages.put_nowait(frame)
+
+        agent = SynapseAgent("api-dev", receive, uri=uri, verbose=False)
+
+        async def response(expected: str) -> dict[str, Any]:
+            """Read a matched reply or reject a matched refusal."""
+            while True:
+                frame = await messages.get()
+                if frame.get("type") == expected:
+                    return frame
+                if frame.get("type") in (MessageType.CLAIM_DENIED, MessageType.ERROR):
+                    raise RuntimeError("task operation refused")
+
         conn = asyncio.create_task(agent.connect())
-        await agent.wait_until_ready()
-        await agent.claim("edit-api", paths=["src/app/api.py"])  # refused if overlapping
-        # ... edit the files you claimed ...
-        await agent.release("edit-api")
+        editing: asyncio.Future[None] | None = None
+        try:
+            if not await agent.wait_until_ready(5.0):
+                raise TimeoutError("hub registration unconfirmed")
+            await agent.claim(task_id, paths=["src/app/api.py"], ttl_seconds=60.0)
+            grant = await asyncio.wait_for(response(MessageType.CLAIM_GRANTED), 5.0)
+            epoch = grant.get("epoch")
+            if grant.get("owner") != agent.name or type(epoch) is not int or epoch <= 0:
+                raise RuntimeError("invalid grant")
+            editing = asyncio.ensure_future(edit())
+            finished, _ = await asyncio.wait(
+                (editing, conn), timeout=30.0, return_when=asyncio.FIRST_COMPLETED
+            )
+            if conn in finished:
+                raise ConnectionError("hub connection ended during editing")
+            if editing not in finished:
+                raise TimeoutError("edit deadline expired")
+            await editing
+            await agent.release(task_id, epoch=epoch)
+            await asyncio.wait_for(response(MessageType.RELEASE_GRANTED), 5.0)
+        finally:
+            if editing is not None and not editing.done():
+                editing.cancel()
+                await asyncio.gather(editing, return_exceptions=True)
+            conn.cancel()
+            await asyncio.gather(conn, return_exceptions=True)
     ```
+
+    `claim()` and `release()` send requests; their return does not confirm a
+    grant or release. A denial, timeout or disconnect must stop editing and be
+    treated according to its observed outcome. If editing fails, the example
+    leaves the lease for explicit recovery; it does not declare success or
+    blindly release uncertain work. The edit callback must honour cancellation
+    and finish within the lease; this is not an OS process/fencing boundary.
+    This minimal SDK example uses legacy literal scopes; use the Git-aware claim
+    flow for canonical repository/path identities and configure the required
+    token/signing profile on a protected hub.
 
     Before you release or ask another agent to release, inspect the live lease
     table:
@@ -108,8 +170,9 @@ can hold a strict lease on its behalf.
 
 ## Evidence-gated release (default closeout)
 
-Manual claim drop without evidence is the emergency exit. The default multi-seat
-closeout is: **run checks → write a receipt → release with that receipt**.
+The recommended multi-seat closeout is: **run checks → write a receipt → release
+with that receipt**. Evidence is optional unless an explicit policy requires it;
+this recommendation is not a universal admission gate.
 
 ```bash
 # Observe the verification (real commands, recorded digests)
@@ -138,13 +201,14 @@ Studio shows a live claim, finish with verify → receipt → release.
 
 ## Why it holds
 
-- **No collisions:** overlapping file scopes are rejected at claim time, in one
-  place, before any edit happens.
-- **No lost work:** with `--db` the hub replays its event log on restart, so a
-  crash does not drop live leases; a lapsed lease hands its checkpoint to whoever
-  claims the task next.
-- **No human relay:** messages, the plan, and claims live in the hub, so agents
-  address each other directly and an idle agent catches up from the feed.
+- **Declared scope coordination:** the hub rejects conflicting scopes held by
+  another owner. Covered provider hooks and the staged Git gate enforce their
+  documented mutation boundaries; claims do not isolate arbitrary host writes.
+- **Configured replay:** a persistent hub replays admitted retained records.
+  Lease expiry, offline cleanup, retention and quarantine still apply;
+  checkpoints are declared state, not backups of external file edits.
+- **Direct communication:** agents address each other through the hub and can
+  read the retained feed. A delivery receipt does not prove model processing.
 
 Run the worked example end-to-end:
 
@@ -175,10 +239,11 @@ is built.)
 
 ## The wake loop
 
-A turn-based agent cannot block waiting for a message, so it turns waiting into a
-*push*. It runs `synapse wait` as a background task; the moment a message addressed
-to it lands, `wait` exits and the harness re-invokes the agent — no polling, no cost
-while it waits.
+A turn-based agent can use `synapse wait` as a background task. When a qualifying
+message arrives, `wait` exits; a separately configured harness must observe that
+exit and invoke the provider. Waiting requires no model turn itself, but keeps
+a process and network connection. Provider invocation and prompt delivery remain
+the harness's responsibility.
 
 ```bash
 # backgrounded; exits + wakes the agent on a message for api-dev
@@ -254,10 +319,12 @@ side is covered by `synapse wait --wake-jitter` (default 8s).
 
 ## Why it holds
 
-- **No missed messages:** the durable feed means an agent that was mid-turn when a
-  message arrived still catches it on its next read; the waiter only adds promptness,
-  and `--mailbox` extends that promptness to messages that arrived in a reconnect gap.
-- **No dark agents:** exit-on-drop + re-arm + takeover mean a crashed or restarted
-  waiter comes back rather than silently lapsing.
-- **No provider stampede:** jitter on the receiver and staggered directed sends on
-  the sender keep a fleet-wide wake from tripping the provider's rate limiter.
+- **Retained-message recovery:** configured durable feed/mailbox replay can
+  recover admitted retained directed messages after reconnect. Retention,
+  integrity validation, cursor/filter configuration and successful rearming
+  remain conditions; a receiver ACK is not model processing.
+- **Receiver supervision:** re-arm/takeover and an answering service manager can
+  restore failed receivers. Start budgets, inhibition, configuration and host
+  failures still require monitoring and explicit recovery.
+- **Reduced bursts:** jitter and staggered sends spread wake attempts. They do
+  not guarantee provider capacity or prevent every rate-limit refusal.

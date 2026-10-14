@@ -95,9 +95,12 @@ same as `false` or as an empty text. On a command line, a value that is empty
 or begins with a dash is refused, because the component could read it as a
 flag. A `pane` row takes no arguments.
 
-A secret is never an argument value. An argument of type `secret_ref` holds a
-reference of the form `ref:<name>`, resolved on the host that runs the
-operation. So no secret enters a description, a catalogue or a record.
+For an argument declared `secret_ref`, the parser accepts a reference of the
+form `ref:<name>` rather than a literal credential. The catalogue does not
+resolve it. A future executor must resolve it on the execution host and keep
+the resolved value out of descriptions, catalogue data and records. This grammar
+does not detect arbitrary secrets supplied in other text fields; catalogue
+authors must keep credentials out of those fields too.
 
 ### Effects and permissions
 

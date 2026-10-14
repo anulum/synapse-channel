@@ -22,8 +22,16 @@ of chat-carried frames rather than a new transport. Server-Sent Events would
 require a separate one-way HTTP endpoint, and MCP/A2A streaming is specific to
 those bridges; the core stream rides the connection an agent already holds. Each
 frame is an ordinary chat envelope with stream metadata (`kind: "stream"`, a
-`stream_id`, a `seq`, a `frame_type`, and the chunk `text`), so a non-stream
+`stream_id`, a `stream_seq`, a `frame_type`, and the chunk `text`), so a non-stream
 client simply sees chat frames it can ignore.
+
+`stream_seq` is the zero-based frame counter. The sender also emits legacy
+`seq` for old readers on journal-less paths. A journal-backed hub assigns
+`seq` its durable row cursor; the stream decoder therefore prefers
+`stream_seq`. It accepts legacy `seq` only when the dedicated field is absent.
+A malformed dedicated field is refused without falling back. Old frames whose
+counter was overwritten by a journal cannot be reconstructed by guessing an
+offset. Journal cursors and stream order have separate meanings.
 
 ## Bounds are the point
 
@@ -32,12 +40,15 @@ A stream declares a `StreamBounds` ceiling and may not exceed it:
 - `max_chunks` — how many `chunk` frames before the producer must finish;
 - `max_chunk_bytes` — the largest single chunk body (UTF-8 bytes);
 - `max_total_bytes` — the cumulative body size across all chunks;
-- `ttl_seconds` — the wall-clock budget for the whole stream.
+- `ttl_seconds` — a declared lifetime, currently not enforced by producer or consumer.
 
-The producer refuses a frame that would breach any ceiling — a runaway
-generation is stopped at the source, not on the bus — and the consumer enforces
-the same ceiling and strict in-order delivery on the receiving side, so a
-malformed or oversized stream is rejected rather than reassembled.
+The producer refuses a frame that exceeds its count or byte ceiling. The
+consumer validates parsed frames against its own configured count/byte limits
+and expected sequence; bounds are not carried in the frames or negotiated.
+Neither class enforces a time limit. Applications must add deadline, stalled
+stream and upstream cancellation handling. A refused frame does not stop a
+model generation or spend, and `stream_reply` does not automatically emit an
+abort frame when an iterator, send or bound check fails.
 
 ## Sending and receiving
 
@@ -66,22 +77,31 @@ if consumer.closed and not consumer.aborted:
 
 ## Retention is shallow and explicit
 
-A stream is **transient** coordination, not durable task state. The frames ride
-the chat path and are therefore subject to the same relay mirroring as chat, but
-they are bounded by the producer, so their footprint is capped rather than
-open-ended. The durable record of what a task produced is its **final reply and
-release receipt**, not the intermediate chunks: the event log and replay
-reconstruct task state, not stream bodies. A fully non-journalled stream message
+A stream is **transient** coordination, not durable task state. The frames use
+ordinary chat transport. Intermediate chunks can be stored in the chat journal
+and relay log under their
+configured retention. Replaying task state does not automatically reassemble
+a stream body. The application must separately persist its **final reply and
+release receipt**; `stream_reply` does not create them or prove receipt by a
+consumer. A fully non-journalled stream message
 type — ephemeral delivery that never touches the relay log — is a deliberate
 later tranche, called out here so the retention boundary is explicit today.
 
+The lite relay file is an observation surface; reading it does not send frames
+to another hub. An explicit application bridge can decode its full envelopes
+and re-submit stream fields through SDK chat, preserving `stream_seq` while the
+destination hub assigns a new journal `seq`. The human-readable `synapse relay`
+output is not a complete stream-frame export. Multi-hub log observation also
+does not automatically deliver a stream to a recipient or reassemble its body.
+
 ## Boundaries
 
-- A stream is **bounded**: the producer refuses to exceed its declared
-  `StreamBounds`, so no stream is unbounded.
-- Streams are **transient, not replay state**: do not rely on replaying chunks;
-  rely on the final reply and the release receipt.
+- The library checks configured count and byte bounds; this is not a hub-wide
+  stream admission limit or a guarantee that every caller uses those helpers.
+- Streams are **transient, not durable task state**, but chunks can persist as
+  chat records. Record final results and release receipts separately.
 - The transport is **the existing WebSocket chat path**, not a new SSE endpoint
   or an always-on streaming service; it adds no new local-core dependency.
-- Delivery and ordering are **enforced**: the consumer rejects an out-of-order,
-  oversized, or post-close frame rather than silently accepting it.
+- Ordering is validated by a configured consumer; transport delivery is not
+  guaranteed. A missing terminal frame leaves the consumer open without an
+  automatic deadline, recovery or cancellation mechanism.

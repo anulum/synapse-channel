@@ -19,6 +19,7 @@ from synapse_channel.core.message_auth import (
     MessageAuthKey,
     MessageReplayCache,
     VerificationResult,
+    next_message_auth_sequence,
     sign_frame,
     verify_frame,
 )
@@ -190,6 +191,29 @@ def test_strict_mode_rejects_sequence_at_or_below_floor(tmp_path: Path) -> None:
             _verify(_signed(nonce="s4", sequence=8, timestamp=500.3), cache, now=500.3)
             == VerificationResult.OK
         )
+
+
+def test_stateless_restart_requires_a_clock_above_the_durable_floor(tmp_path: Path) -> None:
+    """A new client state after clock rollback is refused until it exceeds the stored floor."""
+    path = tmp_path / "restart-clock.sqlite"
+    for phase, clock, expected in (
+        ("initial", 100.0, VerificationResult.OK),
+        ("rollback", 99.5, VerificationResult.SEQUENCE_MISMATCH),
+        ("advance", 101.0, VerificationResult.OK),
+    ):
+        store = DurableMessageAuthReplayStore(path, max_entries=64, window_seconds=30.0)
+        try:
+            cache = MessageReplayCache(
+                window_seconds=30.0,
+                max_entries=64,
+                durable=store,
+                sequence_floor_mode=SequenceFloorMode.STRICT,
+            )
+            sequence = next_message_auth_sequence(0, now_ns=int(clock * 1_000_000_000))
+            frame = _signed(nonce=phase, sequence=sequence, timestamp=clock)
+            assert _verify(frame, cache, now=max(clock, 100.0)) == expected
+        finally:
+            store.close()
 
 
 def test_strict_mode_floor_survives_restart(tmp_path: Path) -> None:

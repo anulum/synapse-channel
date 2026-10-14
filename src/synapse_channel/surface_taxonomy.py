@@ -17,9 +17,10 @@ This module is the single source of truth for that taxonomy. Every CLI subcomman
 is assigned exactly one :data:`TIERS` label, and a regression test asserts the
 taxonomy and the live parser agree — so a new subcommand cannot ship without being
 placed, and a removed one cannot linger here. The design-preview documentation
-pages (research designs that are intentionally *not* implemented) are tracked
-separately in :data:`DESIGN_PREVIEW_DOCS` so they are never mistaken for shipped
-surface.
+pages are tracked separately in :data:`DESIGN_PREVIEW_DOCS`. Their runtime-status
+sections distinguish shipped primitives from planned extensions; membership
+does not mean that every facility discussed there is absent. Tiers classify
+discovery and relative stability, not effects, permissions or deployment safety.
 """
 
 from __future__ import annotations
@@ -27,13 +28,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 STABLE = "stable"
-"""Daily-safe coordination core: stable wire and CLI surface."""
+"""Core coordination commands under the versioned API and wire compatibility contract."""
 
 ADAPTER = "adapter"
 """Bridges to other ecosystems and tools (A2A, MCP, git, tmux, model workers)."""
 
 ANALYSIS = "analysis"
-"""Inspection and reporting that never mutates coordination state."""
+"""Inspection-focused command groups; explicit controls can have effects."""
 
 GOVERNANCE = "governance"
 """Advisory governance: policy, approvals, access control, and release integrity."""
@@ -45,9 +46,9 @@ TIERS = (STABLE, ADAPTER, ANALYSIS, GOVERNANCE, EXPERIMENTAL)
 """The stability tiers, ordered from most to least load-bearing."""
 
 TIER_SUMMARIES = {
-    STABLE: "Daily-safe coordination core with a stable wire and CLI surface.",
+    STABLE: "Core coordination commands under the versioned API and wire compatibility contract.",
     ADAPTER: "Bridges to other ecosystems and tools; optional extras, not core.",
-    ANALYSIS: "Inspection and reporting that never mutates coordination state.",
+    ANALYSIS: "Inspection-focused groups; check each verb's effects and permissions.",
     GOVERNANCE: "Advisory governance: policy, approvals, access control, release integrity.",
     EXPERIMENTAL: "Newer or advisory surfaces still settling; shape may change before 1.0.",
 }
@@ -98,7 +99,7 @@ CLI_TAXONOMY: dict[str, str] = {
     "git-release": ADAPTER,
     "install-shell-hook": ADAPTER,
     "shell-hook": ADAPTER,
-    # read-only inspection and reporting
+    # inspection-focused groups, including separately documented explicit controls
     "setup": ANALYSIS,
     "doctor": ANALYSIS,
     "state": ANALYSIS,
@@ -175,7 +176,7 @@ DESIGN_PREVIEW_DOCS = frozenset(
         "sandboxed-tools-and-marketplace.md",
     }
 )
-"""Documentation pages that describe designs intentionally not yet implemented."""
+"""Design pages whose runtime-status sections separate shipped and planned facilities."""
 
 FIRST_USE_MAX_CONCEPTS = 8
 """Upper bound for the public first-use journey."""
@@ -207,7 +208,7 @@ class SurfaceProfile:
         Explicit command subset; empty means all commands in ``tiers``.
     dependency_extras : tuple of str
         Optional dependency groups relevant to modes inside the profile. An empty
-        tuple is the single-dependency base install; command entry points can still
+        tuple selects the base dependencies in ``pyproject.toml``; entry points can still
         expose separately documented optional modes.
     activation : str
         The explicit action that enters the profile; inspection never activates it.
@@ -252,7 +253,7 @@ SURFACE_PROFILES = {
     ),
     "core": SurfaceProfile(
         name="core",
-        summary="Base-install coordination and read-only operator commands.",
+        summary="Base-install coordination and operator commands; effects depend on the verb.",
         tiers=(STABLE, ANALYSIS),
         commands=(),
         dependency_extras=(),

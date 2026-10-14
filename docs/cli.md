@@ -2,6 +2,10 @@
 
 The `synapse` command exposes the following subcommands.
 
+Captured console outputs below are historical examples, not a current-head
+benchmark, production qualification or proof of interoperability with every
+vendor. Reproduce the relevant command on your selected runtime and configuration.
+
 For end-to-end examples that combine these commands with existing agent tools,
 see the [Integration demos](integration-demos.md).
 
@@ -20,11 +24,11 @@ everything, since they need the whole command table.
 | `synapse demo` | Run the real hub/Git/claim/guard/receipt path with scripted in-process identities labelled `CLAUDE` and `CODEX`; no provider CLI or model turn is launched. Writes JSON plus a static dashboard (`--output DIR` selects the destination). |
 | `synapse benchmark` | Benchmark the installed package (event store, relay encoding, live hub round-trips) and print a scorecard with honest host context; `--compare BASELINE.json` gates the run against a saved scorecard, exit `1` on regression; `--trend STORE.db` accumulates runs and renders per-metric sparkline trends (`--ascii` for a printable-ASCII trend block); `--alert` gates the run statistically against its own same-context history, exit `1` on drift. |
 | `synapse quickstart-coding` | Create a coding-fleet workspace, run the live overlapping-claim refusal demo, and print a success marker. |
-| `synapse fleet-init` | Empty machine to working fleet in one command: doctor (`--fix`), persistent workspace scaffold, provider-seat probe, demo smoke, and a printed next-steps plan. |
+| `synapse fleet-init` | Run doctor checks, optional `--fix`, a persistent workspace scaffold, provider-seat probes, scripted demo smoke, and a printed next-steps plan; no vendor sessions are started. |
 | `synapse new coding-fleet` | Scaffold a runnable two-agent coding demo workspace. |
 | `synapse health` | Probe the hub; exit `0` if reachable, `1` if not (wired as a container healthcheck). For a hub with `--require-identity-binding`, pass `--identity-key-file` and `--identity-key-id` for a key enrolled for the probe's `--name`. |
 | `synapse worker` | Run a model worker that answers on the channel. |
-| `synapse worker-session` | Run a provider command with `SYN_PROJECT`/`SYN_IDENTITY` set and a waiter armed around it, and keep a launch record of what was started. |
+| `synapse worker-session` | Run a provider command with `SYN_PROJECT`/`SYN_IDENTITY` set and a waiter armed around it; record a command-file candidate and the separately observed process image. |
 | `synapse team` | Launch a hub plus one or two local workers in one shot. |
 | `synapse mcp` | Serve identity-safe coordination tools over stdio, including bounded local-feed inbox and live status; an omitted `--name` resolves from an agreeing environment or `<git-project>/mcp` (see [MCP server](mcp.md)). |
 | `synapse mcp-tools` / `synapse mcp-call` | List and call allowlisted tools on an external MCP server (outbound). Stable taxonomy codes distinguish invalid config (exit `2`), deny-by-default access refusal (exit `3`), and tool failure (exit `1`). |
@@ -35,7 +39,7 @@ everything, since they need the whole command table.
 | `synapse a2a-conformance` | Print the local Agent2Agent conformance matrix. |
 | `synapse a2a-serve` | Run the stdlib HTTP+JSON Agent2Agent bridge; an optional default-off gRPC subset has a separate security boundary described below. |
 | `synapse a2a-client` | Outbound A2A HTTP(S) client: Agent Card discovery, message:send, and GET task against a second peer. |
-| `synapse a2a-interop-trace` | Run an independent stdlib HTTP(S) client against a live `a2a-serve` bridge and emit a discovery + task-lifecycle interop receipt. |
+| `synapse a2a-interop-trace` | Run the repository's separate stdlib HTTP(S) client against a live `a2a-serve` bridge and emit a scoped discovery/task receipt; this is not third-party conformance. |
 | `synapse channel` | Manage private-channel membership and member-visible history; pair with `synapse send --channel`. |
 | `synapse encrypt-key` | Generate and check at-rest encryption key files (needs the `encryption` extra to encrypt). |
 | `synapse sqlcipher` | SQLCipher page-encryption ops for the hub event store: `rekey` via PRAGMA rekey, `migrate` plaintext → encrypted. |
@@ -46,7 +50,7 @@ everything, since they need the whole command table.
 | `synapse service tmux-server` | Print which systemd unit's control group holds the tmux server. A server inside a service unit is killed, with every session on it, when that unit is stopped; `--move` puts such a server into a scope of its own without restarting it. See [The tmux server and unit stops](deployment.md#the-tmux-server-and-unit-stops). |
 | `synapse service status` | Print, per Synapse user unit, what is wanted of it (enabled or not) and what it does (state, restart count, last result, start limit), the processes its unit file says it owns, and why it needs an operator if it does. Exit status 1 when a unit or the tmux server placement needs attention. `--json` prints the same report for a dashboard. Read-only. See [Seeing what needs attention](deployment.md#seeing-what-needs-attention-synapse-service-status). |
 | `synapse label` | Set the terminal tab label and the status lines of the tmux session this runs in, so that the terminal says which group, project, vendor and seat work in it. Details (`--focus`, `--vendor`, `--model`, `--session-name`, `--native-session`, `--terminal-identity`) are kept on the session and added to by later calls; `--show` prints them, `--restore` puts the session's earlier label and status back. Outside tmux it does nothing. See [Terminal label](terminal-label.md). |
-| `synapse dashboard` | Serve a loopback-only read-only live cockpit (fleet graph, board, claims, risk guidance, stream, receipts) over hub snapshots, plus `/snapshot.json`; `--feeds-db` adds durable store feeds including `/postmortem.json?task=ID` and `/receipts.json`, and `--observed-peer HUB=URI` adds advisory peer-hub rows. |
+| `synapse dashboard` | Serve a local cockpit, read-only by default with separately armed operator relays, over hub snapshots, plus `/snapshot.json`; `--feeds-db` adds durable store feeds including `/postmortem.json?task=ID` and `/receipts.json`, and `--observed-peer HUB=URI` adds advisory peer-hub rows. |
 | `synapse route-task` | Recommend agents for a board task using local capability signals. |
 | `synapse resource-bids` | Rank live resource offers for a board task without reserving capacity. |
 | `synapse memory-recall` | Recall matching durable memory records from a local event store. |
@@ -106,10 +110,10 @@ everything, since they need the whole command table.
 | `synapse identity` | Inventory and audit declared agent identities for enforcement-rollout blockers. |
 | `synapse acl` | Shadow-mode (non-blocking) deny-by-default ACL evaluation of candidate accesses. |
 | `synapse role` | Grant, revoke, and list role-claim authorisations (`grant`/`revoke`/`list`). |
-| `synapse lock` | Hold a lease while running a command, to serialise it across agents. |
+| `synapse lock` | Acquire a finite lease before a command, then attempt a bounded release; no renewal during the child. |
 | `synapse release` | Manually drop a claim you own (e.g. an `--auto-release-on manual` claim). |
 | `synapse task` | Declare and update the shared task plan. |
-| `synapse native-record` | Record a message that travelled over a vendor's own channel; the hub stores it and delivers nothing. |
+| `synapse native-record` | Record caller-reported native-message metadata and optional text; the hub journals the declaration, delivers nothing and does not independently verify vendor action. |
 | `synapse native-hook` | Record session-send tool calls from an agent client's hook: `claude` reads one call from standard input, spools it on disk and tries the hub, printing nothing and exiting `0`; `flush` tries the spool again; `status` counts its entries. |
 | `synapse native-seat` | Keep the local register of which seat a vendor's native session is (`register`/`resolve`/`list`). |
 | `synapse ops` | Read this host's catalogue of operations that vendor clients offer (`list`/`describe`); nothing is run. See [Operations catalogue](operations.md). |
@@ -157,8 +161,8 @@ synapse commands
 For an agent-consumable setup contract, use `synapse setup spec --profile
 local-single-user --json`; use `synapse setup inspect --profile
 local-single-user --json` to observe the current host, then `synapse setup plan
---profile local-single-user --json` to bind that fresh observation to a
-an inert effect plan. After reviewing a saved plan, `synapse setup
+--profile local-single-user --json` to bind that fresh observation to an
+inert effect plan. After reviewing a saved plan, `synapse setup
 authorize --plan FILE --confirm-digest SHA256 --nonce TOKEN --json` emits an
 expiring envelope bound to its exact target. Add `--authorize-restart-pid PID`
 only when the plan requires restart authority; it must equal the read-only hub
@@ -196,8 +200,9 @@ remedy (`syn inbox --as NAME`, repeatable; a standing set goes in the
 comma-separated `$SYN_ALIASES`, and each name advances its own cursor so
 draining a role never consumes another reader's delta). The primary `syn inbox`
 read is exact-identity scoped too: it uses the full resolved identity and an
-identity-specific cursor, so one terminal cannot display or consume another
-terminal's directed mail. `syn inbox --project-wide` is the explicit opt-in to
+identity-specific cursor, avoiding accidental cross-seat display or cursor
+consumption. This local-feed convention is not an OS access boundary between
+processes sharing the same account and readable feed. `syn inbox --project-wide` is the explicit opt-in to
 the broader project feed, while `syn inbox --name PROJ/name` reads one exact
 address. A bare `--as PROJ` remains an explicit project-wide alias. On
 a fresh machine, a missing hub or waiter can be a warning before services are
@@ -276,11 +281,10 @@ restarting the hub, presence, and wake-listener units together. The lock remains
 held while the hub itself is unavailable. Never reuse a PID authorization from
 an earlier process or session.
 
-The local-hub dogfooding gate is mandatory after every new release tag: install
-the exact published artifact immediately, run the one authorised locked restart,
-and verify version, service health, roster/waiter reconnect, durable replay, and
-hook wiring. This release-specific hub adoption does not grant authority to
-close unrelated running applications.
+For authorised release adoption, install the exact selected artifact, perform
+the authorised locked restart and verify version, service health, roster/waiter
+reconnect, retained replay and hook wiring. Publishing a tag alone does not
+authorise disruption of an unrelated operator's active applications.
 
 `synapse quickstart-coding` creates a temporary workspace, runs the packaged
 two-agent coding demo, removes the temporary workspace after success, and is
@@ -302,7 +306,7 @@ python run_demo.py
 The generated demo succeeds when it prints `success: coding fleet demo completed`.
 
 `synapse fleet-init [path]` is the one-command version of the whole first-run
-sequence — empty machine to working fleet:
+sequence for workspace preparation and readiness observations:
 
 ```bash
 synapse fleet-init            # doctor, ./synapse-fleet scaffold, seat probe, demo smoke
@@ -315,8 +319,10 @@ scaffolds a persistent workspace (refused when non-empty unless `--force`),
 probes every registered provider CLI without taking a turn, runs the packaged
 live overlapping-claim refusal demo (`--no-smoke` to skip), and prints a
 next-steps plan — waiter arming, per-provider `worker-session` seat commands,
-`git-init`, dashboard — with the workspace's project name filled in. It starts
-no daemon and adds nothing the bundled commands do not already do.
+`git-init`, dashboard — with the workspace's project name filled in. Successful
+exit does not certify provider readiness or execution; unavailable seats and
+doctor findings remain advisory. Plain `fleet-init` starts no persistent daemon;
+`--fix` may activate the doctor-managed services.
 
 ## Fastest safe trial path
 
@@ -375,9 +381,10 @@ logs, shell/browser histories, and proxy records.
 
 ## Recovery: picking up after a restart
 
-Nothing is lost when a terminal or session goes down — the feed, the plan, and the
-event log are durable. On return, catch up everything for your repo regardless of
-the instance id you now run as:
+A configured journal and retained feed can recover recorded coordination state
+and messages after a terminal disconnect. This does not recover unrecorded
+provider context or file edits, and retention, compaction and storage loss still
+bound recovery. For an explicit project-wide history view on return:
 
 ```bash
 synapse relay ./feed.ndjson --project quantum --cursor ./quantum.cursor  # missed messages
@@ -387,8 +394,9 @@ synapse who --project quantum                                           # who is
 synapse dashboard --port 8765                                           # local read-only HTML/JSON view
 ```
 
-A lapsed claim keeps its checkpoint, so re-claiming the task resumes from it rather
-than restarting.
+A lapsed claim retains its declared checkpoint in the state projection; a new
+grant can carry that checkpoint. The caller must interpret it and restore its
+actual work. A normal release clears the retained task checkpoint.
 
 `synapse who`, `synapse status`, `synapse state`, and `synapse dashboard` can add
 an opt-in observed peer layer with repeatable `--observed-peer HUB=URI`. The peer
@@ -437,9 +445,11 @@ blackboard. Dashboard branch conflicts use the same declared-claim metadata as
 `synapse conflicts`; they do not run git or apply `--check-diff` refinement. Use
 `--allow-non-loopback` only behind trusted local network controls because the
 page exposes agent names, claim scopes, branch names, and task text. Pass
-`--dashboard-token <token>` to require `Authorization: Bearer <token>` on `/`
-and `/snapshot.json`; when `--allow-non-loopback` exposes the dashboard and no
-token is supplied, Synapse generates and prints a startup token. Add
+`--dashboard-token <token>` to select the `Authorization: Bearer` credential
+for protected pages and feeds. When no token or access file is supplied, Synapse
+generates and prints a bearer even on loopback. Packaged Studio pages require
+an Authorization header; the built React cockpit shell and assets provide the
+separate public bootstrap route before authenticated live reads. Add
 `--observed-peer HUB=URI` to include peer-hub rows in the browser and
 `/snapshot.json`; those rows stay advisory and are labelled `observed@HUB`.
 The snapshot's risk section also enriches at most 20 ready tasks with at most
@@ -505,12 +515,12 @@ hint only: every POST rechecks the bearer and route server-side. Missing/bad
 credentials receive `401`, a known principal without the capability receives
 `403`, and unarmed write routes remain `404`; the hub then applies its own ACL
 and durable audit as before. Without an access file, the existing one-token and
-open-loopback behavior is unchanged.
+generated-bearer profile applies on loopback too; no anonymous live-data access is implied.
 
 With `--feeds-db <hub.db>` (`--reliability-db` is the same flag's original
 name) the dashboard serves twelve feeds off the **durable event store** —
 available when the hub is down, real sequences and timestamps, behind the
-same dashboard bearer token as every other path:
+configured principal grants as protected dashboard data:
 
 - `/reliability.json` — the same audit-signal report as `synapse
   reliability` (per-owner tallies and finding records anchored to event
@@ -519,7 +529,9 @@ same dashboard bearer token as every other path:
 - `/events.json?since=SEQ&limit=N` — the raw event-log tail past a
   cursor, in the exact multihub snapshot shape (`events`, `next_cursor`,
   and `log_end_seq`),
-  so a polling client walks the log forward without loss or duplication;
+  so a polling client can continue through retained rows. Persist a cursor only
+  after processing its page; this response does not acknowledge consumer work,
+  prevent caller duplicates or recover compacted/deleted rows;
   `since=latest` starts at the log's end — the tail shortcut that spares
   a client the full history walk on a large log;
 - `/causality.json?seq=N|task=ID&direction=causes|effects` — one
@@ -534,7 +546,7 @@ same dashboard bearer token as every other path:
   `synapse postmortem`, projected as JSON for cockpit links. The identifier is
   required and bounded before storage access; a task with no matching events
   returns `present: false` and an empty timeline rather than invented history;
-- `/metrics.json` — store-attested log metrics for the cockpit's metrics
+- `/metrics.json` — store-derived log metrics for the cockpit's metrics
   panel: total and per-kind event counts plus the same split over
   trailing hour/day windows, measured against the log's own final
   timestamp (never the wall clock) so the document is deterministic over
@@ -544,7 +556,8 @@ same dashboard bearer token as every other path:
   duplicated here.
 
 - `/state-at.json?seq=N` — coordination state (claims + board) reconstructed as of event `seq` by bounded replay, in the live snapshot shape plus `as_of_seq` and `log_end_seq`; deterministic (judged at the bounded event's own timestamp), `seq` clamped into range, presence/roster omitted (not journalled).
-- `/merkle-proof.json?seq=N` — an RFC 6962 Merkle inclusion proof for event `seq`, in the same shape `synapse debug merkle` emits, so a cockpit row's verify button can check the row against the attested tree root; a `seq` the committed log does not hold returns `{"present": false}` with a note, never a fabricated proof.
+- `/merkle-proof.json?seq=N` — an RFC 6962 Merkle inclusion proof for event `seq`, in the same shape `synapse debug merkle` emits, so a cockpit row's verify button can check consistency against the computed stored-log root; authenticating
+  that root requires a separately trusted commitment or signed tree head; a `seq` the committed log does not hold returns `{"present": false}` with a note, never a fabricated proof.
 - `/health-anomalies.json` — the honest hub-side alert surface: the orphaned, dangling, and stale coordination anomalies the causality graph makes visible, in the same shape `synapse causality --health` emits, with an `anomaly_count` for a cockpit alerts badge. Fired alerts stay collector-side off `/metrics`; this is only what the durable log can prove.
 - `/sessions.json` — the opt-in `session_metric` telemetry the fleet left in the log, in the same shape `synapse participant costs` renders: per-session token counts, cost, latency, and error/abstention rates, with `totals` aggregated across sessions. Every record carries the `seq` of the snapshot it was read from, so a cockpit joins a session's cost straight to its causal cone via `/causality.json`; each record's coordination `task_id` (from the note body) is the same join key `synapse participant costs` reports. A log with no session notes reports empty `sessions` and zeroed `totals`, never a fabricated cost.
 - `/waits.json` — the pending coordination gates reconstructed from the plan: each non-terminal task blocked on a dependency that has not reached a terminal status, with `who` is waiting (the task's suggested owner, or whoever declared it), `on_what` dependency ids it is blocked on, and `since` when it was declared, plus a `wait_count`. This is the "what is the fleet stuck behind" panel. Transient socket waiters (a client's `-rx` connection) are not journalled and are omitted; this is only the coordination gates the durable plan can prove.
@@ -594,8 +607,10 @@ hub is unreachable.
 
 **Public status-page posture:** the dashboard is read-only by default —
 every endpoint answers `GET` only unless `--operator` is set (above), and
-nothing on the read surface mutates the hub or the store — so a public
-status page needs no special mode: expose
+GET feeds do not submit hub mutations. Some storage builders open the normal
+`EventStore`, which can initialise or migrate schema, restrict file permissions,
+and create SQLite coordination sidecars; this is not a filesystem-pure reader.
+For a deliberate status deployment, expose
 the dashboard deliberately with `--allow-non-loopback`, set
 `--dashboard-token` (or accept the generated one), and point it at a
 store copy with `--feeds-db` if you want it serving with the hub down.
@@ -660,19 +675,23 @@ genuinely matters reaches a quiet waiter promptly while peer chatter is left for
 next `synapse relay`/inbox read. Use `--priority` sparingly, for announcements that
 must reach everyone immediately.
 
-When several agents share a repo, serialise the operations that must not overlap —
-above all commits — by wrapping them in a lease. The hub grants one live lease per
-id, so the others wait their turn instead of clobbering each other:
+`synapse lock` acquires a finite hub lease before starting its command. The hub
+grants one live lease per id, so participating contenders wait while that lease
+remains live:
 
 ```bash
-synapse lock quantum:git -- git push          # holds quantum:git while pushing
+synapse lock quantum:git -- git push          # acquire quantum:git before pushing
 synapse lock quantum:git --wait-timeout 0 -- git push   # fail fast if someone holds it
 synapse lock quantum:git --release-timeout 10 -- git push  # allow 10s per confirmation exchange (slow links)
 ```
 
 A lock is a named mutex keyed by its id: `quantum:git` and `physics:git` are
-independent, so one repo's push-lock never blocks another's. The lease is held only
-for the wrapped command and dropped when it exits. A claim that no commit or merge
+independent, so one repo's push-lock does not contend with another's. The client
+disconnects after acquisition and does not renew or monitor the lease during the
+child. A command that outlives the hub's lease TTL can continue after another
+owner acquires the id; this command is not an indefinite side-effect mutex.
+Use an external execution boundary when overlap must be prevented beyond that
+finite lease. On child exit the client attempts a bounded release. A claim that no commit or merge
 will auto-release — a `git-claim --auto-release-on manual` — is dropped by its owner
 with `synapse release <task> --name <owner>`.
 
@@ -963,7 +982,8 @@ message only when it checks. `synapse wait` turns that into a push: it blocks on
 the connection and exits the instant a message addressed to you arrives. Run it as
 a background task — when it exits, the message has landed (and a harness that
 re-invokes an agent on background completion wakes you). On wake, read the message,
-act, and re-launch `synapse wait`. It costs nothing while it waits.
+act, and re-launch `synapse wait`. The wait invokes no model by itself. A harness-triggered wake can consume a
+provider turn; transport and supervision still use host resources.
 
 ```bash
 synapse wait --name api-dev-rx --for api-dev   # blocks; prints + exits on a message for api-dev
@@ -981,7 +1001,9 @@ waiter. The registration is reserved for project-scoped seats
 (`<project>/<seat>`) and is sent unsigned from the waiter's `-rx` name for its
 bare identity. While the wait blocks, the card is re-advertised every
 `--capability-refresh-seconds` (default 21600 = 6h; `0` disables), so a
-healthy long-lived waiter never lets its 24-hour registration lapse.
+normally connected waiter can refresh its 24-hour registration. Rejected
+advertisements, disconnections or delayed supervision can still leave it
+unavailable; persistent registration is not provider-readiness evidence.
 
 `synapse arm` states its binding out loud before it holds the socket: the first line
 names exactly whose messages it wakes on (`waiting for messages to <identity>`), and
@@ -992,8 +1014,10 @@ night of silently missed messages.
 
 A waiter is deaf while it is disconnected — the gap between a dropped connection (or
 a re-arm as a fresh process) and the next connect. A directed message that lands in
-that gap is durable, but the waiter is not woken by it and it waits unread until an
-unrelated wake happens to drain it. `synapse arm --mailbox` closes the gap: on each
+that gap is retained only when the relevant journal/feed is configured and
+still contains it, but the waiter is not woken by it and it waits unread until an
+unrelated wake happens to drain it. With a durable journal and retained backlog,
+`synapse arm --mailbox` supplies recovery: on each
 connect the waiter asks the hub to replay the directed messages it missed and wakes
 on them as it would on a live message. It resumes from a `since_seq` cursor kept per
 identity under `~/synapse/mailbox-cursor/`, so a re-arm picks up where it left off
@@ -1020,15 +1044,18 @@ example `codex` or `claude`; the provider process starts with `SYN_PROJECT` and
 `SYN_IDENTITY` already set.
 
 Use `synapse agent-tmux` as the manual diagnostic/admin surface for that tmux
-wake path. It works for any terminal coding agent — Codex, Kimi K2, Claude Code —
-selected with `--agent-command`. It starts or targets a named tmux session and
+wake path. It supports configured provider idle-composer profiles, selected with
+`--agent-command`. An arbitrary terminal command without a recognised safe
+profile is not qualified for automatic injection. It starts or targets a named tmux session and
 injects only a fixed instruction; the Synapse message body stays in the inbox and
 the agent reads it itself. `synapse codex-tmux` is a Codex-defaulted alias kept
 for backward compatibility (`--codex-command` instead of `--agent-command`).
 Every start, status, and wake operation verifies the live tmux session's stable
 `SYN_PROJECT` and `SYN_IDENTITY` environment. Reusing one session name for a
 different project or identity fails closed; wake returns before `send-keys`, so
-a Fleet receiver cannot inject into a Core-owned pane (or vice versa).
+an unrelated receiver cannot inject into a differently bound pane. One session
+may explicitly hold multiple project roles, but routing still needs its verified
+identity/role binding.
 
 ```bash
 # Generic form — choose the agent with --agent-command (defaults to codex):
@@ -1164,9 +1191,10 @@ apart, so the wakes (and re-invocations) do not stampede the provider.
 
 ## Messaging: broadcast, several, or one
 
-Every message carries a `target`. The hub broadcasts each message to all
-connected clients and records it in history and the relay log; the `target`
-selects who it is *for*:
+Every message carries a `target`. Default compatibility chat is broadcast and
+filtered by clients. Private-directed and private-channel profiles instead use
+their admitted audiences; journal and relay retention depend on configuration.
+The `target` selects the intended recipient or group:
 
 ```bash
 synapse send --target all "deploy is green"              # everyone (the default)
@@ -1195,8 +1223,8 @@ the hub cannot recognise.
 A socket match counts as live
 only when the recipient reacted within the configured liveness window or has a
 fresh `-rx` waiter; otherwise the CLI prints `delivery failed: no live recipient
-matched ...` and exits `1`, the same as an offline target. The message is still
-journalled and best-effort routed to the stale socket, so a later mailbox replay
+matched ...` and exits `1`, the same as an offline target. On a journal-backed hub the message is retained
+and best-effort routed to the stale socket, so a later retained mailbox replay
 can settle its deferred receipt. On a journal-backed hub, receipt frames carry a
 stable `receipt_notification_id`; an offline sender receives the pending outbox frame
 after its next authenticated connection and deduplicates any at-least-once retry by
@@ -1320,8 +1348,7 @@ synapse hub --max-progress-per-task 500            # cap retained board progress
 synapse hub --max-findings-per-agent 200           # cap durable findings admitted per agent
 synapse hub --shutdown-close-timeout 5             # bound active socket close handshakes
 synapse hub --tls-certfile ./hub.crt --tls-keyfile ./hub.key  # native wss://
-synapse hub --host 0.0.0.0 --token-file ./tok      # token from a file, not argv (ps-safe)
-synapse hub --host 0.0.0.0 --insecure-off-loopback # bind off-loopback WITHOUT a token (refused otherwise)
+synapse hub --token-file ./tok                   # loopback example: token from a file, not argv
 synapse hub --expect-multi-seat                    # multi-seat intent for flood auto-enable (default off)
 synapse hub --bridge-exposed                       # declare A2A/MCP bridge for flood auto-enable (default off)
 synapse hub --require-fencing-epoch                # refuse lease mutations that name no lease epoch (default off)
@@ -1349,8 +1376,9 @@ Binding a non-loopback host without a token (and, with `--metrics`, a metrics
 token) is **refused** by default — the hub will not start exposed by accident.
 A token presented over plaintext `ws://` off loopback is **also refused**: the
 token and every coordination frame would be readable on the wire, so an
-off-loopback bind requires native TLS (`--tls-certfile`/`--tls-keyfile`) or a
-`wss://` proxy. `--insecure-off-loopback` downgrades either refusal to a warning
+off-loopback bind requires native TLS (`--tls-certfile`/`--tls-keyfile`). A
+`wss://` proxy deployment keeps the backend hub on loopback; a proxy alone does
+not exempt a plaintext non-loopback bind. `--insecure-off-loopback` downgrades either refusal to a warning
 for a trusted private network. Independently, an off-loopback bind with a
 plaintext `--db` event store is **refused** — the durable coordination log would
 sit unencrypted on the host's disk; encrypt it with `--db-key-file` (after
@@ -1367,8 +1395,8 @@ The durable-ingress quota is on by default. Each quota principal may have at
 most 100 chats and 1 MiB of serialized chat frames accepted per 60-second
 window; a zero `--durable-ingress-events` or `--durable-ingress-bytes` keeps the
 default. On an open loopback hub every local seat shares the host's principal.
-Over 100 days the project's own production hub peaked at 49 chats and about
-71 KiB in any such window, so the default leaves that traffic untouched.
+Size the quota against measured traffic in the intended deployment; the default
+is not evidence that a large terminal fleet's traffic will be admitted.
 `--no-durable-ingress-quota` turns the quota off; `--secure` refuses that flag.
 `--max-connections-per-host` is a connection-count cap keyed by the
 remote host (default **32**; pass `0` to disable); it is separate from
@@ -1394,10 +1422,11 @@ hubs both reap sockets that never bind a name within `--auth-timeout` (default
 at `0`) may still be filled automatically when the hub starts in an exposed
 posture (off-loopback bind, connect token, multi-seat intent, or bridge
 exposed). Use `--expect-multi-seat` (default off) when more than one seat is
-expected without `--team-secure` / identity material, and `--bridge-exposed`
+expected, and `--bridge-exposed`
 (default off) when an A2A or MCP bridge is knowingly reachable against this hub
-— the hub does not detect those processes automatically. Details:
-[Auto flood-enable (REV-SEC-06)](secure-mode.md#auto-flood-enable-without-secure-rev-sec-06). Native `wss://` uses `--tls-certfile` plus `--tls-keyfile`; it protects
+— the hub does not detect those processes automatically. These flags do not
+waive the provisioned-identity gate described above. Details:
+[Automatic flood limits](secure-mode.md#auto-flood-enable-without-secure-rev-sec-06). Native `wss://` uses `--tls-certfile` plus `--tls-keyfile`; it protects
 the transport but does not replace `--token` for off-loopback binds. Supply the
 token with `--token-file` or the `SYNAPSE_TOKEN`
 environment variable rather than `--token`, which is visible in `ps`. The hub
@@ -1440,8 +1469,8 @@ While it serves, the hub anchors again every `--checkpoint-interval` seconds
 clean stop anchors at once and closes the checkpoint store. So cutting writes
 made while the hub was running is refused on the next start too. The declared
 window is the interval: after a crash or a kill, writes newer than the last anchor
-could be cut without detection. On the project's own 102,291-event log a full
-recompute takes 1.7 s, which is why live anchors are incremental.
+could be cut without detection. A full recompute scans the retained log; measure
+its cost on the intended journal and hardware. Live anchors fold incremental writes.
 
 ```bash
 synapse health                       # exit 0 if the local hub is reachable
@@ -1917,8 +1946,9 @@ Three flags shape the projection. `--service-name NAME` overrides the
 several hubs exporting into one observability tenant stay distinguishable.
 `--filter TASK_ID` (repeatable) projects only the named tasks' traces and
 *refuses* a task the log does not record; links pointing at excluded tasks are
-kept — the deterministic ids resolve against any export that carried the other
-task — and the exclusions are counted in the summary, never silently truncated.
+kept with deterministic ids. Correlation needs another export of the same
+journal containing the linked spans and a collector that retains and indexes
+them. Exclusions are counted in the summary rather than silently truncated.
 An event recording the task lifecycle's failure terminal (`failed`) projects
 span status `ERROR` — as does a task root whose *final* recorded status is the
 failure terminal — so failed coordination is visible at a glance in a trace
@@ -1934,9 +1964,10 @@ exported 3 span(s) across 1 trace(s) to spans.json, 332 task(s) filtered out
 `--watch` turns the one-shot export into live coordination observability:
 the store is reread and the spans re-exported every `--interval` seconds
 (default 2.0) until `--count` ticks ran (0 = until Ctrl-C, which stops the
-watch cleanly). The deterministic ids make each re-export idempotent on the
-collector side — a span received twice is stored once — so a fixed cadence
-against a growing log simply fills in the new events. A failing tick stops
+watch cleanly). Each tick re-exports the selected retained history with stable
+trace/span ids. Those ids allow correlation; the exporter does not require the
+collector or backend to store duplicates only once. Qualify duplicate handling
+and retention for the selected backend. A failing tick stops
 the watch with exit `2`, exactly as a single export fails visibly:
 
 ```console
@@ -2126,10 +2157,13 @@ defensible: it models PEP 440 specifier sets, Cargo requirements, and npm
 semver ranges over plain numeric release versions, and anything outside
 that bounded model — pre-release or epoch segments, unrecognised
 operators — never claims a conflict. Direct URL references stay
-uncompared with one honest exception: two references to the *same base
-URL* pinned at two *hex revisions* of which neither prefixes the other are
-provably two different commits and do conflict (identical revisions
-overlap; a branch or tag revision is mutable and never supports a claim).
+uncompared when their reference text differs. Hexadecimal revisions are not
+proof of resolved commit identities, and fragments may select different package
+directories. Identical parsed reference declarations match as text; this does
+not establish the resolved artifact, package version or availability.
+Cargo and npm partial comparators expand omitted components: `=1.2` spans
+the `1.2` release prefix, `<=1.2` extends up to `<1.3.0`, and `>1.2` starts
+at `>=1.3.0`. Fully specified versions retain their exact comparator semantics.
 PEP 440 exclusions
 (`!=`) are ignored, which can only suppress a claim, never invent one.
 `go.mod` requirements are never compared: a Go requirement is a minimum
@@ -2316,9 +2350,11 @@ Under `--json` the document gains a `drift` object with the findings and
 the insufficient series; `--alert` composes with `--compare` (either gate
 failing exits `1`) and requires `--trend`.
 
-`synapse accounting` records and reports opt-in model cost/token usage. Synapse
-never calls a model provider and collects no telemetry, so token and cost figures
-exist only when an agent or operator records them: `synapse accounting record`
+`synapse accounting` records and reports opt-in model cost/token usage. These
+accounting commands do not call a model provider or collect usage themselves;
+other Synapse worker and participant commands can invoke providers. Accounting
+figures aggregate supplied notes and optional pricing, rather than independently
+verifying provider bills. Notes exist only when an agent or operator records them: `synapse accounting record`
 posts one usage note (a `usage`-kind progress note carrying a canonical
 `key=value` body) onto the shared ledger, and `synapse accounting report
 ./synapse.db` reads those notes back into per-agent and per-model totals. Pass
@@ -2341,7 +2377,7 @@ the hub's shared accounting notes, and no command reserves or authorises spend.
 See [Local account and quota ledger](entitlements.md) for the exact event fields,
 privacy boundary and correction syntax.
 
-`synapse spend` operates shared-pool reservations (F02). One hub owns a pool: it
+`synapse spend` operates shared-pool reservations. One hub owns a pool: it
 runs with `synapse hub --hub-id ID --multihub-serving-policy POLICY
 --spend-ledger FILE` and decides every reservation in that owner-only SQLite
 ledger. The ledger is kept apart from the replicated journal, so no balance
@@ -2530,7 +2566,8 @@ owner's authentic lease, while a remote-owned claim whose owner has no route sta
 refused with the owner named — the routing is opt-in and fail-closed, so adding a
 route never opens a claim the hub could not already resolve. `--claim-peer-token
 TOKEN` sends an authentication token on every forwarded claim to owners that gate
-the first frame (mutual-TLS-only owners need none). An unreachable owner is refused
+the first frame. A client certificate does not waive a configured connect-token
+gate. An unreachable owner is refused
 in place with `forward_error=timeout`, not hidden behind the generic ownership
 refusal, so a forwarding outage never silently resumes local granting:
 
@@ -2556,8 +2593,9 @@ The other message-peer options are:
   and it must name a configured peer.
 - `--message-forward-ttl SECONDS` (default 86400, minimum 1) bounds how long an
   unanswered chat is retried. Retries back off from 1 to 300 seconds, and the
-  outbox is durable with `--db`, so a peer outage or a restart does not lose a
-  queued chat.
+  outbox can be reconstructed from a retained `--db` journal after a restart.
+  Expired retries, lost or pruned storage, and unconfirmed external processing
+  remain outside that recovery; this is bounded redelivery, not unlimited retention.
 
 The full contract is in
 [Cross-hub message forwarding](protocol.md#cross-hub-message-forwarding-wire-version-5).
@@ -2631,7 +2669,7 @@ Operational boundaries:
   shared bearer is not per-client identity or a method-level ACL, and the custom
   two-method binding remains `partial`. See
   [Current gRPC activation boundary](a2a-deployment-threat-model.md#current-grpc-activation-boundary).
-- Bind exposure (hub R4 parity for the HTTP edge): the bridge defaults to
+- Bind exposure at the HTTP edge: the bridge defaults to
   loopback (`127.0.0.1`). A non-loopback host is **refused** without bearer
   auth, and a non-loopback host **with** bearer auth is also **refused** while
   the bridge listens on plaintext HTTP so the bearer never rides the LAN in
@@ -2786,7 +2824,9 @@ liveness probe. Doctor's roster query also treats a missing reply as unavailable
 
 `synapse task` lets a human drive the shared blackboard from the command line —
 the persistent plan, not the live leases (claiming/holding a lease belongs to a
-running agent, since a lease is released when its holder disconnects):
+running agent. Disconnect alone does not release its lease: the claim survives
+until its TTL or the hub's offline-holder policy releases it on a later claim
+attempt, unless explicitly released):
 
 ```bash
 synapse task declare BUILD --title "Compile the package"
@@ -2879,9 +2919,9 @@ records with `synapse event-query` or from the event store by kind
 ### Recording from a client hook
 
 `synapse native-record` is one explicit call. `synapse native-hook claude`
-makes the record without anyone calling it: the client runs it after every use
-of its session-send tool. Configure it as a `PostToolUse` hook of Claude Code
-for the tool `SendMessage`:
+records a call when the host client invokes the configured hook; it is not
+automatically installed or proof that every native send is intercepted. Configure
+it as a `PostToolUse` hook of Claude Code for the tool `SendMessage`:
 
 ```json
 {
@@ -2983,8 +3023,9 @@ the receiving side needs the recipient's own call of `synapse native-record`.
 
 ### Which messages have both sides
 
-The sender's record says that the channel accepted a message; only the
-receiver's record says that it arrived. `synapse event-query` pairs the two:
+Sender and receiver records are declarations of native-channel activity.
+`synapse event-query` pairs matching declarations; it does not independently
+verify channel acceptance, arrival or provider processing:
 
 ```bash
 synapse event-query ~/synapse/hub.db "native-messages all"
@@ -3000,7 +3041,8 @@ sender only (no receiver's record):
 Two records are of one message when they name the same channel and the same
 text digest and agree on the native session of the sender and of the recipient
 wherever both state it; at least one of the two sessions must be stated by
-both. A receiver's record of either phase counts as the receiver's side. All
+both. A receiver's record of either phase counts as the receiver's side,
+including an `attempt`; a pair is therefore not a delivery receipt. All
 records are paired first and the seat is applied afterwards to whole pairs, so
 a pair is found by its receiver's seat even when the sender recorded only a
 raw address. `--limit N` cuts each list to its newest `N` entries and leaves
@@ -3013,10 +3055,14 @@ record names its text by digest and size.
 board and the seats: it polls the board/state/manifest/who snapshots, picks
 ready `P`-scoped tasks deterministically, pins `suggested_owner` through the
 version CAS, and sends the seat a directed wake under a stable idempotency
-key — exactly once, even across crashes (an append-only JSONL outbox in
-`~/.synapse/dispatch-outbox/` reconciles pending intents on restart: claimed
-tasks are marked delivered, re-owned tasks conflicted, unanswered ones
-retried with the same key up to `--max-attempts`).
+key recorded in an append-only JSONL outbox under
+`~/.synapse/dispatch-outbox/`. Retained intents are reconciled on restart:
+claimed tasks are labelled delivered, re-owned tasks conflicted, and unanswered
+ones retried with the same `idem_key` up to `--max-attempts`. This field is
+diagnostic metadata; chat deduplication uses `client_msg_id`, which these wakes
+do not supply. Repeated wakes remain possible. Outbox writes are closed without
+an explicit fsync, and a send can precede its attempt update. Neither a socket
+send nor the outbox's delivered label proves receipt or provider processing.
 
 ```bash
 synapse dispatch --project SYNAPSE-CHANNEL --dry-run   # print the plan, mutate nothing
@@ -3081,12 +3127,15 @@ synapse arm install --identity my-repo/agent --start    # install/start only one
 synapse install-shell-hook                              # auto-arm Bash, Zsh, and Fish on new terminals
 synapse install-shell-hook --shell fish                 # only the Fish integration
 synapse shell-hook                                      # print the block instead of installing it
+```
 
 Shell auto-identity: a default-shape `*/terminal-<pid>` identity is re-minted
 when `/proc` is missing or the pid is outside this session's lineage (fail-closed
-against DEL-INT-C env layering). Manual seats and `SYN_TMUX_PROVIDER=1` stay
+against inherited environment identities). Manual seats and `SYN_TMUX_PROVIDER=1` stay
 unchanged. macOS and containers without `/proc` therefore get a fresh terminal
 id each arm rather than keeping a foreign inherited auto name.
+
+```bash
 synapse completions bash > ~/.local/share/bash-completion/completions/synapse   # tab completion
 synapse completions fish > ~/.config/fish/completions/synapse.fish              # (re-run after upgrades)
 synapse arm --name my-repo --for "my-repo,my-repo/*"    # keep a waiter armed, re-arming after each wake
@@ -3127,9 +3176,10 @@ startup code is printed.
 Governance commands are advisory by default — they report, they do not block —
 so a rollout can observe before it enforces. `identity audit` inventories
 declared identities for enforcement-rollout blockers; `identity machine-key`
-prints or enrols the trust-bundle entry for the key every client on this machine
-already signs its registration with, so a seat can join an identity-bound hub
-without per-command key flags; `acl shadow` evaluates
+prints or enrols a machine key's trust-bundle entry. The Python client's
+configured identity setup can use that key without per-command key flags;
+other clients need their own supported signing configuration. Enrol the key
+and sender names that the selected client actually uses. `acl shadow` evaluates
 candidate accesses deny-by-default without denying anything live; `policy-check`
 scores a release receipt against a policy (`--enforce` to gate); and `federation`
 manages operator-confirmed peer-domain bundles for cross-hub trust.
@@ -3180,8 +3230,8 @@ existing signing-key and certificate tooling.
 same federation transport, rather than managing peerings. The first action is
 `release` — an operator whose domain is granted the `release` verb in a namespace
 the peer owns force-releases a stuck lease held on that peer, without a shell on
-it. The peer authorises the relay deny-by-default (mutual TLS + the peering's
-scope + it must own the namespace) and audits it with the verified peer, the
+it. The peer authorises the relay deny-by-default (a trusted live certificate or
+an explicitly enrolled registration identity, the peering's scope, and namespace ownership) and audits it with the verified peer, the
 asserting operator, and the previous holder, so a lease revoked across hubs stays
 attributable. `--local-id` must match a serving grant on the peer, `--operator`
 records who asked (default: the OS user), and the exit code is `0` when the peer
@@ -3195,12 +3245,17 @@ For a retryable release, pass `--idem-key KEY`. The key is scoped by the verifie
 federation principal, resolved sender, and request type; an origin hub preserves it when
 forwarding, and the owner binds it to canonical request content. The owner commits the
 release, inbound relay provenance, exact verdict, and evidence intent in one transaction.
-An identical retry re-runs the live certificate, scope, and namespace-ownership gates
+An identical retry re-runs the serving identity, scope, and namespace-ownership gates
 before replaying that exact verdict; a different principal or changed content cannot reuse
 the stored operation. This applies to a single-person release and to the second request
 that completes a two-person quorum. The first/pending approval and its audit publish
-together, but pending state is deliberately in-memory and restart-cleared, so a pending
-verdict is not exact-replayed. Give each operator request its own retained key. The
+together. A durable hub reconstructs validated inbound pending audits after restart;
+a later terminal audit removes that pending entry, while malformed or contradictory
+audits fail closed. Restoration never manufactures a completed approval or a second
+principal. An unchanged keyed pending request can replay its exact stored verdict,
+including after restart; current authorization gates run before replay. That
+historical response is not a fresh live pending-state snapshot. Give each operator
+request its own retained key. The
 forwarding hub's outbound audit is also outside the owner's local transaction.
 
 `--reason` records why the action was relayed, in the audit on both hubs; `--break-glass`
@@ -3211,7 +3266,8 @@ cross-hub action to an auditable why.
 A hub can also require **two-person approval**: an authorised relay is not applied on its
 own but recorded pending, and carried out only when a second, *distinct verified federation
 principal* relays the same action (same namespace and task). Distinctness is bound to the
-federation trust domain after live mutual-TLS authentication — the descriptive `--operator` label,
+federation trust domain after serving-policy identity verification — the descriptive
+`--operator` label,
 sender name, configured signing-key id, and certificate are not separate identities. Aliases and
 key or certificate rotation within one domain cannot manufacture quorum. The first relay returns
 exit `3`; another label backed by the
@@ -3268,7 +3324,7 @@ synapse encrypt-key generate --from-passphrase ./synapse.key   # derive the key 
 synapse encrypt-key generate --from-passphrase --scrypt-n 65536 ./synapse.key  # tune the scrypt cost (n a power of two; also --scrypt-r/--scrypt-p)
 synapse encrypt-key generate-wrapped ./synapse.wrapped.key     # envelope-encrypted key whose passphrase can be rotated later
 synapse encrypt-key rewrap ./synapse.wrapped.key               # rotate that passphrase without re-encrypting any data
-synapse encrypt-key generate-wrapped-pkcs11 --token-label synapse ./synapse.hsm.key  # wrap the key on a PKCS#11 token (YubiKey/HSM)
+synapse encrypt-key generate-wrapped-pkcs11 --token-label synapse ./synapse.hsm.key  # requires an AES-key-wrap PKCS#11 token
 synapse encrypt-key generate-wrapped-tpm2 ./synapse.tpm.key    # wrap the key with a TPM 2.0 device (RSA-OAEP)
 synapse encrypt-key check ./synapse.key                        # verify its ownership, mode, and length
 ```
@@ -3287,14 +3343,18 @@ prompted passphrase wraps it with RFC 3394 AES-KW. The salt is kept, so `rewrap`
 can rotate the passphrase (unwrap with the old, wrap with the new) **without
 re-encrypting any data** — the data key underneath is unchanged, so ciphertext
 sealed before the rotation still decrypts. This is the model a hardware key store
-(TPM, YubiKey, cloud HSM) plugs into: only the key-encryption key moves into
+(TPM or a compatible key-wrap HSM) plugs into: only the key-encryption key moves into
 hardware, the wrapped-file format and the data key stay the same. Both commands
 take the same `--scrypt-*` cost flags.
 
 `generate-wrapped-pkcs11` is that hardware step. It wraps the random data key with a
-key-encryption key held on a **PKCS#11 token** — a YubiKey PIV, a cloud or network
-HSM, or SoftHSM for testing — via RFC 3394 AES key wrap on the device, so the token
-key never leaves the hardware. Point it at the token with `--pkcs11-module` (or the
+key-encryption key through a **PKCS#11 module** supporting AES secret-key objects
+and RFC 3394 `CKM_AES_KEY_WRAP`. A generated KEK is requested as sensitive and
+non-extractable; an existing key's custody depends on its provisioned attributes.
+SoftHSM provides software test coverage, not hardware protection. YubiKey PIV's
+YKCS11 interface lacks these AES secret-key operations and is unsupported by
+this backend. Qualify the exact token, firmware and module before claiming
+hardware custody. Point it at the token with `--pkcs11-module` (or the
 `PKCS11_MODULE` environment variable) and `--token-label`; the key-encryption key is
 generated on the token on first use (or `--no-create-kek` to require a pre-provisioned
 one), and the PIN comes from `PKCS11_PIN` or an interactive prompt. Needs the optional
@@ -3315,16 +3375,42 @@ path — so loading it re-derives the same key inside the TPM to unwrap the data
 Clearing the TPM hierarchy destroys the key-encryption key and, with it, access to the
 data key, which is the intended way to make the store unrecoverable.
 
+## Operator HMAC statements
+
+The `encrypt-key attest-*` commands create and verify software statements.
+They do not collect hardware measurements or verify a TPM quote:
+
+```bash
+synapse encrypt-key attest-policy-create --policy-id example ./statement-policy.json
+synapse encrypt-key attest-create --policy ./statement-policy.json ./statement.json
+synapse encrypt-key attest-verify --policy ./statement-policy.json --evidence ./statement.json
+```
+
+Optional `--pcr INDEX=HEX_SHA256` values are caller declarations. Without them,
+creation copies the policy's expected values. Verification checks their HMAC
+and policy match; it does not prove measured boot. A nonce is signed, but no
+verifier-issued challenge or age is checked and the nonce is not consumed.
+The same statement may verify repeatedly. The historical `tpm2-quote` label
+also selects the 32-byte-key software path; an AK trust anchor or installed
+TPM library does not make this a hardware quote verifier.
+
+The CLI identifies success as software statement verification and reports
+that hardware quote and freshness were not verified. Keep the policy key
+private. A hardware KEK backend and independently qualified quote/freshness
+verification are separate boundaries. See
+[software statement verification](at-rest-encryption.md#software-statement-verification).
+
 ## Experimental surfaces
 
 Newer, advisory surfaces whose shape may still change before 1.0. `sandbox`
 validates a capability manifest and pre-flights or runs a `.wasm` tool against
 it (running needs the `wasm` extra); `workflow` validates a declarative workflow
-and compiles it into the blackboard tasks the board would execute —
-step-level `requires` predicates (`receipt`, `tests`, `policy`, `approval`,
-`sandbox_run`, `mailbox`, `dead_letters`, or `claim`) hold a task until a
-`--evidence` snapshot proves the required values, so a workflow can route on
-attested evidence instead of status alone;
+and compiles blackboard task declarations for agents to execute. Step-level
+`requires` predicates (`receipt`, `tests`, `policy`, `approval`, `sandbox_run`,
+`mailbox`, `dead_letters`, or `claim`) compare values in a caller-supplied
+`--evidence` JSON snapshot to hold or ready tasks. This is declared readiness;
+it neither independently verifies signatures, tests or approvals nor executes
+agent work;
 `workflow contention FILE DB` additionally joins the compiled task ids to the
 durable log, running the same offline yield-advice analysis as
 `synapse causality contention` but keeping only the overlapping live-claim
@@ -3388,6 +3474,18 @@ produced, or the full typed transcript with `--json`, and exit `0` only when
 every turn answered and the run completed — an unavailable seat, a degraded
 turn, or a `--budget-usd` halt exits `1`; a refused configuration exits `2`.
 
+`convene --budget-usd` is a stop threshold for reported costs, checked after a
+completed fan-out and before synthesis. The opening runs even for a zero or
+negative threshold; concurrent turns in a round can overshoot it. Synthesis
+cost is added without another stop check. Codex, Kimi, Gemini, Grok and the
+plain-text Ollama driver currently report monetary cost as zero, which does
+not mean their turns or resources are free. The library's sequential
+`conduct_conversation` similarly checks after each completed turn. These
+controls neither reserve spending nor cancel in-flight work and do not cap
+provider billing. Dry-run prices are estimates, not an actual-spend ledger;
+account-side limits and separately qualified accounting are needed for
+financial enforcement.
+
 `convene --dry-run` prints the plan without taking a single turn: the resolved
 mode, its round count, and each seat's identity, readiness (health probes run —
 they never cost a turn), planned turns, and estimated cost. Costs come from an
@@ -3421,7 +3519,7 @@ synapse sandbox run ./tool.wasm --manifest ./manifest.json --input ./in.json
 synapse sandbox run ./tool.wasm --manifest ./manifest.json --approve --attest ~/synapse/audit.db  # run + record an audit attestation
 synapse workflow validate ./workflow.json               # parse and validate
 synapse workflow compile ./workflow.json --json         # compile into blackboard tasks
-synapse workflow plan ./workflow.json --evidence ./evidence.json  # hold proof-carrying steps
+synapse workflow plan ./workflow.json --evidence ./evidence.json  # compare declared readiness values
 synapse workflow contention ./workflow.json ~/synapse/hub.db   # yield advice scoped to this workflow
 synapse participant list                                # readiness of every provider driver
 synapse participant ask ollama "summarise this diff" --model llama3   # one turn, print the answer
@@ -3451,14 +3549,23 @@ for the extension installation and the complete command. Pi `write` and `edit`
 checks are cooperative pre-tool guards; `bash` and unknown tools are denied.
 
 Headless provider prompts are an execution trust boundary, not shell text.
-SYNAPSE passes them as one argv value without a shell. Claude additionally runs
-with built-in tools disabled, an empty strict MCP configuration, safe mode,
-disabled skills/browser integration, and plan permissions; Codex uses its
-read-only sandbox; Gemini, Grok, and Kimi use their native non-mutating planning
-or approval modes. An older CLI that cannot enforce the pinned flags fails the
-turn instead of silently weakening it. Model output and peer contributions remain
+SYNAPSE passes them as one argv value without a shell. The default Claude wrapper
+requests disabled built-in tools, an empty strict MCP configuration, safe mode,
+disabled skills/browser integration and plan permissions. Fresh Codex turns request
+its read-only sandbox; the resume argv does not reapply that flag, so the resumed
+session's effective permissions must be independently qualified. Gemini, Grok and
+Kimi wrappers request their configured planning or approval modes. These argv
+settings are not proof of enforcement across every vendor version, session or
+external effect; an unsupported-option refusal is a failed turn, not a successful
+compatibility check. Model output and peer contributions remain
 untrusted data and are fenced before another participant receives them. The
-guarded human-readable surfaces include Participant Fabric answers and health
+fences are text labels, not an escaped structural format or proof of model
+resistance to prompt injection. Metadata and repeated marker text remain
+untrusted too. For Ollama, offline inference depends on a locally provisioned
+daemon and model: this wrapper does not enforce offline mode, rule out remote
+or cloud-backed configuration, or establish licence eligibility or zero cost.
+
+The guarded human-readable surfaces include Participant Fabric answers and health
 details, hub and peer snapshots, mailbox identities, routing and resource
 fields, capability-directory and outbound-MCP results, workflow-contention,
 event-query, memory-recall, and accounting reports, relay verdicts,

@@ -10,11 +10,13 @@ SYNAPSE CHANNEL — per-message authentication runtime
 
 # Per-message authentication runtime
 
-Per-message authentication is implemented for selected mutating hub frames as
+Per-message authentication is implemented for selected hub frames as
 an opt-in HMAC-SHA256 runtime. It runs after WebSocket connect authentication:
 `synapse hub --token` still gates admission, and `--require-message-auth` then
 requires signed frames for claims, releases, task updates, handoffs,
-checkpoints, and resource offers.
+checkpoints, delivery-journal frames, attachment frames and resource offers.
+The exact default set is `DEFAULT_SIGNED_MESSAGE_TYPES` in
+`core/message_auth.py`; it is not a gate for every protocol verb.
 
 The default remains off for compatibility and for loopback-only single-operator
 use. Operators opt in explicitly:
@@ -30,7 +32,7 @@ synapse hub \
 Clients can sign mutating frames by constructing `SynapseAgent` with
 `per_message_auth_key_id` and `per_message_auth_secret`. Unsigned chat and
 heartbeat frames remain ordinary envelopes; the first runtime tranche protects
-state-changing coordination frames.
+coordination mutations and selected delivery and attachment operations.
 
 This runtime does not encrypt payloads, does not replace TLS, does not create
 per-agent identity, and does not enforce ACLs. The
@@ -40,12 +42,12 @@ described here remains the stable CLI-facing frame-authentication mode.
 
 ## Trust model: connect-once versus per-frame
 
-By default a hub authenticates the **connection**, not each frame. `--token`
-gates admission at connect time; once a socket is admitted it is trusted for the
-life of that connection, and every frame it sends afterwards is accepted on the
-strength of that one check. On a loopback, single-operator hub this is
-proportionate — the only party that can open a socket is the operator — and it is
-why per-message authentication is off by default.
+`--token` authenticates connection admission. Per-message HMAC is an additional
+opt-in gate for selected frames, alongside separately configured identity and
+ACL checks; token admission alone does not imply that every later frame is
+accepted. A loopback bind limits network reachability, not access to one local
+operator: other local processes and accounts may reach it. Decide the required
+controls from that deployment's trust boundary.
 
 Enable `--require-message-auth` when that assumption no longer holds:
 
@@ -63,8 +65,8 @@ Enable `--require-message-auth` when that assumption no longer holds:
   to start without `--require-message-auth`, unless `--federation-observe-only`
   declares the store is loaded for diagnostics and deny-closed refusal only.
 
-The token still gates admission in every mode; per-message authentication adds a
-second, per-frame check on top of it for the mutating frames listed above. It is
+When configured, the token gates admission in every mode; per-message
+authentication adds a per-frame check for the protected types listed above. It is
 not a substitute for TLS on an untrusted network — see the boundaries below.
 
 ## Frame authentication profile
@@ -193,20 +195,27 @@ through `--message-auth-sequence-floor-mode`:
 | `compat` | Floor advances on accept; a lower sequence with a **new** nonce is still admitted (reconnect-safe). Same nonce remains `replayed`. |
 | `strict` | `sequence <= floor` for that `(key_id, sender)` is refused as `sequence_mismatch`. Clients must keep counters monotonic across restarts. |
 
-The Python client keeps its sequence monotonic across restarts without state.
+The Python client derives its sequence from the clock without persisting a
+client-side floor.
 Each frame's sequence is the wall clock in microseconds, or one more than the
 previous frame if the clock has not advanced
-(`core.message_auth.next_message_auth_sequence`). A restarted agent therefore
-passes `strict`. Clients up to Core 0.99.31 numbered frames from 1 in every
+(`core.message_auth.next_message_auth_sequence`). This is monotonic within one
+client state. After a restart, `strict` accepts the new sequence only if the
+clock-derived value exceeds the retained hub floor. Clock rollback or a restart
+in the same microsecond can produce `sequence_mismatch`; this rule alone does
+not guarantee stateless monotonic restart. Where that guarantee is required,
+the client policy must reserve sequences durably before transmission and
+coordinate all producers using the same key and sender. The built-in clock-only
+policy does not supply that custody. Clients up to Core 0.99.31 numbered frames from 1 in every
 process and are refused by `strict` after a restart. A custom client must also
-keep its sequence increasing across restarts, for example by using the same
-rule.
+keep its sequence increasing across restarts; an in-memory counter or the same
+clock rule alone does not establish that guarantee.
 
 Durable I/O faults fail closed (verification refuses the frame). Capacity-full
 behaviour matches the in-memory cache. `compat` and `strict` are refused at
 startup unless a durable replay path exists; an in-memory sequence floor would
-misrepresent its restart guarantee. Design notes:
-`docs/internal/DESIGN_REV_SEC_07_sequence_floor_2026-07-20.md`.
+misrepresent its restart guarantee. Server replay-floor durability and the
+client's sequence-generation policy are separate requirements.
 
 Verification produces stable **verification result** strings: `ok`, `missing`,
 `expired`, `unknown_key`, `revoked_key`, `bad_authentication`,
@@ -237,8 +246,12 @@ Per-message authentication and signed events solve different problems:
 
 - Per-message authentication rejects a bad incoming frame before it mutates hub
   state.
-- Signed events make selected durable event-log records tamper-evident after
-  admission, storage, replay, relay export, or postmortem reconstruction.
+- The embedded signed-event alternative verifies protected incoming frames.
+  Later verification needs the complete original signed envelope and explicit
+  trust, time and replay context. Ordinary claim journal snapshots omit that
+  envelope; exports, relay or postmortem reconstruction do not restore it.
+  Row MACs, Merkle commitments and native AEF receipts are separate evidence
+  mechanisms, not the original sender signature.
 
 An exposed deployment may need both. The hub gate can now accept either a valid
 HMAC `auth` envelope or a valid Ed25519 `signature` envelope when an embedded
@@ -255,14 +268,16 @@ bundle for multi-host tamper evidence, does not replace per-agent identity,
 does not replace ACL enforcement, does not sandbox connected agents, and does
 not make a shared-token hub safe on an untrusted network by itself.
 
-The first runtime tranche gates only claims, releases, task updates, handoffs,
-checkpoints, and resource offers. It runs after WebSocket admission and hub
+The default protected set covers claims, releases, task updates, handoffs,
+checkpoints, delivery-journal frames, attachment frames and resource offers.
+It runs after WebSocket admission and hub
 sender resolution; it does not authenticate initial name binding, presence,
 heartbeat traffic, or takeover of a live identity.
 
-The [identity and ACL design](identity-and-acl.md) remains the future layer
-that maps a key holder to an audit subject and decides whether the requested
-verb and target are allowed.
+The separate opt-in [identity and ACL controls](identity-and-acl.md) bind enrolled
+keys and check permitted verbs and targets on their documented surfaces. HMAC
+alone proves possession of a configured shared key, not which individual key
+holder acted, and does not install those identity or permission controls.
 
 The local-first tradeoff is key-management complexity. Loopback-only single
 operator use can stay unsigned. Exposed deployments need explicit keys, sender

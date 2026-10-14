@@ -27,10 +27,15 @@ claims, presence, directed messages, shared plans, and durable coordination arou
 
 ## Does it need a cloud account or a hosted service?
 
-No. It runs entirely on the local machine over one WebSocket hub, with a single runtime
-dependency (`websockets`). There is nothing to sign up for and no telemetry;
+Base coordination needs no cloud account: it runs over a local WebSocket hub
+with `websockets`, plus `typing-extensions` on Python 3.10. Optional workers,
+adapters and external services have their own dependency, account, network and
+cost requirements. Core coordination does not implicitly emit telemetry;
 `synapse --version` is network-silent by default. Set `SYNAPSE_UPDATE_CHECK=1`
-only if you want an opt-in, once-a-day PyPI newer-release check.
+only if you want the synchronous PyPI newer-release check. A successful cached
+result is reused for 24 hours; an absent or stale cache can trigger another
+request on each invocation, including after a failed refresh. See the
+[installation profile](installation.md) for the timeout and cache boundaries.
 
 ## Can a human use it, or is it only for agents?
 
@@ -40,24 +45,29 @@ identity-correct front end for the short loop a person or an agent runs each ses
 
 ## Which models can the workers use?
 
-Any OpenAI-compatible endpoint, a local Ollama server, or a deterministic rule-based
-fallback for offline use — selected with `synapse worker --provider {openai,ollama,rule,tiered}`.
-`tiered` routes trivial requests to the rule backend and hard ones to a heavier model.
+Use the [documented provider profiles](provider_matrix.md), local Ollama or a
+deterministic rule backend. `tiered` selects a configured backend by task class.
+Named paid providers require the explicit admission flags, budget and current
+price quote described in [provider pricing](provider_pricing.md); protocol-fixture
+acceptance is distinct from a live vendor/account qualification.
 
 ## Is it production-ready? What are the limits?
 
-It is dogfooded daily and crash-durable — with `--db` the hub persists to a SQLite WAL event
-log and resumes live leases and history on restart. The deliberate limits: it is **one hub
-on one machine** (no built-in failover or horizontal scale), connect authentication is a
-**proportionate shared secret** (not a cryptographic identity system), and **agents are
-trusted** (the bus coordinates them, it does not sandbox them). See
+The current `0.x` line is pre-1.0. A configured healthy journal supports replay
+within retained history, integrity/key configuration and lease expiry. Each
+hub remains one authority; peer observation and forwarding do not create
+automatic failover or consensus. Shared-token access and opt-in cryptographic
+identity, signatures and TLS have distinct [documented boundaries](identity-and-acl.md).
+The bus does not generally sandbox agents or isolate hostile tenants. See
 [Known limitations](https://github.com/anulum/synapse-channel/blob/main/README.md#known-limitations).
 
 ## How does it refuse conflicting file authority?
 
 An agent **claims** a unit of work with a file **scope** (literal file or directory
-prefixes) before touching it. The hub refuses a claim whose scope overlaps a live
-claim, so the declared scopes of two active claims never intersect. Supported
+prefixes) before touching it. The hub refuses overlap with a different owner's
+live claim in the same coordination/worktree domain; same-owner claims and
+distinct worktree identities have different rules. Legacy literal scopes and
+canonical path identities also have different alias handling. Supported
 provider hooks enforce selected pre-edit paths and the staged Git gate checks the
 index at commit time; neither is a general process or filesystem sandbox. Claims
 are leases — they expire, can be renewed, and release on commit via the optional
@@ -65,10 +75,12 @@ git hooks. See [Git-native claims](git-claims.md).
 
 ## What happens if the hub restarts or crashes?
 
-With `--db`, nothing is lost: the hub replays the durable event log and resumes active
-leases, the plan, and history. Connected clients' waiters exit with code `3` and re-arm; the
-durable feed and presence holders keep messages recoverable. Without `--db` the hub is purely
-in-memory and starts empty.
+With `--db`, the hub replays retained admitted events using the matching
+integrity/encryption configuration; leases may have expired during downtime.
+Lease/control writes and ordinary chat have distinct durability classes. Reads
+recover retained messages, not model processing or external effects. A waiter
+that exits on disconnect needs its caller or supervisor to re-arm it; a presence
+holder alone is not a reader. Without a journal, coordination state starts empty.
 
 ## Why did my waiter wake on a message that was not for me?
 
@@ -94,9 +106,12 @@ endpoint is available with `synapse hub --metrics`.
 
 ## What does it cost, and what is the licence?
 
-The full package is free under the **AGPL-3.0** for open-source, research, internal, and
-personal use. A **commercial licence** lifts the AGPL's network-copyleft for closed-source or
-SaaS use — there is no feature difference between the builds. See
+The public Core is available under **AGPL-3.0-or-later**, including commercial
+use subject to its applicable conditions. A **commercial licence** provides
+separately agreed permission when a deployment cannot meet those conditions;
+hosted use or an internal-use label alone does not determine the obligations.
+There is no feature difference between the builds. Infrastructure, optional
+dependencies and provider costs remain separate. See
 [Commercial use](commercial.md) for the evaluation path and contact details.
 
 ## How do I report a bug or ask for help?

@@ -9,12 +9,11 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # Cross-agent adapter kits design
 
-Synapse coordinates whichever agents an operator already runs. The adapter kits
-are the thin, claim-aware glue that wires a specific coding tool — Claude Code,
-Codex, Gemini CLI, Grok, Kimi Code, Cursor, Aider, Copilot, and the Python
-orchestration frameworks — into the hub so that tool claims its file scope
-before editing and releases it on commit, without Synapse pretending to be that
-tool or shipping a persona library.
+The adapter installer writes claim conventions for named coding tools. A written
+file is not proof that the host loads it, follows those conventions, connects to
+the hub or enforces edits. Exact host integrations and their qualified boundaries
+are listed in the [integration catalogue](integration-catalog.md). Python
+framework shims remain a design pattern, not shipped adapters.
 
 This document began as the design contract for the adapter installer. The native
 editor/CLI installer is now shipped; the contract and boundaries remain here so
@@ -27,16 +26,19 @@ adds no new coordination primitive:
 
 - **`synapse git-init`** installs claim-aware git hooks and writes the local
   `.synapse/` conventions guide before agents edit files.
-- **`synapse git-hook` / `git-release`** auto-release a commit's branch-scoped
-  claims, so "release on commit" already works for any tool that commits.
+- **`synapse git-hook` / `git-release`** request release of claims matching the
+  exact owner, worktree, branch and configured trigger. Select
+  `--auto-release-on commit` for commit closeout; the default Git claim trigger
+  is `merge`. The non-blocking hook's exit `0` does not confirm hub release.
 - **`synapse worker-session`** launches a provider command with identity env and
   a wake sidecar; **`agent-tmux` / `codex-tmux`** wake a terminal-agent session
   from hub messages; **`shell-hook` / `install-shell-hook`** auto-arm fresh
   terminals and provider CLIs.
 - **`synapse mcp`** serves the hub to MCP-capable agents over stdio, and the
   **A2A bridge** exposes an Agent Card and HTTP+JSON endpoint.
-- Typed **[Go](go-client.md)** and **[TypeScript/JavaScript](js-client.md)**
-  clients speak the wire protocol directly.
+- The typed **[TypeScript/JavaScript](js-client.md)** client implements WebSocket
+  messages. The **[Go](go-client.md)** client reads HTTP JSON surfaces and does
+  not implement WebSocket claims, chat, release or presence mutations.
 
 The single `synapse adapters` step that detects the coding tools installed on a
 machine and writes a thin claim-aware adapter into each tool's native configuration
@@ -52,10 +54,11 @@ more:
 - **Claim before edit** — the tool is told to claim its file scope (`synapse
   git-claim` or a semantic claim) before modifying files, and to treat a denied
   claim as a stop.
-- **Release on commit** — handled by the installed git hooks; the adapter only
-  points the tool at `synapse git-init` so the hooks exist.
+- **Configured release** — the convention points to installed Git hooks and
+  the matching release trigger; actual release must be confirmed separately.
 - **Reach the hub** — the adapter records the identity to use and the hub URI, so
-  the tool's session is addressable and present.
+  a compatible session can load that configuration and connect. Creating the
+  instruction file alone does not make the tool adopt it or create online presence.
 - **Advisory, not behavioural** — the adapter conveys claim-safety conventions
   into the tool's own rules format; it does not inject a persona, a workflow, or
   model instructions beyond coordination safety.
@@ -71,15 +74,19 @@ Tools fall into two shapes, and the kit needs both:
 
    | Tool | Target | Format |
    | --- | --- | --- |
-   | Claude Code | `~/.claude/` (or project `.claude/`) | Markdown |
-   | Codex | `~/.codex/` | TOML |
+   | Claude Code | `~/.claude/synapse.md` | Markdown convention file |
+   | Codex | `~/.codex/synapse.md` | Markdown convention file |
    | Grok | `~/.grok/skills/synapse/SKILL.md` | Agent Skill (kebab-case frontmatter) |
    | Kimi Code | `$KIMI_CODE_HOME/skills/synapse/SKILL.md` (default `~/.kimi-code/skills/synapse/SKILL.md`) or project `.kimi-code/skills/synapse/SKILL.md` | Agent Skill |
    | Cursor | `.cursor/rules/synapse.mdc` | Cursor `.mdc` |
    | Aider | append to `./CONVENTIONS.md` | Markdown |
-   | GitHub Copilot | `~/.github/` | Markdown |
+   | GitHub Copilot | `~/.github/synapse.md` | Markdown convention file |
    | Windsurf | `./.windsurfrules` | single file |
-   | Gemini CLI / Qwen / OpenCode | tool agent dir | Markdown |
+   | Gemini CLI | `~/.gemini/synapse.md` | Markdown convention file |
+
+   These are this installer's targets, not a universal host-autoload contract.
+   Qwen and OpenCode are not entries in this generic installer; consult the
+   integration catalogue for separate surfaces.
 
    Detection mirrors a tool's own footprint: a binary on `PATH` (`command -v`) or
    a config directory present (`~/.claude`, `~/.cursor`). Paths are overridable by
@@ -102,10 +109,11 @@ The command set is read-first and reversible:
 - `synapse adapters install [TOOL ...] [--identity ID] [--uri URI] [--dry-run]` —
   write the claim-aware adapter for detected (or named) tools; `--dry-run` prints the
   planned writes. Each write is idempotent and marker-wrapped so `uninstall` removes
-  exactly what was added; re-installing replaces rather than duplicates.
+  the marked block for append-mode targets; re-installing replaces rather than
+  duplicates. Dedicated-file targets replace the whole file.
 - `synapse adapters uninstall [TOOL ...]` — remove only Synapse-written adapter
-  content (delete a dedicated adapter file, or strip the marked block from a shared
-  one), leaving the tool's other configuration untouched.
+  content: a marker-bearing dedicated target is deleted in full; a shared target
+  has its marked block stripped. Do not add unrelated content to a dedicated target.
 
 ```bash
 synapse adapters list                       # who is installed and where
@@ -121,8 +129,11 @@ Two write shapes follow each tool's convention: a **dedicated file** Synapse own
 deletes it) or a **marked block appended** to a file the tool also uses (Aider
 `CONVENTIONS.md`, Windsurf `.windsurfrules` — uninstall strips only the block).
 `--home`/`--project` override the roots; tool detection is a binary on `PATH` or
-a config directory. Grok and Kimi deliberately use different Agent Skill
-frontmatter because their installed 0.2.93 and 0.23.3 contracts differ.
+a config directory. Dedicated-file mode does not preserve pre-existing target
+bytes; review `--dry-run` and back up any existing target before installation.
+Grok and Kimi use different Agent Skill frontmatter, derived from the tested
+0.2.93 and 0.23.3 contracts respectively; those are not claims about today's
+installed versions.
 
 Kimi exposes both official skill scopes. `kimi` installs the detected user-level
 skill under `$KIMI_CODE_HOME/skills/` (default `~/.kimi-code/skills/`);
@@ -157,9 +168,9 @@ deliberately narrow.
 - Synapse stays **persona-neutral and framework-neutral**: it is the coordination
   layer beside coding tools and frameworks, not a replacement for them and not an
   agent library.
-- Every write is **opt-in, local, attributed, and reversible**: nothing is
-  installed without an explicit `adapters install`, and `uninstall` removes
-  exactly what was added.
+- Every write is **opt-in and local**. Append mode removes its marked block;
+  dedicated-file installation replaces the target and uninstall deletes it.
+  Recovering overwritten pre-existing content requires the operator's backup.
 - The kit **claims no support it cannot honour**: a framework that cannot express
   a claim boundary is documented as unsupported rather than wrapped in a shim that
   pretends.

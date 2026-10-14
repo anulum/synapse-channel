@@ -58,8 +58,9 @@ flowchart LR
 
 The managed package imports one existing local-core function:
 `find_conflicts`. The core imports nothing from this integration. GitHub auth,
-HTTP, webhooks, secrets, rate limits, and hosting therefore cannot leak into the
-single-dependency local runtime.
+HTTP, webhooks, secrets, rate limits, and hosting are owned by this separately
+installed integration. The core's base dependencies remain `websockets` and,
+on Python 3.10, `typing-extensions`; optional core extras have their own dependencies.
 
 The separate `review_webhook.py` decoder verifies the same raw-body HMAC before
 parsing submitted reviews or created inline comments. It returns bounded source
@@ -130,7 +131,7 @@ store. Selecting that store and host is stage 3 and remains owner-gated.
 
 ## HTTP and hosting seam
 
-The package exposes a synchronous `handle_pull_request` application service and
+The package exposes synchronous `GitHubAppService.handle(headers=..., body=...)` and
 an injectable REST transport. It does not bind a socket, pick WSGI/ASGI, create a
 database, schedule workers, or persist tenant data. A future host adapter owns
 request routing, concurrency, delivery de-duplication, retries, observability,

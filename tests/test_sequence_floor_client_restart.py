@@ -5,18 +5,20 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — K4-WF10: why secured hubs record floors in compat, not strict
-"""A restarted client continues its sequence, so strict durable floors admit it.
+"""Reinitialised clients pass strict floors when the clock exceeds the prior sequence.
 
 K4-WF10 found through the public claim route that the shipped client numbered
-frames from 1 in every process. Two successive client processes of one seat
+frames from 1 in every process. Two successive client states of one seat
 against a real hub with a durable ledger: ``compat`` admitted both, ``strict``
 refused the second process's first frame (``sequence_mismatch``). The test pinning
 that is in history up to Core ``814a6b03``.
 
 CLIENT-SEQUENCE-PERSIST makes the sequence time-derived
 (:func:`~synapse_channel.core.message_auth.next_message_auth_sequence`), so the
-same two processes now pass under both modes. A frame whose sequence falls back
-below the floor, as the old client's did, is still refused by ``strict``.
+same two client instances now pass under both modes with an advancing clock.
+These tests create instances in one test process, not separate OS processes.
+A frame below the floor is still refused by ``strict``; time derivation does
+not itself preserve a floor across a process restart or clock rollback.
 """
 
 from __future__ import annotations
@@ -43,7 +45,7 @@ _SECRET = "wf10-shared-secret"
 
 
 async def _claim_in_a_fresh_client(uri: str, task: str) -> dict[str, Any]:
-    """Run one short-lived client process of seat P/a and return the hub's answer."""
+    """Connect one short-lived client instance of seat P/a and return the hub's answer."""
     recorder = Recorder()
     agent = SynapseAgent(
         "P/a",
@@ -148,7 +150,7 @@ async def test_strict_still_refuses_a_sequence_below_the_floor(tmp_path: Path) -
     assert refused["verification_result"] == "sequence_mismatch"
 
 
-def test_the_sequence_follows_the_clock_and_never_repeats() -> None:
+def test_the_sequence_follows_the_clock_and_increases_with_retained_state() -> None:
     assert next_message_auth_sequence(0, now_ns=5_000_000) == 5_000
     assert next_message_auth_sequence(5_000, now_ns=5_000_000) == 5_001
     assert next_message_auth_sequence(9_000, now_ns=5_000_000) == 9_001  # clock stepped back

@@ -7,8 +7,9 @@
 # SYNAPSE_CHANNEL — Studio observed / multi-hub fleet health projection
 """Project advisory observed-peer rows into the Studio multi-hub health panel.
 
-Observed peers (dashboard ``--observed-peer``) and FLEET mirrors never grant local
-authority; they are operator views of remote hubs. This module turns the
+Direct observed peers (dashboard ``--observed-peer``) never grant local
+authority. Fleet export mirrors use a separate reader and disclosure grant and
+do not enter this projection. This module turns the
 ``observed_peers`` list from a dashboard snapshot into a compact Studio section:
 
 - overall level (green / amber / red / unknown),

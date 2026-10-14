@@ -95,6 +95,10 @@ run with 55 passed, 5 failed, and 175 skipped pytest cases; all Agent Card,
 wire timestamp, version-negotiation, media-type, AIP-193 error, and unknown-task
 checks exercised by the run passed. The five residual failures were
 response-content scenarios (four structured artifacts + one direct Message).
+These are the historical reported profile's counts. Its source identities and
+missing original package/run artifacts are recorded in
+[validation receipts](a2a-validation-receipts.md); they do not qualify a current
+build or constitute a fresh TCK pass.
 
 The bridge now answers those residual scenarios on the shipped
 `message:send` path when the request matches official TCK `messageId`

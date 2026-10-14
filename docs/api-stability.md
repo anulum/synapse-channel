@@ -155,8 +155,11 @@ documents, bearer checks and hub wire vocabulary retain their existing shape.
 
 Every CLI subcommand carries a tier (`synapse_channel.surface_taxonomy`):
 
-- **stable** — daily-safe coordination core with a stable wire and CLI surface.
-- **analysis** — read-only inspection and reporting with no coordination side effects.
+- **stable** — the coordination core used for daily operations, subject to the
+  versioning policy above and each command's admission controls.
+- **analysis** — inspection-focused command groups. Explicit verbs may change
+  state or configuration, persist records, or export; consult each verb's
+  effects and permissions. The tier is not a read-only or safety guarantee.
 - **governance** — advisory governance: policy, approvals, access control, release integrity.
 - **adapter** — bridges to other ecosystems and tools; optional extras, not core.
 - **experimental** — newer or advisory surfaces still settling; shape may change before 1.0.

@@ -99,8 +99,12 @@ For CLI automation:
 
 ## Store and dashboard checks
 
-The event store remains SQLite/WAL. Before a release cut or fleet upgrade, keep a
-copy of the hub database and verify the read-side feeds you rely on:
+The event store remains SQLite/WAL. Before a release cut or fleet upgrade, make
+a consistent database backup using the [deployment backup procedure](deployment.md#persistence-and-backups).
+Retain its original row-authentication key and, for encrypted stores, the
+original encryption key and matching runtime configuration. A database copy
+alone is not sufficient to restore these stores. Verify the read-side feeds
+you rely on:
 
 ```bash
 synapse event-query ./hub.db "universal-receipts all" --json

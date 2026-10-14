@@ -4,11 +4,11 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
-# SYNAPSE_CHANNEL — emit-time admission gate that keeps every memory atom honest
+# SYNAPSE_CHANNEL — finding structure and declared-evidence admission
 """The emit gate — admit, floor, or reject a finding at the hub edge.
 
-A finding never enters the durable memory spine without passing this gate, so a
-dishonest atom cannot become a trusted input downstream. The gate is a pure
+A finding passes structural and declaration checks before durable admission.
+The gate does not authenticate evidence or establish factual truth. It is a pure
 function over a parsed :class:`~synapse_channel.core.finding.Finding`: it makes no
 network or disk call and the hub stays memory-agnostic, calling it only at the
 write edge.
@@ -19,21 +19,20 @@ Three outcomes:
   provenance, no validity, no claim status where one is required, no evidence
   basis where one is required), or a direct contradiction: falsified evidence
   claiming reference-validated (LOCK-4). The atom is refused; nothing is journalled.
-* **floor** — a record whose stated standing is stronger than its evidence
-  supports. The claim status (or freshness) is lowered and the atom is admitted
+* **floor** — a record whose stated standing exceeds its declared evidence
+  category. The claim status (or freshness) is lowered and the atom is admitted
   with the reasons recorded, so the producer learns what was downgraded.
-* **accept** — a record whose claims its evidence already supports.
+* **accept** — a record satisfying the structural and declaration rules.
 
 The floors encode the write-side invariants: falsified evidence renders a claim
 refuted (INV-2); producer-asserted testimony cannot be born reference-validated
 (INV-6) and cannot declare itself verified-at-source; and a reference-validated
-claim must stand on a reference *and* a source-verified freshness — a reference
-that exists but was never re-checked this session cannot pass for one that was
-(INV-1, closing the traceable-unchecked trap). An unknown enum member is carried
+claim must declare a reference *and* source-verified freshness (INV-1); the
+gate does not independently observe whether that recheck occurred. An unknown enum member is carried
 opaquely and never matches a known-member check, so it is neither floored up nor
 rejected — the read-side degrades it (INV-3). Honesty-propagation across findings
-(INV-4) is read-side and not gated here; this gate only guarantees each atom is a
-truthful input for it.
+(INV-4) is read-side and not gated here. Passing metadata checks does not make
+an admitted statement a truthful input.
 """
 
 from __future__ import annotations

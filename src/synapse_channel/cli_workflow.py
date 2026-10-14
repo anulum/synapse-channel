@@ -9,12 +9,13 @@
 
 A workflow is a plain JSON artifact (a ``name`` and a list of ``steps`` with
 ``depends_on`` edges). ``validate`` parses and checks it; ``compile`` turns it
-into the blackboard task declarations the board would execute, either as a human
+into blackboard task declarations for agents to execute, either as a human
 summary or machine-readable JSON. Neither touches the hub — they are offline
 authoring tools over :mod:`synapse_channel.core.workflow`. ``contention`` joins
 them to the durable log: it runs the same offline yield-advice analysis as
 ``synapse causality contention`` and keeps only the overlapping live-claim pairs
-a workflow task is party to.
+a workflow task is party to. Evidence predicates compare caller-supplied values;
+compilation does not independently verify artifacts or perform agent work.
 """
 
 from __future__ import annotations

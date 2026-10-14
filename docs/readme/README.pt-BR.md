@@ -25,8 +25,7 @@ SYNAPSE CHANNEL — visão geral do repositório (tradução em português do Br
 </p>
 
 <p align="center">
-  <strong>Impeça que agentes de codificação com IA em paralelo sobrescrevam os arquivos uns dos outros.</strong><br>
-  Barramento de coordenação local-first — file-scope claims, um plano compartilhado e leases duráveis — para um repositório ou um ecossistema inteiro deles.
+  <em>Coordene agentes de IA paralelos por escopos de arquivos declarados; hooks e o gate de Git cobrem apenas as mutações documentadas.</em>
 </p>
 
 <p align="center">
@@ -48,30 +47,28 @@ SYNAPSE CHANNEL — visão geral do repositório (tradução em português do Br
   <a href="https://doi.org/10.5281/zenodo.20801559"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.20801559.svg" alt="DOI"></a>
 </p>
 
-Um barramento de coordenação local-first para uma frota de agentes de IA
-trabalhando em paralelo — dentro de um único repositório ou espalhados por um
-ecossistema inteiro deles. Um hub WebSocket é a fonte de verdade compartilhada
-para **presence**, **work claims**, **chat**, **status de tarefas** e
-**resource offers**: os agentes se endereçam entre projetos e compartilham um
-único plano, enquanto os file-scope claims mantêm os agentes de cada
-repositório longe dos arquivos uns dos outros.
+Um barramento de coordenação local-first para agentes de IA trabalhando em
+paralelo em um repositório ou ecossistema de repositórios. Um hub WebSocket
+compartilha **presence**, **work claims**, **chat**, **status de tarefas** e
+**resource offers**. Os agentes se comunicam entre projetos e compartilham um
+plano. O hub recusa escopos declarados em conflito mantidos por outro responsável.
+Os hooks de provedor e o gate de Git cobrem apenas suas mutações documentadas.
 
-O barramento é leve no transporte (uma única dependência, `websockets`),
-centrado no hub por concepção (um único lugar possui a presence, os leases e o
-histórico) e roda inteiramente na máquina local. Os workers de modelos
-respondem no canal por meio de qualquer endpoint compatível com OpenAI,
-incluindo um servidor Ollama local, com um fallback determinístico baseado em
-regras para uso offline.
+As dependências básicas são `websockets` e, no Python 3.10, `typing-extensions`.
+O hub mantém presence, leases e histórico; o barramento pode funcionar totalmente
+em uma máquina local. Workers de modelos opcionais usam endpoints compatíveis
+com OpenAI configurados, incluindo Ollama local, com fallback determinístico
+baseado em regras para uso offline.
 
-**Seus agentes existentes se conectam sem código novo.** Qualquer host de
-Model Context Protocol — Claude Code, Claude Desktop, Cursor — alcança o
-barramento pelo servidor `synapse mcp` incluído, que expõe os verbos send,
-durable inbox, status, claim, release, handoff e task como ferramentas MCP,
-além do board, dos agents e dos resources como MCP resources somente leitura.
-Agentes que falam A2A conectam-se pela fachada Agent Card. O próprio hub
-permanece agnóstico a protocolos e a instalação básica mantém sua única
-dependência — os adaptadores MCP e A2A são extras opcionais
-(`pip install 'synapse-channel[mcp]'`). Veja o [guia MCP](../mcp.md).
+O servidor `synapse mcp` incluído expõe send, durable inbox, status, claim,
+release, handoff e task como ferramentas MCP, além de board, agents e resources
+como recursos MCP somente leitura. A interoperabilidade depende da versão do
+host, do transporte e da configuração; consulte os limites exatos no
+[catálogo de integrações](../integration-catalog.md). A superfície HTTP A2A tem
+qualificação parcial documentada separadamente. Os adaptadores usam seus extras
+opcionais declarados (`pip install 'synapse-channel[mcp]'`). Veja o
+[guia MCP](../mcp.md) e o [perfil HTTP autenticado](../mcp-http.md),
+qualificado separadamente.
 
 ```bash
 python -m pip install synapse-channel && synapse demo
@@ -143,11 +140,14 @@ graph LR
     H --> LOG["Event log (SQLite WAL)<br/>durable · optional SQLCipher at rest"]
 ```
 
-Um claim arrenda (lease) uma unidade de trabalho com um file scope, de modo que
-dois agentes nunca editam os mesmos arquivos; o plano, os handoffs, os
-checkpoints e um supervisor de travamento mantêm o trabalho em movimento; e o
-log de eventos durável significa que um reinício do hub retoma os leases vivos
-em vez de perdê-los.
+Um claim arrenda uma unidade de trabalho declarada com um file scope. O hub
+recusa um escopo declarado que conflita com o de outro proprietário. Hooks de
+provedor e a verificação de alterações Git preparadas aplicam essa autoridade
+apenas nas superfícies documentadas; não isolam todas as escritas de arquivos
+nem os efeitos externos. Plano, handoffs, checkpoints e supervisor ajudam a
+coordenar o trabalho. Com um journal configurado, o reinício restaura leases não
+expirados a partir de registros validados e retidos; expiração, retenção e
+quarentena de integridade limitam a restauração.
 
 ## Núcleo e camadas opcionais
 
@@ -158,7 +158,7 @@ pública é escalonada para que o barramento enxuto permaneça claro:
 |---|---|---|
 | Núcleo de coordenação local | `stable` | O hub, send/wait/listen/arm, claims, tasks, locks, status, board, init e os comandos de bootstrap de frota usados na coordenação diária. |
 | Adaptadores de borda | `adapter` | MCP, A2A, hooks de git, pontes tmux/provider, hooks de shell, ingestão e worker seats que conectam ferramentas existentes ao barramento. |
-| Análise de operador | `analysis` | Doctor, state, dashboard, causality, multihub, reliability, trust graph, directory, accounting, exportação de scorecard da frota, manifestos e consultas de eventos. Eles não mutam o estado de coordenação; modos de exportação explícitos podem escrever em um destino escolhido pelo operador. |
+| Análise de operador | `analysis` | Grupos de diagnóstico, visualizações e relatórios. Controles explícitos podem alterar estado ou configuração, salvar registros ou exportar dados. Consulte os efeitos e permissões de cada comando; o tier não garante somente leitura. |
 | Governança e integridade | `governance` | Verificações de policy, aprovações, superfícies ACL/de papéis, federação, Merkle roots, release receipts, reprodução, compactação, operações de chaves encrypt-key / SQLCipher. |
 | Superfícies de laboratório | `experimental` | Benchmarking, participant fabric, route-task, sandbox, workflow, TTL advice, memory recall, auto-action e resource bidding. |
 
@@ -233,8 +233,9 @@ nativo do Windows não é reivindicada; use WSL com systemd conforme documentado
 no guia de implantação.
 
 Duas conveniências de shell opcionais acompanham o CLI: `synapse completions
-bash|zsh|fish` imprime o completamento por tab para cada subcomando (gerado a
-partir do parser vivo, então nunca deriva), e `synapse install-shell-hook`
+bash|zsh|fish` imprime completamento estático para comandos principais, um nível de subcomandos e suas opções longas (gerado a
+partir do parser da versão instalada; regenere após uma atualização), e
+`synapse install-shell-hook`
 adiciona o bloco guardado que arma automaticamente um wake listener em cada
 novo terminal:
 

@@ -59,8 +59,10 @@ SECRET` and present it from each agent (`--token SECRET`).
 ## Message types
 
 Every message is a JSON envelope (`sender`, `target`, `type`, `payload`,
-`timestamp`; hub messages also carry `hub_id`). The full set of `type` values,
-grouped by concern:
+`timestamp`; hub messages also carry `hub_id`). Common `type` values are
+grouped below by coordination flow. This is not the complete wire
+inventory; see [the protocol reference](docs/protocol.md) and the versioned
+`MessageType` contract in `synapse_channel.core.protocol`:
 
 ### Agent → hub
 

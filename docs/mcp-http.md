@@ -16,6 +16,12 @@ stdio. The HTTP adapter uses MCP SDK **1.30.0**, with acceptance against protoco
 **2025-11-25**. Install the optional runtime with
 `python -m pip install 'synapse-channel[mcp]'`.
 
+The client profiles below describe specific qualification targets and maintained
+tests. A source checkout, editable installation and released wheel are distinct
+artifacts: bind a result to the exact server/client versions, package or binary
+digests and executed profile. A version label or test definition alone does not
+establish acceptance for another deployment.
+
 ## Provisioning and transport
 
 An operator provisions each issuer subject with one fixed native hub seat per
@@ -163,13 +169,13 @@ keep-alive and graceful shutdown. Access logs are disabled; startup failures
 use content-free diagnostics. This is finite resource admission, not a
 guarantee of availability against denial-of-service or compromised native hosts.
 
-## Verified clients and limits
+## Client qualification profiles and limits
 
 | Client surface | Evidence / support boundary |
 | --- | --- |
-| MCP Inspector CLI 2.8.0 | Real verified HTTPS: initialize at 2025-11-25, list tools, declare, claim, resource read and release, with effects checked in the native hub. |
-| MCP Python SDK 1.30.0 | Repository HTTPS tests for authentication, scoped operations, session ownership, reconnect and journal reopen. |
-| Installed Synapse HTTP CLI | Real subprocess TLS, native admission, project mutation/refusal and shutdown tests. |
+| MCP Inspector CLI 2.8.0 | Qualification target: initialize at 2025-11-25, list tools, declare, claim, resource read and release over verified HTTPS; check effects in the native hub and retain the exact run/artifact evidence. |
+| MCP Python SDK 1.30.0 | Maintained real HTTPS profiles in `tests/test_mcp_http_application.py`, including native identities/mutations/resources/reconnect and hub/HTTP restart. Authentication/refusal profiles are in `tests/test_mcp_http_auth.py` and `tests/test_mcp_http_transport.py`. |
+| Installed Synapse HTTP console-script profile | `tests/test_cli_mcp_http.py` invokes the interpreter's installed console script for TLS, native admission, project mutation/refusal and shutdown. Its result qualifies that installation, not every wheel with the same version. |
 | Desktop, hosted web and cloud applications | No HTTP acceptance established by these checks; require their own documented client qualification. |
 
 Configure Inspector headers and request metadata in its owner-only config file,

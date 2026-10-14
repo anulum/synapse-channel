@@ -5,16 +5,21 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — capability-limited WebAssembly runtime for sandboxed tools
-"""Run an untrusted ``.wasm`` tool with the capabilities a manifest grants — and only those.
+"""Run a ``.wasm`` tool with configured resource limits and filesystem preopens.
 
 This is the enforcement half of the sandbox. It takes a granted
 :class:`~synapse_channel.core.sandbox_policy.CapabilityManifest`, derives a WebAssembly
 runtime configuration from its grants, executes the tool's entrypoint under those limits,
-and returns a :class:`~synapse_channel.core.sandbox_receipt.RunReceipt`. The tool gets no
-ambient authority: memory and fuel are capped, a wall-clock backstop interrupts a runaway,
-the filesystem is limited to the manifest's preopened paths, and the network is denied by
-construction — WASI preview1 exposes no sockets, so a tool reaches the network only through
-a host import that is never linked.
+and returns a :class:`~synapse_channel.core.sandbox_receipt.RunReceipt`. Guest memory and
+fuel are capped and a timer interrupts guest execution; compilation and instantiation
+are outside that timer. Filesystem access uses the configured preopens and no outbound
+socket-opening import or network descriptor is supplied. Standard WASI imports include
+clocks: the manifest does not deny or authorise clock access.
+
+This runtime assumes a trusted caller supplies an approved manifest. It does not verify
+its module digest, operator approval, caller identity, card signatures or revocation.
+The CLI separately checks digest equality and requires ``--approve``. Path checks precede
+preopening by name and do not pin descriptors against concurrent host path replacement.
 
 The runtime (``wasmtime``) is a heavy dependency and lives behind the optional ``[wasm]``
 extra; it is imported only inside :func:`_require_wasm`, so importing this module never
@@ -171,8 +176,8 @@ def _execute(
 def _inspect_module(wasm: WasmRuntime, wasm_bytes: bytes) -> tuple[bool, tuple[str, ...], str]:
     """Compile a module without instantiating it; return ``(valid, exported funcs, error)``.
 
-    Compiling validates the module's structure and is cheap — it neither instantiates the
-    module nor runs any of its code, so no fuel is spent and nothing the tool would do
+    Compiling validates the module's structure; it neither instantiates the
+    module nor runs any of its code, so no guest fuel is spent and nothing the tool would do
     happens. Only the names of its exported *functions* are returned (memory, table, and
     global exports are not entrypoints). A malformed module yields ``(False, (), message)``.
     """
@@ -196,7 +201,7 @@ def preflight_sandboxed(
     entrypoint: str = DEFAULT_ENTRYPOINT,
     runtime: WasmRuntime | None = None,
 ) -> PreflightReport:
-    """Pre-flight a tool against its manifest without running it — a cheap gate before a run.
+    """Compile and inspect a tool against its manifest without running it.
 
     Loads ``wasm_bytes`` as a WebAssembly module (validating its structure) and reads its
     exported functions, but never instantiates or calls it: no fuel is spent and none of the
@@ -204,6 +209,9 @@ def preflight_sandboxed(
     is well-formed, whether ``entrypoint`` is an exported function, whether the module
     matches its manifest digest, and what it would be granted — so an operator can confirm a
     tool is runnable (and is the module the manifest authorises) before ``run --approve``.
+
+    This checks exported function names, not the entrypoint's complete calling convention
+    or future runtime success. Compilation consumes host resources without a deadline.
 
     The runtime is resolved lazily through the optional ``[wasm]`` extra; override
     ``runtime`` to inject a stand-in in tests.
@@ -237,6 +245,10 @@ def run_sandboxed(
     called. The receipt records how it exited (normal, out-of-fuel, wall-clock interrupt,
     or error), the fuel it burned, and digests of the input and output.
 
+    ``inputs`` is receipt metadata; this interface does not deliver those bytes to the
+    guest. Digest and approval checks belong to the caller. Neither compilation nor
+    instantiation is covered by the guest execution timer.
+
     When ``approved_roots`` is non-empty, every preopen must resolve to a directory at or
     below one of the operator-approved workspace roots; a grant outside them is refused
     fail-closed before the tool runs, exactly like a symlinked or missing path.
@@ -247,7 +259,7 @@ def run_sandboxed(
         hardened = harden_preopens(config.preopens, approved_roots=approved_roots)
     except SandboxPathError as exc:
         # A grant whose host path resolves through a symlink, or is not a directory, is
-        # refused before the tool runs — the sandbox never preopens a moving target.
+        # refused before preopening. Host path components must remain stable afterward.
         return build_run_receipt(
             manifest=manifest,
             inputs=inputs,

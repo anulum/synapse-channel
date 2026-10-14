@@ -25,8 +25,7 @@ SYNAPSE CHANNEL — prehľad repozitára (slovenský preklad; anglický originá
 </p>
 
 <p align="center">
-  <strong>Zastavte paralelné AI kódovacie agenty, aby si navzájom neprepisovali súbory.</strong><br>
-  Local-first koordinačná zbernica — file-scope claims, zdieľaný plán a trvalé leases — pre jeden repozitár alebo celý ekosystém repozitárov.
+  <em>Koordinujte paralelné AI agenty cez deklarované rozsahy súborov; hooky a Git gate kontrolujú iba dokumentované mutácie.</em>
 </p>
 
 <p align="center">
@@ -48,27 +47,27 @@ SYNAPSE CHANNEL — prehľad repozitára (slovenský preklad; anglický originá
   <a href="https://doi.org/10.5281/zenodo.20801559"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.20801559.svg" alt="DOI"></a>
 </p>
 
-Local-first koordinačná zbernica pre flotilu AI agentov pracujúcich paralelne —
-v jednom repozitári alebo naprieč celým ekosystémom repozitárov. Jeden
-WebSocket hub je zdieľaným zdrojom pravdy pre **presence**, **work claims**,
-**chat**, **stav úloh** a **resource offers**: agenti sa navzájom oslovujú
-naprieč projektmi a zdieľajú jeden plán, zatiaľ čo file-scope claims držia
-agentov v každom repozitári mimo súborov toho druhého.
+Local-first koordinačná zbernica pre paralelne pracujúce AI agenty v jednom
+repozitári alebo ekosystéme repozitárov. WebSocket hub zdieľa **presence**,
+**work claims**, **chat**, **stav úloh** a **resource offers**. Agenti komunikujú
+naprieč projektmi a zdieľajú jeden plán. Hub odmieta konfliktné deklarované rozsahy,
+ktoré drží iný vlastník. Dokumentované provider hooky a Git gate kontrolujú len
+mutácie, ktoré pokrývajú.
 
-Zbernica je transportne ľahká (jediná závislosť, `websockets`), zámerne
-hub-centrická (jedno miesto vlastní presence, leases a históriu) a beží celá na
-lokálnom stroji. Modeloví workeri odpovedajú na kanáli cez ľubovoľný
-OpenAI-kompatibilný endpoint vrátane lokálneho Ollama servera, s deterministickým
-pravidlovým fallbackom pre offline použitie.
+Základné závislosti sú `websockets` a na Pythone 3.10 aj `typing-extensions`.
+Hub spravuje presence, leases a históriu; zbernica môže bežať celá lokálne.
+Voliteľní modeloví workeri používajú nakonfigurované OpenAI-kompatibilné endpointy
+vrátane lokálneho Ollama servera; na offline použitie je dostupný deterministický
+pravidlový fallback.
 
-**Vaši existujúci agenti sa pripoja bez nového kódu.** Ľubovoľný Model Context
-Protocol host — Claude Code, Claude Desktop, Cursor — sa dostane na zbernicu cez
-pribalený `synapse mcp` server, ktorý sprístupňuje verby send, durable inbox,
-status, claim, release, handoff a task ako MCP nástroje, plus board, agents
-a resources ako read-only MCP resources. Agenti hovoriaci A2A sa pripájajú cez
-Agent Card rozhranie. Samotný hub zostáva protokolovo agnostický a základná
-inštalácia si drží jedinú závislosť — MCP a A2A adaptéry sú voliteľné extra
-(`pip install 'synapse-channel[mcp]'`). Pozri [MCP príručku](../mcp.md).
+Pribalený server `synapse mcp` poskytuje send, durable inbox, status, claim,
+release, handoff a task ako MCP nástroje, plus board, agents a resources ako
+read-only MCP resources. Interoperabilita závisí od verzie hosta, transportu a
+konfigurácie; presné hranice uvádza [katalóg integrácií](../integration-catalog.md).
+HTTP rozhranie A2A má samostatne dokumentovanú čiastočnú kvalifikáciu. Adaptéry
+používajú svoje deklarované voliteľné extras (`pip install 'synapse-channel[mcp]'`).
+Pozri [MCP príručku](../mcp.md) a samostatne kvalifikovaný
+[autentifikovaný HTTP profil](../mcp-http.md).
 
 ```bash
 python -m pip install synapse-channel && synapse demo
@@ -137,10 +136,13 @@ graph LR
     H --> LOG["Event log (SQLite WAL)<br/>durable · optional SQLCipher at rest"]
 ```
 
-Claim prenajíma (lease) jednotku práce s file scope, takže dvaja agenti nikdy
-needitujú tie isté súbory; plán, handoffy, checkpointy a stall supervisor držia
-prácu v pohybe; a trvalý event log znamená, že reštart hubu obnoví živé leases
-namiesto ich straty.
+Claim prenajíma deklarovanú jednotku práce s file scope. Hub odmietne
+konfliktný deklarovaný rozsah, ktorý už drží iný vlastník. Provider hooky a
+kontrola staged Git zmien vynucujú túto autoritu iba na dokumentovaných plochách;
+neizolujú všetky zápisy do súborov ani externé účinky. Plán, handoffy,
+checkpointy a stall supervisor pomáhajú koordinovať prácu. S nakonfigurovaným
+journalom reštart obnoví neexpirované leases z overených zachovaných záznamov;
+expirácia, retencia a karanténa poškodených záznamov obmedzujú obnovu.
 
 ## Jadro a voliteľné vrstvy
 
@@ -151,7 +153,7 @@ odstupňovaná, aby štíhla zbernica zostala prehľadná:
 |---|---|---|
 | Lokálne koordinačné jadro | `stable` | Hub, send/wait/listen/arm, claims, tasks, locks, status, board, init a fleet bootstrap príkazy používané na každodennú koordináciu. |
 | Edge adaptéry | `adapter` | MCP, A2A, git hooky, tmux/provider mosty, shell hooky, ingescia a worker seaty, ktoré pripájajú existujúce nástroje na zbernicu. |
-| Operátorská analýza | `analysis` | Doctor, state, dashboard, causality, multihub, reliability, trust graph, directory, accounting, fleet scorecard export, manifesty a event queries. Tieto nemenia koordinačný stav; explicitné exportné režimy môžu zapisovať do operátorom zvoleného sinku. |
+| Operátorská analýza | `analysis` | Skupiny zamerané na diagnostiku, pohľady a reporty. Explicitné ovládacie režimy môžu meniť stav alebo konfiguráciu, ukladať záznamy či exportovať údaje. Overte účinky a oprávnenia konkrétneho príkazu; tier nezaručuje iba čítanie. |
 | Governance a integrita | `governance` | Policy kontroly, schválenia, ACL/rolové plochy, federácia, Merkle roots, release receipts, reprodukcia, kompakcia, encrypt-key / SQLCipher kľúčové operácie. |
 | Laboratórne plochy | `experimental` | Benchmarking, participant fabric, route-task, sandbox, workflow, TTL advice, memory recall, auto-action a resource bidding. |
 
@@ -221,8 +223,9 @@ a `Restart=always`, bez inštalácie hubu. Natívny Windows service setup nie je
 deklarovaný; použite WSL so systemd podľa deployment príručky.
 
 S CLI sa dodávajú dve voliteľné shell pohodlia: `synapse completions
-bash|zsh|fish` vypíše tab completion pre každý subpríkaz (generované zo živého
-parsera, takže nikdy nedriftuje) a `synapse install-shell-hook` pridá strážený
+bash|zsh|fish` vypíše statické completion pre hlavné príkazy, jednu úroveň podpríkazov a ich dlhé prepínače (generované zo živého
+parsera nainštalovanej verzie; po aktualizácii ho vygenerujte znova) a
+`synapse install-shell-hook` pridá strážený
 blok, ktorý v každom novom termináli automaticky armuje wake listener:
 
 ```bash

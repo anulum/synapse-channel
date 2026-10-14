@@ -9,6 +9,11 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # Change log
 
+Entries describe source changes and their maintained acceptance scenarios.
+They do not qualify an arbitrary VSIX or Marketplace version: that requires
+the exact packaged artifact and recorded editor-host run. Unreleased changes
+remain separate from the historical version entries below.
+
 ## Unreleased
 
 - Name the lease's fencing epoch when releasing the active file's claim.
@@ -16,7 +21,7 @@ Contact: www.anulum.li | protoscience@anulum.li
     `handoff_granted`, never from a state snapshot.
   - A hub started with `--require-fencing-epoch` refuses epoch-less releases.
     `--team-secure` and `--secure` force that flag.
-  - The Extension Host acceptance run now uses such a hub.
+  - The maintained Extension Host acceptance scenario uses such a hub.
 - Require VS Code 1.101 or newer for its Node 22 extension host; build with
   Node 22.12 or newer and the current VSIX packaging tools.
 - Add a read-only coordination evidence view that distinguishes self-attested

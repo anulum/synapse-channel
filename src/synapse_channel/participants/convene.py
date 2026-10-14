@@ -16,11 +16,12 @@ answer from the last round. A colloquy goes deeper among a few, a roundtable doe
 pass, a symposium adds the moderator; the differences are entirely in the mode policy, so this
 code is mode-agnostic.
 
-Every paid turn is bounded: each round is a bounded fan-out, the critique rounds are capped by
-the mode, and an optional cumulative ``budget_usd`` halts the convocation between rounds (and
-before the synthesis) and records that it did — a bounded run never reads as a completed one.
-Cross-provider safety is inherited: a peer's contribution only ever reaches another participant
-through the fenced panel, so this is the multiplication layer without an injection hole.
+The mode caps critique rounds. Optional ``budget_usd`` checks reported costs
+after completed fan-outs and before synthesis, without reserving or cancelling
+concurrent turns. A full round can overshoot the threshold; providers without
+monetary reporting contribute zero. Synthesis cost is added afterwards without
+a further stop check. These controls do not cap actual billing. Peer panels use
+textual data-only framing; that does not prove model injection resistance.
 """
 
 from __future__ import annotations
@@ -72,7 +73,7 @@ class ConvocationTranscript:
         The moderator's synthesised answer, or ``None`` when the mode uses no moderator or the
         budget halted the run before synthesis.
     total_cost_usd : float
-        Sum of the metered cost of every turn, including synthesis.
+        Sum of reported monetary costs, including synthesis; unreported costs use zero.
     stopped : str
         Why it ended: :data:`~synapse_channel.participants.conversation.STOPPED_COMPLETED` or
         :data:`~synapse_channel.participants.conversation.STOPPED_BUDGET`.
@@ -116,7 +117,9 @@ async def convene(
     moderator : Participant or None, optional
         Synthesises the final answer. Required when the mode uses a moderator.
     budget_usd : float or None, optional
-        Cumulative cost ceiling checked between rounds and before synthesis.
+        Reported-cost stop threshold checked after completed fan-outs and before
+        synthesis. The opening always runs, even for zero or negative thresholds.
+        Rounds can overshoot; unreported charges and synthesis are not capped.
 
     Returns
     -------
@@ -183,7 +186,7 @@ async def _fan_out(
 
 
 def _round_cost(results: Sequence[TurnResult]) -> float:
-    """Return the summed metered cost of one round's results."""
+    """Return the summed reported cost of one completed round's results."""
     return sum(result["cost_usd"] for result in results)
 
 

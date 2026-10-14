@@ -88,8 +88,10 @@ implying a broader posture than it actually configures:
   [at-rest encryption](at-rest-encryption.md).
 - **Mutual-TLS client-certificate verification and the signed-events/mTLS operator
   workflow** beyond the runtime primitives. Paranoid mode requires server TLS
-  and HMAC-authenticated mutating frames, but the packaged hub CLI does not load
-  an Ed25519 event-trust bundle or client CA. Federation commands manage a
+  and HMAC-authenticated mutating frames. The CLI does not load an Ed25519
+  event-trust bundle; `--multihub-serving-policy` can load a client CA and
+  request optional certificates with separate peer-policy checks. This does
+  not require certificates from ordinary clients. Federation commands manage a
   different operator-confirmed domain bundle. See
   [signed events and mTLS](signed-events-mtls.md).
 - **Per-message key rotation and revocation operator workflow** beyond the

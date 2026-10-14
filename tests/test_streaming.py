@@ -54,6 +54,45 @@ def test_encode_parse_round_trip() -> None:
     assert parse_stream_frame(encode_stream_frame(frame)) == frame
 
 
+def test_frame_order_survives_a_distinct_journal_cursor_and_lite_relay() -> None:
+    """The dedicated counter survives journal stamping and the real relay codec."""
+    from synapse_channel.core.relay import decode_lite, encode_lite
+
+    frame = StreamFrame("S1", 2, CHUNK, "hello")
+    message = encode_stream_frame(frame)
+    assert message["stream_seq"] == message["seq"] == 2
+    message["seq"] = 917
+    relayed = decode_lite(encode_lite(message))
+    assert relayed["seq"] == 917 and relayed["stream_seq"] == 2
+    assert parse_stream_frame(relayed) == frame
+
+
+@pytest.mark.parametrize("value", [None, True, False, 1.5, "2", [], -1])
+def test_a_bad_dedicated_counter_never_falls_back_to_a_valid_legacy_counter(
+    value: object,
+) -> None:
+    """A malformed dedicated field cannot borrow a plausible journal/legacy cursor."""
+    message = {"kind": "stream", "stream_id": "S1", "seq": 0, "frame_type": OPEN}
+    assert parse_stream_frame(message | {"stream_seq": value}) is None
+
+
+@pytest.mark.parametrize("value", [None, [], "bad", float("inf")])
+def test_invalid_legacy_counter_is_refused_without_an_exception(value: object) -> None:
+    """Legacy values that cannot be converted fail closed, including numeric overflow."""
+    message = {"kind": "stream", "stream_id": "S1", "seq": value, "frame_type": OPEN}
+    assert parse_stream_frame(message) is None
+
+
+def test_legacy_journal_offset_is_not_guessed() -> None:
+    """A legacy opening frame stamped by a journal cannot stand in for counter zero."""
+    frame = parse_stream_frame(
+        {"kind": "stream", "stream_id": "S1", "seq": 917, "frame_type": OPEN}
+    )
+    assert frame is not None
+    with pytest.raises(StreamError, match="out-of-order"):
+        StreamConsumer("S1").accept(frame)
+
+
 @pytest.mark.parametrize(
     "payload",
     [

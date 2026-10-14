@@ -19,15 +19,23 @@ and protocol health frames. The configured hub controls its own retention and
 logging. Ask the hub operator for that deployment's policy before connecting a
 workspace that contains sensitive names or paths.
 
-The extension stores a hub bearer only in VS Code SecretStorage under the
-canonical hub URI. It does not write the bearer to settings, source files,
-workspace files, logs, snapshots, screenshots, or telemetry. Clearing the token
-through `SYNAPSE: Clear hub token` deletes that editor-managed secret entry.
+The extension delegates persistent hub-bearer storage to VS Code SecretStorage
+under the canonical hub URI. Its credential wrapper does not implement its own
+encryption or attest the editor's credential service. The transport holds the
+bearer in memory and sends it in the first registration heartbeat on each
+connection to the configured hub. Remote connections require `wss://`; plaintext
+is accepted only on loopback. The extension does not write the bearer to
+settings, source files, workspace files, logs, snapshots, screenshots, or
+telemetry. Clearing the token through `SYNAPSE: Clear hub token` deletes that
+editor-managed secret entry and reconnects without that stored token.
 
 VS Code, Cursor, VSCodium, operating-system credential services, extension
 registries, and separately operated hubs are independent products or services
-and can process data under their own policies. This notice covers only the code
-shipped in `anulum.synapse-channel-vscode`.
+and can process data under their own policies. This notice describes the
+extension's source behavior; qualification of a packaged
+`anulum.synapse-channel-vscode` artifact requires its exact bytes and recorded
+run profile. It does not independently verify editor or operating-system
+credential encryption, Marketplace artifacts or the configured hub's behavior.
 
 Report a suspected privacy or security issue privately through the repository
 [security policy](https://github.com/anulum/synapse-channel/security/policy).

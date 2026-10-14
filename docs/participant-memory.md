@@ -60,7 +60,7 @@ synapse participant convene "choose the safest migration" claude codex \
 | --- | --- | --- |
 | `--memory-url URL` | none | Required to enable recall. Accepts an HTTPS origin, or HTTP only with a literal loopback IP; credentials, paths, queries, and fragments are refused. |
 | `--memory-token-file PATH` | none | Reads at most 8 KiB of UTF-8 bearer-token data. No token-literal option exists. |
-| `--memory-timeout SECONDS` | `2` | Finite hard deadline; accepted interval `(0, 30]`. |
+| `--memory-timeout SECONDS` | `2` | Configured recall-wait timeout; accepted interval `(0, 30]`. |
 | `--memory-top-k N` | `3` | Maximum hits per turn; accepted range `1`–`20`. |
 | `--memory-max-chars N` | `4096` | Maximum rendered memory block passed to the participant. |
 
@@ -85,9 +85,11 @@ axes only after its contract and conformance vectors are pinned.
 
 No-hit recall renders `STATUS: ABSTAINED`. A timeout, authorization failure,
 transport failure, oversized body, or malformed response renders `STATUS:
-UNAVAILABLE`. Raw URLs, bearer tokens, server bodies, and exception details are
-not placed in model context. In both states the underlying provider still takes
-the turn.
+UNAVAILABLE`. Failure diagnostics omit the configured URL, token, raw error
+response and exception details. Successfully decoded hit names, types and
+snippets are passed as untrusted data; this is not arbitrary secret detection
+or proof that a model will disregard instructions embedded in that content.
+In both states the underlying provider still takes the turn.
 
 ## Transport and resource boundaries
 
@@ -96,6 +98,12 @@ uses only Python's standard library. Its default request cap is 16 KiB and its
 default response cap is 1 MiB. The memory policy separately caps hit count,
 elapsed time, and rendered characters. The adapter never calls `/remember`,
 `/consolidate`, or any operator action.
+
+The wrapper uses an asynchronous recall-wait timeout, which depends on event-loop
+scheduling and cancellation cooperation. The HTTP adapter performs blocking
+I/O in a worker thread; cancelling its awaiting task does not forcibly terminate
+that thread. These settings are not operating-system containment or a hard
+real-time bound on every underlying network operation.
 
 The URL is operator configuration, not an untrusted per-turn value. Protect the
 token file with host permissions, use HTTPS beyond loopback, and keep the

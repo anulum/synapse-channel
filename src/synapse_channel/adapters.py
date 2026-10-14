@@ -7,20 +7,18 @@
 # SYNAPSE_CHANNEL — cross-agent adapter catalogue and pure install/uninstall planning
 """Cross-agent adapter kits: route an existing coding tool to the hub.
 
-An adapter is the thin, claim-aware glue that wires a specific coding tool — Claude
-Code, Codex, Kimi Code, Cursor, Aider, Copilot, Windsurf, or Gemini CLI — into
-Synapse so the tool claims its file scope before editing and releases it on commit,
-without Synapse pretending to be that tool or shipping a persona. Every adapter
-carries the *same* small contract (claim before edit, release on commit via the git
-hooks, reach the hub) rendered into the tool's own conventions format, between
-explicit markers so it can be removed exactly.
+An adapter renders claim conventions for a named coding tool — Claude Code, Codex,
+Kimi Code, Cursor, Aider, Copilot, Windsurf, or Gemini CLI. Writing that file does
+not prove that a host consumes it, enforce edits, or start a receiver. The contract
+describes claiming before edits, configured Git release triggers, and the declared
+identity and hub. Markers delimit its block; dedicated-file mode replaces or
+deletes the whole target, while append mode preserves content outside the block.
 
-This module is the **pure** half: the tool catalogue, detection logic, target
-resolution, contract rendering, and the string transforms that plan an install or an
-uninstall. It performs no filesystem I/O — :mod:`synapse_channel.cli_adapters` reads
-and writes files using these planners, so the policy here is fully testable without
-touching a real home directory. The adapter adds no new coordination primitive; it
-only points a tool at the claims, releases, and presence that already exist.
+Detection inspects installation footprints; rendering and install/uninstall
+planning transform strings. :mod:`synapse_channel.cli_adapters` owns target-file
+reads and writes. These planners can be tested with isolated inputs without
+changing a real home directory. The adapter adds no new coordination primitive;
+it points a tool at the claims, releases, and presence that already exist.
 """
 
 from __future__ import annotations
@@ -37,7 +35,7 @@ MARKER_END = "synapse-channel:adapter:end"
 """Sentinel closing the Synapse-owned block."""
 
 FILE_MODE = "file"
-"""Dedicated-file adapter: the whole file is Synapse's, so uninstall deletes it."""
+"""Dedicated-file adapter: install replaces the whole file; uninstall deletes it."""
 
 APPEND_MODE = "append"
 """Shared-file adapter: a marked block is added to a file the tool also owns."""
@@ -256,11 +254,14 @@ def _contract_body(*, identity: str, hub_uri: str) -> str:
         "## Synapse coordination (claim-safety)\n\n"
         "This workspace uses Synapse to refuse overlapping live file claims.\n\n"
         "- **Claim before edit:** run `synapse git-claim <task-id> --paths <path>` (or a\n"
-        "  semantic claim) before modifying files, and treat a denied claim as a stop.\n"
-        "- **Release on commit:** the git hooks installed by `synapse git-init` auto-release\n"
-        "  the branch-scoped claims when you commit.\n"
+        "  semantic claim) before editing. Require an exact grant or confirmed live lease;\n"
+        "  denial or unknown outcome does not permit editing.\n"
+        "- **Release on commit:** select `--auto-release-on commit` for that workflow.\n"
+        "  Installed git hooks request release only for matching owner/worktree/branch\n"
+        "  and trigger. Hook exit 0 does not confirm release; verify uncertain outcomes.\n"
         f"- **Reach the hub:** identity `{identity}`, hub `{hub_uri}`.\n"
-        "- **Enforcement boundary:** provider hooks cover only their documented tools; the\n"
+        "- **Enforcement boundary:** this file declares conventions, not host adoption or\n"
+        "  a connected receiver. Provider hooks cover only their documented tools; the\n"
         "  staged Git gate is a separate check, not a filesystem or process sandbox.\n"
         "- Coordination safety only — this carries no persona, workflow, or model behaviour.\n"
     )

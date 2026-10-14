@@ -90,9 +90,12 @@ The ACL model and its evaluation are implemented in
   (`identity pin mismatch`) and names the observed key id plus the governed
   recovery command; unsigned names keep classic semantics;
   `--require-identity-binding` takes precedence and keeps its fail-closed
-  operator-bundle behaviour. Together with the ownership lease this closes the
-  name-squatting class: the lease covers reconnect gaps with a bearer token,
-  the pin covers restarts with a proof of key possession.
+  operator-bundle behaviour. Together with the ownership lease this preserves an existing
+  reconnect binding: the lease covers its retained gap with a bearer token,
+  and the pin requires proof of the previously enrolled key after restart.
+  First-use enrollment still requires a trusted bootstrap environment.
+  Machine keys shared by same-account processes do not isolate individual
+  agents or prevent another holder of that key from proving the same names.
 
   A new custom journal gets an atomically published empty companion before
   opening the journal or accepting clients, so a restart before the first
@@ -127,7 +130,7 @@ The ACL model and its evaluation are implemented in
   pin table; absence under the new home cannot prove that the old hub had no
   pins. A new journal directory follows the process umask: provision its parent
   with the intended account permissions before starting the hub.
-- **Every client verb signs uniformly**: `SynapseAgent` presents the machine
+- **Uniform registration signing for client verbs**: `SynapseAgent` presents the machine
   identity by default, so any verb that connects — send, listen, arm, queries,
   the bridges — proves the same key. Before this default only `arm` and `wait`
   signed, and arming a name locked its holder out of every *other* verb under
@@ -185,7 +188,9 @@ The ACL model and its evaluation are implemented in
     --key-id <id> --reason <text>` revokes an enrolled key without a
     replacement, for example after a lost laptop. It passes the same authority
     gates. The key is kept as revoked history and its live socket is closed
-    (4018). Keys in the trust file are revoked by editing that file.
+    (4018). Keys in the startup-loaded trust file require restarting the CLI hub
+    with the updated bundle; editing the file alone is not live revocation or
+    eviction of an already admitted socket.
   - **Storage:** the enrolled keys live in the hub-owned, owner-only store, in
     the trust-bundle format. A restarted hub loads it on top of the trust file.
   - **Audit:** every change writes an `identity_enrollment` audit trail
@@ -206,6 +211,12 @@ first credential format is now the zero-config machine key above (operator
 bundles remain the multi-tenant graduation). General credential rotation and
 revocation tooling, owner recovery beyond the governed stale-pin path, and
 read-surface ACLs (metrics, dashboard, event-query) remain design targets.
+
+That remaining read-ACL design is the unified hub identity vocabulary.
+The dashboard already has its own browser bearer/capability enforcement and
+separate host/Fleet disclosure grants; private-channel and required global
+recall checks have their own shipped boundaries. None of those controls
+automatically authorises offline journal readers or completes tenant IAM.
 
 ### Recovering a changed machine key — worked example
 
@@ -270,7 +281,7 @@ performs a silent key rotation or lets a name self-reclaim. This recovers a
 lost or rotated key, not a compromised one — a real credential leak is out of
 scope and must be handled by revocation, not reclaim.
 
-## Identity model
+## Identity model and remaining unified design
 
 An identity record should separate the stable actor from the terminal, process,
 or provider session currently using it:
@@ -295,7 +306,7 @@ add other key or certificate handles, but any addition must support key-id
 lookup, rotation, revocation, owner recovery, and diagnostics that explain which
 credential failed without leaking secret material.
 
-## ACL model
+## ACL model and permission vocabulary
 
 ACLs should deny by default. An admitted identity may only perform the allowed
 verb on a matching target pattern inside its project namespace. The initial
@@ -320,13 +331,18 @@ permission vocabulary should stay small and auditable:
 | `evidence` | Append authenticated, content-minimized enforcement evidence. The shipped `guard_denial` target is `evidence:guard-denial`; the handler additionally requires connect-token provenance and a durable journal. |
 | `recall` | Pull the hub's global chat history and cursor-based resume backlog (`history_request` / `resume_request`). Target kind `history`; the shipped target is `history:global`. Consulted only under `--require-acl` — without enforcement the recall reads stay open, matching the proportionate-to-exposure posture. |
 
+The table includes vocabulary for the remaining unified design. Naming
+`metrics`, `dashboard`, `a2a` or `namespace` does not establish that each
+surface is wired to this hub ACL evaluator. Use the exact shipped handler
+mappings and the separate dashboard/A2A authentication controls.
+
 Each rule should include an allowed verb, a target pattern, an optional channel
 or project namespace constraint, and a decision reason suitable for receipts and
 postmortems. Target patterns must be structured data, not ad hoc substring
 checks, so a future policy engine can compare path claims, channel ids, agent
 ids, and A2A endpoints consistently.
 
-## Enforcement path
+## Unified enforcement path — design target
 
 The hub should evaluate identity and ACLs at the point where a frame would change
 state or reveal scoped state:
@@ -363,6 +379,11 @@ event log must keep both the asserted sender and the resolved audit subject so a
 postmortem can explain what changed during migration.
 
 ## Relationship to other designs
+
+These are intended integration boundaries. A crosslink does not establish
+automatic composition of identity, signed-card admission, private-channel
+history and differential-privacy policy; each shipped surface keeps its own
+documented configuration and checks.
 
 - [Per-message authentication](per-message-authentication.md) authenticates
   selected frames after WebSocket connect authentication. Identity and ACLs
