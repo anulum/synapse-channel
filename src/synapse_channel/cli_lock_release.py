@@ -185,16 +185,51 @@ class LockRelease:
             )
             return 3
 
+    async def register_owner(self, agent: SynapseAgent) -> asyncio.Task[None] | None:
+        """Wait within one budget for a retiring same-name socket, without takeover."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.ready_timeout
+        while (remaining := deadline - loop.time()) > 0:
+            listener = asyncio.create_task(agent.connect())
+            ready = asyncio.create_task(agent.wait_until_ready(remaining))
+            connected = False
+            try:
+                done, _ = await asyncio.wait(
+                    (listener, ready), timeout=remaining, return_when=asyncio.FIRST_COMPLETED
+                )
+                if ready in done and ready.result() and not listener.done():
+                    connected = True
+                    return listener
+                if listener in done and not (
+                    agent.last_close_code == 4009 and agent.last_close_reason == "name conflict"
+                ):
+                    # Preserve the existing complete readiness budget on other
+                    # failures, including cancellation-safe outage cleanup.
+                    await ready
+            finally:
+                if not connected:
+                    ready.cancel()
+                    agent.running = False
+                    listener.cancel()
+                    await asyncio.gather(ready, listener, return_exceptions=True)
+            # A Git hook can finish before the hub retires its socket. Retry only
+            # that precise admission refusal; credentials and ownership rules
+            # remain unchanged, and no release has crossed the send boundary.
+            if agent.last_close_code != 4009 or agent.last_close_reason != "name conflict":
+                return None
+            await asyncio.sleep(min(0.05, max(0.0, deadline - loop.time())))
+        return None
+
     async def settle(self) -> int:
         """Construct the fresh profile and join its listener on every connected exit."""
         agent = self.agent_factory(
             self.name, self.collect, uri=self.uri, verbose=False, token=self.token
         )
-        listener = asyncio.create_task(agent.connect())
+        listener = await self.register_owner(agent)
+        if listener is None:
+            logger.debug("could not reconnect to release the held claim")
+            return 3
         try:
-            if not await agent.wait_until_ready(self.ready_timeout):
-                logger.debug("could not reconnect to release the held claim")
-                return 3
             intent = self.intent
             if intent is None:
                 request, intent = self.prepare_release(agent)
