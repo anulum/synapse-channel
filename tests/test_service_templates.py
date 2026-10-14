@@ -308,8 +308,7 @@ def test_a_failing_unit_becomes_failed_when_the_budget_is_used_up(owned_unit: st
 
     # Before the budget is used up the unit is still trying.
     time.sleep(budget.seconds_to_failed() / 2)
-    assert _show(owned_unit, "ActiveState") == "activating"
-    assert _show(owned_unit, "SubState") == "auto-restart"
+    assert _show(owned_unit, "ActiveState") != "failed"
 
     deadline = started + budget.seconds_to_failed() + 10.0
     while time.monotonic() < deadline and _show(owned_unit, "ActiveState") != "failed":
@@ -345,5 +344,14 @@ def test_without_a_start_limit_the_same_unit_restarts_past_the_budget(owned_unit
 
     time.sleep(budget.seconds_to_failed() + 3.0)
 
-    assert _show(owned_unit, "ActiveState") == "activating"
-    assert int(_show(owned_unit, "NRestarts")) > budget.burst
+    # A sampled `active/running` execution is part of the restart loop too.
+    # Prove that it progresses beyond the budget rather than pinning a phase.
+    restarts = int(_show(owned_unit, "NRestarts"))
+    assert restarts > budget.burst
+    deadline = time.monotonic() + budget.max_delay_sec + 5.0
+    while time.monotonic() < deadline:
+        assert _show(owned_unit, "ActiveState") != "failed"
+        if int(_show(owned_unit, "NRestarts")) > restarts:
+            break
+        time.sleep(0.05)
+    assert int(_show(owned_unit, "NRestarts")) > restarts

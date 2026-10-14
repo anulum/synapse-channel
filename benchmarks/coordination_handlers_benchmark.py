@@ -165,6 +165,15 @@ async def _measure(hub: SynapseHub, uri: str, chats: int, cycles: int) -> dict[s
         for index in range(cycles):
             await _lease_cycle(owner, recipient, index, lease_times)
         assert not hub.state.claims
+        # A wire response can arrive before its durable projection is settled.
+        # Keep both clients connected until the hub finishes those intents.
+        assert hub.journal is not None
+        deadline = time.monotonic() + 5.0
+        while hub.journal.pending_operation_outbox_count():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("benchmark operation outbox did not settle")
+            await asyncio.sleep(min(0.01, remaining))
         return {
             "chat": _distribution(chat_times),
             "leases": {v: _distribution(times) for v, times in lease_times.items()},
