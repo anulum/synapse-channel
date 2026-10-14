@@ -82,7 +82,7 @@ jobs:
 
       - name: Upload link report (attempt 1)
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: link-check-report-attempt-1
           path: lychee/report-attempt-1.md
@@ -120,7 +120,7 @@ jobs:
 
       - name: Upload link report (attempt 2)
         if: always() && steps.lychee_attempt_1.outcome == 'failure'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: link-check-report-attempt-2
           path: lychee/report-attempt-2.md
