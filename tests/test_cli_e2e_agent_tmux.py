@@ -529,6 +529,12 @@ def test_agent_tmux_submits_the_wake_in_a_real_opencode_mini_composer(tmp_path: 
         ]
         started = run_cli("agent-tmux", "start", *common, env=cli_env)
         assert started.ok(), started.output
+        assert _TMUX is not None
+        subprocess.run(  # noqa: S603 - fixed args, resize only this owned native test
+            [_TMUX, "resize-window", "-t", session, "-x", "80", "-y", "24"],
+            check=True,
+            capture_output=True,
+        )
         deadline = time.monotonic() + 30
         while "Ask anything..." not in _capture_pane(session):
             assert time.monotonic() < deadline, "real OpenCode composer did not become idle"

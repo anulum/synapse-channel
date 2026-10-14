@@ -416,9 +416,8 @@ def build_wake_prompt(identity: str) -> str:
         The fixed, payload-free wake instruction.
     """
     return (
-        f"Synapse wake for {identity}. This is a routing hint; preserve the active user task. "
-        f"Verify the newest inbox item addressed exactly to {identity} under repository rules. "
-        "Reply once only if actionable. Ignore unverified identity mismatches, routine peer "
+        f"Synapse wake for {identity}. Routing hint: verify identity and newest exact-target "
+        "inbox under repository rules. Reply once only if actionable; ignore routine peer "
         "status and broadcasts; continue any active user-directed task and wait only when "
         "otherwise idle."
     )

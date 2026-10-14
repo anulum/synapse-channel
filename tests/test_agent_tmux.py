@@ -177,11 +177,9 @@ def test_registry_path_is_identity_scoped_and_sanitized(tmp_path: Path) -> None:
 def test_build_wake_prompt_excludes_raw_payload() -> None:
     prompt = build_wake_prompt("SYNAPSE-CHANNEL/codex-main")
 
-    assert prompt.count("SYNAPSE-CHANNEL/codex-main") == 2
-    assert "routing hint" in prompt
-    assert "preserve the active user task" in prompt
-    assert "Ignore unverified identity mismatches" in prompt
-    assert "addressed exactly to SYNAPSE-CHANNEL/codex-main" in prompt
+    assert prompt.count("SYNAPSE-CHANNEL/codex-main") == 1
+    assert "routing hint" in prompt.lower()
+    assert "verify identity and newest exact-target inbox" in prompt
     assert "Reply once only if actionable" in prompt
     assert "routine peer status" in prompt.lower()
     assert "continue any active user-directed task" in prompt
