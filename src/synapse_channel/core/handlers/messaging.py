@@ -717,6 +717,7 @@ async def handle_ack(
         message_seq=raw_seq,
         entry=entry,
         recipient=recipient,
+        acknowledged_by=sender,
     )
 
 

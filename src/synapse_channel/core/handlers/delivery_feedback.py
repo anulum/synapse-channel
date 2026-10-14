@@ -40,6 +40,7 @@ from synapse_channel.core.journal import (
 from synapse_channel.core.pending_receipts import ReceiptEntry
 from synapse_channel.core.persistence import DeliveryReceiptTransition
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.receipt_receiver_evidence import TRANSPORT_RESULTS, logical_capabilities
 from synapse_channel.core.wake_capability import (
     WAKE_PASSIVE,
     WAKE_UNKNOWN,
@@ -113,7 +114,16 @@ def _delivery_receipt_frame(
     client_msg_id: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Return the exact wire frame and durable payload for an immediate verdict."""
-    capabilities = _recipient_wake_capabilities(hub, decision.matched_recipients)
+    capabilities = (
+        logical_capabilities(
+            decision.matched_recipients, dict(decision.transport_wake_capabilities)
+        )
+        if decision.transport_wake_capabilities is not None
+        else _recipient_wake_capabilities(hub, decision.matched_recipients)
+    )
+    capability_source = (
+        TRANSPORT_RESULTS if decision.transport_wake_capabilities is not None else ""
+    )
     if decision.delivered:
         rendered = (
             _render_recipient_with_capability(recipient, capabilities[recipient])
@@ -135,6 +145,7 @@ def _delivery_receipt_frame(
         reason=decision.reason,
         dead_lettered=recorded_dead_letter,
         recipient_wake_capabilities=capabilities,
+        recipient_wake_capabilities_source=capability_source,
         client_msg_id=client_msg_id,
     )
     correlation = {"client_msg_id": client_msg_id} if client_msg_id else {}
@@ -153,6 +164,7 @@ def _delivery_receipt_frame(
         reason=decision.reason,
         dead_lettered=recorded_dead_letter,
         recipient_wake_capabilities=capabilities,
+        recipient_wake_capabilities_source=capability_source,
         **correlation,
     )
     return frame, audit
@@ -385,12 +397,19 @@ async def settle_delivery_receipt(
     message_seq: int,
     entry: ReceiptEntry,
     recipient: str,
+    acknowledged_by: str = "",
 ) -> None:
     """Atomically settle a pending receipt and enqueue its deferred notification."""
     if hub.journal is None:
         hub.pending_receipts.claim(message_seq)
         return
-    audit = deferred_receipt_payload(entry=entry, message_seq=message_seq, recipient=recipient)
+    audit = deferred_receipt_payload(
+        entry=entry,
+        message_seq=message_seq,
+        recipient=recipient,
+        acknowledged_by=acknowledged_by,
+        receiver_wake_capability=hub.wake_capability_of(acknowledged_by),
+    )
     frame = hub.system(
         f"delivered to {recipient} on reconnect",
         msg_type=MessageType.DELIVERY_RECEIPT,
@@ -401,6 +420,8 @@ async def settle_delivery_receipt(
         delivered=True,
         deferred=True,
         recipients=[recipient],
+        ack_receiver=audit["ack_receiver"],
+        recipient_wake_capabilities=audit["recipient_wake_capabilities"],
         **({"client_msg_id": entry.client_msg_id} if entry.client_msg_id else {}),
     )
     hub.journal.commit_delivery_receipt_transition(

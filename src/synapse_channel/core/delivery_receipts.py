@@ -72,6 +72,7 @@ def immediate_receipt_payload(
     reason: str = "",
     dead_lettered: bool = False,
     recipient_wake_capabilities: Mapping[str, str] | None = None,
+    recipient_wake_capabilities_source: str = "",
     client_msg_id: str = "",
 ) -> dict[str, Any]:
     """Return the audit payload for the hub's immediate receipt verdict."""
@@ -90,6 +91,7 @@ def immediate_receipt_payload(
         "reason": str(reason),
         "dead_lettered": bool(dead_lettered),
         "recipient_wake_capabilities": dict(recipient_wake_capabilities or {}),
+        "recipient_wake_capabilities_source": recipient_wake_capabilities_source,
     }
     if client_msg_id:
         payload["client_msg_id"] = client_msg_id
@@ -101,6 +103,8 @@ def deferred_receipt_payload(
     entry: ReceiptEntry,
     message_seq: int,
     recipient: str,
+    acknowledged_by: str = "",
+    receiver_wake_capability: str = "unknown",
 ) -> dict[str, Any]:
     """Return the audit payload for a mailbox ``ack`` settling a pending receipt."""
     payload: dict[str, Any] = {
@@ -112,6 +116,8 @@ def deferred_receipt_payload(
         "deferred": True,
         "recipients": [recipient],
         "acked_by": recipient,
+        "ack_receiver": acknowledged_by,
+        "recipient_wake_capabilities": {recipient: receiver_wake_capability},
     }
     if entry.client_msg_id:
         payload["client_msg_id"] = entry.client_msg_id

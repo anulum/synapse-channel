@@ -392,7 +392,7 @@ def test_marks_refuse_values_that_cannot_name_one_and_are_never_rewritten(
     assert wake_marks.default_marks_dir() == (
         tmp_path / "h" / ".local" / "share" / "synapse" / "wake-marks"
     )
-    assert {ACCEPTED, REFUSED, UNCERTAIN} == STATES and len(PROVES) == 3
+    assert {ACCEPTED, REFUSED, UNCERTAIN} == STATES and len(PROVES) == 5
 
 
 @pytest.mark.parametrize("content", ["not json", "[]", '{"state": "delivered"}'])

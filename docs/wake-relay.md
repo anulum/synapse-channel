@@ -20,9 +20,9 @@ whose exit the client reports. Each way is a **wake adapter**. The relay tries
 adapters in order and stops at the first one that takes the wake.
 
 !!! note "State of this part"
-    This page describes the relay's foundation and its first two adapters. No
-    service calls the relay yet; the existing pane bridge service works as
-    before.
+    `synapse waker relay` calls the relay for one journal message using an
+    owner-only native-session binding. The existing supervised pane bridge loop
+    remains available; installing a pane waker does not opt it into this command.
 
 ## What an adapter may answer
 
@@ -34,7 +34,9 @@ adapters in order and stops at the first one that takes the wake.
 
 `accepted` is not "read". No state says that the recipient saw or acted on
 anything. The `proves` tokens are `queued_by_native_daemon`,
-`typed_into_idle_composer` and `harness_notice_written`.
+`typed_into_idle_composer`, `written_to_passive_receiver` and
+`acknowledged_by_passive_receiver`. Another,
+`harness_notice_written`, is reserved and said by no adapter today.
 
 An adapter that raises an error, or returns anything other than one of the
 three states, is recorded as `uncertain`: the effect may have happened before
@@ -131,9 +133,122 @@ The adapter's tests start a stand-in program as a real child process; the
 vendor's client is not run by them. The command and its two observed answers
 come from a manual qualification of 2026-10-04 on one route.
 
+## The harness waiter adapter
+
+Some clients cannot be woken from outside. Their session keeps a waiter
+process in the background; the hub writes a directed message to that waiter,
+the waiter ends, and the client's own harness tells the session. A relay
+cannot start any of that: when the hub delivered the message the wake has
+already happened, or it happens when a receiver of the seat later takes the
+message from the mailbox, or not at all.
+
+`harness_waiter` therefore does nothing to the seat. It reads the receipt
+state the hub's store keeps for the message, and the receipt that set it,
+and says what they show:
+
+| Receipt state of the message | Answer |
+|---|---|
+| delivered at once, actual transport results list a completed `passive` write for the seat | `accepted`, proves `written_to_passive_receiver` |
+| delivered at once to a receiver of another declared kind, or not to the seat | `refused`: another adapter may run |
+| pending or expired: the message waits in the mailbox | `uncertain`: a receiver that reads the mailbox may still take it; an expired receipt means the hub stopped tracking the receipt, not that the message left the mailbox |
+| delivered at once, the kind of the seat's receiver is not declared | `uncertain` |
+| older immediate receipt without concrete transport provenance | `uncertain` |
+| taken from the mailbox later and acknowledged by a named passive receiver | `accepted`, proves `acknowledged_by_passive_receiver` |
+| taken from the mailbox later without a named passive acknowledgement | `uncertain` |
+| asked and not yet decided, or no receipt at all, after the time limit | `uncertain` |
+
+It exists so that such a wake is named in marks and rankings like any other,
+and so that a second adapter does not wake a seat its waiter woke or may
+wake.
+
+`written_to_passive_receiver` says that the hub wrote the message to a
+receiver that declared itself passive. It does not say that this receiver was
+a waiter a harness watches, that the waiter ended, or that the session was
+told. The stronger `harness_notice_written` is reserved: no adapter says it
+until a harness managed by the product gives evidence of that.
+
+Deferred receipts include `ack_receiver`, the actual registered connection
+that sent the ACK, and `recipient_wake_capabilities`, keyed by logical recipient.
+The capability comes from that connection, rather than a different live seat or
+sidecar. The existing `acked_by` remains the logical recipient. Wire and journal
+receipts carry the same metadata. The ACK proves a recipient acknowledgement;
+it does not prove a transport write or a harness notice. Older deferred receipts
+without this provenance remain `uncertain`.
+
+Immediate receipts mark `recipient_wake_capabilities_source: transport_results`.
+Declarations are captured for the actual named sockets before fanout and retained
+only for completed writes. Failed writes remain unknown. A passive sidecar that
+completed its write takes precedence over a direct primary connection; an unknown
+attempt prevents a definite refusal. Current roster declarations alone cannot
+prove what a previous delivery did.
+
+`uncertain` ends the work for a message, and the only definite refusal is a
+delivery at once that went elsewhere. Use this adapter only for a seat whose wake path is its waiter, and
+only where the hub keeps a receipt for every message the relay may be asked
+about; for any other seat it would stop a wake another adapter could make.
+
+## Call the bound relay
+
+Create a single-link owner-only JSON binding file. Use the actual seat, canonical
+lower-case native session UUID and `socket.gethostname()` value from the session's
+execution host. The binding declares routing; it does not verify that the model
+is running or has consumed a message. Every call must supply exactly those three
+values, and must run on that execution host. No session-name, latest-session or
+remote-host fallback is used.
+
+```json
+{
+  "schema_version": 1,
+  "seat": "PROJECT/codex-main",
+  "native_session": "00000000-0000-4000-8000-000000000001",
+  "execution_host": "my-workstation",
+  "marks_dir": "/absolute/private/marks-for-this-hub",
+  "adapters": ["harness_waiter"],
+  "journal_db": "/absolute/path/to/hub.db"
+}
+```
+
+Replace the example values before use. On POSIX use mode `0600`; on Windows
+use an owner-only DACL. The loader applies the same secure file policy as waker
+configuration, refuses symlinks and multiple links, and reads at most 16 KiB.
+Unknown fields, duplicate adapter names, wildcard seats, relative paths and
+non-canonical UUIDs are refused. The optional `key_file` names an encrypted-store
+key; an unavailable or unverifiable receipt yields `uncertain`.
+For a row-authenticated journal, also set `row_mac_key_file` to its existing
+owner-only row key. The relay loads that key only; a missing or malformed key
+yields `uncertain` without provisioning a replacement or changing the journal.
+
+```bash
+synapse waker relay --binding-file /absolute/private/wake-binding.json \
+  --identity PROJECT/codex-main \
+  --native-session 00000000-0000-4000-8000-000000000001 \
+  --execution-host my-workstation --wake-id 123 --deadline 5
+```
+
+`--wake-id` is the actual message's journal sequence, not a CLI message id or a
+receipt event sequence. Keep one durable marks namespace per hub journal and
+retain it across process and native-session restarts. Never reuse a marks
+namespace for a different hub or reset journal cursors underneath it. A binding
+mismatch, invalid cursor or non-finite/negative deadline fails before any marks
+or adapter calls. JSON output reports the state, proof token, attempts,
+unavailable transports and whether an adapter was asked in this invocation.
+Exit codes are `0` for accepted, `1` for uncertain or wake failed, and `2` for
+invalid or unavailable configuration. Re-running the command preserves an
+accepted or uncertain outcome; it sends nothing again for that message.
+
+The explicit `adapters` order may also include `native_queue` with an absolute
+`codex_bin` path, or `pane_bridge` using the existing armed waker configuration
+for exactly the seat. Inhibited or uncertain pane lifecycle control is refused.
+The native queue rechecks local-host and fixed-executable availability even on a
+direct adapter call. Available ranking samples retain their advisory ordering;
+this command does not invent latency samples from receipt lookup time.
+
 ## Order of adapters
 
-The configuration gives the order in which a seat's adapters are tried. For
+The harness waiter observes a wake that may already have happened, so the relay
+always asks it before active adapters when it is configured. This priority also
+applies to direct Python relay calls and overrides latency ranking. Among active
+adapters, the configuration gives their order. For
 every accepted wake the time from the hub's event to the adapter's acceptance
 can be recorded per seat and adapter. Once an adapter has enough samples (five
 by default) its median counts:
@@ -161,4 +276,12 @@ adapter.
 - The Windows path of the queue adapter (suspended start, job object, resume)
   has not been run by its author.
 - The syncs are requested as described; no power-loss test has been made.
-- The time limit is given to the adapter; keeping it is the adapter's duty.
+- Waker configuration flushes the file before atomic replacement. The shared
+  portable directory-sync helper requests directory fsync on POSIX; Windows
+  does not provide that directory-sync proof.
+- The time limit is per adapter, and must be finite and non-negative. It does
+  not bound waiting for the per-seat lock or all configured transports together.
+- Receipt reading uses a separate read-only connection beside a running hub;
+  it does not start a waiter or tell a harness to watch one. The caller must
+  arrange that native waiter lifecycle. No proof token says that a model read
+  the message.

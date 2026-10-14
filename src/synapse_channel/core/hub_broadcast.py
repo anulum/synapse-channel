@@ -27,6 +27,8 @@ from synapse_channel.core.hub_clients import HubClientRegistry
 from synapse_channel.core.hub_relay import RelayMirror
 from synapse_channel.core.outbound_send import OutboundSender
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.core.receipt_receiver_evidence import TransportWrites
+from synapse_channel.core.wake_capability import WAKE_UNKNOWN
 
 
 class HubBroadcaster:
@@ -77,15 +79,17 @@ class HubBroadcaster:
         if not clients:
             return frozenset()
         raw = json.dumps(data)
+        capabilities = self._receipt_capabilities(data, owners.values())
         results = await asyncio.gather(
             *(self._sender.send(client, raw) for client in clients),
             return_exceptions=True,
         )
-        return frozenset(
+        successful = frozenset(
             name
             for socket, result in zip(clients, results, strict=True)
             if result is None and (name := owners[socket]) is not None
         )
+        return self._receipt_writes(successful, capabilities)
 
     async def broadcast_presence(self, event: str, agent: str | None = None) -> None:
         """Broadcast a presence update naming who joined or left."""
@@ -144,12 +148,37 @@ class HubBroadcaster:
             return frozenset()
         raw = json.dumps(data)
         audience = tuple(sockets)
+        capabilities = self._receipt_capabilities(
+            data, (name for names in owners.values() for name in names)
+        )
         results = await asyncio.gather(
             *(self._sender.send(socket, raw) for socket in audience), return_exceptions=True
         )
-        return frozenset(
+        successful = frozenset(
             name
             for socket, result in zip(audience, results, strict=True)
             if result is None
             for name in owners.get(socket, ())
         )
+        return self._receipt_writes(successful, capabilities)
+
+    def _receipt_capabilities(
+        self, data: dict[str, Any], names: Iterable[str | None]
+    ) -> dict[str, str] | None:
+        """Capture declarations immediately before requested chat fanout."""
+        if data.get("type") != MessageType.CHAT or not bool(data.get("receipt_requested")):
+            return None
+        return {name: self._clients.wake_capability_of(name) for name in names if name is not None}
+
+    @staticmethod
+    def _receipt_writes(
+        successful: frozenset[str], capabilities: dict[str, str] | None
+    ) -> frozenset[str]:
+        """Retain unknown effects of failed named writes without widening success."""
+        if capabilities is None:
+            return successful
+        evidence = {
+            name: capability if name in successful else WAKE_UNKNOWN
+            for name, capability in capabilities.items()
+        }
+        return TransportWrites(successful, evidence)

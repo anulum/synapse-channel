@@ -186,7 +186,7 @@ def test_the_prompt_and_the_session_are_arguments_and_never_shell_text(
         assert not _adapter(client).available(target).available
         assert (refused.state, refused.detail) == (
             REFUSED,
-            "not started: the session identifier is not a UUID",
+            "not started: the seat has no native session identifier that is a UUID",
         )
     assert len(client.calls()) == 1 and not marker.exists()
     assert canonical_session(SESSION) == SESSION and canonical_session(SESSION.upper()) is None
@@ -210,7 +210,17 @@ def test_another_host_and_a_program_that_is_not_at_its_place(
     client.program.chmod(stat.S_IRUSR | stat.S_IWUSR)
     assert adapter.available(TARGET).detail == reason
     not_started = adapter.wake(TARGET, 1, "fixed prompt", 20.0)
-    assert (not_started.state, not_started.detail) == (REFUSED, "not started: PermissionError")
+    assert (not_started.state, not_started.detail) == (REFUSED, f"not started: {reason}")
+    assert client.calls() == []
+
+
+def test_direct_wake_rechecks_execution_host_and_deadline_before_start(client: Client) -> None:
+    """Bypassing availability inspection cannot select another host or hang a child."""
+    adapter = _adapter(client)
+    wrong_host = WakeTarget(SEAT, SESSION, "other-host")
+    assert adapter.wake(wrong_host, 1, "fixed prompt", 1.0).state == REFUSED
+    for seconds in (True, -1.0, float("inf"), float("nan")):
+        assert adapter.wake(TARGET, 1, "fixed prompt", seconds).state == REFUSED
     assert client.calls() == []
 
 

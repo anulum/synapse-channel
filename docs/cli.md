@@ -1107,6 +1107,13 @@ synapse waker stop --identity api-dev/codex-main --reason "bridge malfunction"
 synapse waker resume --identity api-dev/codex-main
 ```
 
+For an explicitly bound native session, `synapse waker relay --binding-file ...`
+relays one actual journal message through configured adapters with persistent
+duplicate suppression. It requires the exact seat, native UUID, execution host
+and message sequence. See [wake relay](wake-relay.md#call-the-bound-relay) for the
+owner-only configuration, transport proof meanings and exit codes. This command
+does not change the supervised pane bridge's installed loop.
+
 `install` writes an owner-only exact-seat JSON configuration and the shared
 `synapse-waker@.service` template. Add `--uri` and `--token-file` for a secured
 remote hub; token values are never persisted. `status` reports the durable

@@ -44,6 +44,7 @@ from synapse_channel.wake_adapters import (
     WakeAdapter,
     WakeOutcome,
     WakeTarget,
+    validate_deadline,
 )
 
 WAKE_FAILED = "wake_failed"
@@ -136,6 +137,7 @@ def relay(
     RelayResult
         The state of this message's wake after the call.
     """
+    validate_deadline(deadline_seconds)
     with wake_marks.seat_lock(marks_dir, target.seat):
         earlier = wake_marks.read(marks_dir, target.seat, wake_id)
         settled = _settled(earlier)
@@ -144,7 +146,9 @@ def relay(
         refused = {mark.adapter for mark in earlier}
         prompt = prompt_for(target.seat)
         passed_over = []
-        for adapter in adapters:
+        # Observing an already completed passive wake precedes any new effect.
+        # Stable sorting preserves the configured/ranked order of active paths.
+        for adapter in sorted(adapters, key=lambda candidate: candidate.kind != "harness_waiter"):
             if adapter.kind in refused:
                 continue
             availability = adapter.available(target)

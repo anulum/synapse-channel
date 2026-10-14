@@ -241,9 +241,33 @@ These serial nice-19 runs share CPU and storage with other workstation sessions.
 They establish functional regression evidence, without an isolated performance
 claim. The slower directed-chat and release observations remain visible. Full distributions, source and harness digests, observed CPU and load
 context are retained in `coordination_handlers_benchmark.json`. The earlier stage
-comparison is also retained under `initial_stage_comparison`;
+comparison, including its initial measurements, is retained under
+`earlier_handler_stage_comparison`;
 no observation was discarded. Existing record, store, wire and state-only
 harnesses measure different unchanged paths.
+
+### Receiver evidence comparison (2026-10-14)
+
+Three alternating runs compare `c1d3856` with the receiver-evidence integration.
+Each run uses the unchanged default 100 directed chats and 20 lease cycles.
+The following values are medians of the three per-run medians, in microseconds:
+
+| Operation | Baseline p50 (us) | Receiver evidence p50 (us) |
+| --- | ---: | ---: |
+| chat | 23386.356 | 18652.875 |
+| checkpoint | 7801.187 | 8701.878 |
+| claim | 8290.753 | 8367.819 |
+| handoff | 12383.050 | 13465.151 |
+| release | 8540.601 | 8955.476 |
+| task_update | 8126.730 | 9389.813 |
+
+All six actual loopback runs completed with the expected journal and operation
+counts. They share CPU and storage with other workstation sessions; these
+measurements support functional regression assessment without a performance
+improvement claim. The JSON record retains all six distributions, exact source
+and harness hashes, and the complete earlier handler-stage comparison. CPU/load
+snapshots were not recorded for this comparison. The routing hub implementation
+is Python; optional receipt metadata remains opaque to the other language SDKs.
 
 The decomposition changes the two original handler modules (2,262 lines)
 to five modules (2,981 lines, including native documentation and typed

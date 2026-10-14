@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from synapse_channel.agent_tmux import DEFAULT_PANE_PROBE_INTERVAL, DEFAULT_SUBMIT_DELAY
+from synapse_channel.cli_waker_relay import add_parser as add_relay_parser
 from synapse_channel.client.agent import default_hub_uri
 from synapse_channel.waker_commands import DEFAULT_COMMAND_TIMEOUT
 from synapse_channel.waker_service import inhibit_waker, inspect_waker, install_waker, resume_waker
@@ -134,7 +135,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "waker",
         help="Install and control an automatically restarted terminal-agent wake bridge.",
     )
-    nested = group.add_subparsers(dest="waker_command", required=True)
+    nested = _waker_subcommands(group)
 
     install = nested.add_parser("install", help="Write one owner-only seat config and user unit.")
     _identity_argument(install)
@@ -194,3 +195,12 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     run = nested.add_parser("run", help="Run the configured bridge (service-manager entry point).")
     _identity_argument(run)
     run.set_defaults(func=_cmd_waker)
+
+
+def _waker_subcommands(
+    group: argparse.ArgumentParser,
+) -> argparse._SubParsersAction[argparse.ArgumentParser]:
+    """Build the required lifecycle group and register the bound relay unit."""
+    nested = group.add_subparsers(dest="waker_command", required=True)
+    add_relay_parser(nested)
+    return nested

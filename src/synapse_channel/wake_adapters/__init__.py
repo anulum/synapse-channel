@@ -29,6 +29,7 @@ anything.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Final, Protocol
@@ -44,6 +45,7 @@ __all__ = [
     "WakeAdapter",
     "WakeOutcome",
     "WakeTarget",
+    "validate_deadline",
 ]
 
 ACCEPTED: Final = "accepted"
@@ -54,9 +56,22 @@ STATES: Final = frozenset({ACCEPTED, REFUSED, UNCERTAIN})
 """Every state an adapter may report."""
 
 PROVES: Final = frozenset(
-    {"queued_by_native_daemon", "typed_into_idle_composer", "harness_notice_written"}
+    {
+        "queued_by_native_daemon",
+        "typed_into_idle_composer",
+        "written_to_passive_receiver",
+        "acknowledged_by_passive_receiver",
+        "harness_notice_written",
+    }
 )
-"""What an accepted wake shows, per kind of transport."""
+"""What an accepted wake shows, per kind of transport.
+
+``written_to_passive_receiver`` says that the hub wrote the message to a
+receiver that declared itself passive, and nothing about what watches that
+receiver. ``harness_notice_written`` is the stronger statement that a client's
+harness was told; no adapter may say it until a harness managed by the
+product gives evidence of that.
+"""
 
 KIND_PATTERN: Final = re.compile(r"[a-z][a-z0-9_]{0,31}")
 """Shape of an adapter's kind; it is part of file names and receipts."""
@@ -106,3 +121,18 @@ class WakeAdapter(Protocol):
         ``prompt`` is the relay's fixed text. An adapter never receives the
         text of a message.
         """
+
+
+def validate_deadline(seconds: float) -> float:
+    """Return a finite non-negative timeout before any wake effect or mark.
+
+    Raises
+    ------
+    ValueError
+        The timeout is boolean, non-numeric, negative or non-finite.
+    """
+    if isinstance(seconds, bool) or not isinstance(seconds, int | float):
+        raise ValueError("wake deadline must be a finite non-negative number")
+    if not math.isfinite(seconds) or seconds < 0:
+        raise ValueError("wake deadline must be a finite non-negative number")
+    return float(seconds)

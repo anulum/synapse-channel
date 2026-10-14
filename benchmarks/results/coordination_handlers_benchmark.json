@@ -1,44 +1,503 @@
 {
   "after_source_files": {
-    "src/synapse_channel/core/handlers/chat_delivery.py": "cd702d1ec1c3461d16aa010e1c44f321da7857a932114a5af05070ef5f264606",
-    "src/synapse_channel/core/handlers/leasing.py": "fb51c0e22381283c245376e3ae52ef26ad9fc6b763bb96083629970e54017d50",
-    "src/synapse_channel/core/handlers/leasing_drafts.py": "574ebce542c0810aad0de4491668203bf305bfce401dbc1b5395bc365a3324c8",
-    "src/synapse_channel/core/handlers/leasing_mutations.py": "407bab3d0ba6a16596e1cc0bcdf9c7d24638b9e232c19260b9719a58a3cbb393",
-    "src/synapse_channel/core/handlers/messaging.py": "7276d0ba9e53d9485c346c6ebea4d7acec75a798d9680c9a478742f328415970"
+    "src/synapse_channel/core/delivery_receipts.py": "177657503b824a3fc45867390ada5fdf9b561d1c2a45337993592c7f96cf0bb6",
+    "src/synapse_channel/core/directed_delivery_liveness.py": "e57dfa3f6580850ce94bd239683f03e036d57ff554b48cd19e551f5f90366d78",
+    "src/synapse_channel/core/handlers/chat_delivery.py": "e5e1571cd104b9e6523b6ebb85de2fd32f476b32ef0ec8686bad4d77e23b22be",
+    "src/synapse_channel/core/handlers/delivery_feedback.py": "46f68943d65f2157e224c8f7af303ef8dbfb3c8414bbb05df90c8bd8033b8642",
+    "src/synapse_channel/core/handlers/messaging.py": "bb1055da3ff30202aac7bd3059eb18686118f312c0c514ed944004cb5d76937e",
+    "src/synapse_channel/core/hub_broadcast.py": "3cfd17f827598929ad399a3c2f5dda03cbbc1dd574d6d0b9eb102a102827a3b2",
+    "src/synapse_channel/core/receipt_receiver_evidence.py": "4266cea185521befadb7f60ac7d8d0a6238722efa6d1ee3ec6ac08471c037d6b"
   },
-  "before_commit": "0184a1d854c8f1442f07c08d076aa738ac0e3335",
-  "harness_sha256": "960f2b5a84fb85c1b38648b09b7da1d41b3fa1f365d552ab1c18b372b44616e1",
-  "initial_stage_comparison": {
+  "before_commit": "c1d385666164cdceb82b676aaf2f4b9189e1cbf0",
+  "before_source_files": {
+    "src/synapse_channel/core/delivery_receipts.py": "28b4954231b1ddc4e3ae4f383d8380c31fd53c4b261c52543b207601c8cd9979",
+    "src/synapse_channel/core/directed_delivery_liveness.py": "68f4ac70bd3dbddea8b26c94c8df66f1e651c13bef1c200b64051992784a01a4",
+    "src/synapse_channel/core/handlers/chat_delivery.py": "e5e1571cd104b9e6523b6ebb85de2fd32f476b32ef0ec8686bad4d77e23b22be",
+    "src/synapse_channel/core/handlers/delivery_feedback.py": "b40b85c37ddab371e9a1e9b5a38cebe5f9eaed96f2ac91a75170cbd0e30ac08d",
+    "src/synapse_channel/core/handlers/messaging.py": "7276d0ba9e53d9485c346c6ebea4d7acec75a798d9680c9a478742f328415970",
+    "src/synapse_channel/core/hub_broadcast.py": "0a2e860c4a252be767b50d72f211b62559f0ffd0dc7532a947ba213eca464357",
+    "src/synapse_channel/core/receipt_receiver_evidence.py": null
+  },
+  "earlier_handler_stage_comparison": {
     "after_source_files": {
-      "src/synapse_channel/core/handlers/chat_delivery.py": "436960129e329cefdb3e2b6aa4dc4fff61b962d92445b23b62af2af2539202be",
+      "src/synapse_channel/core/handlers/chat_delivery.py": "cd702d1ec1c3461d16aa010e1c44f321da7857a932114a5af05070ef5f264606",
       "src/synapse_channel/core/handlers/leasing.py": "fb51c0e22381283c245376e3ae52ef26ad9fc6b763bb96083629970e54017d50",
       "src/synapse_channel/core/handlers/leasing_drafts.py": "574ebce542c0810aad0de4491668203bf305bfce401dbc1b5395bc365a3324c8",
       "src/synapse_channel/core/handlers/leasing_mutations.py": "407bab3d0ba6a16596e1cc0bcdf9c7d24638b9e232c19260b9719a58a3cbb393",
-      "src/synapse_channel/core/handlers/messaging.py": "5ddff1207c200f094fa8a6ec770f9b1aa2ceb3d0677a12fa8db96ff3f92ce481"
+      "src/synapse_channel/core/handlers/messaging.py": "7276d0ba9e53d9485c346c6ebea4d7acec75a798d9680c9a478742f328415970"
     },
     "before_commit": "0184a1d854c8f1442f07c08d076aa738ac0e3335",
     "harness_sha256": "960f2b5a84fb85c1b38648b09b7da1d41b3fa1f365d552ab1c18b372b44616e1",
+    "initial_stage_comparison": {
+      "after_source_files": {
+        "src/synapse_channel/core/handlers/chat_delivery.py": "436960129e329cefdb3e2b6aa4dc4fff61b962d92445b23b62af2af2539202be",
+        "src/synapse_channel/core/handlers/leasing.py": "fb51c0e22381283c245376e3ae52ef26ad9fc6b763bb96083629970e54017d50",
+        "src/synapse_channel/core/handlers/leasing_drafts.py": "574ebce542c0810aad0de4491668203bf305bfce401dbc1b5395bc365a3324c8",
+        "src/synapse_channel/core/handlers/leasing_mutations.py": "407bab3d0ba6a16596e1cc0bcdf9c7d24638b9e232c19260b9719a58a3cbb393",
+        "src/synapse_channel/core/handlers/messaging.py": "5ddff1207c200f094fa8a6ec770f9b1aa2ceb3d0677a12fa8db96ff3f92ce481"
+      },
+      "before_commit": "0184a1d854c8f1442f07c08d076aa738ac0e3335",
+      "harness_sha256": "960f2b5a84fb85c1b38648b09b7da1d41b3fa1f365d552ab1c18b372b44616e1",
+      "isolation": "shared workstation; serial nice19; MemoryMax1536M; no reserved CPU/storage",
+      "measurement_cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
+      "median_of_run_medians": {
+        "baseline": {
+          "chat_p50_us": 16818.74494533986,
+          "lease_p50_us": {
+            "checkpoint": 7269.798021297902,
+            "claim": 7261.21396292001,
+            "handoff": 9787.318063899875,
+            "release": 7658.411981537938,
+            "task_update": 7092.943997122347
+          }
+        },
+        "candidate": {
+          "chat_p50_us": 15583.514526952058,
+          "lease_p50_us": {
+            "checkpoint": 7452.874444425106,
+            "claim": 7242.345542181283,
+            "handoff": 10079.232917632908,
+            "release": 8109.222981147468,
+            "task_update": 8008.143515326083
+          }
+        }
+      },
+      "pairs": [
+        {
+          "baseline": {
+            "chat": {
+              "max_us": 623659.4949150458,
+              "min_us": 5898.187984712422,
+              "p50_us": 18723.308516200632,
+              "p95_us": 62030.99305275828
+            },
+            "chat_events": 100,
+            "chats": 100,
+            "claim_events": 20,
+            "host": {
+              "cpu": "x86_64",
+              "isolation": "shared host, serial loopback",
+              "pid": 1996056,
+              "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+              "python": "3.12.3"
+            },
+            "lease_cycles": 20,
+            "leases": {
+              "checkpoint": {
+                "max_us": 15248.583978973329,
+                "min_us": 3545.7309568300843,
+                "p50_us": 7269.798021297902,
+                "p95_us": 9306.091000325978
+              },
+              "claim": {
+                "max_us": 14525.80897603184,
+                "min_us": 4306.597984395921,
+                "p50_us": 7261.21396292001,
+                "p95_us": 11607.395950704813
+              },
+              "handoff": {
+                "max_us": 18988.245050422847,
+                "min_us": 5979.4619446620345,
+                "p50_us": 9148.092067334801,
+                "p95_us": 14869.790058583021
+              },
+              "release": {
+                "max_us": 20472.76101075113,
+                "min_us": 3971.430007368326,
+                "p50_us": 7658.411981537938,
+                "p95_us": 17527.734045870602
+              },
+              "task_update": {
+                "max_us": 10928.694042377174,
+                "min_us": 3695.7290722057223,
+                "p50_us": 6875.395949464291,
+                "p95_us": 10743.224062025547
+              }
+            },
+            "measurement_context": {
+              "finished": 1791800921.7796545,
+              "load_after": [
+                10.283203125,
+                11.0234375,
+                11.48193359375
+              ],
+              "load_before": [
+                10.283203125,
+                11.0234375,
+                11.48193359375
+              ],
+              "started": 1791800916.9481616
+            },
+            "operation_records": 100,
+            "pending_outbox": 0
+          },
+          "candidate": {
+            "chat": {
+              "max_us": 223488.29393740743,
+              "min_us": 4853.646969422698,
+              "p50_us": 16414.847515989095,
+              "p95_us": 32682.687044143677
+            },
+            "chat_events": 100,
+            "chats": 100,
+            "claim_events": 20,
+            "host": {
+              "cpu": "x86_64",
+              "isolation": "shared host, serial loopback",
+              "pid": 1996455,
+              "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+              "python": "3.12.3"
+            },
+            "lease_cycles": 20,
+            "leases": {
+              "checkpoint": {
+                "max_us": 17078.093020245433,
+                "min_us": 5209.929076954722,
+                "p50_us": 7909.965002909303,
+                "p95_us": 11226.202012039721
+              },
+              "claim": {
+                "max_us": 15617.612982168794,
+                "min_us": 5171.010969206691,
+                "p50_us": 7242.345542181283,
+                "p95_us": 13718.551024794579
+              },
+              "handoff": {
+                "max_us": 14984.8279543221,
+                "min_us": 5702.328053303063,
+                "p50_us": 9639.738942496479,
+                "p95_us": 14309.305930510163
+              },
+              "release": {
+                "max_us": 13102.85390354693,
+                "min_us": 4300.142056308687,
+                "p50_us": 8109.222981147468,
+                "p95_us": 12951.601995155215
+              },
+              "task_update": {
+                "max_us": 24302.640929818153,
+                "min_us": 3923.9670149981976,
+                "p50_us": 8759.702963288873,
+                "p95_us": 20272.62595947832
+              }
+            },
+            "measurement_context": {
+              "finished": 1791800926.147867,
+              "load_after": [
+                9.93994140625,
+                10.93994140625,
+                11.4521484375
+              ],
+              "load_before": [
+                9.93994140625,
+                10.93994140625,
+                11.4521484375
+              ],
+              "started": 1791800922.3683443
+            },
+            "operation_records": 100,
+            "pending_outbox": 0
+          },
+          "pair": 1
+        },
+        {
+          "baseline": {
+            "chat": {
+              "max_us": 176085.74300538749,
+              "min_us": 4804.35905046761,
+              "p50_us": 15448.720485437661,
+              "p95_us": 31156.057957559824
+            },
+            "chat_events": 100,
+            "chats": 100,
+            "claim_events": 20,
+            "host": {
+              "cpu": "x86_64",
+              "isolation": "shared host, serial loopback",
+              "pid": 1997079,
+              "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+              "python": "3.12.3"
+            },
+            "lease_cycles": 20,
+            "leases": {
+              "checkpoint": {
+                "max_us": 48243.65593958646,
+                "min_us": 4563.2090186700225,
+                "p50_us": 7833.998999558389,
+                "p95_us": 10933.417011983693
+              },
+              "claim": {
+                "max_us": 46576.98201481253,
+                "min_us": 4956.076969392598,
+                "p50_us": 8812.630025204271,
+                "p95_us": 17433.780943974853
+              },
+              "handoff": {
+                "max_us": 17407.997976988554,
+                "min_us": 6814.358988776803,
+                "p50_us": 10770.71001054719,
+                "p95_us": 14844.863908365369
+              },
+              "release": {
+                "max_us": 16855.258960276842,
+                "min_us": 4390.725051052868,
+                "p50_us": 8521.522511728108,
+                "p95_us": 14976.967009715736
+              },
+              "task_update": {
+                "max_us": 123144.99996136874,
+                "min_us": 4458.442912437022,
+                "p50_us": 8838.260022457689,
+                "p95_us": 12988.897040486336
+              }
+            },
+            "measurement_context": {
+              "finished": 1791800934.5272827,
+              "load_after": [
+                11.5634765625,
+                11.24169921875,
+                11.54443359375
+              ],
+              "load_before": [
+                9.7841796875,
+                10.89111328125,
+                11.43359375
+              ],
+              "started": 1791800930.9768782
+            },
+            "operation_records": 100,
+            "pending_outbox": 0
+          },
+          "candidate": {
+            "chat": {
+              "max_us": 143248.24104551226,
+              "min_us": 6132.973940111697,
+              "p50_us": 15188.153542112559,
+              "p95_us": 29390.55801834911
+            },
+            "chat_events": 100,
+            "chats": 100,
+            "claim_events": 20,
+            "host": {
+              "cpu": "x86_64",
+              "isolation": "shared host, serial loopback",
+              "pid": 1996772,
+              "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+              "python": "3.12.3"
+            },
+            "lease_cycles": 20,
+            "leases": {
+              "checkpoint": {
+                "max_us": 15029.880916699767,
+                "min_us": 4349.48701877147,
+                "p50_us": 7452.874444425106,
+                "p95_us": 13388.063060119748
+              },
+              "claim": {
+                "max_us": 21948.178997263312,
+                "min_us": 5630.440078675747,
+                "p50_us": 7829.736510757357,
+                "p95_us": 10160.524980165064
+              },
+              "handoff": {
+                "max_us": 22476.90304648131,
+                "min_us": 6590.819917619228,
+                "p50_us": 10079.232917632908,
+                "p95_us": 21875.61895698309
+              },
+              "release": {
+                "max_us": 17851.735930889845,
+                "min_us": 5097.702029161155,
+                "p50_us": 8261.762966867536,
+                "p95_us": 16875.019995495677
+              },
+              "task_update": {
+                "max_us": 15495.329047553241,
+                "min_us": 4722.701967693865,
+                "p50_us": 8008.143515326083,
+                "p95_us": 13153.976993635297
+              }
+            },
+            "measurement_context": {
+              "finished": 1791800930.4139607,
+              "load_after": [
+                9.7841796875,
+                10.89111328125,
+                11.43359375
+              ],
+              "load_before": [
+                9.93994140625,
+                10.93994140625,
+                11.4521484375
+              ],
+              "started": 1791800926.7490547
+            },
+            "operation_records": 100,
+            "pending_outbox": 0
+          },
+          "pair": 2
+        },
+        {
+          "baseline": {
+            "chat": {
+              "max_us": 172869.22200582922,
+              "min_us": 4897.922044619918,
+              "p50_us": 16818.74494533986,
+              "p95_us": 34254.700993187726
+            },
+            "chat_events": 100,
+            "chats": 100,
+            "claim_events": 20,
+            "host": {
+              "cpu": "x86_64",
+              "isolation": "shared host, serial loopback",
+              "pid": 1997359,
+              "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+              "python": "3.12.3"
+            },
+            "lease_cycles": 20,
+            "leases": {
+              "checkpoint": {
+                "max_us": 9293.133043684065,
+                "min_us": 3276.386996731162,
+                "p50_us": 6325.208523776382,
+                "p95_us": 9090.81706777215
+              },
+              "claim": {
+                "max_us": 45755.46202249825,
+                "min_us": 4312.0699701830745,
+                "p50_us": 6621.323060244322,
+                "p95_us": 15706.047997809947
+              },
+              "handoff": {
+                "max_us": 18956.629908643663,
+                "min_us": 5612.623994238675,
+                "p50_us": 9787.318063899875,
+                "p95_us": 13696.852955035865
+              },
+              "release": {
+                "max_us": 14714.87304661423,
+                "min_us": 3740.6899500638247,
+                "p50_us": 7155.984989367425,
+                "p95_us": 11026.81690827012
+              },
+              "task_update": {
+                "max_us": 130982.14601632208,
+                "min_us": 3472.3799908533692,
+                "p50_us": 7092.943997122347,
+                "p95_us": 21695.715957321227
+              }
+            },
+            "measurement_context": {
+              "finished": 1791800938.7933533,
+              "load_after": [
+                11.27783203125,
+                11.1875,
+                11.525390625
+              ],
+              "load_before": [
+                11.5634765625,
+                11.24169921875,
+                11.54443359375
+              ],
+              "started": 1791800935.1475651
+            },
+            "operation_records": 100,
+            "pending_outbox": 0
+          },
+          "candidate": {
+            "chat": {
+              "max_us": 172886.84798404574,
+              "min_us": 4148.804000578821,
+              "p50_us": 15583.514526952058,
+              "p95_us": 30220.75304761529
+            },
+            "chat_events": 100,
+            "chats": 100,
+            "claim_events": 20,
+            "host": {
+              "cpu": "x86_64",
+              "isolation": "shared host, serial loopback",
+              "pid": 1997660,
+              "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+              "python": "3.12.3"
+            },
+            "lease_cycles": 20,
+            "leases": {
+              "checkpoint": {
+                "max_us": 84028.49198319018,
+                "min_us": 3325.4349837079644,
+                "p50_us": 7020.496006589383,
+                "p95_us": 16039.167996495962
+              },
+              "claim": {
+                "max_us": 15951.520064845681,
+                "min_us": 3910.1510774344206,
+                "p50_us": 6467.705010436475,
+                "p95_us": 8161.2269859761
+              },
+              "handoff": {
+                "max_us": 84118.5039607808,
+                "min_us": 5080.349976196885,
+                "p50_us": 10169.029526878148,
+                "p95_us": 12746.543041430414
+              },
+              "release": {
+                "max_us": 10147.779015824199,
+                "min_us": 3609.1599613428116,
+                "p50_us": 6562.934489920735,
+                "p95_us": 9993.659914471209
+              },
+              "task_update": {
+                "max_us": 46025.581075809896,
+                "min_us": 3347.70604968071,
+                "p50_us": 7393.057981971651,
+                "p95_us": 16590.591985732317
+              }
+            },
+            "measurement_context": {
+              "finished": 1791800943.066648,
+              "load_after": [
+                10.85498046875,
+                11.10107421875,
+                11.49560546875
+              ],
+              "load_before": [
+                11.27783203125,
+                11.1875,
+                11.525390625
+              ],
+              "started": 1791800939.5024264
+            },
+            "operation_records": 100,
+            "pending_outbox": 0
+          },
+          "pair": 3
+        }
+      ],
+      "recorded_at": "2026-10-12T10:33:43.162909+00:00"
+    },
     "isolation": "shared workstation; serial nice19; MemoryMax1536M; no reserved CPU/storage",
     "measurement_cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
     "median_of_run_medians": {
       "baseline": {
-        "chat_p50_us": 16818.74494533986,
+        "chat_p50_us": 16363.081056624651,
         "lease_p50_us": {
-          "checkpoint": 7269.798021297902,
-          "claim": 7261.21396292001,
-          "handoff": 9787.318063899875,
-          "release": 7658.411981537938,
-          "task_update": 7092.943997122347
+          "checkpoint": 7635.498477611691,
+          "claim": 8687.961497344077,
+          "handoff": 11616.502015385777,
+          "release": 7575.02147462219,
+          "task_update": 8490.3595270589
         }
       },
       "candidate": {
-        "chat_p50_us": 15583.514526952058,
+        "chat_p50_us": 19226.95804387331,
         "lease_p50_us": {
-          "checkpoint": 7452.874444425106,
-          "claim": 7242.345542181283,
-          "handoff": 10079.232917632908,
-          "release": 8109.222981147468,
-          "task_update": 8008.143515326083
+          "checkpoint": 7347.681501414627,
+          "claim": 8212.138491217047,
+          "handoff": 10480.376542545855,
+          "release": 7834.438991267234,
+          "task_update": 7558.548997621983
         }
       }
     },
@@ -46,10 +505,10 @@
       {
         "baseline": {
           "chat": {
-            "max_us": 623659.4949150458,
-            "min_us": 5898.187984712422,
-            "p50_us": 18723.308516200632,
-            "p95_us": 62030.99305275828
+            "max_us": 105879.63392026722,
+            "min_us": 5401.824018917978,
+            "p50_us": 14430.670533329248,
+            "p95_us": 36865.77803455293
           },
           "chat_events": 100,
           "chats": 100,
@@ -57,66 +516,66 @@
           "host": {
             "cpu": "x86_64",
             "isolation": "shared host, serial loopback",
-            "pid": 1996056,
+            "pid": 2075342,
             "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
             "python": "3.12.3"
           },
           "lease_cycles": 20,
           "leases": {
             "checkpoint": {
-              "max_us": 15248.583978973329,
-              "min_us": 3545.7309568300843,
-              "p50_us": 7269.798021297902,
-              "p95_us": 9306.091000325978
+              "max_us": 49760.674010030925,
+              "min_us": 3190.4750503599644,
+              "p50_us": 6583.349022548646,
+              "p95_us": 16048.911027610302
             },
             "claim": {
-              "max_us": 14525.80897603184,
-              "min_us": 4306.597984395921,
-              "p50_us": 7261.21396292001,
-              "p95_us": 11607.395950704813
+              "max_us": 21088.44101894647,
+              "min_us": 3911.570063792169,
+              "p50_us": 6194.739486090839,
+              "p95_us": 11135.24497486651
             },
             "handoff": {
-              "max_us": 18988.245050422847,
-              "min_us": 5979.4619446620345,
-              "p50_us": 9148.092067334801,
-              "p95_us": 14869.790058583021
+              "max_us": 93976.61592811346,
+              "min_us": 5043.626995757222,
+              "p50_us": 9397.18447625637,
+              "p95_us": 21042.924956418574
             },
             "release": {
-              "max_us": 20472.76101075113,
-              "min_us": 3971.430007368326,
-              "p50_us": 7658.411981537938,
-              "p95_us": 17527.734045870602
+              "max_us": 45106.43403045833,
+              "min_us": 3696.172032505274,
+              "p50_us": 7176.938466727734,
+              "p95_us": 15064.264996908605
             },
             "task_update": {
-              "max_us": 10928.694042377174,
-              "min_us": 3695.7290722057223,
-              "p50_us": 6875.395949464291,
-              "p95_us": 10743.224062025547
+              "max_us": 10589.42696545273,
+              "min_us": 2954.021911136806,
+              "p50_us": 7069.919025525451,
+              "p95_us": 10359.465959481895
             }
           },
           "measurement_context": {
-            "finished": 1791800921.7796545,
+            "finished": 1791801839.1824498,
             "load_after": [
-              10.283203125,
-              11.0234375,
-              11.48193359375
+              15.16796875,
+              14.25634765625,
+              12.66064453125
             ],
             "load_before": [
-              10.283203125,
-              11.0234375,
-              11.48193359375
+              15.705078125,
+              14.34521484375,
+              12.6806640625
             ],
-            "started": 1791800916.9481616
+            "started": 1791801835.7608037
           },
           "operation_records": 100,
           "pending_outbox": 0
         },
         "candidate": {
           "chat": {
-            "max_us": 223488.29393740743,
-            "min_us": 4853.646969422698,
-            "p50_us": 16414.847515989095,
-            "p95_us": 32682.687044143677
+            "max_us": 100087.41496130824,
+            "min_us": 4618.408042006195,
+            "p50_us": 15537.052473518997,
+            "p95_us": 34431.48802034557
           },
           "chat_events": 100,
           "chats": 100,
@@ -124,56 +583,56 @@
           "host": {
             "cpu": "x86_64",
             "isolation": "shared host, serial loopback",
-            "pid": 1996455,
+            "pid": 2075531,
             "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
             "python": "3.12.3"
           },
           "lease_cycles": 20,
           "leases": {
             "checkpoint": {
-              "max_us": 17078.093020245433,
-              "min_us": 5209.929076954722,
-              "p50_us": 7909.965002909303,
-              "p95_us": 11226.202012039721
+              "max_us": 23878.513020463288,
+              "min_us": 3704.882925376296,
+              "p50_us": 6306.685041636229,
+              "p95_us": 14187.958091497421
             },
             "claim": {
-              "max_us": 15617.612982168794,
-              "min_us": 5171.010969206691,
-              "p50_us": 7242.345542181283,
-              "p95_us": 13718.551024794579
+              "max_us": 9248.88497684151,
+              "min_us": 4008.9190006256104,
+              "p50_us": 6417.307537049055,
+              "p95_us": 9085.013996809721
             },
             "handoff": {
-              "max_us": 14984.8279543221,
-              "min_us": 5702.328053303063,
-              "p50_us": 9639.738942496479,
-              "p95_us": 14309.305930510163
+              "max_us": 21166.53008852154,
+              "min_us": 5550.1790484413505,
+              "p50_us": 8154.543989803642,
+              "p95_us": 11414.132080972195
             },
             "release": {
-              "max_us": 13102.85390354693,
-              "min_us": 4300.142056308687,
-              "p50_us": 8109.222981147468,
-              "p95_us": 12951.601995155215
+              "max_us": 15826.490940526128,
+              "min_us": 3688.642056658864,
+              "p50_us": 7058.745017275214,
+              "p95_us": 9649.963001720607
             },
             "task_update": {
-              "max_us": 24302.640929818153,
-              "min_us": 3923.9670149981976,
-              "p50_us": 8759.702963288873,
-              "p95_us": 20272.62595947832
+              "max_us": 13744.12002041936,
+              "min_us": 3513.2759949192405,
+              "p50_us": 7084.6115704625845,
+              "p95_us": 10934.988036751747
             }
           },
           "measurement_context": {
-            "finished": 1791800926.147867,
+            "finished": 1791801843.0711007,
             "load_after": [
-              9.93994140625,
-              10.93994140625,
-              11.4521484375
+              14.2734375,
+              14.0859375,
+              12.61376953125
             ],
             "load_before": [
-              9.93994140625,
-              10.93994140625,
-              11.4521484375
+              15.16796875,
+              14.25634765625,
+              12.66064453125
             ],
-            "started": 1791800922.3683443
+            "started": 1791801839.1826088
           },
           "operation_records": 100,
           "pending_outbox": 0
@@ -183,10 +642,10 @@
       {
         "baseline": {
           "chat": {
-            "max_us": 176085.74300538749,
-            "min_us": 4804.35905046761,
-            "p50_us": 15448.720485437661,
-            "p95_us": 31156.057957559824
+            "max_us": 129766.09205361456,
+            "min_us": 5711.965030059218,
+            "p50_us": 17950.96351997927,
+            "p95_us": 30226.06996819377
           },
           "chat_events": 100,
           "chats": 100,
@@ -194,66 +653,66 @@
           "host": {
             "cpu": "x86_64",
             "isolation": "shared host, serial loopback",
-            "pid": 1997079,
+            "pid": 2076122,
             "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
             "python": "3.12.3"
           },
           "lease_cycles": 20,
           "leases": {
             "checkpoint": {
-              "max_us": 48243.65593958646,
-              "min_us": 4563.2090186700225,
-              "p50_us": 7833.998999558389,
-              "p95_us": 10933.417011983693
+              "max_us": 22920.73902208358,
+              "min_us": 4843.597067520022,
+              "p50_us": 7884.813065174967,
+              "p95_us": 14897.231012582779
             },
             "claim": {
-              "max_us": 46576.98201481253,
-              "min_us": 4956.076969392598,
-              "p50_us": 8812.630025204271,
-              "p95_us": 17433.780943974853
+              "max_us": 48982.535023242235,
+              "min_us": 5287.153064273298,
+              "p50_us": 8687.961497344077,
+              "p95_us": 26071.33297715336
             },
             "handoff": {
-              "max_us": 17407.997976988554,
-              "min_us": 6814.358988776803,
-              "p50_us": 10770.71001054719,
-              "p95_us": 14844.863908365369
+              "max_us": 14147.468958981335,
+              "min_us": 6365.9470761194825,
+              "p50_us": 11616.502015385777,
+              "p95_us": 13601.340004242957
             },
             "release": {
-              "max_us": 16855.258960276842,
-              "min_us": 4390.725051052868,
-              "p50_us": 8521.522511728108,
-              "p95_us": 14976.967009715736
+              "max_us": 13519.888976588845,
+              "min_us": 4792.93498210609,
+              "p50_us": 7575.02147462219,
+              "p95_us": 10718.577890656888
             },
             "task_update": {
-              "max_us": 123144.99996136874,
-              "min_us": 4458.442912437022,
-              "p50_us": 8838.260022457689,
-              "p95_us": 12988.897040486336
+              "max_us": 20876.83300487697,
+              "min_us": 4656.282952055335,
+              "p50_us": 8490.3595270589,
+              "p95_us": 19495.508982799947
             }
           },
           "measurement_context": {
-            "finished": 1791800934.5272827,
+            "finished": 1791801851.0643408,
             "load_after": [
-              11.5634765625,
-              11.24169921875,
-              11.54443359375
+              14.412109375,
+              14.1181640625,
+              12.63232421875
             ],
             "load_before": [
-              9.7841796875,
-              10.89111328125,
-              11.43359375
+              14.412109375,
+              14.1181640625,
+              12.63232421875
             ],
-            "started": 1791800930.9768782
+            "started": 1791801847.1309478
           },
           "operation_records": 100,
           "pending_outbox": 0
         },
         "candidate": {
           "chat": {
-            "max_us": 143248.24104551226,
-            "min_us": 6132.973940111697,
-            "p50_us": 15188.153542112559,
-            "p95_us": 29390.55801834911
+            "max_us": 146793.30599028617,
+            "min_us": 4308.020928874612,
+            "p50_us": 19226.95804387331,
+            "p95_us": 40193.43201071024
           },
           "chat_events": 100,
           "chats": 100,
@@ -261,56 +720,56 @@
           "host": {
             "cpu": "x86_64",
             "isolation": "shared host, serial loopback",
-            "pid": 1996772,
+            "pid": 2075812,
             "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
             "python": "3.12.3"
           },
           "lease_cycles": 20,
           "leases": {
             "checkpoint": {
-              "max_us": 15029.880916699767,
-              "min_us": 4349.48701877147,
-              "p50_us": 7452.874444425106,
-              "p95_us": 13388.063060119748
+              "max_us": 21491.805906407535,
+              "min_us": 4466.484999284148,
+              "p50_us": 9062.321507371962,
+              "p95_us": 16135.487938299775
             },
             "claim": {
-              "max_us": 21948.178997263312,
-              "min_us": 5630.440078675747,
-              "p50_us": 7829.736510757357,
-              "p95_us": 10160.524980165064
+              "max_us": 41512.28896807879,
+              "min_us": 6226.691999472678,
+              "p50_us": 9208.8200035505,
+              "p95_us": 20872.57197126746
             },
             "handoff": {
-              "max_us": 22476.90304648131,
-              "min_us": 6590.819917619228,
-              "p50_us": 10079.232917632908,
-              "p95_us": 21875.61895698309
+              "max_us": 23842.986905947328,
+              "min_us": 8183.663012459874,
+              "p50_us": 12424.475979059935,
+              "p95_us": 19615.555997006595
             },
             "release": {
-              "max_us": 17851.735930889845,
-              "min_us": 5097.702029161155,
-              "p50_us": 8261.762966867536,
-              "p95_us": 16875.019995495677
+              "max_us": 18948.779092170298,
+              "min_us": 5310.366046614945,
+              "p50_us": 8652.004995383322,
+              "p95_us": 16926.80804990232
             },
             "task_update": {
-              "max_us": 15495.329047553241,
-              "min_us": 4722.701967693865,
-              "p50_us": 8008.143515326083,
-              "p95_us": 13153.976993635297
+              "max_us": 11888.005072250962,
+              "min_us": 5239.077960141003,
+              "p50_us": 8028.681506402791,
+              "p95_us": 10666.750953532755
             }
           },
           "measurement_context": {
-            "finished": 1791800930.4139607,
+            "finished": 1791801847.1305315,
             "load_after": [
-              9.7841796875,
-              10.89111328125,
-              11.43359375
+              14.412109375,
+              14.1181640625,
+              12.63232421875
             ],
             "load_before": [
-              9.93994140625,
-              10.93994140625,
-              11.4521484375
+              14.2734375,
+              14.0859375,
+              12.61376953125
             ],
-            "started": 1791800926.7490547
+            "started": 1791801843.0714698
           },
           "operation_records": 100,
           "pending_outbox": 0
@@ -320,10 +779,10 @@
       {
         "baseline": {
           "chat": {
-            "max_us": 172869.22200582922,
-            "min_us": 4897.922044619918,
-            "p50_us": 16818.74494533986,
-            "p95_us": 34254.700993187726
+            "max_us": 159854.01393845677,
+            "min_us": 4546.519019640982,
+            "p50_us": 16363.081056624651,
+            "p95_us": 34448.54496046901
           },
           "chat_events": 100,
           "chats": 100,
@@ -331,66 +790,66 @@
           "host": {
             "cpu": "x86_64",
             "isolation": "shared host, serial loopback",
-            "pid": 1997359,
+            "pid": 2076424,
             "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
             "python": "3.12.3"
           },
           "lease_cycles": 20,
           "leases": {
             "checkpoint": {
-              "max_us": 9293.133043684065,
-              "min_us": 3276.386996731162,
-              "p50_us": 6325.208523776382,
-              "p95_us": 9090.81706777215
+              "max_us": 29080.811887979507,
+              "min_us": 3936.3809628412127,
+              "p50_us": 7635.498477611691,
+              "p95_us": 14263.593009673059
             },
             "claim": {
-              "max_us": 45755.46202249825,
-              "min_us": 4312.0699701830745,
-              "p50_us": 6621.323060244322,
-              "p95_us": 15706.047997809947
+              "max_us": 55784.987984225154,
+              "min_us": 5012.164008803666,
+              "p50_us": 9552.247007377446,
+              "p95_us": 46290.13605881482
             },
             "handoff": {
-              "max_us": 18956.629908643663,
-              "min_us": 5612.623994238675,
-              "p50_us": 9787.318063899875,
-              "p95_us": 13696.852955035865
+              "max_us": 64284.67109799385,
+              "min_us": 6273.939972743392,
+              "p50_us": 12234.647467266768,
+              "p95_us": 18324.05210006982
             },
             "release": {
-              "max_us": 14714.87304661423,
-              "min_us": 3740.6899500638247,
-              "p50_us": 7155.984989367425,
-              "p95_us": 11026.81690827012
+              "max_us": 47270.74003312737,
+              "min_us": 5239.474005065858,
+              "p50_us": 9024.038969073445,
+              "p95_us": 20283.767953515053
             },
             "task_update": {
-              "max_us": 130982.14601632208,
-              "min_us": 3472.3799908533692,
-              "p50_us": 7092.943997122347,
-              "p95_us": 21695.715957321227
+              "max_us": 40656.549972482026,
+              "min_us": 4264.525952748954,
+              "p50_us": 9492.23554925993,
+              "p95_us": 13737.755012698472
             }
           },
           "measurement_context": {
-            "finished": 1791800938.7933533,
+            "finished": 1791801855.6560671,
             "load_after": [
-              11.27783203125,
-              11.1875,
-              11.525390625
+              15.90087890625,
+              14.431640625,
+              12.7421875
             ],
             "load_before": [
-              11.5634765625,
-              11.24169921875,
-              11.54443359375
+              14.412109375,
+              14.1181640625,
+              12.63232421875
             ],
-            "started": 1791800935.1475651
+            "started": 1791801851.0648084
           },
           "operation_records": 100,
           "pending_outbox": 0
         },
         "candidate": {
           "chat": {
-            "max_us": 172886.84798404574,
-            "min_us": 4148.804000578821,
-            "p50_us": 15583.514526952058,
-            "p95_us": 30220.75304761529
+            "max_us": 162561.9870610535,
+            "min_us": 6339.572952128947,
+            "p50_us": 20670.377532951534,
+            "p95_us": 32433.548010885715
           },
           "chat_events": 100,
           "chats": 100,
@@ -398,56 +857,56 @@
           "host": {
             "cpu": "x86_64",
             "isolation": "shared host, serial loopback",
-            "pid": 1997660,
+            "pid": 2076738,
             "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
             "python": "3.12.3"
           },
           "lease_cycles": 20,
           "leases": {
             "checkpoint": {
-              "max_us": 84028.49198319018,
-              "min_us": 3325.4349837079644,
-              "p50_us": 7020.496006589383,
-              "p95_us": 16039.167996495962
+              "max_us": 19794.319989159703,
+              "min_us": 3668.0069752037525,
+              "p50_us": 7347.681501414627,
+              "p95_us": 18008.476006798446
             },
             "claim": {
-              "max_us": 15951.520064845681,
-              "min_us": 3910.1510774344206,
-              "p50_us": 6467.705010436475,
-              "p95_us": 8161.2269859761
+              "max_us": 18831.799970939755,
+              "min_us": 4768.370999954641,
+              "p50_us": 8212.138491217047,
+              "p95_us": 15578.094986267388
             },
             "handoff": {
-              "max_us": 84118.5039607808,
-              "min_us": 5080.349976196885,
-              "p50_us": 10169.029526878148,
-              "p95_us": 12746.543041430414
+              "max_us": 89730.92201631516,
+              "min_us": 5478.6240216344595,
+              "p50_us": 10480.376542545855,
+              "p95_us": 22505.315020680428
             },
             "release": {
-              "max_us": 10147.779015824199,
-              "min_us": 3609.1599613428116,
-              "p50_us": 6562.934489920735,
-              "p95_us": 9993.659914471209
+              "max_us": 84719.31400708854,
+              "min_us": 4031.4270881935954,
+              "p50_us": 7834.438991267234,
+              "p95_us": 15786.721021868289
             },
             "task_update": {
-              "max_us": 46025.581075809896,
-              "min_us": 3347.70604968071,
-              "p50_us": 7393.057981971651,
-              "p95_us": 16590.591985732317
+              "max_us": 15807.349001988769,
+              "min_us": 4421.618999913335,
+              "p50_us": 7558.548997621983,
+              "p95_us": 11784.493108280003
             }
           },
           "measurement_context": {
-            "finished": 1791800943.066648,
+            "finished": 1791801860.076224,
             "load_after": [
-              10.85498046875,
-              11.10107421875,
-              11.49560546875
+              15.50830078125,
+              14.37451171875,
+              12.732421875
             ],
             "load_before": [
-              11.27783203125,
-              11.1875,
-              11.525390625
+              15.90087890625,
+              14.431640625,
+              12.7421875
             ],
-            "started": 1791800939.5024264
+            "started": 1791801855.656225
           },
           "operation_records": 100,
           "pending_outbox": 0
@@ -455,40 +914,45 @@
         "pair": 3
       }
     ],
-    "recorded_at": "2026-10-12T10:33:43.162909+00:00"
+    "recorded_at": "2026-10-12T10:48:22.770798+00:00"
   },
-  "isolation": "shared workstation; serial nice19; MemoryMax1536M; no reserved CPU/storage",
-  "measurement_cpu": "11th Gen Intel(R) Core(TM) i5-11600K @ 3.90GHz",
-  "median_of_run_medians": {
-    "baseline": {
-      "chat_p50_us": 16363.081056624651,
-      "lease_p50_us": {
-        "checkpoint": 7635.498477611691,
-        "claim": 8687.961497344077,
-        "handoff": 11616.502015385777,
-        "release": 7575.02147462219,
-        "task_update": 8490.3595270589
-      }
+  "harness_sha256": "960f2b5a84fb85c1b38648b09b7da1d41b3fa1f365d552ab1c18b372b44616e1",
+  "measured_at": "2026-10-14T05:31:56.140465+00:00",
+  "median_of_p50_us": {
+    "chat": {
+      "after": 18652.875092811882,
+      "before": 23386.35560590774
     },
-    "candidate": {
-      "chat_p50_us": 19226.95804387331,
-      "lease_p50_us": {
-        "checkpoint": 7347.681501414627,
-        "claim": 8212.138491217047,
-        "handoff": 10480.376542545855,
-        "release": 7834.438991267234,
-        "task_update": 7558.548997621983
-      }
+    "checkpoint": {
+      "after": 8701.878017745912,
+      "before": 7801.186991855502
+    },
+    "claim": {
+      "after": 8367.818547412753,
+      "before": 8290.752535685897
+    },
+    "handoff": {
+      "after": 13465.15107434243,
+      "before": 12383.050401695073
+    },
+    "release": {
+      "after": 8955.475990660489,
+      "before": 8540.600538253784
+    },
+    "task_update": {
+      "after": 9389.813058078289,
+      "before": 8126.729517243803
     }
   },
-  "pairs": [
-    {
-      "baseline": {
+  "method": "Three alternating pairs; unchanged full default100chats20lease cycles; serial nice19 shared workstation; no isolation or current-head hosted CI claim; CPU/load snapshots not recorded in these runs.",
+  "results": {
+    "after": [
+      {
         "chat": {
-          "max_us": 105879.63392026722,
-          "min_us": 5401.824018917978,
-          "p50_us": 14430.670533329248,
-          "p95_us": 36865.77803455293
+          "max_us": 160991.2528656423,
+          "min_us": 5789.564922451973,
+          "p50_us": 17670.438974164426,
+          "p95_us": 63505.306141451
         },
         "chat_events": 100,
         "chats": 100,
@@ -496,66 +960,52 @@
         "host": {
           "cpu": "x86_64",
           "isolation": "shared host, serial loopback",
-          "pid": 2075342,
+          "pid": 3398583,
           "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
           "python": "3.12.3"
         },
         "lease_cycles": 20,
         "leases": {
           "checkpoint": {
-            "max_us": 49760.674010030925,
-            "min_us": 3190.4750503599644,
-            "p50_us": 6583.349022548646,
-            "p95_us": 16048.911027610302
+            "max_us": 85926.09502375126,
+            "min_us": 4008.4561333060265,
+            "p50_us": 8701.878017745912,
+            "p95_us": 63444.66097652912
           },
           "claim": {
-            "max_us": 21088.44101894647,
-            "min_us": 3911.570063792169,
-            "p50_us": 6194.739486090839,
-            "p95_us": 11135.24497486651
+            "max_us": 41641.03185757995,
+            "min_us": 4808.004014194012,
+            "p50_us": 8367.818547412753,
+            "p95_us": 35809.60095860064
           },
           "handoff": {
-            "max_us": 93976.61592811346,
-            "min_us": 5043.626995757222,
-            "p50_us": 9397.18447625637,
-            "p95_us": 21042.924956418574
+            "max_us": 48517.577117308974,
+            "min_us": 6852.646823972464,
+            "p50_us": 13465.15107434243,
+            "p95_us": 30185.231007635593
           },
           "release": {
-            "max_us": 45106.43403045833,
-            "min_us": 3696.172032505274,
-            "p50_us": 7176.938466727734,
-            "p95_us": 15064.264996908605
+            "max_us": 70144.85797844827,
+            "min_us": 3919.5800200104713,
+            "p50_us": 8749.845437705517,
+            "p95_us": 54672.80209995806
           },
           "task_update": {
-            "max_us": 10589.42696545273,
-            "min_us": 2954.021911136806,
-            "p50_us": 7069.919025525451,
-            "p95_us": 10359.465959481895
+            "max_us": 48841.866198927164,
+            "min_us": 4701.944068074226,
+            "p50_us": 9389.813058078289,
+            "p95_us": 29354.347847402096
           }
-        },
-        "measurement_context": {
-          "finished": 1791801839.1824498,
-          "load_after": [
-            15.16796875,
-            14.25634765625,
-            12.66064453125
-          ],
-          "load_before": [
-            15.705078125,
-            14.34521484375,
-            12.6806640625
-          ],
-          "started": 1791801835.7608037
         },
         "operation_records": 100,
         "pending_outbox": 0
       },
-      "candidate": {
+      {
         "chat": {
-          "max_us": 100087.41496130824,
-          "min_us": 4618.408042006195,
-          "p50_us": 15537.052473518997,
-          "p95_us": 34431.48802034557
+          "max_us": 134220.3919775784,
+          "min_us": 6248.45502898097,
+          "p50_us": 19866.058020852506,
+          "p95_us": 39648.310048505664
         },
         "chat_events": 100,
         "chats": 100,
@@ -563,69 +1013,52 @@
         "host": {
           "cpu": "x86_64",
           "isolation": "shared host, serial loopback",
-          "pid": 2075531,
+          "pid": 3398933,
           "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
           "python": "3.12.3"
         },
         "lease_cycles": 20,
         "leases": {
           "checkpoint": {
-            "max_us": 23878.513020463288,
-            "min_us": 3704.882925376296,
-            "p50_us": 6306.685041636229,
-            "p95_us": 14187.958091497421
+            "max_us": 43970.23585624993,
+            "min_us": 3629.842074587941,
+            "p50_us": 7903.3710062503815,
+            "p95_us": 14935.177052393556
           },
           "claim": {
-            "max_us": 9248.88497684151,
-            "min_us": 4008.9190006256104,
-            "p50_us": 6417.307537049055,
-            "p95_us": 9085.013996809721
+            "max_us": 53028.968162834644,
+            "min_us": 4709.5827758312225,
+            "p50_us": 7967.839133925736,
+            "p95_us": 36398.18215742707
           },
           "handoff": {
-            "max_us": 21166.53008852154,
-            "min_us": 5550.1790484413505,
-            "p50_us": 8154.543989803642,
-            "p95_us": 11414.132080972195
+            "max_us": 28104.620054364204,
+            "min_us": 5728.543968871236,
+            "p50_us": 10632.382472977042,
+            "p95_us": 24875.721894204617
           },
           "release": {
-            "max_us": 15826.490940526128,
-            "min_us": 3688.642056658864,
-            "p50_us": 7058.745017275214,
-            "p95_us": 9649.963001720607
+            "max_us": 15728.560043498874,
+            "min_us": 4107.229877263308,
+            "p50_us": 8955.475990660489,
+            "p95_us": 15150.178922340274
           },
           "task_update": {
-            "max_us": 13744.12002041936,
-            "min_us": 3513.2759949192405,
-            "p50_us": 7084.6115704625845,
-            "p95_us": 10934.988036751747
+            "max_us": 19111.443078145385,
+            "min_us": 4081.73818141222,
+            "p50_us": 8974.258904345334,
+            "p95_us": 14691.46111048758
           }
-        },
-        "measurement_context": {
-          "finished": 1791801843.0711007,
-          "load_after": [
-            14.2734375,
-            14.0859375,
-            12.61376953125
-          ],
-          "load_before": [
-            15.16796875,
-            14.25634765625,
-            12.66064453125
-          ],
-          "started": 1791801839.1826088
         },
         "operation_records": 100,
         "pending_outbox": 0
       },
-      "pair": 1
-    },
-    {
-      "baseline": {
+      {
         "chat": {
-          "max_us": 129766.09205361456,
-          "min_us": 5711.965030059218,
-          "p50_us": 17950.96351997927,
-          "p95_us": 30226.06996819377
+          "max_us": 148001.22985616326,
+          "min_us": 7858.178112655878,
+          "p50_us": 18652.875092811882,
+          "p95_us": 60986.998956650496
         },
         "chat_events": 100,
         "chats": 100,
@@ -633,66 +1066,54 @@
         "host": {
           "cpu": "x86_64",
           "isolation": "shared host, serial loopback",
-          "pid": 2076122,
+          "pid": 3399973,
           "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
           "python": "3.12.3"
         },
         "lease_cycles": 20,
         "leases": {
           "checkpoint": {
-            "max_us": 22920.73902208358,
-            "min_us": 4843.597067520022,
-            "p50_us": 7884.813065174967,
-            "p95_us": 14897.231012582779
+            "max_us": 44441.171921789646,
+            "min_us": 4208.006896078587,
+            "p50_us": 9675.103588961065,
+            "p95_us": 36142.3110589385
           },
           "claim": {
-            "max_us": 48982.535023242235,
-            "min_us": 5287.153064273298,
-            "p50_us": 8687.961497344077,
-            "p95_us": 26071.33297715336
+            "max_us": 103311.02996133268,
+            "min_us": 5850.797053426504,
+            "p50_us": 13976.621092297137,
+            "p95_us": 35820.579156279564
           },
           "handoff": {
-            "max_us": 14147.468958981335,
-            "min_us": 6365.9470761194825,
-            "p50_us": 11616.502015385777,
-            "p95_us": 13601.340004242957
+            "max_us": 58870.20309455693,
+            "min_us": 9615.267859771848,
+            "p50_us": 14925.666037015617,
+            "p95_us": 56039.839051663876
           },
           "release": {
-            "max_us": 13519.888976588845,
-            "min_us": 4792.93498210609,
-            "p50_us": 7575.02147462219,
-            "p95_us": 10718.577890656888
+            "max_us": 37490.90479686856,
+            "min_us": 4886.1929681152105,
+            "p50_us": 12104.733032174408,
+            "p95_us": 32176.862005144358
           },
           "task_update": {
-            "max_us": 20876.83300487697,
-            "min_us": 4656.282952055335,
-            "p50_us": 8490.3595270589,
-            "p95_us": 19495.508982799947
+            "max_us": 135330.3398936987,
+            "min_us": 4355.897894129157,
+            "p50_us": 11208.586976863444,
+            "p95_us": 80124.2059096694
           }
-        },
-        "measurement_context": {
-          "finished": 1791801851.0643408,
-          "load_after": [
-            14.412109375,
-            14.1181640625,
-            12.63232421875
-          ],
-          "load_before": [
-            14.412109375,
-            14.1181640625,
-            12.63232421875
-          ],
-          "started": 1791801847.1309478
         },
         "operation_records": 100,
         "pending_outbox": 0
-      },
-      "candidate": {
+      }
+    ],
+    "before": [
+      {
         "chat": {
-          "max_us": 146793.30599028617,
-          "min_us": 4308.020928874612,
-          "p50_us": 19226.95804387331,
-          "p95_us": 40193.43201071024
+          "max_us": 141988.79920877516,
+          "min_us": 5634.112982079387,
+          "p50_us": 19100.850564427674,
+          "p95_us": 58111.76192946732
         },
         "chat_events": 100,
         "chats": 100,
@@ -700,69 +1121,52 @@
         "host": {
           "cpu": "x86_64",
           "isolation": "shared host, serial loopback",
-          "pid": 2075812,
+          "pid": 3398056,
           "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
           "python": "3.12.3"
         },
         "lease_cycles": 20,
         "leases": {
           "checkpoint": {
-            "max_us": 21491.805906407535,
-            "min_us": 4466.484999284148,
-            "p50_us": 9062.321507371962,
-            "p95_us": 16135.487938299775
+            "max_us": 22225.13104788959,
+            "min_us": 5327.354883775115,
+            "p50_us": 9327.55647227168,
+            "p95_us": 20634.48610715568
           },
           "claim": {
-            "max_us": 41512.28896807879,
-            "min_us": 6226.691999472678,
-            "p50_us": 9208.8200035505,
-            "p95_us": 20872.57197126746
+            "max_us": 21772.3420355469,
+            "min_us": 5474.702920764685,
+            "p50_us": 8549.244492314756,
+            "p95_us": 20437.05596588552
           },
           "handoff": {
-            "max_us": 23842.986905947328,
-            "min_us": 8183.663012459874,
-            "p50_us": 12424.475979059935,
-            "p95_us": 19615.555997006595
+            "max_us": 36217.63805858791,
+            "min_us": 7912.84698061645,
+            "p50_us": 12383.050401695073,
+            "p95_us": 28086.923994123936
           },
           "release": {
-            "max_us": 18948.779092170298,
-            "min_us": 5310.366046614945,
-            "p50_us": 8652.004995383322,
-            "p95_us": 16926.80804990232
+            "max_us": 37869.66088227928,
+            "min_us": 4816.066008061171,
+            "p50_us": 8879.615110345185,
+            "p95_us": 23071.801057085395
           },
           "task_update": {
-            "max_us": 11888.005072250962,
-            "min_us": 5239.077960141003,
-            "p50_us": 8028.681506402791,
-            "p95_us": 10666.750953532755
+            "max_us": 21835.365099832416,
+            "min_us": 4758.379189297557,
+            "p50_us": 8959.25099030137,
+            "p95_us": 16897.422028705478
           }
-        },
-        "measurement_context": {
-          "finished": 1791801847.1305315,
-          "load_after": [
-            14.412109375,
-            14.1181640625,
-            12.63232421875
-          ],
-          "load_before": [
-            14.2734375,
-            14.0859375,
-            12.61376953125
-          ],
-          "started": 1791801843.0714698
         },
         "operation_records": 100,
         "pending_outbox": 0
       },
-      "pair": 2
-    },
-    {
-      "baseline": {
+      {
         "chat": {
-          "max_us": 159854.01393845677,
-          "min_us": 4546.519019640982,
-          "p50_us": 16363.081056624651,
-          "p95_us": 34448.54496046901
+          "max_us": 126615.09099416435,
+          "min_us": 5595.918046310544,
+          "p50_us": 23386.35560590774,
+          "p95_us": 67247.33300507069
         },
         "chat_events": 100,
         "chats": 100,
@@ -770,66 +1174,52 @@
         "host": {
           "cpu": "x86_64",
           "isolation": "shared host, serial loopback",
-          "pid": 2076424,
+          "pid": 3399203,
           "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
           "python": "3.12.3"
         },
         "lease_cycles": 20,
         "leases": {
           "checkpoint": {
-            "max_us": 29080.811887979507,
-            "min_us": 3936.3809628412127,
-            "p50_us": 7635.498477611691,
-            "p95_us": 14263.593009673059
+            "max_us": 49277.21503190696,
+            "min_us": 4015.689017251134,
+            "p50_us": 7801.186991855502,
+            "p95_us": 16096.634091809392
           },
           "claim": {
-            "max_us": 55784.987984225154,
-            "min_us": 5012.164008803666,
-            "p50_us": 9552.247007377446,
-            "p95_us": 46290.13605881482
+            "max_us": 53038.07300515473,
+            "min_us": 6022.024899721146,
+            "p50_us": 8290.752535685897,
+            "p95_us": 42146.63617312908
           },
           "handoff": {
-            "max_us": 64284.67109799385,
-            "min_us": 6273.939972743392,
-            "p50_us": 12234.647467266768,
-            "p95_us": 18324.05210006982
+            "max_us": 51332.12893269956,
+            "min_us": 6863.156100735068,
+            "p50_us": 10242.146905511618,
+            "p95_us": 28599.05897639692
           },
           "release": {
-            "max_us": 47270.74003312737,
-            "min_us": 5239.474005065858,
-            "p50_us": 9024.038969073445,
-            "p95_us": 20283.767953515053
+            "max_us": 85125.48310682178,
+            "min_us": 5119.132110849023,
+            "p50_us": 8499.197429046035,
+            "p95_us": 17640.586011111736
           },
           "task_update": {
-            "max_us": 40656.549972482026,
-            "min_us": 4264.525952748954,
-            "p50_us": 9492.23554925993,
-            "p95_us": 13737.755012698472
+            "max_us": 15164.125012233853,
+            "min_us": 4278.287058696151,
+            "p50_us": 7547.231973148882,
+            "p95_us": 13678.71300317347
           }
-        },
-        "measurement_context": {
-          "finished": 1791801855.6560671,
-          "load_after": [
-            15.90087890625,
-            14.431640625,
-            12.7421875
-          ],
-          "load_before": [
-            14.412109375,
-            14.1181640625,
-            12.63232421875
-          ],
-          "started": 1791801851.0648084
         },
         "operation_records": 100,
         "pending_outbox": 0
       },
-      "candidate": {
+      {
         "chat": {
-          "max_us": 162561.9870610535,
-          "min_us": 6339.572952128947,
-          "p50_us": 20670.377532951534,
-          "p95_us": 32433.548010885715
+          "max_us": 147811.52503564954,
+          "min_us": 5422.05385863781,
+          "p50_us": 24202.387547120452,
+          "p95_us": 69790.22617451847
         },
         "chat_events": 100,
         "chats": 100,
@@ -837,62 +1227,46 @@
         "host": {
           "cpu": "x86_64",
           "isolation": "shared host, serial loopback",
-          "pid": 2076738,
+          "pid": 3399584,
           "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
           "python": "3.12.3"
         },
         "lease_cycles": 20,
         "leases": {
           "checkpoint": {
-            "max_us": 19794.319989159703,
-            "min_us": 3668.0069752037525,
-            "p50_us": 7347.681501414627,
-            "p95_us": 18008.476006798446
+            "max_us": 49369.71701681614,
+            "min_us": 3966.695861890912,
+            "p50_us": 7697.990513406694,
+            "p95_us": 27228.500926867127
           },
           "claim": {
-            "max_us": 18831.799970939755,
-            "min_us": 4768.370999954641,
-            "p50_us": 8212.138491217047,
-            "p95_us": 15578.094986267388
+            "max_us": 15949.317021295428,
+            "min_us": 5049.838917329907,
+            "p50_us": 7841.083919629455,
+            "p95_us": 15106.698032468557
           },
           "handoff": {
-            "max_us": 89730.92201631516,
-            "min_us": 5478.6240216344595,
-            "p50_us": 10480.376542545855,
-            "p95_us": 22505.315020680428
+            "max_us": 88676.8710333854,
+            "min_us": 6664.457963779569,
+            "p50_us": 12700.791005045176,
+            "p95_us": 42792.85413213074
           },
           "release": {
-            "max_us": 84719.31400708854,
-            "min_us": 4031.4270881935954,
-            "p50_us": 7834.438991267234,
-            "p95_us": 15786.721021868289
+            "max_us": 67104.60991598666,
+            "min_us": 5525.653017684817,
+            "p50_us": 8540.600538253784,
+            "p95_us": 47888.96720856428
           },
           "task_update": {
-            "max_us": 15807.349001988769,
-            "min_us": 4421.618999913335,
-            "p50_us": 7558.548997621983,
-            "p95_us": 11784.493108280003
+            "max_us": 41482.7901404351,
+            "min_us": 4024.989902973175,
+            "p50_us": 8126.729517243803,
+            "p95_us": 12450.308073312044
           }
-        },
-        "measurement_context": {
-          "finished": 1791801860.076224,
-          "load_after": [
-            15.50830078125,
-            14.37451171875,
-            12.732421875
-          ],
-          "load_before": [
-            15.90087890625,
-            14.431640625,
-            12.7421875
-          ],
-          "started": 1791801855.656225
         },
         "operation_records": 100,
         "pending_outbox": 0
-      },
-      "pair": 3
-    }
-  ],
-  "recorded_at": "2026-10-12T10:48:22.770798+00:00"
+      }
+    ]
+  }
 }

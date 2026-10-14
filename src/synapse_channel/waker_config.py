@@ -23,6 +23,7 @@ from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.core.errors import SynapseError
 from synapse_channel.core.private_dir import ensure_private_dir
 from synapse_channel.core.secret_files import SecretFileError, read_secret_file
+from synapse_channel.durable_dir import sync_directory
 from synapse_channel.terminal_text import terminal_text
 
 CONFIG_SCHEMA_VERSION = 1
@@ -248,7 +249,12 @@ def waker_config_path(identity: str, *, home: Path | None = None) -> Path:
 
 
 def save_waker_config(config: WakerConfig, *, home: Path | None = None) -> Path:
-    """Atomically persist one validated owner-only configuration."""
+    """Flush and atomically replace one validated owner-only configuration.
+
+    Request directory sync through the shared portable seam: POSIX syncs the
+    directory; Windows retains file flush and atomic replace without claiming
+    directory flush or power-loss durability.
+    """
     validate_waker_config(config)
     directory = ensure_private_dir(
         waker_config_dir(home=home), parents=True, purpose="waker configuration directory"
@@ -263,11 +269,7 @@ def save_waker_config(config: WakerConfig, *, home: Path | None = None) -> Path:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, destination)
-        directory_descriptor = os.open(directory, os.O_RDONLY)
-        try:
-            os.fsync(directory_descriptor)
-        finally:
-            os.close(directory_descriptor)
+        sync_directory(directory)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise

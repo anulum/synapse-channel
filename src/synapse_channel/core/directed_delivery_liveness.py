@@ -17,9 +17,10 @@ receive stable live/stale partitions and a machine-readable negative reason.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from synapse_channel.core.agent_liveness import waiter_sidecar_names
+from synapse_channel.core.receipt_receiver_evidence import TransportWrites
 
 NO_ONLINE_RECIPIENT = "no_online_recipient"
 """Negative receipt reason when no socket matched the directed target."""
@@ -43,12 +44,18 @@ class DeliveryLiveness:
     reason : str
         Empty for a positive verdict, otherwise ``no_online_recipient`` or
         ``no_live_recipient`` or ``recipient_transport_unavailable``.
+    transport_wake_capabilities : tuple of pairs or None
+        Concrete writer declarations captured at fanout. Failed attempts are
+        unknown; this evidence does not participate in liveness identity or hashing.
     """
 
     matched_recipients: tuple[str, ...]
     live_recipients: tuple[str, ...]
     stale_recipients: tuple[str, ...]
     reason: str
+    transport_wake_capabilities: tuple[tuple[str, str], ...] | None = field(
+        default=None, compare=False, hash=False
+    )
 
     @property
     def delivered(self) -> bool:
@@ -121,4 +128,7 @@ def classify_completed_delivery(
         live_recipients=live,
         stale_recipients=decision.stale_recipients,
         reason="" if live else RECIPIENT_TRANSPORT_UNAVAILABLE,
+        transport_wake_capabilities=tuple(successful_names.wake_capabilities.items())
+        if isinstance(successful_names, TransportWrites)
+        else None,
     )

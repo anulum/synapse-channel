@@ -66,6 +66,7 @@ from synapse_channel.wake_adapters import (
     Availability,
     WakeOutcome,
     WakeTarget,
+    validate_deadline,
 )
 
 KIND = "native_queue"
@@ -134,9 +135,14 @@ class CodexQueueAdapter:
     ) -> WakeOutcome:
         """Queue the prompt once and say what the command reported."""
         del wake_id
-        session = canonical_session(target.native_session)
-        if session is None:
-            return WakeOutcome(REFUSED, "", "not started: the session identifier is not a UUID")
+        try:
+            validate_deadline(deadline_seconds)
+        except ValueError:
+            return WakeOutcome(REFUSED, "", "not started: invalid wake deadline")
+        availability = self.available(target)
+        if not availability.available:
+            return WakeOutcome(REFUSED, "", f"not started: {availability.detail}")
+        session = target.native_session
         argv = [str(self._executable), "queue", "--thread", session, "--message", prompt]
         try:
             child, owned = _start_owned(argv)
