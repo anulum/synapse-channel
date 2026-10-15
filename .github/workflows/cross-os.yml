@@ -113,6 +113,8 @@ jobs:
           tests/test_cli_lock_same_owner.py
           tests/test_cli_lock_renewal_acl.py
           tests/test_owner_registration.py
+          tests/test_reputation.py
+          tests/test_cli_reputation.py
           tests/test_cli_lock_epoch_runtime.py
           tests/test_cli_lock_registration_retry.py
           tests/test_cli_lock_git_hooks.py::test_commit_hook_releases_edit_claim_inside_same_owner_lock

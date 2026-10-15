@@ -19,6 +19,7 @@ import pytest
 
 from synapse_channel import cli
 from synapse_channel.core.persistence import EventStore
+from synapse_channel.core.state import TaskClaim
 
 
 @pytest.mark.parametrize("json_output", [True, False])
@@ -100,3 +101,50 @@ def test_empty_cli_and_discovery(tmp_path: Path, capsys: pytest.CaptureFixture[s
         cli.main(["reputation", "--help"])
     assert exit_result.value.code == 0
     assert "--row-mac-key-file" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("json_output", [True, False])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("lease_expires_at", None),
+        ("lease_expires_at", 10**400),
+        ("lease_expires_at", "private-invalid-clock"),
+        ("paths", None),
+        ("paths", False),
+        ("paths", 7),
+    ],
+)
+def test_malformed_claim_has_fixed_native_refusal(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    json_output: bool,
+    field: str,
+    value: object,
+) -> None:
+    path = tmp_path / "private-journal.db"
+    payload = TaskClaim("T", "alpha", "", 1, 2, paths=("src/a.py",)).as_dict()
+    payload[field] = value
+    store = EventStore(path)
+    store.append("claim", payload, ts=1, durable=True)
+    store.close()
+    before = path.read_bytes()
+    args = ["reputation", str(path), "--as-of", "3"]
+    if json_output:
+        args.append("--json")
+    child = subprocess.run(
+        [sys.executable, "-m", "synapse_channel.cli", *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=15,
+        check=False,
+    )
+    assert child.returncode == 2
+    assert child.stdout == ""
+    assert child.stderr == (
+        "Advisory ranking refused; check the journal, keys, clocks and budgets.\n"
+    )
+    assert cli.main(args) == 2
+    assert capsys.readouterr() == (child.stdout, child.stderr)
+    assert path.read_bytes() == before

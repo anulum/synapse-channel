@@ -177,7 +177,10 @@ def run_reputation(
             max_payload_bytes=max_payload_bytes,
         )
     ]
-    graph = graph_involving(build_trust_graph(events, as_of=as_of), agent=agent, since=since)
+    try:
+        graph = graph_involving(build_trust_graph(events, as_of=as_of), agent=agent, since=since)
+    except (TypeError, OverflowError) as exc:
+        raise ValueError("invalid recorded evidence for advisory ranking") from exc
     return build_reputation(graph)
 
 

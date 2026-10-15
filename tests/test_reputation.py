@@ -23,6 +23,7 @@ from synapse_channel.core.reputation import (
     reputation_to_json,
     run_reputation,
 )
+from synapse_channel.core.state import TaskClaim
 from synapse_channel.core.trust_graph import TrustGraph, TrustGraphEdge, TrustGraphNode
 from test_trust_graph import _seed_store
 
@@ -170,3 +171,30 @@ def test_native_encrypted_snapshot_and_wrong_key(tmp_path: Path) -> None:
     wrong.chmod(0o600)
     with pytest.raises(ValueError):
         run_reputation(path, key_file=wrong)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("lease_expires_at", None),
+        ("lease_expires_at", 10**400),
+        ("lease_expires_at", "private-invalid-clock"),
+        ("paths", None),
+        ("paths", False),
+        ("paths", 7),
+    ],
+)
+def test_malformed_claim_refuses_public_ranking_without_mutation(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    path = tmp_path / "journal.db"
+    payload = TaskClaim("T", "alpha", "", 1, 2, paths=("src/a.py",)).as_dict()
+    payload[field] = value
+    store = EventStore(path)
+    store.append("claim", payload, ts=1, durable=True)
+    store.close()
+    before = path.read_bytes()
+    with pytest.raises(ValueError):
+        run_reputation(path, as_of=3)
+    assert path.read_bytes() == before
+    assert not row_mac_key_path(path).exists()

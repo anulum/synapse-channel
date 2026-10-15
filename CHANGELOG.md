@@ -41,6 +41,10 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- Advisory ranking now refuses malformed stored claim fields through its
+  documented input-error contract, without exposing conversion tracebacks in
+  the CLI or modifying the journal.
+
 - Non-ASCII persisted row MACs now fail verification and enter the existing
   replay quarantine path, instead of raising from the constant-time comparison.
   The same refusal protects retained-log exports without duplicating validation.
