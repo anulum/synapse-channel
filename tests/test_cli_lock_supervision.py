@@ -278,8 +278,15 @@ async def renewal_proxy(
 
     acquired = asyncio.Event()
     saved_grant: dict[str, object] | None = None
+    connections = 0
 
     async def handle(socket: ServerConnection) -> None:
+        nonlocal connections
+        connections += 1
+        if fault == "stall-reconnect" and connections > 1:
+            if gate is not None:
+                gate.touch()
+            await asyncio.sleep(2)
         async with connect(uri) as upstream:
 
             async def inbound() -> None:

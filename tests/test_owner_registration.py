@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import secrets
+from pathlib import Path
 
 import pytest
 
@@ -19,6 +20,7 @@ from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.client.owner_registration import close_owner, register_owner
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
+from test_cli_lock_supervision import renewal_proxy
 
 
 @pytest.mark.parametrize("secured", [False, True])
@@ -74,3 +76,24 @@ async def test_registration_refuses_missing_or_mismatched_binding_then_rebinds(
             assert recovered.name in hub.clients.agent_sockets
         finally:
             await close_owner(recovered, listener)
+
+
+async def test_pending_retry_retains_the_last_observed_name_refusal(tmp_path: Path) -> None:
+    """A real delayed retry cannot erase the preceding actual hub close reason."""
+    retried = tmp_path / "retried"
+    async with running_hub() as (hub, upstream):
+        owner = SynapseAgent("diagnostic/owner", uri=upstream, verbose=False)
+        listener = await register_owner(owner, 2)
+        try:
+            assert listener is not None
+            async with renewal_proxy(upstream, "stall-reconnect", gate=retried) as uri:
+                contender = SynapseAgent(owner.name, uri=uri, verbose=False)
+                refused = await register_owner(contender, 0.8)
+                assert refused is None and retried.exists()
+                assert contender.last_close_code == 4009
+                assert contender.last_close_reason == "name conflict"
+                assert not contender.running
+                assert owner.name in hub.clients.agent_sockets
+                assert owner.running and not listener.done()
+        finally:
+            await close_owner(owner, listener)

@@ -68,6 +68,21 @@ async def _registered_profile(agent: SynapseAgent, timeout: float) -> bool:
         agent.callback = callback
 
 
+async def _cancel_registration(
+    agent: SynapseAgent,
+    listener: asyncio.Task[None],
+    ready: asyncio.Task[bool],
+    deadline: float,
+) -> bool:
+    """Join both attempt tasks and report an unfinished listener at its deadline."""
+    expired = not listener.done() and asyncio.get_running_loop().time() >= deadline
+    ready.cancel()
+    agent.running = False
+    listener.cancel()
+    await asyncio.gather(ready, listener, return_exceptions=True)
+    return expired
+
+
 async def register_owner(agent: SynapseAgent, timeout: float) -> asyncio.Task[None] | None:
     """Return a ready listener, retrying only exact name conflicts within one budget.
 
@@ -85,10 +100,12 @@ async def register_owner(agent: SynapseAgent, timeout: float) -> asyncio.Task[No
     """
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
+    last_refusal: tuple[int, str] | None = None
     while (remaining := deadline - loop.time()) > 0:
         listener = asyncio.create_task(agent.connect())
         ready = asyncio.create_task(_registered_profile(agent, remaining))
         connected = False
+        pending_listener = False
         try:
             done, _ = await asyncio.wait(
                 (listener, ready), timeout=remaining, return_when=asyncio.FIRST_COMPLETED
@@ -106,15 +123,15 @@ async def register_owner(agent: SynapseAgent, timeout: float) -> asyncio.Task[No
                 await asyncio.wait((listener,), timeout=max(0.0, deadline - loop.time()))
         finally:
             if not connected:
-                ready.cancel()
-                agent.running = False
-                listener.cancel()
-                await asyncio.gather(ready, listener, return_exceptions=True)
+                pending_listener = await _cancel_registration(agent, listener, ready, deadline)
         # A Git hook can finish before the hub retires its socket. Retry only
         # that precise admission refusal; credentials and ownership rules
         # remain unchanged, and no release has crossed the send boundary.
         if agent.last_close_code != 4009 or agent.last_close_reason != "name conflict":
+            if pending_listener and last_refusal and agent.last_close_code is None:
+                agent.last_close_code, agent.last_close_reason = last_refusal
             return None
+        last_refusal = (4009, "name conflict")
         await asyncio.sleep(min(0.05, max(0.0, deadline - loop.time())))
     return None
 
