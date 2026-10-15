@@ -24,6 +24,7 @@ import argparse
 import asyncio
 import logging
 import sys
+import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,8 @@ from typing import Any
 from synapse_channel.cli_lock_process import run_locked_subprocess
 from synapse_channel.cli_lock_release import LockRelease, display_hub_uri, valid_lock_timeouts
 from synapse_channel.cli_lock_supervision import (
+    claim_verdict_matches,
+    connect_lock_owner,
     finish_lock,
     lease_duration,
     supervise_locked_command,
@@ -51,8 +54,8 @@ from synapse_channel.cli_release import (
     _validate_release_receipt_identity as _validate_release_receipt_identity,
 )
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
-from synapse_channel.client.owner_registration import register_owner
-from synapse_channel.connect_failures import describe_connect_failure, explain_silent_outcome
+from synapse_channel.client.owner_registration import close_owner
+from synapse_channel.connect_failures import explain_silent_outcome
 from synapse_channel.core.protocol import SENDER_HUB, MessageType
 from synapse_channel.git.ordinary_claim import (
     OrdinaryClaimScopeError,
@@ -163,6 +166,7 @@ async def _lock(
 
     outcome: dict[str, Any] = {}
     welcome: dict[str, Any] = {}
+    request_id = ""
 
     async def collect(data: dict[str, Any]) -> None:
         """Collect this owner's claim verdict or an addressed hub refusal."""
@@ -175,10 +179,11 @@ async def _lock(
         ):
             outcome["error"] = str(data.get("payload") or "hub refused the request")
             return
-        if (
-            data.get("sender") != SENDER_HUB
-            or data.get("hub_id") != agent.hub_id
-            or data.get("task_id") != task_id
+        if not claim_verdict_matches(
+            data,
+            hub_id=agent.hub_id,
+            task_id=task_id,
+            request_id=request_id,
         ):
             return
         if data.get("type") == MessageType.CLAIM_GRANTED and data.get("owner") == name:
@@ -209,24 +214,16 @@ async def _lock(
     )
     release.renewal_paths = tuple(lock_paths)
     try:
-        conn_task = await register_owner(agent, ready_timeout)
-        if conn_task is None:
-            print(
-                describe_connect_failure(
-                    name,
-                    display_hub_uri(uri),
-                    close_code=agent.last_close_code,
-                    close_reason=agent.last_close_reason,
-                )
-            )
-            return 1
-        session = welcome.get("lock_renewal_session")
-        if not isinstance(session, str) or len(session) != 32:
-            print("lock: hub does not support fenced renewal; no command started", file=sys.stderr)
-            return 1
         loop = asyncio.get_event_loop()
-        deadline = loop.time() + wait_timeout
+        deadline: float | None = None
         while True:
+            request_id = uuid.uuid4().hex
+            connected = await connect_lock_owner(agent, release, welcome)
+            if connected is None:
+                return 1
+            conn_task, session = connected
+            if deadline is None:
+                deadline = loop.time() + wait_timeout
             outcome.clear()
             claim_started = loop.time()
             await agent.claim(
@@ -235,6 +232,7 @@ async def _lock(
                 paths=lock_paths,
                 path_identity=path_identity,
                 local_renewal=True,
+                idem_key=request_id,
             )
             for _ in range(attempts):
                 if outcome or conn_task.done():
@@ -273,6 +271,8 @@ async def _lock(
                     )
                 )
                 return 1
+            await close_owner(agent, conn_task)
+            conn_task = None
             await asyncio.sleep(retry_interval)
         # Task claims survive disconnection. Finish the listener's websocket
         # teardown before spawning the command, allowing its Git hooks to use

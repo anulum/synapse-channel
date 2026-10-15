@@ -251,6 +251,7 @@ class SynapseState:
         paths: tuple[str, ...] | list[str] = (),
         path_identity: ClaimScopeIdentity | None = None,
         git: GitContext | None = None,
+        require_unclaimed: bool = False,
     ) -> tuple[bool, str]:
         """Acquire or renew a scoped lease on a task.
 
@@ -291,6 +292,8 @@ class SynapseState:
         quota_principal : str or None, optional
             Stable server-derived identity bucket charged for the claim. ``None``
             preserves the direct-call compatibility behaviour by using ``agent``.
+        require_unclaimed : bool, optional
+            Refuse an existing lease even for the same owner when starting a supervised command.
 
         Returns
         -------
@@ -322,16 +325,14 @@ class SynapseState:
         existing = self.claims.get(task)
         if self._protected_scope_held(task, worktree, norm_paths, path_identity):
             return False, f"Task '{task}' conflicts with outstanding protected custody."
-        if existing and existing.owner != agent and existing.lease_expires_at > ts:
+        if (
+            existing
+            and (require_unclaimed or existing.owner != agent)
+            and existing.lease_expires_at > ts
+        ):
             return False, f"Task '{task}' is already claimed by {existing.owner}."
 
-        conflict = self._scope_conflict(
-            task,
-            agent,
-            worktree,
-            norm_paths,
-            path_identity,
-        )
+        conflict = self._scope_conflict(task, agent, worktree, norm_paths, path_identity)
         if conflict is not None:
             other_id, other_owner = conflict
             return (
@@ -345,11 +346,6 @@ class SynapseState:
                 f"Agent {agent} principal claim quota holds the maximum "
                 f"{self.max_claims_per_agent} claims.",
             )
-
-        if existing is not None and existing.owner == agent:
-            checkpoint = existing.checkpoint
-        else:
-            checkpoint = self.expired_checkpoints.pop(task, "")
 
         claim = TaskClaim(
             task_id=task,
@@ -367,12 +363,18 @@ class SynapseState:
                 if existing is not None
                 else 0
             ),
-            checkpoint=checkpoint,
+            checkpoint=self._claim_checkpoint(agent, task, existing),
             git=git,
         )
         self.claims[task] = claim
         self._track_lease(claim)
         return True, f"Task '{task}' claimed by {agent}."
+
+    def _claim_checkpoint(self, agent: str, task: str, existing: TaskClaim | None) -> str:
+        """Retain the continuing owner's checkpoint or consume its expired resume token."""
+        if existing is not None and existing.owner == agent:
+            return existing.checkpoint
+        return self.expired_checkpoints.pop(task, "")
 
     def _claim_quota_available(
         self,

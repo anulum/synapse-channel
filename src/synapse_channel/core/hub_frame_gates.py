@@ -261,6 +261,7 @@ class HubFrameGates:
                     owner_hub_id=decision.owner_hub_id,
                     reason_code="RENEWAL_REQUIRES_OWNER_HUB",
                     renewal_id=str(data.get("renewal_id") or ""),
+                    claim_request_id=str(data.get("idem_key") or ""),
                 ),
             )
             return False

@@ -110,6 +110,7 @@ jobs:
           tests/test_cli_lock_supervision.py
           tests/test_cli_lock_federation.py
           tests/test_cli_lock_deadline.py
+          tests/test_cli_lock_same_owner.py
           tests/test_cli_lock_renewal_acl.py
           tests/test_owner_registration.py
           tests/test_cli_lock_epoch_runtime.py

@@ -694,6 +694,9 @@ lease at most every five seconds. Renewal retains the epoch, scope, lifecycle,
 checkpoint and Git context. It refuses an expired, handed-off, released or replaced
 claim; it never reacquires lost ownership. Git profiles wait boundedly for a
 retiring same-name socket without takeover.
+Acquisition refuses an existing claim even for the same identity. A waiting
+contender disconnects between attempts so the running command can renew and
+release using that name. Ordinary child claim renewals remain supported.
 
 A hub must advertise fenced renewal support in its welcome; older hubs are refused
 before acquisition or command launch. Connect directly to the hub owning the agent's

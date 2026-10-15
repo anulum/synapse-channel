@@ -15,14 +15,57 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from synapse_channel.cli_lock_release import LockRelease
+from synapse_channel.cli_lock_release import LockRelease, display_hub_uri
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.client.lease_ownership import claim_continues
-from synapse_channel.client.owner_registration import close_owner
+from synapse_channel.client.owner_registration import close_owner, register_owner
+from synapse_channel.connect_failures import describe_connect_failure
 from synapse_channel.core.numeric_coercion import safe_float
 from synapse_channel.core.protocol import SENDER_HUB, MessageType
 
 STOP_ALLOWANCE = 5.0
+
+
+def claim_verdict_matches(
+    data: dict[str, Any],
+    *,
+    hub_id: str,
+    task_id: str,
+    request_id: str,
+) -> bool:
+    """Bind an acquisition verdict to this hub, task and fresh request."""
+    return bool(request_id) and (
+        data.get("sender") == SENDER_HUB
+        and data.get("hub_id") == hub_id
+        and data.get("task_id") == task_id
+        and data.get("claim_request_id") == request_id
+    )
+
+
+async def connect_lock_owner(
+    agent: SynapseAgent,
+    profile: LockRelease,
+    welcome: dict[str, Any],
+) -> tuple[asyncio.Task[None], str] | None:
+    """Bind a fresh profile and negotiate this connection's supervision support."""
+    welcome.clear()
+    listener = await register_owner(agent, profile.ready_timeout)
+    if listener is None:
+        print(
+            describe_connect_failure(
+                profile.name,
+                display_hub_uri(profile.uri),
+                close_code=agent.last_close_code,
+                close_reason=agent.last_close_reason,
+            )
+        )
+        return None
+    session = welcome.get("lock_renewal_session")
+    if isinstance(session, str) and len(session) == 32:
+        return listener, session
+    await close_owner(agent, listener)
+    print("lock: hub does not support fenced renewal; no command started", file=sys.stderr)
+    return None
 
 
 def lease_duration(data: dict[str, Any]) -> float | None:

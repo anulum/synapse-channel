@@ -59,6 +59,8 @@ class AgentTaskMutationMixin:
         validates supplied identity data before mutating task state. Set
         ``local_renewal`` only after the hub advertises ``lock_renewal_session``;
         it refuses a supervised acquisition rather than forwarding to a peer.
+        It also refuses a live claim held by this same identity, keeping
+        command acquisition distinct from an ordinary same-owner renewal.
         """
         extra: dict[str, Any] = {"task_id": task_id.strip(), "note": note}
         if ttl_seconds is not None:

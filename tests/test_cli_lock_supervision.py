@@ -277,6 +277,7 @@ async def renewal_proxy(
     """Forward actual wire traffic while corrupting or withholding selected replies."""
 
     acquired = asyncio.Event()
+    saved_grant: dict[str, object] | None = None
 
     async def handle(socket: ServerConnection) -> None:
         async with connect(uri) as upstream:
@@ -299,9 +300,19 @@ async def renewal_proxy(
                         )
 
             async def forward_replies() -> None:
+                nonlocal saved_grant
                 async for raw in upstream:
                     data = json.loads(raw)
                     renewed = bool(data.get("renewal_id"))
+                    if data.get("type") == MessageType.CLAIM_GRANTED and not renewed:
+                        if saved_grant is None:
+                            saved_grant = dict(data)
+                    if (
+                        fault == "replay-acquisition"
+                        and data.get("type") == MessageType.CLAIM_DENIED
+                        and saved_grant is not None
+                    ):
+                        await socket.send(json.dumps(saved_grant))
                     if (
                         data.get("type") == MessageType.CLAIM_GRANTED
                         and not renewed

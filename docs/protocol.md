@@ -233,6 +233,12 @@ Guarded renewal accepts the current epoch or that continuous ownership anchor.
 Supervised acquisition sets `local_renewal: true`. A non-owning hub refuses that
 request or any guarded renewal before forwarding; connect directly to the owning
 hub. A relay's welcome cannot qualify another peer's renewal/session support.
+This acquisition requires an unclaimed task, including when another running
+command uses the same authenticated identity. Ordinary same-owner claims still
+renew a live claim; they cannot serve as a second supervised command's entry.
+Each acquisition uses a fresh `idem_key`; grant and denial replies echo it as
+`claim_request_id`. The command accepts only its own correlated verdict, never
+a replayed grant or another operation's same-owner broadcast.
 Grants carry `lease_duration_seconds` and echo
 `renewal_id`; refusals echo the same id with reason `RENEWAL_REFUSED`. Durability
 and atomic operation receipts follow the normal claim path. Clients correlate

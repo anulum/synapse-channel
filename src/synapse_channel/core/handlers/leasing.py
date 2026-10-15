@@ -151,6 +151,7 @@ class ClaimApplication:
     claim: TaskClaim | None
     reason_code: str = ""
     renewal_id: str = ""
+    claim_request_id: str = ""
 
 
 FENCING_EPOCH_REQUIRED = (
@@ -322,6 +323,7 @@ def apply_claim(
     task_id = str(body.get("task_id") or body.get("payload") or "").strip()
     if "renew_epoch" in body:
         return _apply_renewal(hub, claimant, task_id, body)
+    claim_request_id = str(body.get("idem_key") or "")
     note = str(body.get("note") or "")
     ttl_seconds = body.get("ttl_seconds")
     worktree = str(body.get("worktree") or "")
@@ -345,6 +347,7 @@ def apply_claim(
             task_id=task_id,
             claim=None,
             reason_code=reason_code,
+            claim_request_id=claim_request_id,
         )
     # The git context is opaque to the hub: deserialise it for storage and
     # display, but never act on it (the hub runs no git, reads no filesystem).
@@ -367,6 +370,8 @@ def apply_claim(
         paths=paths,
         path_identity=path_identity,
         git=git,
+        require_unclaimed=bool(body.get("local_renewal")),
+        claim_request_id=claim_request_id,
     )
 
 
@@ -382,6 +387,8 @@ def _apply_parsed_claim(
     paths: list[str],
     path_identity: ClaimScopeIdentity | None,
     git: GitContext | None,
+    require_unclaimed: bool,
+    claim_request_id: str,
 ) -> ClaimApplication:
     """Commit a parsed lease before clearing only its satisfied wait."""
     with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
@@ -395,6 +402,7 @@ def _apply_parsed_claim(
             paths=paths,
             path_identity=path_identity,
             git=git,
+            require_unclaimed=require_unclaimed,
         )
         claim = hub.state.claims.get(task_id) if ok else None
         if claim is not None and hub.journal is not None:
@@ -413,13 +421,20 @@ def _apply_parsed_claim(
         # Only the SATISFIED wait is cleared: a claim or renewal for task U must
         # never erase the claimant's still-open wait on an unrelated task T.
         _clear_satisfied_wait(hub.waits, claimant, task_id)
-        return ClaimApplication(ok=True, message=message, task_id=task_id, claim=claim)
+        return ClaimApplication(
+            ok=True,
+            message=message,
+            task_id=task_id,
+            claim=claim,
+            claim_request_id=claim_request_id,
+        )
     return ClaimApplication(
         ok=False,
         message=message,
         task_id=task_id,
         claim=None,
         reason_code=reason_code,
+        claim_request_id=claim_request_id,
     )
 
 
@@ -900,6 +915,7 @@ async def _announce_claim(
                 msg_type=MessageType.CLAIM_GRANTED,
                 **claim_grant_fields(application.claim),
                 renewal_id=application.renewal_id,
+                claim_request_id=application.claim_request_id,
             )
         )
         assert grant is not None
@@ -919,6 +935,7 @@ async def _announce_claim(
             task_id=application.task_id,
             reason_code=application.reason_code,
             renewal_id=application.renewal_id,
+            claim_request_id=application.claim_request_id,
         ),
     )
 
