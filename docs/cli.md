@@ -111,7 +111,7 @@ everything, since they need the whole command table.
 | `synapse identity` | Inventory and audit declared agent identities for enforcement-rollout blockers. |
 | `synapse acl` | Shadow-mode (non-blocking) deny-by-default ACL evaluation of candidate accesses. |
 | `synapse role` | Grant, revoke, and list role-claim authorisations (`grant`/`revoke`/`list`). |
-| `synapse lock` | Acquire a finite lease before a command, then attempt a bounded release; no renewal during the child. |
+| `synapse lock` | Run a command with fenced lease renewal and bounded release confirmation. |
 | `synapse release` | Manually drop a claim you own (e.g. an `--auto-release-on manual` claim). |
 | `synapse task` | Declare and update the shared task plan. |
 | `synapse native-record` | Record caller-reported native-message metadata and optional text; the hub journals the declaration, delivers nothing and does not independently verify vendor action. |
@@ -688,11 +688,34 @@ synapse lock quantum:git --release-timeout 10 -- git push  # allow 10s per confi
 
 A lock is a named mutex keyed by its id: `quantum:git` and `physics:git` are
 independent, so one repo's push-lock does not contend with another's. The client
-disconnects after acquisition and does not renew or monitor the lease during the
-child. A command that outlives the hub's lease TTL can continue after another
-owner acquires the id; this command is not an indefinite side-effect mutex.
-Use an external execution boundary when overlap must be prevented beyond that
-finite lease. On child exit the client attempts a bounded release. A claim that no commit or merge
+disconnects after acquisition so the command's Git hooks can use the same authenticated
+identity. While the command runs, brief owner connections renew the original live
+lease at most every five seconds. Renewal retains the epoch, scope, lifecycle,
+checkpoint and Git context. It refuses an expired, handed-off, released or replaced
+claim; it never reacquires lost ownership. Git profiles wait boundedly for a
+retiring same-name socket without takeover.
+
+A hub must advertise fenced renewal support in its welcome; older hubs are refused
+before acquisition or command launch. Connect directly to the hub owning the agent's
+namespace: supervised leases are refused before cross-hub forwarding. The hub
+must answer state queries for binding and continuity checks.
+A restarted or replaced hub changes the renewal
+session: the command stops and cleanup remains unknown without mutating restored
+claims. Explicit renewal refusal returns `1`; transport loss, missing or malformed
+replies return `3`. The owned command is stopped and joined before release. Renewal
+and cleanup remain bound to the original hub, session and continuous ownership anchor, ignoring unrelated
+or corrupted epoch-cache entries. A child's ordinary renewal can advance the
+fencing epoch; teardown reads a correlated authoritative snapshot and accepts
+that epoch only when the same owner and scope retain the original ownership
+anchor. Release, expiry, handoff or scope change breaks that continuity. Each renewal has a deadline reserving five seconds
+for subprocess termination before the last confirmed lease expires.
+
+On POSIX, termination covers the command's new process group, including descendants
+remaining in that group. Windows termination covers the direct child. Descendants
+that escape the POSIX group, Windows descendants, scheduler stalls, irreversible
+external effects and nonparticipating writers require resource-side fencing or an
+isolated executor; this lease supervisor does not provide OS isolation. On child
+exit the client attempts a bounded release. A claim that no commit or merge
 will auto-release — a `git-claim --auto-release-on manual` — is dropped by its owner
 with `synapse release <task> --name <owner>`.
 
@@ -709,9 +732,8 @@ on stderr together with the original child status.
 If the fresh client profile cannot be loaded after the command finishes, cleanup
 is reported as unknown and the original nonzero child status is still preserved.
 
-After the grant, `lock` closes its hub connection while the command runs; the
-durable task claim remains held until release or its TTL expires. This lets Git
-hooks connect using the same owner identity. After the command, `lock` reconnects
+After the grant, `lock` closes its acquisition connection. Short-lived renewal
+connections preserve the live claim while letting Git hooks use the same identity. After the command, `lock` reconnects
 as that owner using a fresh client profile and waits boundedly for release
 confirmation. The fresh profile reads an epoch persisted by a same-identity
 child renewal under the connected hub, instead of reusing the parent's stale

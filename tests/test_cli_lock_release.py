@@ -86,13 +86,7 @@ async def test_interrupted_cleanup_recovers_the_original_dispatch_without_replay
                     assert asyncio.get_running_loop().time() < deadline
                     await asyncio.sleep(0.01)
                 assert fault["release_dispatches"] == 1
-                cleanup = [
-                    task
-                    for task in asyncio.all_tasks()
-                    if getattr(task.get_coro(), "__qualname__", "") == "_lock.<locals>.teardown"
-                ]
-                assert len(cleanup) == 1
-                cleanup[0].cancel()
+                operation.cancel()
                 fault["active"] = False
                 with pytest.raises(asyncio.CancelledError):
                     await asyncio.wait_for(operation, 10)

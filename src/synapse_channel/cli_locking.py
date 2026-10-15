@@ -8,8 +8,8 @@
 """The lease-oriented ``synapse`` subcommands.
 
 ``lock`` acquires a finite hub lease before running a wrapped command and attempts
-a bounded release afterwards. It neither renews nor monitors the lease during
-the child; a command can outlive that lease and overlap a new owner's command.
+a bounded release afterwards. During the child it renews the original ownership
+generation and stops the owned process on lease loss or an uncertain renewal.
 ``release`` manually
 drops a claim the caller owns (the escape hatch for an ``--auto-release-on
 manual`` claim). Both open their own short-lived client and watch for the hub's
@@ -30,6 +30,11 @@ from typing import Any
 
 from synapse_channel.cli_lock_process import run_locked_subprocess
 from synapse_channel.cli_lock_release import LockRelease, display_hub_uri, valid_lock_timeouts
+from synapse_channel.cli_lock_supervision import (
+    finish_lock,
+    lease_duration,
+    supervise_locked_command,
+)
 from synapse_channel.cli_release import (
     _load_release_receipt as _load_release_receipt,
 )
@@ -46,6 +51,7 @@ from synapse_channel.cli_release import (
     _validate_release_receipt_identity as _validate_release_receipt_identity,
 )
 from synapse_channel.client.agent import SynapseAgent, default_hub_uri
+from synapse_channel.client.owner_registration import register_owner
 from synapse_channel.connect_failures import describe_connect_failure, explain_silent_outcome
 from synapse_channel.core.protocol import SENDER_HUB, MessageType
 from synapse_channel.git.ordinary_claim import (
@@ -58,6 +64,19 @@ logger = logging.getLogger("synapse.lock")
 AgentFactory = Callable[..., SynapseAgent]
 LockRunner = Callable[[list[str]], Awaitable[int]]
 _run_subprocess = run_locked_subprocess
+
+
+def _lock_scope(
+    task_id: str,
+    paths: list[str],
+) -> tuple[str, list[str], dict[str, object] | None]:
+    """Resolve file scope while keeping pathless mutexes in separate namespaces."""
+    if not paths:
+        return task_id, paths, None
+    resolved = resolve_ordinary_claim_scope(paths)
+    if resolved is None:
+        return "", paths, None
+    return resolved.worktree, list(resolved.paths), resolved.path_identity
 
 
 async def _lock(
@@ -77,14 +96,15 @@ async def _lock(
     poll_interval: float = 0.05,
     release_timeout: float | None = None,
 ) -> int:
-    """Acquire a finite lease, run ``command``, then attempt a bounded release.
+    """Supervise ``command`` under its original lease, then confirm release.
 
     The hub grants only one live lease per task id, so wrapping a commit in
     ``synapse lock <project>:git -- git push`` defers participating contenders
     while that lease remains live. The acquisition client disconnects before the
-    child starts. No renewal or ownership monitor runs during the child, so it
-    can outlive the lease and overlap another owner's command. This is not an
-    indefinite external-effect mutex. A lock with no explicit ``paths`` is a
+    child starts. Short-lived same-owner connections renew only the original
+    live epoch. Loss or unknown renewal stops the owned command before bounded
+    cleanup. External effects still require resource-side fencing.
+    A lock with no explicit ``paths`` is a
     pure named mutex: its claim is namespaced to its own task id, so two different
     locks never contend (one repo's ``:git`` push-lock cannot block another repo's
     lock). Passing ``paths`` opts into shared file-scope overlap instead.
@@ -96,7 +116,7 @@ async def _lock(
     task_id : str
         The lease key, e.g. ``"quantum:git"``.
     command : list[str]
-        The command to start after acquisition; its runtime is not bounded by the lease.
+        The command to supervise after confirmed acquisition.
     paths : list[str]
         Optional file-scope paths to lock alongside the id.
     wait_timeout : float
@@ -116,10 +136,9 @@ async def _lock(
     poll_interval : float, optional
         Seconds to wait between verdict polls.
     release_timeout : float or None, optional
-        Seconds the teardown waits for the hub's release confirmation;
-        ``None`` keeps the default bound (``attempts`` polls). The wait is
-        always bounded and the lease TTL remains the backstop — this knob
-        only tunes how long the exit is held for slower links.
+        Seconds per renewal or release confirmation exchange; ``None`` keeps
+        the default bound (``attempts`` polls). Renewal is additionally capped
+        by the remaining confirmed lifetime and termination allowance.
 
     Returns
     -------
@@ -136,26 +155,19 @@ async def _lock(
             file=sys.stderr,
         )
         return 2
-    lock_worktree = task_id
-    lock_paths = paths
-    path_identity: dict[str, object] | None = None
-    if paths:
-        try:
-            resolved_scope = resolve_ordinary_claim_scope(paths)
-        except OrdinaryClaimScopeError as exc:
-            print(f"Could not acquire lock '{task_id}': {exc}")
-            return 1
-        if resolved_scope is None:
-            lock_worktree = ""
-        else:
-            lock_worktree = resolved_scope.worktree
-            lock_paths = list(resolved_scope.paths)
-            path_identity = resolved_scope.path_identity
+    try:
+        lock_worktree, lock_paths, path_identity = _lock_scope(task_id, paths)
+    except OrdinaryClaimScopeError as exc:
+        print(f"Could not acquire lock '{task_id}': {exc}")
+        return 1
 
     outcome: dict[str, Any] = {}
+    welcome: dict[str, Any] = {}
 
     async def collect(data: dict[str, Any]) -> None:
         """Collect this owner's claim verdict or an addressed hub refusal."""
+        if data.get("type") == MessageType.WELCOME:
+            welcome.update(data)
         if (
             data.get("type") == MessageType.ERROR
             and data.get("sender") == SENDER_HUB
@@ -163,21 +175,42 @@ async def _lock(
         ):
             outcome["error"] = str(data.get("payload") or "hub refused the request")
             return
-        if data.get("task_id") != task_id:
+        if (
+            data.get("sender") != SENDER_HUB
+            or data.get("hub_id") != agent.hub_id
+            or data.get("task_id") != task_id
+        ):
             return
         if data.get("type") == MessageType.CLAIM_GRANTED and data.get("owner") == name:
             outcome["granted"] = True
             outcome["epoch"] = data.get("epoch")
+            outcome["duration"] = lease_duration(data)
+            epoch = data.get("epoch")
+            if type(epoch) is int and epoch > 0:
+                release.initial_epoch = epoch
+                release.expected_hub_id = str(data.get("hub_id"))
+                release.expected_session = str(welcome.get("lock_renewal_session"))
         elif data.get("type") == MessageType.CLAIM_DENIED:
             outcome["denied"] = str(data.get("payload") or "held by another agent")
 
     agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    conn_task = asyncio.create_task(agent.connect())
+    conn_task: asyncio.Task[None] | None = None
     child_code: int | None = None
-    cleanup_code = 0
-    release: LockRelease | None = None
+    release = LockRelease(
+        uri=uri,
+        name=name,
+        task_id=task_id,
+        initial_epoch=None,
+        token=token,
+        agent_factory=agent_factory,
+        ready_timeout=ready_timeout,
+        reply_timeout=reply_timeout,
+        pinned_epoch=True,
+    )
+    release.renewal_paths = tuple(lock_paths)
     try:
-        if not await agent.wait_until_ready(timeout=ready_timeout):
+        conn_task = await register_owner(agent, ready_timeout)
+        if conn_task is None:
             print(
                 describe_connect_failure(
                     name,
@@ -187,15 +220,21 @@ async def _lock(
                 )
             )
             return 1
+        session = welcome.get("lock_renewal_session")
+        if not isinstance(session, str) or len(session) != 32:
+            print("lock: hub does not support fenced renewal; no command started", file=sys.stderr)
+            return 1
         loop = asyncio.get_event_loop()
         deadline = loop.time() + wait_timeout
         while True:
             outcome.clear()
+            claim_started = loop.time()
             await agent.claim(
                 task_id,
                 worktree=lock_worktree,
                 paths=lock_paths,
                 path_identity=path_identity,
+                local_renewal=True,
             )
             for _ in range(attempts):
                 if outcome or conn_task.done():
@@ -205,6 +244,9 @@ async def _lock(
                 print(f"Could not acquire lock '{task_id}': {outcome['error']}")
                 return 1
             if outcome.get("granted"):
+                if release.initial_epoch is None:
+                    print("lock: malformed lease grant; no command started", file=sys.stderr)
+                    return 3
                 break
             if conn_task.done() and not outcome:
                 print(
@@ -237,49 +279,26 @@ async def _lock(
         # this same authenticated identity without a concurrent-name conflict.
         conn_task.cancel()
         await asyncio.gather(conn_task, return_exceptions=True)
-        child_code = await runner(command)
+        duration = outcome.get("duration")
+        if duration is None:
+            print("lock: malformed lease grant; no command started", file=sys.stderr)
+            return 3
+        child_code = await supervise_locked_command(
+            command,
+            runner,
+            release,
+            hub_id=agent.hub_id,
+            session=session,
+            duration=duration,
+            acquired_at=claim_started,
+        )
     finally:
-        if outcome.get("granted"):
-            epoch = outcome.get("epoch")
-            release = LockRelease(
-                uri=uri,
-                name=name,
-                task_id=task_id,
-                initial_epoch=epoch
-                if isinstance(epoch, int) and not isinstance(epoch, bool)
-                else None,
-                token=token,
-                agent_factory=agent_factory,
-                ready_timeout=ready_timeout,
-                reply_timeout=reply_timeout,
-            )
-
-        async def teardown() -> None:
-            """Join the original socket before a fresh profile settles the retained intent."""
-            nonlocal cleanup_code
-            agent.running = False
-            conn_task.cancel()
-            await asyncio.gather(conn_task, return_exceptions=True)
-            if release is not None:
-                cleanup_code = await release.run()
-
-        interrupted = False
-        while True:
-            cleanup = asyncio.create_task(teardown())
-            while not cleanup.done():
-                try:
-                    await asyncio.shield(cleanup)
-                except asyncio.CancelledError:
-                    interrupted = True
-            if cleanup.cancelled():
-                interrupted = True
-                continue
-            cleanup.result()
-            break
-        if cleanup_code and release is not None:
-            print(release.diagnostic(cleanup_code, child_code), file=sys.stderr)
-        if interrupted:
-            raise asyncio.CancelledError
+        cleanup_code = await finish_lock(
+            agent,
+            conn_task,
+            release if release.initial_epoch is not None else None,
+            child_code,
+        )
     assert child_code is not None
     return child_code or cleanup_code
 
@@ -338,9 +357,7 @@ def _cmd_release(args: argparse.Namespace) -> int:
 
 def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the ``lock`` and ``release`` subparsers on the top-level CLI."""
-    lock = subparsers.add_parser(
-        "lock", help="Acquire a finite lease before a command; no renewal during the child."
-    )
+    lock = subparsers.add_parser("lock", help="Supervise a command under a renewed, fenced lease.")
     lock.add_argument("task_id")
     lock.add_argument(
         "command", nargs="+", help="The command to start after lease acquisition (after --)."
@@ -361,7 +378,7 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         default=None,
         metavar="SECONDS",
         help=(
-            "Seconds per bounded release or exact read-only confirmation exchange "
+            "Seconds per bounded renewal, release or read-only confirmation exchange "
             "(default ~2s; 0 < seconds <= 300). Lease TTL remains the backstop. Distinct from "
             "--wait-timeout, which bounds ACQUIRING the lease."
         ),

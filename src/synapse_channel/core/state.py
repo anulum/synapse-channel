@@ -339,25 +339,13 @@ class SynapseState:
                 f"Task '{task}' file scope conflicts with '{other_id}' held by {other_owner}.",
             )
 
-        # Cap the live claims one server-derived principal may hold so rotating an
-        # asserted agent name cannot multiply the budget. A same-principal renewal
-        # is free. If a task moved to this owner while still charged to a different
-        # principal, its first renewal transfers the charge only when the new bucket
-        # has capacity.
-        owns_task = existing is not None and existing.owner == agent
-        existing_principal = (
-            (existing.quota_principal or existing.owner) if existing is not None else ""
-        )
-        same_principal = owns_task and existing_principal == principal
-        if not same_principal and self._claims_owned_by(principal) >= self.max_claims_per_agent:
+        if not self._claim_quota_available(agent, principal, existing):
             return (
                 False,
                 f"Agent {agent} principal claim quota holds the maximum "
                 f"{self.max_claims_per_agent} claims.",
             )
 
-        # Carry the checkpoint forward: the same owner renewing keeps its own; a
-        # new owner taking over an expired task resumes the retained checkpoint.
         if existing is not None and existing.owner == agent:
             checkpoint = existing.checkpoint
         else:
@@ -374,12 +362,81 @@ class SynapseState:
             paths=norm_paths,
             path_identity=path_identity,
             epoch=self._next_epoch(),
+            ownership_epoch=(
+                existing.continuation_epoch(agent, worktree, norm_paths, path_identity)
+                if existing is not None
+                else 0
+            ),
             checkpoint=checkpoint,
             git=git,
         )
         self.claims[task] = claim
         self._track_lease(claim)
         return True, f"Task '{task}' claimed by {agent}."
+
+    def _claim_quota_available(
+        self,
+        agent: str,
+        principal: str,
+        existing: TaskClaim | None,
+    ) -> bool:
+        """Charge new principal claims; unchanged owner/principal renewal is free."""
+        if existing is not None and existing.owner == agent:
+            if (existing.quota_principal or existing.owner) == principal:
+                return True
+        return self._claims_owned_by(principal) < self.max_claims_per_agent
+
+    def renew_claim(
+        self,
+        agent: str,
+        task_id: str,
+        now: float | None = None,
+        *,
+        epoch: int,
+        paths: tuple[str, ...] = (),
+    ) -> tuple[bool, str]:
+        """Extend only the still-live ownership generation, retaining its scope and metadata.
+
+        Parameters
+        ----------
+        agent, task_id : str
+            Authenticated owner and exact task being supervised.
+        epoch : int
+            Original ownership generation; an expired or replaced lease is refused.
+        paths : tuple[str, ...]
+            Original normalized paths repeated through the normal ACL gate.
+        now : float or None
+            Trusted domain clock, matching the other state mutations;
+            never read from a wire request.
+
+        Returns
+        -------
+        tuple[bool, str]
+            Authoritative renewal verdict; renewal never acquires an absent lease.
+        """
+        task = task_id.strip()
+        now = time.time() if now is None else float(now)
+        self.heartbeat(agent, now)
+        claim = self.claims.get(task)
+        if (
+            claim is None
+            or claim.owner != agent
+            or epoch
+            not in (
+                claim.epoch,
+                claim.ownership_epoch,
+            )
+        ):
+            return False, f"Task '{task}' renewal lost its original ownership."
+        if self._protected_task_held(task):
+            return False, f"Task '{task}' has outstanding protected custody."
+        if claim.paths != paths:
+            return False, "Renewal must repeat the original paths for ACL checks."
+        duration = claim.lease_expires_at - claim.claimed_at
+        renewed = replace(claim, claimed_at=now, lease_expires_at=now + duration)
+        self.claims[task] = renewed
+        self._track_lease(renewed)
+        return True, f"Task '{task}' renewed by {agent}."
 
     def install_protected_write_admission(
         self, admission: ProtectedWriteAdmission, *, max_reservations: int
@@ -1063,13 +1120,14 @@ class SynapseState:
         proportional to the number of leases actually expiring, not the total
         number of claims. A popped entry is applied only when it is the live lease
         for its task: a missing claim (released or already expired) or an epoch
-        mismatch (the lease was renewed, and a later entry covers the new expiry)
-        means the entry is stale and is skipped. An expiring claim's checkpoint is
+        mismatch or a live expiry later than this sweep means the entry is stale
+        and is skipped. Fenced renewal retains its ownership epoch and queues
+        the extended expiry separately. An expiring claim's checkpoint is
         retained so a later claimant of the same task can resume from it.
         """
         for task, epoch in self._lease_index.pop_due(now):
             claim = self.claims.get(task)
-            if claim is None or claim.epoch != epoch:
+            if claim is None or claim.epoch != epoch or claim.lease_expires_at > now:
                 continue  # superseded entry: released, already expired, or renewed
             if claim.checkpoint:
                 self.expired_checkpoints[task] = claim.checkpoint

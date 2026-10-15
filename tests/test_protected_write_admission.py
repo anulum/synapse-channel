@@ -88,6 +88,16 @@ def test_install_publishes_metadata_and_custody_together() -> None:
     state.publish_from(candidate)
     assert state.protected_write_admissions == {"reservation": admission}
     assert state.protected_claim_custody == {"reservation": admission.claim_custody}
+    before = state.claims["task-1"].as_persisted_dict()
+    renewed, reason = state.renew_claim(
+        "EXAMPLE/author",
+        "task-1",
+        now=CONTEXT.now,
+        epoch=1,
+        paths=("records",),
+    )
+    assert not renewed and "protected custody" in reason
+    assert state.claims["task-1"].as_persisted_dict() == before
 
 
 @pytest.mark.parametrize("budget", [True, 0, -1, 1.0])

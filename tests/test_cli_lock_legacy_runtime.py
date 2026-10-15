@@ -238,17 +238,20 @@ async def test_published_hub_without_confirmation_refuses_manual_release(
                 cwd=repo,
                 env={"SYNAPSE_TOKEN": "", "SYNAPSE_TOKEN_FILE": ""},
             )
-            assert hook.returncode == 3, hook.output
-            assert "hook command ran" in hook.stdout
-            assert "release unknown" in hook.stderr
-            assert "Do not replay release. Read-only recovery:" in hook.stderr
+            assert hook.returncode == 1, hook.output
+            assert "hook command ran" not in hook.stdout
+            assert "does not support fenced renewal" in hook.stderr
             with contextlib.closing(
                 sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)
             ) as reader:
                 hook_releases = reader.execute(
                     "SELECT payload FROM events WHERE kind='release'"
                 ).fetchall()
-            assert [json.loads(row[0])["task_id"] for row in hook_releases] == ["legacy-hook"]
+                hook_claims = reader.execute(
+                    "SELECT payload FROM events WHERE kind='claim'"
+                ).fetchall()
+            assert not hook_releases
+            assert [json.loads(row[0])["task_id"] for row in hook_claims] == ["legacy-edit"]
             assert [json.loads(row[0])["task_id"] for row in claims] == ["legacy-edit"]
             from hub_e2e_helpers import close_agents, connect_agent
             from synapse_channel.core.protocol import MessageType

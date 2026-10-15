@@ -59,13 +59,11 @@ heavier model — so cost follows difficulty.
 ### Serialising a shared side effect across agents
 
 When several agents must take turns at one resource — a deploy, a migration, a shared file —
-`synapse lock` starts its managed command after a confirmed lease and attempts
-a bounded release when the command exits. It does not renew or monitor the lease
-while the child runs: a command that outlives the hub's lease TTL can overlap a
-new owner's command. Conflicting participating owners are coordinated only while
-the original lease remains live. Platform-specific process cleanup and external
-effects remain separate boundaries; an arbitrary program ignoring the claim is
-not fenced from the resource. See the [lock contract](cli.md).
+`synapse lock` supervises its command using fenced renewal of the original live
+lease. It stops the owned process on lost ownership or uncertain renewal and
+confirms release afterwards. See the [lock contract](cli.md) for compatibility,
+exit statuses and process boundaries. External resources still need fencing when
+nonparticipating writers or escaped descendants can affect them.
 
 ## When it is overkill
 

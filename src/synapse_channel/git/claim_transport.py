@@ -16,6 +16,7 @@ from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.client.claim_confirmation import ClaimIntent, confirm_claim
+from synapse_channel.client.owner_registration import close_owner, register_owner
 from synapse_channel.connect_failures import (
     closed_after_ready,
     describe_connect_failure,
@@ -67,7 +68,7 @@ async def claim_outcome(
             pending[1].set_result(data)
 
     agent = agent_factory(intent.owner, collect, uri=uri, verbose=False, token=token)
-    conn_task = asyncio.create_task(agent.connect())
+    conn_task = await register_owner(agent, ready_timeout)
 
     async def await_reply(
         match: Callable[[dict[str, Any]], bool], send: Callable[[], Awaitable[None]]
@@ -90,9 +91,7 @@ async def claim_outcome(
             pending = None
 
     try:
-        if not await agent.wait_until_ready(timeout=ready_timeout) or await closed_after_ready(
-            agent
-        ):
+        if conn_task is None or await closed_after_ready(agent):
             print(
                 describe_connect_failure(
                     intent.owner,
@@ -145,6 +144,4 @@ async def claim_outcome(
         )
         return 3, False
     finally:
-        agent.running = False
-        conn_task.cancel()
-        await asyncio.gather(conn_task, return_exceptions=True)
+        await close_owner(agent, conn_task)

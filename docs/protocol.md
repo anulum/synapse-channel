@@ -211,6 +211,34 @@ under the supplied filesystem policy. Two claims without the field retain the
 version-2 literal-path behavior. This supports rolling upgrades but means a
 fleet closes every alias gap only after all Git-aware claim producers upgrade.
 
+### Fenced renewal of a live claim
+
+Supporting hubs advertise a 32-character `lock_renewal_session` in `welcome`.
+It stays fixed for that running hub and changes after a restart. Clients must
+check support before using guarded renewal and stop supervision when the session
+changes. Older hubs remain usable for ordinary claims; they cannot supervise a
+long-running `lock` command.
+
+A `claim` carrying positive integer `renew_epoch` and nonempty `renewal_id`
+extends only the authenticated owner's existing, unexpired claim at that epoch.
+It cannot acquire an absent claim, replace ownership or change scope or metadata.
+It must repeat the original `paths`, so the normal per-path ACL checks still
+apply. Omitting or altering a file scope is refused without extending the lease.
+The current fencing epoch is retained by guarded renewal. A separate
+`ownership_epoch` anchors continuous ownership across ordinary same-owner claims
+with the exact same scope. Release, expiry, handoff or scope change starts a new
+anchor. It is persisted and included in grants and state snapshots; a supervisor
+can reconcile a child's real renewal without trusting an epoch-cache entry.
+Guarded renewal accepts the current epoch or that continuous ownership anchor.
+Supervised acquisition sets `local_renewal: true`. A non-owning hub refuses that
+request or any guarded renewal before forwarding; connect directly to the owning
+hub. A relay's welcome cannot qualify another peer's renewal/session support.
+Grants carry `lease_duration_seconds` and echo
+`renewal_id`; refusals echo the same id with reason `RENEWAL_REFUSED`. Durability
+and atomic operation receipts follow the normal claim path. Clients correlate
+sender, hub, task, owner and renewal id, and never retry an uncertain mutation as
+a fresh claim. Lease renewal is coordination, not resource-side fencing.
+
 ### Durable claim-denial evidence
 
 When a hub has a durable event journal, every refusal made by its authoritative

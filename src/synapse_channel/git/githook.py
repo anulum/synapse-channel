@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.client.owner_registration import close_owner, register_owner
 from synapse_channel.core.path_identity import (
     ClaimScopeIdentity,
     PathIdentityError,
@@ -396,9 +397,9 @@ async def run_git_release(
             snapshots.append(data.get("snapshot", {}))
 
     agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    conn_task = asyncio.create_task(agent.connect())
+    conn_task = await register_owner(agent, ready_timeout)
     try:
-        if not await agent.wait_until_ready(timeout=ready_timeout):
+        if conn_task is None:
             print(f"[{name}] Could not reach hub at {uri}.")
             return 0
         await agent.request_state()
@@ -475,6 +476,4 @@ async def run_git_release(
             print(f"release requested on {trigger}: {', '.join(released)}")
         return 0
     finally:
-        agent.running = False
-        conn_task.cancel()
-        await asyncio.gather(conn_task, return_exceptions=True)
+        await close_owner(agent, conn_task)

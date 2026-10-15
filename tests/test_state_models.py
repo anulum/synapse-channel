@@ -45,6 +45,7 @@ def test_taskclaim_as_dict_exposes_all_public_fields() -> None:
         "worktree": "",
         "paths": [],
         "epoch": 0,
+        "ownership_epoch": 0,
         "version": 4,
         "checkpoint": "step-3",
         "git": None,

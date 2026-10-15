@@ -228,10 +228,14 @@ async def test_runner_shutdown_during_process_cleanup_does_not_hang(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("secured", [False, True])
+@pytest.mark.parametrize("renew_during_hook", [False, True])
 async def test_commit_hook_releases_edit_claim_inside_same_owner_lock(
-    tmp_path: Path, secured: bool
+    tmp_path: Path, secured: bool, renew_during_hook: bool
 ) -> None:
     """A successful wrapped commit must durably release its owner's edited-file claim."""
+    from test_cli_lock_supervision import renewal_proxy
+
+    gate = tmp_path / "renewing"
     repo = git_repo(tmp_path / "repository")
     journal = EventStore(tmp_path / "hub.db")
     environment = {"SYN_PROJECT": "hook-journey", "SYN_IDENTITY": "hook-journey/owner"}
@@ -247,64 +251,77 @@ async def test_commit_hook_releases_edit_claim_inside_same_owner_lock(
             hub,
             uri,
         ):
-            for arguments in (
-                (
-                    "git-init",
-                    "--name",
-                    "hook-journey/owner",
-                    "--base",
-                    "HEAD",
-                    "--synapse-bin",
-                    str(Path(sys.executable).parent / "synapse"),
-                    *(["--token-file", str(token_path)] if secured else []),
-                ),
-                (
-                    "git-claim",
-                    "edited-file",
-                    "--name",
-                    "hook-journey/owner",
-                    "--base",
-                    "HEAD",
-                    "--paths",
-                    "README.md",
-                    "--auto-release-on",
-                    "commit",
-                ),
-            ):
+            async with renewal_proxy(uri, "delay", gate=gate) as proxy:
+                uri = proxy
+                for arguments in (
+                    (
+                        "git-init",
+                        "--name",
+                        "hook-journey/owner",
+                        "--base",
+                        "HEAD",
+                        "--synapse-bin",
+                        str(Path(sys.executable).parent / "synapse"),
+                        *(["--token-file", str(token_path)] if secured else []),
+                    ),
+                    (
+                        "git-claim",
+                        "edited-file",
+                        "--name",
+                        "hook-journey/owner",
+                        "--base",
+                        "HEAD",
+                        "--paths",
+                        "README.md",
+                        "--auto-release-on",
+                        "commit",
+                    ),
+                ):
+                    result = await asyncio.to_thread(
+                        run_cli,
+                        *arguments,
+                        uri=uri,
+                        cwd=repo,
+                        env=environment,
+                    )
+                    assert result.ok(), result.output
+                (repo / "README.md").write_text("committed edit\n", encoding="utf-8")
+                git_run(repo, "add", "README.md")
                 result = await asyncio.to_thread(
                     run_cli,
-                    *arguments,
+                    "lock",
+                    "--name",
+                    "hook-journey/owner",
+                    "hook-journey:git",
+                    "--",
+                    *(
+                        [
+                            sys.executable,
+                            "-c",
+                            "import sys,time,subprocess;from pathlib import Path;"
+                            "deadline=time.monotonic()+12\n"
+                            "while not Path(sys.argv[1]).exists():\n"
+                            " assert time.monotonic()<deadline\n time.sleep(.01)\n"
+                            "raise SystemExit(subprocess.call("
+                            "['git','commit','-m','edited file']))",
+                            str(gate),
+                        ]
+                        if renew_during_hook
+                        else ["git", "commit", "-m", "edited file"]
+                    ),
                     uri=uri,
                     cwd=repo,
                     env=environment,
+                    timeout=30,
                 )
                 assert result.ok(), result.output
-            (repo / "README.md").write_text("committed edit\n", encoding="utf-8")
-            git_run(repo, "add", "README.md")
-            result = await asyncio.to_thread(
-                run_cli,
-                "lock",
-                "--name",
-                "hook-journey/owner",
-                "hook-journey:git",
-                "--",
-                "git",
-                "commit",
-                "-m",
-                "edited file",
-                uri=uri,
-                cwd=repo,
-                env=environment,
-                timeout=30,
-            )
-            assert result.ok(), result.output
-            assert "edited-file" not in hub.state.claims, result.output
-            assert "hook-journey:git" not in hub.state.claims, result.output
-            assert any(
-                row.kind == "release" and row.payload.get("task_id") == "edited-file"
-                for row in journal.iter_events()
-            ), "commit hook must persist an edit-claim release"
-            assert "release requested on commit: edited-file" in result.output
+                assert "edited-file" not in hub.state.claims, result.output
+                assert "hook-journey:git" not in hub.state.claims, result.output
+                assert any(
+                    row.kind == "release" and row.payload.get("task_id") == "edited-file"
+                    for row in journal.iter_events()
+                ), "commit hook must persist an edit-claim release"
+                assert "release requested on commit: edited-file" in result.output
     finally:
         journal.close()
         token_path.unlink(missing_ok=True)

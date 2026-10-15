@@ -816,6 +816,9 @@ def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
     worktree = str(payload.get("worktree", ""))
     if path_identity is not None and not path_identity.validates_display_scope(worktree, paths):
         raise ValueError("persisted claim path identity does not match its display scope")
+    ownership_epoch = payload.get("ownership_epoch", payload.get("epoch", 0))
+    if type(ownership_epoch) is not int or not 0 <= ownership_epoch <= int(payload.get("epoch", 0)):
+        raise ValueError("invalid persisted ownership epoch")
     return TaskClaim(
         task_id=str(payload["task_id"]),
         owner=str(payload["owner"]),
@@ -832,6 +835,7 @@ def _claim_from_payload(payload: dict[str, Any]) -> TaskClaim:
         paths=paths,
         path_identity=path_identity,
         epoch=int(payload.get("epoch", 0)),
+        ownership_epoch=ownership_epoch,
         version=int(payload.get("version", 0)),
         checkpoint=str(payload.get("checkpoint", "")),
         git=git,

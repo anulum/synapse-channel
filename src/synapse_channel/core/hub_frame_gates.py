@@ -250,6 +250,20 @@ class HubFrameGates:
         if decision.grants_locally:
             return True
         task_id = str(data.get("task_id") or data.get("payload") or "").strip()
+        if data.get("local_renewal") or "renew_epoch" in data:
+            await self._send_json(
+                websocket,
+                self._system(
+                    "Supervised leases require a direct connection to the owning hub.",
+                    msg_type=MessageType.CLAIM_DENIED,
+                    target=sender,
+                    task_id=task_id,
+                    owner_hub_id=decision.owner_hub_id,
+                    reason_code="RENEWAL_REQUIRES_OWNER_HUB",
+                    renewal_id=str(data.get("renewal_id") or ""),
+                ),
+            )
+            return False
         if decision.outcome is OwnershipOutcome.REMOTE and await self.forward_remote_claim(
             sender, namespace, task_id, data, decision.owner_hub_id or "", websocket
         ):

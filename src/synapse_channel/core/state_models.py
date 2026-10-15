@@ -124,6 +124,10 @@ class TaskClaim:
         Opaque resume token the owner saves so the work can continue from where
         it stopped. It survives lease expiry: a later claimant of the same task
         inherits the last checkpoint instead of restarting.
+    ownership_epoch : int
+        Anchor of uninterrupted ownership with identical scope. Zero uses the
+        current epoch for historical claims. Release, expiry, handoff and scope
+        change start a new anchor; ordinary same-owner renewal retains it.
     git : GitContext or None
         The branch context the claim is scoped to, set by a git-aware client;
         ``None`` for a plain claim. Opaque to the hub: stored and displayed but
@@ -145,6 +149,29 @@ class TaskClaim:
     version: int = 0
     checkpoint: str = ""
     git: GitContext | None = None
+    ownership_epoch: int = 0
+
+    def __post_init__(self) -> None:
+        """Use the current generation when no earlier ownership anchor was supplied."""
+        if self.ownership_epoch == 0:
+            self.ownership_epoch = self.epoch
+
+    def continuation_epoch(
+        self,
+        owner: str,
+        worktree: str,
+        paths: tuple[str, ...],
+        path_identity: ClaimScopeIdentity | None,
+    ) -> int:
+        """Retain the ownership anchor only for an unchanged owner and exact scope."""
+        if (self.owner, self.worktree, self.paths, self.path_identity) != (
+            owner,
+            worktree,
+            paths,
+            path_identity,
+        ):
+            return 0
+        return self.ownership_epoch or self.epoch
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable snapshot of this claim.
@@ -166,6 +193,7 @@ class TaskClaim:
             "worktree": self.worktree,
             "paths": list(self.paths),
             "epoch": self.epoch,
+            "ownership_epoch": self.ownership_epoch or self.epoch,
             "version": self.version,
             "checkpoint": self.checkpoint,
             "git": self.git.as_dict() if self.git is not None else None,

@@ -107,6 +107,15 @@ jobs:
           tests/test_cli_lock_release_runtime.py
           tests/test_cli_lock_transport_runtime.py
           tests/test_cli_lock_legacy_runtime.py
+          tests/test_cli_lock_supervision.py
+          tests/test_cli_lock_federation.py
+          tests/test_cli_lock_deadline.py
+          tests/test_cli_lock_renewal_acl.py
+          tests/test_owner_registration.py
+          tests/test_cli_lock_epoch_runtime.py
+          tests/test_cli_lock_registration_retry.py
+          tests/test_cli_lock_git_hooks.py::test_commit_hook_releases_edit_claim_inside_same_owner_lock
+          tests/test_cli_lock_git_hooks.py::test_cancellation_after_real_grant_releases_before_command_start
           tests/test_coverage_exclusion_ledger.py
           tests/test_hub_identity_paths_runtime.py
           tests/test_path_identity.py

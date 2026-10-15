@@ -58,12 +58,12 @@ asyncio.run(main())
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("cache_state", "expected_exit"),
-    [("foreign-hub", 0), ("foreign-task", 0), ("stale", 1), ("ahead", 1)],
+    [("foreign-hub", 0), ("foreign-task", 0), ("stale", 0), ("ahead", 0)],
 )
 async def test_epoch_cache_never_crosses_a_domain_or_guesses_a_fence(
     tmp_path: Path, cache_state: str, expected_exit: int
 ) -> None:
-    """Foreign cache entries are ignored; actual wrong fences are refused unchanged."""
+    """Lock teardown pins the actual grant, regardless of cache corruption."""
     journal = EventStore(tmp_path / "hub.db")
     data_home = tmp_path / "data"
     try:
@@ -134,8 +134,10 @@ async def test_child_handoff_preserves_the_next_owners_claim(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
-async def test_durable_hub_restart_during_child_retains_and_releases_the_claim(
+@pytest.mark.parametrize("replacement_id", ["restart-test", "replacement-hub"])
+async def test_durable_hub_restart_stops_command_without_mutating_restored_claim(
     tmp_path: Path,
+    replacement_id: str,
 ) -> None:
     """A fresh server restores the durable claim before the held command exits."""
     journal = EventStore(tmp_path / "hub.db")
@@ -176,16 +178,16 @@ async def test_durable_hub_restart_during_child_retains_and_releases_the_claim(
         epoch = hub.state.claims["mutex"].epoch
         await context.__aexit__(None, None, None)
         closed = True
-        replacement = SynapseHub(hub_id="restart-test", journal=journal)
+        replacement = SynapseHub(hub_id=replacement_id, journal=journal)
         assert replacement.state.claims["mutex"].epoch == epoch
         port = int(uri.rsplit(":", 1)[1])
         server = asyncio.create_task(replacement.serve("localhost", port))
         await _await_listening(port)
-        finish.touch()
         result = await asyncio.wait_for(operation, 25)
-        assert result.returncode == 0, result.output
-        assert not replacement.state.claims
-        assert len([row for row in journal.iter_events() if row.kind == "release"]) == 1
+        assert result.returncode == 3, result.output
+        assert "lease unknown" in result.stderr
+        assert replacement.state.claims["mutex"].epoch == epoch
+        assert not [row for row in journal.iter_events() if row.kind == "release"]
     finally:
         finish.touch()
         await asyncio.gather(operation, return_exceptions=True)

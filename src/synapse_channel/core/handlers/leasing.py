@@ -150,6 +150,7 @@ class ClaimApplication:
     task_id: str
     claim: TaskClaim | None
     reason_code: str = ""
+    renewal_id: str = ""
 
 
 FENCING_EPOCH_REQUIRED = (
@@ -241,6 +242,44 @@ def _clear_satisfied_wait(
         waits.pop(claimant, None)
 
 
+def _apply_renewal(
+    hub: _ClaimMutationHub,
+    claimant: str,
+    task_id: str,
+    body: Mapping[str, Any],
+) -> ClaimApplication:
+    """Persist an epoch-guarded renewal without applying acquisition fields."""
+    epoch = body["renew_epoch"]
+    renewal_id = str(body.get("renewal_id") or "")
+    with durable_state_transaction(hub.state, task_id, enabled=hub.journal is not None):
+        if type(epoch) is not int or epoch <= 0 or not renewal_id:
+            ok, message = False, "Renewal requires a positive epoch and renewal_id."
+        else:
+            raw_paths = body.get("paths")
+            paths = [str(path) for path in raw_paths] if isinstance(raw_paths, list) else []
+            ok, message = hub.state.renew_claim(
+                claimant,
+                task_id,
+                epoch=epoch,
+                paths=normalize_paths(paths, hub.state.max_paths_per_claim),
+            )
+        claim = hub.state.claims.get(task_id) if ok else None
+        if claim is not None and hub.journal is not None:
+            record_claim(hub.journal, claim)
+        elif not ok:
+            _record_denial(
+                hub,
+                claimant=claimant,
+                task_id=task_id,
+                reason_code="RENEWAL_REFUSED",
+                worktree="",
+                paths=[],
+            )
+    return ClaimApplication(
+        ok, message, task_id, claim, "" if ok else "RENEWAL_REFUSED", renewal_id
+    )
+
+
 def apply_claim(
     hub: _ClaimMutationHub,
     claimant: str,
@@ -281,6 +320,8 @@ def apply_claim(
         The outcome; :attr:`ClaimApplication.claim` is set only when the lease was granted.
     """
     task_id = str(body.get("task_id") or body.get("payload") or "").strip()
+    if "renew_epoch" in body:
+        return _apply_renewal(hub, claimant, task_id, body)
     note = str(body.get("note") or "")
     ttl_seconds = body.get("ttl_seconds")
     worktree = str(body.get("worktree") or "")
@@ -458,10 +499,12 @@ def claim_grant_fields(claim: TaskClaim) -> dict[str, Any]:
         "owner": claim.owner,
         "note": claim.note,
         "lease_expires_at": claim.lease_expires_at,
+        "lease_duration_seconds": claim.lease_expires_at - claim.claimed_at,
         "status": claim.status,
         "worktree": claim.worktree,
         "paths": list(claim.paths),
         "epoch": claim.epoch,
+        "ownership_epoch": claim.ownership_epoch or claim.epoch,
         "version": claim.version,
         "checkpoint": claim.checkpoint,
         "git": claim.git.as_dict() if claim.git is not None else None,
@@ -856,6 +899,7 @@ async def _announce_claim(
                 application.message,
                 msg_type=MessageType.CLAIM_GRANTED,
                 **claim_grant_fields(application.claim),
+                renewal_id=application.renewal_id,
             )
         )
         assert grant is not None
@@ -874,6 +918,7 @@ async def _announce_claim(
             target=sender,
             task_id=application.task_id,
             reason_code=application.reason_code,
+            renewal_id=application.renewal_id,
         ),
     )
 

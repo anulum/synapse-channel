@@ -20,6 +20,8 @@ from typing import Any
 from websockets.exceptions import ConnectionClosed
 
 from synapse_channel.client.agent import SynapseAgent
+from synapse_channel.client.lease_ownership import claim_continues
+from synapse_channel.client.owner_registration import register_owner
 from synapse_channel.core.protocol import SENDER_HUB, MessageType
 from synapse_channel.core.release_confirmation import ReleaseIntent
 
@@ -69,9 +71,17 @@ class LockRelease:
         agent_factory: AgentFactory,
         ready_timeout: float,
         reply_timeout: float,
+        pinned_epoch: bool = False,
+        expected_hub_id: str | None = None,
+        expected_session: str | None = None,
     ) -> None:
         self.uri, self.name, self.task_id = uri, name, task_id
         self.initial_epoch, self.token = initial_epoch, token
+        self.pinned_epoch = pinned_epoch
+        self.expected_hub_id = expected_hub_id
+        self.expected_session = expected_session
+        self.welcome_session: object = None
+        self.renewal_paths: tuple[str, ...] = ()
         self.agent_factory = agent_factory
         self.ready_timeout, self.reply_timeout = ready_timeout, reply_timeout
         self.intent: ReleaseIntent | None = None
@@ -81,6 +91,8 @@ class LockRelease:
 
     async def collect(self, data: dict[str, Any]) -> None:
         """Accept only the currently registered, correlated protocol response."""
+        if data.get("type") == MessageType.WELCOME:
+            self.welcome_session = data.get("lock_renewal_session")
         if self.pending is not None and not self.pending[1].done() and self.pending[0](data):
             self.pending[1].set_result(data)
 
@@ -143,9 +155,48 @@ class LockRelease:
             and intent.matching_receipt(projection) is not None
         )
 
-    def prepare_release(self, agent: SynapseAgent) -> tuple[dict[str, Any], ReleaseIntent]:
+    async def current_epoch(self, agent: SynapseAgent) -> int | None:
+        """Reconcile only an unbroken owner/scope continuation from a correlated snapshot."""
+        request_id = uuid.uuid4().hex
+        reply = await self.exchange(
+            lambda data: (
+                data.get("sender") == SENDER_HUB
+                and data.get("hub_id") == agent.hub_id
+                and data.get("type") == MessageType.STATE_SNAPSHOT
+                and data.get("target") == self.name
+                and data.get("request_id") == request_id
+            ),
+            lambda: agent.send_message(
+                MessageType.STATE_REQUEST,
+                target="System",
+                payload="snapshot",
+                request_id=request_id,
+            ),
+        )
+        snapshot = reply.get("snapshot") if reply is not None else None
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("active_claims"), list):
+            return None
+        for claim in snapshot["active_claims"]:
+            if not isinstance(claim, dict) or claim.get("task_id") != self.task_id:
+                continue
+            epoch = claim.get("epoch")
+            if claim_continues(claim, self.name, self.initial_epoch) and type(epoch) is int:
+                return epoch
+        return self.initial_epoch
+
+    def prepare_release(
+        self,
+        agent: SynapseAgent,
+        epoch: int | None = None,
+    ) -> tuple[dict[str, Any], ReleaseIntent]:
         """Bind and retain the fresh profile's epoch before entering the transport."""
-        request = agent.prepare_release(self.task_id, idem_key=uuid.uuid4().hex)
+        request = agent.prepare_release(
+            self.task_id,
+            idem_key=uuid.uuid4().hex,
+            epoch=(epoch if epoch is not None else self.initial_epoch)
+            if self.pinned_epoch
+            else None,
+        )
         if "epoch" not in request and self.initial_epoch is not None:
             request = agent.prepare_release(
                 self.task_id,
@@ -187,38 +238,7 @@ class LockRelease:
 
     async def register_owner(self, agent: SynapseAgent) -> asyncio.Task[None] | None:
         """Wait within one budget for a retiring same-name socket, without takeover."""
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + self.ready_timeout
-        while (remaining := deadline - loop.time()) > 0:
-            listener = asyncio.create_task(agent.connect())
-            ready = asyncio.create_task(agent.wait_until_ready(remaining))
-            connected = False
-            try:
-                done, _ = await asyncio.wait(
-                    (listener, ready), timeout=remaining, return_when=asyncio.FIRST_COMPLETED
-                )
-                if ready in done and ready.result() and not listener.done():
-                    connected = True
-                    return listener
-                if listener in done and not (
-                    agent.last_close_code == 4009 and agent.last_close_reason == "name conflict"
-                ):
-                    # Preserve the existing complete readiness budget on other
-                    # failures, including cancellation-safe outage cleanup.
-                    await ready
-            finally:
-                if not connected:
-                    ready.cancel()
-                    agent.running = False
-                    listener.cancel()
-                    await asyncio.gather(ready, listener, return_exceptions=True)
-            # A Git hook can finish before the hub retires its socket. Retry only
-            # that precise admission refusal; credentials and ownership rules
-            # remain unchanged, and no release has crossed the send boundary.
-            if agent.last_close_code != 4009 or agent.last_close_reason != "name conflict":
-                return None
-            await asyncio.sleep(min(0.05, max(0.0, deadline - loop.time())))
-        return None
+        return await register_owner(agent, self.ready_timeout)
 
     async def settle(self) -> int:
         """Construct the fresh profile and join its listener on every connected exit."""
@@ -230,9 +250,16 @@ class LockRelease:
             logger.debug("could not reconnect to release the held claim")
             return 3
         try:
+            if (self.expected_hub_id is not None and agent.hub_id != self.expected_hub_id) or (
+                self.expected_session is not None and self.welcome_session != self.expected_session
+            ):
+                return 3
             intent = self.intent
             if intent is None:
-                request, intent = self.prepare_release(agent)
+                epoch = await self.current_epoch(agent) if self.pinned_epoch else None
+                if self.pinned_epoch and epoch is None:
+                    return 3
+                request, intent = self.prepare_release(agent, epoch)
                 reply = await self.send_release(agent, request, intent)
                 if reply is not None:
                     return 0 if reply.get("type") == MessageType.RELEASE_GRANTED else 1

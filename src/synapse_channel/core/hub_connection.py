@@ -32,6 +32,7 @@ import asyncio
 import contextlib
 import logging
 import signal
+import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -112,6 +113,7 @@ class HubConnection:
         abort_uploads: Callable[[str], None] | None = None,
         agent_left: Callable[[str], None] | None = None,
     ) -> None:
+        self._lock_renewal_session = uuid.uuid4().hex
         self._clients = clients
         self._capabilities = capabilities
         self._authenticator = authenticator
@@ -179,6 +181,7 @@ class HubConnection:
                 connected_clients=len(self._clients.connected_clients),
                 online_agents=self._online_agents(),
                 protocol_version=WIRE_PROTOCOL_VERSION,
+                lock_renewal_session=self._lock_renewal_session,
             ),
         )
 

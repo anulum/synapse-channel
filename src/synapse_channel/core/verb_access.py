@@ -88,7 +88,7 @@ def _claim_targets(data: dict[str, Any], task_id: str) -> list[tuple[str, Target
     """Preserve declared path checks after resolving the handler's actual task key."""
     accesses = [(CLAIM, Target("claim", task_id))]
     value = data.get("paths")
-    paths = [str(item) for item in value if str(item).strip()] if isinstance(value, list) else []
+    paths = [str(item) for item in value] if isinstance(value, list) else []
     for path in normalize_paths(paths, MAX_DECLARED_PATHS):
         accesses.append((CLAIM, Target("path", path)))
     return accesses

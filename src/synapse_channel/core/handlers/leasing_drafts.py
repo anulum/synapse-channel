@@ -55,6 +55,7 @@ def prepare_claim(
         application.message,
         msg_type=MessageType.CLAIM_GRANTED,
         **claim_grant_fields(application.claim),
+        renewal_id=application.renewal_id,
     )
     return OperationDraft(
         response=grant,

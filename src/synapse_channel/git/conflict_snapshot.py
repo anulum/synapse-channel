@@ -13,6 +13,7 @@ import asyncio
 import contextlib
 from typing import Any
 
+from synapse_channel.client.owner_registration import close_owner, register_owner
 from synapse_channel.core.protocol import MessageType
 from synapse_channel.git.gitclaim import AgentFactory
 
@@ -60,9 +61,9 @@ async def read_conflict_snapshot(
             received.set()
 
     agent = agent_factory(name, collect, uri=uri, verbose=False, token=token)
-    listener = asyncio.create_task(agent.connect())
+    listener = await register_owner(agent, ready_timeout)
     try:
-        if not await agent.wait_until_ready(timeout=ready_timeout):
+        if listener is None:
             return False, None
         budget = max(0.0, attempts * poll_interval)
         if budget == 0:
@@ -86,5 +87,4 @@ async def read_conflict_snapshot(
         if agent.connection is not None:
             with contextlib.suppress(Exception):
                 await agent.connection.close()
-        listener.cancel()
-        await asyncio.gather(listener, return_exceptions=True)
+        await close_owner(agent, listener)

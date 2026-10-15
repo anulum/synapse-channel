@@ -17,6 +17,13 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+- Supervise long-running `synapse lock` commands with fenced renewal of the
+  original live lease. Stop owned commands on lost ownership or uncertain
+  renewal; preserve successor claims and refuse old or restarted hubs before
+  unsafe mutation. Git profiles wait boundedly for same-owner socket retirement.
+  POSIX process-group and Windows direct-child termination boundaries remain
+  explicit; external effects still require resource-side fencing.
+
 ### Added
 
 - Explicit `reputation` CLI and Python API rank recorded evidence for human

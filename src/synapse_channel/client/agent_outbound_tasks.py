@@ -49,13 +49,16 @@ class AgentTaskMutationMixin:
         path_identity: dict[str, object] | None = None,
         idem_key: str | None = None,
         git: dict[str, Any] | None = None,
+        local_renewal: bool = False,
     ) -> None:
         """Request a task lease with optional display and canonical path scopes.
 
         ``paths`` remain human-readable wire values. Git-aware callers may add
         the aligned, versioned ``path_identity`` returned by the local resolver;
         callers that omit it retain legacy literal-path comparison. The hub
-        validates supplied identity data before mutating task state.
+        validates supplied identity data before mutating task state. Set
+        ``local_renewal`` only after the hub advertises ``lock_renewal_session``;
+        it refuses a supervised acquisition rather than forwarding to a peer.
         """
         extra: dict[str, Any] = {"task_id": task_id.strip(), "note": note}
         if ttl_seconds is not None:
@@ -70,6 +73,8 @@ class AgentTaskMutationMixin:
             extra["idem_key"] = idem_key
         if git:
             extra["git"] = git
+        if local_renewal:
+            extra["local_renewal"] = True
         await self.send_message(
             MessageType.CLAIM, target="System", payload=task_id.strip(), **extra
         )
