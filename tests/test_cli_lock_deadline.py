@@ -71,7 +71,10 @@ async def test_lease_deadline_overrides_a_long_owner_readiness_timeout(tmp_path:
         try:
             assert command.stdout is not None and command.stderr is not None
             error_stream = command.stderr
-            assert await asyncio.wait_for(command.stdout.readline(), 10) == b"STARTED\n"
+            assert await asyncio.wait_for(command.stdout.readline(), 10) in (
+                b"STARTED\n",
+                b"STARTED\r\n",
+            )
             original_expiry = hub.state.claims["deadline"].lease_expires_at
             holder = await connect_agent(name, uri, token=token)
 

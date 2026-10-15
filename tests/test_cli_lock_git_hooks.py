@@ -16,6 +16,7 @@ import os
 import secrets
 import signal
 import sys
+import sysconfig
 from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,10 @@ from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+
+_SYNAPSE_BIN = Path(sysconfig.get_path("scripts")) / (
+    "synapse.exe" if os.name == "nt" else "synapse"
+)
 
 
 @pytest.mark.asyncio
@@ -261,7 +266,7 @@ async def test_commit_hook_releases_edit_claim_inside_same_owner_lock(
                         "--base",
                         "HEAD",
                         "--synapse-bin",
-                        str(Path(sys.executable).parent / "synapse"),
+                        str(_SYNAPSE_BIN),
                         *(["--token-file", str(token_path)] if secured else []),
                     ),
                     (
@@ -651,7 +656,7 @@ async def test_disconnected_lock_still_excludes_contender_and_releases(
                 sys.executable,
                 "-c",
                 child,
-                str(Path(sys.executable).parent / "synapse"),
+                str(_SYNAPSE_BIN),
                 uri,
                 str(exit_code),
                 uri=uri,

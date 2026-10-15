@@ -139,6 +139,8 @@ SKIP_LEDGER: dict[str, tuple[int, str]] = {
     "tests/test_cli_e2e_agent_tmux.py": (3, "optional-dep-guard + operator-smoke"),
     "tests/test_cli_e2e_opencode_editors.py": (1, "operator-smoke"),
     "tests/test_cli_e2e_mutation_status.py": (1, "platform-guard"),
+    # Native supervisor suspension needs POSIX SIGSTOP/SIGCONT.
+    "tests/test_cli_lock_stall.py": (1, "platform-guard"),
     "tests/test_cli_sqlcipher.py": (2, "optional-dep-guard"),
     "tests/test_cli_streams_sqlcipher.py": (1, "optional-dep-guard"),
     "tests/test_codex_tmux.py": (1, "optional-dep-guard"),
