@@ -47,7 +47,7 @@ async def _registered_profile(agent: SynapseAgent, timeout: float) -> bool:
 
     agent.callback = collect
     try:
-        if not await agent.wait_until_ready(timeout):
+        if not await agent.wait_until_ready(timeout=timeout):
             return False
         if not supports_confirmation:
             return not await closed_after_ready(

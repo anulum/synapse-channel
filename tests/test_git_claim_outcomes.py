@@ -41,7 +41,7 @@ async def test_lost_grant_is_confirmed_without_reclaim(
         assert result == 0
         assert "confirmed live claim" in capsys.readouterr().out
         assert proxy.requests.count("claim") == 1
-        assert proxy.requests.count("state_request") == 1
+        assert proxy.requests.count("state_request") == 2
         assert hub.state.claims["T"].epoch == 1
 
 
@@ -139,7 +139,7 @@ async def test_default_deadline_accepts_grant_later_than_old_two_seconds(
                 auto_release_on="manual",
             )
         assert result == 0
-        assert proxy.requests.count("state_request") == 0
+        assert proxy.requests.count("state_request") == 1
         assert hub.state.claims["T"].epoch == 1
 
 

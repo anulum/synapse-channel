@@ -15,11 +15,12 @@ from typing import Any
 
 import pytest
 
+from claim_outcome_helpers import ClaimProxy, claim_proxy
 from cli_e2e_helpers import git_repo, git_run
 from hub_e2e_helpers import _free_port, close_agents, connect_agent, running_hub
 from synapse_channel.core.path_identity import CanonicalPathIdentity, ClaimScopeIdentity
 from synapse_channel.git import githook
-from synapse_channel.git.gitclaim import GitError, _default_git_runner
+from synapse_channel.git.gitclaim import GitError, _default_git_runner, run_git_claim
 from synapse_channel.git.githook import (
     _paths_overlap,
     run_git_release,
@@ -290,98 +291,45 @@ async def test_run_git_release_keeps_same_owner_claim_in_other_worktree(tmp_path
         assert "AWAY" in hub.state.claims
 
 
-class _SilentReleaseAgent:
-    """Connects and reports ready, but the state snapshot never arrives."""
-
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
-        self.running = True
-
-    async def connect(self) -> None:
-        while self.running:
-            await asyncio.sleep(0.01)
-
-    async def wait_until_ready(self, *, timeout: float) -> bool:
-        return True
-
-    async def request_state(self) -> None:
-        return None
-
-
-async def test_run_git_release_never_blocks_on_a_hub_that_answers_nothing() -> None:
-    """A ready hub whose snapshot never lands releases nothing and exits zero."""
-    rc = await run_git_release(
-        uri="ws://unused",
-        name="me",
-        trigger="commit",
-        runner=_release_runner("src/a.py\n"),
-        agent_factory=_SilentReleaseAgent,  # type: ignore[arg-type]
-    )
-    assert rc == 0
-
-
-class _SnapshotReleaseAgent(_SilentReleaseAgent):
-    """Return one controlled snapshot and record attempted releases."""
-
-    def __init__(
-        self,
-        _name: str,
-        callback: Callable[[dict[str, Any]], Any],
-        *,
-        snapshot: dict[str, Any],
-        released: list[str],
-        **_kwargs: object,
-    ) -> None:
-        super().__init__()
-        self.callback = callback
-        self.snapshot = snapshot
-        self.released = released
-
-    async def request_state(self) -> None:
-        await self.callback({"type": "state_snapshot", "snapshot": self.snapshot})
-
-    async def release(self, task_id: str) -> None:
-        self.released.append(task_id)
-
-
-async def test_run_git_release_skips_present_invalid_snapshot_identity(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("fault", ["lost", "invalid-identity"])
+async def test_run_git_release_retains_claim_when_snapshot_cannot_authorize_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
 ) -> None:
-    """Malformed additive identity never downgrades to legacy auto-release."""
-    monkeypatch.setattr(githook, "resolve_claim_scope_identity", _release_scope)
-    released: list[str] = []
-    snapshot = {
-        "active_claims": [
-            {
-                "task_id": "MALFORMED",
-                "owner": "me",
-                "worktree": "/repo",
-                "paths": ["src/a.py"],
-                "path_identity": {"version": 999},
-                "git": {"auto_release_on": "commit"},
-            }
-        ]
-    }
+    """Actual hook reads never release on missing or malformed scope evidence."""
+    repo = git_repo(tmp_path / "repo")
+    (repo / "README.md").write_text("changed\n", encoding="utf-8")
+    git_run(repo, "add", "README.md")
+    git_run(repo, "commit", "-q", "-m", "changed")
+    monkeypatch.chdir(repo)
 
-    def factory(name: str, callback: Callable[[dict[str, Any]], Any], **kwargs: object) -> Any:
-        return _SnapshotReleaseAgent(
-            name,
-            callback,
-            snapshot=snapshot,
-            released=released,
-            **kwargs,
-        )
+    def damage(data: dict[str, Any]) -> None:
+        if data.get("type") == "state_snapshot":
+            data["snapshot"]["active_claims"][0]["path_identity"] = {"version": 999}
 
-    assert (
-        await run_git_release(
-            uri="ws://unused",
-            name="me",
-            trigger="commit",
-            runner=_release_runner("src/a.py\n"),
-            agent_factory=factory,
+    async with running_hub() as (hub, upstream):
+        assert (
+            await run_git_claim(
+                uri=upstream,
+                name="me",
+                task_id="T",
+                paths=["README.md"],
+                auto_release_on="commit",
+            )
+            == 0
         )
-        == 0
-    )
-    assert released == []
+        original = hub.state.claims["T"].as_persisted_dict()
+        proxy = ClaimProxy(
+            upstream,
+            drop_grants=False,
+            drop_snapshots=fault == "lost",
+            transform=damage if fault == "invalid-identity" else None,
+        )
+        async with claim_proxy(proxy) as uri:
+            assert await run_git_release(uri=uri, name="me", trigger="commit") == 0
+        assert hub.state.claims["T"].as_persisted_dict() == original
+        assert proxy.requests.count("release") == 0
+        assert await run_git_release(uri=upstream, name="me", trigger="commit") == 0
+        await _wait_until(lambda: "T" not in hub.state.claims)
 
 
 async def test_run_git_release_local_identity_failure_is_noop() -> None:

@@ -27,7 +27,7 @@ async def test_mcp_recovers_lost_grant_then_confirms_without_renewal(
     monkeypatch.chdir(git_repo(tmp_path / "repo"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     async with running_hub() as (hub, upstream):
-        proxy = ClaimProxy(upstream)
+        proxy = ClaimProxy(upstream, preserve_registration=False)
         async with claim_proxy(proxy) as uri:
             handle = await start_bridge(uri, request_timeout=0.01)
             try:
@@ -56,7 +56,7 @@ async def test_mcp_no_response_remains_unknown(
     """Losing the grant and confirmation cannot authorize work or imply denial."""
     monkeypatch.chdir(git_repo(tmp_path / "repo"))
     async with running_hub() as (_hub, upstream):
-        proxy = ClaimProxy(upstream, drop_snapshots=True)
+        proxy = ClaimProxy(upstream, drop_snapshots=True, preserve_registration=False)
         async with claim_proxy(proxy) as uri:
             handle = await start_bridge(uri)
             try:

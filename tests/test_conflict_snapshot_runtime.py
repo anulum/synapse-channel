@@ -49,7 +49,7 @@ async def snapshot_relay(uri: str, fault: str) -> AsyncIterator[tuple[str, list[
                     snapshots = 0
                     async for raw in upstream:
                         frame: dict[str, object] = json.loads(raw)
-                        if frame.get("type") == "state_snapshot":
+                        if frame.get("type") == "state_snapshot" and not frame.get("request_id"):
                             snapshots += 1
                             if fault == "all" or (fault == "first" and snapshots == 1):
                                 continue
@@ -80,7 +80,9 @@ async def test_conflicts_recovers_only_a_transient_snapshot_loss(
             result = await asyncio.to_thread(
                 run_cli, "conflicts", "--name", name, uri=relay, cwd=tmp_path
             )
-        assert len(requests) == (1 if fault == "none" else 2)
+        assert len(requests) == (2 if fault == "none" else 3)
+        assert isinstance(json.loads(requests[0])["request_id"], str)
+        assert all("request_id" not in json.loads(raw) for raw in requests[1:])
         assert all(json.loads(raw)["payload"] == "snapshot" for raw in requests)
         assert all("release_confirmation" not in json.loads(raw) for raw in requests)
         if fault == "all":

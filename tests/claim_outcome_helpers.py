@@ -31,22 +31,46 @@ class ClaimProxy:
     grant_delay: float = 0.0
     transform: Callable[[dict[str, Any]], None] | None = None
     requests: list[str] = field(default_factory=list)
+    preserve_registration: bool = True
 
     async def handle(self, downstream: ServerConnection) -> None:
         """Forward both directions and join all connection tasks on exit."""
         async with connect(self.upstream, max_size=8 * 1024 * 1024) as upstream:
+            supports_registration = False
+            registration_id: object = None
+            mutated = False
 
             async def requests() -> None:
                 """Relay real client requests and count lease mutations."""
+                nonlocal registration_id, mutated
                 async for raw in downstream:
                     data = json.loads(raw)
                     self.requests.append(str(data.get("type")))
+                    mutated |= data.get("type") in {"claim", "release"}
+                    if (
+                        supports_registration
+                        and not mutated
+                        and registration_id is None
+                        and data.get("type") == "state_request"
+                    ):
+                        registration_id = data.get("request_id")
                     await upstream.send(raw)
 
             async def replies() -> None:
                 """Apply only the configured reply loss or corruption."""
+                nonlocal supports_registration
                 async for raw in upstream:
                     data = json.loads(raw)
+                    if data.get("type") == "welcome":
+                        supports_registration = bool(data.get("lock_renewal_session"))
+                    if (
+                        self.preserve_registration
+                        and registration_id is not None
+                        and data.get("type") == "state_snapshot"
+                        and data.get("request_id") == registration_id
+                    ):
+                        await downstream.send(raw)
+                        continue
                     if self.drop_grants and data.get("type") == "claim_granted":
                         continue
                     if self.grant_delay and data.get("type") == "claim_granted":
