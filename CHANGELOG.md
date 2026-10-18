@@ -47,6 +47,12 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- Keep stdio and authenticated HTTP MCP bridges connected after a hub restart
+  or network disconnect. Serial retries retain the existing native identity
+  and credentials, use bounded backoff with jitter, and leave tool retries
+  under the caller's operation-confirmation contract. Shutdown joins the
+  stdio bridge's connection task.
+
 - Advisory ranking now refuses malformed stored claim fields through its
   documented input-error contract, without exposing conversion tracebacks in
   the CLI or modifying the journal.

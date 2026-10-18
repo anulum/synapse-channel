@@ -22,6 +22,7 @@ from synapse_channel.mcp.bridge import (
     AgentFactory,
     SynapseHubBridge,
 )
+from synapse_channel.mcp.connection import maintain_connection
 from synapse_channel.mcp.registration import build_mcp_server
 
 
@@ -78,7 +79,7 @@ async def serve_stdio(
         inbox_feed=inbox_feed,
         inbox_cursor=inbox_cursor,
     )
-    conn_task = asyncio.create_task(bridge.agent.connect())
+    conn_task = asyncio.create_task(maintain_connection(bridge.agent))
     try:
         if not await bridge.agent.wait_until_ready(timeout=ready_timeout):
             print(f"[{name}] could not reach hub at {uri}", file=sys.stderr)
@@ -89,3 +90,4 @@ async def serve_stdio(
     finally:
         bridge.agent.running = False
         conn_task.cancel()
+        await asyncio.gather(conn_task, return_exceptions=True)

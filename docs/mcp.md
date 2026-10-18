@@ -27,7 +27,7 @@ require their own acceptance evidence; stdio host compatibility does not imply
 cloud or browser support.
 
 `synapse mcp` runs an MCP server over stdio that is **itself a client of the
-hub** — it opens one `SynapseAgent` connection and re-exposes the coordination
+hub** — it maintains one `SynapseAgent` identity and re-exposes the coordination
 verbs as MCP tools and resources. The hub itself never learns about MCP: the face
 is a separate adapter process, not a hub change, so the hub stays exactly as
 local-first and dependency-light as before.
@@ -47,6 +47,29 @@ pip install 'synapse-channel[mcp]'
 
 Running `synapse mcp` without the extra prints a one-line install hint and exits
 non-zero, so nothing fails silently.
+
+## Hub connection recovery
+
+After startup admission, both MCP transports reconnect when their native hub
+connection closes. Attempts run serially with the same identity, credentials,
+roles and mailbox cursor. Retry delay grows from 0.25 to five seconds, with
+20 percent jitter; a connection lasting at least one second resets the delay.
+The startup `--ready-timeout` still bounds initial admission, and transport
+shutdown cancels and joins its connection task.
+
+The MCP protocol session can remain open while the hub is unavailable. Tools
+retain their bounded unavailable, refusal or unknown outcomes during that gap;
+an open stdio process or a successful tool-list request does not establish hub
+readiness. Reconnection restores the transport without reissuing application
+operations. Reconcile an uncertain mutation before explicitly retrying it;
+HTTP callers retain the original operation identifier and arguments.
+
+The maintained stdio profile exercises the real CLI and MCP SDK across two
+private hub restarts, including refusal of offline sends and single delivery
+after recovery. The [HTTP profile](mcp-http.md) additionally exercises provisioned
+principal isolation and the retained HTTP session across backend restarts.
+These profiles qualify the executed adapter code; already running processes
+need their host's supported MCP reattachment procedure to load an update.
 
 For a bounded local walkthrough that places the MCP adapter beside the CLI and
 A2A surfaces, see the [integration demo matrix](integration-demos.md).

@@ -26,6 +26,7 @@ from starlette.routing import Mount
 from starlette.types import Receive, Scope, Send
 
 from synapse_channel.mcp.bridge import SynapseHubBridge
+from synapse_channel.mcp.connection import maintain_connection
 from synapse_channel.mcp.http_agent import HttpHubAgent
 from synapse_channel.mcp.http_auth import HttpTokenVerifier
 from synapse_channel.mcp.http_config import load_http_auth_config
@@ -229,7 +230,7 @@ def build_http_mcp_app(
         try:
             async with AsyncExitStack() as stack:
                 for bridge in bridges:
-                    tasks.append(asyncio.create_task(bridge.agent.connect()))
+                    tasks.append(asyncio.create_task(maintain_connection(bridge.agent)))
                     if not await bridge.agent.wait_until_ready(ready_timeout):
                         raise RuntimeError("remote MCP provisioned hub identity was not admitted")
                     try:

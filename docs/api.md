@@ -126,6 +126,14 @@ is re-armed and the diagnostics are reset, while the mailbox cursor and any
 owner lease carry over. A second `connect()` while an attempt is still active
 raises `RuntimeError` instead of racing the live listener.
 
+The MCP adapters own their retry lifetime separately through
+`mcp.connection.maintain_connection`. It serially reuses the same agent after
+normal transport loss, with bounded backoff and jitter, and propagates owner
+cancellation. Application operations retain their existing confirmation and
+retry contracts; the single-attempt `SynapseAgent.connect()` API is unchanged.
+
+::: synapse_channel.mcp.connection
+
 The Python client limits each decompressed inbound hub message to 8 MiB
 (`MAX_HUB_MESSAGE_BYTES`). This also applies to CLI and dashboard clients and
 allows accumulated board snapshots above 1 MiB. Responses exceeding the bound

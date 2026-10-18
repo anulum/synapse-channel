@@ -1134,6 +1134,9 @@ when `--name` is omitted, but concurrent clients should pin distinct names. It
 does not wake an idle provider; the permanent waiter remains a separate path.
 Unexpected inbox and advisory storage failures return fixed diagnostics;
 cursor-write failures retain the original cursor and allow a retry after recovery.
+Both MCP transports restore a lost hub connection with bounded serial retries
+under the same native identity. Tool operations keep their existing confirmation
+and retry contracts; an open MCP session alone does not prove hub readiness.
 For a private remote client, `synapse mcp --transport streamable-http` uses
 direct TLS, provisioned subject-to-seat grants and bounded project-scoped
 actions. The [HTTP guide](docs/mcp-http.md) documents the verified Inspector CLI
@@ -1831,11 +1834,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.38 |
 | Public API exports | 70 |
-| Package modules | 795 |
+| Package modules | 796 |
 | Classes | 1166 |
 | Wire message types | 114 |
 | CLI subcommands | 257 |
-| Test functions | 11526 |
+| Test functions | 11528 |
 | Benchmark harnesses | 11 |
 | Documentation pages | 86 |
 | GitHub Actions workflows | 27 |

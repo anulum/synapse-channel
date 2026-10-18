@@ -149,6 +149,13 @@ or lost reply does not prove that a native mutation failed to commit: retry
 with the same operation identifier and inspect the actual task/receipt.
 Native refusal or an unconfirmed mutation is an MCP error with generic details.
 
+Each provisioned seat has one serial native connection-maintenance loop. After
+a backend disconnect it reconnects with the same seat and signing key using
+the [bounded MCP retry policy](mcp.md#hub-connection-recovery). Existing HTTP
+sessions retain their normal subject binding and expiry; restoration of the
+hub connection does not reissue an HTTP mutation. Requests made during the
+outage still obey their operation timeout and confirmation contract.
+
 ## Resource envelope and diagnostics
 
 | Limit | Default | Allowed range |
@@ -174,7 +181,7 @@ guarantee of availability against denial-of-service or compromised native hosts.
 | Client surface | Evidence / support boundary |
 | --- | --- |
 | MCP Inspector CLI 2.8.0 | Qualification target: initialize at 2025-11-25, list tools, declare, claim, resource read and release over verified HTTPS; check effects in the native hub and retain the exact run/artifact evidence. |
-| MCP Python SDK 1.30.0 | Maintained real HTTPS profiles in `tests/test_mcp_http_application.py`, including native identities/mutations/resources/reconnect and hub/HTTP restart. Authentication/refusal profiles are in `tests/test_mcp_http_auth.py` and `tests/test_mcp_http_transport.py`. |
+| MCP Python SDK 1.30.0 | Maintained real HTTPS profiles in `tests/test_mcp_http_application.py` and `tests/test_mcp_http_reconnect.py`, including native identities/mutations/resources, two backend hub restarts with the same HTTP session, offline-mutation refusal and principal isolation after recovery. Authentication/refusal profiles are in `tests/test_mcp_http_auth.py` and `tests/test_mcp_http_transport.py`. |
 | Installed Synapse HTTP console-script profile | `tests/test_cli_mcp_http.py` invokes the interpreter's installed console script for TLS, native admission, project mutation/refusal and shutdown. Its result qualifies that installation, not every wheel with the same version. |
 | Desktop, hosted web and cloud applications | No HTTP acceptance established by these checks; require their own documented client qualification. |
 
