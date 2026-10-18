@@ -917,5 +917,55 @@
       }
     }
   ],
+  "pane_classifier_extraction": {
+    "after": {
+      "at": "2026-10-18T10:40:10.590950+00:00",
+      "load": [
+        14.61962890625,
+        15.05908203125,
+        16.81982421875
+      ],
+      "result": {
+        "injected": 5,
+        "max_us": 888050.3149703145,
+        "measured": true,
+        "min_us": 839955.8290839195,
+        "p50_us": 852604.6378538013,
+        "wakes": 5
+      },
+      "source": {
+        "benchmarks/external_surfaces_benchmark.py": "d4d06490cb2451d1aff18111a321d9e18fb01cb5b0c53456ebe85e7a159c5730",
+        "src/synapse_channel/agent_pane_state.py": "9a6eb60c36673e4c2907d05bb37eba0ec08259f98de198a50350fc9dd6bd7572",
+        "src/synapse_channel/agent_tmux.py": "f3c6a80f989e063cee3d7b1582c42f22e328208aace47aa3885f516a8aa8169b",
+        "src/synapse_channel/pane_wake.py": "56979b1066cf29c3ab6b89f107ae8ea06fe9e71b303b20a50b8c8e24b4ded78c"
+      }
+    },
+    "at": "2026-10-18T10:36:52.930972+00:00",
+    "before": {
+      "load": [
+        8.7236328125,
+        14.1982421875,
+        16.97314453125
+      ],
+      "result": {
+        "injected": 5,
+        "max_us": 848074.9239679426,
+        "measured": true,
+        "min_us": 829607.8050043434,
+        "p50_us": 838663.772912696,
+        "wakes": 5
+      },
+      "source": {
+        "benchmarks/external_surfaces_benchmark.py": "d4d06490cb2451d1aff18111a321d9e18fb01cb5b0c53456ebe85e7a159c5730",
+        "src/synapse_channel/agent_tmux.py": "7c5e897eb43953d5947f86d213efcfaabfcb7ce920845cee0baeb550959d6ce0",
+        "src/synapse_channel/pane_wake.py": "56979b1066cf29c3ab6b89f107ae8ea06fe9e71b303b20a50b8c8e24b4ded78c"
+      }
+    },
+    "before_head": "55d4050fd36c7acea6a339db23b19746881bff81",
+    "note": "Five serial real tmux fixture wakes before extraction, then the same workload after; shared host nice19, no throughput or improvement claim.",
+    "p50_delta_percent": 1.6622710305809862,
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]"
+  },
   "recorded_at": "2026-10-12T19:31:12.556592+00:00"
 }

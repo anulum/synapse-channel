@@ -24,6 +24,12 @@ execution evidence when carrying a release claim forward.
   POSIX process-group and Windows direct-child termination boundaries remain
   explicit; external effects still require resource-side fencing.
 
+### Changed
+
+- Extract provider pane classification from the terminal transport into
+  `agent_pane_state`, preserving existing marker precedence, submission
+  decisions, facade behaviour and staged-hint observations.
+
 ### Added
 
 - Explicit `reputation` CLI and Python API rank recorded evidence for human

@@ -1795,6 +1795,7 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | `a2a_http_handler`, `a2a_http_routes` | Bounded HTTP admission and ordered A2A routes, bound through `a2a_http.build_a2a_handler`. |
 | `dashboard_handler_binding`, `dashboard_http_pages`, `dashboard_http_live` | Per-server readers, shells/snapshots and bounded NDJSON delivery, behind the dashboard's existing access checks. |
 | `pane_wake` | Staged wake preparation and submission through `agent_tmux.inject_wake`, with verified pane binding and retry state. |
+| `agent_pane_state` | Existing provider marker precedence, submit readiness and staged-hint observations, used by the `agent_tmux` facade. |
 | `lingering_close` | Orderly end of an HTTP connection whose request was not read to its end, bounded in time, bytes and count, for both HTTP servers. |
 | `client` | The reusable async agent connection and coordination helpers. |
 | `persistence` | WAL-backed event store with documented durability classes and recovery of retained supported events. |
@@ -1830,11 +1831,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.38 |
 | Public API exports | 70 |
-| Package modules | 794 |
+| Package modules | 795 |
 | Classes | 1166 |
 | Wire message types | 114 |
 | CLI subcommands | 257 |
-| Test functions | 11522 |
+| Test functions | 11526 |
 | Benchmark harnesses | 11 |
 | Documentation pages | 86 |
 | GitHub Actions workflows | 27 |

@@ -530,6 +530,12 @@ successful pasting is recorded before the second safety check. An uncertain
 staged prompt is retried through submission without another paste. These
 implementation stages retain the existing response fields and CLI vocabulary.
 
+Provider marker classification belongs to `agent_pane_state`: it retains the
+existing update/busy/idle precedence, complete staged-hint checks and terminal
+wrapping rules. `agent_tmux` continues to bind the current capture, provider and
+registry through its existing API. These terminal observations do not prove
+that a model received or completed work.
+
 Both HTTP servers end a connection in order after its answer. A connection
 whose request was not read to its end, for example one refused before its
 body, is not closed at once: the answer's end is sent, the remaining request
@@ -550,6 +556,8 @@ bound is closed at once.
 ::: synapse_channel.dashboard_http_live
 
 ::: synapse_channel.pane_wake
+
+::: synapse_channel.agent_pane_state
 
 ::: synapse_channel.lingering_close
 

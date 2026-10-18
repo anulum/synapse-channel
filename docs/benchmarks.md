@@ -317,3 +317,23 @@ by these numbers. Full distributions, source and harness digests, the load
 before each run and the host are retained in
 `external_surfaces_benchmark.json`; no observation was discarded. The pane
 wake time includes the fixed 0.4-second submit delay.
+
+
+### Provider pane classification extraction
+
+The 2026-10-18 comparison runs the unchanged Python pane harness before
+extraction at `55d4050f` and after extraction with source digests recorded under
+`pane_classifier_extraction` in the results JSON. Each run delivered all five
+wakes through actual owned tmux sessions and the same harmless shell composer.
+No external model or native vendor client participates in this workload.
+
+| Operation | Before p50 (us) | After p50 (us) |
+| --- | ---: | ---: |
+| Pane wake | 838663.773 | 852604.638 |
+
+The observed median increased by 1.66%. These are two serial
+nice-19 runs on the shared workstation, with different observed host loads;
+they establish functional completion of the same workload, without an isolated
+performance or throughput claim. The fixed submit delays are unchanged.
+The HTTP measurements above remain historical observations of their recorded
+sources; this extraction comparison covers only the affected pane path.
