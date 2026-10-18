@@ -617,7 +617,7 @@ synapse doctor --federation-peer atelier=wss://atelier.example:8876 \
 certificate-pinned federation: it is a different trust boundary, not a direct
 hub mTLS path.
 
-A worked example with [Caddy](https://caddyserver.com) terminating TLS in
+A worked example with [Caddy](https://github.com/caddyserver/caddy) terminating TLS in
 front of a loopback hub (`reverse_proxy` speaks WebSocket without extra
 directives). The hub runs privately with its token:
 
