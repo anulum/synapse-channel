@@ -72,15 +72,14 @@ async def _cancel_registration(
     agent: SynapseAgent,
     listener: asyncio.Task[None],
     ready: asyncio.Task[bool],
-    deadline: float,
 ) -> bool:
-    """Join both attempt tasks and report an unfinished listener at its deadline."""
-    expired = not listener.done() and asyncio.get_running_loop().time() >= deadline
+    """Join both tasks and report whether cancellation interrupted the listener."""
+    unfinished = not listener.done()
     ready.cancel()
     agent.running = False
     listener.cancel()
     await asyncio.gather(ready, listener, return_exceptions=True)
-    return expired
+    return unfinished
 
 
 async def register_owner(agent: SynapseAgent, timeout: float) -> asyncio.Task[None] | None:
@@ -123,7 +122,7 @@ async def register_owner(agent: SynapseAgent, timeout: float) -> asyncio.Task[No
                 await asyncio.wait((listener,), timeout=max(0.0, deadline - loop.time()))
         finally:
             if not connected:
-                pending_listener = await _cancel_registration(agent, listener, ready, deadline)
+                pending_listener = await _cancel_registration(agent, listener, ready)
         # A Git hook can finish before the hub retires its socket. Retry only
         # that precise admission refusal; credentials and ownership rules
         # remain unchanged, and no release has crossed the send boundary.

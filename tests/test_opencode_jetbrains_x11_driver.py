@@ -12,6 +12,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import time
+from contextlib import nullcontext
 
 import pytest
 
@@ -783,6 +784,7 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
     monkeypatch: pytest.MonkeyPatch,
     deadline: float | None,
 ) -> None:
+    monkeypatch.setattr(jetbrains_x11_driver, "owned_clipboard", lambda *_a, **_k: nullcontext())
     focused: list[str] = []
     actions: list[tuple[str, tuple[str, ...]]] = []
     sleeps: list[float] = []
@@ -823,7 +825,7 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
 
     assert focused == ["project"]
     expected_deadline = 100.25 if deadline is None else deadline
-    assert sleeps == [expected_deadline, expected_deadline, expected_deadline]
+    assert sleeps == [expected_deadline] * 4
     assert actions == [
         (
             "prime the ACP prompt composer",
@@ -831,15 +833,8 @@ def test_chat_prompt_submission_targets_the_focused_swing_widget(
         ),
         ("clear the ACP prompt composer", ("key", "ctrl+a", "BackSpace")),
         (
-            "type the ACP prompt",
-            (
-                "type",
-                "--clearmodifiers",
-                "--delay",
-                "20",
-                "--",
-                "governed prompt",
-            ),
+            "paste the complete ACP prompt",
+            ("key", "--clearmodifiers", "ctrl+v"),
         ),
         (
             "submit the JetBrains ACP prompt from the focused composer",
@@ -857,6 +852,7 @@ def test_chat_prompt_submission_refuses_an_unpinned_project_frame(
     geometry: tuple[int, int],
     root_child: bool,
 ) -> None:
+    monkeypatch.setattr(jetbrains_x11_driver, "owned_clipboard", lambda *_a, **_k: nullcontext())
     monkeypatch.setattr(
         jetbrains_x11_driver, "_focus_chat_composer", lambda *_args, **_kwargs: None
     )

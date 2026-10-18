@@ -569,6 +569,11 @@ line forms the canonical disappearing-window `BadWindow` plus
 `X_GetWindowAttributes` report, and only three times. Mixed, prefixed, duplicate,
 or unknown diagnostics are fatal. A persistent race or any other timeout,
 transport, warning, malformed output, or ownership ambiguity still fails closed.
+JetBrains pastes the acceptance prompt as a single UTF-8 clipboard transfer
+inside its private Xvfb display. The driver waits for exact clipboard readback,
+keeps the selection owner alive through paste, then reaps it. The ACP trace
+still requires the original prompt's exact byte length and SHA-256; simulated
+character input cannot silently truncate the accepted prompt.
 A failed Zed or JetBrains real-client turn therefore fails the matrix and the
 workflow rather than being hidden by `continue-on-error`.
 

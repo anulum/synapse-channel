@@ -14,6 +14,7 @@ import shutil
 import subprocess  # nosec B404
 import time
 
+from e2e.opencode_editors.jetbrains_clipboard import owned_clipboard
 from e2e.opencode_editors.jetbrains_timing import DEFAULT_JETBRAINS_TIMING
 from e2e.opencode_editors.jetbrains_x11_focus import focus_belongs_to_project
 from e2e.opencode_editors.jetbrains_x11_geometry import (
@@ -26,10 +27,8 @@ _PROJECT_SELECTOR_GEOMETRY = (1400, 1000)
 _CHAT_COMPOSER_RIGHT_INSET = 240
 _CHAT_COMPOSER_BOTTOM_INSET = 130
 _CHAT_INPUT_SETTLE_SECONDS = 0.25
-# JetBrains' controlled Swing composer can drop the start of a long prompt when
-# XTEST key events arrive faster than its document listener drains them. Keep
-# the real GUI input below that boundary; the acceptance trace still proves the
-# complete prompt byte length and SHA-256 after submission.
+# Only the disposable primer uses XTEST character input. The actual prompt is
+# pasted as one clipboard transfer; its exact bytes remain checked in ACP.
 _CHAT_INPUT_KEY_DELAY_MS = "20"
 _CHAT_INPUT_PRIMER = "x"
 _CANONICAL_XID = re.compile(r"0x[0-9A-Fa-f]+\Z")
@@ -479,16 +478,15 @@ def _submit_chat_prompt(
     if clear_deadline is None:
         clear_deadline = time.monotonic() + _CHAT_INPUT_SETTLE_SECONDS
     _bounded_poll_sleep(clear_deadline)
-    _checked_xdotool(
-        "type the ACP prompt",
-        "type",
-        "--clearmodifiers",
-        "--delay",
-        _CHAT_INPUT_KEY_DELAY_MS,
-        "--",
-        prompt,
-        deadline=deadline,
-    )
+    with owned_clipboard(prompt, deadline=deadline or time.monotonic() + 10.0):
+        _checked_xdotool(
+            "paste the complete ACP prompt",
+            "key",
+            "--clearmodifiers",
+            "ctrl+v",
+            deadline=deadline,
+        )
+        _bounded_poll_sleep(deadline or time.monotonic() + _CHAT_INPUT_SETTLE_SECONDS)
     geometry = _window_geometry(window, deadline=deadline)
     root_child = _window_is_root_child(window, deadline=deadline)
     if geometry != _PROJECT_SELECTOR_GEOMETRY or not root_child:

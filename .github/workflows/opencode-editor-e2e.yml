@@ -241,13 +241,13 @@ jobs:
               sudo apt-get update
               sudo apt-get install --no-install-recommends --yes \
                 imagemagick libasound2t64 libfreetype6 libxi6 libxrender1 \
-                libxtst6 libxkbcommon-x11-0 wmctrl x11-utils xdotool xvfb
-              for executable in import wmctrl xdotool xprop xwininfo xvfb-run; do
+                libxtst6 libxkbcommon-x11-0 wmctrl x11-utils xclip xdotool xvfb
+              for executable in import wmctrl xclip xdotool xprop xwininfo xvfb-run; do
                 command -v "$executable"
               done
               dpkg-query --show --showformat='${Package}=${Version}\n' \
                 imagemagick libasound2t64 libfreetype6 libxi6 libxrender1 \
-                libxtst6 libxkbcommon-x11-0 wmctrl x11-utils xdotool xvfb
+                libxtst6 libxkbcommon-x11-0 wmctrl x11-utils xclip xdotool xvfb
               archive="$RUNNER_TEMP/idea-2026.2.1.tar.gz"
               ai_assistant="$RUNNER_TEMP/ai-assistant-262.9437.185.zip"
               full_line="$RUNNER_TEMP/full-line-262.9437.185.zip"
@@ -391,6 +391,7 @@ jobs:
             tests/e2e/opencode_editors/jetbrains_selector_windows.py
             tests/e2e/opencode_editors/jetbrains_setup.py
             tests/e2e/opencode_editors/jetbrains_timing.py
+            tests/e2e/opencode_editors/jetbrains_clipboard.py
             tests/e2e/opencode_editors/jetbrains_x11_driver.py
             tests/e2e/opencode_editors/jetbrains_x11_focus.py
             tests/e2e/opencode_editors/jetbrains_x11_geometry.py
