@@ -46,6 +46,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # Reports live outside the checkout so retry input cannot include its
+      # predecessor's generated Markdown and cached failure URLs.
       # Attempt 1 may fail on transient network (ECONNRESET, flaky CDN) and
       # continues only so a single full retry can run. Server errors stay
       # non-accepted; badge *targets* remain checked.
@@ -78,14 +80,14 @@ jobs:
           failIfEmpty: true
           format: markdown
           jobSummary: true
-          output: lychee/report-attempt-1.md
+          output: ${{ runner.temp }}/synapse-link-check/report-attempt-1.md
 
       - name: Upload link report (attempt 1)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: link-check-report-attempt-1
-          path: lychee/report-attempt-1.md
+          path: ${{ runner.temp }}/synapse-link-check/report-attempt-1.md
           if-no-files-found: error
           retention-days: 30
 
@@ -116,14 +118,14 @@ jobs:
           failIfEmpty: true
           format: markdown
           jobSummary: true
-          output: lychee/report-attempt-2.md
+          output: ${{ runner.temp }}/synapse-link-check/report-attempt-2.md
 
       - name: Upload link report (attempt 2)
         if: always() && steps.lychee_attempt_1.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: link-check-report-attempt-2
-          path: lychee/report-attempt-2.md
+          path: ${{ runner.temp }}/synapse-link-check/report-attempt-2.md
           if-no-files-found: error
           retention-days: 30
 

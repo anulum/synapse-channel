@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "link-check.yml"
 
@@ -97,11 +99,28 @@ def test_link_check_persistent_failure_is_visible_and_fails_job() -> None:
     assert "::error::" in text or "Link check failed after the bounded two-attempt gate" in text
 
 
-def test_link_check_uploads_distinct_attempt_reports() -> None:
+def test_link_check_uploads_distinct_attempt_reports(tmp_path: Path) -> None:
+    """Actual report paths stay outside the next attempt's Markdown input."""
     text = _workflow_text()
 
-    assert "output: lychee/report-attempt-1.md" in text
-    assert "output: lychee/report-attempt-2.md" in text
+    workspace = tmp_path / "checkout"
+    workspace.mkdir()
+    document = workspace / "README.md"
+    document.write_text("[valid](https://example.com/)\n", encoding="utf-8")
+    runner_temp = tmp_path / "runner-temp"
+    workflow = yaml.safe_load(text)
+    steps = workflow["jobs"]["public-docs"]["steps"]
+    outputs = [step["with"]["output"] for step in steps if "lycheeverse/" in step.get("uses", "")]
+    uploads = [
+        step["with"]["path"] for step in steps if "actions/upload-artifact@" in step.get("uses", "")
+    ]
+    assert len(outputs) == 2 and len(set(outputs)) == 2 and outputs == uploads
+    for output in outputs:
+        report = Path(output.replace("${{ runner.temp }}", str(runner_temp)))
+        assert report.is_relative_to(runner_temp) and not report.is_relative_to(workspace)
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text("[previous failure](https://unavailable.invalid/)\n", encoding="utf-8")
+    assert list(workspace.glob("**/*.md")) == [document]
     assert "name: link-check-report-attempt-1" in text
     assert "name: link-check-report-attempt-2" in text
     # No ambiguous shared report identity.
