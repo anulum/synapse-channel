@@ -139,6 +139,67 @@ def _runner(runner: CommandRunner | None, timeout: float) -> CommandRunner:
     return runner if runner is not None else partial(run_waker_command, timeout=limit)
 
 
+def _native_readback_choice(existing: WakerConfig | None, requested: bool | None) -> bool:
+    """Preserve a configured native choice unless the operator supplies one."""
+    if requested is not None:
+        return requested
+    return existing.opencode_editor_readback if existing is not None else False
+
+
+def _apply_installation(
+    config: WakerConfig,
+    *,
+    start: bool,
+    home: Path | None,
+    runner: CommandRunner,
+) -> WakerOperationResult:
+    """Apply one configuration while the caller holds its lifecycle lock."""
+    unit = _unit(config.identity, runner=runner)
+    unit_path = user_systemd_dir(home=home) / WAKER_TEMPLATE
+    unit_text = render_waker_unit(synapse_bin=config.synapse_bin)
+    with waker_transition(
+        config.identity, config.generation, "install" if start else "configure", home=home
+    ) as transition:
+        unit_path.parent.mkdir(parents=True, exist_ok=True)
+        unit_path.write_text(unit_text, encoding="utf-8")
+        config_path = save_waker_config(config, home=home)
+        lines = [
+            f"wrote {unit_path}",
+            f"wrote {config_path}",
+            f"generation: {config.generation}",
+        ]
+        if config.desired_state == DESIRED_INHIBITED:
+            lines.extend(
+                (
+                    "desired state remains inhibited; service was not started",
+                    f"run: synapse waker resume {config.identity}",
+                )
+            )
+            transition.complete()
+            return WakerOperationResult(True, tuple(lines), config.generation)
+        if not start:
+            lines.extend(
+                (
+                    "run: systemctl --user daemon-reload",
+                    f"run: systemctl --user enable --now {unit}",
+                )
+            )
+            transition.complete()
+            return WakerOperationResult(True, tuple(lines), config.generation)
+        for command in (
+            ["systemctl", "--user", "daemon-reload"],
+            ["systemctl", "--user", "enable", unit],
+            ["systemctl", "--user", "restart", unit],
+        ):
+            _completed, failure = _run_command(command, runner=runner)
+            if failure:
+                lines.append(failure)
+                return WakerOperationResult(False, tuple(lines), config.generation)
+            lines.append(f"ok: {' '.join(command)}")
+        transition.complete()
+        return WakerOperationResult(True, tuple(lines), config.generation)
+
+
 def install_waker(
     *,
     identity: str,
@@ -157,6 +218,7 @@ def install_waker(
     command_timeout: float = DEFAULT_COMMAND_TIMEOUT,
     clock: Callable[[], float] = time.time,
     platform: str = sys.platform,
+    opencode_editor_readback: bool | None = None,
 ) -> WakerOperationResult:
     """Install or update a waker while holding its lock through service commands.
 
@@ -194,6 +256,9 @@ def install_waker(
         Source of Unix timestamps for configuration updates.
     platform : str
         Platform selector; service installation requires Linux or WSL/systemd.
+    opencode_editor_readback : bool or None
+        Enable or disable native mini input readback. None preserves an existing
+        choice and defaults to False for a new waker; owner clients are not restarted.
 
     Returns
     -------
@@ -211,7 +276,6 @@ def install_waker(
         with waker_control_lock(identity, home=home):
             existing_path = waker_config_path(identity, home=home)
             existing = load_waker_config(identity, home=home) if existing_path.exists() else None
-            generation = existing.generation + 1 if existing is not None else 1
             config = WakerConfig(
                 identity=identity,
                 session=session,
@@ -233,52 +297,16 @@ def install_waker(
                 ),
                 submit_delay=submit_delay,
                 pane_probe_interval=pane_probe_interval,
-                generation=generation,
+                opencode_editor_readback=_native_readback_choice(
+                    existing, opencode_editor_readback
+                ),
+                generation=existing.generation + 1 if existing is not None else 1,
                 updated_at=clock(),
                 desired_state=(existing.desired_state if existing is not None else DESIRED_ARMED),
                 inhibit_reason=(existing.inhibit_reason if existing is not None else None),
             )
             validate_waker_config(config)
-            unit = _unit(identity, runner=runner)
-            unit_path = user_systemd_dir(home=home) / WAKER_TEMPLATE
-            unit_text = render_waker_unit(synapse_bin=executable)
-            with waker_transition(
-                identity, generation, "install" if start else "configure", home=home
-            ) as transition:
-                unit_path.parent.mkdir(parents=True, exist_ok=True)
-                unit_path.write_text(unit_text, encoding="utf-8")
-                config_path = save_waker_config(config, home=home)
-                lines = [f"wrote {unit_path}", f"wrote {config_path}", f"generation: {generation}"]
-                if config.desired_state == DESIRED_INHIBITED:
-                    lines.extend(
-                        (
-                            "desired state remains inhibited; service was not started",
-                            f"run: synapse waker resume {identity}",
-                        )
-                    )
-                    transition.complete()
-                    return WakerOperationResult(True, tuple(lines), generation)
-                if not start:
-                    lines.extend(
-                        (
-                            "run: systemctl --user daemon-reload",
-                            f"run: systemctl --user enable --now {unit}",
-                        )
-                    )
-                    transition.complete()
-                    return WakerOperationResult(True, tuple(lines), generation)
-                for command in (
-                    ["systemctl", "--user", "daemon-reload"],
-                    ["systemctl", "--user", "enable", unit],
-                    ["systemctl", "--user", "restart", unit],
-                ):
-                    _completed, failure = _run_command(command, runner=runner)
-                    if failure:
-                        lines.append(failure)
-                        return WakerOperationResult(False, tuple(lines), generation)
-                    lines.append(f"ok: {' '.join(command)}")
-                transition.complete()
-                return WakerOperationResult(True, tuple(lines), generation)
+            return _apply_installation(config, start=start, home=home, runner=runner)
 
     except (OSError, ValueError) as exc:
         return WakerOperationResult(False, (f"failed to install waker — {exc}",))

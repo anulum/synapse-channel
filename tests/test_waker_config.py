@@ -72,7 +72,10 @@ def test_owner_only_configuration_round_trip_builds_transport(tmp_path: Path) ->
 @pytest.mark.parametrize(
     ("changes", "match"),
     [
-        ({"schema_version": 2}, "unsupported waker configuration schema"),
+        ({"schema_version": CONFIG_SCHEMA_VERSION + 1}, "unsupported waker configuration schema"),
+        ({"schema_version": True}, "unsupported waker configuration schema"),
+        ({"opencode_editor_readback": 1}, "must be a boolean"),
+        ({"opencode_editor_readback": True}, "requires an opencode --mini command"),
         ({"identity": ""}, "identity must not be empty"),
         ({"session": "bad\nvalue"}, "session contains control"),
         ({"cwd": "relative"}, "cwd must be an absolute path"),
@@ -176,3 +179,31 @@ def test_save_removes_temporary_file_when_atomic_replace_fails(
 def test_schema_version_constant_is_persisted(tmp_path: Path) -> None:
     path = save_waker_config(_config(tmp_path), home=tmp_path)
     assert json.loads(path.read_text(encoding="utf-8"))["schema_version"] == CONFIG_SCHEMA_VERSION
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_persisted_native_readback_choice_reaches_transport(tmp_path: Path, enabled: bool) -> None:
+    config = _config(
+        tmp_path, agent_command=("opencode", "--mini"), opencode_editor_readback=enabled
+    )
+    save_waker_config(config, home=tmp_path)
+    loaded = load_waker_config(config.identity, home=tmp_path)
+    assert loaded == config
+    assert loaded.agent_tmux_config().opencode_editor_readback is enabled
+
+
+def test_original_schema_loads_without_rewriting_or_enabling_native_controls(
+    tmp_path: Path,
+) -> None:
+    config = _config(
+        tmp_path, desired_state=DESIRED_INHIBITED, inhibit_reason="owner hold", generation=9
+    )
+    document = config.to_document()
+    document["schema_version"] = 1
+    del document["opencode_editor_readback"]
+    path = _write_document(tmp_path, config.identity, document)
+    original = path.read_bytes()
+    loaded = load_waker_config(config.identity, home=tmp_path)
+    assert path.read_bytes() == original
+    assert loaded == config
+    assert loaded.agent_tmux_config().opencode_editor_readback is False

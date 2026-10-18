@@ -544,6 +544,22 @@ wrapping rules. `agent_tmux` continues to bind the current capture, provider and
 registry through its existing API. These terminal observations do not prove
 that a model received or completed work.
 
+`AgentTmuxConfig.opencode_editor_readback` opts new pinned POSIX OpenCode mini
+clients into native input verification. The startup coordinator qualifies an
+unpublished empty client and binds its process before making the requested
+session available. `opencode_composer_probe` compares content-free native
+snapshots before a wake is pasted or submitted; `opencode_composer_files` bounds
+and protects its local metadata. The callback in `opencode_composer` rejects
+the editor transaction even after a successful observation, preserving the
+native draft. Read-only status never invokes that callback. See the
+[operator contract](opencode.md#wake-a-managed-mini-terminal) for the deliberate
+external-editor limitation and the distinction between input consumption and
+model completion.
+
+`opencode_composer.process_stamp` normalises its process start timestamp to UTC
+and English month names, so callback and controller locale settings cannot
+invalidate the same live process receipt.
+
 Both HTTP servers end a connection in order after its answer. A connection
 whose request was not read to its end, for example one refused before its
 body, is not closed at once: the answer's end is sent, the remaining request
@@ -566,6 +582,16 @@ bound is closed at once.
 ::: synapse_channel.pane_wake
 
 ::: synapse_channel.agent_pane_state
+
+::: synapse_channel.opencode_composer
+
+::: synapse_channel.opencode_composer_files
+
+::: synapse_channel.opencode_composer_probe
+
+::: synapse_channel.opencode_composer_startup
+
+::: synapse_channel.opencode_composer_state
 
 ::: synapse_channel.lingering_close
 

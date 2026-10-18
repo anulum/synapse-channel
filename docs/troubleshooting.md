@@ -160,6 +160,17 @@ composer appeared after it. During asynchronous startup an ignored Enter leaves
 the single prompt staged and pending; the bridge waits for a safe pane and retries
 only Enter, never the prompt paste.
 
+For opted-in OpenCode mini input readback, `readback-required` is a qualified
+process awaiting an exact input check, not an empty-composer verdict. Status
+does not invoke the editor. `readback-unavailable` means the current client or
+private profile is not bound; preserve the terminal and inspect the configured
+identity, session, pinned version and storage permissions. A mount that creates
+requested private files as `0644` or directories as `0755` is unsuitable for
+this profile until its creation semantics are qualified. Keep the privacy
+checks enabled. See the [managed OpenCode terminal
+profile](opencode.md#wake-a-managed-mini-terminal), including its external-editor
+limitation. A pane-consumption observation alone does not prove a model turn.
+
 If `agent-tmux status` reports `pane readiness: update-required`, the update
 chooser belongs to the already running managed provider process; it may be in a
 detached tmux session even when visible terminals and the currently installed

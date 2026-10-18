@@ -69,6 +69,7 @@ def _config_from_args(args: argparse.Namespace) -> AgentTmuxConfig:
         ),
         submit_delay=args.submit_delay,
         pane_probe_interval=getattr(args, "pane_probe_interval", DEFAULT_PANE_PROBE_INTERVAL),
+        opencode_editor_readback=getattr(args, "opencode_editor_readback", False),
     )
 
 
@@ -138,6 +139,14 @@ def _add_common_args(
 ) -> None:
     """Add common target options to one wake subcommand."""
     parser.add_argument("--identity", required=True, help="Synapse identity to wake.")
+    parser.add_argument(
+        "--opencode-editor-readback",
+        action="store_true",
+        help=(
+            "Configure exact native input readback for a new pinned OpenCode --mini client; "
+            "existing clients are preserved. Use the same flag for wake and wait."
+        ),
+    )
     parser.add_argument("--session", required=True, help="tmux session target.")
     parser.add_argument("--cwd", type=Path, default=Path.cwd(), help="Agent working directory.")
     parser.add_argument(

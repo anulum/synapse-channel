@@ -9,7 +9,7 @@ Contact: www.anulum.li | protoscience@anulum.li
 
 # OpenCode bridge
 
-SYNAPSE CHANNEL integrates OpenCode through six deliberately separate surfaces.
+SYNAPSE CHANNEL integrates OpenCode through seven separate surfaces.
 Use only the layers needed by one seat; installing the adapter does not silently
 start OpenCode, a Synapse hub, or a provider turn.
 
@@ -21,6 +21,7 @@ start OpenCode, a Synapse hub, or a provider turn.
 | Headless participant | Run an exact-version local OpenCode turn | `opencode run --format json` |
 | Server participant | Run and cancel an authenticated long-lived server turn | Bounded HTTP(S) API |
 | ACP editor face | Use OpenCode from an ACP-compatible IDE | JSON-RPC over stdio |
+| Managed mini terminal | Check exact input before an interactive wake | POSIX tmux and private external-editor callback |
 
 The verified contract is **OpenCode 1.18.32**, official tag commit
 `545f51d26cc39a907d2867492d498d9607ea5fa4`. Both participant drivers refuse a
@@ -33,6 +34,77 @@ against a local scripted provider and real Synapse hub. The previous 1.18.31
 contract remains a rollback reference. Other platform archives are digest
 pinned in the compatibility manifest and receive their own executable checks
 in the corresponding workflow; an asset digest alone is not a runtime pass.
+
+## Wake a managed mini terminal
+
+For a **new POSIX OpenCode 1.18.32 `--mini` client**, opt in to native input
+readback. The configured model and provider credentials must already be available
+to that client:
+
+```bash
+synapse agent-tmux start \
+  --identity my-repo/opencode-mini --session my-repo-opencode-mini \
+  --cwd "$PWD" --agent-command 'opencode --mini --model provider/model' \
+  --opencode-editor-readback
+
+synapse agent-tmux wait \
+  --identity my-repo/opencode-mini --session my-repo-opencode-mini \
+  --cwd "$PWD" --agent-command 'opencode --mini --model provider/model' \
+  --opencode-editor-readback
+```
+
+Use the same flag and identity/session pair with `status` and `wake`. For a
+persistent bridge, pass `--opencode-editor-readback` to `synapse waker install`.
+Omitting the option on a later installation preserves the stored choice;
+`--no-opencode-editor-readback` explicitly disables it. Version-one waker
+configurations load with readback disabled; reading them does not rewrite them.
+
+Startup first creates a private temporary session and verifies the stock
+`Ctrl+x`, `e` editor shortcut on its empty composer, without requesting a model
+turn. Only that same qualified process is published under the requested session
+name. Unsupported versions, altered editor shortcuts, resume options and initial
+prompts refuse this launch profile. Existing terminals retain their process,
+configuration and input; they are not retrofitted by `start`.
+
+The registry and profile temporary directory require a filesystem that honours
+owner-only creation modes, no-follow access and transaction locks. A successful
+SSH connection or readable shared mount does not establish those properties.
+If a mount creates a requested private directory or file with broader access,
+native qualification refuses it. Keep the privacy checks enabled and qualify
+the storage before using it for terminal runtime state.
+
+The managed client uses Synapse's private `EDITOR`, `VISUAL` and temporary
+directory. Its callback reads a bounded native export, records only its digest,
+length and process metadata, and rejects the edit so OpenCode restores the exact
+input, including whitespace and trailing newlines. **This profile does not offer
+ordinary external-editor editing:** manually invoking the editor also leaves the
+draft unchanged. Normal terminal editing remains available. Other processes and
+global editor/keybinding configuration are unaffected.
+
+Process start timestamps use UTC and English month names for both the callback
+and controller. Different locale or time-zone settings do not change the receipt
+for the same live process.
+
+Before pasting, Synapse requires an empty composer. Before Enter, it requires
+the exact staged wake text. A different draft, shell, menu, busy footer,
+unavailable callback or changed process leaves the wake pending. The configured
+normal `BUILD` footer is required; another mode is not automatically qualified.
+Concurrent bridges share a private transaction lock, and an uncertain staged
+paste is not blindly repeated after recovery.
+
+Staged input and its verification are bound to the client's launch marker.
+After a managed replacement qualifies a new empty native process, the pending
+wake is pasted once into that new client. Verification from the retired client
+cannot acknowledge delivery in the replacement. Missing historical launch
+metadata keeps an uncertain paste pending until its exact input can be proved.
+
+`status` checks metadata without opening the editor. `readback-required` means
+the process is qualified but its current input still needs a wake-time readback;
+it does not mean the composer is empty. `readback-unavailable` means the current
+process lacks a usable binding. A successful terminal-consumption observation
+does not establish that the model read its inbox or completed work. Filesystem
+and process checks protect the local coordination boundary; they are not
+isolation from a malicious process running as the same operating-system user.
 
 ## Install the bridge
 

@@ -41,15 +41,23 @@ from functools import partial
 from pathlib import Path
 from typing import Protocol
 
+from synapse_channel import agent_pane_state as _pane_classification
 from synapse_channel.agent_pane_state import (
     PROVIDER_IDLE_PATTERNS as _PROVIDER_IDLE_PATTERNS,
 )
-from synapse_channel.agent_pane_state import pane_state as _pane_state
-from synapse_channel.agent_pane_state import screen_is_safe_for_submit as _screen_is_safe_for_submit
-from synapse_channel.agent_pane_state import staged_wake_was_consumed as _staged_wake_was_consumed
+from synapse_channel.agent_pane_state import (
+    bound_pane_state,
+    bound_screen_safety,
+    bound_staged_wake_was_consumed,
+    provider_compatibility,
+)
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.tmux_server import new_server_prefix
 from synapse_channel.waiter_identity import pane_waiter_name
+
+_pane_state = _pane_classification.pane_state
+_screen_is_safe_for_submit = _pane_classification.screen_is_safe_for_submit
+_staged_wake_was_consumed = _pane_classification.staged_wake_was_consumed
 
 DEFAULT_AGENT_PANE_COMMANDS = frozenset(
     {"codex", "node", "kimi", "claude", "grok", "gemini", "opencode"}
@@ -156,6 +164,9 @@ class AgentTmuxConfig:
     token_file : pathlib.Path or None, optional
         Owner-only token file passed to the wait child instead of exposing the
         secret value in its process arguments.
+    opencode_editor_readback : bool, optional
+        Opt a new pinned OpenCode mini client into exact native input readback.
+        Existing owner clients are never reconfigured or restarted.
     """
 
     identity: str
@@ -171,6 +182,7 @@ class AgentTmuxConfig:
     submit_delay: float = DEFAULT_SUBMIT_DELAY
     pane_probe_interval: float = DEFAULT_PANE_PROBE_INTERVAL
     token_file: Path | None = None
+    opencode_editor_readback: bool = False
 
 
 @dataclass(frozen=True)
@@ -215,6 +227,7 @@ class RegistryRecord:
     pending_wake: bool = False
     wake_prompt_staged: bool = False
     pending_since: float | None = None
+    wake_launch_nonce: str | None = None
 
 
 def agent_binary(config: AgentTmuxConfig) -> str:
@@ -280,6 +293,32 @@ def registry_path(config: AgentTmuxConfig) -> Path:
     return _registry_dir(config) / f"{_safe_key(config.identity)}.json"
 
 
+def _record_wake_launch(
+    config: AgentTmuxConfig,
+    existing: Mapping[str, object],
+    pending_wake: bool | None,
+    wake_prompt_staged: bool | None,
+) -> str | None:
+    """Bind a native paste to its launch before any text reaches the pane."""
+    if not config.opencode_editor_readback:
+        return None
+    from synapse_channel.opencode_composer_state import current_launch_nonce, set_stage_verified
+
+    value = existing.get("wake_launch_nonce")
+    previous = value if isinstance(value, str) else None
+    if pending_wake is False:
+        set_stage_verified(config, False)
+        return None
+    if wake_prompt_staged is False:
+        return None
+    if wake_prompt_staged is not True:
+        return previous
+    nonce = current_launch_nonce(config)
+    if previous != nonce or existing.get("wake_prompt_staged") is not True:
+        set_stage_verified(config, False)
+    return nonce
+
+
 def _write_registry(
     config: AgentTmuxConfig,
     *,
@@ -299,6 +338,7 @@ def _write_registry(
     except (OSError, json.JSONDecodeError):
         pass
     existing_pending = existing.get("pending_wake") is True
+    launch_nonce = _record_wake_launch(config, existing, pending_wake, wake_prompt_staged)
     resolved_pending = pending_wake if pending_wake is not None else existing_pending
     existing_pending_since = existing.get("pending_since")
     pending_since = (
@@ -332,6 +372,7 @@ def _write_registry(
             else existing.get("wake_prompt_staged") is True
         ),
         pending_since=pending_since,
+        wake_launch_nonce=launch_nonce,
     )
     temp = path.with_suffix(".tmp")
     temp.write_text(json.dumps(record.__dict__, sort_keys=True) + "\n", encoding="utf-8")
@@ -370,11 +411,16 @@ def _wake_prompt_staged(config: AgentTmuxConfig) -> bool:
         payload = json.loads(registry_path(config).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
-    return (
+    staged = (
         isinstance(payload, dict)
         and payload.get("pending_wake") is True
         and payload.get("wake_prompt_staged") is True
     )
+    if staged and config.opencode_editor_readback:
+        from synapse_channel.opencode_composer_state import launch_has_changed
+
+        return not launch_has_changed(config, payload.get("wake_launch_nonce"))
+    return staged
 
 
 def build_wake_prompt(identity: str) -> str:
@@ -467,7 +513,7 @@ def _observe_staged_wake(
     screen, detail = _capture_pane(config, runner=runner)
     if screen is None:
         return False, detail
-    if _staged_wake_was_consumed(provider, screen, prompt):
+    if bound_staged_wake_was_consumed(config, provider, screen, prompt, runner=runner):
         return True, "wake prompt consumption observed"
     return False, "wake prompt remains staged"
 
@@ -490,7 +536,7 @@ def _pane_is_safe_for_submit(
     screen, detail = _capture_pane(config, runner=runner)
     if screen is None:
         return False, detail
-    return _screen_is_safe_for_submit(provider, screen, required_text=required_text)
+    return bound_screen_safety(config, provider, screen, runner=runner, required_text=required_text)
 
 
 def _submit_staged_wake(
@@ -597,6 +643,56 @@ def _session_binding(config: AgentTmuxConfig, *, runner: CommandRunner) -> tuple
     )
 
 
+def _bounded_native_command(
+    args: Sequence[str],
+    *,
+    capture_output: bool = False,
+    text: bool = False,
+    check: bool = False,
+    env: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Keep native startup controls within the existing bounded process boundary."""
+    from synapse_channel.opencode_composer_files import ComposerError
+    from synapse_channel.waker_commands import run_waker_command
+
+    if env is not None:
+        raise ComposerError("native startup controls do not replace the environment")
+    try:
+        return run_waker_command(
+            list(args), capture_output=capture_output, text=text, check=check, timeout=2.0
+        )
+    except subprocess.SubprocessError as exc:
+        raise ComposerError("native startup control command did not complete") from exc
+
+
+def _launch_tmux_session(
+    config: AgentTmuxConfig,
+    target: str,
+    provider_env: Sequence[str],
+    *,
+    runner: CommandRunner,
+) -> subprocess.CompletedProcess[str]:
+    """Create one new managed session under the caller's selected target."""
+    command = shlex.join(["env", *provider_env, *_managed_agent_command(config)])
+    return runner(
+        [
+            *new_server_prefix(config.tmux_bin, runner=runner),
+            config.tmux_bin,
+            "new-session",
+            "-d",
+            "-s",
+            target,
+            *(arg for item in provider_env for arg in ("-e", item)),
+            "-c",
+            str(config.cwd),
+            command,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def start_session(
     config: AgentTmuxConfig,
     *,
@@ -645,24 +741,21 @@ def start_session(
         "SYN_TMUX_PROVIDER=1",
         "SYNAPSE_AUTO_CONNECT=0",
     ]
-    command = shlex.join(["env", *provider_env, *_managed_agent_command(config)])
-    proc = runner(
-        [
-            *new_server_prefix(config.tmux_bin, runner=runner),
-            config.tmux_bin,
-            "new-session",
-            "-d",
-            "-s",
-            config.session,
-            *(arg for item in provider_env for arg in ("-e", item)),
-            "-c",
-            str(config.cwd),
-            command,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    if config.opencode_editor_readback:
+        from synapse_channel.opencode_composer_startup import launch_editor_session
+
+        native_runner = _bounded_native_command if runner is subprocess.run else runner
+        startup = launch_editor_session(
+            config,
+            provider_env,
+            launch=partial(_launch_tmux_session, config, runner=native_runner),
+            runner=native_runner,
+        )
+        proc = subprocess.CompletedProcess(
+            [], startup.returncode, stdout=startup.stdout, stderr=startup.stderr
+        )
+    else:
+        proc = _launch_tmux_session(config, config.session, provider_env, runner=runner)
     returncode = proc.returncode
     detail = "started" if proc.returncode == 0 else (proc.stderr or proc.stdout).strip()
     if proc.returncode == 0:
@@ -728,8 +821,8 @@ def inject_wake(
         prompt=partial(build_wake_prompt, config.identity),
         staged=partial(_wake_prompt_staged, config),
         capture=partial(_capture_pane, config, runner=runner),
-        consumed=_staged_wake_was_consumed,
-        screen_safe=_screen_is_safe_for_submit,
+        consumed=partial(bound_staged_wake_was_consumed, config, runner=runner),
+        screen_safe=partial(bound_screen_safety, config, runner=runner),
         pane_safe=partial(_pane_is_safe_for_submit, config, runner=runner),
         submit=partial(_submit_staged_wake, config, runner=runner, sleeper=sleeper),
         record=partial(_write_registry, config),
@@ -737,6 +830,17 @@ def inject_wake(
         result=AgentTmuxWakeResult,
         binding_refusal_code=BINDING_REFUSAL_EXIT_CODE,
     )
+    if config.opencode_editor_readback:
+        from synapse_channel.opencode_composer_files import ComposerError
+        from synapse_channel.opencode_composer_probe import native_wake_transaction
+
+        try:
+            with native_wake_transaction(config):
+                return inject_pane_wake(config, ports, runner=runner, sleeper=sleeper)
+        except ComposerError:
+            return AgentTmuxWakeResult(
+                False, False, 0, "wake deferred: native transaction unavailable"
+            )
     return inject_pane_wake(config, ports, runner=runner, sleeper=sleeper)
 
 
@@ -801,30 +905,15 @@ def status(
     provider = _provider_family(config)
     screen, _capture_detail = _capture_pane(config, runner=runner)
     pane_state = (
-        _pane_state(provider, screen)
+        bound_pane_state(config, provider, screen, runner=runner)
         if agent_active and provider is not None and screen is not None
         else "unknown"
     )
     start_command = tuple(start_parts)
     codex_policy_aligned = provider != "codex" or _has_codex_update_override(start_command)
-    compatibility_aligned = bool(
-        agent_active
-        and provider is not None
-        and pane_state in {"idle", "blocked"}
-        and codex_policy_aligned
+    compatibility_aligned, compatibility_detail = provider_compatibility(
+        provider, pane_state, active=agent_active, codex_policy_aligned=codex_policy_aligned
     )
-    if not agent_active:
-        compatibility_detail = "active provider pane was not verified"
-    elif provider is None:
-        compatibility_detail = "provider has no supported pane profile"
-    elif pane_state == "update-required":
-        compatibility_detail = "provider update chooser blocks automatic wake delivery"
-    elif not codex_policy_aligned:
-        compatibility_detail = "Codex update checks are not centrally managed for this session"
-    elif pane_state == "unknown":
-        compatibility_detail = "provider pane readiness is unknown"
-    else:
-        compatibility_detail = "provider launch and pane profile are aligned"
     return AgentTmuxStatus(
         identity=config.identity,
         session=config.session,

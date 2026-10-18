@@ -26,7 +26,7 @@ from synapse_channel.core.secret_files import SecretFileError, read_secret_file
 from synapse_channel.durable_dir import sync_directory
 from synapse_channel.terminal_text import terminal_text
 
-CONFIG_SCHEMA_VERSION = 1
+CONFIG_SCHEMA_VERSION = 2
 """Schema version of the owner-only waker configuration document."""
 
 MAX_CONFIG_BYTES = 131_072
@@ -84,6 +84,8 @@ class WakerConfig:
         Unix timestamp of the last write.
     schema_version : int
         Exact configuration schema version.
+    opencode_editor_readback : bool
+        Opt in to exact native input readback for a new pinned OpenCode mini client.
     """
 
     identity: str
@@ -102,6 +104,7 @@ class WakerConfig:
     inhibit_reason: str | None = None
     updated_at: float = 0.0
     schema_version: int = CONFIG_SCHEMA_VERSION
+    opencode_editor_readback: bool = False
 
     def to_document(self) -> dict[str, object]:
         """Return the canonical JSON-compatible configuration document."""
@@ -123,6 +126,7 @@ class WakerConfig:
             registry_dir=Path(self.registry_dir),
             submit_delay=self.submit_delay,
             pane_probe_interval=self.pane_probe_interval,
+            opencode_editor_readback=self.opencode_editor_readback,
         )
 
 
@@ -148,6 +152,27 @@ def _finite(value: object, *, field: str, allow_zero: bool) -> float:
     return number
 
 
+def _validate_profile_version(config: WakerConfig) -> None:
+    """Validate the supported protocol and opt-in native client profile."""
+    if (
+        not isinstance(config.schema_version, int)
+        or isinstance(config.schema_version, bool)
+        or config.schema_version != CONFIG_SCHEMA_VERSION
+    ):
+        raise WakerConfigError(
+            f"unsupported waker configuration schema {config.schema_version}; "
+            f"expected {CONFIG_SCHEMA_VERSION}"
+        )
+    if not isinstance(config.opencode_editor_readback, bool):
+        raise WakerConfigError("opencode_editor_readback must be a boolean")
+    if config.opencode_editor_readback and (
+        not config.agent_command
+        or Path(config.agent_command[0]).name != "opencode"
+        or "--mini" not in config.agent_command
+    ):
+        raise WakerConfigError("native input readback requires an opencode --mini command")
+
+
 def validate_waker_config(config: WakerConfig) -> WakerConfig:
     """Return ``config`` after validating every persisted execution field.
 
@@ -156,11 +181,7 @@ def validate_waker_config(config: WakerConfig) -> WakerConfig:
     WakerConfigError
         If a field could select an ambiguous seat, path, process, or state.
     """
-    if config.schema_version != CONFIG_SCHEMA_VERSION:
-        raise WakerConfigError(
-            f"unsupported waker configuration schema {config.schema_version}; "
-            f"expected {CONFIG_SCHEMA_VERSION}"
-        )
+    _validate_profile_version(config)
     clean_waker_text(config.identity, field="identity")
     clean_waker_text(config.session, field="session")
     if not Path(clean_waker_text(config.cwd, field="cwd")).is_absolute():
@@ -204,6 +225,16 @@ def _config_from_document(document: object) -> WakerConfig:
     if not isinstance(document, dict):
         raise WakerConfigError("waker configuration must be a JSON object")
     expected = {field.name for field in fields(WakerConfig)}
+    if (
+        type(document.get("schema_version")) is int
+        and document.get("schema_version") == 1
+        and set(document) == expected - {"opencode_editor_readback"}
+    ):
+        document = {
+            **document,
+            "schema_version": CONFIG_SCHEMA_VERSION,
+            "opencode_editor_readback": False,
+        }
     actual = set(document)
     if actual != expected:
         missing = ", ".join(sorted(expected - actual)) or "none"
@@ -232,6 +263,7 @@ def _config_from_document(document: object) -> WakerConfig:
         inhibit_reason=cast(str | None, values["inhibit_reason"]),
         updated_at=cast(float, values["updated_at"]),
         schema_version=cast(int, values["schema_version"]),
+        opencode_editor_readback=cast(bool, values["opencode_editor_readback"]),
     )
     return validate_waker_config(config)
 

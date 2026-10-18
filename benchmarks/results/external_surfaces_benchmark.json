@@ -486,6 +486,56 @@
       "pane.wake": 821563.9609843493
     }
   },
+  "native_readback_default_profile": {
+    "after": {
+      "load_after": [
+        15.5751953125,
+        17.06787109375,
+        17.05029296875
+      ],
+      "pane": {
+        "injected": 5,
+        "max_us": 878744.508838281,
+        "measured": true,
+        "min_us": 853065.6059738249,
+        "p50_us": 861593.7649738044,
+        "wakes": 5
+      },
+      "runtime_sources": {
+        "agent_pane_state": "5eac404704af11248a99ab5d6dde9381982e6f5c4b793a46e8c64a523377f95e",
+        "agent_tmux": "c8235a2c319f02745c509cf1256ebe3bf771fde27fae7ef2789ae926c8222e79",
+        "pane_wake": "03d05040007e07eff969c7ad33e84fdbb9a5cdf86f638d45288bc58e8af5e630"
+      }
+    },
+    "baseline_commit": "ad3bc70b514fb0168e7578cebbd1bfb55ec5b763",
+    "before": {
+      "load_after": [
+        16.06103515625,
+        17.1875,
+        17.08837890625
+      ],
+      "pane": {
+        "injected": 5,
+        "max_us": 889274.2218449712,
+        "measured": true,
+        "min_us": 840092.5090536475,
+        "p50_us": 853155.5610243231,
+        "wakes": 5
+      },
+      "runtime_sources": {
+        "agent_pane_state": "9a6eb60c36673e4c2907d05bb37eba0ec08259f98de198a50350fc9dd6bd7572",
+        "agent_tmux": "f3c6a80f989e063cee3d7b1582c42f22e328208aace47aa3885f516a8aa8169b",
+        "pane_wake": "56979b1066cf29c3ab6b89f107ae8ea06fe9e71b303b20a50b8c8e24b4ded78c"
+      }
+    },
+    "candidate_wheel_sha256": "4e746ebd958d704ac066f4f2b67ff0632bbfa097a3c458737ca2846406c51c66",
+    "date": "2026-10-18",
+    "harness_sha256": "d4d06490cb2451d1aff18111a321d9e18fb01cb5b0c53456ebe85e7a159c5730",
+    "interpretation": "functional regression evidence, not an isolated performance or native readback latency claim",
+    "method": "one serial shared-host before/after pair; five actual owned tmux wakes each; identical harness, private shell and harmless composer",
+    "p50_change_percent": 0.9890580727563991,
+    "profile": "default legacy transport; native editor readback disabled"
+  },
   "pairs": [
     {
       "candidate": {

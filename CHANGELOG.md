@@ -32,6 +32,16 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Opt-in native input readback for new POSIX OpenCode 1.18.32 mini terminals.
+  Qualify the actual editor shortcut before publishing a new session, preserve
+  exact drafts when refusing wakes, and bind subsequent checks to the same
+  process. Startup and wake transactions share private locks and retain recovery
+  metadata. `agent-tmux` exposes the option and read-only readiness states;
+  `waker install` persists it with backward-compatible configuration reads.
+  This profile uses a rejecting editor callback instead of ordinary external
+  editing and leaves existing terminals untouched. Process receipts use UTC
+  independently of callback and controller locale settings.
+
 - Explicit `reputation` CLI and Python API rank recorded evidence for human
   triage, with per-agent counts and source sequences. The complete read-only
   snapshot requires existing enrolled row keys and refuses invalid data or

@@ -10,6 +10,10 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from synapse_channel.agent_tmux import AgentTmuxConfig, CommandRunner
 
 PROVIDER_IDLE_PATTERNS = {
     "codex": re.compile(r"(?m)^\s*›(?:\s|$)"),
@@ -175,3 +179,184 @@ def staged_wake_was_consumed(
         ):
             return True
     return PROVIDER_IDLE_PATTERNS[provider].search(screen, prompt_match.end()) is not None
+
+
+def bound_screen_safety(
+    config: AgentTmuxConfig,
+    provider: str,
+    screen: str,
+    *,
+    runner: CommandRunner,
+    required_text: str | None = None,
+) -> tuple[bool, str]:
+    """Use the opted-in native input proof, retaining every legacy provider guard.
+
+    Parameters
+    ----------
+    config : AgentTmuxConfig
+        Terminal configuration selecting native or legacy input verification.
+    provider : str
+        Detected provider name.
+    screen : str
+        Current bounded pane capture.
+    runner : CommandRunner
+        Bound process runner used for native editor probes.
+    required_text : str or None, optional
+        Exact staged hint to verify; None requires empty native input.
+
+    Returns
+    -------
+    tuple of bool, str
+        Admission result and caller-safe reason. A matching staged hint also
+        records its verification for later recovery.
+    """
+    if not config.opencode_editor_readback:
+        return screen_is_safe_for_submit(provider, screen, required_text=required_text)
+    if provider != "opencode":
+        return False, "native input readback requires an OpenCode pane"
+    from synapse_channel.opencode_composer_probe import inspect_editor_composer
+
+    try:
+        snapshot = inspect_editor_composer(config, screen, runner=runner)
+    except (OSError, ValueError):
+        return False, "native OpenCode input readback is unavailable"
+    if not snapshot.matches(required_text):
+        return False, "native OpenCode input contains another draft"
+    if required_text is not None:
+        from synapse_channel.opencode_composer_probe import set_stage_verified
+
+        set_stage_verified(config, True)
+    return True, "native OpenCode input verified"
+
+
+def bound_staged_wake_was_consumed(
+    config: AgentTmuxConfig,
+    provider: str,
+    screen: str,
+    prompt: str,
+    *,
+    runner: CommandRunner,
+) -> bool:
+    """Settle a native paste only after its actual staged input was verified.
+
+    Parameters
+    ----------
+    config : AgentTmuxConfig
+        Terminal and persistent staged-wake configuration.
+    provider : str
+        Detected provider name.
+    screen : str
+        Current bounded pane capture.
+    prompt : str
+        Complete fixed wake hint previously staged.
+    runner : CommandRunner
+        Bound native process runner when the profile requires readback.
+
+    Returns
+    -------
+    bool
+        Whether terminal observations or an empty native readback show the
+        previously verified hint was consumed. This is not model completion.
+    """
+    if not config.opencode_editor_readback:
+        return staged_wake_was_consumed(provider, screen, prompt)
+    from synapse_channel.opencode_composer_probe import (
+        inspect_editor_composer,
+        profile_is_bound,
+        stage_is_verified,
+    )
+
+    if not stage_is_verified(config) or not profile_is_bound(config, runner):
+        return False
+    if staged_wake_was_consumed(provider, screen, prompt):
+        return True
+    try:
+        return inspect_editor_composer(config, screen, runner=runner).matches(None)
+    except (OSError, ValueError):
+        return False
+
+
+def bound_pane_state(
+    config: AgentTmuxConfig,
+    provider: str,
+    screen: str,
+    *,
+    runner: CommandRunner,
+) -> str:
+    """Describe readiness without invoking any native editor during status.
+
+    Parameters
+    ----------
+    config : AgentTmuxConfig
+        Terminal configuration selecting the input verification profile.
+    provider : str
+        Detected provider name.
+    screen : str
+        Current bounded pane capture.
+    runner : CommandRunner
+        Observational native process runner; no editor keys are sent.
+
+    Returns
+    -------
+    str
+        Legacy readiness or readback-required, readback-unavailable, blocked
+        or unknown for the opted-in native profile.
+    """
+    if not config.opencode_editor_readback:
+        return pane_state(provider, screen)
+    if provider != "opencode":
+        return "unknown"
+    from synapse_channel.opencode_composer_probe import footer_is_probeable, profile_is_bound
+
+    if not profile_is_bound(config, runner):
+        return "readback-unavailable"
+    return "readback-required" if footer_is_probeable(screen) else "blocked"
+
+
+def provider_compatibility(
+    provider: str | None,
+    state: str,
+    *,
+    active: bool,
+    codex_policy_aligned: bool,
+) -> tuple[bool, str]:
+    """Describe launch/profile support separately from native wake acceptance.
+
+    Parameters
+    ----------
+    provider : str or None
+        Detected provider or None when no supported profile is present.
+    state : str
+        Current pane readiness classification.
+    active : bool
+        Whether the provider process is live.
+    codex_policy_aligned : bool
+        Whether the existing centrally managed Codex launch policy is aligned.
+
+    Returns
+    -------
+    tuple of bool, str
+        Compatibility assessment and its explanation. An aligned process still
+        requires current input checks before a wake may be submitted.
+    """
+    aligned = (
+        active
+        and provider is not None
+        and state in {"idle", "blocked", "readback-required"}
+        and codex_policy_aligned
+    )
+    if not active:
+        return aligned, "active provider pane was not verified"
+    if provider is None:
+        return aligned, "provider has no supported pane profile"
+    if state == "update-required":
+        return aligned, "provider update chooser blocks automatic wake delivery"
+    if not codex_policy_aligned:
+        return aligned, "Codex update checks are not centrally managed for this session"
+    if state == "unknown":
+        return aligned, "provider pane readiness is unknown"
+    if state == "readback-unavailable":
+        return aligned, "native editor profile is not bound to this running client"
+    if state == "readback-required":
+        return aligned, "native input readback is required before wake submission"
+    return aligned, "provider launch and pane profile are aligned"

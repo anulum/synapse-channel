@@ -97,7 +97,9 @@ class PaneBridgeAdapter:
             return Availability(False, f"session binding: {snapshot.binding_detail}")
         if not snapshot.agent_active:
             return Availability(False, "the pane does not run the agent")
-        if snapshot.pane_state != IDLE:
+        if snapshot.pane_state != IDLE and not (
+            config.opencode_editor_readback and snapshot.pane_state == "readback-required"
+        ):
             return Availability(False, f"the pane is not idle ({snapshot.pane_state})")
         return Availability(True)
 

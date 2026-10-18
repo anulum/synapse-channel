@@ -1099,6 +1099,15 @@ the inbox but the pane never re-engages. `agent-tmux wait` is the external bridg
 that closes that gap — it blocks on `synapse wait` for the identity and, on each
 directed message, delivers the fixed prompt only to a verified idle provider
 composer.
+For a new POSIX OpenCode 1.18.32 mini terminal, add
+`--opencode-editor-readback` to `start`, `wait`, `wake` and `status` and select
+`--agent-command 'opencode --mini --model provider/model'`. This opt-in verifies
+the native editor shortcut before publishing the new session and compares exact
+input before a paste or Enter. Existing terminals are not reconfigured. The
+managed editor callback preserves the draft by rejecting all external-editor
+edits, including manually opened ones. See the [OpenCode terminal
+profile](opencode.md#wake-a-managed-mini-terminal) for supported modes and limits.
+
 Unlike a general-purpose `synapse wait --directed-only` receiver, the interactive
 pane bridge never treats a global priority or CEO broadcast as permission to
 invoke a provider. Those events remain in the durable inbox; an exact identity,
@@ -1139,6 +1148,11 @@ duplicate suppression. It requires the exact seat, native UUID, execution host
 and message sequence. See [wake relay](wake-relay.md#call-the-bound-relay) for the
 owner-only configuration, transport proof meanings and exit codes. This command
 does not change the supervised pane bridge's installed loop.
+
+`waker install --opencode-editor-readback` persists the native OpenCode mini
+profile; `--no-opencode-editor-readback` disables it. Omitting both preserves an
+existing choice and defaults to disabled on a new configuration. Schema version
+two stores the flag; a version-one file reads as disabled without being rewritten.
 
 `install` writes an owner-only exact-seat JSON configuration and the shared
 `synapse-waker@.service` template. Add `--uri` and `--token-file` for a secured

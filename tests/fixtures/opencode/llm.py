@@ -96,7 +96,9 @@ class ScriptedLlmServer:
     """A real HTTP/SSE provider endpoint with an explicit response queue."""
 
     def __init__(self) -> None:
-        self._scripts: queue.Queue[tuple[dict[str, Any], ...]] = queue.Queue()
+        self._scripts: queue.Queue[tuple[tuple[dict[str, Any], ...], threading.Event | None]] = (
+            queue.Queue()
+        )
         self._requests: list[dict[str, Any]] = []
         self._lock = threading.Lock()
         owner = self
@@ -126,12 +128,16 @@ class ScriptedLlmServer:
                     owner._requests.append(decoded)
                 if _is_title_request(decoded):
                     script = _text_script("Synapse OpenCode acceptance")
+                    release = None
                 else:
                     try:
-                        script = owner._scripts.get(timeout=5)
+                        script, release = owner._scripts.get(timeout=5)
                     except queue.Empty:
                         self.send_error(503)
                         return
+                if release is not None and not release.wait(timeout=10):
+                    self.send_error(504)
+                    return
                 payload = (
                     b"".join(
                         f"data: {json.dumps(chunk, separators=(',', ':'))}\n\n".encode()
@@ -170,13 +176,31 @@ class ScriptedLlmServer:
         """Return build-agent requests, excluding automatic title generation."""
         return tuple(request for request in self.requests if not _is_title_request(request))
 
-    def enqueue_text(self, text: str) -> None:
-        """Queue one assistant text completion."""
-        self._scripts.put(_text_script(text))
+    def enqueue_text(self, text: str, *, release: threading.Event | None = None) -> None:
+        """Queue one assistant text completion, optionally holding its HTTP answer.
+
+        Parameters
+        ----------
+        text : str
+            Exact assistant text returned to the real client.
+        release : threading.Event or None, optional
+            Hold the ordinary response until this event is set. An unreleased
+            response returns HTTP504 after ten seconds; title requests are
+            answered independently. None retains immediate completion.
+        """
+        self._scripts.put((_text_script(text), release))
 
     def enqueue_tool(self, name: str, arguments: Mapping[str, Any]) -> None:
-        """Queue one assistant tool call completion."""
-        self._scripts.put(_tool_script(name, arguments))
+        """Queue one immediate assistant tool call completion.
+
+        Parameters
+        ----------
+        name : str
+            Native tool name emitted in the response.
+        arguments : mapping
+            JSON-serialisable tool arguments, encoded into the actual SSE body.
+        """
+        self._scripts.put((_tool_script(name, arguments), None))
 
     def __enter__(self) -> ScriptedLlmServer:
         self._thread.start()

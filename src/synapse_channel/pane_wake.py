@@ -169,6 +169,7 @@ def _paste_prompt(
             returncode=process.returncode,
             detail=(process.stderr or process.stdout).strip() or "buffer setup failed",
         )
+    ports.record(last_inject_returncode=0, pending_wake=True, wake_prompt_staged=True)
     process = runner(
         [config.tmux_bin, "paste-buffer", "-b", buffer_name, "-d", "-p", "-t", config.session],
         capture_output=True,
@@ -177,7 +178,7 @@ def _paste_prompt(
     )
     if process.returncode != 0:
         ports.record(
-            last_inject_returncode=process.returncode, pending_wake=True, wake_prompt_staged=False
+            last_inject_returncode=process.returncode, pending_wake=True, wake_prompt_staged=True
         )
         return ports.result(
             injected=False,

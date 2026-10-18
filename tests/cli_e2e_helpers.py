@@ -4,6 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE_CHANNEL — packaged CLI journey process helpers
 """End-to-end helpers that drive the packaged CLI against an isolated hub.
 
 The unit suite exercises handlers in-process; these helpers instead run the real
@@ -30,6 +31,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+import synapse_channel
+
 # ``-u`` forces the child interpreter's stdout/stderr unbuffered. The server
 # helpers capture a subprocess's merged output and, on a readiness timeout, kill
 # it with SIGTERM before reading that pipe. A block-buffered startup banner would
@@ -40,18 +43,19 @@ from pathlib import Path
 _CLI = [sys.executable, "-u", "-m", "synapse_channel.cli"]
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _CANDIDATE_PYTHONPATH = (
-    (_PROJECT_ROOT / "src").as_posix(),
+    Path(synapse_channel.__file__).resolve().parent.parent.as_posix(),
     (_PROJECT_ROOT / "tests").as_posix(),
 )
 
 
 def _candidate_environment(overrides: Mapping[str, str] | None) -> dict[str, str]:
-    """Return a child environment that imports this candidate checkout first.
+    """Return a child environment that imports the loaded package first.
 
     CLI journeys often execute from a temporary Git repository. Relative
     ``PYTHONPATH`` entries such as ``src`` would then resolve inside that
     repository and silently fall back to an installed package instead of the
-    candidate under test.
+    candidate under test. Bind to the parent's loaded package so installed-wheel
+    journeys do not silently fall back to the neighbouring source checkout.
     """
     environment = dict(os.environ)
     if overrides is not None:

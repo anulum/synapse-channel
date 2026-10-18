@@ -5,7 +5,7 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE_CHANNEL — actual pane disappearance during wake staging
-"""Prove a real tmux paste failure retains a retryable, unstaged wake."""
+"""Prove a real tmux paste failure preserves uncertainty without claiming delivery."""
 
 from __future__ import annotations
 
@@ -20,7 +20,13 @@ from pathlib import Path
 
 import pytest
 
-from synapse_channel.agent_tmux import AgentTmuxConfig, inject_wake, registry_path, start_session
+from synapse_channel.agent_tmux import (
+    BINDING_REFUSAL_EXIT_CODE,
+    AgentTmuxConfig,
+    inject_wake,
+    registry_path,
+    start_session,
+)
 
 pytestmark = pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is not installed")
 
@@ -78,6 +84,8 @@ class PaneDisappears:
         self.config = config
         self.buffer: str | None = None
         self.paste_returncode: int | None = None
+        self.paste_attempts = 0
+        self.prepared_before_paste = False
 
     def __call__(
         self,
@@ -89,6 +97,11 @@ class PaneDisappears:
         env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """Cause an actual tmux race rather than manufacturing a return value."""
+        if args[1] == "paste-buffer":
+            prepared = json.loads(registry_path(self.config).read_text())
+            self.prepared_before_paste = (
+                prepared["pending_wake"] is True and prepared["wake_prompt_staged"] is True
+            )
         result = subprocess.run(
             args,
             capture_output=capture_output,
@@ -106,25 +119,30 @@ class PaneDisappears:
             )
             assert killed.returncode == 0
         if args[1] == "paste-buffer":
+            self.paste_attempts += 1
             self.paste_returncode = result.returncode
         return result
 
 
-def test_actual_pane_disappearance_does_not_claim_a_staged_or_delivered_wake(
+def test_actual_pane_disappearance_preserves_an_uncertain_paste_without_delivery(
     tmp_path: Path,
 ) -> None:
-    """A failed real paste queues retry and cannot report staging or delivery."""
+    """Persist before the real attempted paste and never repaste into a missing target."""
     with idle_pane(tmp_path) as config:
         runner = PaneDisappears(config)
         try:
             result = inject_wake(config, runner=runner)
             assert runner.paste_returncode is not None and runner.paste_returncode != 0
+            assert runner.prepared_before_paste is True
             assert result.returncode == runner.paste_returncode
             assert not result.injected and not result.started
             record = json.loads(registry_path(config).read_text())
             assert record["pending_wake"] is True
-            assert record["wake_prompt_staged"] is False
+            assert record["wake_prompt_staged"] is True
             assert record["last_inject_returncode"] == result.returncode
+            retried = inject_wake(config, runner=runner)
+            assert not retried.injected and retried.returncode == BINDING_REFUSAL_EXIT_CODE
+            assert runner.paste_attempts == 1
         finally:
             if runner.buffer is not None:
                 subprocess.run(

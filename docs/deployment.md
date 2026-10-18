@@ -318,7 +318,8 @@ synapse agent-tmux status \
 ```
 
 The status reports the identity binding, active process, pane readiness
-(`idle`, `blocked`, `update-required`, or `unknown`), pending wake state, and
+(`idle`, `blocked`, `update-required`, `readback-required`,
+`readback-unavailable`, or `unknown`), pending wake state, and
 provider compatibility. `update-required` is degraded: the bridge does not
 press a numbered update choice, update the executable, or restart the terminal.
 A pending bridge remains registered on Synapse while it retries the safe pane,
@@ -330,6 +331,17 @@ record the exact running and installed versions, and schedule a controlled
 session handover only with owner authority. Updating the package, restarting a
 bridge sidecar, and restarting a provider terminal are three separate actions;
 none authorizes the next.
+
+New pinned OpenCode 1.18.32 `--mini` sessions can use
+`--opencode-editor-readback` on `agent-tmux` or `waker install`. Startup qualifies
+an empty input and the actual editor shortcut before publishing the session;
+existing clients are preserved. A qualified status reports `readback-required`
+until the bridge checks exact input for a wake. Missing or stale process proof
+reports `readback-unavailable` and cannot authorize input. This mode replaces
+external-editor editing in the new client with a draft-preserving callback.
+See the [OpenCode terminal profile](opencode.md#wake-a-managed-mini-terminal)
+before enabling it. These CLI states do not imply a dashboard configuration
+control or prove a model completed the requested work.
 
 ## Fresh terminal auto-connect
 

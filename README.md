@@ -1798,7 +1798,8 @@ on-channel model worker a question. Each starts its own in-process hub, so
 | `a2a_http_handler`, `a2a_http_routes` | Bounded HTTP admission and ordered A2A routes, bound through `a2a_http.build_a2a_handler`. |
 | `dashboard_handler_binding`, `dashboard_http_pages`, `dashboard_http_live` | Per-server readers, shells/snapshots and bounded NDJSON delivery, behind the dashboard's existing access checks. |
 | `pane_wake` | Staged wake preparation and submission through `agent_tmux.inject_wake`, with verified pane binding and retry state. |
-| `agent_pane_state` | Existing provider marker precedence, submit readiness and staged-hint observations, used by the `agent_tmux` facade. |
+| `agent_pane_state` | Provider marker precedence, submit readiness, staged-hint observations and opt-in native input readiness, used by the `agent_tmux` facade. |
+| `opencode_composer`, `opencode_composer_files`, `opencode_composer_probe`, `opencode_composer_startup`, `opencode_composer_state` | Opt-in [OpenCode mini input verification](docs/opencode.md#wake-a-managed-mini-terminal): private callback files, exact draft comparisons, qualified new-client startup, process-bound readback and launch-bound wake state. |
 | `lingering_close` | Orderly end of an HTTP connection whose request was not read to its end, bounded in time, bytes and count, for both HTTP servers. |
 | `client` | The reusable async agent connection and coordination helpers. |
 | `persistence` | WAL-backed event store with documented durability classes and recovery of retained supported events. |
@@ -1834,11 +1835,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.38 |
 | Public API exports | 70 |
-| Package modules | 796 |
-| Classes | 1166 |
+| Package modules | 801 |
+| Classes | 1170 |
 | Wire message types | 114 |
 | CLI subcommands | 257 |
-| Test functions | 11528 |
+| Test functions | 11575 |
 | Benchmark harnesses | 11 |
 | Documentation pages | 86 |
 | GitHub Actions workflows | 27 |

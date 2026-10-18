@@ -337,3 +337,24 @@ they establish functional completion of the same workload, without an isolated
 performance or throughput claim. The fixed submit delays are unchanged.
 The HTTP measurements above remain historical observations of their recorded
 sources; this extraction comparison covers only the affected pane path.
+
+### Native editor profile with the default transport retained
+
+The 2026-10-18 comparison measures baseline `ad3bc70b` against the installed
+wheel containing managed native editor readback, with that opt-in **disabled**.
+The unchanged Python pane harness delivers five wakes through owned tmux
+sessions and the same harmless composer in each serial run.
+
+| Operation | Before p50 (us) | After p50 (us) |
+| --- | ---: | ---: |
+| Default pane wake | 853155.561 | 861593.765 |
+
+The measured median increased by 0.99%. Host load differed between runs, and
+the sample contains one pair of five wakes: it does not establish an isolated
+regression or a performance guarantee. All ten wakes were injected. This
+comparison covers the retained default transport; it does not measure native
+editor readback latency or a model turn. Source/harness digests, wheel digest,
+loads and full distributions are in `native_readback_default_profile` in
+`external_surfaces_benchmark.json`. The terminal transport has no second
+language implementation; this measurement does not qualify the JS/Go wire
+clients or cockpit.

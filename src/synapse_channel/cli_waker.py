@@ -28,27 +28,33 @@ def _print_lines(lines: tuple[str, ...]) -> None:
         print(line)
 
 
+def _install_waker(args: argparse.Namespace) -> int:
+    """Dispatch one parsed install while preserving its stored readback choice."""
+    command = tuple(shlex.split(args.agent_command))
+    result = install_waker(
+        identity=args.identity,
+        session=args.session,
+        cwd=args.cwd,
+        agent_command=command,
+        tmux_bin=args.tmux_bin,
+        synapse_bin=args.synapse_bin,
+        uri=args.uri,
+        token_file=Path(args.token_file) if args.token_file else None,
+        submit_delay=args.submit_delay,
+        pane_probe_interval=args.pane_probe_interval,
+        opencode_editor_readback=getattr(args, "opencode_editor_readback", None),
+        start=args.start,
+        command_timeout=args.command_timeout,
+    )
+    _print_lines(result.lines)
+    return 0 if result.ok else 1
+
+
 def _cmd_waker(args: argparse.Namespace) -> int:
     """Dispatch one active-waker lifecycle operation."""
     try:
         if args.waker_command == "install":
-            command = tuple(shlex.split(args.agent_command))
-            result = install_waker(
-                identity=args.identity,
-                session=args.session,
-                cwd=args.cwd,
-                agent_command=command,
-                tmux_bin=args.tmux_bin,
-                synapse_bin=args.synapse_bin,
-                uri=args.uri,
-                token_file=Path(args.token_file) if args.token_file else None,
-                submit_delay=args.submit_delay,
-                pane_probe_interval=args.pane_probe_interval,
-                start=args.start,
-                command_timeout=args.command_timeout,
-            )
-            _print_lines(result.lines)
-            return 0 if result.ok else 1
+            return _install_waker(args)
         if args.waker_command == "stop":
             result = inhibit_waker(
                 args.identity,
@@ -129,14 +135,10 @@ def _command_timeout_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the ``synapse waker`` active-execution lifecycle."""
-    group = subparsers.add_parser(
-        "waker",
-        help="Install and control an automatically restarted terminal-agent wake bridge.",
-    )
-    nested = _waker_subcommands(group)
-
+def _install_parser(
+    nested: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register the complete installation configuration surface."""
     install = nested.add_parser("install", help="Write one owner-only seat config and user unit.")
     _identity_argument(install)
     install.add_argument("--session", required=True, help="tmux session containing the provider.")
@@ -145,6 +147,15 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         "--agent-command", default="codex", help="Shell-style provider launch command."
     )
     install.add_argument("--tmux-bin", default="tmux", help="tmux executable.")
+    install.add_argument(
+        "--opencode-editor-readback",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Enable or disable native input readback for new pinned OpenCode --mini clients; "
+            "omitting this option preserves the stored choice."
+        ),
+    )
     install.add_argument(
         "--synapse-bin",
         default=None,
@@ -166,6 +177,17 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     install.add_argument("--start", action="store_true", help="Enable and start the exact unit.")
     _command_timeout_argument(install)
     install.set_defaults(func=_cmd_waker)
+
+
+def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register the ``synapse waker`` active-execution lifecycle."""
+    group = subparsers.add_parser(
+        "waker",
+        help="Install and control an automatically restarted terminal-agent wake bridge.",
+    )
+    nested = _waker_subcommands(group)
+
+    _install_parser(nested)
 
     stop = nested.add_parser("stop", help="Persistently inhibit and stop one exact waker.")
     _identity_argument(stop)
