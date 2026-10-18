@@ -3190,8 +3190,20 @@ synapse arm --name my-repo --owner-pid $$               # leash the waiter: disa
 synapse worker-session --identity my-repo -- codex      # run a provider CLI with SYN_PROJECT/SYN_IDENTITY set
 synapse adapters list                                   # detect coding tools and report adapter status
 synapse adapters install --project my-repo              # write the claim-aware adapter into each tool
+synapse adapters install codex --adopt-existing          # preserve an existing dedicated file first
+synapse adapters recover codex                          # reconcile an interrupted adapter update
 synapse adapters mutation-status --project my-repo      # read-only hook/gate posture and residuals
 ```
+
+Generic adapter installation requires exact-byte ownership recorded beside each
+target. Existing unowned dedicated files require `--adopt-existing`; uninstall
+restores their retained original bytes. Shared files retain outside text exactly.
+Changed dedicated content, edited blocks and ambiguous markers refuse mutation.
+`--dry-run` creates no files and does not settle pending intent. Keep the private
+`.<filename>.synapse-custody/` directory with its target for later removal and
+recovery. Recovery observes recorded before/after bytes and never replays a write.
+See [adapter custody and recovery](cross-agent-adapter-kits.md#local-custody-and-recovery)
+for file bounds, partial multi-tool outcomes and platform limits.
 
 `adapters mutation-status` keeps runtime discovery, static hook configuration,
 and enforcement as separate facts. A provider executable on `PATH` is only

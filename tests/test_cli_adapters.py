@@ -376,9 +376,9 @@ def test_install_is_idempotent(tmp_path: Path, capsys: pytest.CaptureFixture[str
     args = _args("install", "claude-code", "--home", str(tmp_path), "--project", str(tmp_path))
     assert _cmd_install(args, which=_which()) == 0
     capsys.readouterr()
-    # second install reports "updated" and does not duplicate the block
+    # The journal recognizes unchanged bytes and avoids another replacement.
     assert _cmd_install(args, which=_which()) == 0
-    assert "updated" in capsys.readouterr().out
+    assert "unchanged" in capsys.readouterr().out
     assert _claude(tmp_path).read_text(encoding="utf-8").count(MARKER_BEGIN) == 1
 
 
@@ -427,7 +427,10 @@ def test_install_reports_controlled_io_failure(
     monkeypatch.setattr(cli_adapters, "_install_one", fail)
     args = _args("install", "claude-code", "--home", str(tmp_path), "--project", str(tmp_path))
     assert _cmd_install(args, which=_which()) == 2
-    assert "cannot install KIMI hook: write failed" in capsys.readouterr().err
+    assert (
+        "cannot install adapter or KIMI hook: Target or journal is unsafe."
+        in capsys.readouterr().err
+    )
 
 
 def test_uninstall_removes_file_and_clears_block(
@@ -445,7 +448,7 @@ def test_uninstall_removes_file_and_clears_block(
     )
     assert args.func(args) == 0
     out = capsys.readouterr().out
-    assert "removed" in out and "cleared" in out
+    assert "removed" in out and "restored" in out
     assert not _claude(tmp_path).exists()  # file-mode adapter deleted
     conventions = (tmp_path / "CONVENTIONS.md").read_text(encoding="utf-8")
     assert conventions == "My rules.\n"  # append-mode block stripped, rules kept
@@ -456,7 +459,7 @@ def test_uninstall_reports_not_installed(
 ) -> None:
     args = _args("uninstall", "cursor", "--home", str(tmp_path), "--project", str(tmp_path))
     assert args.func(args) == 0
-    assert "not installed" in capsys.readouterr().out
+    assert "not-installed" in capsys.readouterr().out
 
 
 def test_uninstall_deletes_an_append_file_that_becomes_empty(tmp_path: Path) -> None:
@@ -488,7 +491,10 @@ def test_uninstall_reports_controlled_io_failure(
     monkeypatch.setattr(cli_adapters, "_uninstall_one", fail)
     args = _args("uninstall", "claude-code", "--home", str(tmp_path), "--project", str(tmp_path))
     assert args.func(args) == 2
-    assert "cannot uninstall adapter or KIMI hook: remove failed" in capsys.readouterr().err
+    assert (
+        "cannot uninstall adapter or KIMI hook: Target or journal is unsafe."
+        in capsys.readouterr().err
+    )
 
 
 def test_default_roots_used_when_not_overridden() -> None:

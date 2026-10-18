@@ -106,14 +106,20 @@ The command set is read-first and reversible:
 - `synapse adapters list [TOOL ...]` — detect installed tools and print, for each,
   whether an adapter is installed and where it would be written. Detection only;
   writes nothing.
-- `synapse adapters install [TOOL ...] [--identity ID] [--uri URI] [--dry-run]` —
+- `synapse adapters install [TOOL ...] [--identity ID] [--uri URI] [--dry-run] [--adopt-existing]` —
   write the claim-aware adapter for detected (or named) tools; `--dry-run` prints the
-  planned writes. Each write is idempotent and marker-wrapped so `uninstall` removes
-  the marked block for append-mode targets; re-installing replaces rather than
-  duplicates. Dedicated-file targets replace the whole file.
+  planned writes without creating parents or custody state. Installation refuses
+  an existing unowned dedicated file. Explicit `--adopt-existing` preserves its
+  original UTF-8 bytes before replacement, including complete skill frontmatter.
+  Re-installation updates recorded bytes without duplicating an append block.
 - `synapse adapters uninstall [TOOL ...]` — remove only Synapse-written adapter
-  content: a marker-bearing dedicated target is deleted in full; a shared target
-  has its marked block stripped. Do not add unrelated content to a dedicated target.
+  content: restore an adopted dedicated file or remove a newly created one.
+  Shared files retain every byte outside the recorded segment, including later
+  additions, CRLF and trailing whitespace. Modified dedicated files and edited
+  or duplicated append blocks are preserved with a refusal.
+- `synapse adapters recover [TOOL ...]` — settle a prepared transaction only when
+  the target matches its recorded before or after bytes. Recovery does not replay
+  a write or overwrite a third party's changes.
 
 ```bash
 synapse adapters list                       # who is installed and where
@@ -122,15 +128,18 @@ synapse adapters install grok --identity proj/grok # user-level Grok skill
 synapse adapters install kimi-project --identity proj/me # explicit project skill
 synapse adapters install kimi --identity proj/me --with-hook # skill + native edit guard
 synapse adapters uninstall cursor           # remove just one
+synapse adapters install codex --adopt-existing # preserve an existing dedicated file first
+synapse adapters recover codex              # reconcile a previous interrupted write
 ```
 
-Two write shapes follow each tool's convention: a **dedicated file** Synapse owns
-(Claude Code, Codex, Gemini CLI, Grok, Kimi Code, Cursor, Copilot — uninstall
-deletes it) or a **marked block appended** to a file the tool also uses (Aider
-`CONVENTIONS.md`, Windsurf `.windsurfrules` — uninstall strips only the block).
+Two write shapes follow each tool's convention: a **dedicated file** with recorded
+ownership (Claude Code, Codex, Gemini CLI, Grok, Kimi Code, Cursor, Copilot) or an
+**exact block appended** to a file the tool also uses (Aider `CONVENTIONS.md`,
+Windsurf `.windsurfrules`). A marker alone never grants ownership. An existing
+legacy dedicated adapter can be explicitly adopted; legacy append blocks require
+manual merging before installation because their original outside bytes are unknown.
 `--home`/`--project` override the roots; tool detection is a binary on `PATH` or
-a config directory. Dedicated-file mode does not preserve pre-existing target
-bytes; review `--dry-run` and back up any existing target before installation.
+a config directory.
 Grok and Kimi use different Agent Skill frontmatter, derived from the tested
 0.2.93 and 0.23.3 contracts respectively; those are not claims about today's
 installed versions.
@@ -145,6 +154,31 @@ override the user default. Skill installation itself does not modify
 `PreToolUse` claim guard once even when both Kimi skill scopes are selected.
 `--home` overrides and isolates the default user root for tests; otherwise both
 the user Skill and hook config respect `$KIMI_CODE_HOME`.
+
+### Local custody and recovery
+
+Each target has a private adjacent `.<filename>.synapse-custody/` directory with
+an advisory lock and `custody.sqlite3`. Keep it with the target: it contains the
+single retained original and any pending before/after intent. It is recovery
+state, not a disposable build cache. No backup history accumulates. The installer
+accepts owner-controlled regular UTF-8 files up to 1 MiB, refuses symbolic links
+below the selected root and multiple hard links, and rejects group/other-writable
+targets. Newly created state is owner-only; existing target read permissions are
+preserved on replacement. An explicitly selected root resolves its own existing
+ancestors before validating all components below it.
+
+The intent is committed before atomic replacement or removal; file and directory
+syncs are requested where supported. Recovery retains conflicting target bytes
+and pending intent for inspection. Losing or corrupting custody state does not
+authorize marker-based deletion. A dry run inspects existing state without
+settling pending intent. Multi-tool commands and the separate Kimi hook update
+are individual transactions, so an earlier successful target remains installed
+if a later target refuses.
+
+The lock coordinates cooperating installers on one host. Cross-host filesystem
+locks, hostile same-account writers and measured power-loss durability are outside
+this contract. Native Windows qualification is tracked separately; Linux results
+do not establish Windows ACL or replacement behavior.
 
 ## Prior art
 
@@ -168,9 +202,9 @@ deliberately narrow.
 - Synapse stays **persona-neutral and framework-neutral**: it is the coordination
   layer beside coding tools and frameworks, not a replacement for them and not an
   agent library.
-- Every write is **opt-in and local**. Append mode removes its marked block;
-  dedicated-file installation replaces the target and uninstall deletes it.
-  Recovering overwritten pre-existing content requires the operator's backup.
+- Every write is **opt-in and local**. Exact-byte custody preserves adopted
+  originals and outside text. Changed or ambiguous owned content requires
+  operator inspection rather than automatic replacement or deletion.
 - The kit **claims no support it cannot honour**: a framework that cannot express
   a claim boundary is documented as unsupported rather than wrapped in a shim that
   pretends.

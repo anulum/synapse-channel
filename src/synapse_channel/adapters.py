@@ -201,14 +201,34 @@ def tool_for(key: str) -> AdapterTool:
     return _BY_KEY[key.strip().lower()]
 
 
-def _scope_root(
+def resolve_root(
     tool: AdapterTool,
     *,
     home: Path,
     project: Path,
     environ: Mapping[str, str] | None,
 ) -> Path:
-    """Resolve the injected root for one adapter scope without touching the filesystem."""
+    """Resolve a catalogue scope without touching the filesystem.
+
+    Parameters
+    ----------
+    tool : AdapterTool
+        Catalogue entry whose scope selects the configuration root.
+    home, project : pathlib.Path
+        Explicit home and workspace roots.
+    environ : Mapping[str, str] or None
+        Kimi path overrides, or None to use the current process environment.
+
+    Returns
+    -------
+    pathlib.Path
+        Selected home, workspace or Kimi configuration root.
+
+    Raises
+    ------
+    ValueError
+        The entry declares an unsupported scope.
+    """
     if tool.scope == HOME_SCOPE:
         return home
     if tool.scope == PROJECT_SCOPE:
@@ -232,7 +252,7 @@ def detect_installed(
     """Return whether ``tool`` looks installed: a binary on ``PATH`` or a config dir present."""
     if any(which(binary) for binary in tool.binaries):
         return True
-    root = _scope_root(tool, home=home, project=home, environ=environ)
+    root = resolve_root(tool, home=home, project=home, environ=environ)
     return any((root / path).exists() for path in tool.detect_paths)
 
 
@@ -244,7 +264,7 @@ def resolve_target(
     environ: Mapping[str, str] | None = None,
 ) -> Path:
     """Return the absolute adapter-file path for ``tool`` under its scope."""
-    root = _scope_root(tool, home=home, project=project, environ=environ)
+    root = resolve_root(tool, home=home, project=project, environ=environ)
     return root / tool.target
 
 
@@ -322,7 +342,9 @@ def strip_block(text: str) -> str:
 def plan_install(existing: str | None, block: str, *, mode: str) -> str:
     """Return the file content that installs ``block``, idempotently.
 
-    In :data:`FILE_MODE` the adapter owns the whole file, so the planned content is
+    This pure transformation does not authorize a filesystem mutation; the CLI
+    uses :mod:`synapse_channel.adapter_custody` to establish exact-byte ownership.
+    In :data:`FILE_MODE` the caller owns the whole file, so the planned content is
     just the block. In :data:`APPEND_MODE` any prior block is stripped first and the
     fresh block is appended after the file's own content, so re-installing replaces
     rather than duplicates.
@@ -338,6 +360,9 @@ def plan_install(existing: str | None, block: str, *, mode: str) -> str:
 def plan_uninstall(existing: str, *, mode: str) -> str | None:
     """Return the file content after removing the adapter, or ``None`` to delete the file.
 
+    This pure transformation assumes the caller already owns the selected bytes;
+    markers alone do not authorize deletion. Runtime commands use the custody
+    journal to preserve originals and refuse changed content.
     A :data:`FILE_MODE` adapter owns its file, so uninstall deletes it (``None``). An
     :data:`APPEND_MODE` adapter only strips its own marked block, leaving the rest of
     the tool's file intact.

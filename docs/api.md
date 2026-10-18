@@ -6,6 +6,19 @@ below. This page starts with the main entry points, then renders their source
 docstrings. See [API and wire stability](api-stability.md) for the compatibility
 policy.
 
+## Generic adapter file custody
+
+`adapter_custody.manage_adapter` is the Python entry point used by the generic
+`adapters install`, `uninstall` and `recover` commands. Pass a catalogue tool from
+`adapters.tool_for`, an explicit root and a rendered install block. It preserves
+adopted originals and exact outside bytes; markers alone do not authorize edits.
+The adjacent private journal must remain with the target. See the
+[file and recovery contract](cross-agent-adapter-kits.md#local-custody-and-recovery).
+
+::: synapse_channel.adapter_custody
+
+::: synapse_channel.adapter_custody_store
+
 ## Retained-log observation readers
 
 Local retained-log readers are documented in [record observations](compliance.md).

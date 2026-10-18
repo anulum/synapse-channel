@@ -1622,6 +1622,11 @@ shims remain a documented thin-client pattern. Adapters carry only "claim before
 edit, release on commit, reach the hub" — Synapse stays persona-neutral and adds
 no new coordination primitive.
 
+Generic installation refuses existing unowned dedicated files; explicit
+`--adopt-existing` retains their original bytes for uninstall. Recorded custody
+also preserves outside text in shared files and refuses changed owned content.
+Use `synapse adapters recover TOOL` to reconcile an interrupted update.
+
 The [multi-hub sync (CRDT) research](docs/multi-hub-sync.md) asks whether several
 hubs could synchronise state while keeping claim safety and local-first. Its
 honest core: an honest append-only event log with unique `(hub_id, seq)` identities
@@ -1835,11 +1840,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.38 |
 | Public API exports | 70 |
-| Package modules | 801 |
-| Classes | 1170 |
+| Package modules | 804 |
+| Classes | 1174 |
 | Wire message types | 114 |
-| CLI subcommands | 257 |
-| Test functions | 11575 |
+| CLI subcommands | 258 |
+| Test functions | 11605 |
 | Benchmark harnesses | 11 |
 | Documentation pages | 86 |
 | GitHub Actions workflows | 27 |

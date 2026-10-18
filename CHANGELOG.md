@@ -57,6 +57,12 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- Generic adapter installation now refuses existing unowned dedicated files
+  unless explicitly adopted with a retained original. Uninstall restores adopted
+  originals, preserves exact outside bytes in shared files and refuses changed
+  owned content. Private adjacent journals retain prepared updates for
+  `adapters recover`; markers alone no longer authorize deletion.
+
 - Keep stdio and authenticated HTTP MCP bridges connected after a hub restart
   or network disconnect. Serial retries retain the existing native identity
   and credentials, use bounded backoff with jitter, and leave tool retries
@@ -88,9 +94,10 @@ execution evidence when carrying a release claim forward.
   sequence, and recovery remains limited to retained storage.
 
 - Clarify historical streaming and adapter limits: `ttl_seconds` is declared
-  but unenforced by the current stream producer and consumer. Generic dedicated
-  adapter files are replaced on install and removed on marked-file uninstall;
-  those operations do not restore prior contents or prove native host enforcement.
+  but unenforced by the current stream producer and consumer. Earlier generic
+  dedicated adapter installers did not retain prior content. The current custody
+  correction above changes file ownership behavior; neither version proves native
+  host enforcement.
 
 - Cargo and npm partial comparator ranges now expand omitted components for
   `=`, `<=` and `>`, avoiding false conflicts and missed conflicts for values
