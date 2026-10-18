@@ -341,13 +341,23 @@ def test_a2a_task_store_marks_stale_inflight_tasks_failed(tmp_path: Path) -> Non
 
     store = A2ATaskStore(storage_path)
 
-    assert store.get("task-a") == {
+    recovered = store.get("task-a")
+    assert recovered is not None
+    outcome = recovered["metadata"]["synapseExecutionOutcome"]
+    assert recovered == {
         "id": "task-a",
         "status": {
             "state": "TASK_STATE_FAILED",
             "message": "Recovered from stale in-flight task state after restart",
         },
+        "metadata": {"synapseExecutionOutcome": outcome},
     }
+    assert outcome["schema"] == "synapse.execution-outcome.v1"
+    assert outcome["boundary"] == "a2a_exchange"
+    assert outcome["state"] == outcome["external_effect"] == "unknown"
+    assert not outcome["automatic_retry"] and not outcome["effects_undone"]
+    assert not outcome["stop_requested"] and not outcome["stop_confirmed"]
+    assert outcome["recovery"] == "inquire_or_operator"
     assert store.get("task-b") == {"id": "task-b", "status": {"state": "TASK_STATE_COMPLETED"}}
 
 

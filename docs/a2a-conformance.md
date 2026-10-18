@@ -14,6 +14,12 @@ is an inventory, not a certification: it maps the bridge to the A2A 1.0.0
 operation model and keeps the remaining gates visible after each independent
 client, conformance, webhook, and deployment receipt.
 
+Task metadata includes a [scoped execution observation](execution-outcomes.md).
+The bridge forwards `a2aOperationId` beside task/context IDs; a peer should echo
+it to bind its reply to the exact continuation. Legacy replies retain protocol
+handling with an unknown execution outcome. Neither protocol completion nor
+local task cancellation verifies external effects or remote stop.
+
 Comparison sources:
 
 - A2A Protocol Specification `1.0.0`:

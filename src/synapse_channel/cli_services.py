@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from synapse_channel.service_setup import (
     service_suggestions,
     validate_systemd_executable,
 )
+from synapse_channel.worker_outcome import read_worker_outcome
 from synapse_channel.worker_session import run_worker_session
 
 ServiceInstaller = Callable[..., list[str]]
@@ -74,12 +76,29 @@ def _cmd_worker_session(
     session_runner: WorkerSessionRunner = run_worker_session,
 ) -> int:
     """Dispatch ``synapse worker-session``."""
+    report = getattr(args, "read_outcome", None)
+    if report is not None:
+        if args.command or getattr(args, "outcome_file", None) is not None:
+            print("worker-session: report inquiry cannot include a launch or output file")
+            return 2
+        try:
+            print(json.dumps(read_worker_outcome(report), sort_keys=True))
+        except (ValueError, OSError) as exc:
+            print(f"worker-session: outcome report unavailable ({type(exc).__name__})")
+            return 2
+        return 0
     command: Sequence[str] = list(args.command)
     if command and command[0] == "--":
         command = command[1:]
     if not command:
         print("worker-session requires a provider command after --")
         return 2
+    if not args.identity:
+        print("worker-session requires --identity for a provider launch")
+        return 2
+    outcome_options = {}
+    if getattr(args, "outcome_file", None) is not None:
+        outcome_options["outcome_file"] = args.outcome_file
     try:
         return session_runner(
             identity=args.identity,
@@ -94,7 +113,11 @@ def _cmd_worker_session(
             tmux_bin=args.tmux_bin,
             synapse_bin=args.synapse_bin,
             tmux_session=args.tmux_session,
+            **outcome_options,
         )
+    except (OSError, RuntimeError):
+        print("worker-session: launch or outcome publication unavailable; inquire before retrying")
+        return 2
     except ValueError as exc:
         print(str(exc))
         return 2
@@ -127,11 +150,29 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     init.set_defaults(func=_cmd_init)
 
+    _add_worker_parser(subparsers)
+
+
+def _add_worker_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register provider launch and read-only process outcome inspection."""
     worker = subparsers.add_parser(
         "worker-session",
         help="Run a provider command with SYN_PROJECT/SYN_IDENTITY and a cheap wake sidecar.",
     )
-    worker.add_argument("--identity", required=True, help="Worker identity, e.g. PROJECT/ux.")
+    mode = worker.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--identity", help="Required for a launch, e.g. PROJECT/ux.")
+    worker.add_argument(
+        "--outcome-file",
+        type=Path,
+        help="Create a new private process outcome record; existing files refuse launch.",
+    )
+    mode.add_argument(
+        "--read-outcome",
+        type=Path,
+        help="Read a private outcome record without starting or retrying work.",
+    )
     worker.add_argument(
         "--project", default=None, help="Project override; defaults to identity prefix."
     )

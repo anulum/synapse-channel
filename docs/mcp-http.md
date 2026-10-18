@@ -133,8 +133,9 @@ Every mutation requires a stable request `_meta` entry:
 {"synapse/operation-id": "declare-task-20260927-1"}
 ```
 
-Use a new identifier for a new operation and reuse the original identifier and
-arguments for a retry. The native hub provides retained idempotency for board
+Use a new identifier for a new operation. Inspect current state before deciding
+on an explicit recovery attempt; retain the original identifier and arguments
+if using an applicable retained retry contract. The native hub provides retained idempotency for board
 and lease writes. Durable replay additionally requires a journaled hub; an
 unjournaled hub does not establish cross-restart deduplication. Directed chat
 uses native message identifiers and receiver deduplication, preserving its
@@ -145,9 +146,15 @@ HTTP sessions are isolated per provisioned subject. A stolen session identifier
 with another valid subject token is refused. Reinitialise after an expired or
 unknown session; session identifiers are transport state, not mutation keys.
 The adapter does not promise durable SSE event replay. A timeout, cancellation
-or lost reply does not prove that a native mutation failed to commit: retry
-with the same operation identifier and inspect the actual task/receipt.
+or lost reply does not prove that a native mutation failed to commit. Inspect
+the actual task/receipt before considering an explicit keyed recovery. The
+adapter never automatically repeats a mutation.
 Native refusal or an unconfirmed mutation is an MCP error with generic details.
+
+Mutation tool envelopes carry [scoped execution outcomes](execution-outcomes.md)
+in `structuredContent.execution_outcome`. Their observation ID is stable for
+the same native seat, tool and caller operation ID. A matched exchange and a
+successful chat submission remain distinct from verified business effects.
 
 Each provisioned seat has one serial native connection-maintenance loop. After
 a backend disconnect it reconnects with the same seat and signing key using

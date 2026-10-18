@@ -9,7 +9,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import secrets
 import time
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -24,8 +27,46 @@ from synapse_channel.a2a_grpc import (
 )
 from synapse_channel.a2a_server import A2ABridge
 from synapse_channel.a2a_store import A2ATaskStore
+from test_execution_outcomes_native import completed_task, live_bridge, request_message
 
 pytestmark = pytest.mark.skipif(not grpc_available(), reason="grpcio not installed")
+
+
+@pytest.mark.asyncio
+async def test_native_grpc_exchange_preserves_operation_observation(tmp_path: Path) -> None:
+    """The shipped JSON gRPC subset preserves outcomes across a real hub and peer reply."""
+    async with live_bridge(tmp_path / "state.json") as (bridge, worker, http_port):
+        port, token = _free_port(), secrets.token_urlsafe(24)
+        server, thread = start_grpc_in_background(
+            bridge, host="127.0.0.1", port=port, policy=A2AGrpcPolicy(bearer_token=token)
+        )
+        try:
+            with A2AGrpcClient(
+                f"127.0.0.1:{port}", bearer_token=token, timeout_seconds=3
+            ) as client:
+                message = request_message("grpc-native")
+                del message["taskId"]
+                sent = await asyncio.to_thread(client.send_message, {"message": message})
+                task_id = sent["task"]["id"]
+                observed = sent["task"]["metadata"]["synapseExecutionOutcome"]
+                assert observed["state"] == "started"
+                request = await worker.recorder.wait_for(
+                    lambda row: row.get("metadata", {}).get("a2aTaskId") == task_id
+                )
+                await worker.agent.chat(
+                    "native grpc reply", target="outcome-sender", metadata=request["metadata"]
+                )
+                await completed_task(http_port, task_id)
+                retained = await asyncio.to_thread(client.get_task, task_id)
+                result = retained["metadata"]["synapseExecutionOutcome"]
+                assert result["operation_id"] == observed["operation_id"]
+                assert result["state"] == "confirmed_done"
+                assert result["external_effect"] == "unknown"
+                assert not result["stop_confirmed"] and not result["effects_undone"]
+        finally:
+            server.stop(grace=0).wait(timeout=3)
+            thread.join(timeout=3)
+            assert not thread.is_alive()
 
 
 def test_grpc_matrix_row_is_partial_not_unsupported() -> None:

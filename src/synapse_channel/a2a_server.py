@@ -26,11 +26,18 @@ from typing import Any, cast
 from synapse_channel import a2a_errors
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_events import A2ATaskEvents
+from synapse_channel.a2a_execution import A2AExecution
 from synapse_channel.a2a_http_protocol import (
     endpoint_authorities,
     non_negative_int,
     normalise_authority,
     normalise_origin,
+)
+from synapse_channel.a2a_outcome import (
+    OPERATION_KEY,
+    bind_reply,
+    execution_id,
+    protocol_observation,
 )
 from synapse_channel.a2a_push import PushDeliverer, deliver_push_notification, http_push_deliverer
 from synapse_channel.a2a_push_delivery import (
@@ -50,11 +57,17 @@ from synapse_channel.a2a_scenario_responses import (
 from synapse_channel.a2a_store import A2ATaskStore
 from synapse_channel.a2a_task_flow import (
     build_working_task,
-    prepare_continuation,
     render_message_text,
     resolve_target,
-    stored_task_target,
-    user_status_message,
+)
+from synapse_channel.a2a_task_flow import (
+    prepare_continuation as prepare_continuation,
+)
+from synapse_channel.a2a_task_flow import (
+    stored_task_target as stored_task_target,
+)
+from synapse_channel.a2a_task_flow import (
+    user_status_message as user_status_message,
 )
 from synapse_channel.a2a_validation import (
     OPEN_TASK_STATES,
@@ -260,6 +273,13 @@ class A2ABridge:
         self._events = A2ATaskEvents(durable_store=self.store)
         self._task_creation_lock = threading.RLock()
         self._correlation_lock = threading.RLock()
+        self.execution = A2AExecution(
+            self.store,
+            self._forward_message,
+            self._set_task_status,
+            self._publish_task_update,
+            self._correlation_lock,
+        )
         self._recover_stale_open_tasks(now=time.time())
 
     def _gc_retained_tasks(self, *, now: float | None = None) -> list[str]:
@@ -313,21 +333,12 @@ class A2ABridge:
                 target=resolved_target,
                 now=time.time(),
             )
-            self._forward_message(
+            return self.execution.send(
+                task,
                 message,
-                task_id=task_id,
-                context_id=context_id,
                 target=resolved_target,
                 operation_timeout_seconds=operation_timeout_seconds,
             )
-            stored = self._set_task_status(
-                task,
-                state="TASK_STATE_WORKING",
-                message=task["status"]["message"],
-                publish=False,
-            )
-            self._publish_task_update(stored, deliver_push=False)
-            return stored
 
     def create_completed_task(self, message: JsonMap, *, target: str | None = None) -> JsonMap:
         """Create a task for compatibility with older callers."""
@@ -460,28 +471,15 @@ class A2ABridge:
         operation_timeout_seconds: float | None = None,
     ) -> JsonMap:
         """Continue a non-terminal task under A2A 1.0 task-id semantics."""
-        status = task.get("status")
-        if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
-            raise a2a_errors.A2AConflictError("terminal task cannot accept another message")
-        continued = prepare_continuation(task, message)
-        task_id = str(task["id"])
-        context_id = str(task["contextId"])
-        target = stored_task_target(task, default=self.target)
-        history = task.setdefault("history", [])
-        if isinstance(history, list):
-            history.append(continued)
-        self._forward_message(
-            continued,
-            task_id=task_id,
-            context_id=context_id,
-            target=target,
-            operation_timeout_seconds=operation_timeout_seconds,
-        )
-        return self._set_task_status(
+        stored = self.execution.send(
             task,
-            state="TASK_STATE_WORKING",
-            message=user_status_message(continued),
+            message,
+            target=self.target,
+            operation_timeout_seconds=operation_timeout_seconds,
+            continue_existing=True,
         )
+        self._deliver_push_notifications(stored)
+        return stored
 
     def _forward_message(
         self,
@@ -505,6 +503,9 @@ class A2ABridge:
                     metadata={
                         A2A_METADATA_TASK_ID: task_id,
                         A2A_METADATA_CONTEXT_ID: context_id,
+                        OPERATION_KEY: execution_id(
+                            {"id": task_id, "contextId": context_id}, message
+                        ),
                     },
                 ),
                 timeout_seconds=operation_timeout_seconds,
@@ -557,7 +558,8 @@ class A2ABridge:
         message: JsonMap | None = None,
         publish: bool = True,
     ) -> JsonMap:
-        """Set task status and refresh bridge-local lifecycle metadata."""
+        """Persist a detached protocol state and its scoped execution observation."""
+        task = protocol_observation(task, state)
         status: JsonMap = {"state": state}
         if message is not None:
             status["message"] = message
@@ -628,14 +630,19 @@ class A2ABridge:
             if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
                 return
 
+            task = bind_reply(task, data)
+            if task is None:
+                return
+
             reply_text = payload.strip()
             reply_part: JsonMap = {
                 "messageId": str(uuid.uuid4()),
                 "role": "ROLE_AGENT",
                 "parts": [{"text": reply_text, "mediaType": "text/plain"}],
             }
-            task.setdefault("history", []).append(reply_part)
-            task.setdefault("artifacts", []).append(
+            task["history"] = [*task.get("history", []), reply_part]
+            task["artifacts"] = list(task.get("artifacts", []))
+            task["artifacts"].append(
                 {
                     "artifactId": f"synapse-reply-{task_id}",
                     "name": "SYNAPSE reply",
@@ -665,30 +672,31 @@ class A2ABridge:
         if self.task_timeout_seconds <= 0.0:
             return []
         failed: list[JsonMap] = []
-        for task in self.store.list_tasks():
-            status = task.get("status", {})
-            if not isinstance(status, dict) or status.get("state") not in OPEN_TASK_STATES:
-                continue
-            metadata = task.get("metadata", {})
-            updated_at = 0.0
-            if isinstance(metadata, dict):
-                # A hostile or malformed timestamp (mapping, huge int, NaN) must not
-                # crash the sweep or park the task forever; unusable stamps read as
-                # stale so the timeout still fires.
-                updated_at = safe_float(
-                    metadata.get("updatedAt") or metadata.get("createdAt") or 0.0,
-                    default=0.0,
+        with self._correlation_lock:
+            for task in self.store.list_tasks():
+                status = task.get("status", {})
+                if not isinstance(status, dict) or status.get("state") not in OPEN_TASK_STATES:
+                    continue
+                metadata = task.get("metadata", {})
+                updated_at = 0.0
+                if isinstance(metadata, dict):
+                    # Unusable timestamps are stale; they cannot bypass the timeout.
+                    updated_at = safe_float(
+                        metadata.get("updatedAt") or metadata.get("createdAt") or 0.0,
+                        default=0.0,
+                    )
+                if now - updated_at < self.task_timeout_seconds:
+                    continue
+                task_id = str(task["id"])
+                message = {
+                    "messageId": str(uuid.uuid4()),
+                    "role": "ROLE_AGENT",
+                    "parts": [{"text": detail, "mediaType": "text/plain"}],
+                }
+                self._remove_pending_task(task_id)
+                failed.append(
+                    self._set_task_status(task, state="TASK_STATE_FAILED", message=message)
                 )
-            if now - updated_at < self.task_timeout_seconds:
-                continue
-            task_id = str(task["id"])
-            message = {
-                "messageId": str(uuid.uuid4()),
-                "role": "ROLE_AGENT",
-                "parts": [{"text": detail, "mediaType": "text/plain"}],
-            }
-            self._remove_pending_task(task_id)
-            failed.append(self._set_task_status(task, state="TASK_STATE_FAILED", message=message))
         return failed
 
     def list_tasks(
@@ -730,14 +738,15 @@ class A2ABridge:
 
     def cancel_task(self, task_id: str) -> JsonMap | None:
         """Cancel a stored A2A task."""
-        task = self.store.get(task_id)
-        if task is None:
-            return None
-        status = task.get("status", {})
-        if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
-            return task
-        self._remove_pending_task(task_id)
-        return self._set_task_status(task, state="TASK_STATE_CANCELED")
+        with self._correlation_lock:
+            task = self.store.get(task_id)
+            if task is None:
+                return None
+            status = task.get("status", {})
+            if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
+                return task
+            self._remove_pending_task(task_id)
+            return self._set_task_status(task, state="TASK_STATE_CANCELED")
 
     def subscribe_task(self, task_id: str) -> JsonMap | None:
         """Return a task snapshot for SSE subscription, or ``None`` when unknown."""

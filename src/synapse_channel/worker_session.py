@@ -15,17 +15,20 @@ import shlex
 # Provider, tmux, and synapse subprocesses are this module's controlled boundary.
 import subprocess  # nosec B404
 import sys
+import threading
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from synapse_channel.agent_tmux import AgentTmuxConfig, start_session
 from synapse_channel.client.agent import DEFAULT_HUB_URI
 from synapse_channel.core.errors import SynapseError
+from synapse_channel.execution_outcome import OutcomeState
 from synapse_channel.launch_record import (
     make_record,
     record_dir_for,
     write_record,
 )
+from synapse_channel.worker_outcome import WorkerExit, WorkerObservation
 
 SIDECAR_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 """Seconds to wait for a wake sidecar to exit after graceful termination."""
@@ -144,6 +147,7 @@ def _start_tmux_waiter(
     cwd: Path,
     command: Sequence[str],
     synapse_bin: str,
+    tmux_bin: str = "tmux",
     uri: str,
     token: str | None,
     token_file: str | None = None,
@@ -166,6 +170,10 @@ def _start_tmux_waiter(
         str(cwd),
         "--agent-command",
         shlex.join(command),
+        "--synapse-bin",
+        synapse_bin,
+        "--tmux-bin",
+        tmux_bin,
     ]
     # Prefer --token-file so the child argv never carries a process-visible secret
     # (SCH-H-NEW-16). Inline --token remains only when no file was supplied.
@@ -185,7 +193,17 @@ def _start_tmux_waiter(
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-    pidfile.write_text(f"{waiter.pid}\n", encoding="utf-8")
+    try:
+        pidfile.write_text(f"{waiter.pid}\n", encoding="utf-8")
+        threading.Thread(target=waiter.wait, name="synapse-waiter-reaper", daemon=True).start()
+    except BaseException:
+        waiter.terminate()
+        try:
+            waiter.wait(timeout=SIDECAR_SHUTDOWN_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            waiter.kill()
+            waiter.wait()
+        raise
 
 
 def _attach_tmux_session(
@@ -222,17 +240,33 @@ def _record_launch(
         print(f"synapse worker-session: launch record not written: {exc}", file=sys.stderr)
 
 
-def _run_provider(command: Sequence[str], env: Mapping[str, str], *, cwd: Path) -> int:
-    """Start the provider, record the launch, and wait for it to end."""
-    with subprocess.Popen(list(command), env=dict(env), cwd=cwd) as provider:  # nosec B603
-        _record_launch(env["SYN_IDENTITY"], command, provider.pid, env, cwd=cwd)
+def _run_provider(
+    command: Sequence[str], env: Mapping[str, str], *, cwd: Path, outcome: WorkerObservation
+) -> WorkerExit:
+    """Observe one native child; confirmed exit never establishes external effect undo."""
+    outcome.observe(OutcomeState.STARTED, "provider_launch_invoked")
+    try:
+        provider = subprocess.Popen(list(command), env=dict(env), cwd=cwd)  # nosec B603
+    except OSError:
+        outcome.observe(OutcomeState.NOT_STARTED, "provider_launch_refused")
+        raise
+    with provider:
         try:
-            return provider.wait()
+            outcome.observe(OutcomeState.STARTED, "provider_started")
+            _record_launch(env["SYN_IDENTITY"], command, provider.pid, env, cwd=cwd)
+            returncode = provider.wait()
         except BaseException:
             # An interrupted wait must not leave the provider behind, running or unreaped.
             provider.kill()
             provider.wait()
+            outcome.observe(
+                OutcomeState.UNKNOWN,
+                "provider_wait_interrupted",
+                stop_requested=True,
+                stop_confirmed=True,
+            )
             raise
+    return outcome.finish(returncode)
 
 
 def _run_terminal_tmux_session(
@@ -279,6 +313,7 @@ def _run_terminal_tmux_session(
         cwd=cwd,
         command=command,
         synapse_bin=synapse_bin,
+        tmux_bin=tmux_bin,
         uri=uri,
         token=token,
         token_file=token_file,
@@ -304,7 +339,8 @@ def run_worker_session(
     cwd: Path | None = None,
     environ: Mapping[str, str] | None = None,
     sidecar_shutdown_timeout_seconds: float = SIDECAR_SHUTDOWN_TIMEOUT_SECONDS,
-) -> int:
+    outcome_file: Path | None = None,
+) -> WorkerExit:
     """Run ``command`` with ``SYN_PROJECT``/``SYN_IDENTITY`` and an optional waker.
 
     The sidecar is a local ``syn arm`` process. It holds a socket and prints wake
@@ -320,20 +356,23 @@ def run_worker_session(
     resolved_project = (project or _project_from_identity(identity)).strip()
     env["SYN_PROJECT"] = resolved_project
     env["SYN_IDENTITY"] = identity.strip()
+    outcome = WorkerObservation(outcome_file)
     if _terminal_tmux_enabled(command=command, mode=terminal_tmux, env=env):
         env["SYN_TMUX_PROVIDER"] = "1"
         env["SYNAPSE_AUTO_CONNECT"] = "0"
-        return _run_terminal_tmux_session(
-            identity=env["SYN_IDENTITY"],
-            command=command,
-            env=env,
-            uri=uri,
-            token=token,
-            token_file=token_file,
-            tmux_bin=tmux_bin,
-            synapse_bin=synapse_bin,
-            session=tmux_session,
-            cwd=resolved_cwd,
+        return outcome.tmux_result(
+            lambda: _run_terminal_tmux_session(
+                identity=env["SYN_IDENTITY"],
+                command=command,
+                env=env,
+                uri=uri,
+                token=token,
+                token_file=token_file,
+                tmux_bin=tmux_bin,
+                synapse_bin=synapse_bin,
+                session=tmux_session,
+                cwd=resolved_cwd,
+            )
         )
 
     sidecar: subprocess.Popen[bytes] | None = None
@@ -358,7 +397,7 @@ def run_worker_session(
             log_handle.close()
 
     try:
-        return _run_provider(command, env, cwd=resolved_cwd)
+        return _run_provider(command, env, cwd=resolved_cwd, outcome=outcome)
     finally:
         if sidecar is not None and sidecar.poll() is None:
             sidecar.terminate()

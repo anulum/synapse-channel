@@ -65,6 +65,7 @@ async def test_create_working_task_forwards_metadata_correlated_request_through_
     assert frame.get("metadata") == {
         "a2aTaskId": "task-live-forward",
         "a2aContextId": "ctx-live-forward",
+        "a2aOperationId": task["metadata"]["synapseExecutionOutcome"]["operation_id"],
     }
 
 

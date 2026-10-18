@@ -107,7 +107,7 @@ async def test_owned_editable_claim_allows_with_one_state_query(tmp_path: Path) 
     assert result.allowed is True
     assert result.paths == ("src/a.py", "src/b.py")
     assert len(captured) == 1
-    assert captured[0]["requester"].startswith("claim-check/")
+    assert captured[0]["requester"].startswith("CLAIM-CHECK/")
 
 
 def _semantic_record(

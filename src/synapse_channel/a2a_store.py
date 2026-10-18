@@ -19,9 +19,11 @@ from pathlib import Path
 
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_errors import A2AQuotaError, A2AStoreError
+from synapse_channel.a2a_outcome import observed_task
 from synapse_channel.a2a_push_delivery import PushDeliveryAttempt
 from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
 from synapse_channel.core.numeric_coercion import safe_float
+from synapse_channel.execution_outcome import OutcomeState
 
 STALE_INFLIGHT_MESSAGE = "Recovered from stale in-flight task state after restart"
 STATE_FILE_MODE = 0o600
@@ -155,7 +157,7 @@ class A2ATaskStore:
             "state": "TASK_STATE_FAILED",
             "message": STALE_INFLIGHT_MESSAGE,
         }
-        return recovered
+        return observed_task(recovered, OutcomeState.UNKNOWN, "bridge_restart")
 
     def _normalize_task(self, task: JsonMap) -> JsonMap:
         """Apply bounded task history and artifact retention."""

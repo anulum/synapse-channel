@@ -73,6 +73,14 @@ async def test_native_identities_mutations_resources_and_reconnect(tmp_path: Pat
                                     meta={"synapse/operation-id": "declare-task"},
                                 )
                                 assert not declared.isError
+                                assert declared.structuredContent is not None
+                                observed = declared.structuredContent["execution_outcome"]
+                                assert observed["schema"] == "synapse.execution-outcome.v1"
+                                assert observed["boundary"] == "mcp_exchange"
+                                assert observed["state"] == "confirmed_done"
+                                assert observed["external_effect"] == "unknown"
+                                assert not observed["automatic_retry"]
+                                assert not observed["effects_undone"]
                                 assert hub.blackboard.tasks["ALPHA/task"].project == "ALPHA"
                                 assert hub.blackboard.tasks["ALPHA/task"].version == 1
                                 if incarnation:

@@ -96,6 +96,11 @@ extras (`pip install
 'synapse-channel[mcp]'`). See the [MCP guide](docs/mcp.md) and the separately
 qualified [authenticated HTTP profile](docs/mcp-http.md).
 
+[Scoped execution outcomes](docs/execution-outcomes.md) distinguish A2A/MCP
+exchanges, wake transport and worker process exits from external business
+effects. Unknown outcomes require inquiry or operator recovery; reconnect
+does not automatically repeat work.
+
 ```bash
 python -m pip install synapse-channel && synapse demo
 ```
@@ -1840,13 +1845,13 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.38 |
 | Public API exports | 70 |
-| Package modules | 804 |
-| Classes | 1174 |
+| Package modules | 810 |
+| Classes | 1185 |
 | Wire message types | 114 |
 | CLI subcommands | 258 |
-| Test functions | 11605 |
+| Test functions | 11637 |
 | Benchmark harnesses | 11 |
-| Documentation pages | 86 |
+| Documentation pages | 87 |
 | GitHub Actions workflows | 27 |
 | Optional-dependency groups | 14 |
 

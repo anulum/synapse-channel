@@ -179,10 +179,9 @@ network server: task creation, SYNAPSE reply correlation, task listing, push
 delivery callback dispatch, and bounded subscriber fanout.
 
 The [recorded reference artifact](https://github.com/anulum/synapse-channel/blob/main/benchmarks/results/a2a_bridge_benchmark.json)
-contains 250 tasks and 32 subscribers, with host metadata declaring Python
-3.12.13 on Linux. Its SHA-256 is
-`1f4cb9315a7d7be7740e23fd2249939b32cfd6ec0be2e279304442f0eddcf8bf`.
-These are that retained artifact's figures, not a fresh current-build result:
+retains the earlier 250-task, 32-subscriber reference in its top-level fields.
+The current comparison is separately recorded under `execution_outcome_contract`.
+The following figures are the earlier reference, not a fresh current-build result:
 
 | Operation | Result |
 | --- | ---: |
@@ -196,6 +195,25 @@ These are that retained artifact's figures, not a fresh current-build result:
 local regressions and sizing the single-process edge. They do not measure remote
 HTTP server throughput, real webhook receiver latency, TLS, DNS, third-party A2A
 conformance, or multi-replica behavior.
+
+### Scoped execution outcomes
+
+One serial baseline/candidate pair compares source `06c53087` with the scoped
+execution observations. Both runs use the unchanged full workload: 250 tasks,
+250 replies, 250 push callbacks and 32 subscriber events. The results record
+complete source and harness digests, common interpreter/dependency versions,
+host load before/after and the explicit source-checkout artefact class.
+
+| Operation | Baseline tasks/s | Candidate tasks/s |
+| --- | ---: | ---: |
+| Task creation | 1,563.245 | 1,408.454 |
+| Reply correlation | 633.224 | 733.429 |
+
+The observed creation throughput fell 9.90%, equivalent to a 10.99% increase
+in time per task; correlation throughput rose 15.82%. These are serial nice-19
+measurements on a shared workstation, without an isolated performance claim.
+The unchanged fixture sends legacy task/context replies; it measures compatible
+protocol completion, not business-effect confirmation or native vendor work.
 
 ## Coding fleet benchmark
 
@@ -358,3 +376,25 @@ loads and full distributions are in `native_readback_default_profile` in
 `external_surfaces_benchmark.json`. The terminal transport has no second
 language implementation; this measurement does not qualify the JS/Go wire
 clients or cockpit.
+
+### Scoped execution observations
+
+The `execution_outcome_contract` section records a new baseline `06c53087` and
+candidate source-checkout pair with full source/harness digests and observed
+host loads. Every measured HTTP kind completed all 200 requests with zero
+resets; both runs injected all five fixture pane wakes.
+
+| Operation | Baseline p50 (us) | Candidate p50 (us) |
+| --- | ---: | ---: |
+| A2A agent card | 2328.617 | 2262.178 |
+| A2A accepted message | 2497.110 | 3040.114 |
+| A2A refusal before the body | 1271.987 | 2183.205 |
+| Dashboard snapshot document | 35986.815 | 36237.828 |
+| Dashboard classic page | 36557.911 | 36108.388 |
+| Pane wake | 893470.187 | 885700.986 |
+
+Accepted-message p50 increased 21.75% in this pair. Other operations also varied;
+one shared-host pair does not isolate the cause or establish a performance
+guarantee. The overhead is retained rather than presented as a speedup. The
+pane workload uses a harmless composer, not a vendor client or model turn;
+these measurements do not qualify Windows, JS/Go clients or third-party A2A.

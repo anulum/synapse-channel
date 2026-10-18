@@ -6,6 +6,18 @@ below. This page starts with the main entry points, then renders their source
 docstrings. See [API and wire stability](api-stability.md) for the compatibility
 policy.
 
+## Scoped execution outcomes
+
+`execution_outcome.ExecutionOutcome` records a named boundary independently of
+external effects, stop confirmation and undo. `run_worker_session` returns an
+integer-compatible `worker_outcome.WorkerExit` carrying `.outcome`; its optional
+`outcome_file` can be inspected with `worker_outcome.read_worker_outcome`.
+See [execution outcomes](execution-outcomes.md) for report and recovery semantics.
+
+::: synapse_channel.execution_outcome
+
+::: synapse_channel.worker_outcome
+
 ## Generic adapter file custody
 
 `adapter_custody.manage_adapter` is the Python entry point used by the generic

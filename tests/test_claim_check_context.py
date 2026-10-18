@@ -67,8 +67,8 @@ def test_explicit_identity_builds_canonical_context(tmp_path: Path) -> None:
     assert context.identity == "project/agent"
     assert context.uri == "ws://explicit"
     assert context.token_file is None
-    assert context.requester.startswith("claim-check/")
-    assert len(context.requester.removeprefix("claim-check/")) == 16
+    assert context.requester.startswith("CLAIM-CHECK/")
+    assert len(context.requester.removeprefix("CLAIM-CHECK/")) == 16
 
 
 def test_config_identity_uri_and_relative_token_file_resolve_under_root(tmp_path: Path) -> None:

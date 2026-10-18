@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, Protocol
 
 from synapse_channel.core.protocol import MessageType
@@ -47,8 +48,13 @@ class AgentQueryMixin:
         )
 
     async def request_state(self: _QueryAgent) -> None:
-        """Ask the hub for a full state snapshot."""
-        await self.send_message(MessageType.STATE_REQUEST, target="System", payload="snapshot")
+        """Ask for a full snapshot with a distinct read-only query identity."""
+        await self.send_message(
+            MessageType.STATE_REQUEST,
+            target="System",
+            payload="snapshot",
+            request_id=uuid.uuid4().hex,
+        )
 
     async def request_release_confirmation(
         self: _QueryAgent, task_id: str, operation_id: str, request_digest: str, request_id: str

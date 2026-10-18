@@ -26,11 +26,21 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Staged claim checks use a hub-compatible query namespace and a distinct
+  read-only state request ID, preserving exact ownership checks on deployed hubs.
+
 - Extract provider pane classification from the terminal transport into
   `agent_pane_state`, preserving existing marker precedence, submission
   decisions, facade behaviour and staged-hint observations.
 
 ### Added
+
+- Shared scoped execution observations for A2A tasks, MCP mutation results,
+  wake relay JSON and worker processes. Reports distinguish boundary completion
+  from external effects, stop requests, confirmed direct-child stops and undo.
+  Worker sessions support optional private reports and read-only inquiry;
+  A2A continuations refuse duplicate message IDs and stale operation replies.
+  HTTP MCP preserves structured outcomes and stable seat/tool operation identity.
 
 - Opt-in native input readback for new POSIX OpenCode 1.18.32 mini terminals.
   Qualify the actual editor shortcut before publishing a new session, preserve

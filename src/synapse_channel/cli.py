@@ -405,7 +405,7 @@ def main(argv: list[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser(command=_requested_command(arguments))
     args = parser.parse_args(arguments)
-    if not getattr(args, "command", None):
+    if not hasattr(args, "func"):
         parser.print_help()
         return 1
     if hasattr(args, "token"):

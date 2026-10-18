@@ -239,7 +239,11 @@ def isolated_hub(
         # "localhost" default robustness on macOS is tracked separately.
         yield IsolatedHub(uri=f"ws://127.0.0.1:{port}", port=port, db_path=db_path)
     finally:
-        _stop(proc)
+        try:
+            _stop(proc)
+        finally:
+            if proc.stdout is not None:
+                proc.stdout.close()
 
 
 def _stop(proc: subprocess.Popen[str]) -> None:

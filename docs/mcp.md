@@ -215,6 +215,12 @@ opened; their TLS certificate and bearer grant authenticate them.
 
 ## Tools
 
+Mutation results include the [scoped execution outcome](execution-outcomes.md)
+in `structuredContent.execution_outcome`, beside `result` and the unchanged
+human text. A completed reply exchange does not verify downstream business
+effects. Unknown results require inquiry or an operator; reconnect never
+automatically replays the mutation.
+
 Each tool maps to a coordination verb or local adapter surface. Lease and plan
 actions await their correlated hub reply; query tools return JSON.
 The stdio `synapse_send` path submits on its live socket and returns local

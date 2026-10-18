@@ -21,11 +21,13 @@ from synapse_channel.client.claim_confirmation import (
     valid_claim_timeout,
 )
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.execution_outcome import OutcomeState
 from synapse_channel.git.ordinary_claim import (
     OrdinaryClaimScopeError,
     resolve_ordinary_claim_scope,
 )
 from synapse_channel.mcp.git_claim import McpGitClaimError, resolve_mcp_git_claim_scope
+from synapse_channel.mcp.outcome import McpMutation
 
 Matcher = Callable[[dict[str, Any]], bool]
 Sender = Callable[[], Awaitable[None]]
@@ -87,7 +89,9 @@ class McpClaimActions:
         scope = list(paths or [])
         if task_only:
             if scope:
-                return "claim refused: task_only cannot be combined with paths"
+                return McpMutation().not_started(
+                    "claim refused: task_only cannot be combined with paths"
+                )
             return await self._claim(
                 task_id,
                 paths=[],
@@ -101,13 +105,13 @@ class McpClaimActions:
         try:
             resolved_scope = resolve_ordinary_claim_scope(scope, whole_worktree=not scope)
         except OrdinaryClaimScopeError as exc:
-            return f"claim refused: {exc}"
+            return McpMutation().not_started(f"claim refused: {exc}")
         if resolved_scope is not None:
             scope = list(resolved_scope.paths)
             worktree = resolved_scope.worktree
             path_identity = resolved_scope.path_identity
         elif not scope:
-            return (
+            return McpMutation().not_started(
                 "claim refused: outside a Git worktree a claim needs paths, or "
                 "task_only=true for a task lock with no file scope"
             )
@@ -158,7 +162,9 @@ class McpClaimActions:
             authorizes edits; confirmation requires an exact scope and live fence.
         """
         if not valid_claim_timeout(reply_timeout):
-            return "git claim refused: deadline must be finite, positive and at most 300 seconds"
+            return McpMutation().not_started(
+                "git claim refused: deadline must be finite, positive and at most 300 seconds"
+            )
         try:
             scope = resolve_mcp_git_claim_scope(
                 paths,
@@ -167,7 +173,7 @@ class McpClaimActions:
                 whole_worktree=whole_worktree,
             )
         except McpGitClaimError as exc:
-            return f"git claim refused: {exc}"
+            return McpMutation().not_started(f"git claim refused: {exc}")
         where = (
             f"{', '.join(scope.paths) if scope.paths else 'the whole worktree'} "
             f"on branch {scope.git['branch']}"
@@ -198,10 +204,14 @@ class McpClaimActions:
         """Issue one claim, or prove an uncertain Git lease through fresh state."""
         task_id = task_id.strip()
         intent = ClaimIntent(task_id, self.name, worktree, tuple(paths), path_identity, git)
+        mutation = McpMutation()
 
         async def await_claim_reply(match: Matcher, send: Sender) -> dict[str, Any] | None:
             """Use the timed correlator when the owning bridge supplies it."""
-            return await self.await_timed_reply(match, send, reply_timeout)
+            sender = mutation.sender(send)
+            if git is not None:
+                return await self.await_timed_reply(match, sender, reply_timeout)
+            return await self.await_reply(match, sender)
 
         def match(data: dict[str, Any]) -> bool:
             if data.get("task_id") != task_id:
@@ -218,7 +228,7 @@ class McpClaimActions:
         reply = (
             None
             if confirm_only
-            else await (await_claim_reply if git is not None else self.await_reply)(
+            else await await_claim_reply(
                 match,
                 lambda: self.agent.claim(
                     task_id,
@@ -232,15 +242,21 @@ class McpClaimActions:
         if reply is None:
             if git is not None:
                 if await confirm_claim(self.agent, await_claim_reply, intent):
-                    return f"claim confirmed: '{task_id}' ({where}; live lease, no mutation replay)"
-                return (
+                    return mutation.finished(
+                        f"claim confirmed: '{task_id}' ({where}; live lease, no mutation replay)",
+                        "fresh_exact_live_lease",
+                        external_effect=OutcomeState.CONFIRMED_DONE,
+                    )
+                return mutation.unknown(
                     f"claim outcome unknown: '{task_id}'; no confirmed live lease. "
                     "Use confirm_only=true with the same identity and scope before working."
                 )
-            return f"claim '{task_id}': no response from the hub"
+            return mutation.unknown(f"claim '{task_id}': no response from the hub")
         if reply.get("type") == MessageType.CLAIM_GRANTED:
-            return f"claim granted: '{task_id}' ({where})"
-        return f"claim denied: '{task_id}' — {reply.get('payload') or 'held by another agent'}"
+            return mutation.finished(f"claim granted: '{task_id}' ({where})")
+        return mutation.finished(
+            f"claim denied: '{task_id}' — {reply.get('payload') or 'held by another agent'}"
+        )
 
     async def release(
         self,
@@ -258,26 +274,37 @@ class McpClaimActions:
                 MessageType.RELEASE_DENIED,
             }
 
+        mutation = McpMutation()
         reply = await self.await_reply(
             match,
-            lambda: self.agent.release(
-                task_id,
-                evidence=list(evidence),
-                changed_files=list(changed_files),
-                confidence=confidence,
+            mutation.sender(
+                lambda: self.agent.release(
+                    task_id,
+                    evidence=list(evidence),
+                    changed_files=list(changed_files),
+                    confidence=confidence,
+                )
             ),
         )
         if reply is None:
-            return f"release '{task_id}': no response from the hub"
+            return mutation.unknown(f"release '{task_id}': no response from the hub")
         if reply.get("type") == MessageType.RELEASE_GRANTED:
             receipt = reply.get("receipt")
             if not isinstance(receipt, Mapping):
-                return f"released '{task_id}', but the hub returned no valid receipt"
+                return mutation.unknown(
+                    f"release outcome unknown: '{task_id}'; the hub returned no valid receipt"
+                )
             if (
                 receipt.get("task_id") != task_id
                 or receipt.get("owner") != self.name
                 or receipt.get("released") is not True
             ):
-                return f"released '{task_id}', but the hub returned a mismatched receipt"
-            return f"released '{task_id}' with receipt owner '{self.name}'"
-        return f"release denied: '{task_id}' — {reply.get('payload') or 'not the owner'}"
+                return mutation.unknown(
+                    f"release outcome unknown: '{task_id}'; the hub returned a mismatched receipt"
+                )
+            return mutation.finished(
+                f"released '{task_id}' with receipt owner '{self.name}'", "matching_release_receipt"
+            )
+        return mutation.finished(
+            f"release denied: '{task_id}' — {reply.get('payload') or 'not the owner'}"
+        )

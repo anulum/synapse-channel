@@ -15,7 +15,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from synapse_channel.a2a import JsonMap
-from synapse_channel.a2a_errors import A2AValidationError
+from synapse_channel.a2a_errors import A2AConflictError, A2AValidationError
+from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
 
 
 def render_message_text(message: Mapping[str, Any]) -> str:
@@ -93,6 +94,22 @@ def prepare_continuation(task: JsonMap, message: JsonMap) -> JsonMap:
     continued["taskId"] = task_id
     continued["contextId"] = context_id
     return continued
+
+
+def build_continued_task(task: JsonMap, message: JsonMap) -> tuple[JsonMap, JsonMap]:
+    """Validate a current non-terminal snapshot and detach its next exchange."""
+    status = task.get("status")
+    if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
+        raise A2AConflictError("terminal task cannot accept another message")
+    continued = prepare_continuation(task, message)
+    history = list(task.get("history", []))
+    if any(row.get("messageId") == continued.get("messageId") for row in history):
+        raise A2AConflictError("message.messageId already exists in task")
+    return {
+        **task,
+        "history": [*history, continued],
+        "status": {"message": user_status_message(continued)},
+    }, continued
 
 
 def user_status_message(message: Mapping[str, Any]) -> JsonMap:

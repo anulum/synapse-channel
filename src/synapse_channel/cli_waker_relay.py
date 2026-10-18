@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import asdict
 from pathlib import Path
 
 from synapse_channel.wake_adapters import ACCEPTED, WakeTarget
@@ -31,7 +30,7 @@ def _command(args: argparse.Namespace) -> int:
     except (OSError, ValueError) as exc:
         print(f"waker relay: {type(exc).__name__}", file=sys.stderr)
         return 2
-    print(json.dumps(asdict(result), sort_keys=True))
+    print(json.dumps(result.to_json(), sort_keys=True))
     return 0 if result.state == ACCEPTED else 1
 
 

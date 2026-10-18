@@ -27,12 +27,18 @@ source.
 | Atomic operation truth | Partial | Claim-family operations commit before publication and apply once; this is not yet universal. |
 | Content-bound global event identity | Conformant | A federated identity binds one fingerprint; equivocation quarantines before publication. |
 | Causal conflict handling | Partial | Content-bound, same-task parent edges suppress proven ancestors; unresolved heads remain payload-free conflicts without automatic resolution. |
-| Evidence completeness | Partial | Defined journal, receipt, AEF, and quarantine evidence exists, but coverage is not universal. |
+| Evidence completeness | Partial | Defined journal, receipt, AEF, quarantine and scoped execution observations exist; external business effects and universal evidence remain unproven. |
 
 `python tools/invariant_conformance.py --check` validates the schema, exact six-row
 set, cited invariant identifiers, public evidence paths, and generated output.
 This freshness check runs before commit and in reserved release preflight.
 It does not execute the cited tests or qualify a new source or package artifact.
+
+[Execution outcomes](execution-outcomes.md) record A2A/MCP exchanges, wake
+transport and worker process observations independently of external effects,
+stop requests, confirmed stops and undo. Their explicit unknown state requires
+inquiry or operator recovery; it does not authorise mutation replay. These
+adapter observations extend the evidence map without making its status universal.
 The row statuses describe the registry's named guarantees and limitations;
 qualification of a build also needs its exact source/package identity and
 recorded results for the applicable evidence profiles.

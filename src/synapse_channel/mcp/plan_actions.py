@@ -14,6 +14,7 @@ from typing import Any
 
 from synapse_channel.client.agent import SynapseAgent
 from synapse_channel.core.protocol import MessageType
+from synapse_channel.mcp.outcome import McpMutation
 
 Matcher = Callable[[dict[str, Any]], bool]
 Sender = Callable[[], Awaitable[None]]
@@ -44,12 +45,17 @@ class McpPlanActions:
                 MessageType.HANDOFF_DENIED,
             }
 
-        reply = await self.await_reply(match, lambda: self.agent.handoff(task_id, to_agent))
+        mutation = McpMutation()
+        reply = await self.await_reply(
+            match, mutation.sender(lambda: self.agent.handoff(task_id, to_agent))
+        )
         if reply is None:
-            return f"handoff '{task_id}': no response from the hub"
+            return mutation.unknown(f"handoff '{task_id}': no response from the hub")
         if reply.get("type") == MessageType.HANDOFF_GRANTED:
-            return f"handed off '{task_id}' to {to_agent}"
-        return f"handoff denied: '{task_id}' — {reply.get('payload') or 'rejected'}"
+            return mutation.finished(f"handed off '{task_id}' to {to_agent}")
+        return mutation.finished(
+            f"handoff denied: '{task_id}' — {reply.get('payload') or 'rejected'}"
+        )
 
     async def task_declare(
         self, task_id: str, title: str, depends_on: list[str] | None = None
@@ -63,13 +69,15 @@ class McpPlanActions:
                 and data.get("task", {}).get("task_id") == task_id
             )
 
+        mutation = McpMutation()
         reply = await self.await_reply(
-            match, lambda: self.agent.post_task(task_id, title=title, depends_on=deps)
+            match,
+            mutation.sender(lambda: self.agent.post_task(task_id, title=title, depends_on=deps)),
         )
         if reply is None:
-            return f"declare '{task_id}': no response from the hub"
+            return mutation.unknown(f"declare '{task_id}': no response from the hub")
         task = reply.get("task", {})
-        return f"declared '{task_id}' — {task.get('title')}"
+        return mutation.finished(f"declared '{task_id}' — {task.get('title')}")
 
     async def task_update(
         self, task_id: str, status: str | None = None, suggested_owner: str | None = None
@@ -82,13 +90,16 @@ class McpPlanActions:
                 and data.get("task", {}).get("task_id") == task_id
             )
 
+        mutation = McpMutation()
         reply = await self.await_reply(
             match,
-            lambda: self.agent.update_ledger_task(
-                task_id, status=status, suggested_owner=suggested_owner
+            mutation.sender(
+                lambda: self.agent.update_ledger_task(
+                    task_id, status=status, suggested_owner=suggested_owner
+                )
             ),
         )
         if reply is None:
-            return f"update '{task_id}': no response from the hub"
+            return mutation.unknown(f"update '{task_id}': no response from the hub")
         task = reply.get("task", {})
-        return f"updated '{task_id}' -> status={task.get('status')}"
+        return mutation.finished(f"updated '{task_id}' -> status={task.get('status')}")

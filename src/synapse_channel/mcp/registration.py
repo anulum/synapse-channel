@@ -127,82 +127,14 @@ def build_mcp_server(
         fast_mcp = fastmcp_loader()
         server = fast_mcp("synapse")
     reader = views if views is not None else bridge
+    from synapse_channel.mcp.outcome_tools import register_mutation_tools
 
-    @server.tool()
-    async def synapse_claim(
-        task_id: str, paths: list[str] | None = None, task_only: bool = False
-    ) -> str:
-        """Claim a task lease on file paths, the whole current Git worktree, or the task alone.
-
-        Without paths the claim covers the MCP process's whole Git worktree, and is
-        refused outside one; ``task_only`` leases the task id alone with no file scope.
-        """
-        return await bridge.claim(task_id, paths, task_only=task_only)
-
-    @server.tool()
-    async def synapse_git_claim(
-        task_id: str,
-        paths: list[str] | None = None,
-        base: str = "main",
-        auto_release_on: str = "manual",
-        whole_worktree: bool = False,
-        reply_timeout: float = 30.0,
-        confirm_only: bool = False,
-    ) -> str:
-        """Claim or read-only confirm exact Git paths; unknown never authorizes edits."""
-        return await bridge.git_claim(
-            task_id,
-            paths,
-            base=base,
-            auto_release_on=auto_release_on,
-            whole_worktree=whole_worktree,
-            reply_timeout=reply_timeout,
-            confirm_only=confirm_only,
-        )
-
-    @server.tool()
-    async def synapse_release(
-        task_id: str,
-        evidence: list[str] | None = None,
-        changed_files: list[str] | None = None,
-        confidence: str = "",
-    ) -> str:
-        """Release a task lease with optional durable receipt evidence."""
-        return await bridge.release(
-            task_id,
-            evidence=evidence or (),
-            changed_files=changed_files or (),
-            confidence=confidence,
-        )
-
-    @server.tool()
-    async def synapse_send(target: str, message: str) -> str:
-        """Send a chat message to an agent, a group, or everyone (``all``)."""
-        return await bridge.send(target, message)
+    register_mutation_tools(server, bridge)
 
     @server.tool()
     async def synapse_inbox(limit: int = 50) -> str:
         """Consume a bounded page of local durable messages for this bridge identity."""
         return await bridge.inbox(limit)
-
-    @server.tool()
-    async def synapse_handoff(task_id: str, to_agent: str) -> str:
-        """Hand a held task to another online agent atomically."""
-        return await bridge.handoff(task_id, to_agent)
-
-    @server.tool()
-    async def synapse_task_declare(
-        task_id: str, title: str, depends_on: list[str] | None = None
-    ) -> str:
-        """Declare or refine a task on the shared plan."""
-        return await bridge.task_declare(task_id, title, depends_on)
-
-    @server.tool()
-    async def synapse_task_update(
-        task_id: str, status: str | None = None, suggested_owner: str | None = None
-    ) -> str:
-        """Update a plan task's status or suggested owner."""
-        return await bridge.task_update(task_id, status, suggested_owner)
 
     @server.tool()
     async def synapse_board() -> str:
@@ -279,19 +211,9 @@ def build_mcp_server(
         return await bridge.entitlements()
 
     @server.tool()
-    async def synapse_app_task_offer(bundle: dict[str, Any]) -> str:
-        """Offer an explicit human app task against a current local allowance."""
-        return await bridge.app_task_offer(bundle)
-
-    @server.tool()
     async def synapse_app_task_status(task_id: str) -> str:
         """Read redacted state for one human app task."""
         return await bridge.app_task_status(task_id)
-
-    @server.tool()
-    async def synapse_app_task_attach(task_id: str, result: dict[str, Any]) -> str:
-        """Attach an untrusted result envelope to its offered task."""
-        return await bridge.app_task_attach(task_id, result)
 
     @server.resource("synapse://board")
     async def board_resource() -> str:

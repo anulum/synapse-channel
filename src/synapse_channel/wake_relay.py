@@ -31,13 +31,18 @@ built from the seat's identity alone.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
 from synapse_channel import wake_marks
+from synapse_channel.execution_outcome import ExecutionOutcome, OutcomeState
 from synapse_channel.wake_adapters import (
+    ACCEPTED,
+    PROVES,
     REFUSED,
     STATES,
     UNCERTAIN,
@@ -71,6 +76,34 @@ class RelayResult:
     attempts: tuple[wake_marks.Mark, ...] = ()
     passed_over: tuple[tuple[str, str], ...] = ()
     sent_now: bool = False
+    operation_id: str = ""
+
+    @property
+    def execution_outcome(self) -> ExecutionOutcome:
+        """Observe the stored wake attempt, never current model liveness or work.
+
+        The operation identity follows the durable marks' directory/seat/message
+        namespace. An accepted mark remains a historical transport observation
+        after replay, not a new acknowledgement by the current native session.
+        Unavailable transports may be considered on a later explicit invocation;
+        an already uncertain attempt remains non-repeatable.
+        """
+        state = OutcomeState.UNKNOWN
+        observation = "wake_attempt_unconfirmed"
+        if not self.operation_id:
+            observation = "wake_identity_unbound"
+        elif self.state == ACCEPTED and self.proves in PROVES:
+            state, observation = OutcomeState.CONFIRMED_DONE, "wake_transport_accepted"
+        elif self.state == WAKE_FAILED:
+            state = OutcomeState.CONFIRMED_FAILED if self.attempts else OutcomeState.NOT_STARTED
+            observation = "wake_transports_refused" if self.attempts else "no_transport_invoked"
+        return ExecutionOutcome(
+            self.operation_id or "wake-unbound", "wake_transport", state, observation
+        )
+
+    def to_json(self) -> dict[str, object]:
+        """Keep legacy relay fields and add the common scoped outcome envelope."""
+        return {**asdict(self), "execution_outcome": self.execution_outcome.to_json()}
 
 
 def _fixed_prompt(seat: str) -> str:
@@ -140,9 +173,11 @@ def relay(
     validate_deadline(deadline_seconds)
     with wake_marks.seat_lock(marks_dir, target.seat):
         earlier = wake_marks.read(marks_dir, target.seat, wake_id)
+        identity = json.dumps([str(marks_dir.resolve()), target.seat, wake_id]).encode("utf-8")
+        operation_id = "wake-" + hashlib.sha256(identity).hexdigest()
         settled = _settled(earlier)
         if settled is not None:
-            return settled
+            return replace(settled, operation_id=operation_id)
         refused = {mark.adapter for mark in earlier}
         prompt = prompt_for(target.seat)
         passed_over = []
@@ -163,10 +198,16 @@ def relay(
             if outcome.state != REFUSED:
                 marks = wake_marks.read(marks_dir, target.seat, wake_id)
                 return RelayResult(
-                    outcome.state, adapter.kind, outcome.proves, marks, tuple(passed_over), True
+                    outcome.state,
+                    adapter.kind,
+                    outcome.proves,
+                    marks,
+                    tuple(passed_over),
+                    True,
+                    operation_id,
                 )
             refused.add(adapter.kind)
         marks = wake_marks.read(marks_dir, target.seat, wake_id)
         return RelayResult(
-            WAKE_FAILED, "", "", marks, tuple(passed_over), len(marks) > len(earlier)
+            WAKE_FAILED, "", "", marks, tuple(passed_over), len(marks) > len(earlier), operation_id
         )

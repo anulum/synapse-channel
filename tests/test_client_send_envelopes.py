@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 from client_helpers import connected_recording_agent, wait_for_recorded_count
 from synapse_channel.client.agent import SynapseAgent
 
@@ -44,6 +46,7 @@ async def test_send_helpers_emit_expected_envelopes() -> None:
     assert "ttl_seconds" not in claim_min
     assert release["task_id"] == "T3"
     assert state["type"] == "state_request"
+    assert uuid.UUID(state["request_id"]).hex == state["request_id"]
     assert who["type"] == "who_request"
     assert hist_n["limit"] == 5
     assert "limit" not in hist_all

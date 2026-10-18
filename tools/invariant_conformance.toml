@@ -180,10 +180,11 @@ id = "evidence-completeness"
 title = "Evidence completeness"
 status = "partial"
 guarantee = "Durable journal and receipt surfaces expose bounded evidence for defined coordination, denial, escalation, identity-reclaim, and delivery outcomes without treating transport acknowledgement as model action."
-scope = "Journal-backed coordination operations, defined delivery receipts and audit decisions, AEF records, and federation quarantine evidence."
+scope = "Journal-backed coordination operations, defined delivery receipts and audit decisions, AEF records, federation quarantine evidence, and scoped A2A/MCP/wake/worker execution observations."
 limitations = [
   "Not every command or external side effect emits a universal receipt.",
   "Evidence completeness across all adapters and deployment effects is not yet proven.",
+  "Execution observations do not grant authority or independently verify business effects, remote stop or undo; some transport errors occur before a tool envelope exists.",
 ]
 spec_invariants = ["INV-JA-1", "INV-JA-2", "INV-DG-1", "INV-DG-3", "INV-DG-4", "INV-MH-5"]
 sources = [
@@ -191,6 +192,11 @@ sources = [
   "src/synapse_channel/core/journal.py",
   "src/synapse_channel/core/universal_receipts.py",
   "src/synapse_channel/dashboard_store_feeds.py",
+  "src/synapse_channel/execution_outcome.py",
+  "src/synapse_channel/a2a_outcome.py",
+  "src/synapse_channel/mcp/outcome.py",
+  "src/synapse_channel/wake_relay.py",
+  "src/synapse_channel/worker_outcome.py",
 ]
 tests = [
   "tests/test_atomic_operation_killpoints.py",
@@ -200,5 +206,9 @@ tests = [
   "tests/test_delivery_receipts.py",
   "tests/test_multihub_watch.py",
   "tests/test_universal_receipts.py",
+  "tests/test_execution_outcomes_native.py",
+  "tests/test_mcp_outcomes_native.py",
+  "tests/test_wake_outcomes_native.py",
+  "tests/test_worker_outcomes_native.py",
 ]
 evidence_modes = ["kill-point", "partition", "receipt", "replay", "taxonomy-drift"]

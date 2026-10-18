@@ -4,6 +4,125 @@
     "seconds": 0.07916659900001832,
     "tasks_per_sec": 3157.8974360126567
   },
+  "execution_outcome_contract": {
+    "baseline": {
+      "ended_at": 1792363665.248398,
+      "load_after": [
+        59.3759765625,
+        56.0576171875,
+        47.3095703125
+      ],
+      "load_before": [
+        59.5830078125,
+        56.04150390625,
+        47.2568359375
+      ],
+      "results": {
+        "correlated_replies": 250,
+        "correlation": {
+          "seconds": 0.39480501995421946,
+          "tasks_per_sec": 633.2239646521955
+        },
+        "host": {
+          "cpu": "x86_64",
+          "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3"
+        },
+        "listing": {
+          "seconds": 0.0018868560437113047,
+          "tasks": 250,
+          "tasks_per_sec": 132495.53448087577
+        },
+        "push_delivery": {
+          "deliveries": 250,
+          "deliveries_per_sec": 633.2239646521955,
+          "evidence_records": 250,
+          "terminal_successes": 250
+        },
+        "subscriber_count": 32,
+        "subscriber_fanout": {
+          "events": 32,
+          "events_per_sec": 540.0954187837414,
+          "seconds": 0.059248789912089705
+        },
+        "task_creation": {
+          "seconds": 0.1599237199407071,
+          "tasks_per_sec": 1563.2452777654833
+        },
+        "tasks": 250
+      },
+      "source": {
+        "python_files": 814,
+        "sha256": "833dd37278a7f932ca0a1ea750f2a98093bc0c054683517226a92862417bcd35"
+      },
+      "started_at": 1792363662.6296973
+    },
+    "baseline_git_commit": "06c530877ee50e6d9a35a5792cbf95ae3a4fdfe7",
+    "candidate": {
+      "ended_at": 1792363695.9748049,
+      "load_after": [
+        52.326171875,
+        54.57763671875,
+        47.08935546875
+      ],
+      "load_before": [
+        54.35693359375,
+        55.009765625,
+        47.1875
+      ],
+      "results": {
+        "correlated_replies": 250,
+        "correlation": {
+          "seconds": 0.3408648220356554,
+          "tasks_per_sec": 733.4285729662339
+        },
+        "host": {
+          "cpu": "x86_64",
+          "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3"
+        },
+        "listing": {
+          "seconds": 0.0019195200875401497,
+          "tasks": 250,
+          "tasks_per_sec": 130240.88761705697
+        },
+        "push_delivery": {
+          "deliveries": 250,
+          "deliveries_per_sec": 733.4285729662339,
+          "evidence_records": 250,
+          "terminal_successes": 250
+        },
+        "subscriber_count": 32,
+        "subscriber_fanout": {
+          "events": 32,
+          "events_per_sec": 2161.8919484657285,
+          "seconds": 0.014801849843934178
+        },
+        "task_creation": {
+          "seconds": 0.1774996160529554,
+          "tasks_per_sec": 1408.4537508262258
+        },
+        "tasks": 250
+      },
+      "source": {
+        "python_files": 820,
+        "sha256": "d63bb860ef5aa66bb3d9cd87b166e68d9e3d2b6bfc95d93574b72caf49b56423"
+      },
+      "started_at": 1792363693.7655196
+    },
+    "harnesses": {
+      "a2a_bridge_benchmark.py": "ef7c8d9f7978bae0b2a9479392489ed6c6d58a9072ccd1d24483d20e8ca824d4",
+      "external_surfaces_benchmark.py": "d4d06490cb2451d1aff18111a321d9e18fb01cb5b0c53456ebe85e7a159c5730"
+    },
+    "method": "One serial nice19 baseline/candidate pair at unchanged full defaults, shared host; no isolated speed or vendor acceptance claim.",
+    "model_turns": 0,
+    "recorded_at": "2026-10-18T22:48:43.031985+00:00",
+    "runtime": {
+      "isolation": "shared host, serial, MemoryMax1536M",
+      "python": "3.12.3",
+      "websockets": "16.0"
+    }
+  },
   "host": {
     "cpu": "x86_64",
     "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",

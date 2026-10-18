@@ -14,6 +14,11 @@ A message waits in the recipient's mailbox on the hub. A **wake** tells the
 recipient's session that something is there. It carries no message text and
 no authority: the session reads its inbox from the hub.
 
+Relay JSON includes a [scoped execution outcome](execution-outcomes.md) under
+`execution_outcome`. Its operation ID binds the marks directory, exact seat and
+wake sequence. A cached successful wake is historical transport evidence;
+it does not establish current model liveness, inbox reading or task completion.
+
 There is more than one way to wake a session: typing a fixed prompt into an
 idle terminal composer, queueing it through a vendor's own daemon, a waiter
 whose exit the client reports. Each way is a **wake adapter**. The relay tries

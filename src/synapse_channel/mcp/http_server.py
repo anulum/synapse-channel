@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
 from collections.abc import Iterable, Sequence
 from typing import Any
@@ -18,7 +19,7 @@ from urllib.parse import unquote, urlsplit
 from anyio import fail_after
 from mcp.server.fastmcp import FastMCP
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.types import ContentBlock, Resource, ResourceTemplate, Tool
+from mcp.types import CallToolResult, ContentBlock, Resource, ResourceTemplate, TextContent, Tool
 from pydantic import AnyUrl, TypeAdapter
 
 from synapse_channel.mcp.http_agent import HTTP_OPERATION_ID
@@ -26,9 +27,9 @@ from synapse_channel.mcp.http_arguments import HttpArgumentPolicy
 from synapse_channel.mcp.http_config import MUTATION_TOOLS
 from synapse_channel.mcp.http_policy import HttpOperationPolicy
 from synapse_channel.mcp.http_views import ProjectMcpViews
+from synapse_channel.mcp.outcome import MCP_OUTCOME_ID
 
 _REPLY = TypeAdapter(object)
-_MUTATION_REPLY = TypeAdapter(tuple[list[ContentBlock], dict[str, str]])
 _MUTATION_SUCCESS = {
     "synapse_claim": "claim granted:",
     "synapse_release": "released '",
@@ -50,6 +51,32 @@ _TEMPLATE_ACTIONS = {
     "synapse://agent/{agent}": "synapse_manifest",
     "synapse://resource-kind/{kind}": "synapse_state",
 }
+
+
+def qualify_mutation_result(value: object, *, name: str, task_id: object, seat: str) -> None:
+    """Retain the shared native envelope while refusing unsuccessful remote actions.
+
+    A scoped exchange observation survives refusal; it does not establish the
+    requested business effect. The fixed error text hides local diagnostics.
+    """
+    if not isinstance(value, CallToolResult) or value.structuredContent is None:
+        raise RuntimeError("remote MCP mutation result unavailable")
+    structured = value.structuredContent
+    text = structured.get("result")
+    outcome = structured.get("execution_outcome")
+    if not isinstance(text, str) or not isinstance(outcome, dict):
+        raise RuntimeError("remote MCP mutation result unavailable")
+    expected = (
+        f"released '{task_id}' with receipt owner '{seat}'"
+        if name == "synapse_release"
+        else _MUTATION_SUCCESS[name]
+    )
+    confirmed = text == expected if name == "synapse_release" else text.startswith(expected)
+    if value.isError or not confirmed:
+        message = "remote MCP operation refused or unavailable"
+        value.content = [TextContent(type="text", text=message)]
+        value.structuredContent = {"result": message, "execution_outcome": outcome}
+        value.isError = True
 
 
 class HttpMcpServer(FastMCP[None]):
@@ -103,6 +130,7 @@ class HttpMcpServer(FastMCP[None]):
     ) -> Sequence[ContentBlock] | dict[str, Any]:
         """Authorize and execute one registered tool with a stable mutation key."""
         token = None
+        outcome_token = None
         try:
             with fail_after(self.operation_timeout):
                 async with self.dispatch:
@@ -118,22 +146,18 @@ class HttpMcpServer(FastMCP[None]):
                             raise PermissionError("remote MCP mutation requires operation identity")
                         await self.arguments.authorize(name, arguments)
                         token = HTTP_OPERATION_ID.set(operation)
+                        scope = f"{self.policy.seat.seat}\0{name}\0{operation}".encode()
+                        outcome_token = MCP_OUTCOME_ID.set(
+                            "mcp-" + hashlib.sha256(scope).hexdigest()
+                        )
                     result = await super().call_tool(name, arguments)
                     if name in MUTATION_TOOLS:
-                        _, structured = _MUTATION_REPLY.validate_python(result, strict=True)
-                        expected = (
-                            f"released '{arguments['task_id']}' with receipt "
-                            f"owner '{self.policy.seat.seat}'"
-                            if name == "synapse_release"
-                            else _MUTATION_SUCCESS[name]
+                        qualify_mutation_result(
+                            result,
+                            name=name,
+                            task_id=arguments.get("task_id"),
+                            seat=self.policy.seat.seat,
                         )
-                        confirmed = (
-                            structured["result"] == expected
-                            if name == "synapse_release"
-                            else structured["result"].startswith(expected)
-                        )
-                        if not confirmed:
-                            raise RuntimeError("remote MCP mutation refused or unconfirmed")
                     self._bound(result)
                     return result
         except Exception:
@@ -141,6 +165,8 @@ class HttpMcpServer(FastMCP[None]):
         finally:
             if token is not None:
                 HTTP_OPERATION_ID.reset(token)
+            if outcome_token is not None:
+                MCP_OUTCOME_ID.reset(outcome_token)
 
     async def _allowed(self, action: str) -> bool:
         """Check live authority without exposing removed grants in discovery."""

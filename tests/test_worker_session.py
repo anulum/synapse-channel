@@ -439,6 +439,10 @@ pathlib.Path({str(provider_record)!r}).write_text("direct provider ran", encodin
             str(Path.cwd()),
             "--agent-command",
             f"{str(provider)} --sandbox danger-full-access",
+            "--synapse-bin",
+            str(synapse),
+            "--tmux-bin",
+            str(tmux),
         ]
     ]
     assert not provider_record.exists()

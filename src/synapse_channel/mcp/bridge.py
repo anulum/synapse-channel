@@ -15,6 +15,7 @@ from typing import Any
 
 from synapse_channel.client.agent import DEFAULT_HUB_URI, SynapseAgent
 from synapse_channel.client.claim_confirmation import DEFAULT_CLAIM_REPLY_TIMEOUT
+from synapse_channel.execution_outcome import OutcomeState
 from synapse_channel.mcp import app_task_actions
 from synapse_channel.mcp.advisory_actions import McpAdvisoryActions
 from synapse_channel.mcp.claim_actions import McpClaimActions
@@ -26,6 +27,7 @@ from synapse_channel.mcp.inbox import (
     McpFeedInbox as McpFeedInbox,
 )
 from synapse_channel.mcp.inbox_queries import _McpInboxQueries
+from synapse_channel.mcp.outcome import McpMutation, McpOutcomeFailure, local_result
 from synapse_channel.mcp.plan_actions import McpPlanActions
 from synapse_channel.mcp.reply_exchange import (
     DEFAULT_REQUEST_TIMEOUT as DEFAULT_REQUEST_TIMEOUT,
@@ -211,10 +213,13 @@ class SynapseHubBridge(_McpInboxQueries):
         ValueError
             When no hub connection remains; transport failures also propagate.
         """
+        mutation = McpMutation()
         if self.agent.connection is None:
-            raise ValueError("hub connection unavailable")
-        await self.agent.chat(message, target=target)
-        return f"sent to {target}"
+            raise McpOutcomeFailure(mutation.not_started("hub connection unavailable").outcome)
+        await mutation.sender(lambda: self.agent.chat(message, target=target))()
+        return mutation.result(
+            f"sent to {target}", OutcomeState.STARTED, "chat_submission_returned"
+        )
 
     async def handoff(self, task_id: str, to_agent: str) -> str:
         """Hand a held task to another agent in one atomic step."""
@@ -262,7 +267,7 @@ class SynapseHubBridge(_McpInboxQueries):
 
     async def app_task_offer(self, bundle: dict[str, Any]) -> str:
         """Offer a human app task using the local private queue."""
-        return app_task_actions.offer(bundle, self.name)
+        return local_result(lambda: app_task_actions.offer(bundle, self.name))
 
     async def app_task_status(self, task_id: str) -> str:
         """Read the task's redacted MCP state."""
@@ -270,7 +275,7 @@ class SynapseHubBridge(_McpInboxQueries):
 
     async def app_task_attach(self, task_id: str, result: dict[str, Any]) -> str:
         """Bind an untrusted result envelope to its task."""
-        return app_task_actions.attach(task_id, result, self.name)
+        return local_result(lambda: app_task_actions.attach(task_id, result, self.name))
 
     async def task_resource(self, task_id: str) -> str:
         """Return one board-task resource through the query facade."""

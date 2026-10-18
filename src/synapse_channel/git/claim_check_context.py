@@ -131,5 +131,5 @@ def resolve_claim_check_context(
         identity=selected_identity,
         uri=selected_uri,
         token_file=selected_token_file,
-        requester=f"claim-check/{digest}",
+        requester=f"CLAIM-CHECK/{digest}",
     )

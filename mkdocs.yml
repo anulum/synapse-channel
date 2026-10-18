@@ -70,6 +70,7 @@ nav:
   - Group and project map: ecosystem.md
   - Terminal label: terminal-label.md
   - Wake relay: wake-relay.md
+  - Execution outcomes: execution-outcomes.md
   - Operations catalogue: operations.md
   - Installation: installation.md
   - Machine-readable setup: machine-readable-setup.md
