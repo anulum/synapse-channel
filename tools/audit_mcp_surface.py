@@ -142,14 +142,43 @@ def _resource_uri(decorator: ast.expr) -> str | None:
     return None
 
 
+def _registration_trees(registration_path: Path) -> tuple[ast.Module, ...]:
+    """Read the entry module and its explicitly called mutation registration module.
+
+    Parse source only: the optional MCP SDK is never imported by this audit.
+    A neighboring file is included only when the entry module imports and calls
+    its known registration function with the server and bridge arguments.
+    """
+    tree = ast.parse(registration_path.read_text(encoding="utf-8"), filename=str(registration_path))
+    bindings = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "synapse_channel.mcp.outcome_tools"
+        for alias in node.names
+        if alias.name == "register_mutation_tools"
+    }
+    called = any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in bindings
+        and [arg.id if isinstance(arg, ast.Name) else None for arg in node.args]
+        == ["server", "bridge"]
+        for node in ast.walk(tree)
+    )
+    if not called:
+        return (tree,)
+    companion = registration_path.with_name("outcome_tools.py")
+    return tree, ast.parse(companion.read_text(encoding="utf-8"), filename=str(companion))
+
+
 def discover_surface(registration_path: Path) -> McpSurface:
     """Parse the MCP registration module and return registered surface names."""
-    tree = ast.parse(registration_path.read_text(encoding="utf-8"), filename=str(registration_path))
+    trees = _registration_trees(registration_path)
     tools: list[str] = []
     resources: list[str] = []
     resource_templates: list[str] = []
 
-    for node in ast.walk(tree):
+    for node in (node for tree in trees for node in ast.walk(tree)):
         if not isinstance(node, ast.AsyncFunctionDef):
             continue
         for decorator in node.decorator_list:

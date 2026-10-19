@@ -16,6 +16,7 @@ from typing import Any
 
 from synapse_channel.a2a import JsonMap
 from synapse_channel.a2a_errors import A2AConflictError, A2AValidationError
+from synapse_channel.a2a_outcome import OUTCOME_KEY, execution_id
 from synapse_channel.a2a_validation import TERMINAL_TASK_STATES
 
 
@@ -102,12 +103,21 @@ def build_continued_task(task: JsonMap, message: JsonMap) -> tuple[JsonMap, Json
     if isinstance(status, dict) and status.get("state") in TERMINAL_TASK_STATES:
         raise A2AConflictError("terminal task cannot accept another message")
     continued = prepare_continuation(task, message)
-    history = list(task.get("history", []))
-    if any(row.get("messageId") == continued.get("messageId") for row in history):
+    metadata = task.get("metadata")
+    outcome = metadata.get(OUTCOME_KEY) if isinstance(metadata, Mapping) else None
+    if isinstance(outcome, Mapping) and outcome.get("operation_id") == execution_id(
+        task, continued
+    ):
+        raise A2AConflictError("message.messageId already exists in task")
+    history = task.get("history", [])
+    if isinstance(history, list) and any(
+        isinstance(row, Mapping) and row.get("messageId") == continued.get("messageId")
+        for row in history
+    ):
         raise A2AConflictError("message.messageId already exists in task")
     return {
         **task,
-        "history": [*history, continued],
+        "history": [*history, continued] if isinstance(history, list) else history,
         "status": {"message": user_status_message(continued)},
     }, continued
 

@@ -46,6 +46,9 @@ def test_json_rpc_message_send_dispatches_to_bridge() -> None:
     assert harness.handler.bridge.agent.message_metadata[0] == {
         "a2aTaskId": body["result"]["task"]["id"],
         "a2aContextId": body["result"]["task"]["contextId"],
+        "a2aOperationId": body["result"]["task"]["metadata"]["synapseExecutionOutcome"][
+            "operation_id"
+        ],
     }
 
 

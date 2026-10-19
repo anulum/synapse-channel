@@ -6,22 +6,22 @@
   },
   "execution_outcome_contract": {
     "baseline": {
-      "ended_at": 1792363665.248398,
+      "ended_at": 1792367888.1830142,
       "load_after": [
-        59.3759765625,
-        56.0576171875,
-        47.3095703125
+        35.2333984375,
+        28.873046875,
+        32.21435546875
       ],
       "load_before": [
-        59.5830078125,
-        56.04150390625,
-        47.2568359375
+        35.2333984375,
+        28.873046875,
+        32.21435546875
       ],
       "results": {
         "correlated_replies": 250,
         "correlation": {
-          "seconds": 0.39480501995421946,
-          "tasks_per_sec": 633.2239646521955
+          "seconds": 0.21680660196579993,
+          "tasks_per_sec": 1153.1014172688162
         },
         "host": {
           "cpu": "x86_64",
@@ -29,25 +29,25 @@
           "python": "3.12.3"
         },
         "listing": {
-          "seconds": 0.0018868560437113047,
+          "seconds": 0.0018303969409316778,
           "tasks": 250,
-          "tasks_per_sec": 132495.53448087577
+          "tasks_per_sec": 136582.39609641678
         },
         "push_delivery": {
           "deliveries": 250,
-          "deliveries_per_sec": 633.2239646521955,
+          "deliveries_per_sec": 1153.1014172688162,
           "evidence_records": 250,
           "terminal_successes": 250
         },
         "subscriber_count": 32,
         "subscriber_fanout": {
           "events": 32,
-          "events_per_sec": 540.0954187837414,
-          "seconds": 0.059248789912089705
+          "events_per_sec": 5858.876456055278,
+          "seconds": 0.005461798049509525
         },
         "task_creation": {
-          "seconds": 0.1599237199407071,
-          "tasks_per_sec": 1563.2452777654833
+          "seconds": 0.11733964504674077,
+          "tasks_per_sec": 2130.567208554412
         },
         "tasks": 250
       },
@@ -55,26 +55,26 @@
         "python_files": 814,
         "sha256": "833dd37278a7f932ca0a1ea750f2a98093bc0c054683517226a92862417bcd35"
       },
-      "started_at": 1792363662.6296973
+      "started_at": 1792367886.5862136
     },
     "baseline_git_commit": "06c530877ee50e6d9a35a5792cbf95ae3a4fdfe7",
     "candidate": {
-      "ended_at": 1792363695.9748049,
+      "ended_at": 1792367915.9765313,
       "load_after": [
-        52.326171875,
-        54.57763671875,
-        47.08935546875
+        37.1904296875,
+        29.99267578125,
+        32.48291015625
       ],
       "load_before": [
-        54.35693359375,
-        55.009765625,
-        47.1875
+        37.5556640625,
+        29.94189453125,
+        32.47998046875
       ],
       "results": {
         "correlated_replies": 250,
         "correlation": {
-          "seconds": 0.3408648220356554,
-          "tasks_per_sec": 733.4285729662339
+          "seconds": 0.27377199195325375,
+          "tasks_per_sec": 913.1686489050612
         },
         "host": {
           "cpu": "x86_64",
@@ -82,33 +82,33 @@
           "python": "3.12.3"
         },
         "listing": {
-          "seconds": 0.0019195200875401497,
+          "seconds": 0.0014340078923851252,
           "tasks": 250,
-          "tasks_per_sec": 130240.88761705697
+          "tasks_per_sec": 174336.55792799403
         },
         "push_delivery": {
           "deliveries": 250,
-          "deliveries_per_sec": 733.4285729662339,
+          "deliveries_per_sec": 913.1686489050612,
           "evidence_records": 250,
           "terminal_successes": 250
         },
         "subscriber_count": 32,
         "subscriber_fanout": {
           "events": 32,
-          "events_per_sec": 2161.8919484657285,
-          "seconds": 0.014801849843934178
+          "events_per_sec": 4784.274816630411,
+          "seconds": 0.006688578985631466
         },
         "task_creation": {
-          "seconds": 0.1774996160529554,
-          "tasks_per_sec": 1408.4537508262258
+          "seconds": 0.15330445510335267,
+          "tasks_per_sec": 1630.7419104778037
         },
         "tasks": 250
       },
       "source": {
         "python_files": 820,
-        "sha256": "d63bb860ef5aa66bb3d9cd87b166e68d9e3d2b6bfc95d93574b72caf49b56423"
+        "sha256": "3a18d3e4cc25df984e244a9d20f2b31c6a02fb44fd62013048cf82b196070ba1"
       },
-      "started_at": 1792363693.7655196
+      "started_at": 1792367914.2390122
     },
     "harnesses": {
       "a2a_bridge_benchmark.py": "ef7c8d9f7978bae0b2a9479392489ed6c6d58a9072ccd1d24483d20e8ca824d4",
@@ -116,11 +116,11 @@
     },
     "method": "One serial nice19 baseline/candidate pair at unchanged full defaults, shared host; no isolated speed or vendor acceptance claim.",
     "model_turns": 0,
-    "recorded_at": "2026-10-18T22:48:43.031985+00:00",
+    "recorded_at": "2026-10-18T23:59:01.291109+00:00",
     "runtime": {
       "isolation": "shared host, serial, MemoryMax1536M",
       "python": "3.12.3",
-      "websockets": "16.0"
+      "websockets": "17.1"
     }
   },
   "host": {

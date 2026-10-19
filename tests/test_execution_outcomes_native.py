@@ -224,8 +224,13 @@ async def test_local_terminal_state_does_not_confirm_remote_stop(
             assert events[-1]["task"]["metadata"][OUTCOME_KEY] == outcome
 
 
+@pytest.mark.parametrize(
+    "legacy_metadata", ["valid", "scalar", "bad_outcome", "bad_id_prefix", "bad_id_length"]
+)
 @pytest.mark.asyncio
-async def test_durable_intent_precedes_real_send_and_reply_is_scoped(tmp_path: Path) -> None:
+async def test_durable_intent_precedes_real_send_and_reply_is_scoped(
+    tmp_path: Path, legacy_metadata: str
+) -> None:
     """A real peer sees durable intent; its reply confirms exchange, not business."""
     state_file = tmp_path / "state.json"
     async with live_bridge(state_file) as (bridge, worker, port):
@@ -247,9 +252,22 @@ async def test_durable_intent_precedes_real_send_and_reply_is_scoped(tmp_path: P
         assert durable["metadata"][OUTCOME_KEY]["state"] == "started"
         assert await asyncio.to_thread(bridge.expire_timed_out_tasks, now=time.time()) == []
         assert json.loads(state_file.read_text())["tasks"]["replied"] == durable
-        await worker.agent.chat(
-            "peer response", target="outcome-sender", metadata=request["metadata"]
-        )
+        reply_metadata = dict(request["metadata"])
+        if legacy_metadata != "valid":
+            retained_metadata: object = (
+                "legacy-malformed"
+                if legacy_metadata == "scalar"
+                else {"synapseTarget": "outcome-worker", OUTCOME_KEY: "legacy-malformed"}
+            )
+            reply_metadata.pop("a2aOperationId")
+            if legacy_metadata.startswith("bad_id_"):
+                invalid_id = (
+                    "bad-" + "a" * 64 if legacy_metadata == "bad_id_prefix" else "a2a-short"
+                )
+                retained_metadata = {OUTCOME_KEY: {"operation_id": invalid_id}}
+                reply_metadata["a2aOperationId"] = invalid_id
+            bridge.store.put({**durable, "metadata": retained_metadata})
+        await worker.agent.chat("peer response", target="outcome-sender", metadata=reply_metadata)
         status, _response = await send
         assert status == 200
 
@@ -265,8 +283,12 @@ async def test_durable_intent_precedes_real_send_and_reply_is_scoped(tmp_path: P
         task = await asyncio.wait_for(completed(), 3)
         outcome = task["metadata"][OUTCOME_KEY]
         assert outcome["boundary"] == "a2a_exchange"
-        assert outcome["state"] == "confirmed_done"
-        assert outcome["observation"] == "correlated_reply_received"
+        assert outcome["state"] == ("confirmed_done" if legacy_metadata == "valid" else "unknown")
+        assert outcome["observation"] == (
+            "correlated_reply_received"
+            if legacy_metadata == "valid"
+            else "reply_operation_unconfirmed"
+        )
         assert outcome["external_effect"] == "unknown"
         assert outcome["external_recovery"] == "inquire_or_operator"
         assert not outcome["automatic_retry"] and not outcome["effects_undone"]
@@ -335,7 +357,7 @@ async def test_embedding_continuation_refuses_a_pruned_native_task(tmp_path: Pat
         assert len([row for row in worker.recorder.messages if row.get("type") == "chat"]) == 1
 
 
-@pytest.mark.parametrize("transition", ["cancel", "expire", "expire_legacy"])
+@pytest.mark.parametrize("transition", ["cancel", "expire", "expire_legacy", "expire_bad_metadata"])
 @pytest.mark.asyncio
 async def test_native_terminal_transition_survives_forward_ack_failure(
     tmp_path: Path, transition: str
@@ -380,10 +402,12 @@ async def test_native_terminal_transition_survives_forward_ack_failure(
             request = await worker.recorder.wait_for(
                 lambda row: row.get("metadata", {}).get("a2aTaskId") == "terminal-forward"
             )
-            if transition == "expire_legacy":
+            if transition in {"expire_legacy", "expire_bad_metadata"}:
                 legacy = bridge.store.get("terminal-forward")
                 assert legacy is not None
-                bridge.store.put({**legacy, "metadata": None})
+                bridge.store.put(
+                    {**legacy, "metadata": None if transition == "expire_legacy" else "bad"}
+                )
             if transition == "cancel":
                 task = await asyncio.to_thread(bridge.cancel_task, "terminal-forward")
                 expected = "TASK_STATE_CANCELED"
@@ -561,6 +585,13 @@ async def test_duplicate_and_stale_continuation_do_not_repeat_or_complete_work(
         )
         current_id = response["task"]["metadata"][OUTCOME_KEY]["operation_id"]
         assert second["metadata"]["a2aOperationId"] == current_id
+        old_code, _old_duplicate = await asyncio.to_thread(
+            http_json, port, "POST", "/message:send", {"message": message}, version="1.0"
+        )
+        assert old_code == 409
+        retained_task = _bridge.get_task("continued")
+        assert retained_task is not None
+        assert retained_task["metadata"][OUTCOME_KEY]["operation_id"] == current_id
         await worker.agent.chat("stale reply", target="outcome-sender", metadata=first["metadata"])
         await worker.agent.chat(
             "current reply", target="outcome-sender", metadata=second["metadata"]
@@ -667,3 +698,49 @@ async def test_actual_adapter_io_and_retention_after_native_reply(
             await asyncio.gather(reply_job, return_exceptions=True)
             await close_owner(sender, listener)
             await close_agents(worker)
+
+
+@pytest.mark.parametrize("history", ["legacy-malformed", None, ["legacy-entry"]])
+@pytest.mark.asyncio
+async def test_real_http_continuation_preserves_legacy_history_without_replaying(
+    tmp_path: Path, history: object
+) -> None:
+    """Actual forwarding tolerates retained legacy shapes and rejects a repeated exchange."""
+    async with live_bridge(tmp_path / "legacy-state.json") as (bridge, worker, port):
+        message = request_message("legacy-history")
+        status, response = await asyncio.to_thread(
+            http_json, port, "POST", "/message:send", {"message": message}
+        )
+        assert status == 200
+        await worker.recorder.wait_for(
+            lambda row: row.get("metadata", {}).get("a2aTaskId") == "legacy-history"
+        )
+        metadata: object = response["task"]["metadata"]
+        if history is None:
+            metadata = "legacy-malformed"
+        elif isinstance(history, list):
+            metadata = {OUTCOME_KEY: "legacy-malformed"}
+        bridge.store.put({**response["task"], "history": history, "metadata": metadata})
+        next_message = {**message, "messageId": "legacy-next-exchange"}
+        status, response = await asyncio.to_thread(
+            http_json, port, "POST", "/message:send", {"message": next_message}, version="1.0"
+        )
+        assert status == 200
+        retained = response["task"]["history"]
+        if isinstance(history, list):
+            assert (
+                retained[:-1] == history and retained[-1]["messageId"] == next_message["messageId"]
+            )
+        else:
+            assert retained == history
+        await worker.recorder.wait_for(
+            lambda row: (
+                row.get("metadata", {}).get("a2aOperationId")
+                == response["task"]["metadata"][OUTCOME_KEY]["operation_id"]
+            )
+        )
+        status, _refused = await asyncio.to_thread(
+            http_json, port, "POST", "/message:send", {"message": next_message}, version="1.0"
+        )
+        assert status == 409
+        assert len([row for row in worker.recorder.messages if row.get("type") == "chat"]) == 2

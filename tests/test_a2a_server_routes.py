@@ -124,6 +124,7 @@ def test_message_send_creates_completed_task_and_forwards_text_to_synapse() -> N
     assert harness.handler.bridge.agent.message_metadata[0] == {
         "a2aTaskId": body["task"]["id"],
         "a2aContextId": body["task"]["contextId"],
+        "a2aOperationId": body["task"]["metadata"]["synapseExecutionOutcome"]["operation_id"],
     }
 
 
@@ -184,6 +185,7 @@ def test_message_stream_sends_sse_task_event_and_forwards_to_synapse() -> None:
     assert harness.handler.bridge.agent.message_metadata[0] == {
         "a2aTaskId": body["task"]["id"],
         "a2aContextId": body["task"]["contextId"],
+        "a2aOperationId": body["task"]["metadata"]["synapseExecutionOutcome"]["operation_id"],
     }
 
 

@@ -23,6 +23,12 @@ OPERATION_KEY = "a2aOperationId"
 """Opaque exchange identity echoed by a peer to distinguish continuation replies."""
 
 
+def _task_metadata(task: Mapping[str, Any]) -> dict[str, Any]:
+    """Detach valid metadata while treating malformed retained legacy values as absent."""
+    metadata = task.get("metadata")
+    return dict(metadata) if isinstance(metadata, Mapping) else {}
+
+
 def execution_id(task: Mapping[str, Any], message: Mapping[str, Any] | None = None) -> str:
     """Derive a stable bounded id without exposing message content."""
     identity = [task.get("id"), task.get("contextId")]
@@ -35,7 +41,7 @@ def execution_id(task: Mapping[str, Any], message: Mapping[str, Any] | None = No
 def begin_execution(task: Mapping[str, Any], message: Mapping[str, Any]) -> dict[str, Any]:
     """Return a detached task whose next exchange has not yet been invoked."""
     result = dict(task)
-    metadata = dict(task.get("metadata") or {})
+    metadata = _task_metadata(task)
     metadata[OUTCOME_KEY] = ExecutionOutcome(
         execution_id(task, message),
         "a2a_exchange",
@@ -50,7 +56,7 @@ def begin_execution(task: Mapping[str, Any], message: Mapping[str, Any]) -> dict
 def observed_task(task: Mapping[str, Any], state: OutcomeState, observation: str) -> dict[str, Any]:
     """Return an updated observation without mutating the store's prior record."""
     result = dict(task)
-    metadata = dict(task.get("metadata") or {})
+    metadata = _task_metadata(task)
     previous = metadata.get(OUTCOME_KEY)
     identity = previous.get("operation_id") if isinstance(previous, dict) else None
     if not isinstance(identity, str) or not identity.startswith("a2a-") or len(identity) != 68:
@@ -62,7 +68,7 @@ def observed_task(task: Mapping[str, Any], state: OutcomeState, observation: str
 
 def bind_reply(task: Mapping[str, Any], frame: Mapping[str, Any]) -> dict[str, Any] | None:
     """Detach a matching reply observation; reject a different exchange identity."""
-    metadata = dict(task.get("metadata") or {})
+    metadata = _task_metadata(task)
     previous = metadata.get(OUTCOME_KEY)
     expected = previous.get("operation_id") if isinstance(previous, dict) else None
     frame_metadata = frame.get("metadata")
@@ -87,8 +93,14 @@ def protocol_observation(task: Mapping[str, Any], protocol_state: str) -> dict[s
         "TASK_STATE_CANCELED": (OutcomeState.UNKNOWN, "local_task_cancelled"),
     }.get(protocol_state, (OutcomeState.UNKNOWN, "local_protocol_transition"))
     if protocol_state == "TASK_STATE_COMPLETED":
-        metadata = task.get("metadata") or {}
-        previous = metadata.get(OUTCOME_KEY) or {}
-        if metadata.get("synapseReplyOperationId") != previous.get("operation_id"):
+        metadata = _task_metadata(task)
+        previous = metadata.get(OUTCOME_KEY)
+        expected = previous.get("operation_id") if isinstance(previous, Mapping) else None
+        if (
+            not isinstance(expected, str)
+            or not expected.startswith("a2a-")
+            or len(expected) != 68
+            or metadata.get("synapseReplyOperationId") != expected
+        ):
             state, observation = OutcomeState.UNKNOWN, "reply_operation_unconfirmed"
     return observed_task(task, state, observation)

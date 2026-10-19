@@ -30,6 +30,7 @@ from synapse_channel.core.hub import SynapseHub
 async def snapshot_relay(uri: str, fault: str) -> AsyncIterator[tuple[str, list[str]]]:
     """Forward real frames, withholding only selected genuine snapshot replies."""
     requests: list[str] = []
+    registration_id: object = None
 
     async def handler(client: ServerConnection) -> None:
         """Join both actual socket directions on every disconnect."""
@@ -38,9 +39,12 @@ async def snapshot_relay(uri: str, fault: str) -> AsyncIterator[tuple[str, list[
 
                 async def inbound() -> None:
                     """Count real snapshot requests without modifying the upstream frame."""
+                    nonlocal registration_id
                     async for raw in client:
                         frame: dict[str, object] = json.loads(raw)
                         if frame.get("type") == "state_request":
+                            if not requests:
+                                registration_id = frame.get("request_id")
                             requests.append(raw.decode() if isinstance(raw, bytes) else raw)
                         await upstream.send(raw)
 
@@ -49,7 +53,10 @@ async def snapshot_relay(uri: str, fault: str) -> AsyncIterator[tuple[str, list[
                     snapshots = 0
                     async for raw in upstream:
                         frame: dict[str, object] = json.loads(raw)
-                        if frame.get("type") == "state_snapshot" and not frame.get("request_id"):
+                        if (
+                            frame.get("type") == "state_snapshot"
+                            and frame.get("request_id") != registration_id
+                        ):
                             snapshots += 1
                             if fault == "all" or (fault == "first" and snapshots == 1):
                                 continue
@@ -82,7 +89,8 @@ async def test_conflicts_recovers_only_a_transient_snapshot_loss(
             )
         assert len(requests) == (2 if fault == "none" else 3)
         assert isinstance(json.loads(requests[0])["request_id"], str)
-        assert all("request_id" not in json.loads(raw) for raw in requests[1:])
+        request_ids = [str(uuid.UUID(json.loads(raw)["request_id"])) for raw in requests]
+        assert len(set(request_ids)) == len(request_ids)
         assert all(json.loads(raw)["payload"] == "snapshot" for raw in requests)
         assert all("release_confirmation" not in json.loads(raw) for raw in requests)
         if fault == "all":

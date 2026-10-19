@@ -206,11 +206,11 @@ host load before/after and the explicit source-checkout artefact class.
 
 | Operation | Baseline tasks/s | Candidate tasks/s |
 | --- | ---: | ---: |
-| Task creation | 1,563.245 | 1,408.454 |
-| Reply correlation | 633.224 | 733.429 |
+| Task creation | 2,130.567 | 1,630.742 |
+| Reply correlation | 1,153.101 | 913.169 |
 
-The observed creation throughput fell 9.90%, equivalent to a 10.99% increase
-in time per task; correlation throughput rose 15.82%. These are serial nice-19
+The observed creation throughput fell 23.46%, equivalent to a 30.65% increase
+in time per task; correlation throughput fell 20.81%. These are serial nice-19
 measurements on a shared workstation, without an isolated performance claim.
 The unchanged fixture sends legacy task/context replies; it measures compatible
 protocol completion, not business-effect confirmation or native vendor work.
@@ -386,14 +386,14 @@ resets; both runs injected all five fixture pane wakes.
 
 | Operation | Baseline p50 (us) | Candidate p50 (us) |
 | --- | ---: | ---: |
-| A2A agent card | 2328.617 | 2262.178 |
-| A2A accepted message | 2497.110 | 3040.114 |
-| A2A refusal before the body | 1271.987 | 2183.205 |
-| Dashboard snapshot document | 35986.815 | 36237.828 |
-| Dashboard classic page | 36557.911 | 36108.388 |
-| Pane wake | 893470.187 | 885700.986 |
+| A2A agent card | 2125.782 | 2063.226 |
+| A2A accepted message | 2848.748 | 3024.711 |
+| A2A refusal before the body | 1810.699 | 2018.672 |
+| Dashboard snapshot document | 36022.201 | 35129.483 |
+| Dashboard classic page | 35637.467 | 35447.697 |
+| Pane wake | 871165.637 | 872547.332 |
 
-Accepted-message p50 increased 21.75% in this pair. Other operations also varied;
+Accepted-message p50 increased 6.18% in this pair. Other operations also varied;
 one shared-host pair does not isolate the cause or establish a performance
 guarantee. The overhead is retained rather than presented as a speedup. The
 pane workload uses a harmless composer, not a vendor client or model turn;
