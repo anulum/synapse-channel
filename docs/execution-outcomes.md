@@ -127,7 +127,10 @@ The query requires no provider command or identity and never starts, stops or
 retries a process. It refuses malformed or unavailable reports without echoing
 their contents. Reports retain no argv, credentials, prompts or returned text.
 They include the observation time, return code and the launcher's native birth
-reference. If a started report's launcher can no longer be confirmed, inquiry
+reference. Native birth references are read on Linux and Windows. On macOS and
+other platforms without a supported birth reader, a pending inquiry returns
+`unknown`; a PID alone does not confirm the launcher. If a started report's
+launcher can no longer be confirmed, inquiry
 returns `unknown` without rewriting the file. Terminal records remain historical
 same-account declarations, not evidence of current liveness or independent authority.
 

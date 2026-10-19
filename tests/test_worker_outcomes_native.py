@@ -273,7 +273,7 @@ def test_actual_cli_refuses_ambiguous_launch_and_query_modes(tmp_path: Path, mod
 
 
 def test_read_only_inquiry_observes_real_inflight_launcher_then_exit(tmp_path: Path) -> None:
-    """A separate actual CLI reader checks the native launcher's birth identity."""
+    """Read an actual pending launcher without inventing unavailable birth evidence."""
     env = private_environment(tmp_path)
     report, ready = tmp_path / "private" / "outcome.json", tmp_path / "ready"
     program = (
@@ -293,7 +293,15 @@ def test_read_only_inquiry_observes_real_inflight_launcher_then_exit(tmp_path: P
                 assert time.monotonic() < deadline
                 time.sleep(0.01)
             inflight = inquire(report, env)
-            assert inflight["state"] == "started"
+            declared = json.loads(report.read_bytes())
+            assert declared["state"] == "started"
+            assert inflight["launcher"] == declared["launcher"]
+            if sys.platform.startswith("linux") or sys.platform == "win32":
+                assert inflight["state"] == "started"
+            else:
+                assert declared["launcher"]["started"] == ""
+                assert inflight["state"] == "unknown"
+                assert inflight["observation"] == "launcher_unconfirmed"
             stdout, stderr = child.communicate(input=b"finish\n", timeout=5)
             assert child.returncode == 0, stdout + stderr
         finally:
