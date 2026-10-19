@@ -326,17 +326,26 @@ def assert_repository_contract(contract: Compatibility, root: Path = ROOT) -> No
         "fixture": root / "tests/fixtures/opencode/process.py",
         "docs": root / "docs/opencode.md",
         "integration": root / ".github/workflows/opencode-integration.yml",
+        "coverage": root / ".github/workflows/ci.yml",
         "editors": root / ".github/workflows/opencode-editor-e2e.yml",
         "compatibility": root / ".github/workflows/opencode-compatibility.yml",
         "zed_x11": root / "tests/e2e/opencode_editors/zed_x11.py",
     }
     text = {name: path.read_text(encoding="utf-8") for name, path in surfaces.items()}
-    for name in ("stream", "fixture", "docs", "integration", "editors", "compatibility"):
+    for name in (
+        "stream",
+        "fixture",
+        "docs",
+        "integration",
+        "editors",
+        "compatibility",
+        "coverage",
+    ):
         if contract.version not in text[name]:
             raise CompatibilityError(f"{name} surface omitted OpenCode {contract.version}")
     linux = contract.artifact("linux-x64")
     for token in (linux.name, linux.sha256):
-        if token not in text["integration"] or token not in text["editors"]:
+        if any(token not in text[name] for name in ("integration", "editors", "coverage")):
             raise CompatibilityError(f"OpenCode workflows drifted from {token}")
     for component in contract.components:
         if component.pin not in text["editors"]:

@@ -86,7 +86,7 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
           /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
           && sudo apt-get update && sudo apt-get install -y
-          softhsm2 swtpm swtpm-tools tpm2-tools libtss2-dev
+          softhsm2 swtpm swtpm-tools tpm2-tools libtss2-dev tmux
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
       - run: python -m pip install -e . --no-deps
       # The hash-locked dev cohort includes the shipped gRPC dependency. Keep the
@@ -139,6 +139,29 @@ jobs:
           chmod 755 "$RUNNER_TEMP/claude-bin/claude"
           test "$("$RUNNER_TEMP/claude-bin/claude" --version)" = '2.1.284 (Claude Code)'
           echo "$RUNNER_TEMP/claude-bin" >> "$GITHUB_PATH"
+      - name: Install exact OpenCode host for native composer coverage
+        if: matrix.python-version == '3.12'
+        env:
+          OPENCODE_ARCHIVE_SHA256: 3046e0404fdc60fb80307e7a47824ba07477364178a4d09baa8548496dd6d43b
+          OPENCODE_BINARY_SHA256: 513f500a1a5ea1dc7d865547ac87b32a8936334e8d5abd5b3ff585c45a170080
+          OPENCODE_URL: https://github.com/anomalyco/opencode/releases/download/v1.18.32/opencode-linux-x64.tar.gz
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/opencode-coverage-linux-x64.tar.gz"
+          bin_dir="$RUNNER_TEMP/opencode-coverage-1.18.32/bin"
+          mkdir -p "$bin_dir"
+          curl --fail --location --proto '=https' --proto-redir '=https' \
+            --tlsv1.2 --retry 3 --connect-timeout 15 --max-time 120 \
+            --output "$archive" "$OPENCODE_URL"
+          printf '%s  %s\n' "$OPENCODE_ARCHIVE_SHA256" "$archive" \
+            | sha256sum --check --strict
+          tar -xzf "$archive" -C "$bin_dir"
+          chmod 0755 "$bin_dir/opencode"
+          printf '%s  %s\n' "$OPENCODE_BINARY_SHA256" "$bin_dir/opencode" \
+            | sha256sum --check --strict
+          test "$("$bin_dir/opencode" --version)" = "1.18.32"
+          tmux -V
+          echo "OPENCODE_BIN=$bin_dir/opencode" >> "$GITHUB_ENV"
       - name: Run the full suite with the exact coverage gate
         if: matrix.python-version == '3.12'
         env:

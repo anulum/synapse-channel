@@ -98,11 +98,11 @@ def find_opencode() -> str:
     """Return the exact pinned OpenCode binary, or skip when it is unavailable.
 
     These are real-process acceptance tests: they need the pinned ``opencode``
-    ``1.18.32`` binary installed (the dedicated ``opencode-integration`` workflow
-    provides it via ``OPENCODE_BIN``). When the binary is absent or the wrong
-    version — the general test matrix, where OpenCode is not installed — the test
-    skips rather than failing, so acceptance stays gated on the real binary
-    without reddening runs that never had it.
+    ``1.18.32`` binary installed. Both the dedicated ``opencode-integration``
+    workflow and the required Python 3.12 coverage lane provide it through
+    ``OPENCODE_BIN`` after archive, executable and version checks. Other matrix
+    lanes may lack this optional capability and skip these real-process tests;
+    the coverage lane must install the exact host before it runs the suite.
     """
     binary = os.environ.get("OPENCODE_BIN", "").strip() or shutil.which("opencode")
     if binary is None:

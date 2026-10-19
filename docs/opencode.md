@@ -441,6 +441,12 @@ dependency sets, pins OpenCode's official Linux x64 archive and extracted binary
 by SHA-256, verifies exact version 1.18.32, builds the wheel, checks its OpenCode
 modules, and runs only the OpenCode unit and real-process cohort.
 
+The required Python 3.12 coverage lane also installs that exact archive and
+executable, verifies their SHA-256 and version 1.18.32, and requires tmux before
+running the full suite. This exercises the existing native composer, startup
+and readback tests in the global coverage measurement; an absent optional
+OpenCode host in another interpreter lane does not qualify those paths.
+
 The separate `opencode-editor-e2e` workflow does not substitute a synthetic ACP
 peer for an editor. Four fail-closed jobs launch the real client process against
 the exact OpenCode binary and a local deterministic provider:
