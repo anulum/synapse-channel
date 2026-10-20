@@ -280,6 +280,21 @@ async def test_public_admission_without_a_durable_journal_refuses_before_queuein
 
 
 @pytest.mark.real_hub
+async def test_version_three_socket_cannot_queue_delivery_without_a_durable_hub() -> None:
+    async with running_hub(SynapseHub(hub_id="volatile")) as (hub, uri):
+        sender, _ = await _register(uri, "P/author")
+        try:
+            await sender.send(json.dumps(_intent("a" * 64)))
+            refusal = await read_until_type(sender, MessageType.DELIVERY_REFUSED)
+            assert refusal["reason_code"] == "unsupported_profile"
+            assert hub.clients.protocol_version_of("P/author") == 3
+            assert hub.journal is None
+            assert "Apply reviewed change." not in json.dumps(refusal)
+        finally:
+            await sender.close()
+
+
+@pytest.mark.real_hub
 async def test_offline_cancellation_waits_for_a_capable_recipient_session(tmp_path: Path) -> None:
     with EventStore(tmp_path / "offline-cancel.db") as store:
         async with running_hub(SynapseHub(journal=store, hub_id="hub-1")) as (hub, uri):
