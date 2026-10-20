@@ -95,6 +95,22 @@ inert root-owned file in a new private runner-owned temporary directory through
 owner; tests never invoke privilege tools. Windows uses its separate DACL
 qualification and does not borrow a POSIX UID result.
 
+The explicit Linux metadata-refusal profile requires `libseccomp.so.2` and a
+kernel that permits an unprivileged process to install a seccomp filter:
+
+```bash
+python -m pytest tests/fixtures/opencode/metadata_denial_linux.py
+```
+
+It confines only a disposable child process, where real `fchmod` calls return
+`EPERM`. Both existing and absent configuration targets must survive the refused
+publication, with no leaked descriptor or temporary file; the parent must still
+publish successfully. Missing native capability fails this profile. The Linux
+matrix and OpenCode integration jobs collect it explicitly; the Python 3.12
+coverage lane appends its real subprocess coverage before uploading reports.
+The filename keeps Linux kernel requirements out of default macOS and Windows
+collection, without adding a conditional skip or claiming cross-platform proof.
+
 - **Tests.** Every new module, function, and branch ships with tests. Aggregate
   coverage stays above the 98% floor; a change must not lower it.
 - **Test taxonomy.** Reserve the `e2e` name and real-runtime CI mental

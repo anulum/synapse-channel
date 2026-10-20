@@ -179,6 +179,7 @@ jobs:
             tests/test_opencode_plugin.py
             tests/test_opencode_adapter.py
             tests/test_opencode_adapter_files.py
+            tests/fixtures/opencode/metadata_denial_linux.py
             tests/test_cli_opencode_adapter.py
             tests/test_cli_participants.py
             tests/test_cli_participants_deliberate.py
@@ -240,6 +241,8 @@ jobs:
           PY
       - name: Prepare the native foreign-owner fixture
         uses: ./.github/actions/native-file-owner
+      - name: Require the native metadata-refusal capability
+        run: sudo apt-get update && sudo apt-get install -y libseccomp2
       - name: OpenCode unit and real-process acceptance
         run: |
           set -euo pipefail
@@ -249,6 +252,7 @@ jobs:
             tests/test_opencode_plugin.py \
             tests/test_opencode_adapter.py \
             tests/test_opencode_adapter_files.py \
+            tests/fixtures/opencode/metadata_denial_linux.py \
             tests/test_cli_opencode_adapter.py \
             tests/test_cli_participants.py \
             tests/test_cli_participants_deliberate.py \

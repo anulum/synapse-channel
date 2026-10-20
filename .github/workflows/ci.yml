@@ -86,7 +86,7 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
           /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources
           && sudo apt-get update && sudo apt-get install -y
-          softhsm2 swtpm swtpm-tools tpm2-tools libtss2-dev tmux
+          softhsm2 swtpm swtpm-tools tpm2-tools libtss2-dev tmux libseccomp2
       - run: python -m pip install --require-hashes -r .github/requirements/requirements-dev.txt
       - run: python -m pip install -e . --no-deps
       # The hash-locked dev cohort includes the shipped gRPC dependency. Keep the
@@ -175,6 +175,15 @@ jobs:
       - name: Run the full version-compatibility suite
         if: matrix.python-version != '3.12'
         run: python -m pytest
+      - name: Native Linux metadata refusal with accumulated coverage
+        if: matrix.python-version == '3.12'
+        run: >-
+          python -m pytest tests/fixtures/opencode/metadata_denial_linux.py
+          --cov=synapse_channel --cov-append
+          --cov-report=term-missing --cov-report=xml --cov-report=json
+      - name: Native Linux metadata refusal across Python versions
+        if: matrix.python-version != '3.12'
+        run: python -m pytest tests/fixtures/opencode/metadata_denial_linux.py
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1

@@ -27,6 +27,10 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Linux CI exercises adapter publication under a real child-only metadata
+  refusal policy, including descriptor cleanup and preservation of existing
+  configuration. The explicit profile requires the native libseccomp runtime.
+
 - POSIX adapter-file ownership tests require a real foreign-UID leaf in a
   test-user-owned directory. CI prepares the native fixture; focused local runs
   select an existing fixture through `SYNAPSE_TEST_FOREIGN_OWNER_FILE`.
