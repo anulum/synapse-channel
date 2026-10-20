@@ -76,6 +76,30 @@ Licensee's, and no obligation to publish them arises under this commercial licen
   the grant is for embedding within the Licensee's broader product.
 - Attribution and copyright notices in the source must be preserved.
 
+## Use limitation: text and data mining and machine learning
+
+In this section, "this License" means these commercial licence terms together
+with any order form, licence certificate or signed agreement that refers to
+them; "Licensed Work" means SYNAPSE CHANNEL; and "Licensor" means ANULUM
+Institute (Miroslav Šotek). The limitation binds every Licensee and continues
+after the term ends.
+
+```text
+Text and data mining and machine learning. Notwithstanding any other
+provision of this License, including any Additional Use Grant and any
+permission for non-production use, no right is granted to use the Licensed
+Work, or any part of it, for text and data mining or for collecting,
+training, fine-tuning or evaluating machine learning or artificial
+intelligence models, except with the Licensor's prior written permission.
+This limitation does not restrict running the Licensed Work as software for
+its documented purpose. This limitation is permanent: it survives the Change
+Date and applies to every version of the Licensed Work, unless the Licensor
+withdraws it in writing.
+```
+
+This limitation belongs to the commercial licence only. It does not restrict
+any right that anyone has under the GNU AGPL-3.0-or-later.
+
 ## No warranty
 
 SYNAPSE CHANNEL is provided **"as is"**, without warranty of any kind, express or
