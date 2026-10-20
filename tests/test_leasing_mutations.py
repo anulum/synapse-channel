@@ -32,18 +32,31 @@ async def test_public_claim_application_durably_refuses_a_missing_task_id(tmp_pa
             assert events[0].payload["reason_code"] == "TASK_ID_REQUIRED"
 
 
-async def test_public_nondurable_renewal_keeps_the_original_fence() -> None:
-    hub = SynapseHub()
-    async with running_hub(hub):
-        acquired = await leasing.apply_claim_async(hub, "LEASE/owner", {"task_id": "lease"})
-        assert acquired.ok and acquired.claim is not None
-        epoch = acquired.claim.epoch
-        renewed = leasing.apply_claim(
-            hub, "LEASE/owner", {"task_id": "lease", "renew_epoch": epoch, "renewal_id": "renew-1"}
-        )
-        assert renewed.ok and renewed.claim is not None
-        assert renewed.claim.epoch == epoch
-        assert renewed.claim.owner == "LEASE/owner" and renewed.renewal_id == "renew-1"
+@pytest.mark.parametrize("durable", [False, True])
+async def test_public_renewal_keeps_the_original_fence_and_optional_durability(
+    tmp_path: Path, durable: bool
+) -> None:
+    store = EventStore(tmp_path / "renewal.db") if durable else None
+    hub = SynapseHub(journal=store)
+    try:
+        async with running_hub(hub):
+            acquired = await leasing.apply_claim_async(hub, "LEASE/owner", {"task_id": "lease"})
+            assert acquired.ok and acquired.claim is not None
+            epoch = acquired.claim.epoch
+            renewed = leasing.apply_claim(
+                hub,
+                "LEASE/owner",
+                {"task_id": "lease", "renew_epoch": epoch, "renewal_id": "renew-1"},
+            )
+            assert renewed.ok and renewed.claim is not None
+            assert renewed.claim.epoch == epoch
+            assert renewed.claim.owner == "LEASE/owner" and renewed.renewal_id == "renew-1"
+            if store is not None:
+                assert [event.kind for event in store.read_all()] == [EventKind.CLAIM] * 2
+                assert replay(store).state.claims["lease"].epoch == epoch
+    finally:
+        if store is not None:
+            store.close()
 
 
 @pytest.mark.parametrize(

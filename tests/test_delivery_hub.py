@@ -275,6 +275,68 @@ async def test_public_admission_without_a_durable_journal_refuses_before_queuein
 
 
 @pytest.mark.real_hub
+async def test_offline_cancellation_waits_for_a_capable_recipient_session(tmp_path: Path) -> None:
+    with EventStore(tmp_path / "offline-cancel.db") as store:
+        async with running_hub(SynapseHub(journal=store, hub_id="hub-1")) as (hub, uri):
+            receiver, session = await _register(
+                uri, "P/receiver", capabilities={"follow_up": "native"}
+            )
+            sender, _ = await _register(uri, "P/author")
+            try:
+                assert session is not None
+                request = _intent(session["incarnation"])
+                await sender.send(json.dumps(request))
+                queued = await read_until_type(sender, MessageType.DELIVERY_STATUS)
+                await read_until_type(receiver, MessageType.DELIVERY_OFFER)
+                await receiver.close()
+                limit = asyncio.get_running_loop().time() + 3
+                while "P/receiver" in hub.clients.agent_sockets:
+                    assert asyncio.get_running_loop().time() < limit
+                    await asyncio.sleep(0.01)
+                before = tuple(store.read_all())
+
+                await sender.send(json.dumps(request))
+
+                offline = await read_until_type(sender, MessageType.DELIVERY_STATUS)
+                assert offline["stage"] == "queued" and not offline["receiver_reachable"]
+                assert tuple(store.read_all()) == before
+                await sender.send(
+                    json.dumps(
+                        {
+                            "sender": "P/author",
+                            "type": MessageType.DELIVERY_CANCEL,
+                            "target": "System",
+                            "protocol_version": 3,
+                            "operation_key": queued["operation_key"],
+                            "mutation_id": "cancel-offline",
+                        }
+                    )
+                )
+                cancelled = await read_until_type(sender, MessageType.DELIVERY_STATUS)
+                assert cancelled["cancel_requested"] and cancelled["stage"] == "queued"
+                pending = store.delivery.pending_notifications("P/receiver")
+                assert pending
+                bare, _ = await _register(uri, "P/receiver")
+                try:
+                    await bare.send(
+                        json.dumps(
+                            {
+                                "sender": "P/receiver",
+                                "type": MessageType.WHO_REQUEST,
+                                "target": "System",
+                            }
+                        )
+                    )
+                    await read_until_type(bare, MessageType.WHO_SNAPSHOT)
+                    assert store.delivery.pending_notifications("P/receiver") == pending
+                finally:
+                    await bare.close()
+            finally:
+                await receiver.close()
+                await sender.close()
+
+
+@pytest.mark.real_hub
 async def test_recipient_supersession_is_terminal_and_duplicate_request_does_not_reoffer(
     tmp_path: Path,
 ) -> None:
