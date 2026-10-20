@@ -26,6 +26,7 @@ from synapse_channel.core.delivery_modes import DeliveryRefusal, parse_delivery_
 from synapse_channel.core.handlers.delivery_modes import (
     admit_delivery_request,
     expire_due_deliveries,
+    supersede_old_delivery_sessions,
 )
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
@@ -271,6 +272,10 @@ async def test_public_admission_without_a_durable_journal_refuses_before_queuein
             hub, sender="P/author", origin_hub="volatile", data=_intent("a" * 64)
         )
     assert refused.value.code == "unsupported_profile"
+    assert await expire_due_deliveries(hub) == 0
+    assert (
+        await supersede_old_delivery_sessions(hub, target="P/receiver", incarnation="a" * 64) == 0
+    )
     assert hub.state.claims == {}
 
 
@@ -634,7 +639,10 @@ async def test_reconnect_replays_offer_and_offline_sender_status(tmp_path: Path)
 
 
 @pytest.mark.real_hub
-async def test_expired_queue_is_terminal_and_cannot_be_acknowledged(tmp_path: Path) -> None:
+@pytest.mark.parametrize("expiry_trigger", ["sweep", "recipient"])
+async def test_expired_queue_is_terminal_and_cannot_be_acknowledged(
+    tmp_path: Path, expiry_trigger: str
+) -> None:
     """An elapsed deadline commits a distinct terminal outcome before executor ACK."""
     store = EventStore(tmp_path / "hub.db")
     async with running_hub(SynapseHub(journal=store, hub_id="hub-1")) as (hub, uri):
@@ -648,7 +656,18 @@ async def test_expired_queue_is_terminal_and_cannot_be_acknowledged(tmp_path: Pa
             queued = await read_until_type(sender, MessageType.DELIVERY_STATUS)
             await read_until_type(receiver, MessageType.DELIVERY_OFFER)
             await asyncio.sleep(0.25)
-            assert await expire_due_deliveries(hub) == 1
+            if expiry_trigger == "sweep":
+                assert await expire_due_deliveries(hub) == 1
+            else:
+                await _stage(
+                    receiver,
+                    msg_type=MessageType.DELIVERY_ACK,
+                    operation_key=queued["operation_key"],
+                    mutation_id="before-sweep",
+                    evidence={"receipt_id": "late"},
+                )
+                deadline_refusal = await read_until_type(receiver, MessageType.DELIVERY_REFUSED)
+                assert deadline_refusal["reason_code"] == "deadline_expired"
             expired = await read_until_type(sender, MessageType.DELIVERY_STATUS)
             assert expired["stage"] == "expired"
             await sender.send(
@@ -798,6 +817,64 @@ async def test_duplicate_request_and_cancel_completion_race(tmp_path: Path) -> N
         finally:
             await sender.close()
             await receiver.close()
+
+
+@pytest.mark.real_hub
+async def test_conflicting_request_and_mutation_ids_never_replace_existing_work(
+    tmp_path: Path,
+) -> None:
+    with EventStore(tmp_path / "conflicts.db") as store:
+        async with running_hub(SynapseHub(journal=store, hub_id="hub-1")) as (_, uri):
+            receiver, session = await _register(
+                uri, "P/receiver", capabilities={"follow_up": "native"}
+            )
+            sender, _ = await _register(uri, "P/author")
+            try:
+                assert session is not None
+                request = _intent(session["incarnation"])
+                await sender.send(json.dumps(request))
+                queued = await read_until_type(sender, MessageType.DELIVERY_STATUS)
+                await read_until_type(receiver, MessageType.DELIVERY_OFFER)
+                before = tuple(store.read_all())
+
+                await sender.send(json.dumps({**request, "idempotency_key": "different-key"}))
+
+                refused = await read_until_type(sender, MessageType.DELIVERY_REFUSED)
+                assert refused["reason_code"] == "id_conflict"
+                assert tuple(store.read_all()) == before
+                await _stage(
+                    receiver,
+                    msg_type=MessageType.DELIVERY_BOUNDARY,
+                    operation_key=queued["operation_key"],
+                    mutation_id="same-id",
+                    evidence={"boundary": "turn-1"},
+                )
+                await read_until_type(receiver, MessageType.DELIVERY_STATUS)
+                await read_until_type(sender, MessageType.DELIVERY_STATUS)
+                before = tuple(store.read_all())
+
+                await sender.send(
+                    json.dumps(
+                        {
+                            "sender": "P/author",
+                            "type": MessageType.DELIVERY_CANCEL,
+                            "target": "System",
+                            "protocol_version": 3,
+                            "operation_key": queued["operation_key"],
+                            "mutation_id": "same-id",
+                        }
+                    )
+                )
+
+                conflict = await read_until_type(sender, MessageType.DELIVERY_REFUSED)
+                assert conflict["reason_code"] == "id_conflict"
+                assert tuple(store.read_all()) == before
+                record = store.delivery.get(queued["operation_key"])
+                assert record is not None and record.stage == "boundary_delivered"
+                assert not record.cancel_requested
+            finally:
+                await receiver.close()
+                await sender.close()
 
 
 @pytest.mark.real_hub
