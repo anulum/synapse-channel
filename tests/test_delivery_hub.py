@@ -31,6 +31,7 @@ from synapse_channel.core.handlers.delivery_modes import (
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
+from test_delivery_ownership import FIXTURE, _restore_legacy_journal
 
 
 async def _register(
@@ -1308,3 +1309,36 @@ async def test_a_status_read_after_the_deadline_expires_the_queued_request(
             await sender.close()
             await receiver.close()
     store.close()
+
+
+@pytest.mark.real_hub
+async def test_foreign_supersession_quarantines_released_work_without_rewriting_it(
+    tmp_path: Path,
+) -> None:
+    """Offline maintenance cannot make a foreign hub the owner of captured release work."""
+    fixture = FIXTURE.with_name("delivery_legacy_local_core_09936.sql")
+    path, key = _restore_legacy_journal(tmp_path, fixture)
+    with EventStore(path) as store:
+        original = store.delivery.get(key)
+        assert original is not None and original.receiving_hub == "workstation"
+        assert original.stage == "queued"
+        before = tuple(store.iter_events())
+        hub = SynapseHub(journal=store, hub_id="foreign-hub")
+
+        changed = await supersede_old_delivery_sessions(
+            hub, target=original.request["target"], incarnation="0" * 64
+        )
+
+        assert changed == 0
+        assert store.delivery.get(key) == original
+        assert tuple(store.iter_events()) == before
+        assert (
+            store.delivery.open_for_other_incarnations(original.request["target"], "0" * 64) == ()
+        )
+    with EventStore(path) as restored:
+        restored.delivery.verify_origin_hub("workstation")
+        assert restored.delivery.get(key) == original
+        assert (
+            restored.delivery.open_for_other_incarnations(original.request["target"], "0" * 64)
+            == ()
+        )

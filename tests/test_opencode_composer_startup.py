@@ -137,6 +137,47 @@ def test_invalid_native_configuration_reaches_a_finite_startup_refusal(tmp_path:
         assert not native.provider.prompt_requests
 
 
+def test_native_control_timeout_reaps_the_command_and_allows_a_fresh_start(
+    tmp_path: Path,
+) -> None:
+    """An actual blocked capture retires only its unpublished launch and can recover."""
+    with native_composer(tmp_path) as native:
+        native.tmux("kill-session", "-t", native.config.session)
+        wrapper = Path(native.config.tmux_bin)
+        original = wrapper.read_text(encoding="utf-8")
+        marker = tmp_path / "stalled-control.pid"
+        wrapper.write_text(
+            f"#!{sys.executable}\nimport os,sys,time\nfrom pathlib import Path\n"
+            "if sys.argv[1] == 'capture-pane':\n"
+            f" Path({str(marker)!r}).write_text(str(os.getpid()))\n"
+            " time.sleep(30)\n"
+            f"os.execv({native.base[0]!r}, [*{native.base!r}, *sys.argv[1:]])\n",
+            encoding="utf-8",
+        )
+        try:
+            started_at = time.monotonic()
+            refused = start_session(native.config)
+
+            assert refused.returncode == 4 and not refused.started
+            assert time.monotonic() - started_at < 20
+            stalled_pid = int(marker.read_text())
+            with pytest.raises(ProcessLookupError):
+                os.kill(stalled_pid, 0)
+            assert native.tmux("list-sessions", "-F", "#{session_name}").splitlines() == ["anchor"]
+            assert not native.provider.prompt_requests
+        finally:
+            wrapper.write_text(original, encoding="utf-8")
+
+        recovered = start_session(native.config)
+        assert recovered.returncode == 0 and recovered.started, recovered.detail
+        assert native.readback().matches(None)
+        assert set(native.tmux("list-sessions", "-F", "#{session_name}").splitlines()) == {
+            "anchor",
+            native.config.session,
+        }
+        assert not native.provider.prompt_requests
+
+
 def test_new_client_admission_refuses_input_and_unrepresentable_profiles(tmp_path: Path) -> None:
     """Rejected commands preserve the old profile and never launch or submit input."""
     with native_composer(tmp_path) as native:
