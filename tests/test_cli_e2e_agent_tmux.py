@@ -22,21 +22,26 @@ import json
 import os
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from cli_e2e_helpers import _candidate_environment, _stop, isolated_hub, run_cli
 from synapse_channel.agent_tmux import (
+    PANE_CAPTURE_MAX_CHARS,
     AgentTmuxConfig,
     build_wake_prompt,
+    inject_wake,
     registry_path,
+    status,
     wait_and_wake,
 )
 
@@ -301,6 +306,172 @@ def test_pending_wake_preserves_a_bound_pane_without_the_expected_agent(tmp_path
         path.write_text(json.dumps({"pending_wake": True}), encoding="utf-8")
         assert wait_and_wake(config, max_wakes=1) == 1
         assert json.loads(path.read_text())["pending_wake"] is True
+
+
+def test_pending_modal_wake_stops_after_real_connection_failures(tmp_path: Path) -> None:
+    """A refused hub connection cannot clear a hint or select a native approval modal."""
+    provider = _modal_provider(tmp_path)
+    waits: list[int] = []
+
+    def run(args: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        """Observe the actual wait child without changing its result."""
+        result = subprocess.run(args, **kwargs, timeout=12)
+        if args[1] == "wait":
+            waits.append(result.returncode)
+        return result
+
+    with _throwaway_session() as session, socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))
+        started = run_cli(
+            "agent-tmux",
+            "start",
+            "--identity",
+            _IDENTITY,
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            str(provider),
+        )
+        assert started.ok(), started.output
+        before = _wait_for_idle_fixture(session)
+        assert "Allow Codex" in before
+        config = AgentTmuxConfig(
+            identity=_IDENTITY,
+            session=session,
+            cwd=tmp_path,
+            agent_command=(str(provider),),
+            synapse_bin=str(Path(sys.executable).parent / "synapse"),
+            uri=f"ws://127.0.0.1:{reserved.getsockname()[1]}",
+            registry_dir=tmp_path / "registry",
+        )
+        path = registry_path(config)
+        path.write_text(json.dumps({"pending_wake": True}), encoding="utf-8")
+
+        result = wait_and_wake(
+            config,
+            runner=run,
+            max_wakes=1,
+            max_wait_failures=2,
+            retry_base=0.01,
+            retry_cap=0.01,
+            retry_jitter=0,
+        )
+
+        assert len(waits) == 2 and all(code not in {0, 2} for code in waits)
+        assert result == waits[-1]
+        assert json.loads(path.read_text())["pending_wake"] is True
+        assert _capture_pane(session) == before
+
+
+def test_pending_wake_keeps_its_hint_when_native_paste_loses_the_target(tmp_path: Path) -> None:
+    """A real pane disappearance propagates paste failure without claiming consumption."""
+    provider, submissions = _recording_provider(tmp_path)
+    identity = "E2ERACE/" + uuid.uuid4().hex
+    buffers: list[str] = []
+    with _throwaway_session() as session:
+        started = run_cli(
+            "agent-tmux",
+            "start",
+            "--identity",
+            identity,
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            str(provider),
+        )
+        assert started.ok(), started.output
+        assert "›" in _wait_for_idle_fixture(session)
+        config = AgentTmuxConfig(
+            identity=identity,
+            session=session,
+            cwd=tmp_path,
+            agent_command=(str(provider),),
+            registry_dir=tmp_path / "registry",
+        )
+        path = registry_path(config)
+        path.write_text(json.dumps({"pending_wake": True}), encoding="utf-8")
+
+        def run(args: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            """Remove only this fixture's target immediately before the real paste."""
+            if args[1] == "paste-buffer":
+                buffers.append(args[args.index("-b") + 1])
+                _kill_session(session)
+            return subprocess.run(args, **kwargs, timeout=10)
+
+        try:
+            result = wait_and_wake(config, runner=run, max_wakes=1)
+            assert result != 0
+            assert len(buffers) == 1
+            assert json.loads(path.read_text())["pending_wake"] is True
+            assert not submissions.exists()
+        finally:
+            assert _TMUX is not None
+            for name in buffers:
+                subprocess.run(
+                    [_TMUX, "delete-buffer", "-b", name],
+                    capture_output=True,
+                    check=False,
+                    timeout=10,
+                )
+
+
+def test_oversized_native_capture_keeps_the_wake_pending_without_input(tmp_path: Path) -> None:
+    """An actual oversized viewport cannot authorize a paste or an idle classification."""
+    provider = tmp_path / "codex-fixture-large"
+    provider.write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        f"print('x' * {PANE_CAPTURE_MAX_CHARS + 1000}, flush=True)\n"
+        "print('› ', flush=True)\nsys.stdin.read()\n",
+        encoding="utf-8",
+    )
+    provider.chmod(0o700)
+    with _throwaway_session() as session:
+        started = run_cli(
+            "agent-tmux",
+            "start",
+            "--identity",
+            _IDENTITY,
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            str(provider),
+        )
+        assert started.ok(), started.output
+        assert _TMUX is not None
+        subprocess.run(
+            [_TMUX, "resize-window", "-t", session, "-x", "1000", "-y", "100"],
+            capture_output=True,
+            check=True,
+            timeout=10,
+        )
+        deadline = time.monotonic() + 5
+        while len(before := _capture_pane(session)) <= PANE_CAPTURE_MAX_CHARS:
+            assert time.monotonic() < deadline, len(before)
+            time.sleep(0.025)
+        config = AgentTmuxConfig(
+            identity=_IDENTITY,
+            session=session,
+            cwd=tmp_path,
+            agent_command=(str(provider),),
+            registry_dir=tmp_path / "registry",
+        )
+
+        registry_path(config).write_text("[]", encoding="utf-8")
+        snapshot = status(config)
+        refused = inject_wake(config)
+
+        assert snapshot.agent_active and snapshot.binding_valid
+        assert snapshot.pane_state == "unknown"
+        assert refused.returncode == 0 and not refused.injected
+        assert "capture exceeded the safety bound" in refused.detail
+        assert json.loads(registry_path(config).read_text())["pending_wake"] is True
+        assert _capture_pane(session) == before
 
 
 def test_agent_tmux_wake_queues_without_selecting_a_real_tmux_modal(tmp_path: Path) -> None:
