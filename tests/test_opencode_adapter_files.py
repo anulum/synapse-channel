@@ -198,3 +198,39 @@ assert list(path.parent.glob(".config.json.*")) == []
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert path.read_text() == "owner edit"
+
+
+def test_concurrently_created_parent_preserves_the_owners_existing_file(tmp_path: Path) -> None:
+    """A real mkdir collision accepts a private directory without replacing its contents."""
+    path = tmp_path / "parent" / "config.json"
+    program = r"""
+import sys
+from pathlib import Path
+from synapse_channel.opencode_adapter_files import read_text_snapshot, write_text_snapshot
+
+path = Path(sys.argv[1])
+snapshot = read_text_snapshot(path)
+armed = True
+def create_at_boundary(event, args):
+    global armed
+    if armed and event == "os.mkdir" and Path(args[0]) == path.parent:
+        armed = False
+        path.parent.mkdir(mode=0o700)
+        (path.parent / "owner.txt").write_text("retain owner content")
+sys.addaudithook(create_at_boundary)
+write_text_snapshot(path, "adapter configuration", snapshot)
+assert not armed
+assert path.read_text() == "adapter configuration"
+assert (path.parent / "owner.txt").read_text() == "retain owner content"
+assert sorted(item.name for item in path.parent.iterdir()) == ["config.json", "owner.txt"]
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program, str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert read_text_snapshot(path).text == "adapter configuration"
+    assert (path.parent / "owner.txt").read_text() == "retain owner content"
