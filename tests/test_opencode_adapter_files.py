@@ -4,6 +4,7 @@
 # © Code 2020–2026 Miroslav Šotek. All rights reserved.
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE_CHANNEL — owner-controlled adapter file snapshots
 
 import os
 import subprocess
@@ -148,6 +149,25 @@ def test_remove_missing_snapshot_is_noop(tmp_path: Path) -> None:
     path = tmp_path / "missing"
     remove_snapshot(path, read_text_snapshot(path))
     assert not path.exists()
+
+
+def test_write_and_remove_under_a_parent_without_read_permission(tmp_path: Path) -> None:
+    """Publish and remove safely when the parent permits only writing and traversal."""
+    parent = tmp_path / "private"
+    parent.mkdir(mode=0o700)
+    path = parent / "config.json"
+    _write_private(path, "original configuration")
+    snapshot = read_text_snapshot(path)
+    parent.chmod(0o300)
+    try:
+        write_text_snapshot(path, "updated configuration", snapshot)
+        assert path.read_text() == "updated configuration"
+        assert path.stat().st_mode & 0o777 == 0o600
+        remove_snapshot(path, read_text_snapshot(path))
+        assert not path.exists()
+    finally:
+        parent.chmod(0o700)
+    assert list(parent.iterdir()) == []
 
 
 @pytest.mark.parametrize("boundary", ["open", "tempfile.mkstemp"])
