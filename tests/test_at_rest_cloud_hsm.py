@@ -8,7 +8,12 @@
 
 from __future__ import annotations
 
+import base64
 import json
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +36,117 @@ from synapse_channel.core.at_rest_cloud_hsm import (
     generate_wrapped_key_file_cloud_hsm,
     require_boto3,
 )
+
+
+@contextmanager
+def _kms_endpoint(mode: str, requests: list[str]) -> Iterator[str]:
+    """Serve the KMS wire boundary locally; this does not qualify AWS hardware."""
+    plaintext: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, fmt: str, *args: object) -> None:
+            pass
+
+        def do_POST(self) -> None:
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+            target = self.headers.get("X-Amz-Target", "")
+            requests.append(target)
+            assert body["KeyId"] == "alias/loopback-test"
+            reply: dict[str, str] = {}
+            status = 200
+            if target.endswith(".Encrypt"):
+                plaintext[:] = [body["Plaintext"]]
+                if mode != "missing-ciphertext":
+                    reply = {"CiphertextBlob": base64.b64encode(b"wrapped-test-key").decode()}
+            elif mode == "denied":
+                status = 400
+                reply = {"__type": "AccessDeniedException", "message": "loopback refusal"}
+            elif mode == "short-plaintext":
+                reply = {"Plaintext": base64.b64encode(b"short").decode()}
+            elif mode != "missing-plaintext":
+                reply = {"Plaintext": plaintext[0]}
+            encoded = json.dumps(reply).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/x-amz-json-1.1")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever)
+    worker.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+
+
+def _aws_environment(monkeypatch: pytest.MonkeyPatch, root: Path, endpoint: str) -> None:
+    """Keep actual SDK credential and endpoint resolution inside this fixture."""
+    import boto3
+
+    monkeypatch.setattr(boto3, "DEFAULT_SESSION", None)
+    for key, value in {
+        "AWS_ACCESS_KEY_ID": "fixture",
+        "AWS_SECRET_ACCESS_KEY": "fixture",
+        "AWS_DEFAULT_REGION": "eu-west-1",
+        "AWS_ENDPOINT_URL_KMS": endpoint,
+        "AWS_ENDPOINT_URL": endpoint,
+        "AWS_IGNORE_CONFIGURED_ENDPOINT_URLS": "false",
+        "AWS_EC2_METADATA_DISABLED": "true",
+        "AWS_MAX_ATTEMPTS": "1",
+        "AWS_CONFIG_FILE": str(root / "unused-config"),
+        "AWS_SHARED_CREDENTIALS_FILE": str(root / "unused-credentials"),
+    }.items():
+        monkeypatch.setenv(key, value)
+    for key in ("AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_SESSION_TOKEN"):
+        monkeypatch.delenv(key, raising=False)
+
+
+@pytest.mark.parametrize("region", [None, "eu-west-1"])
+def test_real_kms_sdk_envelope_round_trip_uses_only_the_loopback_endpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, region: str | None
+) -> None:
+    requests: list[str] = []
+    with _kms_endpoint("normal", requests) as endpoint:
+        _aws_environment(monkeypatch, tmp_path, endpoint)
+        provider = AwsKmsCloudHsmProvider("alias/loopback-test", region_name=region)
+        path = generate_wrapped_key_file_cloud_hsm(tmp_path / "sdk.key", provider=provider)
+        cipher = cipher_from_wrapped_key_file_cloud_hsm(path)
+        encrypted = cipher.encrypt(b"SDK envelope boundary")
+        assert cipher.decrypt(encrypted) == b"SDK envelope boundary"
+        assert requests == ["TrentService.Encrypt", "TrentService.Decrypt"]
+        document = json.loads(path.read_text(encoding="utf-8"))
+        assert document["params"] == provider.params()
+        assert "Plaintext" not in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("mode", "reason"),
+    [
+        ("missing-ciphertext", "returned no CiphertextBlob"),
+        ("missing-plaintext", "returned no Plaintext"),
+        ("short-plaintext", "returned 5 bytes, expected 32"),
+        ("denied", "AWS KMS Decrypt failed"),
+    ],
+)
+def test_real_kms_sdk_refuses_incomplete_or_denied_service_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, reason: str
+) -> None:
+    requests: list[str] = []
+    with _kms_endpoint(mode, requests) as endpoint:
+        _aws_environment(monkeypatch, tmp_path, endpoint)
+        provider = AwsKmsCloudHsmProvider("alias/loopback-test")
+        with pytest.raises(ValueError, match=reason):
+            wrapped = provider.wrap(b"k" * KEY_BYTES)
+            provider.unwrap(wrapped)
+        expected = ["TrentService.Encrypt"]
+        if mode != "missing-ciphertext":
+            expected.append("TrentService.Decrypt")
+        assert requests == expected
 
 
 def test_local_aes_kw_round_trip(tmp_path: Path) -> None:

@@ -143,7 +143,7 @@ def test_real_codex_lifecycle_preserves_unrelated_config(
             "--synapse-bin",
             str(synapse),
             "--identity",
-            "C15/test",
+            "ADAPTER/test",
             "--token-file",
             str(token),
         )
@@ -301,13 +301,13 @@ def test_exact_host_refuses_invalid_install_inputs_before_profile_mutation(
     readable_token.chmod(0o644)
     cases = (
         ((), "identity"),
-        (("--identity", "C15/test", "--uri", "http://127.0.0.1:8876"), "hub URI"),
-        (("--identity", "C15/test", "--uri", "ws://127.0.0.1:8876/?key=secret"), "hub URI"),
-        (("--identity", "C15/test"), "Synapse executable"),
+        (("--identity", "ADAPTER/test", "--uri", "http://127.0.0.1:8876"), "hub URI"),
+        (("--identity", "ADAPTER/test", "--uri", "ws://127.0.0.1:8876/?key=secret"), "hub URI"),
+        (("--identity", "ADAPTER/test"), "Synapse executable"),
         (
             (
                 "--identity",
-                "C15/test",
+                "ADAPTER/test",
                 "--synapse-bin",
                 str(synapse),
                 "--token-file",
@@ -318,7 +318,7 @@ def test_exact_host_refuses_invalid_install_inputs_before_profile_mutation(
         (
             (
                 "--identity",
-                "C15/test",
+                "ADAPTER/test",
                 "--synapse-bin",
                 str(synapse),
                 "--token-file",
@@ -416,7 +416,9 @@ def test_exact_host_refuses_to_remove_an_entry_with_a_changed_marker(
         pytest.skip("Synapse entrypoint unavailable")
     profile = tmp_path / "codex"
     assert (
-        _command(profile, host, "install", "--synapse-bin", str(synapse), "--identity", "C15/test")
+        _command(
+            profile, host, "install", "--synapse-bin", str(synapse), "--identity", "ADAPTER/test"
+        )
         == 0
     )
     assert json.loads(capsys.readouterr().out)["state"] == "owned"

@@ -19,6 +19,33 @@ from synapse_channel.core.journal import EventKind, replay
 from synapse_channel.core.persistence import EventStore
 
 
+async def test_public_claim_application_durably_refuses_a_missing_task_id(tmp_path: Path) -> None:
+    with EventStore(tmp_path / "invalid-claim.db") as store:
+        hub = SynapseHub(journal=store)
+        async with running_hub(hub):
+            result = await leasing.apply_claim_async(hub, "LEASE/owner", {"task_id": ""})
+            assert not result.ok and result.claim is None
+            assert result.reason_code == "TASK_ID_REQUIRED"
+            assert hub.state.claims == {}
+            events = tuple(store.read_all())
+            assert len(events) == 1 and events[0].kind == EventKind.CLAIM_DENIAL
+            assert events[0].payload["reason_code"] == "TASK_ID_REQUIRED"
+
+
+async def test_public_nondurable_renewal_keeps_the_original_fence() -> None:
+    hub = SynapseHub()
+    async with running_hub(hub):
+        acquired = await leasing.apply_claim_async(hub, "LEASE/owner", {"task_id": "lease"})
+        assert acquired.ok and acquired.claim is not None
+        epoch = acquired.claim.epoch
+        renewed = leasing.apply_claim(
+            hub, "LEASE/owner", {"task_id": "lease", "renew_epoch": epoch, "renewal_id": "renew-1"}
+        )
+        assert renewed.ok and renewed.claim is not None
+        assert renewed.claim.epoch == epoch
+        assert renewed.claim.owner == "LEASE/owner" and renewed.renewal_id == "renew-1"
+
+
 @pytest.mark.parametrize(
     ("verb", "reply"),
     [

@@ -67,6 +67,7 @@ dev = [
   "grpcio>=1.62.0",
   "sqlcipher3-binary==0.6.0; sys_platform == 'linux'",
   "cryptography>=42.0",
+  "boto3>=1.34",
   "python-pkcs11>=0.9",
   "wasmtime>=14.0.0",
   "opentelemetry-sdk>=1.43.0",
