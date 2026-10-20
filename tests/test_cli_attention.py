@@ -16,10 +16,116 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from synapse_channel.core.approvals import format_approval_note
 from synapse_channel.core.entitlement_store import append_event
 from synapse_channel.core.journal import EventKind
 from synapse_channel.core.persistence import EventStore
+
+
+def _pending_approvals(path: Path) -> None:
+    with EventStore(path) as hub:
+        for subject in ("first", "second"):
+            hub.append(
+                EventKind.LEDGER_PROGRESS,
+                {
+                    "kind": "approval",
+                    "author": "operator:one",
+                    "text": format_approval_note(
+                        subject=subject, state="requested", reason="private request"
+                    ),
+                },
+                durable=True,
+            )
+
+
+@pytest.mark.parametrize(
+    ("options", "reason"),
+    [
+        (("--approval-hours", "0"), "approval deadline"),
+        (("--stale-hours", "8761"), "stale-data age"),
+        (("--review-store", "absent"), "exact reviewer seat"),
+        (
+            ("--review-store", "absent", "--reviewer-seat", "P/reviewer"),
+            "review evidence store is missing",
+        ),
+        (("--entitlement-store", "absent"), "missing entitlement ledger"),
+    ],
+)
+def test_sync_rejects_unavailable_sources_and_invalid_ages_without_a_queue(
+    tmp_path: Path, options: tuple[str, ...], reason: str
+) -> None:
+    hub = tmp_path / "hub.db"
+    EventStore(hub).close()
+    queue = tmp_path / "queue.db"
+    result = _cli("sync", str(hub), "--store", str(queue), *options)
+    assert result.returncode == 2
+    assert reason in result.stderr
+    assert not queue.exists()
+
+
+def test_sync_missing_hub_does_not_create_it(tmp_path: Path) -> None:
+    hub = tmp_path / "missing.db"
+    result = _cli("sync", str(hub), "--store", str(tmp_path / "queue.db"))
+    assert result.returncode == 2
+    assert "missing hub event store" in result.stderr
+    assert not hub.exists()
+
+
+def test_default_queue_empty_text_view_does_not_invent_alerts(tmp_path: Path) -> None:
+    result = _cli("list", env={**os.environ, "XDG_STATE_HOME": str(tmp_path / "state")})
+    assert result.returncode == 0, result.stderr
+    assert "0 active" in result.stdout
+    assert "more;" not in result.stdout
+
+
+def test_text_listing_is_bounded_and_snoozing_preserves_hub_evidence(tmp_path: Path) -> None:
+    hub = tmp_path / "hub.db"
+    queue = tmp_path / "queue.db"
+    _pending_approvals(hub)
+    assert (
+        _cli("sync", str(hub), "--store", str(queue), "--approval-hours", "0.00000001").returncode
+        == 0
+    )
+    listing = _cli("list", "--store", str(queue), "--max-items", "1")
+    assert listing.returncode == 0, listing.stderr
+    assert "2 active" in listing.stdout
+    assert "+1 more; increase --max-items" in listing.stdout
+    assert listing.stdout.count("[expired]") == 1
+    assert "private request" not in listing.stdout
+    snoozed = _cli("snooze", "approval:first", "--store", str(queue), "--hours", "1")
+    assert snoozed.returncode == 0, snoozed.stderr
+    assert json.loads(snoozed.stdout)["snoozed_until"] is not None
+    with EventStore(hub) as observed:
+        assert len(tuple(observed.read_all())) == 2
+    rejected = _cli("list", "--store", str(queue), "--max-items", "0")
+    assert rejected.returncode == 2 and "max-items" in rejected.stderr
+
+
+def test_desktop_failure_never_marks_a_preview_as_delivered(tmp_path: Path) -> None:
+    hub = tmp_path / "hub.db"
+    queue = tmp_path / "queue.db"
+    _pending_approvals(hub)
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    env = {**os.environ, "PATH": str(empty_bin)}
+    args = ("sync", str(hub), "--store", str(queue), "--desktop")
+    missing = _cli(*args, env=env)
+    assert missing.returncode == 2 and "notify-send is unavailable" in missing.stderr
+    invalid = _cli(*args, "--desktop-max", "0", env=env)
+    assert invalid.returncode == 2 and "between 1 and 50" in invalid.stderr
+    notifier = empty_bin / "notify-send"
+    notifier.write_text("#!/bin/sh\nexit 7\n", encoding="ascii")
+    notifier.chmod(0o700)
+    failed = _cli(*args, env=env)
+    assert failed.returncode == 2
+    assert "exit status 7" in failed.stderr
+    rows = json.loads(_cli("list", "--store", str(queue), "--json").stdout)["alerts"]
+    assert len(rows) == 2
+    assert all(
+        row["notified_revision"] != f"{row['source_revision']}:{row['state']}" for row in rows
+    )
 
 
 def _cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:

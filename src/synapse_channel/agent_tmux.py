@@ -1010,6 +1010,15 @@ def _is_provider_yield_stdout(stdout: str | None) -> bool:
     return stdout is not None and _PROVIDER_YIELD_MARKER in stdout
 
 
+def _target_refusal(snapshot: AgentTmuxStatus) -> int:
+    """Check session identity before the agent that may run inside that session."""
+    if not snapshot.session_exists:
+        return 1
+    if not snapshot.binding_valid:
+        return BINDING_REFUSAL_EXIT_CODE
+    return 0 if snapshot.agent_active else 1
+
+
 def wait_and_wake(
     config: AgentTmuxConfig,
     *,
@@ -1072,11 +1081,9 @@ def wait_and_wake(
         if heartbeat is not None:
             heartbeat()
         if pending:
-            snapshot = status(config, runner=runner)
-            if not snapshot.session_exists or not snapshot.agent_active:
-                return 1
-            if not snapshot.binding_valid:
-                return BINDING_REFUSAL_EXIT_CODE
+            refusal = _target_refusal(status(config, runner=runner))
+            if refusal:
+                return refusal
             wake = inject_wake(config, runner=runner, sleeper=sleeper)
             if wake.returncode != 0:
                 return wake.returncode
@@ -1129,13 +1136,9 @@ def wait_and_wake(
             # A bounded wait timeout is the bridge's liveness checkpoint. The
             # child has already disconnected, so prove the session, exact binding,
             # and agent pane again before advertising a fresh pane receiver.
-            snapshot = status(config, runner=runner)
-            if not snapshot.session_exists:
-                return 1
-            if not snapshot.binding_valid:
-                return BINDING_REFUSAL_EXIT_CODE
-            if not snapshot.agent_active:
-                return 1
+            refusal = _target_refusal(status(config, runner=runner))
+            if refusal:
+                return refusal
             consecutive_failures = 0
             continue
         if wait_proc.returncode != 0 or false_wake:

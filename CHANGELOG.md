@@ -26,6 +26,10 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Pending terminal wakes report the identity-binding refusal code `4` for a
+  foreign live tmux session, before checking whether its agent is active.
+  The queued hint is retained and the foreign pane receives no input.
+
 - Staged claim checks use a hub-compatible query namespace and a distinct
   read-only state request ID, preserving exact ownership checks on deployed hubs.
 

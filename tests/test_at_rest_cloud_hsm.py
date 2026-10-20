@@ -36,6 +36,8 @@ from synapse_channel.core.at_rest_cloud_hsm import (
 def test_local_aes_kw_round_trip(tmp_path: Path) -> None:
     master = generate_key_file(tmp_path / "master.key")
     provider = LocalAesKwCloudHsmProvider.from_key_file(master)
+    assert provider.provider_id == PROVIDER_LOCAL_AES_KW
+    assert provider.key_id == str(master.resolve())
     key_path = tmp_path / "cloud.wrapped.key"
     from synapse_channel.core.secure_path import assert_owner_only_file_path
 
@@ -96,6 +98,51 @@ def test_master_key_must_be_owner_only_full_length(tmp_path: Path) -> None:
 def test_empty_key_id_rejected() -> None:
     with pytest.raises(ValueError, match="key_id must not be empty"):
         LocalAesKwCloudHsmProvider(b"\x01" * KEY_BYTES, key_id="")
+
+
+def test_local_master_rejects_wrong_key_length() -> None:
+    with pytest.raises(ValueError, match="must be 32 bytes"):
+        LocalAesKwCloudHsmProvider(b"short", key_id="local")
+
+
+@pytest.mark.parametrize(
+    ("params", "reason"),
+    [
+        ({"provider": "local-aes-kw"}, "missing provider/key_id"),
+        ({"provider": False, "key_id": "local"}, "missing provider/key_id"),
+        ({"provider": "local-aes-kw", "key_id": ""}, "missing provider/key_id"),
+        ({"provider": "unsupported", "key_id": "local"}, "unsupported cloud-HSM provider"),
+    ],
+)
+def test_malformed_provider_metadata_refuses_before_unwrap(
+    tmp_path: Path, params: dict[str, object], reason: str
+) -> None:
+    master = generate_key_file(tmp_path / "master.key")
+    wrapped = generate_wrapped_key_file_cloud_hsm(
+        tmp_path / "wrapped.key", provider=LocalAesKwCloudHsmProvider.from_key_file(master)
+    )
+    document = json.loads(wrapped.read_text(encoding="utf-8"))
+    document["params"] = params
+    damaged = json.dumps(document)
+    wrapped.write_text(damaged, encoding="utf-8")
+    with pytest.raises(ValueError, match=reason):
+        cipher_from_wrapped_key_file_cloud_hsm(wrapped)
+    assert wrapped.read_text(encoding="utf-8") == damaged
+
+
+def test_cloud_description_refuses_other_backend_without_mutation(tmp_path: Path) -> None:
+    wrapped = generate_wrapped_key_file(tmp_path / "wrapped.key", "operator-passphrase")
+    original = wrapped.read_bytes()
+    with pytest.raises(ValueError, match="not cloud-HSM"):
+        describe_cloud_hsm_document(wrapped)
+    assert wrapped.read_bytes() == original
+
+
+def test_aws_provider_rejects_non_data_key_before_any_client_request() -> None:
+    provider = AwsKmsCloudHsmProvider("alias/synapse-test")
+    assert provider.key_id == "alias/synapse-test"
+    with pytest.raises(ValueError, match="data key must be 32 bytes"):
+        provider.wrap(b"short")
 
 
 def test_aws_kms_provider_params_and_fail_closed_on_unknown_blob(tmp_path: Path) -> None:

@@ -24,6 +24,132 @@ from synapse_channel.core.ledger import Blackboard
 from synapse_channel.core.persistence import EventStore
 
 
+@pytest.mark.parametrize("content", [b"[]", b"\xff", b"{broken"])
+def test_record_refuses_nonobject_or_undecodable_input_without_creating_ledger(
+    tmp_path: Path, content: bytes
+) -> None:
+    source = tmp_path / "event.json"
+    source.write_bytes(content)
+    source.chmod(0o600)
+    store = tmp_path / "private" / "ledger.db"
+
+    result = _run(store, "record", "--file", str(source))
+
+    assert result.returncode == 2
+    assert "JSON object" in result.stderr
+    assert not store.exists()
+
+
+@pytest.mark.parametrize("command", ["show", "history", "advertise"])
+def test_corrupt_ledger_is_reported_without_replacing_evidence(
+    tmp_path: Path, command: str
+) -> None:
+    store = tmp_path / "ledger.db"
+    damaged = b"not a sqlite database"
+    store.write_bytes(damaged)
+    store.chmod(0o600)
+    args = ("--pool", "pool", "--alias", "compute", "--dry-run") if command == "advertise" else ()
+
+    result = _run(store, command, *args)
+
+    assert result.returncode == 2
+    assert "entitlements:" in result.stderr
+    assert store.read_bytes() == damaged
+
+
+@pytest.mark.parametrize(
+    ("content", "reason"),
+    [
+        (b"{invalid", "UTF-8 JSON"),
+        (b"[]", "contain only tasks"),
+        (b'{"tasks": [], "extra": true}', "contain only tasks"),
+        (b'{"tasks": {}}', "at most 128"),
+        (json.dumps({"tasks": [{}] * 129}).encode(), "at most 128"),
+        (b'{"tasks": [false]}', "each compute task"),
+    ],
+)
+def test_compute_subjects_rejects_invalid_task_documents(
+    tmp_path: Path, content: bytes, reason: str
+) -> None:
+    source = tmp_path / "tasks.json"
+    source.write_bytes(content)
+    source.chmod(0o600)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "synapse_channel.cli",
+            "entitlements",
+            "compute-subjects",
+            "--file",
+            str(source),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 2
+    assert reason in result.stderr
+    assert source.read_bytes() == content
+
+
+def test_compute_suggestion_refuses_missing_hub_store(tmp_path: Path) -> None:
+    source = tmp_path / "tasks.json"
+    source.write_text('{"tasks": []}', encoding="utf-8")
+    source.chmod(0o600)
+    missing = tmp_path / "absent-hub.db"
+    store = tmp_path / "ledger.db"
+
+    result = _run(
+        store,
+        "suggest-compute",
+        "--file",
+        str(source),
+        "--hub-db",
+        str(missing),
+        "--reviewer",
+        "P/reviewer",
+    )
+
+    assert result.returncode == 2
+    assert "hub event store is unavailable" in result.stderr
+    assert not missing.exists() and not store.exists()
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"not-json",
+        b"[]",
+        b'{"done":true,"response":"x","message":{}}',
+        b'{"done":true,"response":"x","model":""}',
+    ],
+)
+def test_ollama_import_refuses_malformed_response_before_ledger_write(
+    tmp_path: Path, content: bytes
+) -> None:
+    source = tmp_path / "response.json"
+    source.write_bytes(content)
+    source.chmod(0o600)
+    store = tmp_path / "ledger.db"
+
+    result = _run(
+        store,
+        "observe-ollama",
+        "--file",
+        str(source),
+        "--window-id",
+        "w",
+        "--window-event-id",
+        "w1",
+    )
+
+    assert result.returncode == 2
+    assert "Ollama input" in result.stderr or "identify a model" in result.stderr
+    assert not store.exists()
+
+
 def _run(store: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "synapse_channel.cli", "entitlements", *args, "--store", str(store)],

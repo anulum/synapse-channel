@@ -13,9 +13,62 @@ from pathlib import Path
 import pytest
 
 from hub_e2e_helpers import close_agents, connect_agent, running_hub
+from synapse_channel.core.handlers import leasing
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.journal import EventKind, replay
 from synapse_channel.core.persistence import EventStore
+
+
+@pytest.mark.parametrize(
+    ("verb", "reply"),
+    [
+        ("claim", "claim_granted"),
+        ("task_update", "task_updated"),
+        ("checkpoint", "checkpoint_saved"),
+        ("handoff", "handoff_granted"),
+        ("release", "release_granted"),
+    ],
+)
+async def test_public_handler_replay_keeps_a_single_durable_mutation(
+    tmp_path: Path, verb: str, reply: str
+) -> None:
+    """Handlers retain idempotency when invoked by a caller outside the socket router."""
+    with EventStore(tmp_path / "replay.db") as store:
+        hub = SynapseHub(journal=store, hub_id="handler-replay")
+        async with running_hub(hub) as (_, uri):
+            owner = await connect_agent("REPLAY/owner", uri)
+            recipient = await connect_agent("REPLAY/recipient", uri)
+            try:
+                if verb != "claim":
+                    await owner.agent.claim("lease")
+                    await owner.recorder.wait_for(lambda m: m.get("type") == "claim_granted")
+                owner.recorder.messages.clear()
+                frame = {
+                    "sender": owner.agent.name,
+                    "type": verb,
+                    "task_id": "lease",
+                    "idem_key": "durable-" + verb,
+                    "note": "retained",
+                    "checkpoint": "resume",
+                    "to_agent": recipient.agent.name,
+                }
+                handler = getattr(leasing, "handle_" + verb)
+                socket = hub.clients.agent_sockets[owner.agent.name]
+                await handler(hub, owner.agent.name, frame, socket)
+                first = await owner.recorder.wait_for(lambda m: m.get("type") == reply)
+                events = tuple(store.read_all())
+                operations = store.read_operations()
+                assert len(operations) == 1
+                owner.recorder.messages.clear()
+
+                await handler(hub, owner.agent.name, frame, socket)
+
+                repeated = await owner.recorder.wait_for(lambda m: m.get("type") == reply)
+                assert repeated == first
+                assert tuple(store.read_all()) == events
+                assert store.read_operations() == operations
+            finally:
+                await close_agents(owner, recipient)
 
 
 @pytest.mark.parametrize("durable", [False, True])

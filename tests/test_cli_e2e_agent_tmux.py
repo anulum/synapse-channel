@@ -33,7 +33,12 @@ from pathlib import Path
 import pytest
 
 from cli_e2e_helpers import _candidate_environment, _stop, isolated_hub, run_cli
-from synapse_channel.agent_tmux import AgentTmuxConfig, build_wake_prompt, registry_path
+from synapse_channel.agent_tmux import (
+    AgentTmuxConfig,
+    build_wake_prompt,
+    registry_path,
+    wait_and_wake,
+)
 
 _TMUX = shutil.which("tmux")
 _CODEX = shutil.which("codex")
@@ -193,6 +198,109 @@ def test_agent_tmux_status_reports_a_missing_session() -> None:
         # A missing session is a health failure, so status exits non-zero.
         assert not health.ok(), health.output
         assert "missing" in health.stdout
+
+
+def test_pending_wake_does_not_start_a_missing_target_or_a_waiter(tmp_path: Path) -> None:
+    with _throwaway_session() as session:
+        config = AgentTmuxConfig(
+            identity="E2E/missing",
+            session=session,
+            cwd=tmp_path,
+            registry_dir=tmp_path / "registry",
+        )
+        path = registry_path(config)
+        path.write_text(json.dumps({"pending_wake": True}), encoding="utf-8")
+        assert wait_and_wake(config, max_wakes=1) == 1
+        assert json.loads(path.read_text())["pending_wake"] is True
+
+
+def test_native_environment_wrapper_keeps_provider_recognition_and_single_submit(
+    tmp_path: Path,
+) -> None:
+    provider, submissions = _recording_provider(tmp_path)
+    with _throwaway_session() as session:
+        common = [
+            "--identity",
+            _IDENTITY,
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            f"env -- {shlex.quote(str(provider))}",
+        ]
+        started = run_cli("agent-tmux", "start", *common)
+        assert started.ok(), started.output
+        assert "›" in _wait_for_idle_fixture(session)
+        woken = run_cli("agent-tmux", "wake", *common, "--submit-delay", "0.1")
+        assert woken.ok(), woken.output
+        assert "consumption observed" in woken.stdout
+        pane = _normalise(_capture_pane(session))
+        assert _normalise(build_wake_prompt(_IDENTITY)) in pane
+        assert submissions.read_text(encoding="utf-8").splitlines() == [
+            build_wake_prompt(_IDENTITY)
+        ]
+
+
+def test_pending_wake_keeps_foreign_native_pane_untouched(tmp_path: Path) -> None:
+    provider = _harmless_provider(tmp_path)
+    with _throwaway_session() as session:
+        started = run_cli(
+            "agent-tmux",
+            "start",
+            "--identity",
+            "E2E/owner",
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            str(provider),
+        )
+        assert started.ok(), started.output
+        before = _wait_for_idle_fixture(session)
+        config = AgentTmuxConfig(
+            identity="E2E/other",
+            session=session,
+            cwd=tmp_path,
+            registry_dir=tmp_path / "registry",
+            agent_command=(str(provider),),
+        )
+        path = registry_path(config)
+        path.write_text(json.dumps({"pending_wake": True}), encoding="utf-8")
+
+        assert wait_and_wake(config, max_wakes=1) == 4
+
+        assert _capture_pane(session) == before
+        assert json.loads(path.read_text())["pending_wake"] is True
+
+
+def test_pending_wake_preserves_a_bound_pane_without_the_expected_agent(tmp_path: Path) -> None:
+    with _throwaway_session() as session:
+        started = run_cli(
+            "agent-tmux",
+            "start",
+            "--identity",
+            "E2E/owner",
+            "--session",
+            session,
+            "--cwd",
+            str(tmp_path),
+            "--agent-command",
+            "sleep 60",
+        )
+        assert started.ok(), started.output
+        config = AgentTmuxConfig(
+            identity="E2E/owner",
+            session=session,
+            cwd=tmp_path,
+            registry_dir=tmp_path / "registry",
+            agent_command=("missing-agent",),
+        )
+        path = registry_path(config)
+        path.write_text(json.dumps({"pending_wake": True}), encoding="utf-8")
+        assert wait_and_wake(config, max_wakes=1) == 1
+        assert json.loads(path.read_text())["pending_wake"] is True
 
 
 def test_agent_tmux_wake_queues_without_selecting_a_real_tmux_modal(tmp_path: Path) -> None:

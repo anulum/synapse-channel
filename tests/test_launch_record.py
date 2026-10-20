@@ -146,6 +146,14 @@ def test_the_first_word_candidate_uses_the_launch_search_path(tmp_path: Path) ->
             executable_identity(empty)
 
 
+def test_missing_path_uses_the_native_default_executable_search() -> None:
+    command = "cmd" if WINDOWS else "sh"
+    found = executable_identity([command], {})
+    assert not found.unavailable
+    assert Path(found.path).is_file()
+    assert found.sha256 == _sha256(found.path)
+
+
 @pytest.mark.skipif(not LINUX, reason="checks real Linux exec fallback and process image")
 def test_a_launch_record_candidate_can_differ_from_the_file_that_started(tmp_path: Path) -> None:
     """An invalid first PATH candidate is recorded while a later script actually runs."""

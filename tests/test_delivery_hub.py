@@ -23,7 +23,10 @@ from hub_e2e_helpers import read_until_type, running_hub
 from synapse_channel.core.acl import CLAIM, DELIVERY_CONTROL, MESSAGE, AclPolicy, AclRule
 from synapse_channel.core.auth import TokenAuthenticator
 from synapse_channel.core.delivery_modes import DeliveryRefusal, parse_delivery_intent
-from synapse_channel.core.handlers.delivery_modes import expire_due_deliveries
+from synapse_channel.core.handlers.delivery_modes import (
+    admit_delivery_request,
+    expire_due_deliveries,
+)
 from synapse_channel.core.hub import SynapseHub
 from synapse_channel.core.persistence import EventStore
 from synapse_channel.core.protocol import MessageType
@@ -228,6 +231,87 @@ async def test_real_hub_queues_exact_mode_and_reports_distinct_stages(tmp_path: 
         finally:
             await sender.close()
             await receiver.close()
+
+
+@pytest.mark.real_hub
+@pytest.mark.parametrize("authenticated", [False, True])
+async def test_interrupt_without_a_live_recipient_claim_never_creates_work(
+    tmp_path: Path, authenticated: bool
+) -> None:
+    with EventStore(tmp_path / "control.db") as store:
+        token = "test-token" if authenticated else ""
+        hub = SynapseHub(
+            journal=store,
+            hub_id="hub-1",
+            authenticator=TokenAuthenticator([token]) if authenticated else None,
+            acl_policy=AclPolicy([AclRule(DELIVERY_CONTROL, "agent", "P/receiver", "P", "control")])
+            if authenticated
+            else None,
+        )
+        async with running_hub(hub) as (_, uri):
+            receiver, session = await _register(
+                uri, "P/receiver", capabilities={"interrupt": "native"}, auth_token=token
+            )
+            sender, _ = await _register(uri, "P/author", auth_token=token)
+            try:
+                assert session is not None
+                await sender.send(json.dumps(_intent(session["incarnation"], mode="interrupt")))
+                refusal = await read_until_type(sender, MessageType.DELIVERY_REFUSED)
+                assert refusal["reason_code"] == "unauthorised_requester"
+                assert tuple(store.iter_events()) == ()
+            finally:
+                await sender.close()
+                await receiver.close()
+
+
+async def test_public_admission_without_a_durable_journal_refuses_before_queueing() -> None:
+    hub = SynapseHub(hub_id="volatile")
+    with pytest.raises(DeliveryRefusal) as refused:
+        await admit_delivery_request(
+            hub, sender="P/author", origin_hub="volatile", data=_intent("a" * 64)
+        )
+    assert refused.value.code == "unsupported_profile"
+    assert hub.state.claims == {}
+
+
+@pytest.mark.real_hub
+async def test_recipient_supersession_is_terminal_and_duplicate_request_does_not_reoffer(
+    tmp_path: Path,
+) -> None:
+    with EventStore(tmp_path / "superseded.db") as store:
+        async with running_hub(SynapseHub(journal=store, hub_id="hub-1")) as (_, uri):
+            receiver, session = await _register(
+                uri, "P/receiver", capabilities={"follow_up": "native"}
+            )
+            sender, _ = await _register(uri, "P/author")
+            try:
+                assert session is not None
+                request = _intent(session["incarnation"])
+                await sender.send(json.dumps(request))
+                queued = await read_until_type(sender, MessageType.DELIVERY_STATUS)
+                await read_until_type(receiver, MessageType.DELIVERY_OFFER)
+                await _stage(
+                    receiver,
+                    msg_type=MessageType.DELIVERY_OUTCOME,
+                    operation_key=queued["operation_key"],
+                    mutation_id="superseded",
+                    evidence={"reason_code": "replaced"},
+                    stage="superseded",
+                )
+                terminal = await read_until_type(receiver, MessageType.DELIVERY_STATUS)
+                await read_until_type(sender, MessageType.DELIVERY_STATUS)
+                assert terminal["stage"] == "superseded" and not terminal["task_completed"]
+                before = tuple(store.read_all())
+
+                await sender.send(json.dumps(request))
+
+                repeated = await read_until_type(sender, MessageType.DELIVERY_STATUS)
+                assert repeated["stage"] == "superseded"
+                assert repeated["latest_event_seq"] == terminal["latest_event_seq"]
+                assert tuple(store.read_all()) == before
+            finally:
+                await sender.close()
+                await receiver.close()
 
 
 @pytest.mark.real_hub

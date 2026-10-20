@@ -224,6 +224,23 @@ def test_direct_wake_rechecks_execution_host_and_deadline_before_start(client: C
     assert client.calls() == []
 
 
+def test_executable_with_missing_interpreter_refuses_before_any_queue_effect(
+    client: Client,
+) -> None:
+    client.program.write_text("#!/synapse-missing-interpreter\n", encoding="ascii")
+    adapter = _adapter(client)
+    assert adapter.available(TARGET).available
+
+    outcome = adapter.wake(TARGET, 1, "fixed prompt", 1.0)
+
+    assert (outcome.state, outcome.proves, outcome.detail) == (
+        REFUSED,
+        "",
+        "not started: FileNotFoundError",
+    )
+    assert client.calls() == []
+
+
 def test_a_descendant_that_escaped_cannot_hold_the_adapter_past_its_bounds(
     client: Client,
 ) -> None:

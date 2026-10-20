@@ -6,6 +6,8 @@
 # Contact: www.anulum.li | protoscience@anulum.li
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -146,3 +148,53 @@ def test_remove_missing_snapshot_is_noop(tmp_path: Path) -> None:
     path = tmp_path / "missing"
     remove_snapshot(path, read_text_snapshot(path))
     assert not path.exists()
+
+
+@pytest.mark.parametrize("boundary", ["open", "tempfile.mkstemp"])
+def test_real_replacement_between_snapshot_and_publication_is_refused(
+    tmp_path: Path, boundary: str
+) -> None:
+    """An audit barrier schedules a real rename; it never substitutes syscall results."""
+    path = tmp_path / "config.json"
+    replacement = tmp_path / "replacement.json"
+    _write_private(path, "original")
+    _write_private(replacement, "owner edit")
+    program = r"""
+import sys
+from pathlib import Path
+from synapse_channel.opencode_adapter_files import (
+    OpenCodeAdapterFileError, read_text_snapshot, write_text_snapshot,
+)
+path, replacement = map(Path, sys.argv[1:3])
+boundary = sys.argv[3]
+snapshot = read_text_snapshot(path)
+armed = True
+def move_at_boundary(event, args):
+    global armed
+    if armed and event == boundary and (boundary != "open" or args[0] == str(path)):
+        armed = False
+        replacement.replace(path)
+sys.addaudithook(move_at_boundary)
+try:
+    if boundary == "open":
+        read_text_snapshot(path)
+    else:
+        write_text_snapshot(path, "adapter edit", snapshot)
+except OpenCodeAdapterFileError as exc:
+    reason = "changed while opening" if boundary == "open" else "changed concurrently"
+    assert reason in str(exc)
+else:
+    raise AssertionError("the concurrent owner replacement was overwritten")
+assert not armed
+assert path.read_text() == "owner edit"
+assert list(path.parent.glob(".config.json.*")) == []
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program, str(path), str(replacement), boundary],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert path.read_text() == "owner edit"
