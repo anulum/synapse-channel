@@ -93,6 +93,8 @@ jobs:
       # capability fail-closed so the real loopback/TLS/mTLS tests cannot silently skip.
       - name: Require the real gRPC test capability
         run: python -c "import grpc; assert grpc.__version__"
+      - name: Prepare the native foreign-owner fixture
+        uses: ./.github/actions/native-file-owner
       - name: Prepare the published no-receipt hub fixture
         run: >-
           python -m pip download --require-hashes --no-deps --only-binary=:all:

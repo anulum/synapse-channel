@@ -5,6 +5,7 @@ Commercial license available
 © Code 2020–2026 Miroslav Šotek. All rights reserved.
 ORCID: 0009-0009-3560-0851
 Contact: www.anulum.li | protoscience@anulum.li
+SYNAPSE CHANNEL — release history
 -->
 
 # Changelog
@@ -25,6 +26,10 @@ execution evidence when carrying a release claim forward.
   explicit; external effects still require resource-side fencing.
 
 ### Changed
+
+- POSIX adapter-file ownership tests require a real foreign-UID leaf in a
+  test-user-owned directory. CI prepares the native fixture; focused local runs
+  select an existing fixture through `SYNAPSE_TEST_FOREIGN_OWNER_FILE`.
 
 - Pending terminal wakes report the identity-binding refusal code `4` for a
   foreign live tmux session, before checking whether its agent is active.

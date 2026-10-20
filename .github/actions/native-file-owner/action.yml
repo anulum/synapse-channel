@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — native POSIX file ownership test fixture
+name: Native foreign-owner fixture
+description: Prepare a foreign POSIX leaf inside a private runner-owned directory.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        command -v sudo >/dev/null
+        test "$(id -u)" -ne 0
+        native_owner_dir="$(mktemp -d "$RUNNER_TEMP/synapse-native-ownership.XXXXXXXX")"
+        chmod 700 "$native_owner_dir"
+        native_owner_file="$native_owner_dir/foreign-config.json"
+        printf '%s\n' 'Native foreign-owner test fixture.' > "$native_owner_file"
+        chmod 600 "$native_owner_file"
+        sudo -n chown -h 0 "$native_owner_file"
+        printf 'SYNAPSE_TEST_FOREIGN_OWNER_FILE=%s\n' "$native_owner_file" >> "$GITHUB_ENV"

@@ -81,6 +81,20 @@ the old release over the candidate. For a preloaded wheel directory, set
 it does not skip the journey. This historical protocol fixture is not a
 deployment recommendation or a general minor-version compatibility guarantee.
 
+The POSIX adapter-file ownership test also requires
+`SYNAPSE_TEST_FOREIGN_OWNER_FILE`: a regular file owned by a different UID,
+directly inside a safe directory owned by the test user. Its contents are never
+opened or changed. The test requires the exact leaf-owner refusal; an earlier
+parent-directory refusal does not qualify. For focused local runs, point this
+variable at an existing native fixture. A missing or unsuitable fixture fails
+the prerequisite instead of skipping the case.
+
+The Linux full-suite, macOS full-suite and OpenCode integration jobs prepare an
+inert root-owned file in a new private runner-owned temporary directory through
+`.github/actions/native-file-owner`. Only that CI setup changes the new file's
+owner; tests never invoke privilege tools. Windows uses its separate DACL
+qualification and does not borrow a POSIX UID result.
+
 - **Tests.** Every new module, function, and branch ships with tests. Aggregate
   coverage stays above the 98% floor; a change must not lower it.
 - **Test taxonomy.** Reserve the `e2e` name and real-runtime CI mental

@@ -41,6 +41,7 @@ on:
       - "mkdocs.yml"
       - "pyproject.toml"
       - ".github/requirements/**"
+      - ".github/actions/native-file-owner/**"
       - ".github/workflows/opencode-integration.yml"
   pull_request:
     paths:
@@ -75,6 +76,7 @@ on:
       - "mkdocs.yml"
       - "pyproject.toml"
       - ".github/requirements/**"
+      - ".github/actions/native-file-owner/**"
       - ".github/workflows/opencode-integration.yml"
 
 permissions:
@@ -236,6 +238,8 @@ jobs:
           assert suites and sum(int(s.attrib["tests"]) for s in suites) > 0
           assert all(int(s.attrib[k]) == 0 for s in suites for k in ("skipped", "failures", "errors"))
           PY
+      - name: Prepare the native foreign-owner fixture
+        uses: ./.github/actions/native-file-owner
       - name: OpenCode unit and real-process acceptance
         run: |
           set -euo pipefail

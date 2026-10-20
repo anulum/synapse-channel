@@ -69,6 +69,9 @@ jobs:
           -r .github/requirements/requirements-release-admission.txt
           --dest .pytest_cache/legacy-release
       # macOS: full suite (finishes cleanly on this advisory lane).
+      - name: Prepare the native foreign-owner fixture (macOS)
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/native-file-owner
       - name: Run the suite (macOS)
         if: runner.os == 'macOS'
         env:

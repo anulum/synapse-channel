@@ -7,12 +7,14 @@
 # SYNAPSE_CHANNEL — owner-controlled adapter file snapshots
 
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
+from synapse_channel.core.secure_path import apply_owner_only_file
 from synapse_channel.opencode_adapter_files import (
     OpenCodeAdapterFileError,
     read_text_snapshot,
@@ -168,6 +170,27 @@ def test_write_and_remove_under_a_parent_without_read_permission(tmp_path: Path)
     finally:
         parent.chmod(0o700)
     assert list(parent.iterdir()) == []
+
+
+def test_owned_configuration_is_read_and_a_foreign_posix_leaf_is_refused(tmp_path: Path) -> None:
+    """Read actual owner data and reject a foreign POSIX leaf before opening it."""
+    owned = tmp_path / "owned.json"
+    owned.write_text("owned configuration")
+    apply_owner_only_file(owned)
+    assert read_text_snapshot(owned).text == "owned configuration"
+
+    if hasattr(os, "getuid"):
+        configured = os.environ.get("SYNAPSE_TEST_FOREIGN_OWNER_FILE")
+        assert configured, "Provide the native foreign-owner fixture described in CONTRIBUTING.md"
+        foreign = Path(configured)
+        before = foreign.lstat()
+        parent = foreign.parent.stat()
+        assert stat.S_ISREG(before.st_mode) and before.st_uid != os.getuid()
+        assert parent.st_uid == os.getuid() and not parent.st_mode & 0o022
+        with pytest.raises(OpenCodeAdapterFileError) as failure:
+            read_text_snapshot(foreign)
+        assert str(failure.value) == f"OpenCode adapter path is not owned by this user: {foreign}"
+        assert foreign.lstat() == before
 
 
 @pytest.mark.parametrize("boundary", ["open", "tempfile.mkstemp"])
