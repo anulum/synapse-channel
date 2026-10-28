@@ -28,6 +28,22 @@ remediation plan with a target timeline based on severity.
 
 ## Threat model and posture
 
+Installation artifact capture traverses exact absolute paths without symlinks,
+requires root-owned ancestry and regular files without non-root write access,
+and compares complete captured bytes with independently enrolled digests.
+Private scope also refuses group/other access. A declared complete path set
+is checked against the supplied pins; this does not establish that the operator
+has enrolled every interpreter, import, loader, configuration or trust dependency.
+
+Sealed installation contexts repeat actual capture and retain bytes in Linux
+memory files. Kernel seals prevent writes, resizing and later seal changes,
+including through duplicates. Descriptors close on context exit and carry
+close-on-exec; explicit handover still grants byte access. Seals do not provide
+confidentiality, prevent descriptor copying, constrain an executed process or
+prove quiescence. Privileged installation custody and complete dependency,
+principal, namespace and syscall enrollment remain separate requirements.
+No installation, account, ownership or credential changes are made by these APIs.
+
 Protected filesystem observations can explicitly require Linux `openat2` with
 `RESOLVE_BENEATH`, `RESOLVE_NO_SYMLINKS` and `RESOLVE_NO_XDEV`. This compares
 kernel-resolved parent and leaf identities against retained descriptors and

@@ -48,6 +48,11 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Capture digest-pinned root-owned installation artifacts with exact declared
+  path-set and aggregate byte checks. Retain captured bytes in Linux memory
+  files sealed against writes, resizing and changes to the seal set, with
+  explicit descriptor handover and closure on context exit.
+
 - Capture verified protected-file bytes through retained descriptors while
   preserving caller offsets and rechecking content and attachments. Optional
   Linux `openat2` verification rejects mount crossings and symlinks beneath

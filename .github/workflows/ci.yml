@@ -173,13 +173,13 @@ jobs:
           SYNAPSE_TEST_PI_BIN: ${{ github.workspace }}/integrations/pi/node_modules/.bin/pi
         run: >-
           python -m pytest tests
-          -o 'python_files=test_*.py *_test.py protected_paths_linux.py'
+          -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py'
           --cov=synapse_channel --cov-report=term-missing --cov-report=xml --cov-report=json
       - name: Run the full version-compatibility suite
         if: matrix.python-version != '3.12'
         run: >-
           python -m pytest tests
-          -o 'python_files=test_*.py *_test.py protected_paths_linux.py'
+          -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py'
       - name: Native Linux metadata refusal with accumulated coverage
         if: matrix.python-version == '3.12'
         run: >-

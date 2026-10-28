@@ -313,6 +313,60 @@ flags set per record in `core/journal.py`.
 
 ## 5. Restart replay
 
+### Pinned installation artifacts and sealed bytes
+
+Trusted supervisors may use `capture_protected_install_artifact` to read one
+independently enrolled absolute path. Every opened ancestor and the regular
+artifact MUST be owned by UID and GID zero, without group/other write permission.
+Traversal MUST refuse symlinks. Private artifacts MUST also refuse group/other
+access. The complete bytes MUST match the enrolled lowercase SHA-256 within a
+positive individual limit of at most 64 MiB. Returned content is immutable and
+omitted from its value's representation; private bytes MUST stay out of logs.
+This is capture-time evidence, not continued custody of the source pathname.
+
+`capture_protected_install_artifact_set` requires an independently retained
+complete declared path set and private subset. Missing, extra or duplicate pins
+MUST refuse. The aggregate limit is positive and at most 1 GiB. Capture returns
+the whole set in canonical path order, or raises without publishing a partial
+set. It does not infer the manifest from the caller's pins or discover the
+application's actual interpreter, loader, import, configuration and trust closure.
+
+`retain_sealed_installation_artifacts` performs that capture before publishing
+a read-only path-to-descriptor mapping. Linux memory files carry close-on-exec
+and seals against content writes, growth, shrinkage and changes to the seal set.
+Their shared inode seals also apply through duplicated descriptors. Consumers
+MUST borrow descriptors only within the context and MUST NOT close or replace
+them. The context closes every owned descriptor on normal or exceptional exit;
+a failed or partial memory-file write MUST NOT publish a descriptor set.
+Unsupported sealing profiles MUST refuse before accessing installation bytes.
+
+Captured content and memory-file pages coexist during preparation, so operators
+must budget for both copies and allocator overhead. Seals protect byte integrity,
+not confidentiality or process isolation. Explicit descriptor handover, forked
+or duplicated descriptors can retain access beyond the original context; their
+custody and closure belong to the supervisor's process lifecycle. No executable
+launch, UID separation, namespace/syscall policy, authority grant, secret
+provisioning or complete installed-runtime qualification follows from these APIs.
+
+The Linux profiles in `tests/fixtures/protected_install_artifacts_linux.py`,
+`protected_installation_set_linux.py` and `protected_sealed_installation_linux.py`
+exercise actual root-owned public OS bytes, kernel seals, explicit child handover,
+close-on-exec and resource-limit cleanup. Portable owning modules test enrollment
+shape and modeled support guards. Public OS examples are mechanics fixtures;
+they do not qualify a complete application installation or private credentials.
+
+#### Native installation artifact APIs
+
+::: synapse_channel.core.protected_write_install_artifacts.ProtectedInstallArtifact
+
+::: synapse_channel.core.protected_write_install_artifacts.capture_protected_install_artifact
+
+::: synapse_channel.core.protected_write_installation_set.ProtectedInstallArtifactPin
+
+::: synapse_channel.core.protected_write_installation_set.capture_protected_install_artifact_set
+
+::: synapse_channel.core.protected_write_sealed_installation.retain_sealed_installation_artifacts
+
 ### Retained filesystem observations
 
 `inspect_protected_file` observes a path relative to an enrolled borrowed root

@@ -625,6 +625,12 @@ Linux resolution beneath the enrolled root and refuses symlinks and mount
 crossings. These primitives require separate authority and writer isolation;
 see the [retained filesystem API contract](docs/coordination-spec.md#retained-filesystem-observations).
 
+Trusted supervisor embedders can also capture digest-pinned root-owned
+installation artifacts and retain their verified bytes in sealed Linux memory
+files. The APIs check an independently declared path set and explicit byte
+budgets; they do not discover a complete runtime dependency closure or launch
+an isolated worker. See the [installation artifact contract](docs/coordination-spec.md#pinned-installation-artifacts-and-sealed-bytes).
+
 CLI hub queries and `task` writes return `0` only after a matching reply.
 Missing replies return `1` with an unconfirmed-outcome diagnostic. A write may
 already have committed: inspect `synapse board` and retain the same `--idem-key`
@@ -1860,11 +1866,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.38 |
 | Public API exports | 70 |
-| Package modules | 815 |
-| Classes | 1189 |
+| Package modules | 818 |
+| Classes | 1191 |
 | Wire message types | 114 |
 | CLI subcommands | 258 |
-| Test functions | 11739 |
+| Test functions | 11747 |
 | Benchmark harnesses | 11 |
 | Documentation pages | 87 |
 | GitHub Actions workflows | 27 |

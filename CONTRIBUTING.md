@@ -137,6 +137,26 @@ the existing POSIX platform guards; it does not collect these Linux-only cases
 on macOS or Windows. The modeled architecture-refusal test proves only the
 guard's rejection behavior, while the explicit profile proves Linux behavior.
 
+Installation capture and sealed-byte custody have three dedicated Linux profiles:
+
+```bash
+python -m pytest tests/fixtures/protected_install_artifacts_linux.py
+python -m pytest tests/fixtures/protected_installation_set_linux.py
+python -m pytest tests/fixtures/protected_sealed_installation_linux.py
+```
+
+They read public root-owned OS configuration and executable files through their
+actual descriptor ancestry. These files exercise artifact capture mechanics;
+they are not a complete application installation or secret-provisioning fixture.
+The sealing profile requires Linux `memfd_create` and file seals. Actual duplicated
+descriptors, disposable readers, close-on-exec and a child file-size limit test
+byte integrity, handover and cleanup. Tests never install accounts, alter OS files
+or use real credentials. Missing native prerequisites fail these profiles.
+Linux CI adds their exact filenames alongside `protected_paths_linux.py` to the
+two default pytest filename patterns, measuring the complete native population
+in the initial coverage invocation. Default collection keeps portable enrollment
+and modeled unsupported-platform guards; those guards are not foreign-OS proof.
+
 - **Tests.** Every new module, function, and branch ships with tests. Aggregate
   coverage stays above the 98% floor; a change must not lower it.
 - **Test taxonomy.** Reserve the `e2e` name and real-runtime CI mental
