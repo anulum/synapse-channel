@@ -66,6 +66,11 @@ from synapse_channel.core.protected_write_admission_journal import (
     ProtectedAdmissionReplayPolicy,
     restore_protected_admission,
 )
+from synapse_channel.core.protected_write_enrollment_journal import (
+    ISSUE_EVENT_KIND,
+    REVOKE_EVENT_KIND,
+    apply_enrollment_event,
+)
 from synapse_channel.core.protected_write_recovery_journal import (
     RECOVERY_EVENT_KIND,
     restore_protected_recovery,
@@ -853,6 +858,8 @@ def _protected_replay_callbacks(
         return {}
     enrolled = policies
     return {
+        ISSUE_EVENT_KIND: lambda event: apply_enrollment_event(event, state),
+        REVOKE_EVENT_KIND: lambda event: apply_enrollment_event(event, state),
         RECOVERY_EVENT_KIND: lambda event: restore_protected_recovery(
             event, store=store, state=state, policies=enrolled, through_seq=through_seq
         ),

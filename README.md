@@ -610,6 +610,14 @@ Python embedders can configure a hub with `HubConfig` and use
 `SynapseHub.from_config(config)`. The explicit composition factory also supports
 substituting complete collaborator families; see [embedding a hub](docs/api.md#embedding-a-hub).
 
+Authority embedders can retain protected-session issue and revocation in the
+same hub journal through `ProtectedEnrollmentControl`. Restart reconstructs
+secret-free metadata; usable sessions require the matching operator-held key.
+The API requires an already authenticated operator path and does not install
+account or listener isolation. See the [durable enrollment contract and native
+APIs](docs/coordination-spec.md#durable-protected-session-enrollment), including
+the writer-incarnation binding required for signed `begin` and `settle`.
+
 CLI hub queries and `task` writes return `0` only after a matching reply.
 Missing replies return `1` with an unconfirmed-outcome diagnostic. A write may
 already have committed: inspect `synapse board` and retain the same `--idem-key`
@@ -1845,11 +1853,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.38 |
 | Public API exports | 70 |
-| Package modules | 811 |
-| Classes | 1185 |
+| Package modules | 814 |
+| Classes | 1188 |
 | Wire message types | 114 |
 | CLI subcommands | 258 |
-| Test functions | 11702 |
+| Test functions | 11737 |
 | Benchmark harnesses | 11 |
 | Documentation pages | 87 |
 | GitHub Actions workflows | 27 |

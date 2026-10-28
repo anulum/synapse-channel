@@ -39,7 +39,84 @@ def enrollment() -> ProtectedSessionEnrollment:
         verbs=frozenset({"prepare", "admit", "begin", "settle", "revoke", "status", "recover"}),
         expires_at=NOW + 30,
         key=KEY,
+        writer_incarnation="incarnation",
     )
+
+
+@pytest.mark.parametrize("revoked", [False, True])
+def test_existing_positional_revocation_argument_keeps_its_authentication_meaning(
+    revoked: bool,
+) -> None:
+    """Adding a writer incarnation cannot reinterpret the old positional flag."""
+    original = enrollment()
+    grant = ProtectedSessionEnrollment(
+        original.session_id,
+        original.principal,
+        original.target,
+        original.authority_id,
+        original.authority_continuity,
+        original.enrollment_revision,
+        original.transaction_id,
+        original.proposal_sha256,
+        original.verbs,
+        original.expires_at,
+        original.key,
+        revoked,
+    )
+    assert grant.revoked is revoked and grant.writer_incarnation is None
+    raw = json.dumps(
+        sign_frame(_request("status"), key=KEY, nonce="positional", sequence=1, timestamp=NOW)
+    )
+
+    def authenticate() -> None:
+        authenticate_protected_request(
+            raw,
+            limits=LIMITS,
+            enrollments={grant.session_id: grant},
+            authenticated_principal=grant.principal,
+            replay_cache=MessageReplayCache(window_seconds=10, max_entries=32),
+            now=NOW,
+        )
+
+    if revoked:
+        with pytest.raises(ValueError, match="unavailable"):
+            authenticate()
+    else:
+        authenticate()
+
+
+def test_writer_incarnation_must_be_exact_and_nonempty() -> None:
+    """The registry refuses an ambiguous writer process identity."""
+    with pytest.raises(ValueError, match="exact nonempty identifier"):
+        replace(enrollment(), writer_incarnation="")
+
+
+@pytest.mark.parametrize("revoked", [0, 1, None, "false"])
+def test_revocation_flag_must_be_boolean(revoked: object) -> None:
+    """Reject numeric, null and text flags in actual enrollment construction."""
+    with pytest.raises(ValueError, match="strong single-principal key"):
+        metadata = json.loads(json.dumps({"revoked": revoked}))
+        replace(enrollment(), **metadata)
+
+
+@pytest.mark.parametrize("incarnation", [None, "another-incarnation"])
+def test_signed_begin_cannot_escape_enrolled_writer_incarnation(
+    incarnation: str | None,
+) -> None:
+    """The signed request body and current session must name one incarnation."""
+    grant = replace(enrollment(), writer_incarnation=incarnation)
+    raw = json.dumps(
+        sign_frame(_request("begin"), key=KEY, nonce="incarnation", sequence=1, timestamp=NOW)
+    )
+    with pytest.raises(ValueError, match="outside enrolled incarnation"):
+        authenticate_protected_request(
+            raw,
+            limits=LIMITS,
+            enrollments={grant.session_id: grant},
+            authenticated_principal=grant.principal,
+            replay_cache=MessageReplayCache(window_seconds=10, max_entries=32),
+            now=NOW,
+        )
 
 
 @pytest.mark.parametrize(

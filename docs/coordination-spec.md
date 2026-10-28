@@ -313,6 +313,67 @@ flags set per record in `core/journal.py`.
 
 ## 5. Restart replay
 
+### Durable protected-session enrollment
+
+Protected-session enrollment belongs to the existing `SynapseHub` state,
+`SerializedStateMutationActor` and `EventStore`. Issue and revoke MUST append
+with `durable=True` before publishing their candidate. A failed append MUST
+publish nothing; cancellation follows the actor's authoritative-outcome rule.
+Replay reconstructs the complete issue/revoke prefix before protected work.
+Missing protected-write configuration, a filtered prefix, unsupported schemas,
+unknown protected events, reused identifiers and revocation without a live
+predecessor MUST refuse reconstruction.
+
+The closed `synapse-protected-write.enrollment.v1` issue schema retains the
+session's authority, principal, target, revision, transaction, proposal digest,
+verbs, expiry, writer incarnation, key ID and key fingerprint. Revocation
+retains its schema and exact session ID. Neither event carries secret bytes.
+Session IDs, key IDs and domain-separated key fingerprints cannot be reused,
+even after revocation. A principal with an unrevoked writer incarnation cannot
+receive a second one. Expiry withdraws admission but does not replace explicit
+revocation of the old incarnation.
+
+`ProtectedSessionScope` validates metadata without constructing a credential.
+`ProtectedEnrollmentRecord` adds retained key identity and revocation.
+`ProtectedSessionEnrollment` binds that scope to the actual operator-held key.
+Projection requires an unexpired, unrevoked record, a finite trusted time and
+the matching unrevoked single-principal key. Missing or changed retained keys
+produce no usable enrollment.
+
+`ProtectedEnrollmentControl.issue_from_metadata` accepts only the scope fields
+and `key_id`, with sorted unique verbs and an explicit `writer_incarnation`
+field. It binds them to an already retained key indexed by session ID. The
+caller MUST authenticate the operator before invoking issue or revoke. This
+primitive does not expose an operator listener or establish account/key
+isolation. An admission handler MUST use the current projection and recheck
+it under the authority actor before mutation.
+
+Migration: `ProtectedSessionEnrollment` preserves its twelve original
+positional parameters. `writer_incarnation` is keyword-only. Signed `begin`
+and `settle` now require a nonempty server-side incarnation equal to their
+existing body field. Callers enabling those verbs must bind the enrollment at
+issue time. Other verbs retain their existing scope checks. No wire field or
+protocol version changes in this delivery.
+
+The authority implementation is Python. Native clients continue to use the
+existing signed envelope; no client-side journal or parallel grant registry is
+introduced. Behavioral evidence is in
+`tests/test_protected_write_enrollment_control.py`,
+`tests/test_protected_write_enrollment_journal.py`,
+`tests/test_protected_write_session_scope.py` and
+`tests/test_protected_write_session_auth.py`. These exercise actual SQLite
+reopen/replay, issue races, failed appends, signed admission and durable revoke.
+
+#### Native enrollment APIs
+
+::: synapse_channel.core.protected_write_session_scope.ProtectedSessionScope
+
+::: synapse_channel.core.protected_write_session_auth.ProtectedSessionEnrollment
+
+::: synapse_channel.core.protected_write_enrollment_journal.ProtectedEnrollmentRecord
+
+::: synapse_channel.core.protected_write_enrollment_control.ProtectedEnrollmentControl
+
 A hub restart MUST reconstruct authority from the log, and MUST NOT resurrect
 state the live hub would have bounded away.
 

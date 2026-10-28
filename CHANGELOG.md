@@ -48,6 +48,12 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Durable protected-session enrollment metadata in the existing hub journal.
+  Internal authority APIs issue and revoke sessions through the hub mutation
+  actor, reconstruct metadata after restart and project only matching retained
+  operator keys. Session IDs, key IDs and key fingerprints cannot be reused.
+  A writer principal needs explicit revocation before a new incarnation.
+
 - Shared scoped execution observations for A2A tasks, MCP mutation results,
   wake relay JSON and worker processes. Reports distinguish boundary completion
   from external effects, stop requests, confirmed direct-child stops and undo.
@@ -79,6 +85,11 @@ execution evidence when carrying a release claim forward.
   `eu-ai-act` evidence label and make no compliance verdict or deletion decision.
 
 ### Fixed
+
+- Bind signed protected `begin` and `settle` requests to the writer incarnation
+  in the current server-side enrollment. Existing positional enrollment
+  construction is preserved; callers authorizing these verbs must supply the
+  keyword-only `writer_incarnation`. The wire envelope is unchanged.
 
 - Keep durable state mutations ordered across repeated cancellation and normal
   event-loop shutdown. Drain the journal worker's actual outcome before

@@ -52,6 +52,25 @@ claim fields and checkpoint, so an expired lease cannot pass an uncommitted
 resume token to its successor. Abrupt process death still requires journal
 replay; these rules do not fence external process effects.
 
+Protected-session issue and revoke use that same actor and journal, with
+`durable=True`. Retained events contain scope, expiry, key identity and a
+domain-separated SHA-256 key fingerprint; they contain no key bytes. Protect
+the journal because it exposes principal and transaction metadata. Projection
+requires the matching operator-held key and refuses revoked or expired records,
+changed key bytes, a wrong principal or an invalid clock. Historical session
+IDs, key IDs and fingerprints remain unavailable for reuse after revocation.
+One writer principal cannot acquire a second incarnation before explicit
+revocation, including when its earlier session has expired.
+
+`ProtectedEnrollmentControl` is an internal authority API. Its caller must
+already authenticate the operator and isolate credential custody. It neither
+installs a control listener nor proves separate operating-system accounts or
+key isolation. Request handlers must recheck the current enrollment under the
+same mutation ordering. Signed `begin` and `settle` bodies must match its
+server-side writer incarnation. Replay without protected-write configuration,
+filtered replay and unsupported protected history remain refused. See the
+[durable enrollment contract](docs/coordination-spec.md#durable-protected-session-enrollment).
+
 Causal-parent validation echoes only `TaskCausalParentInputError` messages
 chosen at deliberate refusal sites. Other parser exceptions return a fixed
 private error and stay in server logs. Both task write verbs refuse before

@@ -29,58 +29,54 @@ from synapse_channel.core.protected_write_request import (
     ParsedProtectedWriteRequest,
     parse_protected_write_request,
 )
-
-_VERBS = frozenset({"prepare", "admit", "begin", "settle", "revoke", "status", "recover"})
+from synapse_channel.core.protected_write_session_scope import ProtectedSessionScope
 
 
 @dataclass(frozen=True)
-class ProtectedSessionEnrollment:
-    """Operator-owned exact session scope; never accept this object from a client."""
+class ProtectedSessionEnrollment(ProtectedSessionScope):
+    """Operator-owned exact session scope; never accept this object from a client.
 
-    session_id: str
-    principal: str
-    target: str
-    authority_id: str
-    authority_continuity: str
-    enrollment_revision: str
-    transaction_id: str
-    proposal_sha256: str
-    verbs: frozenset[str]
-    expires_at: float
+    A signed begin/settle frame names the writer incarnation in its body. The
+    authority verifies that value against the incarnation attached to the
+    current server-side session key; the frame cannot choose a different one.
+    The transition actor then compares that current enrollment with the exact
+    admitted reservation. Durable actor-ordered issue/revoke and one fresh key
+    per incarnation remain deployment requirements; constructing this value
+    alone does not satisfy them.
+
+    Parameters
+    ----------
+    key : MessageAuthKey
+        Actual operator-held credential for exactly the enrolled principal.
+    revoked : bool, optional
+        Whether the current server-side enrollment has been withdrawn.
+
+    See Also
+    --------
+    ProtectedSessionScope
+        Inherited metadata, including the keyword-only writer incarnation.
+    """
+
     key: MessageAuthKey = field(repr=False)
     revoked: bool = False
 
     def __post_init__(self) -> None:
         """Refuse ambiguous enrollment and shared multi-sender credentials."""
-        identifiers = (
-            self.session_id,
-            self.principal,
-            self.target,
-            self.authority_id,
-            self.authority_continuity,
-            self.enrollment_revision,
-            self.transaction_id,
-        )
-        if any(type(value) is not str or not value for value in identifiers):
-            raise ValueError("session enrollment requires nonempty identifiers")
-        if (
-            type(self.proposal_sha256) is not str
-            or len(self.proposal_sha256) != 64
-            or any(character not in "0123456789abcdef" for character in self.proposal_sha256)
-        ):
-            raise ValueError("session enrollment requires an exact proposal digest")
-        if type(self.verbs) is not frozenset or not self.verbs or not self.verbs <= _VERBS:
-            raise ValueError("session enrollment requires explicit supported verbs")
-        if type(self.expires_at) not in (int, float) or not math.isfinite(self.expires_at):
-            raise ValueError("session expiry must be finite")
-        if (
-            type(self.revoked) is not bool
-            or type(self.key.secret) is not bytes
-            or len(self.key.secret) < 32
-            or not self.key.key_id
-            or self.key.senders != frozenset({self.principal})
-        ):
+        super().__post_init__()
+        if type(self.revoked) is not bool:
             raise ValueError("session requires its own strong single-principal key")
+        _verify_enrollment_credential(self.key, self.principal)
+
+
+def _verify_enrollment_credential(key: MessageAuthKey, principal: str) -> None:
+    """Require the strong per-principal key independently of the session's scope fields."""
+    if (
+        type(key.secret) is not bytes
+        or len(key.secret) < 32
+        or not key.key_id
+        or key.senders != frozenset({principal})
+    ):
+        raise ValueError("session requires its own strong single-principal key")
 
 
 @dataclass(frozen=True)
@@ -185,6 +181,11 @@ def _validate_protected_session_scope(
         raise ValueError("request outside current session scope")
     if frame["type"].removeprefix("protected_write_") not in enrollment.verbs:
         raise ValueError("operation outside current session scope")
+    if frame["type"] in {"protected_write_begin", "protected_write_settle"} and (
+        enrollment.writer_incarnation is None
+        or frame["body"]["writer_incarnation"] != enrollment.writer_incarnation
+    ):
+        raise ValueError("writer transition outside enrolled incarnation")
     auth = frame.get("auth")
     if not isinstance(auth, dict) or auth.get("kid") != enrollment.key.key_id:
         raise ValueError("request does not bind the enrolled session key")

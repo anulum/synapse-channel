@@ -339,7 +339,6 @@ names = ["argparse._SubParsersAction"]
 "src/synapse_channel/core/protected_write_request.py::_proofs" = 16
 "src/synapse_channel/core/protected_write_result.py::_state" = 24
 "src/synapse_channel/core/protected_write_result.py::parse_protected_write_result" = 29
-"src/synapse_channel/core/protected_write_session_auth.py::ProtectedSessionEnrollment.__post_init__" = 17
 "src/synapse_channel/core/protected_write_storage_layout.py::inspect_protected_journal_layout" = 30
 "src/synapse_channel/core/ready_dispatch.py::plan_dispatches" = 23
 "src/synapse_channel/core/relay.py::normalize_core_command" = 36

@@ -28,6 +28,7 @@ from synapse_channel.core.numeric_coercion import safe_float, safe_int
 from synapse_channel.core.path_identity import ClaimScopeIdentity
 from synapse_channel.core.protected_write_admission import ProtectedWriteAdmission
 from synapse_channel.core.protected_write_custody import ProtectedClaimCustody
+from synapse_channel.core.protected_write_enrollment_journal import ProtectedEnrollmentRecord
 from synapse_channel.core.protected_write_lifecycle import ProtectedWriteReservation
 from synapse_channel.core.protected_write_recovery import ProtectedRecoveryAdmission
 from synapse_channel.core.scoping import (
@@ -144,6 +145,9 @@ class SynapseState:
         self.protected_write_admissions: dict[str, ProtectedWriteAdmission] = {}
         self.protected_write_reservations: dict[str, ProtectedWriteReservation] = {}
         self.protected_write_recoveries: dict[str, str] = {}
+        self.protected_enrollments: dict[str, ProtectedEnrollmentRecord] = {}
+        self.protected_enrollment_key_ids: set[str] = set()
+        self.protected_enrollment_fingerprints: set[str] = set()
         self._resource_registry = ResourceRegistry(max_offers_per_agent=self.max_offers_per_agent)
         self.resources: dict[str, ResourceOffer] = self._resource_registry.resources
         self.max_offers_per_agent = self._resource_registry.max_offers_per_agent
@@ -195,6 +199,9 @@ class SynapseState:
         self.protected_write_admissions = candidate.protected_write_admissions
         self.protected_write_reservations = candidate.protected_write_reservations
         self.protected_write_recoveries = candidate.protected_write_recoveries
+        self.protected_enrollments = candidate.protected_enrollments
+        self.protected_enrollment_key_ids = candidate.protected_enrollment_key_ids
+        self.protected_enrollment_fingerprints = candidate.protected_enrollment_fingerprints
         self._resource_registry = candidate._resource_registry
         self.resources = self._resource_registry.resources
         self.expired_checkpoints = candidate.expired_checkpoints
