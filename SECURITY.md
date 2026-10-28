@@ -43,6 +43,15 @@ stay in server logs; the failed task/progress candidate is neither published
 nor committed. Protect operator log access because those logs retain diagnostic
 tracebacks. See [the wire contract](docs/protocol.md) for retry semantics.
 
+Cancelling a serialized state mutation does not roll back an in-flight journal
+write. The actor retains its ordering lock while draining the actual worker
+outcome, including repeated caller cancellation and normal event-loop shutdown.
+A successful append publishes its candidate before cancellation propagates;
+an append failure publishes nothing. Synchronous rollback uses the captured
+claim fields and checkpoint, so an expired lease cannot pass an uncommitted
+resume token to its successor. Abrupt process death still requires journal
+replay; these rules do not fence external process effects.
+
 Causal-parent validation echoes only `TaskCausalParentInputError` messages
 chosen at deliberate refusal sites. Other parser exceptions return a fixed
 private error and stay in server logs. Both task write verbs refuse before

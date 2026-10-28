@@ -80,6 +80,12 @@ execution evidence when carrying a release claim forward.
 
 ### Fixed
 
+- Keep durable state mutations ordered across repeated cancellation and normal
+  event-loop shutdown. Drain the journal worker's actual outcome before
+  publishing a successful candidate or propagating cancellation. A synchronous
+  rollback preserves the captured claim fields and checkpoint while keeping
+  leases that expired during I/O expired.
+
 - Generic adapter installation now refuses existing unowned dedicated files
   unless explicitly adopted with a retained original. Uninstall restores adopted
   originals, preserves exact outside bytes in shared files and refuses changed

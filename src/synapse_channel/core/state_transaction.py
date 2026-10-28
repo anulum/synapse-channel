@@ -20,6 +20,7 @@ import asyncio
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
+from contextvars import copy_context
 from copy import copy, deepcopy
 from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING, Any, TypeVar, cast
@@ -39,13 +40,41 @@ MutationResult = TypeVar("MutationResult")
 MutationSubject = TypeVar("MutationSubject")
 
 
+def _submit_append(
+    persist: Callable[[MutationResult], MutationSubject], result: MutationResult
+) -> asyncio.Future[MutationSubject]:
+    """Retain a context-aware executor future outside runner task cancellation.
+
+    asyncio.run cancels every pending Task during shutdown. The executor Future
+    must remain independently awaitable until the actual native append finishes;
+    cancelling a to_thread Task cannot stop its already running storage thread.
+    """
+    context = copy_context()
+    return asyncio.get_running_loop().run_in_executor(None, lambda: context.run(persist, result))
+
+
+async def _drain_append(
+    append: asyncio.Future[MutationResult],
+) -> tuple[MutationResult, bool]:
+    """Drain the authoritative worker result before propagating caller cancellation."""
+    cancelled = False
+    while True:
+        try:
+            return await asyncio.shield(append), cancelled
+        except asyncio.CancelledError:
+            if append.done():
+                # A worker may itself raise CancelledError. Preserve that failure
+                # rather than spinning or publishing an uncommitted candidate.
+                append.result()
+            cancelled = True
+
+
 @dataclass(frozen=True)
 class _TaskStateSnapshot:
     """State needed to undo one synchronous claim-family mutation."""
 
     task_id: str
-    claim: TaskClaim | None
-    claim_value: TaskClaim | None
+    claim: tuple[TaskClaim, TaskClaim] | None
     checkpoint_present: bool
     checkpoint: str
     presence: tuple[tuple[str, bool, float], ...]
@@ -63,8 +92,7 @@ class _TaskStateSnapshot:
         checkpoint_present = task_id in state.expired_checkpoints
         return cls(
             task_id=task_id,
-            claim=claim,
-            claim_value=copy(claim) if claim is not None else None,
+            claim=(claim, copy(claim)) if claim is not None else None,
             checkpoint_present=checkpoint_present,
             checkpoint=state.expired_checkpoints.get(task_id, ""),
             presence=tuple(
@@ -76,20 +104,21 @@ class _TaskStateSnapshot:
 
     def restore(self, state: SynapseState) -> None:
         """Restore the task and accounting captured before the mutation."""
-        expired = self.claim is not None and self.claim.lease_expires_at <= time.time()
-        if self.claim is None or expired:
+        checkpoint = self.checkpoint if self.checkpoint_present else None
+        if self.claim is None:
             state.claims.pop(self.task_id, None)
         else:
-            if self.claim_value is None:
-                raise RuntimeError("transaction snapshot lost its live claim value")
-            for field in fields(self.claim_value):
-                setattr(self.claim, field.name, getattr(self.claim_value, field.name))
-            state.claims[self.task_id] = self.claim
+            claim, value = self.claim
+            for field in fields(value):
+                setattr(claim, field.name, getattr(value, field.name))
+            if value.lease_expires_at <= time.time():
+                state.claims.pop(self.task_id, None)
+                checkpoint = value.checkpoint or checkpoint
+            else:
+                state.claims[self.task_id] = claim
 
-        if expired and self.claim is not None and self.claim.checkpoint:
-            state.expired_checkpoints[self.task_id] = self.claim.checkpoint
-        elif self.checkpoint_present:
-            state.expired_checkpoints[self.task_id] = self.checkpoint
+        if checkpoint is not None:
+            state.expired_checkpoints[self.task_id] = checkpoint
         else:
             state.expired_checkpoints.pop(self.task_id, None)
 
@@ -114,7 +143,25 @@ def durable_state_transaction(
     """Roll back one task if its synchronous durable append raises.
 
     The context may contain state mutation plus synchronous journal I/O only;
-    it must not contain an event-loop yield.
+    it must not contain an event-loop yield. Rollback restores the captured
+    claim object and its fields. A lease that expires during I/O stays expired;
+    only its previously captured checkpoint remains available to a successor.
+
+    Parameters
+    ----------
+    state : SynapseState
+        Live state owning the task and its accounting.
+    task_id : str
+        Exact task whose provisional mutation may need restoring.
+    enabled : bool
+        Capture and restore state when a durable journal is configured.
+    restore_presence : Sequence[str], optional
+        Agents whose presence entries belong to this mutation.
+
+    Yields
+    ------
+    None
+        A synchronous mutation and journal-append boundary.
     """
     snapshot = _TaskStateSnapshot.capture(state, task_id, restore_presence) if enabled else None
     try:
@@ -169,7 +216,41 @@ class SerializedStateMutationActor:
         publish_candidate: Callable[[MutationSubject], None],
         publish: Callable[[MutationResult], None] | None = None,
     ) -> MutationResult:
-        """Serialize and durably publish a mutation of any copyable state subject."""
+        """Serialize and durably publish a mutation of any copyable state subject.
+
+        Repeated caller cancellation cannot release the actor lock or abandon
+        an in-flight journal thread. Its outcome is drained before publication
+        and cancellation propagation; a failed append never publishes state.
+
+        Parameters
+        ----------
+        subject : MutationSubject
+            Copyable state mutated under this actor's serial ordering.
+        mutate : Callable
+            Synchronous transition applied to the live volatile subject or a
+            private durable candidate.
+        persist : Callable or None, optional
+            Journal append run in an executor with the caller's context.
+            It must return successfully only after its durable write completes.
+        publish_candidate : Callable
+            Synchronously install the successfully persisted candidate.
+        publish : Callable or None, optional
+            Observe the result after live-state publication.
+
+        Returns
+        -------
+        MutationResult
+            The transition result after successful publication.
+
+        Raises
+        ------
+        asyncio.CancelledError
+            After draining a caller-cancelled append and publishing its success,
+            or immediately when the persistence callback itself is cancelled.
+        Exception
+            The mutation or persistence failure; a failed durable append does
+            not publish its private candidate.
+        """
         async with self._lock:
             if persist is None:
                 result = mutate(subject)
@@ -179,18 +260,7 @@ class SerializedStateMutationActor:
 
             candidate = deepcopy(subject)
             result = mutate(candidate)
-            append = asyncio.create_task(asyncio.to_thread(persist, result))
-            cancelled = False
-            try:
-                await asyncio.shield(append)
-            except asyncio.CancelledError:
-                # A worker thread cannot be cancelled.  Keep the mutation lock,
-                # wait for its authoritative outcome, and publish a committed
-                # candidate before propagating cancellation.  Otherwise shutdown
-                # could close the journal around an in-flight append or leave a
-                # durable event whose live state was discarded.
-                cancelled = True
-                await append
+            _, cancelled = await _drain_append(_submit_append(persist, result))
             publish_candidate(candidate)
             if publish is not None:
                 publish(result)
@@ -226,6 +296,14 @@ class SerializedStateMutationActor:
         then fails before the candidate or any uncommitted path can be published.
         When supplied, authorization runs under the lock before replay/conflict
         lookup as well as mutation. It must be synchronous and perform no I/O.
+
+        Notes
+        -----
+        Both keyed and uncommitted journal appends retain their executor Future
+        across repeated caller cancellation and normal event-loop shutdown.
+        The actor drains the authoritative outcome before releasing its lock;
+        an inserted operation is remembered and published before cancellation
+        propagates. A persistence failure leaves the private candidate unpublished.
         """
         hook = stage_hook or (lambda _stage: None)
         candidate_publisher: Callable[[MutationSubject], None]
@@ -254,17 +332,7 @@ class SerializedStateMutationActor:
                     raise ValueError("this operation requires a durable response draft")
                 cancelled = False
                 if persist_uncommitted is not None:
-                    uncommitted_append = asyncio.create_task(
-                        asyncio.to_thread(persist_uncommitted, result)
-                    )
-                    while True:
-                        try:
-                            await asyncio.shield(uncommitted_append)
-                            break
-                        except asyncio.CancelledError:
-                            if uncommitted_append.cancelled():
-                                raise
-                            cancelled = True
+                    _, cancelled = await _drain_append(_submit_append(persist_uncommitted, result))
                 candidate_publisher(candidate)
                 if publish is not None:
                     publish(result)
@@ -272,16 +340,7 @@ class SerializedStateMutationActor:
                     raise asyncio.CancelledError
                 return AtomicExecution("uncommitted", result, None)
 
-            operation_append = asyncio.create_task(asyncio.to_thread(commit, draft))
-            cancelled = False
-            while True:
-                try:
-                    committed = await asyncio.shield(operation_append)
-                    break
-                except asyncio.CancelledError:
-                    if operation_append.cancelled():
-                        raise
-                    cancelled = True
+            committed, cancelled = await _drain_append(_submit_append(commit, draft))
 
             stored = OperationRecord(
                 key=committed.operation.operation_key,

@@ -259,10 +259,11 @@ new live state **only after** the append has committed. A concurrent reader MUST
 never observe a provisional mutation whose event has not yet committed.
 
 **Implementation.** `core/state_transaction.py:SerializedStateMutationActor.run`
-— `deepcopy` → `mutate(candidate)` → shielded `to_thread(persist)` →
+— `deepcopy` → `mutate(candidate)` → context-preserving executor Future →
 `state.publish_from(candidate)`.
 
-**Pinned by.** `tests/test_claim_journal_atomicity.py`. `[model]` (the model
+**Pinned by.** `tests/test_claim_journal_atomicity.py`,
+`tests/test_state_actor_shutdown.py`. `[model]` (the model
 exercises the state-transition semantics; atomicity against a real journal is
 pinned by the cited suite.)
 
@@ -271,24 +272,30 @@ pinned by the cited suite.)
 **Normative.** If the journal append raises, the candidate MUST be discarded and
 the live state left unchanged: no grant, no wait, no checkpoint side effect. The
 synchronous path MUST roll the touched task back to its pre-mutation snapshot.
+A lease that expires during journal I/O MUST remain expired. Its retained
+checkpoint MUST come from the captured snapshot, never a failed provisional
+checkpoint mutation.
 
 **Implementation.** `core/state_transaction.py` (actor error path;
 `durable_state_transaction` restore-on-`BaseException`).
 
-**Pinned by.** `tests/test_claim_journal_atomicity.py`.
+**Pinned by.** `tests/test_claim_journal_atomicity.py`,
+`tests/test_state_actor_shutdown.py`.
 
 ### INV-JA-3 — cancellation waits for the authoritative outcome
 
 **Normative.** A cancellation arriving while an append is in flight MUST wait for
 the worker's authoritative commit before propagating, and MUST NOT close the
 journal around an in-flight append or leave a committed event whose live state
-was discarded.
+was discarded. Repeated caller cancellation and normal event-loop shutdown
+MUST preserve this ordering. An append failure MUST discard the candidate
+before releasing the actor lock.
 
-**Implementation.** `core/state_transaction.py` (`asyncio.shield` + `await
-append` on `CancelledError`).
+**Implementation.** `core/state_transaction.py` (retain the executor Future
+independently of runner Tasks; shield and drain its authoritative outcome).
 
 **Pinned by.** `tests/test_claim_journal_atomicity.py`,
-`tests/test_claim_grant_recovery.py`.
+`tests/test_claim_grant_recovery.py`, `tests/test_state_actor_shutdown.py`.
 
 ### INV-JA-4 — durability is split honestly by workload
 
