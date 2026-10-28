@@ -618,6 +618,13 @@ account or listener isolation. See the [durable enrollment contract and native
 APIs](docs/coordination-spec.md#durable-protected-session-enrollment), including
 the writer-incarnation binding required for signed `begin` and `settle`.
 
+Protected filesystem embedders can capture verified bytes through
+`ProtectedPathDescriptors.read_bytes()` without resolving the external root
+pathname again. The optional `require_openat2=True` profile requires native
+Linux resolution beneath the enrolled root and refuses symlinks and mount
+crossings. These primitives require separate authority and writer isolation;
+see the [retained filesystem API contract](docs/coordination-spec.md#retained-filesystem-observations).
+
 CLI hub queries and `task` writes return `0` only after a matching reply.
 Missing replies return `1` with an unconfirmed-outcome diagnostic. A write may
 already have committed: inspect `synapse board` and retain the same `--idem-key`
@@ -1853,11 +1860,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.38 |
 | Public API exports | 70 |
-| Package modules | 814 |
-| Classes | 1188 |
+| Package modules | 815 |
+| Classes | 1189 |
 | Wire message types | 114 |
 | CLI subcommands | 258 |
-| Test functions | 11737 |
+| Test functions | 11739 |
 | Benchmark harnesses | 11 |
 | Documentation pages | 87 |
 | GitHub Actions workflows | 27 |

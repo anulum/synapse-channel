@@ -28,6 +28,22 @@ remediation plan with a target timeline based on severity.
 
 ## Threat model and posture
 
+Protected filesystem observations can explicitly require Linux `openat2` with
+`RESOLVE_BENEATH`, `RESOLVE_NO_SYMLINKS` and `RESOLVE_NO_XDEV`. This compares
+kernel-resolved parent and leaf identities against retained descriptors and
+requires an actually absent leaf when no object descriptor is supplied. A
+missing kernel/ABI or refused path never falls back to portable traversal for
+an explicitly restricted request. Default POSIX inspection remains diagnostic.
+
+`ProtectedPathDescriptors.read_bytes()` captures only the expected regular
+file's bounded bytes using positional reads, then revalidates the retained
+topology and content. Substituting the external root pathname cannot redirect
+the captured data. Changed attachments, ownership, mode, link count, content or
+metadata during a read refuse publication. These checks do not establish read
+authorization, an atomic multi-file snapshot or physical exclusion of bypass
+writers. Account isolation, authority ordering and service-specific checks
+remain required. See the [retained filesystem contract](docs/coordination-spec.md#retained-filesystem-observations).
+
 Durable dashboard feeds return a fixed HTTP 503 for unexpected storage,
 builder or JSON-encoding failures. Internal paths, database messages and parser
 tracebacks remain in dashboard server logs, including when the events,

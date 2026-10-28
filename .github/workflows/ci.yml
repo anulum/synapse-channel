@@ -171,10 +171,15 @@ jobs:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
           SYNAPSE_TEST_CODEX_BIN: ${{ github.workspace }}/integrations/codex-cli/node_modules/.bin/codex
           SYNAPSE_TEST_PI_BIN: ${{ github.workspace }}/integrations/pi/node_modules/.bin/pi
-        run: python -m pytest --cov=synapse_channel --cov-report=term-missing --cov-report=xml --cov-report=json
+        run: >-
+          python -m pytest tests
+          -o 'python_files=test_*.py *_test.py protected_paths_linux.py'
+          --cov=synapse_channel --cov-report=term-missing --cov-report=xml --cov-report=json
       - name: Run the full version-compatibility suite
         if: matrix.python-version != '3.12'
-        run: python -m pytest
+        run: >-
+          python -m pytest tests
+          -o 'python_files=test_*.py *_test.py protected_paths_linux.py'
       - name: Native Linux metadata refusal with accumulated coverage
         if: matrix.python-version == '3.12'
         run: >-

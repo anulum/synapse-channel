@@ -14,12 +14,13 @@ import os
 import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from synapse_channel.core.protected_write_inspection import (
     ProtectedFileInspection,
     inspect_protected_file,
 )
+from synapse_channel.core.protected_write_openat2 import verify_protected_openat2_path
 
 
 def _identity(info: os.stat_result) -> tuple[int, int]:
@@ -48,6 +49,53 @@ def _check_chain(
                 raise ValueError("protected directory attachment changed")
 
 
+def _check_file_content(
+    descriptor: int,
+    before: os.stat_result,
+    expected: ProtectedFileInspection,
+    max_bytes: int,
+    *,
+    capture: bool = False,
+) -> bytes:
+    """Verify bounded retained bytes and unchanged metadata using positional reads."""
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+        raise ValueError("protected object is not a single-link regular file")
+    if before.st_size != expected.size_bytes or before.st_size > max_bytes:
+        raise ValueError("protected object size changed")
+    total = 0
+    digest = hashlib.sha256()
+    chunks: list[bytes] = []
+    while True:
+        chunk = os.pread(descriptor, min(65536, max_bytes + 1 - total), total)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValueError("protected object grew beyond retained byte budget")
+        digest.update(chunk)
+        if capture:
+            chunks.append(chunk)
+    after = os.fstat(descriptor)
+    fields = (
+        "st_dev",
+        "st_ino",
+        "st_mode",
+        "st_uid",
+        "st_gid",
+        "st_nlink",
+        "st_size",
+        "st_mtime_ns",
+        "st_ctime_ns",
+    )
+    if (
+        total != expected.size_bytes
+        or digest.hexdigest() != expected.sha256
+        or any(getattr(before, field) != getattr(after, field) for field in fields)
+    ):
+        raise ValueError("protected retained bytes changed")
+    return b"".join(chunks)
+
+
 @dataclass(frozen=True)
 class ProtectedPathDescriptors:
     """Live descriptors owned by hold_protected_path, valid only in its context.
@@ -65,6 +113,7 @@ class ProtectedPathDescriptors:
     _expected: ProtectedFileInspection
     _owner_uid: int
     _max_bytes: int
+    _require_openat2: bool = field(default=False, kw_only=True)
     _closed: bool = False
 
     def revalidate(self) -> None:
@@ -84,15 +133,57 @@ class ProtectedPathDescriptors:
         exclude a concurrent rename/write. Enforced OS-principal isolation is
         mandatory before using these descriptors to mutate files.
         """
+        self._revalidate(capture=False)
+
+    def read_bytes(self) -> bytes:
+        """Capture the exact inspected file bytes without resolving an external path.
+
+        Returns
+        -------
+        bytes
+            Immutable content matching the enrolled size and raw-byte SHA-256.
+            Positional reads preserve the retained file's current offset.
+
+        Raises
+        ------
+        ValueError
+            On a closed context, absent/directory target, changed identity,
+            content, attachments, ownership or exhausted byte budget.
+        OSError
+            On inaccessible retained descriptors or filesystem read failure.
+
+        Notes
+        -----
+        The capture and a final revalidation both use the retained root and
+        object descriptors. Replacing the external root pathname cannot redirect
+        this read. Multi-file coherence, authentication, current authority and
+        enforced exclusion of concurrent writers remain service prerequisites.
+        This method creates no read permission or active-memory receipt.
+        """
+        if self.object_descriptor is None or self._expected.is_directory:
+            raise ValueError("protected byte capture requires an existing regular file")
+        content = self._revalidate(capture=True)
+        self.revalidate()
+        return content
+
+    def _revalidate(self, *, capture: bool) -> bytes:
+        """Check retained topology and optionally return the verified content read."""
         if self._closed:
             raise ValueError("protected descriptor context is closed")
         _check_chain(self._chain, self._parts, self._expected, self._owner_uid)
+        if self._require_openat2:
+            verify_protected_openat2_path(
+                self._chain[0],
+                self._expected.relative_path,
+                self.parent_descriptor,
+                self.object_descriptor,
+            )
         try:
             linked = os.stat(self.leaf_name, dir_fd=self.parent_descriptor, follow_symlinks=False)
         except FileNotFoundError:
             if self.object_descriptor is not None:
                 raise ValueError("protected object attachment disappeared") from None
-            return
+            return b""
         if self.object_descriptor is None:
             raise ValueError("protected absent leaf appeared")
         before = os.fstat(self.object_descriptor)
@@ -105,39 +196,10 @@ class ProtectedPathDescriptors:
         if stat.S_IMODE(before.st_mode) != self._expected.mode:
             raise ValueError("protected object mode changed")
         if self._expected.is_directory:
-            return
-        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
-            raise ValueError("protected object is not a single-link regular file")
-        if before.st_size != self._expected.size_bytes or before.st_size > self._max_bytes:
-            raise ValueError("protected object size changed")
-        total = 0
-        digest = hashlib.sha256()
-        while True:
-            chunk = os.pread(self.object_descriptor, min(65536, self._max_bytes + 1 - total), total)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > self._max_bytes:
-                raise ValueError("protected object grew beyond retained byte budget")
-            digest.update(chunk)
-        after = os.fstat(self.object_descriptor)
-        fields = (
-            "st_dev",
-            "st_ino",
-            "st_mode",
-            "st_uid",
-            "st_gid",
-            "st_nlink",
-            "st_size",
-            "st_mtime_ns",
-            "st_ctime_ns",
+            return b""
+        return _check_file_content(
+            self.object_descriptor, before, self._expected, self._max_bytes, capture=capture
         )
-        if (
-            total != self._expected.size_bytes
-            or digest.hexdigest() != self._expected.sha256
-            or any(getattr(before, field) != getattr(after, field) for field in fields)
-        ):
-            raise ValueError("protected retained bytes changed")
 
 
 @contextmanager
@@ -148,6 +210,7 @@ def hold_protected_path(
     owner_uid: int,
     max_bytes: int,
     writable: bool = False,
+    require_openat2: bool = False,
 ) -> Iterator[ProtectedPathDescriptors]:
     """Retain an exact previously inspected path without truncation or creation.
 
@@ -164,6 +227,9 @@ def hold_protected_path(
     writable:
         Open an existing regular target read/write without truncation. Directories
         and absent targets must use False. This does not authorize a later write.
+    require_openat2:
+        Verify each revalidation through Linux openat2 with beneath, no-symlink
+        and no-mount-crossing resolution. Unsupported native profiles refuse.
 
     Yields
     ------
@@ -185,7 +251,12 @@ def hold_protected_path(
     closure is resource release, not recovery of a partially executed operation.
     The root remains pinned by its borrowed descriptor, not its external pathname.
     """
-    if type(owner_uid) is not int or owner_uid < 0 or type(writable) is not bool:
+    if (
+        type(owner_uid) is not int
+        or owner_uid < 0
+        or type(writable) is not bool
+        or type(require_openat2) is not bool
+    ):
         raise ValueError("invalid enrolled descriptor owner or access option")
     if not expected.directories:
         raise ValueError("retained path has no enrolled root")
@@ -197,6 +268,7 @@ def hold_protected_path(
         root_identity=expected.directories[0],
         max_bytes=max_bytes,
         allow_directory=expected.is_directory,
+        require_openat2=require_openat2,
     )
     if observed != expected:
         raise ValueError("protected observation changed before retention")
@@ -227,6 +299,7 @@ def hold_protected_path(
             expected,
             owner_uid,
             max_bytes,
+            _require_openat2=require_openat2,
         )
         held.revalidate()
         yield held

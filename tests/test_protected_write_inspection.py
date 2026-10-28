@@ -135,32 +135,13 @@ def test_directory_option_and_incomplete_file_observation_fail_closed(tmp_path: 
         )
 
 
-def test_directory_device_mismatch_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    (tmp_path / "records").mkdir()
-    original = os.fstat
-    calls = 0
-
-    def fstat(descriptor: int) -> os.stat_result:
-        nonlocal calls
-        calls += 1
-        result = original(descriptor)
-        if calls == 3:
-            fields = list(result)
-            fields[2] += 1
-            return os.stat_result(fields)
-        return result
-
-    # Injected identity/device mismatch checks refusal; activation needs a real competing path or
-    # mount change in the sandbox.
-    monkeypatch.setattr(os, "fstat", fstat)
-    with pytest.raises(ValueError, match="directory crosses"):
-        _directory_inspection(tmp_path, "records")
-
-
 @pytest.mark.parametrize("identity", [(True, 1), (1.0, 1), (-1, 1), (1,), [1, 2], None])
 def test_pinned_identity_requires_exact_integer_pair(identity: object) -> None:
+    """Malformed dynamic caller input must refuse before any descriptor access."""
     with pytest.raises(ValueError, match="pinned root identity"):
-        inspect_protected_file(-1, "record", root_identity=identity, max_bytes=64)  # type: ignore[arg-type]
+        inspect_protected_file(
+            -1, "record", root_identity=cast(tuple[int, int], identity), max_bytes=64
+        )
 
 
 def test_primary_before_binding_uses_real_empty_file_and_absent_target(tmp_path: Path) -> None:
@@ -308,58 +289,22 @@ def test_wrong_pinned_root_refused(tmp_path: Path) -> None:
         os.close(descriptor)
 
 
-@pytest.mark.parametrize("change", ["grow", "same-size"])
-def test_real_concurrent_file_change_is_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
-) -> None:
-    target = tmp_path / "record"
-    target.write_bytes(b"old")
-    original_read = os.read
-    changed = False
-
-    def read(descriptor: int, count: int) -> bytes:
-        nonlocal changed
-        result = original_read(descriptor, count)
-        if not changed:
-            changed = True
-            target.write_bytes(b"larger" if change == "grow" else b"new")
-            os.utime(target, ns=(1, 1))
-        return result
-
-    # Injected growth checks the bound; activation needs a second process growing the actual file
-    # during inspection.
-    monkeypatch.setattr(os, "read", read)
-    with pytest.raises(ValueError, match="grew|changed"):
-        _inspect(tmp_path, budget=3)
-
-
 def test_unsupported_backend_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Injected platform refusal checks fallback; a real non-POSIX runner must verify backend
-    # behavior.
+    # os.name cannot become non-POSIX on this Linux process. The substitute reaches only
+    # the platform-refusal branch; native non-POSIX runner evidence remains required.
+    # All new kernel, byte-mutation and device-boundary tests use actual OS objects.
     monkeypatch.setattr(inspection, "os", SimpleNamespace(name="unsupported"))
     with pytest.raises(OSError, match="unavailable"):
         inspect_protected_file(0, "record", root_identity=(1, 1), max_bytes=64)
 
 
-def test_changed_device_metadata_is_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    (tmp_path / "records").mkdir()
-    original = os.fstat
-    calls = 0
-
-    def fstat(descriptor: int) -> os.stat_result:
-        nonlocal calls
-        calls += 1
-        result = original(descriptor)
-        if calls == 3:  # wrapper root, inspection root, then child directory
-            fields = list(result)
-            fields[2] += 1
-            return os.stat_result(fields)
-        return result
-
-    # Injected identity/device mismatch checks refusal; activation needs a real competing path or
-    # mount change in the sandbox.
-    monkeypatch.setattr(os, "fstat", fstat)
-    with pytest.raises(ValueError, match="device boundary"):
-        _inspect(tmp_path, "records/record")
+def test_inspection_refuses_non_boolean_kernel_requirement(tmp_path: Path) -> None:
+    """A malformed security option refuses before using an invalid descriptor."""
+    with pytest.raises(ValueError, match="directory inspection option"):
+        inspect_protected_file(
+            -1,
+            "record",
+            root_identity=(0, 0),
+            max_bytes=64,
+            require_openat2=cast(bool, 1),
+        )

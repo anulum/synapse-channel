@@ -16,6 +16,7 @@ import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from synapse_channel.core.protected_write_openat2 import verify_protected_openat2_path
 from synapse_channel.core.protected_write_proposal import (
     ProtectedWriteProposalLimits,
     parse_protected_write_proposal,
@@ -265,6 +266,7 @@ def inspect_protected_file(
     root_identity: tuple[int, int],
     max_bytes: int,
     allow_directory: bool = False,
+    require_openat2: bool = False,
 ) -> ProtectedFileInspection:
     """Inspect exact bytes without following aliases or reopening by pathname.
 
@@ -280,6 +282,9 @@ def inspect_protected_file(
         Positive explicit byte budget for bounded inspection.
     allow_directory:
         Explicitly permit directory identity/mode observations, never child access.
+    require_openat2:
+        Require Linux BENEATH, NO_SYMLINKS and NO_XDEV resolution before reading
+        any object bytes. Unsupported kernels refuse without a weaker fallback.
 
     Returns
     -------
@@ -300,10 +305,13 @@ def inspect_protected_file(
     the isolated writer must retain/revalidate enrolled descriptors at execution.
     Symlinks, hard links, device/FIFO nodes and cross-device ancestor traversal
     are refused. Parent absence is not silently converted to target absence.
+    With require_openat2, each opened ancestor and leaf must match kernel-resolved
+    descriptors before file reads; same-device mount crossings also refuse.
+    The default retains the diagnostic POSIX contract, not isolated-writer proof.
     """
     if type(max_bytes) is not int or not 0 < max_bytes < 2**53:
         raise ValueError("invalid inspection byte budget")
-    if type(allow_directory) is not bool:
+    if type(allow_directory) is not bool or type(require_openat2) is not bool:
         raise ValueError("invalid directory inspection option")
     if (
         type(root_identity) is not tuple
@@ -329,8 +337,16 @@ def inspect_protected_file(
         directories.append(root_identity)
         parts = relative_path.split("/")
         flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
-        for part in parts[:-1]:
+        for index, part in enumerate(parts[:-1]):
             child = os.open(part, flags | os.O_DIRECTORY, dir_fd=descriptor)
+            try:
+                if require_openat2:
+                    verify_protected_openat2_path(
+                        root_descriptor, "/".join(parts[: index + 1]), descriptor, child
+                    )
+            except BaseException:
+                os.close(child)
+                raise
             os.close(descriptor)
             descriptor = child
             info = os.fstat(descriptor)
@@ -340,8 +356,12 @@ def inspect_protected_file(
         try:
             leaf = os.open(parts[-1], flags, dir_fd=descriptor)
         except FileNotFoundError:
+            if require_openat2:
+                verify_protected_openat2_path(root_descriptor, relative_path, descriptor, None)
             return ProtectedFileInspection(tuple(directories), None, None, 0, None, relative_path)
         try:
+            if require_openat2:
+                verify_protected_openat2_path(root_descriptor, relative_path, descriptor, leaf)
             before = os.fstat(leaf)
             if allow_directory and stat.S_ISDIR(before.st_mode):
                 if before.st_dev != root.st_dev:
@@ -361,38 +381,11 @@ def inspect_protected_file(
                 or before.st_dev != root.st_dev
             ):
                 raise ValueError("protected target is not a single-link enrolled regular file")
-            if before.st_size > max_bytes:
-                raise ValueError("protected file exceeds inspection budget")
-            digest = hashlib.sha256()
-            total = 0
-            while True:
-                chunk = os.read(leaf, min(65536, max_bytes + 1 - total))
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > max_bytes:
-                    raise ValueError("protected file grew beyond inspection budget")
-                digest.update(chunk)
-            after = os.fstat(leaf)
-            fields = (
-                "st_dev",
-                "st_ino",
-                "st_mode",
-                "st_uid",
-                "st_gid",
-                "st_nlink",
-                "st_size",
-                "st_mtime_ns",
-                "st_ctime_ns",
-            )
-            if total != before.st_size or any(
-                getattr(before, field) != getattr(after, field) for field in fields
-            ):
-                raise ValueError("protected file changed during inspection")
+            digest, total = _read_inspected_content(leaf, before, max_bytes)
             return ProtectedFileInspection(
                 tuple(directories),
                 (before.st_dev, before.st_ino),
-                digest.hexdigest(),
+                digest,
                 total,
                 stat.S_IMODE(before.st_mode),
                 relative_path,
@@ -401,3 +394,36 @@ def inspect_protected_file(
             os.close(leaf)
     finally:
         os.close(descriptor)
+
+
+def _read_inspected_content(leaf: int, before: os.stat_result, max_bytes: int) -> tuple[str, int]:
+    """Hash bounded bytes while retaining every before/after metadata stability check."""
+    if before.st_size > max_bytes:
+        raise ValueError("protected file exceeds inspection budget")
+    digest = hashlib.sha256()
+    total = 0
+    while True:
+        chunk = os.read(leaf, min(65536, max_bytes + 1 - total))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValueError("protected file grew beyond inspection budget")
+        digest.update(chunk)
+    after = os.fstat(leaf)
+    fields = (
+        "st_dev",
+        "st_ino",
+        "st_mode",
+        "st_uid",
+        "st_gid",
+        "st_nlink",
+        "st_size",
+        "st_mtime_ns",
+        "st_ctime_ns",
+    )
+    if total != before.st_size or any(
+        getattr(before, field) != getattr(after, field) for field in fields
+    ):
+        raise ValueError("protected file changed during inspection")
+    return digest.hexdigest(), total

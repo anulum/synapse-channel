@@ -313,6 +313,65 @@ flags set per record in `core/journal.py`.
 
 ## 5. Restart replay
 
+### Retained filesystem observations
+
+`inspect_protected_file` observes a path relative to an enrolled borrowed root
+descriptor. `hold_protected_path` retains the exact observed root, ancestors
+and optional target without creating or truncating anything. Both accept the
+keyword-only `require_openat2`, defaulting to `False` for their existing POSIX
+diagnostic contract. When `True`, inspection MUST verify each opened ancestor
+and leaf through Linux `openat2` before reading target bytes. Retention MUST
+repeat that restricted identity check during revalidation. Unsupported kernels
+and userspaces MUST refuse instead of using a weaker opener.
+
+The native profile requires 64-bit `x86_64` or `aarch64` Linux. Resolution uses
+`RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_XDEV`, compares parent and
+leaf device/inode identities, and refuses a present leaf when absence was
+expected. Descriptor inputs must be exact nonnegative Python integers in the
+C `int` range, preventing ABI truncation to another open descriptor. Every
+temporary kernel reference is closed on success and refusal.
+Borrowed descriptors remain owned by the caller. This profile does not mount,
+create, remove, chmod or write a target.
+
+`ProtectedPathDescriptors.read_bytes()` returns immutable bytes only for an
+existing, single-link regular file matching the enrolled size, digest, identity
+and mode, under the explicit byte budget. It uses `pread`, preserving the
+caller's file offset. It then revalidates the retained chain and content before
+returning. A closed context, absent or directory target, changed attachment,
+ownership, bytes, observed metadata or exhausted budget MUST refuse. A detached
+external root pathname cannot redirect the captured data to a lookalike root.
+
+Compatibility: existing function arguments and the descriptor value's existing
+positional field order are preserved; its new internal kernel option is
+keyword-only. Capturing bytes adds a final full revalidation read and retains
+up to the selected content budget in memory. Operators must select budgets
+appropriate to their process resources. No published performance guarantee is
+made for this newly exposed primitive.
+
+These values and file descriptors do not grant write or read authority. Current
+admission/custody, authenticated service ordering, complete domain validation
+and operating-system isolation of bypass writers remain separate requirements.
+The checks narrow observation races; they cannot atomically exclude an
+unconfined process from changing multi-component filesystem state.
+
+Portable API contracts are exercised in `tests/test_protected_write_descriptors.py`,
+`tests/test_protected_write_inspection.py`, `tests/test_protected_write_openat2.py`
+and the preparation integration tests. Actual Linux syscall, procfs, inotify
+and independent-mutator cases are collected explicitly from
+`tests/fixtures/protected_paths_linux.py`; every Linux CI Python lane runs that
+complete profile together with default collection. The coverage lane measures
+their union in the same invocation before evaluating the existing floor.
+
+#### Native retained-path APIs
+
+::: synapse_channel.core.protected_write_openat2.verify_protected_openat2_path
+
+::: synapse_channel.core.protected_write_inspection.inspect_protected_file
+
+::: synapse_channel.core.protected_write_descriptors.hold_protected_path
+
+::: synapse_channel.core.protected_write_descriptors.ProtectedPathDescriptors
+
 ### Durable protected-session enrollment
 
 Protected-session enrollment belongs to the existing `SynapseHub` state,

@@ -111,6 +111,32 @@ coverage lane appends its real subprocess coverage before uploading reports.
 The filename keeps Linux kernel requirements out of default macOS and Windows
 collection, without adding a conditional skip or claiming cross-platform proof.
 
+The protected filesystem profile similarly requires a native 64-bit Linux
+`x86_64` or `aarch64` userspace with `openat2`, procfs and inotify:
+
+```bash
+python -m pytest tests/fixtures/protected_paths_linux.py
+```
+
+It exercises actual kernel path resolution, mount and symlink refusal,
+absent-leaf checks, descriptor cleanup and independent processes changing file
+bytes, metadata or parent attachments. The former device-mismatch and
+concurrent-inspection cases live here with native observations. Linux CI
+collects the complete profile together with `tests` on every supported Python
+version, preserving both default filename patterns and adding this profile:
+
+```bash
+python -m pytest tests -o 'python_files=test_*.py *_test.py protected_paths_linux.py'
+```
+
+Python 3.12 measures that combined population before evaluating its
+coverage floor, so native implementation is included in the first report.
+Missing native prerequisites fail this profile. Default collection retains
+portable descriptor/input checks and
+the existing POSIX platform guards; it does not collect these Linux-only cases
+on macOS or Windows. The modeled architecture-refusal test proves only the
+guard's rejection behavior, while the explicit profile proves Linux behavior.
+
 - **Tests.** Every new module, function, and branch ships with tests. Aggregate
   coverage stays above the 98% floor; a change must not lower it.
 - **Test taxonomy.** Reserve the `e2e` name and real-runtime CI mental

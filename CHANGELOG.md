@@ -48,6 +48,11 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Capture verified protected-file bytes through retained descriptors while
+  preserving caller offsets and rechecking content and attachments. Optional
+  Linux `openat2` verification rejects mount crossings and symlinks beneath
+  the enrolled root, with no weaker fallback when explicitly required.
+
 - Durable protected-session enrollment metadata in the existing hub journal.
   Internal authority APIs issue and revoke sessions through the hub mutation
   actor, reconstruct metadata after restart and project only matching retained
@@ -85,6 +90,12 @@ execution evidence when carrying a release claim forward.
   `eu-ai-act` evidence label and make no compliance verdict or deletion decision.
 
 ### Fixed
+
+- Check the actual leaf when protected kernel resolution expects absence.
+  An existing file, directory or symlink cannot satisfy a missing-object
+  expectation. Retained expected objects that disappear remain refused.
+  Descriptor integers outside the nonnegative C `int` range refuse before
+  the syscall instead of wrapping to a different open descriptor.
 
 - Bind signed protected `begin` and `settle` requests to the writer incarnation
   in the current server-side enrollment. Existing positional enrollment

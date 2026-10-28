@@ -53,8 +53,22 @@ from test_protected_write_transition_journal import _begin, _pending
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="real POSIX preparation observations")
 
 
-def _begun(tmp_path: Path) -> tuple[EventStore, PreparedProtectedWrite, SynapseState]:
-    admission, proposal, policy, observations = _inputs(tmp_path)
+def _begun(
+    tmp_path: Path,
+    *,
+    planned: bool = False,
+    prepared_inputs: tuple[
+        ProtectedWriteAdmission,
+        dict[str, Any],
+        ProtectedPreparationPolicy,
+        dict[tuple[str, str], ProtectedFileInspection],
+    ]
+    | None = None,
+) -> tuple[EventStore, PreparedProtectedWrite, SynapseState]:
+    """Commit real authority admission and begin for an existing or planned parent."""
+    admission, proposal, policy, observations = (
+        _inputs(tmp_path, planned) if prepared_inputs is None else prepared_inputs
+    )
     store = EventStore(tmp_path / "prepared-begin.db")
     claim = _claim()
     record_claim(store, claim)
@@ -358,7 +372,8 @@ def test_preparation_cannot_skip_a_required_gate(tmp_path: Path, case: str) -> N
         observations[("memory", "records/note.md")] = _inspect(tmp_path, "records/note.md")
     elif case == "budget":
         policy = replace(policy, max_artifact_bytes=1)
-    elif case == "domain":
+    else:
+        assert case == "domain"
         policy = replace(policy, domain_verifiers={})
     with pytest.raises(ValueError):
         prepare_protected_writer_input(
