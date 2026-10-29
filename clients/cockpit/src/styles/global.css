@@ -513,7 +513,6 @@ body {
   background: var(--raised);
   border-left: 2px solid var(--idle);
   border-radius: 0 var(--radius) var(--radius) 0;
-  transition: background var(--t-feedback) var(--ease);
 }
 
 .roster-row:hover {

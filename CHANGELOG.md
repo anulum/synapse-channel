@@ -18,6 +18,8 @@ execution evidence when carrying a release claim forward.
 
 ## [Unreleased]
 
+## [0.99.39] - 2026-10-29
+
 - Supervise long-running `synapse lock` commands with fenced renewal of the
   original live lease. Stop owned commands on lost ownership or uncertain
   renewal; preserve successor claims and refuse old or restarted hubs before
@@ -26,6 +28,9 @@ execution evidence when carrying a release claim forward.
   explicit; external effects still require resource-side fencing.
 
 ### Changed
+
+- Apply roster backgrounds immediately during theme changes so muted claim
+  labels retain readable contrast throughout the switch.
 
 - Keep the version-one UUID refusal case's collected test ID stable across
   independent CI workers while retaining its generated input and the complete

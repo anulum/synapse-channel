@@ -411,7 +411,7 @@ an exact-name registry query reported `0.99.38` as active and latest, with its
 PyPI package version also `0.99.38`. PyPI reported that version's wheel and
 source archive. This is a dated publication snapshot, not qualification of
 later local commits that keep the same package version. In-tree metadata also
-names `0.99.38`; validate the exact cut and artifact separately.
+names `0.99.39`; validate the exact cut and artifact separately.
 Registry metadata does not automatically follow PyPI or this repository, so
 every release remains incomplete until the registry query returns the cut
 version. Check live publication rather than inferring it from local metadata.
