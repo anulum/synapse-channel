@@ -20,6 +20,11 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Known-state protected recovery snapshots, immutable parent-bound evidence,
+  fresh-claim candidate checks and authenticated actor-ordered recovery refusal.
+  Real native profiles detect partial effects, stale frontiers and descriptor
+  custody outside an emptied writer group. These embedding APIs require a
+  separate physical-custody verifier and do not install a recovery service.
 - Verify the requested result, not only the exchange. `synapse verify-result
   file` checks a file's exact SHA-256 and then the change's tests;
   `synapse verify-result git` checks that a commit is on a remote branch. Each

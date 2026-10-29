@@ -418,6 +418,58 @@ actual kernel and storage behavior; they do not prove isolated installation.
 
 ::: synapse_channel.core.protected_write_descriptor_filter
 
+### Known-state recovery inputs and evidence
+
+`inspect_protected_recovery_snapshot` compares every enrolled path with the
+exact retained execution prefix. An uncertain step may match its known before
+or after state; an undeclared physical effect, partial bytes, changed inode or
+unmodelled parent refuses. Root aliases and planned absent children retain their
+checked physical ancestry. File and evidence reads have independent aggregate
+budgets. Collection is sequential: the supervisor MUST establish and retain old
+writer quiescence and filesystem custody before inspection. A matching after
+state proves the declared postcondition, not which writer produced it.
+
+`collect_protected_recovery_evidence` stores a closed canonical parent/begin-bound
+packet in the enrolled immutable evidence store. `read_protected_recovery_evidence`
+reads it without consulting live files and compares the original admission,
+begin, execution-start hash, frontier and every completed-prefix digest with the
+retained journal. Later journal progress invalidates an older packet. A retained
+packet remains historical if current files later change; its digest is not a
+current-custody or quiescence receipt.
+
+`prepare_protected_recovery_candidate` checks a fresh-claim child proposal against
+those retained observations, the parent's enrolled project/domain, explicit
+per-path effects, parent bindings and bounded immutable content. Unknown names
+cannot acquire permission from a prefix. It performs no I/O and grants no
+admission, begin or custody transfer.
+
+Inside the authority actor, `verify_protected_recovery_admission_inputs` requires
+the exact current blocked parent, unchanged candidate bytes and authority domain.
+It is one check inside a separate recovery verifier; physical custody MUST still
+be established independently. `ProtectedWriteRecoverHandler` rechecks authenticated
+service enrollment and a distinct current writer, then uses the sole durable
+actor for request-key conflict handling and atomic recovery finalization. Its
+operator-enrolled recovery verifier is mandatory. Refusal preserves parent
+custody and journals; reusing an admission key produces a signed, request-bound
+conflict before the physical verifier runs.
+
+The handler is an explicit embedding API. These mechanisms register no default
+listener, install no recovery service and do not make an uncertain old writer
+safe to resume. The [native profiles](https://github.com/anulum/synapse-channel/blob/main/CONTRIBUTING.md#known-state-recovery-profiles)
+exercise actual kernel/storage behavior and the existing authenticated loopback
+transport; their result is not installed-role or independent physical-custody
+qualification.
+
+::: synapse_channel.core.protected_write_recovery_snapshot
+
+::: synapse_channel.core.protected_write_recovery_evidence
+
+::: synapse_channel.core.protected_write_recovery_candidate
+
+::: synapse_channel.core.protected_write_recovery_admission_inputs
+
+::: synapse_channel.core.protected_write_recover_handler
+
 ### Retained filesystem observations
 
 `inspect_protected_file` observes a path relative to an enrolled borrowed root

@@ -51,6 +51,18 @@ across synchronized threads and descendants. It does not constrain existing
 outside descriptor holders or already running kernel polling rings, and is not
 a complete syscall allowlist or an installed containment claim.
 
+Recovery snapshots compare current retained paths with exact known execution
+states, while immutable recovery packets bind the original admission, begin and
+retained frontier. Later journal progress invalidates old packets. Packet reads
+perform no live-file checks: an outside descriptor holder can change current
+bytes even after the writer group is empty. The supervisor must independently
+establish and retain quiescence and filesystem custody before collection and
+admission. Candidate preparation and actor-current input checks do not grant
+physical recovery authority. The authenticated recovery handler requires an
+operator-enrolled verifier and a distinct currently enrolled writer, and preserves
+blocked custody on refusal. These library APIs install no recovery listener or
+service; see the [known-state recovery contract](docs/coordination-spec.md#known-state-recovery-inputs-and-evidence).
+
 Installation artifact capture traverses exact absolute paths without symlinks,
 requires root-owned ancestry and regular files without non-root write access,
 and compares complete captured bytes with independently enrolled digests.

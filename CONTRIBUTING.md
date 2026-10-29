@@ -268,6 +268,39 @@ Linux CI collects all five exact filenames alongside the existing two default
 filename patterns on Python 3.10–3.13; Python 3.12 includes their real subprocess
 coverage. They are outside default macOS and Windows collection.
 
+### Known-state recovery profiles
+
+The recovery handler's authenticated loopback and key-conflict journeys use
+`tests/test_protected_write_recover_handler.py` and
+`tests/test_protected_write_recover_conflict.py`. Six additional Linux profiles
+exercise real native observations and immutable storage:
+
+```bash
+python -m pytest \
+  tests/fixtures/protected_write_recovery_snapshot_linux.py \
+  tests/fixtures/protected_write_recovery_evidence_linux.py \
+  tests/fixtures/protected_write_recovery_candidate_linux.py \
+  tests/fixtures/protected_write_recovery_admission_inputs_linux.py \
+  tests/fixtures/protected_write_recovery_topology_faults_linux.py \
+  tests/fixtures/protected_write_recovery_escaped_descriptor_linux.py
+```
+
+They require native Linux `openat2`, procfs and the current descriptor backend.
+The descriptor-transfer profile additionally requires Linux x86-64 seccomp,
+cgroup v2 and a working systemd user session. It owns a transient resource-bounded
+service and two disposable processes, comparing a real blocked transfer with an
+outside descriptor holder that remains able to alter the file after the writer
+group is killed. Its cleanup terminates and reaps every owned child. An empty
+group and a frozen packet do not prove current filesystem custody.
+
+Both complete Linux interpreter inventories include all six exact filenames
+alongside the two existing default patterns and all earlier native profiles.
+Python 3.12 includes their actual subprocess coverage in the unchanged complete
+98% gate. Missing prerequisites fail; these profiles add no conditional skips
+and stay outside default macOS/Windows collection. Passing component journeys
+qualify observation, binding and refusal mechanics, not an installed recovery
+service or separate-principal writer isolation.
+
 ### Changes to `core/*`
 
 The `core/` modules sit on the request, authentication, and durability hot paths,

@@ -638,6 +638,13 @@ the optional Linux x86-64 filter blocks ancillary descriptor and io_uring routes
 These mechanisms require independently supervised custody and do not activate a
 writer service. See the [durable execution contract](docs/coordination-spec.md#durable-protected-execution-evidence).
 
+Recovery embedding APIs inspect known before/after states at an interrupted
+execution frontier, persist parent-bound immutable observations and check
+fresh-claim candidates against exact actor-current blocked custody. Unknown bytes,
+substituted paths and later journal progress refuse. Collection requires separate
+writer quiescence and filesystem custody; these APIs do not install a recovery
+service. See the [known-state recovery contract](docs/coordination-spec.md#known-state-recovery-inputs-and-evidence).
+
 CLI hub queries and `task` writes return `0` only after a matching reply.
 Missing replies return `1` with an unconfirmed-outcome diagnostic. A write may
 already have committed: inspect `synapse board` and retain the same `--idem-key`
@@ -1873,11 +1880,11 @@ on-channel model worker a question. Each starts its own in-process hub, so
 |---|---:|
 | Package version | 0.99.39 |
 | Public API exports | 70 |
-| Package modules | 823 |
-| Classes | 1200 |
+| Package modules | 828 |
+| Classes | 1204 |
 | Wire message types | 114 |
 | CLI subcommands | 261 |
-| Test functions | 11859 |
+| Test functions | 11862 |
 | Benchmark harnesses | 11 |
 | Documentation pages | 88 |
 | GitHub Actions workflows | 27 |

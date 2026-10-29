@@ -254,7 +254,7 @@ jobs:
           python -m pytest tests -p tools.pytest_shard
           --shard-index=${{ matrix.shard }} --shard-count=4 --shard-output=shard-main.json
           --shard-timings=timing-input/timings.json
-          -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py protected_write_descriptor_filter_linux.py protected_write_sequence_linux.py protected_write_execution_frontier_linux.py protected_write_observation_effect_faults_linux.py protected_write_observation_topology_faults_linux.py'
+          -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py protected_write_descriptor_filter_linux.py protected_write_sequence_linux.py protected_write_execution_frontier_linux.py protected_write_observation_effect_faults_linux.py protected_write_observation_topology_faults_linux.py protected_write_recovery_admission_inputs_linux.py protected_write_recovery_candidate_linux.py protected_write_recovery_escaped_descriptor_linux.py protected_write_recovery_evidence_linux.py protected_write_recovery_snapshot_linux.py protected_write_recovery_topology_faults_linux.py'
           --cov=synapse_channel --cov-report= --cov-fail-under=0
       - name: Run a complete indexed compatibility shard
         if: matrix.python-version != '3.12'
@@ -262,7 +262,7 @@ jobs:
           python -m pytest tests -p tools.pytest_shard
           --shard-index=${{ matrix.shard }} --shard-count=4 --shard-output=shard-main.json
           --shard-timings=timing-input/timings.json
-          -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py protected_write_descriptor_filter_linux.py protected_write_sequence_linux.py protected_write_execution_frontier_linux.py protected_write_observation_effect_faults_linux.py protected_write_observation_topology_faults_linux.py'
+          -o 'python_files=test_*.py *_test.py protected_paths_linux.py protected_install_artifacts_linux.py protected_installation_set_linux.py protected_sealed_installation_linux.py protected_write_descriptor_filter_linux.py protected_write_sequence_linux.py protected_write_execution_frontier_linux.py protected_write_observation_effect_faults_linux.py protected_write_observation_topology_faults_linux.py protected_write_recovery_admission_inputs_linux.py protected_write_recovery_candidate_linux.py protected_write_recovery_escaped_descriptor_linux.py protected_write_recovery_evidence_linux.py protected_write_recovery_snapshot_linux.py protected_write_recovery_topology_faults_linux.py'
       - name: Native Linux metadata refusal with accumulated coverage
         if: matrix.python-version == '3.12' && matrix.shard == 0
         run: >-
