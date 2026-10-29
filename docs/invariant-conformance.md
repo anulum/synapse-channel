@@ -93,6 +93,10 @@ An agent that keeps a credential for a resource can still act on it after its
 authority is withdrawn. Enforcement at the source needs an executor that holds
 the access, not a hub profile.
 
+The [guarantee register](guarantee-register.md) records, per capability, how
+far it has come from described to released, with the platform and artefact of
+each qualification.
+
 `python tools/invariant_conformance.py --check` validates the schema, exact six-row
 set, cited invariant identifiers, public evidence paths, and generated output.
 This freshness check runs before commit and in reserved release preflight.

@@ -92,6 +92,7 @@ nav:
   - Coordination model: coordination-model.md
   - Coordination specification: coordination-spec.md
   - Invariant conformance: invariant-conformance.md
+  - Guarantee register: guarantee-register.md
   - Agent Air Traffic Control: agent-air-traffic-control.md
   - Wire protocol: protocol.md
   - Delivery journal recovery: delivery-journal-recovery.md

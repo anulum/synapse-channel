@@ -1,0 +1,223 @@
+{
+  "capabilities": [
+    {
+      "described": [
+        "docs/coordination-model.md",
+        "docs/coordination-spec.md"
+      ],
+      "id": "coordination-hub",
+      "implemented": [
+        "src/synapse_channel/core/hub.py",
+        "src/synapse_channel/core/state.py"
+      ],
+      "qualified": [],
+      "released": [],
+      "stage": "wired",
+      "title": "Coordination hub",
+      "wired": [
+        {
+          "kind": "cli",
+          "name": "hub"
+        }
+      ]
+    },
+    {
+      "described": [
+        "docs/git-claims.md"
+      ],
+      "id": "git-claims",
+      "implemented": [
+        "src/synapse_channel/git/gitclaim.py",
+        "src/synapse_channel/git/claim_coverage.py"
+      ],
+      "qualified": [],
+      "released": [],
+      "stage": "wired",
+      "title": "Git path claims",
+      "wired": [
+        {
+          "kind": "cli",
+          "name": "git-claim"
+        },
+        {
+          "kind": "cli",
+          "name": "git-claim-check"
+        }
+      ]
+    },
+    {
+      "described": [
+        "docs/cli.md"
+      ],
+      "id": "lease-lock",
+      "implemented": [
+        "src/synapse_channel/cli_locking.py",
+        "src/synapse_channel/cli_lock_supervision.py"
+      ],
+      "qualified": [],
+      "released": [],
+      "stage": "wired",
+      "title": "Lease-held command lock",
+      "wired": [
+        {
+          "kind": "cli",
+          "name": "lock"
+        },
+        {
+          "kind": "cli",
+          "name": "release"
+        }
+      ]
+    },
+    {
+      "described": [
+        "docs/a2a-conformance.md",
+        "docs/a2a-deployment-threat-model.md"
+      ],
+      "id": "a2a-bridge",
+      "implemented": [
+        "src/synapse_channel/a2a_server.py",
+        "src/synapse_channel/a2a_http.py"
+      ],
+      "qualified": [],
+      "released": [],
+      "stage": "wired",
+      "title": "A2A bridge",
+      "wired": [
+        {
+          "kind": "cli",
+          "name": "a2a-serve"
+        }
+      ]
+    },
+    {
+      "described": [
+        "docs/a2a-conformance.md"
+      ],
+      "id": "a2a-conformance-backend",
+      "implemented": [
+        "src/synapse_channel/a2a_conformance_backend.py"
+      ],
+      "qualified": [],
+      "released": [],
+      "stage": "wired",
+      "title": "A2A TCK conformance backend",
+      "wired": [
+        {
+          "kind": "imported_by",
+          "name": "src/synapse_channel/cli_a2a_serve.py"
+        }
+      ]
+    },
+    {
+      "described": [
+        "docs/mcp-http.md"
+      ],
+      "id": "http-mcp",
+      "implemented": [
+        "src/synapse_channel/mcp/http_application.py",
+        "src/synapse_channel/mcp/http_auth.py"
+      ],
+      "qualified": [],
+      "released": [],
+      "stage": "wired",
+      "title": "Authenticated HTTP MCP",
+      "wired": [
+        {
+          "kind": "cli",
+          "name": "mcp"
+        }
+      ]
+    },
+    {
+      "described": [
+        "docs/mcp.md"
+      ],
+      "id": "stdio-mcp",
+      "implemented": [
+        "src/synapse_channel/mcp/server.py",
+        "src/synapse_channel/mcp/stdio.py"
+      ],
+      "qualified": [],
+      "released": [],
+      "stage": "wired",
+      "title": "stdio MCP server",
+      "wired": [
+        {
+          "kind": "console_script",
+          "name": "synapse-channel"
+        },
+        {
+          "kind": "cli",
+          "name": "mcp"
+        }
+      ]
+    },
+    {
+      "described": [
+        "docs/execution-outcomes.md"
+      ],
+      "id": "execution-outcomes",
+      "implemented": [
+        "src/synapse_channel/execution_outcome.py"
+      ],
+      "qualified": [],
+      "released": [],
+      "stage": "wired",
+      "title": "Scoped execution outcomes",
+      "wired": [
+        {
+          "kind": "imported_by",
+          "name": "src/synapse_channel/a2a_outcome.py"
+        },
+        {
+          "kind": "imported_by",
+          "name": "src/synapse_channel/mcp/outcome.py"
+        }
+      ]
+    },
+    {
+      "described": [
+        "docs/wake-relay.md"
+      ],
+      "id": "wake-relay",
+      "implemented": [
+        "src/synapse_channel/wake_relay.py",
+        "src/synapse_channel/wake_relay_service.py"
+      ],
+      "qualified": [],
+      "released": [],
+      "stage": "wired",
+      "title": "Wake relay",
+      "wired": [
+        {
+          "kind": "imported_by",
+          "name": "src/synapse_channel/cli_waker_relay.py"
+        }
+      ]
+    },
+    {
+      "described": [
+        "docs/coordination-spec.md"
+      ],
+      "id": "protected-write-driver",
+      "implemented": [
+        "src/synapse_channel/core/protected_write_driver.py"
+      ],
+      "qualified": [],
+      "released": [],
+      "stage": "implemented",
+      "title": "Protected-write driver",
+      "wired": []
+    }
+  ],
+  "schema_version": "synapse-guarantee-register.v1",
+  "summary": {
+    "described": 0,
+    "implemented": 1,
+    "none": 0,
+    "qualified": 0,
+    "released": 0,
+    "wired": 9
+  }
+}

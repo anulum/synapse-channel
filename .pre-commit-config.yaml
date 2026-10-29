@@ -85,6 +85,13 @@ repos:
         stages: [pre-commit, pre-push]
         always_run: true
         pass_filenames: false
+      - id: guarantee-register
+        name: guarantee register is current before commit
+        entry: python tools/guarantee_register.py --check
+        language: system
+        stages: [pre-commit]
+        always_run: true
+        pass_filenames: false
       - id: structure-budget
         name: structure budget holds and no ceiling rose
         entry: python -m tools.check_structure_budget --check --baseline HEAD
@@ -102,6 +109,13 @@ repos:
       - id: pre-push-invariant-conformance
         name: invariant conformance registry is current before push
         entry: python tools/invariant_conformance.py --check
+        language: system
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+      - id: pre-push-guarantee-register
+        name: guarantee register is current before push
+        entry: python tools/guarantee_register.py --check
         language: system
         stages: [pre-push]
         always_run: true

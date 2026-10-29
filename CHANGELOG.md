@@ -20,6 +20,17 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Generate a guarantee register (`docs/guarantee-register.md`,
+  `docs/_generated/guarantee_register.json`) from
+  `tools/guarantee_register.toml`. For each capability it shows the last stage
+  reached (described, implemented, wired, qualified, released). It checks each
+  stage against the tree: documentation and source files exist, a CLI
+  subcommand, console script or importing module statically reaches an
+  implementing module, and a maintainer-attested public receipt backs each
+  qualification and release. A receipt for one platform cannot qualify
+  another, and a source-commit receipt cannot qualify a released wheel. No
+  receipt is committed yet, so no capability is shown as qualified or
+  released. Pre-commit and pre-push hooks refuse a stale register.
 - Make qualification evidence trustworthy for production. A
   `synapse-qualification-bundle.v1` names a catalogue row's binding digest,
   its level, tests, configuration, artefacts, environment, qualifier and

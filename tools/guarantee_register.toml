@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Commercial license available
+# © Concepts 1996–2026 Miroslav Šotek. All rights reserved.
+# © Code 2020–2026 Miroslav Šotek. All rights reserved.
+# ORCID: 0009-0009-3560-0851
+# Contact: www.anulum.li | protoscience@anulum.li
+# SYNAPSE CHANNEL — capability guarantee register (source of the generated register)
+#
+# A stage counts only with evidence that tools/guarantee_register.py checks.
+# qualified and released need public receipts below docs/qualification/;
+# none is committed yet, so no capability claims either stage.
+schema_version = "synapse-guarantee-register.v1"
+generated_output = "docs/_generated/guarantee_register.json"
+page = "docs/guarantee-register.md"
+
+[[capability]]
+id = "coordination-hub"
+title = "Coordination hub"
+described = ["docs/coordination-model.md", "docs/coordination-spec.md"]
+implemented = ["src/synapse_channel/core/hub.py", "src/synapse_channel/core/state.py"]
+wired = [{ kind = "cli", name = "hub" }]
+qualified = []
+released = []
+
+[[capability]]
+id = "git-claims"
+title = "Git path claims"
+described = ["docs/git-claims.md"]
+implemented = ["src/synapse_channel/git/gitclaim.py", "src/synapse_channel/git/claim_coverage.py"]
+wired = [{ kind = "cli", name = "git-claim" }, { kind = "cli", name = "git-claim-check" }]
+qualified = []
+released = []
+
+[[capability]]
+id = "lease-lock"
+title = "Lease-held command lock"
+described = ["docs/cli.md"]
+implemented = ["src/synapse_channel/cli_locking.py", "src/synapse_channel/cli_lock_supervision.py"]
+wired = [{ kind = "cli", name = "lock" }, { kind = "cli", name = "release" }]
+qualified = []
+released = []
+
+[[capability]]
+id = "a2a-bridge"
+title = "A2A bridge"
+described = ["docs/a2a-conformance.md", "docs/a2a-deployment-threat-model.md"]
+implemented = ["src/synapse_channel/a2a_server.py", "src/synapse_channel/a2a_http.py"]
+wired = [{ kind = "cli", name = "a2a-serve" }]
+qualified = []
+released = []
+
+[[capability]]
+id = "a2a-conformance-backend"
+title = "A2A TCK conformance backend"
+described = ["docs/a2a-conformance.md"]
+implemented = ["src/synapse_channel/a2a_conformance_backend.py"]
+wired = [{ kind = "imported_by", name = "src/synapse_channel/cli_a2a_serve.py" }]
+qualified = []
+released = []
+
+[[capability]]
+id = "http-mcp"
+title = "Authenticated HTTP MCP"
+described = ["docs/mcp-http.md"]
+implemented = ["src/synapse_channel/mcp/http_application.py", "src/synapse_channel/mcp/http_auth.py"]
+wired = [{ kind = "cli", name = "mcp" }]
+qualified = []
+released = []
+
+[[capability]]
+id = "stdio-mcp"
+title = "stdio MCP server"
+described = ["docs/mcp.md"]
+implemented = ["src/synapse_channel/mcp/server.py", "src/synapse_channel/mcp/stdio.py"]
+wired = [{ kind = "console_script", name = "synapse-channel" }, { kind = "cli", name = "mcp" }]
+qualified = []
+released = []
+
+[[capability]]
+id = "execution-outcomes"
+title = "Scoped execution outcomes"
+described = ["docs/execution-outcomes.md"]
+implemented = ["src/synapse_channel/execution_outcome.py"]
+wired = [
+  { kind = "imported_by", name = "src/synapse_channel/a2a_outcome.py" },
+  { kind = "imported_by", name = "src/synapse_channel/mcp/outcome.py" },
+]
+qualified = []
+released = []
+
+[[capability]]
+id = "wake-relay"
+title = "Wake relay"
+described = ["docs/wake-relay.md"]
+implemented = ["src/synapse_channel/wake_relay.py", "src/synapse_channel/wake_relay_service.py"]
+wired = [{ kind = "imported_by", name = "src/synapse_channel/cli_waker_relay.py" }]
+qualified = []
+released = []
+
+[[capability]]
+id = "protected-write-driver"
+title = "Protected-write driver"
+described = ["docs/coordination-spec.md"]
+implemented = ["src/synapse_channel/core/protected_write_driver.py"]
+wired = []
+qualified = []
+released = []
