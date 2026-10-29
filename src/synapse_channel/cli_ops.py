@@ -24,6 +24,7 @@ import os
 import sys
 from pathlib import Path
 
+from synapse_channel.cli_ops_qualification import add_parsers as add_qualification_parsers
 from synapse_channel.core.protocol import loads_bounded
 from synapse_channel.core.terminal_text import terminal_text
 from synapse_channel.operations.catalogue import (
@@ -206,3 +207,4 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         command.add_argument("--transport", default=None, help="Only rows of this transport.")
         command.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
         command.set_defaults(func=_cmd_ops)
+    add_qualification_parsers(commands)

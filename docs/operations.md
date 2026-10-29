@@ -160,6 +160,53 @@ effects, obligations, output and scope). When any of these changes afterwards,
 the digest no longer matches: the row is **stale** and may not run until it is
 qualified again.
 
+### Qualification evidence per profile
+
+The evidence text, fingerprint and binding digest of a row are the operator's
+own word. That is enough for a **personal** profile, and the gate says so:
+its basis reads `operator_confirmation (personal profile)`.
+
+A **production** profile needs a signed qualification bundle. A qualifier
+writes a `synapse-qualification-bundle.v1` body naming:
+
+- the row's `operation`, `transport` and `variant`, and its `binding_digest`;
+- the `level` (`run_once` or `accepted`), the `tests`, the
+  `configuration_sha256` and the `artefacts` (name → `sha256:` digest);
+- the `environment` the qualification ran with (component → identity), for
+  example the interpreter, plugins and remote parts;
+- the `qualifier`, `issued_at` and `valid_until` (whole UNIX seconds, at most
+  366 days apart).
+
+The qualifier signs the body with an Ed25519 key. The signature is
+domain-separated and covers the body and the key id:
+
+```bash
+synapse ops sign-qualification --bundle-body body.json \
+  --key-file qualifier.pem --key-id lab-1 --out session-list.bundle.json
+synapse ops gate session.list --profile production \
+  --bundle session-list.bundle.json --trust qualifiers.json \
+  --require-environment interpreter --require-environment plugin:none
+```
+
+The trust file is `{"keys": {"lab-1": "<base64 raw 32-byte public key>"}}`, and
+the key file must be owner-only. `synapse ops gate` prints whether the row may
+run, on what basis and every reason it may not; it exits 0 or 1 and runs
+nothing. In production, a row may run only when all of these hold:
+
+- the row itself is qualified for its present binding;
+- a trusted key signed the bundle and the signature verifies;
+- the bundle names this operation, transport and variant, and the row's
+  present binding digest and qualification level;
+- the bundle is valid now;
+- `run_once` is used only for a row whose every effect is `read`; any other
+  effect needs `accepted`;
+- the profile names at least one required environment component, and the
+  bundle's environment covers every one. The gate compares component names;
+  it does not check that the identities the bundle records match the machine
+  or process that will run.
+
+The gate is one precondition of a run. It grants no authority by itself.
+
 ## Admission
 
 An operation is admitted only when all of this holds:

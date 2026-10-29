@@ -20,6 +20,15 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Make qualification evidence trustworthy for production. A
+  `synapse-qualification-bundle.v1` names a catalogue row's binding digest,
+  its level, tests, configuration, artefacts, environment, qualifier and
+  validity period. It is signed with a domain-separated Ed25519 signature
+  (`synapse ops sign-qualification`). `synapse ops gate` lets a row run in
+  production only with a bundle from a trusted key that matches the row now
+  and covers the environment components the profile names. `run_once` is
+  enough only for a read-only row. A personal profile keeps the operator's own
+  qualification, labelled as such.
 - Known-state protected recovery snapshots, immutable parent-bound evidence,
   fresh-claim candidate checks and authenticated actor-ordered recovery refusal.
   Real native profiles detect partial effects, stale frontiers and descriptor
