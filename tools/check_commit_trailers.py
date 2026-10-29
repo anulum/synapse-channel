@@ -6,17 +6,29 @@
 # ORCID: 0009-0009-3560-0851
 # Contact: www.anulum.li | protoscience@anulum.li
 # SYNAPSE CHANNEL — forward-only commit-message policy
-"""Enforce seat, authorship, and subject-language rules on new commits.
+"""Enforce seat, authorship, subject-language and hook-use rules on new commits.
 
 With a message-file argument, this module is the local ``commit-msg`` hook.
 Without one, it audits every commit after the policy baseline. CI may pass an
 event-specific revision range with ``--range``. Published history before the
 baseline is immutable and deliberately outside this forward-only gate.
+
+Hook use is enforced as well. Run with ``--stamp``, the ``commit-msg`` hook
+writes ``Hooks-Verified: pre-commit sha256:<16 hex>`` above the ``Seat:``
+trailer: a digest of the staged ``.pre-commit-config.yaml``. Git runs
+``commit-msg`` only after every ``pre-commit`` hook has passed, so the stamp
+shows that the hooks ran. The audit requires the stamp, matching that
+commit's own hook configuration, on every commit whose configuration already
+contains this rule. A commit made with ``--no-verify``, ``git commit-tree`` or
+from a worktree without installed hooks has no stamp and is refused before
+push and in CI. Whoever types a stamp by hand can defeat this; it stops
+accidental bypass, not a determined forger.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 import shutil
@@ -62,6 +74,10 @@ HISTORY_EXEMPTIONS = {
 SEAT_PREFIX_RE = re.compile(r"^\s*Seat:")
 SEAT_TRAILER_RE = re.compile(r"^Seat:\s+([A-Za-z0-9][A-Za-z0-9_-]{0,63})\s*$")
 FORBIDDEN_SEAT_PREFIXES = ("claude-", "codex-")
+CONFIG_PATH = ".pre-commit-config.yaml"
+STAMP_MARKER = "check_commit_trailers.py --stamp"
+STAMP_PREFIX_RE = re.compile(r"^\s*Hooks-Verified:")
+STAMP_RE = re.compile(r"^Hooks-Verified: pre-commit sha256:([0-9a-f]{16})$")
 FORBIDDEN_SUBJECT_WORDS = (
     "elite",
     "superior",
@@ -81,6 +97,16 @@ FORBIDDEN_SUBJECT_RE = re.compile(
 def _subject(message: str) -> str:
     """Return the first non-empty commit-message line."""
     return next((line.strip() for line in message.splitlines() if line.strip()), "")
+
+
+def _stamp_shape_violations(lines: list[str]) -> list[str]:
+    """Return why a message's hooks stamp, if any, is malformed or repeated."""
+    stamps = [line.strip() for line in lines if STAMP_PREFIX_RE.match(line)]
+    if len(stamps) > 1:
+        return ["expected at most one `Hooks-Verified:` stamp"]
+    if stamps and STAMP_RE.fullmatch(stamps[0]) is None:
+        return ["malformed `Hooks-Verified:` stamp"]
+    return []
 
 
 def _message_violations(message: str) -> list[str]:
@@ -113,6 +139,8 @@ def _message_violations(message: str) -> list[str]:
         if seat_index >= authorship_index or any(line.strip() for line in between):
             violations.append("`Seat:` must immediately precede the authorship line")
 
+    violations += _stamp_shape_violations(lines)
+
     forbidden = list(
         dict.fromkeys(
             match.group(1).lower() for match in FORBIDDEN_SUBJECT_RE.finditer(_subject(message))
@@ -123,8 +151,33 @@ def _message_violations(message: str) -> list[str]:
     return violations
 
 
-def _check_message_file(path: Path) -> int:
-    """Validate one pending commit-message file."""
+def config_digest(config: bytes) -> str:
+    """Return the 16-hex digest a stamp carries for one hook configuration."""
+    return hashlib.sha256(config).hexdigest()[:16]
+
+
+def stamp_message(message: str, digest: str) -> str:
+    """Return ``message`` with exactly one hooks stamp directly above ``Seat:``.
+
+    Any earlier stamp, for example from an amended message, is replaced.
+    """
+    lines = [line for line in message.splitlines() if not STAMP_PREFIX_RE.match(line)]
+    seat = next(index for index, line in enumerate(lines) if SEAT_PREFIX_RE.match(line))
+    lines.insert(seat, f"Hooks-Verified: pre-commit sha256:{digest}")
+    return "\n".join(lines) + "\n"
+
+
+def _staged_config() -> bytes | None:
+    """Return the staged hook configuration, or ``None`` when it cannot be read."""
+    git = _resolve_git()
+    if git is None:
+        return None
+    result = subprocess.run([git, "show", f":{CONFIG_PATH}"], check=False, capture_output=True)
+    return result.stdout if result.returncode == 0 else None
+
+
+def _check_message_file(path: Path, *, stamp: bool = False) -> int:
+    """Validate one pending commit-message file and, with ``stamp``, stamp it."""
     try:
         message = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -132,6 +185,13 @@ def _check_message_file(path: Path) -> int:
         return 2
     violations = _message_violations(message)
     if not violations:
+        if not stamp:
+            return 0
+        config = _staged_config()
+        if config is None:
+            print(f"cannot read the staged {CONFIG_PATH}; refusing to stamp", file=sys.stderr)
+            return 2
+        path.write_text(stamp_message(message, config_digest(config)), encoding="utf-8")
         return 0
     print("Commit message rejected:", file=sys.stderr)
     for violation in violations:
@@ -167,6 +227,27 @@ def _run_git(git: str, repo: Path, *args: str) -> subprocess.CompletedProcess[st
     )
 
 
+def _stamp_violations(git: str, root: Path, commit: str, message: str) -> list[str]:
+    """Return why ``commit`` lacks a valid hooks stamp, when its configuration needs one."""
+    config = subprocess.run(
+        [git, "-C", str(root), "show", f"{commit}:{CONFIG_PATH}"],
+        check=False,
+        capture_output=True,
+    )
+    if config.returncode != 0 or STAMP_MARKER.encode() not in config.stdout:
+        return []
+    stamps = [
+        match.group(1)
+        for line in message.splitlines()
+        if (match := STAMP_RE.fullmatch(line.strip())) is not None
+    ]
+    if not stamps:
+        return ["no `Hooks-Verified:` stamp: the commit was made without the pre-commit hooks"]
+    if stamps[0] != config_digest(config.stdout):
+        return ["`Hooks-Verified:` stamp does not match this commit's hook configuration"]
+    return []
+
+
 def _audit_range(range_spec: str, *, repo: Path | None = None) -> int:
     """Audit commit messages in ``range_spec`` and return a CLI status code."""
     git = _resolve_git()
@@ -191,6 +272,7 @@ def _audit_range(range_spec: str, *, repo: Path | None = None) -> int:
             print(f"git show failed for {commit}: {result.stderr.strip()}", file=sys.stderr)
             return 2
         violations = _message_violations(result.stdout)
+        violations += _stamp_violations(git, root, commit, result.stdout)
         if violations:
             failures.append(f"{commit[:12]}: {'; '.join(violations)}")
 
@@ -209,6 +291,9 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("message_file", nargs="?", type=Path)
     parser.add_argument("--range", dest="range_spec")
+    parser.add_argument(
+        "--stamp", action="store_true", help="commit-msg hook: stamp a valid message"
+    )
     return parser
 
 
@@ -218,8 +303,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.message_file is not None and args.range_spec is not None:
         parser.error("message_file and --range are mutually exclusive")
+    if args.stamp and args.message_file is None:
+        parser.error("--stamp needs a message_file")
     if args.message_file is not None:
-        return _check_message_file(args.message_file)
+        return _check_message_file(args.message_file, stamp=args.stamp)
     return _audit_range(args.range_spec or DEFAULT_AUDIT_RANGE)
 
 

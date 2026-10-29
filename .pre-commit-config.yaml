@@ -135,8 +135,8 @@ repos:
         always_run: true
         pass_filenames: false
       - id: commit-trailers
-        name: seat, authorship, and commit-subject policy
-        entry: python tools/check_commit_trailers.py
+        name: seat, authorship, commit-subject policy and hooks stamp
+        entry: python tools/check_commit_trailers.py --stamp
         language: system
         stages: [commit-msg]
       - id: version-sync

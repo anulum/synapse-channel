@@ -37,6 +37,15 @@ development environment and the standards a change must meet to be merged.
    elsewhere, set `SYNAPSE_MYPY_PYTHON` to its absolute Python path; an invalid
    override fails closed.
 
+   The hooks are mandatory. When every `pre-commit` hook has passed, the
+   `commit-msg` hook adds `Hooks-Verified: pre-commit sha256:<16 hex>` above the
+   `Seat:` trailer. The value is a digest of the staged `.pre-commit-config.yaml`.
+   The pre-push hook and the `commit-trailers` CI workflow refuse any new commit
+   without a stamp that matches its own hook configuration. So a commit made
+   with `--no-verify`, with `git commit-tree`, or from a worktree whose hooks
+   are not installed cannot be pushed. Run `make install-hooks` in every
+   worktree, and never land commits through a temporary index.
+
    The installed pre-push hooks are deliberately lightweight. They check the
    generated capability snapshot, commit-trailer history, and version surfaces
    in seconds. They do not run pytest, coverage, or `tools/preflight.sh`; CI owns

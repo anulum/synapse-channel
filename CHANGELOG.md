@@ -20,6 +20,13 @@ execution evidence when carrying a release claim forward.
 
 ### Added
 
+- Make the pre-commit hooks mandatory. The `commit-msg` hook runs only after
+  every `pre-commit` hook has passed. It now stamps
+  `Hooks-Verified: pre-commit sha256:<digest of the staged hook configuration>`
+  above the `Seat:` trailer. The pre-push hook and the `commit-trailers` CI
+  workflow refuse new commits without a stamp that matches their own
+  configuration, which catches `--no-verify`, `git commit-tree` and worktrees
+  without installed hooks. Commits made before this rule are unaffected.
 - Hand over work state that the receiver can check, never authority.
   `synapse work-state build` pins input files by SHA-256 and repositories by
   commit, and records completed steps, unknown-outcome operations, remaining
