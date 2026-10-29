@@ -27,6 +27,10 @@ execution evidence when carrying a release claim forward.
 
 ### Changed
 
+- Keep the version-one UUID refusal case's collected test ID stable across
+  independent CI workers while retaining its generated input and the complete
+  inventory gate.
+
 - Read Claude's stable release metadata from the official Anthropic repository
   through the existing bounded release parser, and record the current vendor
   and bounded discovery-source review. Host qualification and human candidate

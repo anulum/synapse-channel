@@ -133,7 +133,13 @@ def test_plan_request_requires_literal_contract_version(version: object) -> None
 
 @pytest.mark.parametrize(
     "request_id",
-    [None, 7, "not-a-uuid", str(uuid1()), str(UUID(REQUEST_ID)).upper()],
+    [
+        None,
+        7,
+        "not-a-uuid",
+        pytest.param(str(uuid1()), id="uuid-v1"),
+        str(UUID(REQUEST_ID)).upper(),
+    ],
 )
 def test_plan_request_requires_a_canonical_v4_request_id(request_id: object) -> None:
     document = valid_plan_document()
